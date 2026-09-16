@@ -327,6 +327,8 @@ pub struct CreateSynchronizedTimetableBlockRequest {
     pub day_of_week: String,
     pub bell_schedule_period_id: Uuid,
     pub intended_homeroom_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub teacher_ids: Vec<Uuid>,
     #[serde(deserialize_with = "deserialize_required_nullable_uuid")]
     #[schema(required = true)]
     pub room_id: Option<Uuid>,
@@ -387,6 +389,8 @@ pub struct UpdateTimetableBlockRequest {
     pub clear_room: bool,
     #[serde(default)]
     pub instructor_ids: Option<Vec<Uuid>>,
+    #[serde(default)]
+    pub teacher_ids: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]

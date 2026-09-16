@@ -368,8 +368,22 @@ pub(crate) async fn get_workspace(
                   offering.name_snapshot AS offering_name,
                   target.weekly_period_target AS required_periods,
                   count(DISTINCT block.id) FILTER (WHERE block.is_active)::integer AS scheduled_periods,
-                  COALESCE(array_agg(DISTINCT reservation.homeroom_id)
-                      FILTER (WHERE reservation.is_active), ARRAY[]::uuid[]) AS intended_homeroom_ids,
+                  COALESCE((
+                      SELECT array_agg(DISTINCT scoped_homeroom.id ORDER BY scoped_homeroom.id)
+                      FROM learning_offering_targets offering_target
+                      JOIN homerooms scoped_homeroom
+                        ON scoped_homeroom.academic_year_id = offering_target.academic_year_id
+                       AND scoped_homeroom.is_active
+                       AND (
+                           (offering_target.target_kind = 'homeroom'
+                            AND offering_target.homeroom_id = scoped_homeroom.id)
+                           OR
+                           (offering_target.target_kind = 'grade_program'
+                            AND offering_target.grade_level_id = scoped_homeroom.grade_level_id
+                            AND offering_target.study_program_id = scoped_homeroom.study_program_id)
+                       )
+                      WHERE offering_target.learning_offering_id = offering.id
+                  ), ARRAY[]::uuid[]) AS intended_homeroom_ids,
                   count(DISTINCT sync.learning_group_id)
                       FILTER (WHERE sync.status = 'LINKED')::integer AS linked_group_count,
                   count(DISTINCT sync.learning_group_id)
@@ -387,8 +401,6 @@ pub(crate) async fn get_workspace(
            LEFT JOIN academic_timetable_blocks block
              ON block.timetable_version_id = target.timetable_version_id
             AND block.learning_offering_id = offering.id
-           LEFT JOIN academic_timetable_block_homerooms reservation
-             ON reservation.block_id = block.id
            LEFT JOIN academic_timetable_block_group_sync sync ON sync.block_id = block.id
            WHERE target.timetable_version_id = $1
              AND ($2 OR offering.owning_organization_unit_id = ANY($3) OR EXISTS (

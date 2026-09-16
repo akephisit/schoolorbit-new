@@ -213,6 +213,15 @@ pub async fn get_daily_teaching_overview(
                       NULL::uuid
                FROM academic_timetable_block_teachers block_teacher
                WHERE block_teacher.is_active
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM academic_timetable_block_groups confirmed_group
+                     JOIN academic_timetable_block_group_instructors confirmed_instructor
+                       ON confirmed_instructor.block_group_id = confirmed_group.id
+                      AND confirmed_instructor.instructor_id = block_teacher.teacher_id
+                     WHERE confirmed_group.block_id = block_teacher.block_id
+                       AND confirmed_group.is_active
+                 )
            )
            SELECT allocation.teacher_id,
                   block.bell_schedule_period_id,

@@ -3,6 +3,7 @@
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
 		TimetableBlockWorkspaceLearningGroup,
+		TimetableBlockWorkspaceStaff,
 		TimetableOrdinaryDemand,
 		TimetableSynchronizedDemand
 	} from '$lib/api/timetable';
@@ -10,6 +11,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Check, ChevronDown, GripVertical, Inbox, Plus, UsersRound } from 'lucide-svelte';
+	import TimetableTeacherTargetPicker from './TimetableTeacherTargetPicker.svelte';
 
 	type DemandSelection = {
 		source: TimetableBlockPlacementSource;
@@ -20,6 +22,7 @@
 		ordinaryDemands,
 		synchronizedDemands,
 		groups,
+		staff,
 		disabled = false,
 		onChooseDemand,
 		onDragStartDemand,
@@ -29,6 +32,7 @@
 		ordinaryDemands: TimetableOrdinaryDemand[];
 		synchronizedDemands: TimetableSynchronizedDemand[];
 		groups: TimetableBlockWorkspaceLearningGroup[];
+		staff: TimetableBlockWorkspaceStaff[];
 		disabled?: boolean;
 		onChooseDemand: (
 			source: TimetableBlockPlacementSource,
@@ -44,6 +48,7 @@
 	} = $props();
 
 	let instructorChoices = $state<Record<string, string[]>>({});
+	let synchronizedTeacherChoices = $state<Record<string, string[]>>({});
 	const groupById = $derived(new Map(groups.map((group) => [group.id, group])));
 	const visibleOrdinary = $derived(ordinaryDemands.filter((demand) => demand.remainingPeriods > 0));
 	const visibleSynchronized = $derived(
@@ -104,8 +109,18 @@
 				roomId: null,
 				instructorIds: [],
 				homeroomIds: demand.intendedHomeroomIds,
-				teacherIds: []
+				teacherIds: synchronizedTeacherChoices[demand.learningOfferingId] ?? []
 			}
+		};
+	}
+
+	function setSynchronizedTeachers(
+		demand: TimetableSynchronizedDemand,
+		teacherIds: string[]
+	): void {
+		synchronizedTeacherChoices = {
+			...synchronizedTeacherChoices,
+			[demand.learningOfferingId]: teacherIds
 		};
 	}
 
@@ -192,6 +207,15 @@
 										{demand.requiredPeriods - demand.scheduledPeriods} คาบ
 									</p>
 								</button>
+							</div>
+							<div class="mt-3">
+								<TimetableTeacherTargetPicker
+									{staff}
+									value={synchronizedTeacherChoices[demand.learningOfferingId] ?? []}
+									label="ครูที่กันเวลาไว้"
+									{disabled}
+									onValueChange={(teacherIds) => setSynchronizedTeachers(demand, teacherIds)}
+								/>
 							</div>
 						</article>
 					{/each}

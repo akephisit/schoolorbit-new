@@ -216,10 +216,21 @@ function localConflicts(
 }
 
 export function blockTeacherIds(block: TimetableBlock): string[] {
-	return [
-		...block.groups.flatMap((group) => group.instructors.map((teacher) => teacher.teacherId)),
-		...block.teachers.map((teacher) => teacher.teacherId)
-	].filter((teacherId, index, values) => values.indexOf(teacherId) === index);
+	return [...blockInstructorIds(block), ...blockTargetTeacherIds(block)].filter(
+		(teacherId, index, values) => values.indexOf(teacherId) === index
+	);
+}
+
+export function blockInstructorIds(block: TimetableBlock): string[] {
+	return block.groups
+		.flatMap((group) => group.instructors.map((teacher) => teacher.teacherId))
+		.filter((teacherId, index, values) => values.indexOf(teacherId) === index);
+}
+
+export function blockTargetTeacherIds(block: TimetableBlock): string[] {
+	return block.teachers
+		.map((teacher) => teacher.teacherId)
+		.filter((teacherId, index, values) => values.indexOf(teacherId) === index);
 }
 
 export function blockHomeroomIds(block: TimetableBlock): string[] {

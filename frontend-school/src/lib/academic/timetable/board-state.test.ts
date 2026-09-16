@@ -8,6 +8,8 @@ import type {
 	TimetableBlockWorkspace
 } from '../../api/timetable';
 import {
+	blockInstructorIds,
+	blockTargetTeacherIds,
 	blocksForTimetableCell,
 	createTimetableBoardState,
 	localPlacementPreview,
@@ -191,4 +193,24 @@ test('demand accounting follows canonical block membership and published version
 	const removed = replaceTimetableBlocks(state, []);
 	assert.equal(remainingDemandForGroup(removed, 'group-1'), 3);
 	assert.equal(createTimetableBoardState(workspace('published')).canEdit, false);
+});
+
+test('keeps confirmed group instructors separate from provisional teacher targets', () => {
+	const synchronized = block(
+		'block-sync',
+		'group-sync',
+		'WED',
+		'period-1',
+		['teacher-1'],
+		['homeroom-1']
+	);
+	synchronized.blockKind = 'activity';
+	synchronized.schedulingMode = 'synchronized';
+	synchronized.teachers = [
+		{ teacherId: 'teacher-1' },
+		{ teacherId: 'teacher-2' }
+	] as TimetableBlock['teachers'];
+
+	assert.deepEqual(blockInstructorIds(synchronized), ['teacher-1']);
+	assert.deepEqual(blockTargetTeacherIds(synchronized), ['teacher-1', 'teacher-2']);
 });

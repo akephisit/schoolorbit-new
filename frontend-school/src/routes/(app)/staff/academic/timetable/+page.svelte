@@ -7,7 +7,8 @@
 	import {
 		blockBelongsToRow,
 		blockHomeroomIds,
-		blockTeacherIds,
+		blockInstructorIds,
+		blockTargetTeacherIds,
 		blocksForTimetableCell,
 		localPlacementPreview,
 		type TimetablePageView
@@ -45,6 +46,7 @@
 	import TimetableBoard from '$lib/components/academic/timetable/TimetableBoard.svelte';
 	import type { TimetableCellState } from '$lib/components/academic/timetable/TimetableCell.svelte';
 	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
+	import TimetableTeacherTargetPicker from '$lib/components/academic/timetable/TimetableTeacherTargetPicker.svelte';
 	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
 	import TimetableWorkspaceHeader from '$lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
 	import { PageShell } from '$lib/components/app-layout';
@@ -161,6 +163,7 @@
 	let editNote = $state('');
 	let editRoomId = $state(noRoomValue);
 	let editInstructorIds = $state<string[]>([]);
+	let editTeacherIds = $state<string[]>([]);
 	let removeOpen = $state(false);
 	let removeMode = $state<RemovalMode>('block');
 	let structuralOpen = $state(false);
@@ -402,15 +405,14 @@
 
 	function candidateForBlock(block: TimetableBlock): TimetableBlockPlacementCandidate {
 		const group = block.groups[0];
-		const teacherIds = blockTeacherIds(block);
 		return {
 			blockKind: block.blockKind,
 			learningGroupId: block.groups.length === 1 ? (group?.learningGroupId ?? null) : null,
 			learningOfferingId: block.learningOfferingId,
 			roomId: group?.roomId ?? block.homerooms[0]?.roomId ?? null,
-			instructorIds: block.blockKind === 'structural' ? [] : teacherIds,
+			instructorIds: block.blockKind === 'structural' ? [] : blockInstructorIds(block),
 			homeroomIds: blockHomeroomIds(block),
-			teacherIds: block.blockKind === 'structural' ? teacherIds : []
+			teacherIds: blockTargetTeacherIds(block)
 		};
 	}
 
@@ -541,6 +543,7 @@
 					timetableVersionId: controller.workspace.version.id,
 					learningOfferingId: dragSource.source.learningOfferingId,
 					intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
+					teacherIds: dragSource.candidate.teacherIds ?? [],
 					dayOfWeek,
 					bellSchedulePeriodId: periodId,
 					roomId: dragSource.candidate.roomId,
@@ -628,7 +631,14 @@
 		editInstructorIds = block.groups.flatMap((group) =>
 			group.instructors.map((teacher) => teacher.teacherId)
 		);
+		editTeacherIds = blockTargetTeacherIds(block);
 		editOpen = true;
+	}
+
+	function lockedTeacherTargetIds(block: TimetableBlock | null): string[] {
+		if (!block) return [];
+		const confirmed = new Set(blockInstructorIds(block));
+		return blockTargetTeacherIds(block).filter((teacherId) => confirmed.has(teacherId));
 	}
 
 	function instructorOptionsForBlock(block: TimetableBlock | null) {
@@ -679,9 +689,12 @@
 				roomId: editRoomId === noRoomValue ? null : editRoomId,
 				clearRoom: editRoomId === noRoomValue,
 				instructorIds:
-					selectedBlock.blockKind !== 'structural' && selectedBlock.groups.length === 1
+					selectedBlock.blockKind !== 'structural' &&
+					selectedBlock.schedulingMode !== 'synchronized' &&
+					selectedBlock.groups.length === 1
 						? editInstructorIds
-						: null
+						: null,
+				teacherIds: selectedBlock.schedulingMode === 'synchronized' ? editTeacherIds : null
 			});
 			editOpen = false;
 			await reload('แก้รายละเอียดคาบแล้ว');
@@ -1224,6 +1237,7 @@
 						ordinaryDemands={visibleOrdinaryDemands}
 						synchronizedDemands={visibleSynchronizedDemands}
 						groups={controller.workspace.learningGroups}
+						staff={controller.workspace.staff}
 						disabled={!canEdit}
 						onChooseDemand={chooseDemand}
 						onDragStartDemand={(source, candidate) => controller?.startPlacement(source, candidate)}
@@ -1295,18 +1309,31 @@
 						</Select.Content>
 					</Select.Root>
 				</div>
-				{#if selectedBlock?.blockKind !== 'structural' && selectedBlock?.groups.length === 1}
+				{#if selectedBlock?.blockKind !== 'structural' && selectedBlock?.schedulingMode !== 'synchronized' && selectedBlock?.groups.length === 1}
 					<TimetableInstructorPicker
 						options={instructorOptionsForBlock(selectedBlock)}
 						bind:value={editInstructorIds}
 						disabled={!canEdit}
 					/>
-				{:else if selectedBlock?.blockKind === 'activity'}
+				{/if}
+				{#if selectedBlock?.schedulingMode === 'synchronized'}
+					<TimetableTeacherTargetPicker
+						staff={controller?.workspace.staff ?? []}
+						value={editTeacherIds}
+						lockedIds={lockedTeacherTargetIds(selectedBlock)}
+						disabled={!canEdit}
+						label="ครูที่กันเวลาไว้ล่วงหน้า"
+						onValueChange={(teacherIds) => (editTeacherIds = teacherIds)}
+					/>
 					<div
 						class="rounded-lg border border-violet-500/25 bg-violet-50/40 p-3 text-xs text-muted-foreground dark:bg-violet-950/10"
 					>
-						กิจกรรมพร้อมกันจะดึงกลุ่มและครูจากหน้าจัดการเรียน หากเพิ่มกลุ่มภายหลัง
-						ระบบจะซิงค์เข้าช่วงกิจกรรมนี้
+						ครูที่เลือกจะเห็นคาบนี้และระบบจะกันเวลาชนไว้ก่อนเปิดกลุ่ม เมื่อเพิ่มกลุ่มภายหลัง
+						ระบบจะซิงค์กลุ่มและครูประจำกลุ่มเข้าคาบเดียวกันโดยไม่แสดงซ้ำ
+					</div>
+				{:else if selectedBlock?.blockKind === 'activity' && selectedBlock?.groups.length !== 1}
+					<div class="rounded-lg border p-3 text-xs text-muted-foreground">
+						กิจกรรมนี้จะดึงกลุ่มและครูจากหน้าจัดการเรียน
 					</div>
 				{/if}
 				<div class="space-y-1.5">

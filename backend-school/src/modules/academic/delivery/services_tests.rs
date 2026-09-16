@@ -3367,6 +3367,7 @@ async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_ch
             title: None,
             clear_title: false,
             instructor_ids: None,
+            teacher_ids: None,
         },
     )
     .await
@@ -6193,7 +6194,7 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
             groups: Vec::new(),
         })
         .collect();
-    offerings::apply_from_curriculum(
+    let applied = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
@@ -6206,6 +6207,17 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     )
     .await
     .unwrap();
+    assert!(applied.created_offering_count > 0);
+    assert_eq!(applied.created_group_count, 0);
+    assert!(applied.group_ids.is_empty());
+    let deferred_group_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM learning_groups WHERE learning_offering_id = ANY($1)",
+    )
+    .bind(&applied.offering_ids)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(deferred_group_count, 0);
 
     let filter = AcademicResourceListFilter {
         includes_school_owned: true,

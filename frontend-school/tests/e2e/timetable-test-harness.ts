@@ -1,5 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 
+import type { TimetableBlock } from '../../src/lib/api/timetable';
+
 export const timetableIds = {
 	year: '11000000-0000-4000-8000-000000000201',
 	term: '21000000-0000-4000-8000-000000000201',
@@ -12,6 +14,7 @@ export const timetableIds = {
 	teacherB: '51000000-0000-4000-8000-000000000203',
 	offeringA: '61000000-0000-4000-8000-000000000201',
 	offeringB: '61000000-0000-4000-8000-000000000202',
+	offeringSync: '61000000-0000-4000-8000-000000000203',
 	groupA: '71000000-0000-4000-8000-000000000201',
 	groupB: '71000000-0000-4000-8000-000000000202',
 	homeroom: '81000000-0000-4000-8000-000000000201',
@@ -26,7 +29,7 @@ export const timetableIds = {
 	blockGroupB: 'd1000000-0000-4000-8000-000000000202'
 } as const;
 
-export type MockBlock = ReturnType<typeof makeTimetableBlock>;
+export type MockBlock = TimetableBlock;
 
 export interface TimetableMockOptions {
 	status?: 'draft' | 'published';
@@ -35,6 +38,7 @@ export interface TimetableMockOptions {
 	eligibleInstructorIds?: string[];
 	blockedPeriodId?: string;
 	periodCount?: number;
+	includeSynchronizedDemand?: boolean;
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -81,6 +85,16 @@ function instructors(ids: string[]) {
 	return ids.map(instructor);
 }
 
+function teacherTargets(ids: string[]) {
+	return ids.map((teacherId, index) => ({
+		id: `e1000000-0000-4000-8000-${String(201 + index).padStart(12, '0')}`,
+		teacherId,
+		displayName: teacherId === timetableIds.teacherA ? 'ครูคณิตศาสตร์ A' : 'ครูคณิตศาสตร์ B',
+		rowVersion: 1,
+		isActive: true
+	}));
+}
+
 function periodDetails(periodId: string) {
 	if (periodId === timetableIds.period1) {
 		return { periodName: 'คาบ 1', startTime: '08:30:00', endTime: '09:20:00' };
@@ -102,7 +116,7 @@ export function makeTimetableBlock(
 		name?: string;
 		instructorIds?: string[];
 	} = {}
-) {
+): MockBlock {
 	const groupId = options.groupId ?? timetableIds.groupA;
 	const offeringId = options.offeringId ?? timetableIds.offeringA;
 	const code = options.code ?? 'ค21101';
@@ -150,7 +164,43 @@ export function makeTimetableBlock(
 		rowVersion: 1,
 		createdAt: '2026-08-31T00:00:00Z',
 		updatedAt: '2026-08-31T00:00:00Z'
-	};
+	} as unknown as MockBlock;
+}
+
+export function makeSynchronizedTimetableBlock(
+	id: string,
+	periodId: string,
+	teacherIds: string[] = [],
+	groupInstructorIds: string[] = []
+): MockBlock {
+	const ordinary = makeTimetableBlock(id, periodId, {
+		offeringId: timetableIds.offeringSync,
+		code: 'CLUB',
+		name: 'ชุมนุม',
+		instructorIds: groupInstructorIds
+	});
+	return {
+		...ordinary,
+		blockKind: 'activity',
+		learningOfferingId: timetableIds.offeringSync,
+		offeringCode: 'CLUB',
+		offeringName: 'ชุมนุม',
+		schedulingMode: 'synchronized',
+		groups: groupInstructorIds.length > 0 ? ordinary.groups : [],
+		homerooms: [
+			{
+				id: 'f1000000-0000-4000-8000-000000000201',
+				homeroomId: timetableIds.homeroom,
+				code: 'M1-1',
+				name: 'ม.1/1',
+				roomId: null,
+				roomCode: null,
+				rowVersion: 1,
+				isActive: true
+			}
+		],
+		teachers: teacherTargets(teacherIds)
+	} as unknown as MockBlock;
 }
 
 function periodId(orderIndex: number): string {
@@ -215,12 +265,18 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let workspaceRequests = 0;
 	let previewRequests = 0;
 	let createRequests = 0;
+	let synchronizedCreateRequests = 0;
 	let updateRequests = 0;
 	let swapRequests = 0;
+	let lastSynchronizedCreateBody: Record<string, unknown> | null = null;
+	let lastUpdateBody: Record<string, unknown> | null = null;
 
 	const workspace = () => {
 		const scheduledPeriods = blocks.filter((block) =>
 			block.groups.some((group) => group.learningGroupId === timetableIds.groupA)
+		).length;
+		const synchronizedScheduledPeriods = blocks.filter(
+			(block) => block.learningOfferingId === timetableIds.offeringSync
 		).length;
 		return {
 			version: selectedVersion,
@@ -284,11 +340,23 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					eligibleInstructors: instructors(eligibleInstructorIds)
 				}
 			],
-			synchronizedDemands: [],
+			synchronizedDemands: options.includeSynchronizedDemand
+				? [
+						{
+							learningOfferingId: timetableIds.offeringSync,
+							offeringCode: 'CLUB',
+							offeringName: 'ชุมนุม',
+							requiredPeriods: 1,
+							scheduledPeriods: synchronizedScheduledPeriods,
+							intendedHomeroomIds: [timetableIds.homeroom]
+						}
+					]
+				: [],
 			summary: {
 				blockCount: blocks.length,
 				ordinaryDemandCount: Math.max(requiredPeriods - scheduledPeriods, 0) > 0 ? 1 : 0,
-				synchronizedDemandCount: 0,
+				synchronizedDemandCount:
+					options.includeSynchronizedDemand && synchronizedScheduledPeriods === 0 ? 1 : 0,
 				linkedGroupCount: 0,
 				waitingGroupCount: 0,
 				conflictGroupCount: 0,
@@ -433,6 +501,22 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				await fulfill(route, created, 201);
 				return;
 			}
+			if (url.pathname === '/api/academic/timetable-blocks/synchronized' && method === 'POST') {
+				synchronizedCreateRequests += 1;
+				const body = route.request().postDataJSON();
+				lastSynchronizedCreateBody = body;
+				const created = {
+					...makeSynchronizedTimetableBlock(
+						timetableIds.createdBlock,
+						body.bellSchedulePeriodId,
+						body.teacherIds ?? []
+					),
+					dayOfWeek: body.dayOfWeek
+				};
+				blocks = [...blocks, created];
+				await fulfill(route, created, 201);
+				return;
+			}
 			if (url.pathname === '/api/academic/timetable-blocks/swap' && method === 'POST') {
 				swapRequests += 1;
 				const body = route.request().postDataJSON();
@@ -463,6 +547,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				updateRequests += 1;
 				const id = url.pathname.split('/').at(-1);
 				const body = route.request().postDataJSON();
+				lastUpdateBody = body;
 				const existing = blocks.find((block) => block.id === id);
 				if (!existing) throw new Error('Mock update block not found');
 				const periodId = body.bellSchedulePeriodId ?? existing.bellSchedulePeriodId;
@@ -477,6 +562,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 								instructors: instructors(body.instructorIds)
 							}))
 						: existing.groups,
+					teachers: body.teacherIds ? teacherTargets(body.teacherIds) : existing.teachers,
 					rowVersion: existing.rowVersion + 1
 				};
 				blocks = blocks.map((block) => (block.id === updated.id ? updated : block));
@@ -522,8 +608,11 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		workspaceRequestCount: () => workspaceRequests,
 		previewRequestCount: () => previewRequests,
 		createRequestCount: () => createRequests,
+		synchronizedCreateRequestCount: () => synchronizedCreateRequests,
 		updateRequestCount: () => updateRequests,
 		swapRequestCount: () => swapRequests,
+		lastSynchronizedCreateBody: () => lastSynchronizedCreateBody,
+		lastUpdateBody: () => lastUpdateBody,
 		blocks: () => blocks
 	};
 }

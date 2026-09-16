@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-import { installTimetableMock, makeTimetableBlock, timetableIds } from './timetable-test-harness';
+import {
+	installTimetableMock,
+	makeSynchronizedTimetableBlock,
+	makeTimetableBlock,
+	timetableIds
+} from './timetable-test-harness';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -132,4 +137,69 @@ test('requires an exact teacher choice when a group has several eligible teacher
 	expect(mock.blocks()[0]?.groups[0]?.instructors.map((teacher) => teacher.teacherId)).toEqual([
 		timetableIds.teacherB
 	]);
+});
+
+test('reserves selected teachers when placing a synchronized activity and edits them later', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page, {
+		requiredPeriods: 0,
+		includeSynchronizedDemand: true
+	});
+	await page.goto(timetableUrl());
+
+	const trayCard = page.locator('aside article').filter({ hasText: 'ชุมนุม' });
+	await expect(trayCard.getByRole('button', { name: 'ยังไม่กำหนดครู' })).toBeVisible();
+	await trayCard.getByRole('button', { name: 'ยังไม่กำหนดครู' }).click();
+	await page.getByRole('button', { name: 'ครูทุกคน', exact: true }).click();
+	await page.keyboard.press('Escape');
+	await trayCard.locator('button').first().click();
+	await page.getByRole('button', { name: 'วางคาบที่นี่' }).first().click();
+	const createdBlockButton = page.getByRole('button', { name: /ดูรายละเอียด ชุมนุม/ });
+	await expect(createdBlockButton).toBeVisible();
+
+	expect(mock.synchronizedCreateRequestCount()).toBe(1);
+	expect(mock.lastSynchronizedCreateBody()).toMatchObject({
+		teacherIds: [timetableIds.teacherA, timetableIds.teacherB]
+	});
+	await createdBlockButton.click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'ครูทุกคน' }).click();
+	await page
+		.getByRole('button', { name: /ครูคณิตศาสตร์ A/ })
+		.last()
+		.click();
+	await page.keyboard.press('Escape');
+	await dialog.getByRole('button', { name: 'บันทึก' }).click();
+
+	await expect(page.getByText('แก้รายละเอียดคาบแล้ว')).toBeVisible();
+	expect(mock.lastUpdateBody()).toMatchObject({ teacherIds: [timetableIds.teacherB] });
+});
+
+test('keeps synchronized group instructors managed by delivery when editing reservations', async ({
+	page
+}) => {
+	const block = makeSynchronizedTimetableBlock(
+		timetableIds.blockA,
+		timetableIds.period1,
+		[timetableIds.teacherB],
+		[timetableIds.teacherB]
+	);
+	const mock = await installTimetableMock(page, { blocks: [block] });
+	await page.goto(timetableUrl());
+
+	await page.getByRole('button', { name: /ดูรายละเอียด ชุมนุม/ }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByText('ครูผู้สอนของคาบนี้')).toHaveCount(0);
+	await expect(dialog.getByText('ครูที่กันเวลาไว้ล่วงหน้า')).toBeVisible();
+	await dialog.getByRole('button', { name: 'เลือกครู 1 คน' }).click();
+	await expect(page.getByRole('button', { name: /ครูคณิตศาสตร์ B/ }).last()).toBeDisabled();
+	await page.keyboard.press('Escape');
+	await dialog.getByRole('button', { name: 'บันทึก' }).click();
+	await expect(page.getByText('แก้รายละเอียดคาบแล้ว')).toBeVisible();
+
+	expect(mock.lastUpdateBody()).toMatchObject({
+		instructorIds: null,
+		teacherIds: [timetableIds.teacherB]
+	});
 });

@@ -82,6 +82,7 @@ test('teacher handoff findings remain in readiness and link to the canonical tim
 
 	assert.match(readiness, /stopped_teacher_still_scheduled/);
 	assert.match(readiness, /entry_instructor_not_effective/);
-	assert.match(page, /blockTeacherIds/);
+	assert.match(page, /blockInstructorIds/);
+	assert.match(page, /blockTargetTeacherIds/);
 	assert.match(page, /updateTimetableBlock/);
 });

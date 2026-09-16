@@ -29,7 +29,7 @@ test('loads one bounded draft workspace and preserves exact attached teachers', 
 
 	await expect(page.getByRole('heading', { name: 'จัดตารางสอน' })).toBeVisible();
 	await expect(page.getByText('แบบร่าง · แก้ไขได้')).toBeVisible();
-	await expect(page.getByText('ครูคณิตศาสตร์ A, ครูคณิตศาสตร์ B')).toBeVisible();
+	await expect(page.getByText('ครูคณิตศาสตร์ A +1')).toBeVisible();
 	expect(mock.workspaceRequestCount()).toBe(1);
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();

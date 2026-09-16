@@ -13200,6 +13200,7 @@ export interface components {
 			note?: string | null;
 			/** Format: uuid */
 			roomId: string | null;
+			teacherIds?: string[];
 			/** Format: uuid */
 			timetableVersionId: string;
 		};
@@ -18675,6 +18676,7 @@ export interface components {
 			roomId?: string | null;
 			/** Format: int64 */
 			rowVersion: number;
+			teacherIds?: string[] | null;
 			/** Format: uuid */
 			timetableVersionId: string;
 			title?: string | null;

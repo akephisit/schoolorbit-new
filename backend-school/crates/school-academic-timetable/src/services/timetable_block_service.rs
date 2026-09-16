@@ -43,6 +43,8 @@ struct InstructorAssignment {
 #[derive(Debug, FromRow)]
 struct LockedBlock {
     timetable_version_id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
     bell_schedule_id: Uuid,
     bell_schedule_period_id: Uuid,
     day_of_week: String,
@@ -299,6 +301,7 @@ pub async fn create_synchronized_block(
 ) -> Result<TimetableBlock, AppError> {
     let day = normalize_day(&request.day_of_week)?;
     let homeroom_ids = canonical_ids(&request.intended_homeroom_ids);
+    let teacher_ids = canonical_ids(&request.teacher_ids);
     if homeroom_ids.is_empty() {
         return Err(AppError::ValidationError(
             "ต้องระบุห้องประจำชั้นที่เข้าร่วมช่วงกิจกรรมหลัก".to_string(),
@@ -341,7 +344,22 @@ pub async fn create_synchronized_block(
         request.learning_offering_id,
     )
     .await?;
+    let scoped_homeroom_ids = offering_homeroom_ids(
+        &mut transaction,
+        request.learning_offering_id,
+        version.academic_year_id,
+    )
+    .await?;
+    if homeroom_ids
+        .iter()
+        .any(|homeroom_id| !scoped_homeroom_ids.contains(homeroom_id))
+    {
+        return Err(AppError::ValidationError(
+            "ห้องประจำชั้นอยู่นอกขอบเขตรายการเปิดสอน".to_string(),
+        ));
+    }
     ensure_homerooms(&mut transaction, version.academic_year_id, &homeroom_ids).await?;
+    ensure_teachers(&mut transaction, &teacher_ids).await?;
     let block_id = Uuid::new_v4();
     insert_block(
         &mut transaction,
@@ -372,6 +390,22 @@ pub async fn create_synchronized_block(
         .bind(version.academic_term_id)
         .bind(version.academic_year_id)
         .bind(request.room_id)
+        .bind(actor_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(map_write_error)?;
+    }
+    for teacher_id in teacher_ids {
+        sqlx::query(
+            r#"INSERT INTO academic_timetable_block_teachers (
+                   id, block_id, teacher_id, academic_term_id, academic_year_id,
+                   created_by, updated_by
+               ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $5)"#,
+        )
+        .bind(block_id)
+        .bind(teacher_id)
+        .bind(version.academic_term_id)
+        .bind(version.academic_year_id)
         .bind(actor_id)
         .execute(&mut *transaction)
         .await
@@ -583,6 +617,29 @@ pub async fn remove_target(
             .await?;
         }
         TimetableTargetKind::Teacher => {
+            let confirmed: bool = sqlx::query_scalar(
+                r#"SELECT EXISTS (
+                       SELECT 1
+                       FROM academic_timetable_block_teachers target
+                       JOIN academic_timetable_block_groups block_group
+                         ON block_group.block_id = target.block_id AND block_group.is_active
+                       JOIN academic_timetable_block_group_instructors instructor
+                         ON instructor.block_group_id = block_group.id
+                        AND instructor.instructor_id = target.teacher_id
+                       WHERE target.id = $1
+                         AND target.block_id = $2
+                         AND target.is_active
+                   )"#,
+            )
+            .bind(request.target_id)
+            .bind(block_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if confirmed {
+                return Err(AppError::ValidationError(
+                    "ครูประจำกลุ่มต้องย้ายหรือยกเลิกการมอบหมายก่อนนำออกจากคาบ".to_string(),
+                ));
+            }
             deactivate_child(
                 &mut transaction,
                 "academic_timetable_block_teachers",
@@ -683,6 +740,25 @@ pub async fn update_block(
             block_group_id,
             request.timetable_version_id,
             &instructor_ids,
+        )
+        .await?;
+    }
+
+    if let Some(teacher_ids) = request.teacher_ids.as_ref() {
+        if block.scheduling_mode.as_deref() != Some("synchronized") {
+            return Err(AppError::ValidationError(
+                "ครูที่กันเวลาโดยตรงแก้ได้เฉพาะกิจกรรมพร้อมกัน".to_string(),
+            ));
+        }
+        let teacher_ids = canonical_ids(teacher_ids);
+        ensure_teachers(&mut transaction, &teacher_ids).await?;
+        replace_block_teacher_targets(
+            &mut transaction,
+            block_id,
+            block.academic_term_id,
+            block.academic_year_id,
+            &teacher_ids,
+            actor_id,
         )
         .await?;
     }
@@ -994,7 +1070,7 @@ async fn load_locked_block(
     version_id: Uuid,
 ) -> Result<LockedBlock, AppError> {
     sqlx::query_as(
-        r#"SELECT timetable_version_id, bell_schedule_id,
+        r#"SELECT timetable_version_id, academic_term_id, academic_year_id, bell_schedule_id,
                   bell_schedule_period_id, day_of_week, block_kind,
                   scheduling_mode, row_version
            FROM academic_timetable_blocks
@@ -1204,6 +1280,34 @@ async fn ensure_version_offering_target(
     }
 }
 
+async fn offering_homeroom_ids(
+    transaction: &mut Transaction<'_, Postgres>,
+    offering_id: Uuid,
+    academic_year_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT DISTINCT homeroom.id
+           FROM learning_offering_targets target
+           JOIN homerooms homeroom
+             ON homeroom.academic_year_id = target.academic_year_id
+            AND homeroom.is_active
+            AND (
+                (target.target_kind = 'homeroom' AND target.homeroom_id = homeroom.id)
+                OR
+                (target.target_kind = 'grade_program'
+                 AND target.grade_level_id = homeroom.grade_level_id
+                 AND target.study_program_id = homeroom.study_program_id)
+            )
+           WHERE target.learning_offering_id = $1
+             AND target.academic_year_id = $2
+           ORDER BY homeroom.id"#,
+    )
+    .bind(offering_id)
+    .bind(academic_year_id)
+    .fetch_all(&mut **transaction)
+    .await?)
+}
+
 async fn ensure_homerooms(
     transaction: &mut Transaction<'_, Postgres>,
     academic_year_id: Uuid,
@@ -1244,6 +1348,77 @@ async fn ensure_teachers(
             "ครูบางรายการไม่พร้อมใช้งาน".to_string(),
         ))
     }
+}
+
+async fn replace_block_teacher_targets(
+    transaction: &mut Transaction<'_, Postgres>,
+    block_id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    teacher_ids: &[Uuid],
+    actor_id: Uuid,
+) -> Result<(), AppError> {
+    let confirmed_removal_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM academic_timetable_block_teachers target
+               JOIN academic_timetable_block_groups block_group
+                 ON block_group.block_id = target.block_id AND block_group.is_active
+               JOIN academic_timetable_block_group_instructors instructor
+                 ON instructor.block_group_id = block_group.id
+                AND instructor.instructor_id = target.teacher_id
+               WHERE target.block_id = $1
+                 AND target.is_active
+                 AND NOT (target.teacher_id = ANY($2))
+           )"#,
+    )
+    .bind(block_id)
+    .bind(teacher_ids)
+    .fetch_one(&mut **transaction)
+    .await?;
+    if confirmed_removal_exists {
+        return Err(AppError::ValidationError(
+            "ครูประจำกลุ่มต้องย้ายหรือยกเลิกการมอบหมายก่อนนำออกจากคาบ".to_string(),
+        ));
+    }
+
+    sqlx::query(
+        r#"UPDATE academic_timetable_block_teachers
+           SET is_active = false, row_version = row_version + 1,
+               updated_by = $3, updated_at = now()
+           WHERE block_id = $1
+             AND is_active
+             AND NOT (teacher_id = ANY($2))"#,
+    )
+    .bind(block_id)
+    .bind(teacher_ids)
+    .bind(actor_id)
+    .execute(&mut **transaction)
+    .await?;
+
+    for teacher_id in teacher_ids {
+        sqlx::query(
+            r#"INSERT INTO academic_timetable_block_teachers (
+                   id, block_id, teacher_id, academic_term_id, academic_year_id,
+                   created_by, updated_by
+               ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $5)
+               ON CONFLICT (block_id, teacher_id) DO UPDATE
+               SET is_active = true,
+                   row_version = academic_timetable_block_teachers.row_version + 1,
+                   updated_by = EXCLUDED.updated_by,
+                   updated_at = now()
+               WHERE NOT academic_timetable_block_teachers.is_active"#,
+        )
+        .bind(block_id)
+        .bind(teacher_id)
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .bind(actor_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(map_write_error)?;
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

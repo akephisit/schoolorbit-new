@@ -27808,6 +27808,13 @@
               "null"
             ]
           },
+          "teacherIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "timetableVersionId": {
             "format": "uuid",
             "type": "string"
@@ -47589,6 +47596,16 @@
           "rowVersion": {
             "format": "int64",
             "type": "integer"
+          },
+          "teacherIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "timetableVersionId": {
             "format": "uuid",
