@@ -24,6 +24,9 @@
 	import {
 		DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
 		DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
+		dailyTeachingCompactGroupMeta,
+		dailyTeachingCompactTitle,
+		dailyTeachingEmptyCellLabel,
 		dailyTeachingEntryCardPresentation,
 		dailyTeachingTableMinWidth,
 		groupDailyTeachingEntries
@@ -152,23 +155,52 @@
 
 	function entryTitle(entry: DailyTeachingEntry): string {
 		return (
-			entry.offeringCode ??
-			entry.offeringName ??
 			entry.title ??
+			entry.offeringName ??
 			entry.subjectVersionDisplayLabel ??
 			entry.activityVersionDisplayLabel ??
+			entry.offeringCode ??
 			entry.entryType
 		);
 	}
 
+	function entryDetailLabels(entry: DailyTeachingEntry): string[] {
+		const title = entryTitle(entry);
+		return [entry.offeringName, entry.subjectVersionDisplayLabel, entry.activityVersionDisplayLabel]
+			.filter((value): value is string => Boolean(value?.trim()) && value !== title)
+			.filter((value, index, values) => values.indexOf(value) === index);
+	}
+
 	function entrySubtitle(entry: DailyTeachingEntry): string {
-		return [
-			entry.learningGroupName,
-			entry.homeroomNames.join(', '),
-			entry.roomCode ? `ห้อง ${entry.roomCode}` : null
-		]
-			.filter(Boolean)
-			.join(' · ');
+		return [entry.learningGroupName, entry.homeroomNames.join(', ')].filter(Boolean).join(' · ');
+	}
+
+	function periodLabel(period: DailyTeachingPeriod): string {
+		return period.name ?? `คาบ ${period.orderIndex}`;
+	}
+
+	function periodTime(period: DailyTeachingPeriod): string {
+		return `${period.startTime.slice(0, 5)}–${period.endTime.slice(0, 5)}`;
+	}
+
+	function cellAriaLabel(
+		teacher: DailyTeachingTeacher,
+		period: DailyTeachingPeriod,
+		entries: DailyTeachingEntry[]
+	): string {
+		const label = periodLabel(period);
+		const time = periodTime(period);
+		if (entries.length === 0) {
+			return dailyTeachingEmptyCellLabel(teacher.displayName, label, time);
+		}
+		const titles = Array.from(
+			new Set(
+				groupDailyTeachingEntries(entries).map((group) =>
+					dailyTeachingCompactTitle(group.entries[0])
+				)
+			)
+		);
+		return `${teacher.displayName} ${label} ${time}: ${titles.join(', ')}`;
 	}
 
 	function openCell(
@@ -326,17 +358,24 @@
 					class="m-4"
 				/>
 			{:else}
-				<div class="max-h-[70vh] overflow-auto">
+				<div class="daily-teaching-scroll max-h-[70vh] overflow-auto">
 					<Table.Root
+						class="daily-teaching-table border-0"
 						style={`--teacher-column-width: ${DAILY_TEACHING_TEACHER_COLUMN_WIDTH}px; --minimum-period-column-width: ${DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH}px; min-width: ${tableMinWidth}px;`}
 					>
+						<colgroup>
+							<col class="daily-teaching-teacher-column" />
+							{#each overview.periods as period (period.id)}<col />{/each}
+						</colgroup>
 						<Table.Header class="sticky top-0 z-40"
 							><Table.Row class="bg-muted/80 hover:bg-muted/80"
-								><Table.Head class="sticky left-0 z-50 bg-muted">ครู</Table.Head
+								><Table.Head
+									class="daily-teaching-teacher-column sticky left-0 z-50 h-9 overflow-hidden bg-muted px-1.5 text-[10px]"
+									>ครู</Table.Head
 								>{#each overview.periods as period (period.id)}<Table.Head
-										class="bg-muted text-center"
-										><p>{period.name ?? `คาบ ${period.orderIndex}`}</p>
-										<p class="text-muted-foreground text-xs font-normal">
+										class="daily-teaching-period-column h-9 overflow-hidden bg-muted px-1 text-center text-[10px]"
+										><p class="truncate">{period.name ?? `คาบ ${period.orderIndex}`}</p>
+										<p class="text-muted-foreground truncate text-[9px] font-normal">
 											{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
 										</p></Table.Head
 									>{/each}</Table.Row
@@ -345,34 +384,50 @@
 						<Table.Body>
 							{#each filteredTeachers as teacher (teacher.id)}
 								<Table.Row>
-									<Table.Cell class="sticky left-0 z-20 bg-background font-medium"
-										>{teacher.displayName}</Table.Cell
+									<Table.Cell
+										class="daily-teaching-teacher-column sticky left-0 z-20 overflow-hidden bg-background px-1.5 py-1 text-[10px] font-medium"
+										><p class="truncate" title={teacher.displayName}>
+											{teacher.displayName}
+										</p></Table.Cell
 									>
 									{#each overview.periods as period (period.id)}
 										{@const cell = cellForPeriod(teacher, period.id)}
-										<Table.Cell class="p-1 align-top">
+										<Table.Cell
+											class="daily-teaching-period-column overflow-hidden p-0.5 align-top"
+										>
 											<button
 												type="button"
-												class="hover:bg-muted/30 min-h-20 w-full rounded-md p-1 text-left"
+												class="hover:bg-muted/30 min-h-12 w-full min-w-0 overflow-hidden rounded-md p-0.5 text-left"
+												aria-label={cellAriaLabel(teacher, period, cell.entries)}
 												onclick={() => openCell(teacher, period, cell.entries)}
 											>
-												{#each groupDailyTeachingEntries(cell.entries) as group (group.key)}
-													{@const entry = group.entries[0]}
-													{@const presentation = dailyTeachingEntryCardPresentation(entry)}
-													<div
-														class="mb-1 overflow-hidden rounded-md border p-2 {presentation.tone ===
-														'course'
-															? 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
-															: presentation.tone === 'activity'
-																? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
-																: 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40'}"
-													>
-														<p class="truncate text-xs font-semibold">{entryTitle(entry)}</p>
-														<p class="text-muted-foreground mt-1 truncate text-[10px]">
-															{entrySubtitle(entry)}
-														</p>
-													</div>
-												{/each}
+												<div class="space-y-0.5">
+													{#each groupDailyTeachingEntries(cell.entries) as group (group.key)}
+														{@const entry = group.entries[0]}
+														{@const presentation = dailyTeachingEntryCardPresentation(entry)}
+														{@const compactMeta = dailyTeachingCompactGroupMeta(group)}
+														<div
+															class="min-w-0 overflow-hidden rounded-md border px-1.5 py-1 {presentation.tone ===
+															'course'
+																? 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
+																: presentation.tone === 'activity'
+																	? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
+																	: 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40'}"
+														>
+															<p
+																class="truncate text-[10px] leading-[14px] font-semibold"
+																title={dailyTeachingCompactTitle(entry)}
+															>
+																{dailyTeachingCompactTitle(entry)}
+															</p>
+															{#if compactMeta}<p
+																	class="text-muted-foreground truncate text-[9px] leading-[14px]"
+																>
+																	{compactMeta}
+																</p>{/if}
+														</div>
+													{/each}
+												</div>
 											</button>
 										</Table.Cell>
 									{/each}
@@ -392,7 +447,7 @@
 			><Dialog.Title>{selectedCell?.teacher.displayName ?? 'รายละเอียดคาบ'}</Dialog.Title
 			><Dialog.Description
 				>{selectedCell
-					? `${selectedCell.period.name ?? `คาบ ${selectedCell.period.orderIndex}`} · ${selectedCell.period.startTime.slice(0, 5)}–${selectedCell.period.endTime.slice(0, 5)}`
+					? `${periodLabel(selectedCell.period)} · ${periodTime(selectedCell.period)}`
 					: ''}</Dialog.Description
 			></Dialog.Header
 		>
@@ -401,13 +456,24 @@
 					ไม่มีคาบสอนในช่วงเวลานี้
 				</p>{/if}
 			{#each selectedCell?.entries ?? [] as entry (entry.entryId)}
+				{@const detailTitle = entryTitle(entry)}
 				<div class="rounded-lg border p-4">
 					<div class="flex items-center justify-between gap-3">
-						<p class="font-medium">{entryTitle(entry)}</p>
-						<Badge variant="outline">{entry.entryType}</Badge>
+						<div class="min-w-0">
+							<p class="font-medium">{detailTitle}</p>
+							{#each entryDetailLabels(entry) as label (label)}
+								<p class="text-muted-foreground mt-1 text-sm">{label}</p>
+							{/each}
+						</div>
+						<div class="flex shrink-0 flex-wrap justify-end gap-1">
+							{#if entry.offeringCode && entry.offeringCode !== detailTitle}
+								<Badge variant="outline">{entry.offeringCode}</Badge>
+							{/if}
+							<Badge variant="outline">{entry.entryType}</Badge>
+						</div>
 					</div>
 					<p class="text-muted-foreground mt-2 text-sm">
-						{entrySubtitle(entry) || 'ไม่มีข้อมูลห้องหรือกลุ่มเรียน'}
+						{entrySubtitle(entry) || 'ไม่มีข้อมูลกลุ่มเรียน'}
 					</p>
 					{#if entry.note}<p class="mt-2 text-sm">{entry.note}</p>{/if}{#if entry.roomCode}<p
 							class="mt-2 flex items-center gap-1 text-sm"
@@ -420,3 +486,29 @@
 		</div>
 	</Dialog.Content>
 </Dialog.Root>
+
+<style>
+	:global(.daily-teaching-table) {
+		table-layout: fixed;
+		width: 100%;
+	}
+
+	:global(.daily-teaching-teacher-column) {
+		width: var(--teacher-column-width);
+		min-width: var(--teacher-column-width);
+		max-width: var(--teacher-column-width);
+	}
+
+	:global(.daily-teaching-table th),
+	:global(.daily-teaching-table td) {
+		max-width: 0;
+	}
+
+	:global(.daily-teaching-table .daily-teaching-teacher-column) {
+		max-width: var(--teacher-column-width);
+	}
+
+	:global(.daily-teaching-scroll [data-slot='table-container']) {
+		overflow: visible;
+	}
+</style>

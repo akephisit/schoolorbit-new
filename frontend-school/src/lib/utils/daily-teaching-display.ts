@@ -1,7 +1,7 @@
 import type { DailyTeachingEntry } from '$lib/api/timetable';
 
-export const DAILY_TEACHING_TEACHER_COLUMN_WIDTH = 128;
-export const DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH = 132;
+export const DAILY_TEACHING_TEACHER_COLUMN_WIDTH = 104;
+export const DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH = 84;
 
 type DailyTeachingTeacherIdentity = {
 	displayName: string;
@@ -39,7 +39,7 @@ const thaiNaturalCollator = new Intl.Collator('th', {
 
 function synchronizedActivityKey(entry: DailyTeachingEntry): string | null {
 	if (
-		entry.entryType !== 'ACTIVITY' ||
+		normalizedEntryType(entry.entryType) !== 'activity' ||
 		entry.activitySchedulingMode !== 'synchronized' ||
 		!entry.offeringId
 	) {
@@ -47,6 +47,10 @@ function synchronizedActivityKey(entry: DailyTeachingEntry): string | null {
 	}
 
 	return `activity:${entry.offeringId}`;
+}
+
+function normalizedEntryType(entryType: DailyTeachingEntry['entryType']): string {
+	return entryType.trim().toLowerCase();
 }
 
 function textOrNull(value: string | null | undefined): string | null {
@@ -143,6 +147,53 @@ export function displayGroupCountLabel(group: DailyTeachingDisplayGroup): string
 	return '';
 }
 
+export function dailyTeachingCompactTitle(entry: DailyTeachingEntry): string {
+	if (normalizedEntryType(entry.entryType) === 'course') {
+		return (
+			textOrNull(entry.offeringCode) ??
+			textOrNull(entry.offeringName) ??
+			textOrNull(entry.subjectVersionDisplayLabel) ??
+			textOrNull(entry.title) ??
+			entry.entryType
+		);
+	}
+
+	return (
+		textOrNull(entry.title) ??
+		textOrNull(entry.offeringName) ??
+		textOrNull(entry.activityVersionDisplayLabel) ??
+		textOrNull(entry.subjectVersionDisplayLabel) ??
+		entry.entryType
+	);
+}
+
+export function dailyTeachingCompactGroupMeta(group: DailyTeachingDisplayGroup): string {
+	const entry = group.entries[0];
+	if (!entry) return '';
+
+	const homeroomNames = Array.from(
+		new Set(
+			group.entries.flatMap((item) =>
+				item.homeroomNames.map(textOrNull).filter((name) => name !== null)
+			)
+		)
+	);
+	if (
+		group.isSynchronizedActivity ||
+		(normalizedEntryType(entry.entryType) !== 'course' && homeroomNames.length > 1)
+	) {
+		if (homeroomNames.length > 0) return `${homeroomNames.length} ห้อง`;
+		return displayGroupCountLabel(group);
+	}
+
+	const targetLabel =
+		homeroomNames.length > 0
+			? `${homeroomNames[0]}${homeroomNames.length > 1 ? ` +${homeroomNames.length - 1}` : ''}`
+			: textOrNull(entry.learningGroupName);
+	const roomLabel = textOrNull(entry.roomCode);
+	return [targetLabel, roomLabel ? `ห้อง ${roomLabel}` : null].filter(Boolean).join(' · ');
+}
+
 export function dailyTeachingTableMinWidth(periodCount: number): number {
 	return DAILY_TEACHING_TEACHER_COLUMN_WIDTH + periodCount * DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH;
 }
@@ -160,17 +211,18 @@ export function dailyTeachingTeacherCell(teacher: DailyTeachingTeacherIdentity):
 export function dailyTeachingEntryCardPresentation(
 	entry: Pick<DailyTeachingEntry, 'entryType' | 'activitySchedulingMode'>
 ): DailyTeachingEntryCardPresentation {
-	if (entry.entryType === 'COURSE') {
+	const entryType = normalizedEntryType(entry.entryType);
+	if (entryType === 'course') {
 		return { tone: 'course', layout: 'details', titleLineLimit: 2 };
 	}
-	switch (entry.entryType) {
-		case 'BREAK':
+	switch (entryType) {
+		case 'break':
 			return { tone: 'break', layout: 'centered', titleLineLimit: 3 };
-		case 'ACTIVITY':
+		case 'activity':
 			return entry.activitySchedulingMode === 'independent'
 				? { tone: 'activity', layout: 'details', titleLineLimit: 2 }
 				: { tone: 'activity', layout: 'centered', titleLineLimit: 3 };
-		case 'HOMEROOM':
+		case 'homeroom':
 			return { tone: 'activity', layout: 'centered', titleLineLimit: 3 };
 		default:
 			return { tone: 'course', layout: 'centered', titleLineLimit: 3 };

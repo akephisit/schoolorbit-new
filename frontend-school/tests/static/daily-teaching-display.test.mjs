@@ -7,6 +7,8 @@ const {
 	DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
 	DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
 	dailyTeachingEmptyCellLabel,
+	dailyTeachingCompactGroupMeta,
+	dailyTeachingCompactTitle,
 	dailyTeachingEntryCardPresentation,
 	dailyTeachingTableMinWidth,
 	dailyTeachingTeacherCell,
@@ -20,7 +22,7 @@ function entry(overrides = {}) {
 		offeringId: 'offering-a',
 		homeroomNames: ['ป.1/1'],
 		entryId: 'entry-a',
-		entryType: 'ACTIVITY',
+		entryType: 'activity',
 		isTeamTeaching: false,
 		note: null,
 		roomCode: null,
@@ -119,7 +121,7 @@ test('preserves the first occurrence order when later synchronized entries merge
 		entry({ entryId: 'sync-a-1', offeringId: 'offering-a' }),
 		entry({
 			entryId: 'course-a',
-			entryType: 'COURSE',
+			entryType: 'course',
 			offeringId: 'course-offering-a',
 			activitySchedulingMode: null,
 			homeroomNames: ['ป.2/1'],
@@ -160,12 +162,12 @@ test('falls back to an entry count when a synchronized group has no classroom la
 });
 
 test('calculates the readable table minimum from the teacher and period columns', () => {
-	assert.equal(DAILY_TEACHING_TEACHER_COLUMN_WIDTH, 128);
-	assert.equal(DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH, 132);
+	assert.equal(DAILY_TEACHING_TEACHER_COLUMN_WIDTH, 104);
+	assert.equal(DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH, 84);
 	assert.equal(typeof dailyTeachingTableMinWidth, 'function');
-	assert.equal(dailyTeachingTableMinWidth(0), 128);
-	assert.equal(dailyTeachingTableMinWidth(4), 656);
-	assert.equal(dailyTeachingTableMinWidth(10), 1448);
+	assert.equal(dailyTeachingTableMinWidth(0), 104);
+	assert.equal(dailyTeachingTableMinWidth(4), 440);
+	assert.equal(dailyTeachingTableMinWidth(10), 944);
 });
 
 test('teacher cell presentation excludes subject-group subtitles', () => {
@@ -186,32 +188,32 @@ test('uses detailed cards for courses and independent activities', () => {
 	assert.equal(typeof dailyTeachingEntryCardPresentation, 'function');
 	assert.deepEqual(
 		dailyTeachingEntryCardPresentation(
-			entry({ entryType: 'COURSE', activitySchedulingMode: null })
+			entry({ entryType: 'course', activitySchedulingMode: null })
 		),
 		{ tone: 'course', layout: 'details', titleLineLimit: 2 }
 	);
 	assert.deepEqual(
 		dailyTeachingEntryCardPresentation(
-			entry({ entryType: 'ACTIVITY', activitySchedulingMode: 'independent' })
+			entry({ entryType: 'activity', activitySchedulingMode: 'independent' })
 		),
 		{ tone: 'activity', layout: 'details', titleLineLimit: 2 }
 	);
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'ACTIVITY' })), {
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'activity' })), {
 		tone: 'activity',
 		layout: 'centered',
 		titleLineLimit: 3
 	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'ACADEMIC' })), {
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'structural' })), {
 		tone: 'course',
 		layout: 'centered',
 		titleLineLimit: 3
 	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'HOMEROOM' })), {
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'homeroom' })), {
 		tone: 'activity',
 		layout: 'centered',
 		titleLineLimit: 3
 	});
-	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'BREAK' })), {
+	assert.deepEqual(dailyTeachingEntryCardPresentation(entry({ entryType: 'break' })), {
 		tone: 'break',
 		layout: 'centered',
 		titleLineLimit: 3
@@ -224,4 +226,65 @@ test('builds an accessible label for a visually empty period cell', () => {
 		dailyTeachingEmptyCellLabel('วิภาวดี วงศ์ศรี', 'คาบที่ 1', '08:40-09:30'),
 		'วิภาวดี วงศ์ศรี คาบที่ 1 08:40-09:30: ว่าง'
 	);
+});
+
+test('keeps compact daily teaching titles focused on the scheduled item', () => {
+	assert.equal(typeof dailyTeachingCompactTitle, 'function');
+	assert.equal(
+		dailyTeachingCompactTitle(
+			entry({
+				entryType: 'course',
+				offeringCode: 'ค21101',
+				offeringName: 'คณิตศาสตร์พื้นฐาน',
+				title: null
+			})
+		),
+		'ค21101'
+	);
+	assert.equal(
+		dailyTeachingCompactTitle(
+			entry({
+				offeringCode: 'ACTIVITY-HOMEROOM',
+				offeringName: 'กิจกรรมโฮมรูม',
+				title: 'โฮมรูม'
+			})
+		),
+		'โฮมรูม'
+	);
+});
+
+test('summarizes compact targets instead of rendering long classroom lists', () => {
+	assert.equal(typeof dailyTeachingCompactGroupMeta, 'function');
+	const synchronized = groupDailyTeachingEntries([
+		entry({
+			homeroomNames: Array.from(
+				{ length: 18 },
+				(_, index) => `ม.${Math.floor(index / 3) + 1}/${(index % 3) + 1}`
+			)
+		})
+	])[0];
+	assert.equal(dailyTeachingCompactGroupMeta(synchronized), '18 ห้อง');
+	const sharedBreak = groupDailyTeachingEntries([
+		entry({
+			entryType: 'break',
+			activitySchedulingMode: null,
+			offeringId: null,
+			homeroomNames: Array.from(
+				{ length: 18 },
+				(_, index) => `ม.${Math.floor(index / 3) + 1}/${(index % 3) + 1}`
+			)
+		})
+	])[0];
+	assert.equal(dailyTeachingCompactGroupMeta(sharedBreak), '18 ห้อง');
+
+	const course = groupDailyTeachingEntries([
+		entry({
+			entryType: 'course',
+			activitySchedulingMode: null,
+			homeroomNames: ['ม.1/1', 'ม.1/2'],
+			learningGroupName: 'ม.1/1 · คณิตศาสตร์พื้นฐาน',
+			roomCode: '116'
+		})
+	])[0];
+	assert.equal(dailyTeachingCompactGroupMeta(course), 'ม.1/1 +1 · ห้อง 116');
 });
