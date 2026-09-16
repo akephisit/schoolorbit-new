@@ -71,7 +71,7 @@
 	data-row-id={rowId}
 	draggable={canEdit}
 	class={[
-		'group flex min-h-full flex-col rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
+		'group flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
 		canEdit && 'cursor-grab active:cursor-grabbing',
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45',
 		block.blockKind === 'activity' && 'border-l-4 border-l-violet-500',
@@ -95,22 +95,22 @@
 		>
 			<p
 				data-timetable-card-line
-				class="truncate font-mono text-[0.62rem] font-semibold leading-3.5 text-primary"
+				class="truncate font-mono text-[0.56rem] font-semibold leading-3 text-primary"
 			>
 				{code}
 			</p>
-			<h4 data-timetable-card-line class="truncate text-[0.68rem] font-semibold leading-3.5">
+			<h4 data-timetable-card-line class="truncate text-[0.62rem] font-semibold leading-3">
 				{title}
 			</h4>
 			{#if display.contextLabel || display.scopeLabel}
 				<div class="mt-0.5 flex min-w-0 flex-nowrap gap-0.5 overflow-hidden">
 					{#if display.contextLabel}
-						<Badge variant="outline" class="h-4 min-w-0 truncate px-1 text-[0.58rem] font-medium">
+						<Badge variant="outline" class="h-4 min-w-0 truncate px-1 text-[0.54rem] font-medium">
 							{display.contextLabel}
 						</Badge>
 					{/if}
 					{#if display.scopeLabel}
-						<Badge variant="secondary" class="h-4 min-w-0 truncate px-1 text-[0.58rem] font-medium">
+						<Badge variant="secondary" class="h-4 min-w-0 truncate px-1 text-[0.54rem] font-medium">
 							{display.scopeLabel}
 						</Badge>
 					{/if}
@@ -118,14 +118,14 @@
 			{:else if resolvedTargetLabel}
 				<p
 					data-timetable-card-line
-					class="mt-0.5 truncate text-[0.62rem] leading-3.5 text-muted-foreground"
+					class="mt-0.5 truncate text-[0.58rem] leading-3 text-muted-foreground"
 				>
 					{resolvedTargetLabel}
 				</p>
 			{/if}
 		</button>
 	</div>
-	<div class="mt-1 min-w-0 space-y-0.5 text-[0.62rem] leading-3.5 text-muted-foreground">
+	<div class="mt-1 min-w-0 space-y-0.5 text-[0.58rem] leading-3 text-muted-foreground">
 		<p class="flex min-w-0 items-center gap-1.5">
 			<Users class="size-3 shrink-0" />
 			<span data-timetable-card-line class="min-w-0 truncate"

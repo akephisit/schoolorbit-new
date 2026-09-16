@@ -35,7 +35,7 @@ async function installDenseWorkspace(page: Parameters<typeof installTimetableMoc
 	const tallBlock = makeTimetableBlock(timetableIds.blockB, timetableIds.period2, {
 		groupId: timetableIds.groupB,
 		offeringId: timetableIds.offeringB,
-		code: 'ว21101',
+		code: 'OTHER-cf1520d73a57-very-long-course-code',
 		name: 'วิทยาศาสตร์พื้นฐานและการออกแบบเทคโนโลยีแบบบูรณาการ',
 		instructorIds: [timetableIds.teacherA, timetableIds.teacherB]
 	});
@@ -203,4 +203,33 @@ test('shows only context that adds information for homeroom and teacher views', 
 	await expect(card).toBeVisible();
 	await expect(card.getByText('ม.1/1', { exact: true })).toBeVisible();
 	await expect(card.getByText('ม.1/1 วิทยาศาสตร์', { exact: true })).toHaveCount(0);
+});
+
+test('keeps teacher-view card typography compact and inside its period column', async ({
+	page
+}) => {
+	await installDenseWorkspace(page);
+	await page.goto(teacherBoardUrl());
+
+	const board = page.getByRole('region', { name: 'ตารางของ ครูคณิตศาสตร์ A' });
+	const cell = board.locator(
+		`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period2}"]`
+	);
+	const card = cell.locator(`[data-block-id="${timetableIds.blockB}"]`);
+	await expect(card).toBeVisible();
+
+	const [cellBox, cardBox, fontSizes] = await Promise.all([
+		cell.boundingBox(),
+		card.boundingBox(),
+		card
+			.locator('[data-timetable-card-line]')
+			.evaluateAll((elements) =>
+				elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+			)
+	]);
+	expect(cellBox).not.toBeNull();
+	expect(cardBox).not.toBeNull();
+	expect(cardBox!.x).toBeGreaterThanOrEqual(cellBox!.x + 5);
+	expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(cellBox!.x + cellBox!.width - 5);
+	expect(Math.max(...fontSizes)).toBeLessThanOrEqual(10);
 });

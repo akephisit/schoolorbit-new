@@ -83,7 +83,7 @@
 	}}
 >
 	<span class="sr-only">{stateLabel}</span>
-	<div class="flex min-h-24 flex-col">
+	<div class="flex min-h-24 min-w-0 flex-col">
 		{#if state !== 'neutral'}
 			<div
 				class={[
@@ -112,7 +112,9 @@
 				{stateLabel}
 			</div>
 		{/if}
-		<div class="grid min-h-0 flex-1 auto-rows-fr gap-1.5">{@render children?.()}</div>
+		<div class="grid min-h-0 min-w-0 flex-1 auto-rows-fr gap-1.5">
+			{@render children?.()}
+		</div>
 		{#if !disabled && (state === 'move' || state === 'swap')}
 			<Button
 				type="button"
