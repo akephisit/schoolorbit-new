@@ -22,13 +22,12 @@ test('shows periods across the top and weekdays down the left side', async ({ pa
 	await expect(board.locator('thead th').first()).toHaveText('วัน / คาบ');
 	await expect(board.locator('thead th').nth(1)).toContainText('คาบ 1');
 	await expect(board.locator('thead th').nth(2)).toContainText('คาบ 2');
-	await expect(board.locator('tbody tr > th')).toHaveText([
-		'วันจันทร์',
-		'วันอังคาร',
-		'วันพุธ',
-		'วันพฤหัสบดี',
-		'วันศุกร์'
-	]);
+	const dayHeaders = board.locator('tbody tr > th');
+	await expect(dayHeaders).toHaveText(['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.']);
+	const fullDayNames = ['วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์'];
+	for (const [index, fullDayName] of fullDayNames.entries()) {
+		await expect(dayHeaders.nth(index)).toHaveAttribute('aria-label', fullDayName);
+	}
 });
 
 test('places exactly one unscheduled period and projects it into both editable views', async ({

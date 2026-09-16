@@ -66,7 +66,7 @@
 	data-row-id={rowId}
 	draggable={canEdit}
 	class={[
-		'group rounded-lg border bg-background p-2.5 text-left shadow-xs transition',
+		'group flex h-full flex-col rounded-lg border bg-background p-2 text-left shadow-xs transition',
 		canEdit && 'cursor-grab active:cursor-grabbing',
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45',
 		block.blockKind === 'activity' && 'border-l-4 border-l-violet-500',
@@ -123,7 +123,7 @@
 		{/if}
 	</div>
 	{#if canEdit}
-		<div class="mt-2 flex justify-end border-t pt-1">
+		<div class="mt-auto flex justify-end border-t pt-1">
 			<Button
 				type="button"
 				size="icon"

@@ -34,6 +34,7 @@ export interface TimetableMockOptions {
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
 	blockedPeriodId?: string;
+	periodCount?: number;
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -152,21 +153,34 @@ export function makeTimetableBlock(
 	};
 }
 
-function periods() {
-	return [
-		[timetableIds.period1, 1, 'คาบ 1', '08:30:00', '09:20:00'],
-		[timetableIds.period2, 2, 'คาบ 2', '09:20:00', '10:10:00'],
-		[timetableIds.period3, 3, 'คาบ 3', '10:10:00', '11:00:00']
-	].map(([id, orderIndex, name, startTime, endTime]) => ({
-		id,
-		bellScheduleId: timetableIds.schedule,
-		orderIndex,
-		name,
-		startTime,
-		endTime,
-		applicableDays: 'MON,TUE,WED,THU,FRI',
-		isActive: true
-	}));
+function periodId(orderIndex: number): string {
+	if (orderIndex === 1) return timetableIds.period1;
+	if (orderIndex === 2) return timetableIds.period2;
+	if (orderIndex === 3) return timetableIds.period3;
+	return `41000000-0000-4000-8000-${String(200 + orderIndex).padStart(12, '0')}`;
+}
+
+function periodTime(totalMinutes: number): string {
+	const hours = Math.floor(totalMinutes / 60);
+	const minutes = totalMinutes % 60;
+	return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
+function periods(count = 3) {
+	return Array.from({ length: count }, (_, index) => {
+		const orderIndex = index + 1;
+		const startMinutes = 8 * 60 + 30 + index * 50;
+		return {
+			id: periodId(orderIndex),
+			bellScheduleId: timetableIds.schedule,
+			orderIndex,
+			name: `คาบ ${orderIndex}`,
+			startTime: periodTime(startMinutes),
+			endTime: periodTime(startMinutes + 50),
+			applicableDays: 'MON,TUE,WED,THU,FRI',
+			isActive: true
+		};
+	});
 }
 
 function changeSet() {
@@ -210,7 +224,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		).length;
 		return {
 			version: selectedVersion,
-			bellPeriods: periods(),
+			bellPeriods: periods(options.periodCount),
 			blocks,
 			learningGroups: [
 				{
