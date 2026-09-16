@@ -21,6 +21,77 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
     pool
 }
 
+async fn insert_deferred_synchronized_offering(
+    pool: &sqlx::PgPool,
+    term_id: Uuid,
+    year_id: Uuid,
+    code: &str,
+) -> Uuid {
+    let offering_id = Uuid::new_v4();
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_offerings (
+               id, academic_term_id, academic_year_id, kind, code_snapshot,
+               name_snapshot, status, owning_organization_unit_id
+           )
+           SELECT $1, $2, $3, 'activity', $4,
+                  'กิจกรรมรอจัดกลุ่ม', 'draft', activity.owning_organization_unit_id
+           FROM activities activity
+           JOIN activity_versions version ON version.activity_id = activity.id
+           WHERE version.scheduling_mode = 'synchronized'
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(offering_id)
+    .bind(term_id)
+    .bind(year_id)
+    .bind(code)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO activity_offering_details (
+               learning_offering_id, academic_term_id, academic_year_id,
+               activity_version_id, activity_id, curriculum_activity_requirement_id,
+               registration_type, scheduling_mode, hours, capacity,
+               attendance_requirement, pass_criteria
+           )
+           SELECT $1, $2, $3, version.id, version.activity_id, NULL,
+                  'assigned', 'synchronized', version.hours_per_week, NULL,
+                  '{}'::jsonb, '{}'::jsonb
+           FROM activity_versions version
+           WHERE version.scheduling_mode = 'synchronized'
+           ORDER BY version.id
+           LIMIT 1"#,
+    )
+    .bind(offering_id)
+    .bind(term_id)
+    .bind(year_id)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"INSERT INTO learning_offering_targets (
+               id, learning_offering_id, academic_term_id, academic_year_id,
+               target_kind, homeroom_id, grade_level_id, study_program_id
+           )
+           SELECT gen_random_uuid(), $1, $2, $3, 'homeroom',
+                  homeroom.id, homeroom.grade_level_id, homeroom.study_program_id
+           FROM homerooms homeroom
+           WHERE homeroom.academic_year_id = $3 AND homeroom.is_active
+           ORDER BY homeroom.id
+           LIMIT 1"#,
+    )
+    .bind(offering_id)
+    .bind(term_id)
+    .bind(year_id)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    transaction.commit().await.unwrap();
+    offering_id
+}
+
 #[tokio::test]
 async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     let pool = migrated_pool("timetable_version_list_resolve_clone").await;
@@ -171,6 +242,123 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
             source_id
         );
     }
+}
+
+#[tokio::test]
+async fn clone_draft_includes_active_offerings_missing_from_published_source() {
+    let pool = migrated_pool("timetable_version_clone_adds_missing_offering").await;
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (term_id, year_id, term_start, source_id, source_row_version): (
+        Uuid,
+        Uuid,
+        NaiveDate,
+        Uuid,
+        i64,
+    ) = sqlx::query_as(
+        r#"SELECT term.id, term.academic_year_id, term.start_date,
+                  version.id, version.row_version
+           FROM academic_terms term
+           JOIN academic_timetable_versions version
+             ON version.academic_term_id = term.id
+            AND version.status = 'published'
+           WHERE term.status = 'active'
+           ORDER BY version.effective_from, version.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let offering_id =
+        insert_deferred_synchronized_offering(&pool, term_id, year_id, "CLONE-MISSING").await;
+
+    let source_has_target: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM academic_timetable_version_targets \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2)",
+    )
+    .bind(source_id)
+    .bind(offering_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!source_has_target);
+
+    let cloned = timetable_version_service::clone_draft(
+        &pool,
+        actor_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            effective_from: term_start.checked_add_days(Days::new(7)).unwrap(),
+            source_row_version,
+        },
+    )
+    .await
+    .unwrap();
+
+    let cloned_target: Option<i32> = sqlx::query_scalar(
+        "SELECT weekly_period_target FROM academic_timetable_version_targets \
+         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+    )
+    .bind(cloned.id)
+    .bind(offering_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cloned_target, Some(1));
+}
+
+#[tokio::test]
+async fn include_offering_target_adds_existing_deferred_activity_only_to_a_draft() {
+    let pool = migrated_pool("timetable_version_include_existing_offering").await;
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (term_id, year_id, term_start, source_id, source_row_version): (
+        Uuid,
+        Uuid,
+        NaiveDate,
+        Uuid,
+        i64,
+    ) = sqlx::query_as(
+        r#"SELECT term.id, term.academic_year_id, term.start_date,
+                  version.id, version.row_version
+           FROM academic_terms term
+           JOIN academic_timetable_versions version
+             ON version.academic_term_id = term.id
+            AND version.status = 'published'
+           WHERE term.status = 'active'
+           ORDER BY version.effective_from, version.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let draft = timetable_version_service::clone_draft(
+        &pool,
+        actor_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            effective_from: term_start.checked_add_days(Days::new(7)).unwrap(),
+            source_row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let offering_id =
+        insert_deferred_synchronized_offering(&pool, term_id, year_id, "INCLUDE-EXISTING").await;
+
+    let included = timetable_version_service::include_offering_target(&pool, draft.id, offering_id)
+        .await
+        .unwrap();
+    assert_eq!(included.timetable_version_id, draft.id);
+    assert_eq!(included.learning_offering_id, offering_id);
+    assert_eq!(included.weekly_period_target, 1);
+
+    let repeated = timetable_version_service::include_offering_target(&pool, draft.id, offering_id)
+        .await
+        .unwrap();
+    assert_eq!(repeated, included);
+
+    let published =
+        timetable_version_service::include_offering_target(&pool, source_id, offering_id).await;
+    assert!(matches!(published, Err(AppError::Conflict(_))));
 }
 
 #[tokio::test]

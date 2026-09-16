@@ -135,6 +135,10 @@ pub fn academic_routes() -> Router<AppState> {
                 "/timetable-versions/{source_id}/clone",
                 post(handlers::timetable_versions::clone_version),
             )
+            .route(
+                "/timetable-versions/{version_id}/targets",
+                post(handlers::timetable_versions::include_offering),
+            )
             // Canonical timetable blocks. Literal action paths must precede block IDs.
             .route(
                 "/timetable-blocks/workspace",

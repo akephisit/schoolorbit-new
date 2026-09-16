@@ -73,3 +73,9 @@ pub struct CloneTimetableVersionRequest {
     pub effective_from: NaiveDate,
     pub source_row_version: i64,
 }
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IncludeTimetableVersionOfferingRequest {
+    pub learning_offering_id: Uuid,
+}

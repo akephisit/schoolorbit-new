@@ -14088,6 +14088,51 @@
         ],
         "type": "object"
       },
+      "ApiResponse_TimetableVersionTarget": {
+        "properties": {
+          "data": {
+            "properties": {
+              "learningOfferingId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "standardPeriodsPerWeek": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "timetableVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "weeklyPeriodTarget": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "timetableVersionId",
+              "learningOfferingId",
+              "weeklyPeriodTarget",
+              "standardPeriodsPerWeek"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_UserMenuData": {
         "properties": {
           "data": {
@@ -20985,6 +21030,13 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -32877,6 +32929,19 @@
           "fileId",
           "alignment",
           "widthPercent"
+        ],
+        "type": "object"
+      },
+      "IncludeTimetableVersionOfferingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learningOfferingId"
         ],
         "type": "object"
       },
@@ -67539,6 +67604,98 @@
               }
             },
             "description": "Timetable version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-versions/{version_id}/targets": {
+      "post": {
+        "operationId": "includeTimetableVersionOffering",
+        "parameters": [
+          {
+            "description": "Draft timetable version ID",
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncludeTimetableVersionOfferingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableVersionTarget"
+                }
+              }
+            },
+            "description": "Learning offering included in the draft timetable version"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid learning offering target"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable manage permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable version or learning offering not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Timetable version or learning offering conflict"
           }
         },
         "tags": [

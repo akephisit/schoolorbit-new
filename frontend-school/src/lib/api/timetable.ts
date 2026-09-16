@@ -40,6 +40,8 @@ export type TimetableBlockPlacementPreviewRequest =
 export type TimetableBlockPlacementPreview = Schemas['TimetableBlockPlacementPreview'];
 export type CloneTimetableVersionRequest =
 	operations['cloneTimetableVersion']['requestBody']['content']['application/json'];
+export type IncludeTimetableVersionOfferingRequest =
+	operations['includeTimetableVersionOffering']['requestBody']['content']['application/json'];
 export type CreateOrdinaryTimetableBlockRequest = Schemas['CreateOrdinaryTimetableBlockRequest'];
 export type CreateSynchronizedTimetableBlockRequest =
 	Schemas['CreateSynchronizedTimetableBlockRequest'];
@@ -208,6 +210,18 @@ export const cloneTimetableVersion = (sourceId: string, body: CloneTimetableVers
 			body
 		),
 		'สร้างแบบร่างตารางสอนไม่สำเร็จ'
+	);
+
+export const includeTimetableVersionOffering = (
+	versionId: string,
+	body: IncludeTimetableVersionOfferingRequest
+) =>
+	timetableData(
+		apiClient.post<TimetableVersionTarget>(
+			`/api/academic/timetable-versions/${encodeURIComponent(versionId)}/targets`,
+			body
+		),
+		'เพิ่มรายการเปิดสอนเข้ารุ่นตารางไม่สำเร็จ'
 	);
 
 export const createOrdinaryTimetableBlock = (body: CreateOrdinaryTimetableBlockRequest) =>

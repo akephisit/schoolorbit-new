@@ -106,6 +106,36 @@ test('independent or already-open activities do not offer the synchronized prepa
 	);
 });
 
+test('delivery rows choose a draft-safe timetable action before grouping exists', () => {
+	assert.equal(
+		typeof deliveryModule.deliveryTimetableAction,
+		'function',
+		'the delivery timetable action helper must exist'
+	);
+	assert.equal(deliveryModule.deliveryTimetableAction(synchronizedItem, 'draft'), 'activate');
+	assert.equal(
+		deliveryModule.deliveryTimetableAction(synchronizedItem, 'published'),
+		'revise_then_activate'
+	);
+	const openedWithoutTarget = {
+		...synchronizedItem,
+		offeringId: 'club-offering',
+		offeringState: 'draft'
+	};
+	assert.equal(deliveryModule.deliveryTimetableAction(openedWithoutTarget, 'draft'), 'include');
+	assert.equal(
+		deliveryModule.deliveryTimetableAction(openedWithoutTarget, 'published'),
+		'revise_then_include'
+	);
+	assert.equal(
+		deliveryModule.deliveryTimetableAction(
+			{ ...openedWithoutTarget, weeklyPeriodTarget: 1 },
+			'draft'
+		),
+		'none'
+	);
+});
+
 test('focused curriculum preparation applies only the selected activity and skips unrelated proposals', () => {
 	assert.equal(
 		typeof deliveryModule.buildFocusedCurriculumPreparationChoices,

@@ -2938,6 +2938,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/timetable-versions/{version_id}/targets': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['includeTimetableVersionOffering'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/timetable-versions/resolve': {
 		parameters: {
 			query?: never;
@@ -9504,6 +9520,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TimetableVersionTarget: {
+			data: {
+				/** Format: uuid */
+				learningOfferingId: string;
+				/** Format: int32 */
+				standardPeriodsPerWeek: number | null;
+				/** Format: uuid */
+				timetableVersionId: string;
+				/** Format: int32 */
+				weeklyPeriodTarget: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_UserMenuData: {
 			data: {
 				groups: components['schemas']['MenuGroupResponse'][];
@@ -11375,6 +11405,8 @@ export interface components {
 			idempotencyKey: string;
 			sourceHash: string;
 			studyProgramIds: string[];
+			/** Format: uuid */
+			timetableVersionId?: string | null;
 		};
 		ApplyCurriculumOfferingsResult: {
 			/** Format: uuid */
@@ -14643,6 +14675,10 @@ export interface components {
 			fileId: string;
 			/** Format: int32 */
 			widthPercent: number;
+		};
+		IncludeTimetableVersionOfferingRequest: {
+			/** Format: uuid */
+			learningOfferingId: string;
 		};
 		InspectSchoolFontUploadsRequest: {
 			fileIds: string[];
@@ -33054,6 +33090,78 @@ export interface operations {
 				};
 			};
 			/** @description Timetable version conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	includeTimetableVersionOffering: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Draft timetable version ID */
+				version_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['IncludeTimetableVersionOfferingRequest'];
+			};
+		};
+		responses: {
+			/** @description Learning offering included in the draft timetable version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableVersionTarget'];
+				};
+			};
+			/** @description Invalid learning offering target */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable manage permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable version or learning offering not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Timetable version or learning offering conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;

@@ -192,6 +192,121 @@ pub async fn clone_draft(
     get_version(pool, new_version_id, Utc::now().date_naive()).await
 }
 
+pub async fn include_offering_target(
+    pool: &PgPool,
+    timetable_version_id: Uuid,
+    learning_offering_id: Uuid,
+) -> Result<TimetableVersionTarget, AppError> {
+    let mut transaction = pool.begin().await?;
+    let target = include_offering_target_in_transaction(
+        &mut transaction,
+        timetable_version_id,
+        learning_offering_id,
+    )
+    .await?;
+    transaction.commit().await?;
+    Ok(target)
+}
+
+pub async fn include_offering_target_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    timetable_version_id: Uuid,
+    learning_offering_id: Uuid,
+) -> Result<TimetableVersionTarget, AppError> {
+    require_version_term_write(transaction, timetable_version_id).await?;
+    let (academic_term_id, academic_year_id, effective_from, status): (
+        Uuid,
+        Uuid,
+        NaiveDate,
+        TimetableVersionStatus,
+    ) = sqlx::query_as(
+        r#"SELECT academic_term_id, academic_year_id, effective_from, status
+           FROM academic_timetable_versions
+           WHERE id = $1
+           FOR UPDATE"#,
+    )
+    .bind(timetable_version_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางเรียน".to_string()))?;
+    if status != TimetableVersionStatus::Draft {
+        return Err(AppError::Conflict(
+            "เพิ่มรายการเปิดสอนได้เฉพาะรุ่นตารางเรียนแบบร่าง".to_string(),
+        ));
+    }
+
+    let candidate: (i32, Option<i32>) = sqlx::query_as(
+        r#"SELECT COALESCE(subject_version.periods_per_week,
+                           activity_version.periods_per_week) AS weekly_period_target,
+                  subject_version.periods_per_week AS standard_periods_per_week
+           FROM learning_offerings offering
+           LEFT JOIN course_offering_details course_detail
+             ON course_detail.learning_offering_id = offering.id
+           LEFT JOIN subject_versions subject_version
+             ON subject_version.id = course_detail.subject_version_id
+           LEFT JOIN activity_offering_details activity_detail
+             ON activity_detail.learning_offering_id = offering.id
+           LEFT JOIN activity_versions activity_version
+             ON activity_version.id = activity_detail.activity_version_id
+           WHERE offering.id = $1
+             AND offering.academic_term_id = $2
+             AND offering.academic_year_id = $3
+             AND offering.status IN ('draft', 'published')
+             AND (offering.starts_on IS NULL OR offering.starts_on <= $4)
+             AND (offering.ends_on IS NULL OR offering.ends_on >= $4)
+             AND EXISTS (
+                 SELECT 1
+                 FROM learning_offering_targets offering_target
+                 WHERE offering_target.learning_offering_id = offering.id
+             )"#,
+    )
+    .bind(learning_offering_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(effective_from)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::Conflict("รายการเปิดสอนไม่พร้อมใช้ในวันที่เริ่มต้นของรุ่นตารางนี้".to_string()))?;
+    if candidate.0 <= 0 {
+        return Err(AppError::Conflict(
+            "รายการเปิดสอนไม่มีจำนวนคาบต่อสัปดาห์ที่ใช้จัดตารางได้".to_string(),
+        ));
+    }
+
+    let inserted = sqlx::query(
+        r#"INSERT INTO academic_timetable_version_targets (
+               timetable_version_id, learning_offering_id, academic_term_id,
+               academic_year_id, weekly_period_target, migration_provenance
+           ) VALUES ($1, $2, $3, $4, $5,
+                     jsonb_build_object('includedFromDelivery', true))
+           ON CONFLICT (timetable_version_id, learning_offering_id) DO NOTHING"#,
+    )
+    .bind(timetable_version_id)
+    .bind(learning_offering_id)
+    .bind(academic_term_id)
+    .bind(academic_year_id)
+    .bind(candidate.0)
+    .execute(&mut **transaction)
+    .await?;
+    if inserted.rows_affected() == 1 {
+        sqlx::query(
+            r#"UPDATE academic_timetable_versions
+               SET row_version = row_version + 1, updated_at = now()
+               WHERE id = $1"#,
+        )
+        .bind(timetable_version_id)
+        .execute(&mut **transaction)
+        .await?;
+    }
+
+    Ok(TimetableVersionTarget {
+        timetable_version_id,
+        learning_offering_id,
+        weekly_period_target: candidate.0,
+        standard_periods_per_week: candidate.1,
+    })
+}
+
 /// Coordinate before version/block locks. Resolve immutable IDs without row
 /// locks and acquire the term write mode initially, including nested Delivery
 /// callers which already hold that same term lock.
@@ -313,6 +428,54 @@ pub async fn clone_draft_in_transaction(
            WHERE target.timetable_version_id = $2"#,
     )
     .bind(new_version_id)
+    .bind(source.id)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        r#"WITH candidates AS (
+               SELECT offering.id AS learning_offering_id,
+                      offering.academic_term_id,
+                      offering.academic_year_id,
+                      COALESCE(
+                          subject_version.periods_per_week,
+                          activity_version.periods_per_week
+                      ) AS weekly_period_target
+               FROM learning_offerings offering
+               LEFT JOIN course_offering_details course_detail
+                 ON course_detail.learning_offering_id = offering.id
+               LEFT JOIN subject_versions subject_version
+                 ON subject_version.id = course_detail.subject_version_id
+               LEFT JOIN activity_offering_details activity_detail
+                 ON activity_detail.learning_offering_id = offering.id
+               LEFT JOIN activity_versions activity_version
+                 ON activity_version.id = activity_detail.activity_version_id
+               WHERE offering.academic_term_id = $2
+                 AND offering.academic_year_id = $3
+                 AND offering.status IN ('draft', 'published')
+                 AND (offering.starts_on IS NULL OR offering.starts_on <= $4)
+                 AND (offering.ends_on IS NULL OR offering.ends_on >= $4)
+                 AND EXISTS (
+                     SELECT 1
+                     FROM learning_offering_targets offering_target
+                     WHERE offering_target.learning_offering_id = offering.id
+                 )
+           )
+           INSERT INTO academic_timetable_version_targets (
+               timetable_version_id, learning_offering_id, academic_term_id,
+               academic_year_id, weekly_period_target, migration_provenance
+           )
+           SELECT $1, candidate.learning_offering_id, candidate.academic_term_id,
+                  candidate.academic_year_id, candidate.weekly_period_target,
+                  jsonb_build_object('includedDuringCloneFromVersionId', $5::text)
+           FROM candidates candidate
+           WHERE candidate.weekly_period_target > 0
+           ON CONFLICT (timetable_version_id, learning_offering_id) DO NOTHING"#,
+    )
+    .bind(new_version_id)
+    .bind(source.academic_term_id)
+    .bind(source.academic_year_id)
+    .bind(effective_from)
     .bind(source.id)
     .execute(&mut **transaction)
     .await?;

@@ -60,8 +60,8 @@ use school_academic_timetable::models::timetable::{
 };
 use school_academic_timetable::models::timetable_block::*;
 use school_academic_timetable::models::timetable_version::{
-    CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
-    TimetableVersionStatus, TimetableVersionTarget,
+    CloneTimetableVersionRequest, IncludeTimetableVersionOfferingRequest, TimetableVersion,
+    TimetableVersionDisplayState, TimetableVersionStatus, TimetableVersionTarget,
 };
 use school_academic_timetable::services::daily_teaching::{
     DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
@@ -307,6 +307,7 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::timetable_versions::list_versions,
         crate::modules::academic::handlers::timetable_versions::resolve_version,
         crate::modules::academic::handlers::timetable_versions::clone_version,
+        crate::modules::academic::handlers::timetable_versions::include_offering,
         crate::modules::academic::handlers::timetable_templates::list_templates,
         crate::modules::academic::handlers::timetable_templates::get_template,
         crate::modules::academic::handlers::timetable_templates::create_template,
@@ -1477,8 +1478,10 @@ use utoipa::OpenApi;
         TimetableVersionTarget,
         TimetableVersion,
         CloneTimetableVersionRequest,
+        IncludeTimetableVersionOfferingRequest,
         ApiResponse<Vec<TimetableVersion>>,
         ApiResponse<TimetableVersion>,
+        ApiResponse<TimetableVersionTarget>,
         ApiResponse<Vec<TimetableTemplate>>,
         ApiResponse<TimetableTemplate>,
         ApiResponse<TemplateWithEntries>,
@@ -3728,6 +3731,11 @@ mod tests {
                     "/api/academic/timetable-versions/{source_id}/clone",
                     "post",
                     "cloneTimetableVersion",
+                ),
+                (
+                    "/api/academic/timetable-versions/{version_id}/targets",
+                    "post",
+                    "includeTimetableVersionOffering",
                 ),
             ],
         );

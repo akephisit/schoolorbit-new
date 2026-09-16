@@ -16,11 +16,13 @@
 	let {
 		academicTermId,
 		onCreated,
-		purpose = 'operational_change'
+		purpose = 'operational_change',
+		showTrigger = true
 	}: {
 		academicTermId: string;
 		onCreated: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
 		purpose?: ChangePurpose;
+		showTrigger?: boolean;
 	} = $props();
 
 	let open = $state(false);
@@ -28,6 +30,11 @@
 	let reason = $state('');
 	let saving = $state(false);
 	let errorMessage = $state('');
+
+	export function openDialog() {
+		errorMessage = '';
+		open = true;
+	}
 
 	async function createDraft(event: SubmitEvent) {
 		event.preventDefault();
@@ -58,18 +65,16 @@
 	}
 </script>
 
-{#if purpose === 'timetable_revision'}
-	<Button variant="outline" onclick={() => (open = true)}>
-		<CalendarClock class="size-4" /> สร้างรุ่นตารางสอนใหม่
-	</Button>
-{:else}
-	<Button
-		variant="outline"
-		class="border-amber-500/40 text-amber-800"
-		onclick={() => (open = true)}
-	>
-		<CalendarClock class="size-4" /> เพิ่ม/ปรับ/หยุดกลางภาค
-	</Button>
+{#if showTrigger}
+	{#if purpose === 'timetable_revision'}
+		<Button variant="outline" onclick={openDialog}>
+			<CalendarClock class="size-4" /> สร้างรุ่นตารางสอนใหม่
+		</Button>
+	{:else}
+		<Button variant="outline" class="border-amber-500/40 text-amber-800" onclick={openDialog}>
+			<CalendarClock class="size-4" /> เพิ่ม/ปรับ/หยุดกลางภาค
+		</Button>
+	{/if}
 {/if}
 
 <Dialog.Root bind:open>

@@ -12,6 +12,21 @@ pub(crate) static TIMETABLE_MUTATIONS: ApplicationTimetableMutations =
 
 #[async_trait]
 impl TimetableMutationPort for ApplicationTimetableMutations {
+    async fn include_offering_target(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        timetable_version_id: Uuid,
+        learning_offering_id: Uuid,
+    ) -> Result<(), AppError> {
+        school_academic_timetable::services::timetable_version_service::include_offering_target_in_transaction(
+            transaction,
+            timetable_version_id,
+            learning_offering_id,
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn retry_group_sync(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

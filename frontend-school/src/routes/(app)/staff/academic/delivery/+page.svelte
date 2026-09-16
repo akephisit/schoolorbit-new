@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
@@ -15,6 +17,7 @@
 		type LearningDeliveryOverview,
 		type LearningOfferingOverviewItem
 	} from '$lib/api/learning-delivery';
+	import { includeTimetableVersionOffering } from '$lib/api/timetable';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -46,8 +49,15 @@
 	let errorMessage = $state('');
 	let viewMode = $state<'homerooms' | 'offerings'>('homerooms');
 	let offeringDialog = $state<{
-		openCurriculumPreparation: (target: SynchronizedActivityPreparationTarget) => Promise<void>;
+		openCurriculumPreparation: (
+			target: SynchronizedActivityPreparationTarget,
+			timetableVersionId?: string | null
+		) => Promise<void>;
 	}>();
+	let timetableRevisionDialog = $state<{ openDialog: () => void }>();
+	let pendingTimetableAction = $state.raw<
+		{ kind: 'activate'; catalogVersionId: string } | { kind: 'include' } | null
+	>(null);
 	let initialKind = $derived<'all' | 'activity'>(
 		page.url.searchParams.get('kind') === 'activity' ? 'activity' : 'all'
 	);
@@ -57,6 +67,14 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT,
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
+		)
+	);
+	let canManageTimetable = $derived(
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_TREE,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED
 		)
 	);
 	let items = $derived(overview?.offerings ?? []);
@@ -103,13 +121,13 @@
 		return `${formatDate(changeSet.effectiveFrom)} · ${status} · ${changeSet.reason}`;
 	}
 
-	async function loadWorkspace(yearId: string, termId: string) {
+	async function loadWorkspace(yearId: string, termId: string, versionId?: string) {
 		const { revision, signal } = workspaceRequest.begin();
 		loading = true;
 		errorMessage = '';
 		try {
 			const timetableVersionId =
-				page.url.searchParams.get('timetableVersionId')?.trim() || undefined;
+				versionId ?? (page.url.searchParams.get('timetableVersionId')?.trim() || undefined);
 			const homeroomResult = await getHomeroomDeliveryWorkspace(yearId, termId, {
 				signal,
 				timetableVersionId
@@ -188,9 +206,55 @@
 
 	function prepareSynchronizedActivity(catalogVersionId: string) {
 		if (!workspace || !offeringDialog) return;
+		if (workspace.timetableVersionStatus === 'published') {
+			pendingTimetableAction = { kind: 'activate', catalogVersionId };
+			timetableRevisionDialog?.openDialog();
+			return;
+		}
 		const target = buildSynchronizedActivityPreparationTarget(workspace, catalogVersionId);
 		if (!target) return;
-		void offeringDialog.openCurriculumPreparation(target);
+		void offeringDialog.openCurriculumPreparation(
+			target,
+			workspace.timetableVersionStatus === 'draft' ? workspace.timetableVersionId : null
+		);
+	}
+
+	async function includeOfferingInTimetable(offeringId: string) {
+		if (!workspace || !academicYearId || !academicTermId) return;
+		if (workspace.timetableVersionStatus === 'published') {
+			pendingTimetableAction = { kind: 'include' };
+			timetableRevisionDialog?.openDialog();
+			return;
+		}
+		if (workspace.timetableVersionStatus !== 'draft' || !workspace.timetableVersionId) {
+			errorMessage = 'ยังไม่มีรุ่นตารางแบบร่างสำหรับเพิ่มรายการเปิดสอน';
+			return;
+		}
+		errorMessage = '';
+		try {
+			await includeTimetableVersionOffering(workspace.timetableVersionId, {
+				learningOfferingId: offeringId
+			});
+			await loadWorkspace(academicYearId, academicTermId, workspace.timetableVersionId);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'เพิ่มรายการเข้ารุ่นตารางไม่สำเร็จ';
+		}
+	}
+
+	async function handleTimetableRevisionCreated(created: AcademicTermChangeSet) {
+		const pending = pendingTimetableAction;
+		pendingTimetableAction = null;
+		addChangeSet(created);
+		if (!academicYearId || !academicTermId) return;
+		const url = new URL(page.url);
+		url.searchParams.set('timetableVersionId', created.targetTimetableVersionId);
+		url.searchParams.set('changeSetId', created.id);
+		replaceState(resolve(`/staff/academic/delivery?${url.searchParams.toString()}`), page.state);
+		await loadWorkspace(academicYearId, academicTermId, created.targetTimetableVersionId);
+		if (pending?.kind !== 'activate' || !workspace || !offeringDialog) return;
+		const target = buildSynchronizedActivityPreparationTarget(workspace, pending.catalogVersionId);
+		if (!target) return;
+		await offeringDialog.openCurriculumPreparation(target, created.targetTimetableVersionId);
 	}
 
 	function addChangeSet(created: AcademicTermChangeSet) {
@@ -258,8 +322,20 @@
 				{academicTermId}
 				onCreated={addCreated}
 				onApplied={reloadAfterApply}
+				defaultTimetableVersionId={workspace?.timetableVersionStatus === 'draft'
+					? workspace.timetableVersionId
+					: null}
 			/>
 			<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
+			{#if canManageTimetable}
+				<AcademicChangeSetDialog
+					bind:this={timetableRevisionDialog}
+					{academicTermId}
+					purpose="timetable_revision"
+					showTrigger={false}
+					onCreated={handleTimetableRevisionCreated}
+				/>
+			{/if}
 		{/if}
 	{/snippet}
 
@@ -337,7 +413,9 @@
 						<HomeroomDeliveryWorkspace
 							{workspace}
 							{canManage}
+							{canManageTimetable}
 							onPrepareSynchronizedActivity={prepareSynchronizedActivity}
+							onIncludeOfferingInTimetable={includeOfferingInTimetable}
 						/>
 					{/if}
 				</Tabs.Content>

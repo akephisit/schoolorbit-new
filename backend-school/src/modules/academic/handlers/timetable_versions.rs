@@ -11,7 +11,11 @@ use crate::policies::learning_offering_access_policy::{
 use crate::utils::request_context::actor_tenant_context_from_session;
 use crate::AppState;
 use school_academic_timetable::models::timetable_version::{
-    CloneTimetableVersionRequest, ResolveTimetableVersionQuery, TimetableVersionQuery,
+    CloneTimetableVersionRequest, IncludeTimetableVersionOfferingRequest,
+    ResolveTimetableVersionQuery, TimetableVersionQuery,
+};
+use school_academic_timetable::policy::{
+    require_timetable_resources, TimetableAction, TimetableResourceSet,
 };
 use school_academic_timetable::services::timetable_version_service;
 use school_auth::session_service::AuthenticatedSession;
@@ -117,4 +121,47 @@ pub async fn clone_version(
     )
     .await?;
     Ok(Json(ApiResponse::ok(version)).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/timetable-versions/{version_id}/targets",
+    operation_id = "includeTimetableVersionOffering",
+    params(("version_id" = Uuid, Path, description = "Draft timetable version ID")),
+    request_body = IncludeTimetableVersionOfferingRequest,
+    responses(
+        (status = 200, description = "Learning offering included in the draft timetable version", body = ApiResponse<school_academic_timetable::models::timetable_version::TimetableVersionTarget>),
+        (status = 400, description = "Invalid learning offering target", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Timetable version or learning offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Timetable version or learning offering conflict", body = ApiErrorResponse)
+    ),
+    tag = "academic"
+)]
+pub async fn include_offering(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(version_id): Path<Uuid>,
+    Json(payload): Json<IncludeTimetableVersionOfferingRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    require_timetable_resources(
+        &context.tenant.pool,
+        &context.actor,
+        TimetableAction::Manage,
+        &TimetableResourceSet {
+            timetable_version_ids: vec![version_id],
+            learning_offering_ids: vec![payload.learning_offering_id],
+            ..TimetableResourceSet::default()
+        },
+    )
+    .await?;
+    let target = timetable_version_service::include_offering_target(
+        &context.tenant.pool,
+        version_id,
+        payload.learning_offering_id,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(target)).into_response())
 }

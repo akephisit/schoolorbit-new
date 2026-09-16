@@ -13,6 +13,9 @@ use school_academic_delivery::models::*;
 use school_academic_delivery::services::{
     activities, change_sets, groups, offerings, roster_memberships, teacher_handoff, workspaces,
 };
+use school_academic_timetable::policy::{
+    require_timetable_resources, TimetableAction, TimetableResourceSet,
+};
 use school_auth::session_service::AuthenticatedSession;
 use school_authorization::ActorContext;
 use school_http::HttpError as AppError;
@@ -459,9 +462,25 @@ pub async fn apply_offerings_from_curriculum(
             ));
         }
     }
-    let result =
-        offerings::apply_from_curriculum(&context.tenant.pool, context.actor.user_id, request)
-            .await?;
+    if let Some(timetable_version_id) = request.timetable_version_id {
+        require_timetable_resources(
+            &context.tenant.pool,
+            &context.actor,
+            TimetableAction::Manage,
+            &TimetableResourceSet {
+                timetable_version_ids: vec![timetable_version_id],
+                ..TimetableResourceSet::default()
+            },
+        )
+        .await?;
+    }
+    let result = offerings::apply_from_curriculum(
+        &TIMETABLE_MUTATIONS,
+        &context.tenant.pool,
+        context.actor.user_id,
+        request,
+    )
+    .await?;
     let signal_descriptors =
         offerings::signal_descriptors(&context.tenant.pool, &result.offering_ids).await?;
     for descriptor in signal_descriptors {

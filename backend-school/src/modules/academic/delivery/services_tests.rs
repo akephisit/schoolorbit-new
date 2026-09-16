@@ -5316,11 +5316,13 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let choices = default_preparation_choices(&preview);
 
     let mismatched = offerings::apply_from_curriculum(
+        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
+            timetable_version_id: None,
             source_hash: "stale-source-hash".to_string(),
             idempotency_key: Uuid::new_v4(),
             choices: choices.clone(),
@@ -5331,11 +5333,13 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
 
     let idempotency_key = Uuid::new_v4();
     let applied = offerings::apply_from_curriculum(
+        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
+            timetable_version_id: None,
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices: choices.clone(),
@@ -5344,11 +5348,13 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .await
     .unwrap();
     let retried = offerings::apply_from_curriculum(
+        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
+            timetable_version_id: None,
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices,
@@ -5391,11 +5397,13 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .unwrap();
     let retained_choices = default_preparation_choices(&retained_preview);
     let retained = offerings::apply_from_curriculum(
+        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
+            timetable_version_id: None,
             source_hash: retained_preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices: retained_choices,
@@ -5473,11 +5481,13 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         .unwrap()
         .groups = Vec::new();
     let empty_apply = offerings::apply_from_curriculum(
+        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
+            timetable_version_id: None,
             source_hash: preview.source_hash.clone(),
             idempotency_key: Uuid::new_v4(),
             choices: empty_apply_choices,
@@ -5514,11 +5524,13 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
     ];
 
     let result = offerings::apply_from_curriculum(
+        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
+            timetable_version_id: None,
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices,
@@ -6176,6 +6188,28 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
 async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverage() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_homeroom_workspace").await;
     let context = planning_runtime_context(&pool).await;
+    let (term_start, bell_schedule_id): (NaiveDate, Uuid) =
+        sqlx::query_as("SELECT start_date, bell_schedule_id FROM academic_terms WHERE id = $1")
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let draft_version_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_versions (
+               id, academic_term_id, academic_year_id, effective_from, status,
+               bell_schedule_id, created_by
+           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6)"#,
+    )
+    .bind(draft_version_id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .bind(term_start)
+    .bind(bell_schedule_id)
+    .bind(context.teacher_id)
+    .execute(&pool)
+    .await
+    .unwrap();
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
@@ -6195,11 +6229,13 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         })
         .collect();
     let applied = offerings::apply_from_curriculum(
+        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
+            timetable_version_id: Some(draft_version_id),
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices: deferred_choices,
@@ -6218,6 +6254,18 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     .await
     .unwrap();
     assert_eq!(deferred_group_count, 0);
+    let timetable_target_count: i64 = sqlx::query_scalar(
+        r#"SELECT count(*)
+           FROM academic_timetable_version_targets
+           WHERE timetable_version_id = $1
+             AND learning_offering_id = ANY($2)"#,
+    )
+    .bind(draft_version_id)
+    .bind(&applied.offering_ids)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(timetable_target_count as usize, applied.offering_ids.len());
 
     let filter = AcademicResourceListFilter {
         includes_school_owned: true,

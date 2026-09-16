@@ -9,6 +9,8 @@ use school_academic_core::services::validate_canonical_decimal;
 use school_authorization::AcademicResourceListFilter;
 use school_errors::AppError;
 
+use crate::ports::TimetableMutationPort;
+
 use super::super::models::{
     ActivityAttendanceRequirement, ActivityOfferingSnapshot, ActivityPassCriteria,
     ApplyCurriculumOfferingsRequest, ApplyCurriculumOfferingsResult, CourseOfferingSnapshot,
@@ -174,6 +176,7 @@ struct PreviewHashInput<'a> {
 struct ApplyRequestHashInput<'a> {
     academic_term_id: Uuid,
     study_program_ids: &'a [Uuid],
+    timetable_version_id: Option<Uuid>,
     source_hash: &'a str,
     choices: &'a [CurriculumPreparationChoice],
 }
@@ -539,7 +542,8 @@ pub async fn apply_term_preparation(
         })
         .collect::<Vec<_>>();
     validate_preparation_choices(&preview.proposals, &choices)?;
-    let applied = apply_preview_in_transaction(transaction, &term, preview, &choices).await?;
+    let applied =
+        apply_preview_in_transaction(transaction, &term, preview, &choices, None, None).await?;
     Ok(TermPreparationDeliveryOutcome {
         offering_ids: applied.offering_ids,
         group_ids: applied.group_ids,
@@ -549,6 +553,7 @@ pub async fn apply_term_preparation(
 }
 
 pub async fn apply_from_curriculum(
+    timetable_mutations: &dyn TimetableMutationPort,
     pool: &PgPool,
     actor_user_id: Uuid,
     request: ApplyCurriculumOfferingsRequest,
@@ -558,6 +563,7 @@ pub async fn apply_from_curriculum(
     let request_hash = stable_hash(&ApplyRequestHashInput {
         academic_term_id: request.academic_term_id,
         study_program_ids: &program_ids,
+        timetable_version_id: request.timetable_version_id,
         source_hash: &request.source_hash,
         choices: &choices,
     })?;
@@ -624,7 +630,15 @@ pub async fn apply_from_curriculum(
     }
     validate_preparation_choices(&preview.proposals, &choices)?;
 
-    let applied = apply_preview_in_transaction(&mut transaction, &term, &preview, &choices).await?;
+    let applied = apply_preview_in_transaction(
+        &mut transaction,
+        &term,
+        &preview,
+        &choices,
+        Some(timetable_mutations),
+        request.timetable_version_id,
+    )
+    .await?;
     sqlx::query(
         "INSERT INTO learning_delivery_apply_runs (
              idempotency_key, academic_term_id, request_hash, source_hash,
@@ -677,6 +691,8 @@ async fn apply_preview_in_transaction(
     term: &TermContext,
     preview: &CurriculumOfferingPreview,
     choices: &[CurriculumPreparationChoice],
+    timetable_mutations: Option<&dyn TimetableMutationPort>,
+    timetable_version_id: Option<Uuid>,
 ) -> Result<AppliedCurriculumPreview, AppError> {
     let mut offering_ids = Vec::new();
     let mut group_ids = Vec::new();
@@ -711,6 +727,13 @@ async fn apply_preview_in_transaction(
             insert_generated_offering(transaction, term, proposal).await?
         };
         insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
+        if let (Some(timetable_mutations), Some(timetable_version_id)) =
+            (timetable_mutations, timetable_version_id)
+        {
+            timetable_mutations
+                .include_offering_target(transaction, timetable_version_id, offering_id)
+                .await?;
+        }
         offering_ids.push(offering_id);
         if choice.action == PreparationAction::Apply {
             for group in &choice.groups {

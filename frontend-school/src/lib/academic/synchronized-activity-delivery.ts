@@ -17,6 +17,27 @@ export type SynchronizedActivityPreparationTarget = CurriculumPreparationFocus &
 	homeroomCount: number;
 };
 
+export type DeliveryTimetableAction =
+	| 'none'
+	| 'activate'
+	| 'revise_then_activate'
+	| 'include'
+	| 'revise_then_include';
+
+export function deliveryTimetableAction(
+	item: HomeroomDeliveryItem,
+	versionStatus: HomeroomDeliveryWorkspace['timetableVersionStatus']
+): DeliveryTimetableAction {
+	if (isPendingSynchronizedActivity(item)) {
+		return versionStatus === 'published' ? 'revise_then_activate' : 'activate';
+	}
+	if (item.offeringId !== null && item.weeklyPeriodTarget === null) {
+		if (versionStatus === 'published') return 'revise_then_include';
+		if (versionStatus === 'draft') return 'include';
+	}
+	return 'none';
+}
+
 function isSynchronizedActivity(item: HomeroomDeliveryItem, catalogVersionId: string): boolean {
 	return (
 		item.resourceKind === 'activity' &&

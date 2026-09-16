@@ -10,7 +10,10 @@
 		summarizeHomeroomDelivery,
 		type HomeroomReadinessFilter
 	} from '$lib/academic/homeroom-delivery';
-	import { isPendingSynchronizedActivity } from '$lib/academic/synchronized-activity-delivery';
+	import {
+		deliveryTimetableAction,
+		isPendingSynchronizedActivity
+	} from '$lib/academic/synchronized-activity-delivery';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -30,11 +33,15 @@
 	let {
 		workspace,
 		canManage = false,
-		onPrepareSynchronizedActivity
+		canManageTimetable = false,
+		onPrepareSynchronizedActivity,
+		onIncludeOfferingInTimetable
 	}: {
 		workspace: Workspace;
 		canManage?: boolean;
+		canManageTimetable?: boolean;
 		onPrepareSynchronizedActivity?: (catalogVersionId: string) => void;
+		onIncludeOfferingInTimetable?: (offeringId: string) => void;
 	} = $props();
 	let search = $state('');
 	let readiness = $state<HomeroomReadinessFilter>('all');
@@ -72,6 +79,7 @@
 			!item.alignmentStates.includes('matches_curriculum') ||
 			item.offeringState === 'missing' ||
 			item.groupMode === 'missing' ||
+			(item.offeringId !== null && item.weeklyPeriodTarget === null) ||
 			(item.groupMode !== 'deferred' && item.teacherState === 'missing_primary') ||
 			(item.groupMode !== 'deferred' && item.timetableState !== 'scheduled')
 		);
@@ -339,23 +347,45 @@
 													<Table.Cell>
 														<div class="flex items-center gap-1.5 text-sm">
 															<Clock3 class="size-3.5" />
-															{item.groupMode === 'deferred' && item.groups.length === 0
-																? 'รอจัดกลุ่ม'
+															{item.offeringId && item.weeklyPeriodTarget === null
+																? 'ยังไม่อยู่ในรุ่นตาราง'
 																: timetableLabels[item.timetableState]}
 														</div>
 													</Table.Cell>
 													<Table.Cell>
 														{#if item.offeringId}
-															<Button
-																href={`/staff/academic/delivery/${item.offeringId}`}
-																size="icon"
-																variant="ghost"
-																aria-label={`จัดการ ${item.name}`}
-															>
-																<ArrowUpRight class="size-4" />
-															</Button>
+															<div class="flex items-center justify-end gap-1">
+																{#if deliveryTimetableAction(item, workspace.timetableVersionStatus) === 'include' || deliveryTimetableAction(item, workspace.timetableVersionStatus) === 'revise_then_include'}
+																	{#if canManage && canManageTimetable && onIncludeOfferingInTimetable}
+																		<Button
+																			type="button"
+																			size="sm"
+																			variant="outline"
+																			onclick={() =>
+																				onIncludeOfferingInTimetable?.(item.offeringId!)}
+																		>
+																			<CirclePlus class="size-3.5" />
+																			{workspace.timetableVersionStatus === 'published'
+																				? 'สร้างรุ่นร่าง'
+																				: 'เพิ่มเข้ารุ่นตาราง'}
+																		</Button>
+																	{:else}
+																		<span class="text-xs text-muted-foreground"
+																			>ต้องมีสิทธิ์จัดตาราง</span
+																		>
+																	{/if}
+																{/if}
+																<Button
+																	href={`/staff/academic/delivery/${item.offeringId}`}
+																	size="icon"
+																	variant="ghost"
+																	aria-label={`จัดการ ${item.name}`}
+																>
+																	<ArrowUpRight class="size-4" />
+																</Button>
+															</div>
 														{:else if isPendingSynchronizedActivity(item)}
-															{#if canManage && onPrepareSynchronizedActivity}
+															{#if canManage && (workspace.timetableVersionStatus === null || canManageTimetable) && onPrepareSynchronizedActivity}
 																<Button
 																	type="button"
 																	size="sm"
@@ -363,7 +393,10 @@
 																	onclick={() =>
 																		onPrepareSynchronizedActivity?.(item.catalogVersionId)}
 																>
-																	<CirclePlus class="size-3.5" /> เปิดใช้งาน
+																	<CirclePlus class="size-3.5" />
+																	{workspace.timetableVersionStatus === 'published'
+																		? 'สร้างรุ่นร่างและเปิดใช้งาน'
+																		: 'เปิดใช้งาน'}
 																</Button>
 															{:else}
 																<span class="text-xs text-muted-foreground">ต้องมีสิทธิ์จัดการ</span

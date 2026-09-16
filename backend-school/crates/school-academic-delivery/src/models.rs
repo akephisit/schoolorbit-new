@@ -842,6 +842,8 @@ pub struct PreviewCurriculumOfferingsRequest {
 pub struct ApplyCurriculumOfferingsRequest {
     pub academic_term_id: Uuid,
     pub study_program_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub timetable_version_id: Option<Uuid>,
     pub source_hash: String,
     pub idempotency_key: Uuid,
     pub choices: Vec<CurriculumPreparationChoice>,
