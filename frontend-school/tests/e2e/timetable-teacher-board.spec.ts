@@ -77,6 +77,7 @@ test('preselects the board teacher before creating an exact-instructor period', 
 	await page.keyboard.press('Escape');
 	await trayCard.locator('button').first().click();
 	await page.getByRole('button', { name: 'วางคาบที่นี่' }).first().click();
+	await expect(page.getByText('เหลือ 2/3')).toBeVisible();
 
 	expect(mock.blocks()[0]?.groups[0]?.instructors.map((teacher) => teacher.teacherId)).toEqual([
 		timetableIds.teacherA

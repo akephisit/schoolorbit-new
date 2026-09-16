@@ -1152,7 +1152,7 @@
 			{/if}
 
 			{#if activeView === 'wholeSchool'}
-				<section class="overflow-hidden rounded-xl border bg-background">
+				<section class="min-w-0 overflow-hidden rounded-xl border bg-background">
 					<div class="border-b bg-muted/20 px-4 py-3">
 						<h2 class="font-semibold">
 							ภาพรวมทั้งโรงเรียน · วัน{days.find((day) => day.id === overviewDay)?.label}
@@ -1162,14 +1162,14 @@
 						</p>
 					</div>
 					<div class="overflow-x-auto">
-						<table class="w-full border-collapse text-left text-xs">
+						<table class="w-full min-w-[70rem] table-fixed border-collapse text-left text-xs">
 							<thead>
 								<tr class="bg-muted/35">
-									<th class="sticky left-0 z-10 min-w-36 border-b border-r bg-muted/70 px-3 py-2"
+									<th class="sticky left-0 z-10 w-24 border-b border-r bg-muted/70 px-2 py-2"
 										>ห้อง</th
 									>
 									{#each controller.workspace.bellPeriods as period (period.id)}
-										<th class="min-w-44 border-b border-r px-3 py-2 text-center">
+										<th class="border-b border-r px-1.5 py-2 text-center">
 											<p class="font-semibold">{periodLabel(period)}</p>
 											<p class="font-mono text-[0.65rem] font-normal text-muted-foreground">
 												{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
@@ -1219,7 +1219,7 @@
 					</div>
 				</section>
 			{:else if controller.selectedRow && controller.workspace.bellPeriods.length > 0}
-				<div class="grid min-h-0 gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
+				<div class="grid min-h-0 gap-4 xl:grid-cols-[15rem_minmax(0,1fr)]">
 					<TimetableUnscheduledTray
 						ordinaryDemands={visibleOrdinaryDemands}
 						synchronizedDemands={visibleSynchronizedDemands}

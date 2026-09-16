@@ -10,7 +10,7 @@
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
 	import TimetableLessonCard from './TimetableLessonCard.svelte';
 
-	type Day = { id: string; label: string };
+	type Day = { id: string; label: string; shortLabel: string };
 
 	let {
 		state,
@@ -43,11 +43,11 @@
 	} = $props();
 
 	const days: Day[] = [
-		{ id: 'MON', label: 'วันจันทร์' },
-		{ id: 'TUE', label: 'วันอังคาร' },
-		{ id: 'WED', label: 'วันพุธ' },
-		{ id: 'THU', label: 'วันพฤหัสบดี' },
-		{ id: 'FRI', label: 'วันศุกร์' }
+		{ id: 'MON', label: 'วันจันทร์', shortLabel: 'จ.' },
+		{ id: 'TUE', label: 'วันอังคาร', shortLabel: 'อ.' },
+		{ id: 'WED', label: 'วันพุธ', shortLabel: 'พ.' },
+		{ id: 'THU', label: 'วันพฤหัสบดี', shortLabel: 'พฤ.' },
+		{ id: 'FRI', label: 'วันศุกร์', shortLabel: 'ศ.' }
 	];
 
 	function periodLabel(period: TimetableBoardState['workspace']['bellPeriods'][number]): string {
@@ -62,7 +62,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <section
-	class="overflow-hidden rounded-xl border bg-background"
+	class="min-w-0 overflow-hidden rounded-xl border bg-background"
 	aria-label={`ตารางของ ${row.label}`}
 >
 	<div class="flex items-center justify-between border-b bg-muted/20 px-4 py-3">
@@ -72,16 +72,16 @@
 		</div>
 		<p class="text-xs text-muted-foreground">ลากคาบไปยังช่องใหม่ · ครั้งละ 1 คาบ</p>
 	</div>
-	<div class="overflow-x-auto">
-		<table class="w-full border-collapse text-left">
+	<div class="overflow-x-auto" data-timetable-scroll-container>
+		<table class="w-full min-w-[70rem] table-fixed border-collapse text-left">
 			<thead>
 				<tr class="bg-muted/35">
 					<th
-						class="sticky left-0 z-10 w-28 min-w-28 border-b border-r bg-muted/70 px-3 py-2 text-xs font-semibold"
+						class="sticky left-0 z-10 w-14 border-b border-r bg-muted/70 px-1.5 py-2 text-center text-xs font-semibold"
 						>วัน / คาบ</th
 					>
 					{#each state.workspace.bellPeriods as period (period.id)}
-						<th class="min-w-44 border-b border-r px-3 py-2 text-center text-xs font-semibold">
+						<th class="border-b border-r px-1.5 py-2 text-center text-xs font-semibold">
 							<p>{periodLabel(period)}</p>
 							<p class="mt-1 font-mono text-[0.65rem] font-normal text-muted-foreground">
 								{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
@@ -93,8 +93,11 @@
 			<tbody>
 				{#each days as day (day.id)}
 					<tr>
-						<th class="sticky left-0 z-10 border-b border-r bg-background px-3 py-3 align-top">
-							<p class="text-xs font-semibold">{day.label}</p>
+						<th
+							class="sticky left-0 z-10 border-b border-r bg-background px-1.5 py-3 text-center align-top"
+							aria-label={day.label}
+						>
+							<p class="text-xs font-semibold">{day.shortLabel}</p>
 						</th>
 						{#each state.workspace.bellPeriods as period (period.id)}
 							{@const blocks = blocksForTimetableCell(state, {

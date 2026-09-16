@@ -59,7 +59,7 @@
 
 <td
 	class={[
-		'relative min-w-44 border-b border-r p-1.5 align-top transition-colors',
+		'relative h-px border-b border-r p-1.5 align-top transition-colors',
 		state === 'dragging' && 'bg-primary/5 ring-2 ring-inset ring-primary/35',
 		state === 'move' && 'bg-emerald-50 ring-2 ring-inset ring-emerald-500 dark:bg-emerald-950/25',
 		state === 'swap' && 'bg-sky-50 ring-2 ring-inset ring-sky-500 dark:bg-sky-950/25',
@@ -83,44 +83,46 @@
 	}}
 >
 	<span class="sr-only">{stateLabel}</span>
-	{#if state !== 'neutral'}
-		<div
-			class={[
-				'mb-1.5 flex items-center gap-1 rounded-md border px-2 py-1 text-[0.68rem] font-medium',
-				state === 'dragging' && 'border-primary/30 bg-primary/5 text-primary',
-				state === 'move' && 'border-emerald-300 bg-emerald-50 text-emerald-800',
-				state === 'swap' && 'border-sky-300 bg-sky-50 text-sky-800',
-				state === 'blocked' && 'border-destructive/40 bg-destructive/5 text-destructive',
-				state === 'saving' && 'border-amber-300 bg-amber-50 text-amber-800',
-				state === 'stale' && 'border-orange-300 bg-orange-50 text-orange-800'
-			]}
-		>
-			{#if state === 'dragging'}
-				<Grip class="size-3" />
-			{:else if state === 'move'}
-				<ArrowRight class="size-3" />
-			{:else if state === 'swap'}
-				<ArrowRightLeft class="size-3" />
-			{:else if state === 'blocked'}
-				<AlertTriangle class="size-3" />
-			{:else if state === 'saving'}
-				<LoaderCircle class="size-3 animate-spin" />
-			{:else}
-				<RefreshCw class="size-3" />
-			{/if}
-			{stateLabel}
-		</div>
-	{/if}
-	<div class="min-h-28 space-y-1.5">{@render children?.()}</div>
-	{#if !disabled && (state === 'move' || state === 'swap')}
-		<Button
-			type="button"
-			size="sm"
-			variant="outline"
-			class="mt-1.5 h-7 w-full text-xs"
-			onclick={onActivateIntent}
-		>
-			{state === 'swap' ? 'สลับกับคาบนี้' : 'วางคาบที่นี่'}
-		</Button>
-	{/if}
+	<div class="flex h-full min-h-28 flex-col">
+		{#if state !== 'neutral'}
+			<div
+				class={[
+					'mb-1.5 flex items-center gap-1 rounded-md border px-2 py-1 text-[0.68rem] font-medium',
+					state === 'dragging' && 'border-primary/30 bg-primary/5 text-primary',
+					state === 'move' && 'border-emerald-300 bg-emerald-50 text-emerald-800',
+					state === 'swap' && 'border-sky-300 bg-sky-50 text-sky-800',
+					state === 'blocked' && 'border-destructive/40 bg-destructive/5 text-destructive',
+					state === 'saving' && 'border-amber-300 bg-amber-50 text-amber-800',
+					state === 'stale' && 'border-orange-300 bg-orange-50 text-orange-800'
+				]}
+			>
+				{#if state === 'dragging'}
+					<Grip class="size-3" />
+				{:else if state === 'move'}
+					<ArrowRight class="size-3" />
+				{:else if state === 'swap'}
+					<ArrowRightLeft class="size-3" />
+				{:else if state === 'blocked'}
+					<AlertTriangle class="size-3" />
+				{:else if state === 'saving'}
+					<LoaderCircle class="size-3 animate-spin" />
+				{:else}
+					<RefreshCw class="size-3" />
+				{/if}
+				{stateLabel}
+			</div>
+		{/if}
+		<div class="grid min-h-0 flex-1 auto-rows-fr gap-1.5">{@render children?.()}</div>
+		{#if !disabled && (state === 'move' || state === 'swap')}
+			<Button
+				type="button"
+				size="sm"
+				variant="outline"
+				class="mt-1.5 h-7 w-full text-xs"
+				onclick={onActivateIntent}
+			>
+				{state === 'swap' ? 'สลับกับคาบนี้' : 'วางคาบที่นี่'}
+			</Button>
+		{/if}
+	</div>
 </td>
