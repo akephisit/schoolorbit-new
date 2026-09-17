@@ -71,6 +71,46 @@ export function replaceTimetableBlocks(
 	});
 }
 
+export function patchTimetableWorkspaceBlocks(
+	workspace: TimetableBlockWorkspace,
+	changedBlocks: readonly TimetableBlock[]
+): TimetableBlockWorkspace {
+	const changedById = new Map(changedBlocks.map((block) => [block.id, block]));
+	const existingIds = new Set(workspace.blocks.map((block) => block.id));
+	const blocks = [
+		...workspace.blocks.map((block) => changedById.get(block.id) ?? block),
+		...changedBlocks.filter((block) => !existingIds.has(block.id))
+	];
+	const activeBlocks = blocks.filter((block) => block.isActive);
+
+	return {
+		...workspace,
+		blocks,
+		ordinaryDemands: workspace.ordinaryDemands.map((demand) => {
+			const scheduledPeriods = activeBlocks.filter((block) =>
+				block.groups.some((group) => group.learningGroupId === demand.learningGroupId)
+			).length;
+			return {
+				...demand,
+				scheduledPeriods,
+				remainingPeriods: Math.max(demand.requiredPeriods - scheduledPeriods, 0)
+			};
+		}),
+		synchronizedDemands: workspace.synchronizedDemands.map((demand) => ({
+			...demand,
+			scheduledPeriods: activeBlocks.filter(
+				(block) =>
+					block.learningOfferingId === demand.learningOfferingId &&
+					block.schedulingMode === 'synchronized'
+			).length
+		})),
+		summary: {
+			...workspace.summary,
+			blockCount: activeBlocks.length
+		}
+	};
+}
+
 export function rowsForTimetableView(
 	state: TimetableBoardState,
 	view: TimetableBoardView

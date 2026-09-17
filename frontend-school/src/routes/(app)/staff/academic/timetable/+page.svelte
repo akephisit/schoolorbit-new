@@ -11,6 +11,7 @@
 		blockTargetTeacherIds,
 		blocksForTimetableCell,
 		localPlacementPreview,
+		patchTimetableWorkspaceBlocks,
 		type TimetablePageView
 	} from '$lib/academic/timetable/board-state';
 	import {
@@ -49,6 +50,7 @@
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import TimetableBoard from '$lib/components/academic/timetable/TimetableBoard.svelte';
 	import type { TimetableCellState } from '$lib/components/academic/timetable/TimetableCell.svelte';
+	import type { TimetablePlacementCard } from '$lib/components/academic/timetable/TimetablePlacementPreviewCard.svelte';
 	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
 	import TimetableTeacherTargetPicker from '$lib/components/academic/timetable/TimetableTeacherTargetPicker.svelte';
 	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
@@ -470,6 +472,33 @@
 		return local.state === 'source' ? 'dragging' : local.state;
 	}
 
+	function placementPreview(dayOfWeek: string, periodId: string): TimetablePlacementCard | null {
+		if (!controller?.dragSource || previewCellKey !== cellKey(dayOfWeek, periodId)) return null;
+		const { source, candidate } = controller.dragSource;
+		if (source.kind === 'existing_block') {
+			const block = controller.board.blocksById.get(source.blockId);
+			if (!block) return null;
+			return {
+				code: block.blockKind === 'course' ? block.offeringCode : null,
+				title: block.offeringName ?? block.title ?? 'รายการตารางสอน'
+			};
+		}
+		if (source.kind === 'ordinary_demand') {
+			const demand = controller.workspace.ordinaryDemands.find(
+				(item) => item.learningGroupId === source.learningGroupId
+			);
+			if (!demand) return null;
+			return {
+				code: candidate.blockKind === 'course' ? demand.offeringCode : null,
+				title: demand.offeringName
+			};
+		}
+		const demand = controller.workspace.synchronizedDemands.find(
+			(item) => item.learningOfferingId === source.learningOfferingId
+		);
+		return demand ? { code: null, title: demand.offeringName } : null;
+	}
+
 	function targetBlock(dayOfWeek: string, periodId: string): TimetableBlock | null {
 		if (!controller?.selectedOwnerId) return null;
 		const sourceId =
@@ -534,59 +563,71 @@
 					? controller.preview
 					: await fetchPlacementPreview(dayOfWeek, periodId);
 			if (!preview) {
+				cancelPlacement();
 				toast.error('ตรวจตำแหน่งวางคาบไม่สำเร็จ กรุณาลองใหม่');
 				return;
 			}
 			const failureMessage = placementFailureMessage(preview);
 			if (failureMessage) {
+				cancelPlacement();
 				toast.error(failureMessage);
 				return;
 			}
 			busy = true;
 			try {
+				let changedBlocks: TimetableBlock[];
 				if (dragSource.source.kind === 'ordinary_demand') {
-					await createOrdinaryTimetableBlock({
-						academicTermId,
-						timetableVersionId: controller.workspace.version.id,
-						learningGroupId: dragSource.source.learningGroupId,
-						dayOfWeek,
-						bellSchedulePeriodId: periodId,
-						roomId: dragSource.candidate.roomId,
-						instructorIds: dragSource.candidate.instructorIds ?? [],
-						note: null
-					});
+					changedBlocks = [
+						await createOrdinaryTimetableBlock({
+							academicTermId,
+							timetableVersionId: controller.workspace.version.id,
+							learningGroupId: dragSource.source.learningGroupId,
+							dayOfWeek,
+							bellSchedulePeriodId: periodId,
+							roomId: dragSource.candidate.roomId,
+							instructorIds: dragSource.candidate.instructorIds ?? [],
+							note: null
+						})
+					];
 				} else if (dragSource.source.kind === 'synchronized_offering') {
-					await createSynchronizedTimetableBlock({
-						academicTermId,
-						timetableVersionId: controller.workspace.version.id,
-						learningOfferingId: dragSource.source.learningOfferingId,
-						intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
-						teacherIds: dragSource.candidate.teacherIds ?? [],
-						dayOfWeek,
-						bellSchedulePeriodId: periodId,
-						roomId: dragSource.candidate.roomId,
-						note: null
-					});
+					changedBlocks = [
+						await createSynchronizedTimetableBlock({
+							academicTermId,
+							timetableVersionId: controller.workspace.version.id,
+							learningOfferingId: dragSource.source.learningOfferingId,
+							intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
+							teacherIds: dragSource.candidate.teacherIds ?? [],
+							dayOfWeek,
+							bellSchedulePeriodId: periodId,
+							roomId: dragSource.candidate.roomId,
+							note: null
+						})
+					];
 				} else if (preview.state === 'swap' && preview.targetBlockId) {
 					const other = controller.board.blocksById.get(preview.targetBlockId);
 					if (!other) throw new Error('ไม่พบคาบปลายทาง กรุณาโหลดข้อมูลล่าสุด');
-					await swapTimetableBlocks({
+					const swapped = await swapTimetableBlocks({
 						timetableVersionId: controller.workspace.version.id,
 						blockAId: dragSource.source.blockId,
 						blockARowVersion: dragSource.source.rowVersion,
 						blockBId: other.id,
 						blockBRowVersion: other.rowVersion
 					});
+					changedBlocks = [swapped.blockA, swapped.blockB];
 				} else {
-					await updateTimetableBlock(dragSource.source.blockId, {
-						timetableVersionId: controller.workspace.version.id,
-						rowVersion: dragSource.source.rowVersion,
-						dayOfWeek,
-						bellSchedulePeriodId: periodId
-					});
+					changedBlocks = [
+						await updateTimetableBlock(dragSource.source.blockId, {
+							timetableVersionId: controller.workspace.version.id,
+							rowVersion: dragSource.source.rowVersion,
+							dayOfWeek,
+							bellSchedulePeriodId: periodId
+						})
+					];
 				}
+				controller.setWorkspace(patchTimetableWorkspaceBlocks(controller.workspace, changedBlocks));
+				draftRevision += 1;
 				cancelPlacement();
-				await reload('บันทึกตำแหน่งคาบแล้ว');
+				toast.success('บันทึกตำแหน่งคาบแล้ว');
 			} catch (error) {
 				toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
 			} finally {
@@ -1248,6 +1289,7 @@
 						{selectedBlockId}
 						{canEdit}
 						{cellState}
+						{placementPreview}
 						onHoverIntent={previewPlacement}
 						onDropIntent={applyPlacement}
 						onActivateIntent={applyPlacement}

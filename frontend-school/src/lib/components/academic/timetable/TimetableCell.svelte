@@ -11,6 +11,9 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import TimetablePlacementPreviewCard, {
+		type TimetablePlacementCard
+	} from './TimetablePlacementPreviewCard.svelte';
 
 	let {
 		dayOfWeek,
@@ -22,6 +25,7 @@
 		onDropIntent,
 		onHoverIntent,
 		onActivateIntent,
+		placementCard = null,
 		children
 	}: {
 		dayOfWeek: string;
@@ -33,6 +37,7 @@
 		onDropIntent?: (event: DragEvent) => void;
 		onHoverIntent?: () => void;
 		onActivateIntent?: () => void;
+		placementCard?: TimetablePlacementCard | null;
 		children?: Snippet;
 	} = $props();
 
@@ -90,5 +95,8 @@
 		>
 			<span class="sr-only">{actionLabel}</span>
 		</button>
+	{/if}
+	{#if placementCard}
+		<TimetablePlacementPreviewCard card={placementCard} {state} />
 	{/if}
 </td>

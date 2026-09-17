@@ -10,6 +10,7 @@
 
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
 	import TimetableLessonCard from './TimetableLessonCard.svelte';
+	import type { TimetablePlacementCard } from './TimetablePlacementPreviewCard.svelte';
 
 	type Day = { id: string; label: string; shortLabel: string };
 
@@ -23,6 +24,7 @@
 		onDropIntent,
 		onActivateIntent,
 		onHoverIntent,
+		placementPreview,
 		onSelectBlock,
 		onDragStart,
 		onCancelDrag,
@@ -37,6 +39,7 @@
 		onDropIntent?: (dayOfWeek: string, periodId: string) => void;
 		onActivateIntent?: (dayOfWeek: string, periodId: string) => void;
 		onHoverIntent?: (dayOfWeek: string, periodId: string) => void;
+		placementPreview?: (dayOfWeek: string, periodId: string) => TimetablePlacementCard | null;
 		onSelectBlock?: (block: TimetableBlock) => void;
 		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
 		onCancelDrag?: () => void;
@@ -104,6 +107,7 @@
 							<p class="text-xs font-semibold">{day.shortLabel}</p>
 						</th>
 						{#each state.workspace.bellPeriods as period (period.id)}
+							{@const currentCellState = cellState?.(day.id, period.id) ?? 'neutral'}
 							{@const blocks = blocksForTimetableCell(state, {
 								view,
 								rowId: row.id,
@@ -115,8 +119,9 @@
 								periodId={period.id}
 								dayLabel={day.label}
 								periodLabel={periodLabel(period)}
-								state={cellState?.(day.id, period.id) ?? 'neutral'}
+								state={currentCellState}
 								disabled={!canEdit}
+								placementCard={placementPreview?.(day.id, period.id) ?? null}
 								onHoverIntent={() => onHoverIntent?.(day.id, period.id)}
 								onDropIntent={() => onDropIntent?.(day.id, period.id)}
 								onActivateIntent={() => onActivateIntent?.(day.id, period.id)}

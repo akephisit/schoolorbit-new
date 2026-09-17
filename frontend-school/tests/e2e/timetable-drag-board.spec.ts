@@ -42,6 +42,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await page.goto(timetableUrl());
 
 	await expect(page.getByText('เหลือ 3/3')).toBeVisible();
+	expect(mock.workspaceRequestCount()).toBe(1);
 	const trayCard = page.locator('aside article[draggable="true"]').first();
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
@@ -54,10 +55,48 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await expect(page.getByText('เหลือ 2/3')).toBeVisible();
 	expect(mock.previewRequestCount()).toBe(1);
 	expect(mock.createRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(1);
 	expect(mock.blocks()).toHaveLength(1);
 
 	await page.getByRole('button', { name: 'กลุ่มเรียน' }).click();
 	await expect(page.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toBeVisible();
+});
+
+test('shows the dragged lesson preview only in the cell currently under the pointer', async ({
+	page
+}) => {
+	await installTimetableMock(page, { requiredPeriods: 1 });
+	await page.goto(timetableUrl());
+
+	const board = page.locator('section[aria-label^="ตารางของ "]');
+	const firstRow = board.locator('tbody tr').first();
+	const secondRow = board.locator('tbody tr').nth(1);
+	const firstPeriod = firstRow.locator('td').nth(0);
+	const secondPeriod = firstRow.locator('td').nth(1);
+	const beforeSecondRow = await secondRow.boundingBox();
+	expect(beforeSecondRow).not.toBeNull();
+
+	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer });
+	await firstPeriod.dispatchEvent('dragover', { dataTransfer });
+
+	const preview = page.locator('[data-timetable-placement-preview]');
+	await expect(preview).toHaveCount(1);
+	await expect(firstPeriod.locator('[data-timetable-placement-preview]')).toContainText('ค21101');
+	await expect(firstPeriod.locator('[data-timetable-placement-preview]')).toContainText(
+		'คณิตศาสตร์พื้นฐาน'
+	);
+
+	await secondPeriod.dispatchEvent('dragover', { dataTransfer });
+	await expect(firstPeriod.locator('[data-timetable-placement-preview]')).toHaveCount(0);
+	await expect(secondPeriod.locator('[data-timetable-placement-preview]')).toHaveCount(1);
+	const afterSecondRow = await secondRow.boundingBox();
+	expect(afterSecondRow).not.toBeNull();
+	expect(afterSecondRow!.y).toBeCloseTo(beforeSecondRow!.y, 1);
+
+	await trayCard.dispatchEvent('dragend', { dataTransfer });
+	await expect(preview).toHaveCount(0);
 });
 
 test('keeps timetable row geometry stable while drag feedback is active', async ({ page }) => {
