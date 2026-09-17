@@ -85,7 +85,6 @@
 		FileSpreadsheet,
 		History,
 		LoaderCircle,
-		MousePointer2,
 		Plus,
 		RefreshCw,
 		Trash2
@@ -1161,30 +1160,6 @@
 					<p class="text-lg font-semibold">{controller.workspace.summary.conflictGroupCount}</p>
 				</div>
 			</div>
-
-			{#if activeView !== 'wholeSchool' && controller.dragSource}
-				<div
-					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3"
-				>
-					<p class="flex items-center gap-2 text-sm font-medium text-primary">
-						<MousePointer2 class="size-4" /> ลากหรือแตะช่องสีเขียวเพื่อวาง 1 คาบ ช่องสีแดงมีรายการชน
-					</p>
-					<Button variant="ghost" size="sm" onclick={cancelPlacement}>ยกเลิก</Button>
-				</div>
-				{#if controller.preview?.state === 'blocked' && controller.preview.conflicts.length > 0}
-					<div
-						role="alert"
-						class="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-					>
-						<p class="font-medium">ช่องนี้วางไม่ได้</p>
-						<ul class="mt-1 list-disc space-y-0.5 pl-5">
-							{#each controller.preview.conflicts as conflict (`${conflict.code}:${conflict.targetKind}:${conflict.targetId}:${conflict.existingBlockId}`)}
-								<li>{conflict.message}</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-			{/if}
 
 			{#if activeView === 'wholeSchool'}
 				<section class="min-w-0 overflow-hidden rounded-xl border bg-background">

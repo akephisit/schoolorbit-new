@@ -11,15 +11,6 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
-	import {
-		AlertTriangle,
-		ArrowRight,
-		ArrowRightLeft,
-		Grip,
-		LoaderCircle,
-		RefreshCw
-	} from 'lucide-svelte';
 
 	let {
 		dayOfWeek,
@@ -55,6 +46,8 @@
 		stale: 'ข้อมูลเปลี่ยนแล้ว'
 	};
 	const stateLabel = $derived(stateLabels[state]);
+	const canActivate = $derived(!disabled && (state === 'move' || state === 'swap'));
+	const actionLabel = $derived(state === 'swap' ? 'สลับกับคาบนี้' : 'วางคาบที่นี่');
 </script>
 
 <td
@@ -84,47 +77,18 @@
 >
 	<span class="sr-only">{stateLabel}</span>
 	<div class="flex min-h-24 min-w-0 flex-col">
-		{#if state !== 'neutral'}
-			<div
-				class={[
-					'mb-1.5 flex items-center gap-1 rounded-md border px-2 py-1 text-[0.68rem] font-medium',
-					state === 'dragging' && 'border-primary/30 bg-primary/5 text-primary',
-					state === 'move' && 'border-emerald-300 bg-emerald-50 text-emerald-800',
-					state === 'swap' && 'border-sky-300 bg-sky-50 text-sky-800',
-					state === 'blocked' && 'border-destructive/40 bg-destructive/5 text-destructive',
-					state === 'saving' && 'border-amber-300 bg-amber-50 text-amber-800',
-					state === 'stale' && 'border-orange-300 bg-orange-50 text-orange-800'
-				]}
-			>
-				{#if state === 'dragging'}
-					<Grip class="size-3" />
-				{:else if state === 'move'}
-					<ArrowRight class="size-3" />
-				{:else if state === 'swap'}
-					<ArrowRightLeft class="size-3" />
-				{:else if state === 'blocked'}
-					<AlertTriangle class="size-3" />
-				{:else if state === 'saving'}
-					<LoaderCircle class="size-3 animate-spin" />
-				{:else}
-					<RefreshCw class="size-3" />
-				{/if}
-				{stateLabel}
-			</div>
-		{/if}
 		<div class="grid min-h-0 min-w-0 flex-1 auto-rows-fr gap-1.5">
 			{@render children?.()}
 		</div>
-		{#if !disabled && (state === 'move' || state === 'swap')}
-			<Button
-				type="button"
-				size="sm"
-				variant="outline"
-				class="mt-1.5 h-7 w-full text-xs"
-				onclick={onActivateIntent}
-			>
-				{state === 'swap' ? 'สลับกับคาบนี้' : 'วางคาบที่นี่'}
-			</Button>
-		{/if}
 	</div>
+	{#if canActivate}
+		<button
+			type="button"
+			class="absolute inset-0 z-20 cursor-copy border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+			aria-label={actionLabel}
+			onclick={onActivateIntent}
+		>
+			<span class="sr-only">{actionLabel}</span>
+		</button>
+	{/if}
 </td>

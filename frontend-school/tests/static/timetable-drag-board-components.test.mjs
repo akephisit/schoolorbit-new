@@ -48,8 +48,8 @@ test('lesson tray and board expose native drag with tap-to-place parity', async 
 	assert.match(board, /Escape/);
 	assert.match(page, /previewTimetableBlockPlacement/);
 	assert.match(page, /swapTimetableBlocks/);
-	assert.match(page, /controller\.preview\.conflicts/);
-	assert.match(page, /conflict\.message/);
+	assert.match(page, /placementFailureMessage\(preview\)/);
+	assert.match(page, /toast\.error\(failureMessage\)/);
 	assert.match(page, /previewCellKey === targetCellKey[\s\S]*controller\.preview/);
 });
 

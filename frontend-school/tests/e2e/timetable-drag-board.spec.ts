@@ -60,6 +60,68 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await expect(page.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toBeVisible();
 });
 
+test('keeps timetable row geometry stable while drag feedback is active', async ({ page }) => {
+	await installTimetableMock(page, { requiredPeriods: 1 });
+	await page.goto(timetableUrl());
+
+	const board = page.locator('section[aria-label^="ตารางของ "]');
+	const firstRow = board.locator('tbody tr').first();
+	const secondRow = board.locator('tbody tr').nth(1);
+	const firstPeriod = firstRow.locator('td').first();
+	const before = await Promise.all([
+		firstRow.boundingBox(),
+		secondRow.boundingBox(),
+		firstPeriod.boundingBox()
+	]);
+	expect(before.every(Boolean)).toBe(true);
+
+	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer });
+	await expect(firstPeriod).toHaveAttribute('data-state', 'move');
+
+	const after = await Promise.all([
+		firstRow.boundingBox(),
+		secondRow.boundingBox(),
+		firstPeriod.boundingBox()
+	]);
+	expect(after.every(Boolean)).toBe(true);
+	expect(after[0]!.height).toBeCloseTo(before[0]!.height, 1);
+	expect(after[1]!.y).toBeCloseTo(before[1]!.y, 1);
+	expect(after[2]!.height).toBeCloseTo(before[2]!.height, 1);
+});
+
+test('uses border-only placement feedback without visible status labels', async ({ page }) => {
+	await installTimetableMock(page, { requiredPeriods: 1 });
+	await page.goto(timetableUrl());
+
+	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
+	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer });
+	await expect(firstPeriod).toHaveAttribute('data-state', 'move');
+
+	const feedback = await firstPeriod.evaluate((cell) => {
+		const hasVisibleStatusLabel = Array.from(cell.querySelectorAll('*')).some((element) => {
+			if (element.textContent?.trim() !== 'วางได้') return false;
+			const style = getComputedStyle(element);
+			const rect = element.getBoundingClientRect();
+			return (
+				style.visibility !== 'hidden' &&
+				style.display !== 'none' &&
+				rect.width > 1 &&
+				rect.height > 1
+			);
+		});
+		return {
+			hasVisibleStatusLabel,
+			boxShadow: getComputedStyle(cell).boxShadow
+		};
+	});
+	expect(feedback.hasVisibleStatusLabel).toBe(false);
+	expect(feedback.boxShadow).not.toBe('none');
+});
+
 test('keeps a quick drop alive while its placement preview is still loading', async ({ page }) => {
 	const mock = await installTimetableMock(page, {
 		requiredPeriods: 1,
@@ -128,7 +190,6 @@ test('keeps a blocked placement unchanged and explains the teacher conflict', as
 	await destination.dispatchEvent('dragover', { dataTransfer });
 	await destination.dispatchEvent('drop', { dataTransfer });
 
-	await expect(page.getByText('ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว', { exact: true })).toBeVisible();
 	await expect(
 		page.getByText('วางคาบไม่ได้: ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว', { exact: true })
 	).toBeVisible();
