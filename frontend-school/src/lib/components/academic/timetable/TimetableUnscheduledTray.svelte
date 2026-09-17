@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { alignDragImageToPointer } from '$lib/academic/timetable/drag-image';
 	import type {
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
@@ -132,6 +133,9 @@
 		}
 		event.dataTransfer?.setData('text/plain', demand.learningGroupId);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+		if (event.currentTarget instanceof HTMLElement) {
+			alignDragImageToPointer(event, event.currentTarget);
+		}
 		onDragStartDemand?.(selection.source, selection.candidate, event);
 	}
 
@@ -139,6 +143,9 @@
 		const selection = synchronizedSelection(demand);
 		event.dataTransfer?.setData('text/plain', demand.learningOfferingId);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+		if (event.currentTarget instanceof HTMLElement) {
+			alignDragImageToPointer(event, event.currentTarget);
+		}
 		onDragStartDemand?.(selection.source, selection.candidate, event);
 	}
 </script>

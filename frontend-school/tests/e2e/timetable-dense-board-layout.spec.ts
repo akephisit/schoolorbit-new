@@ -150,6 +150,24 @@ test('stretches a shorter lesson card to fill the timetable row', async ({ page 
 	expect(cardBox!.height).toBeGreaterThanOrEqual(cellBox!.height - 14);
 });
 
+test('keeps the remove action overlaid without an internal divider row', async ({ page }) => {
+	await installDenseBoard(page);
+
+	const card = page.locator(`[data-block-id="${timetableIds.blockA}"]`);
+	const removeButton = card.getByRole('button', { name: /นำ .* ออกจากตาราง/ });
+	await expect(removeButton).toBeVisible();
+	const hasInternalDivider = await removeButton.evaluate((button, cardId) => {
+		const cardElement = document.querySelector(`[data-block-id="${cardId}"]`);
+		let parent = button.parentElement;
+		while (parent && parent !== cardElement) {
+			if (Number.parseFloat(getComputedStyle(parent).borderTopWidth) > 0) return true;
+			parent = parent.parentElement;
+		}
+		return false;
+	}, timetableIds.blockA);
+	expect(hasInternalDivider).toBe(false);
+});
+
 test('keeps every lesson field on one line and the card inside its timetable row', async ({
 	page
 }) => {

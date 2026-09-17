@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { buildTimetableBlockDisplay } from '$lib/academic/timetable/block-display';
+	import { alignDragImageToPointer } from '$lib/academic/timetable/drag-image';
 	import type { TimetableBlock } from '$lib/api/timetable';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -71,6 +72,9 @@
 		if (!canEdit) return;
 		event.dataTransfer?.setData('text/plain', block.id);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+		if (event.currentTarget instanceof HTMLElement) {
+			alignDragImageToPointer(event, event.currentTarget);
+		}
 		onDragStart?.(block, event);
 	}
 </script>
@@ -81,7 +85,7 @@
 	data-row-id={rowId}
 	draggable={canEdit}
 	class={[
-		'group flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
+		'group relative flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
 		canEdit && 'cursor-grab active:cursor-grabbing',
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45'
 	]}
@@ -89,15 +93,19 @@
 	ondragstart={dragStart}
 	ondragend={() => onDragEnd?.()}
 >
-	<div class="flex min-w-0 items-start gap-1">
+	<div class="flex min-w-0 items-start">
 		{#if canEdit}
-			<span data-timetable-drag-handle="true" aria-hidden="true">
-				<GripVertical class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+			<span
+				data-timetable-drag-handle="true"
+				class="absolute top-1.5 left-0.5 z-10"
+				aria-hidden="true"
+			>
+				<GripVertical class="size-3.5 text-muted-foreground" />
 			</span>
 		{/if}
 		<button
 			type="button"
-			class="min-w-0 flex-1 text-left"
+			class={['min-w-0 flex-1 text-left', canEdit && 'pl-3']}
 			aria-label={`ดูรายละเอียด ${accessibleLabel}`}
 			onclick={() => onSelect?.(block)}
 		>
@@ -141,7 +149,12 @@
 			{/if}
 		</button>
 	</div>
-	<div class="mt-1 min-w-0 space-y-1 text-[8px] leading-[14px] text-muted-foreground">
+	<div
+		class={[
+			'mt-1 min-w-0 space-y-1 text-[8px] leading-[14px] text-muted-foreground',
+			canEdit && 'pr-5'
+		]}
+	>
 		{#if showTeacher}
 			<p class="flex min-w-0 items-center gap-1.5">
 				<Users class="size-3 shrink-0" />
@@ -158,20 +171,18 @@
 		{/if}
 	</div>
 	{#if canEdit}
-		<div class="mt-auto flex justify-end border-t pt-0.5">
-			<Button
-				type="button"
-				size="icon"
-				variant="ghost"
-				class="size-6 text-destructive"
-				aria-label={`นำ ${title} ออกจากตาราง`}
-				onclick={(event) => {
-					event.stopPropagation();
-					onRemove?.(block);
-				}}
-			>
-				<Trash2 class="size-3" />
-			</Button>
-		</div>
+		<Button
+			type="button"
+			size="icon"
+			variant="ghost"
+			class="absolute right-0.5 bottom-0.5 z-10 size-6 text-destructive"
+			aria-label={`นำ ${title} ออกจากตาราง`}
+			onclick={(event) => {
+				event.stopPropagation();
+				onRemove?.(block);
+			}}
+		>
+			<Trash2 class="size-3" />
+		</Button>
 	{/if}
 </article>

@@ -14,6 +14,10 @@
 		type TimetablePageView
 	} from '$lib/academic/timetable/board-state';
 	import {
+		placementCellState,
+		placementFailureMessage
+	} from '$lib/academic/timetable/placement-preview';
+	import {
 		createTimetableWorkspaceController,
 		type TimetableDragSource,
 		type TimetableWorkspaceController
@@ -152,6 +156,7 @@
 	let loading = $state(false);
 	let busy = $state(false);
 	let previewing = $state(false);
+	let applyingPlacement = false;
 	let exportingTeacherLoad = $state(false);
 	let errorMessage = $state('');
 	let draftRevision = $state(0);
@@ -437,6 +442,10 @@
 		controller?.clearPlacement();
 	}
 
+	function finishPlacementDrag(): void {
+		if (!applyingPlacement) cancelPlacement();
+	}
+
 	function cellKey(dayOfWeek: string, periodId: string): string {
 		return `${dayOfWeek}:${periodId}`;
 	}
@@ -450,7 +459,7 @@
 				return 'dragging';
 		}
 		if (controller.preview && previewCellKey === cellKey(dayOfWeek, periodId)) {
-			return controller.preview.state === 'source' ? 'dragging' : controller.preview.state;
+			return placementCellState(controller.preview);
 		}
 		const local = localPlacementPreview(controller.board, {
 			view: controller.view,
@@ -516,63 +525,76 @@
 	}
 
 	async function applyPlacement(dayOfWeek: string, periodId: string): Promise<void> {
-		if (!controller?.dragSource || !academicTermId || busy) return;
+		if (!controller?.dragSource || !academicTermId || busy || applyingPlacement) return;
+		applyingPlacement = true;
 		const dragSource: TimetableDragSource = controller.dragSource;
-		const targetCellKey = cellKey(dayOfWeek, periodId);
-		const preview =
-			!previewing && previewCellKey === targetCellKey && controller.preview
-				? controller.preview
-				: await fetchPlacementPreview(dayOfWeek, periodId);
-		if (!preview || preview.state === 'blocked' || preview.state === 'source') return;
-		busy = true;
 		try {
-			if (dragSource.source.kind === 'ordinary_demand') {
-				await createOrdinaryTimetableBlock({
-					academicTermId,
-					timetableVersionId: controller.workspace.version.id,
-					learningGroupId: dragSource.source.learningGroupId,
-					dayOfWeek,
-					bellSchedulePeriodId: periodId,
-					roomId: dragSource.candidate.roomId,
-					instructorIds: dragSource.candidate.instructorIds ?? [],
-					note: null
-				});
-			} else if (dragSource.source.kind === 'synchronized_offering') {
-				await createSynchronizedTimetableBlock({
-					academicTermId,
-					timetableVersionId: controller.workspace.version.id,
-					learningOfferingId: dragSource.source.learningOfferingId,
-					intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
-					teacherIds: dragSource.candidate.teacherIds ?? [],
-					dayOfWeek,
-					bellSchedulePeriodId: periodId,
-					roomId: dragSource.candidate.roomId,
-					note: null
-				});
-			} else if (preview.state === 'swap' && preview.targetBlockId) {
-				const other = controller.board.blocksById.get(preview.targetBlockId);
-				if (!other) throw new Error('ไม่พบคาบปลายทาง กรุณาโหลดข้อมูลล่าสุด');
-				await swapTimetableBlocks({
-					timetableVersionId: controller.workspace.version.id,
-					blockAId: dragSource.source.blockId,
-					blockARowVersion: dragSource.source.rowVersion,
-					blockBId: other.id,
-					blockBRowVersion: other.rowVersion
-				});
-			} else {
-				await updateTimetableBlock(dragSource.source.blockId, {
-					timetableVersionId: controller.workspace.version.id,
-					rowVersion: dragSource.source.rowVersion,
-					dayOfWeek,
-					bellSchedulePeriodId: periodId
-				});
+			const targetCellKey = cellKey(dayOfWeek, periodId);
+			const preview =
+				!previewing && previewCellKey === targetCellKey && controller.preview
+					? controller.preview
+					: await fetchPlacementPreview(dayOfWeek, periodId);
+			if (!preview) {
+				toast.error('ตรวจตำแหน่งวางคาบไม่สำเร็จ กรุณาลองใหม่');
+				return;
 			}
-			cancelPlacement();
-			await reload('บันทึกตำแหน่งคาบแล้ว');
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
+			const failureMessage = placementFailureMessage(preview);
+			if (failureMessage) {
+				toast.error(failureMessage);
+				return;
+			}
+			busy = true;
+			try {
+				if (dragSource.source.kind === 'ordinary_demand') {
+					await createOrdinaryTimetableBlock({
+						academicTermId,
+						timetableVersionId: controller.workspace.version.id,
+						learningGroupId: dragSource.source.learningGroupId,
+						dayOfWeek,
+						bellSchedulePeriodId: periodId,
+						roomId: dragSource.candidate.roomId,
+						instructorIds: dragSource.candidate.instructorIds ?? [],
+						note: null
+					});
+				} else if (dragSource.source.kind === 'synchronized_offering') {
+					await createSynchronizedTimetableBlock({
+						academicTermId,
+						timetableVersionId: controller.workspace.version.id,
+						learningOfferingId: dragSource.source.learningOfferingId,
+						intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
+						teacherIds: dragSource.candidate.teacherIds ?? [],
+						dayOfWeek,
+						bellSchedulePeriodId: periodId,
+						roomId: dragSource.candidate.roomId,
+						note: null
+					});
+				} else if (preview.state === 'swap' && preview.targetBlockId) {
+					const other = controller.board.blocksById.get(preview.targetBlockId);
+					if (!other) throw new Error('ไม่พบคาบปลายทาง กรุณาโหลดข้อมูลล่าสุด');
+					await swapTimetableBlocks({
+						timetableVersionId: controller.workspace.version.id,
+						blockAId: dragSource.source.blockId,
+						blockARowVersion: dragSource.source.rowVersion,
+						blockBId: other.id,
+						blockBRowVersion: other.rowVersion
+					});
+				} else {
+					await updateTimetableBlock(dragSource.source.blockId, {
+						timetableVersionId: controller.workspace.version.id,
+						rowVersion: dragSource.source.rowVersion,
+						dayOfWeek,
+						bellSchedulePeriodId: periodId
+					});
+				}
+				cancelPlacement();
+				await reload('บันทึกตำแหน่งคาบแล้ว');
+			} catch (error) {
+				toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
+			} finally {
+				busy = false;
+			}
 		} finally {
-			busy = false;
+			applyingPlacement = false;
 		}
 	}
 
@@ -1241,7 +1263,7 @@
 						disabled={!canEdit}
 						onChooseDemand={chooseDemand}
 						onDragStartDemand={(source, candidate) => controller?.startPlacement(source, candidate)}
-						onCancelDrag={cancelPlacement}
+						onCancelDrag={finishPlacementDrag}
 						onOpenStructural={openStructuralDialog}
 					/>
 					<TimetableBoard
@@ -1256,7 +1278,7 @@
 						onActivateIntent={applyPlacement}
 						onSelectBlock={openEditor}
 						onDragStart={startExistingPlacement}
-						onCancelDrag={cancelPlacement}
+						onCancelDrag={finishPlacementDrag}
 						onRemoveBlock={requestRemove}
 					/>
 				</div>

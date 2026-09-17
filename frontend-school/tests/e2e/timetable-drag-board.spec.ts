@@ -60,6 +60,26 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await expect(page.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toBeVisible();
 });
 
+test('keeps a quick drop alive while its placement preview is still loading', async ({ page }) => {
+	const mock = await installTimetableMock(page, {
+		requiredPeriods: 1,
+		previewDelayMs: 150
+	});
+	await page.goto(timetableUrl());
+
+	const trayCard = page.locator('aside article[draggable="true"]').first();
+	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer });
+	await firstPeriod.dispatchEvent('dragover', { dataTransfer });
+	await firstPeriod.dispatchEvent('drop', { dataTransfer });
+	await trayCard.dispatchEvent('dragend', { dataTransfer });
+
+	await expect(page.getByText('บันทึกตำแหน่งคาบแล้ว', { exact: true })).toBeVisible();
+	expect(mock.createRequestCount()).toBe(1);
+	expect(mock.blocks()).toHaveLength(1);
+});
+
 test('swaps occupied periods by dragging one block onto the other', async ({ page }) => {
 	const blockA = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const blockB = makeTimetableBlock(timetableIds.blockB, timetableIds.period2, {
@@ -106,12 +126,112 @@ test('keeps a blocked placement unchanged and explains the teacher conflict', as
 	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
 	await source.dispatchEvent('dragstart', { dataTransfer });
 	await destination.dispatchEvent('dragover', { dataTransfer });
+	await destination.dispatchEvent('drop', { dataTransfer });
 
-	await expect(page.getByText('ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว')).toBeVisible();
+	await expect(page.getByText('ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('วางคาบไม่ได้: ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว', { exact: true })
+	).toBeVisible();
 	expect(mock.previewRequestCount()).toBe(1);
 	expect(mock.swapRequestCount()).toBe(0);
 	expect(mock.updateRequestCount()).toBe(0);
 	expect(mock.blocks()[0]?.bellSchedulePeriodId).toBe(timetableIds.period1);
+});
+
+test('anchors the native drag image at the point where the lesson card is grabbed', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		const nativeSetDragImage = DataTransfer.prototype.setDragImage;
+		DataTransfer.prototype.setDragImage = function (image, x, y) {
+			(
+				window as unknown as {
+					__timetableDragImage?: { blockId: string | null; x: number; y: number };
+				}
+			).__timetableDragImage = {
+				blockId: image instanceof HTMLElement ? (image.dataset.blockId ?? null) : null,
+				x,
+				y
+			};
+			return nativeSetDragImage.call(this, image, x, y);
+		};
+	});
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	await installTimetableMock(page, { blocks: [block] });
+	await page.goto(timetableUrl());
+
+	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
+	const box = await card.boundingBox();
+	expect(box).not.toBeNull();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await card.dispatchEvent('dragstart', {
+		dataTransfer,
+		clientX: box!.x + 24,
+		clientY: box!.y + 18
+	});
+
+	const dragImage = await page.evaluate(
+		() =>
+			(
+				window as unknown as {
+					__timetableDragImage?: { blockId: string | null; x: number; y: number };
+				}
+			).__timetableDragImage ?? null
+	);
+	expect(dragImage?.blockId).toBe(timetableIds.blockA);
+	expect(dragImage?.x).toBeGreaterThanOrEqual(23);
+	expect(dragImage?.x).toBeLessThanOrEqual(25);
+	expect(dragImage?.y).toBeGreaterThanOrEqual(17);
+	expect(dragImage?.y).toBeLessThanOrEqual(19);
+});
+
+test('anchors the synchronized tray drag image at the point where it is grabbed', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		const nativeSetDragImage = DataTransfer.prototype.setDragImage;
+		DataTransfer.prototype.setDragImage = function (image, x, y) {
+			(
+				window as unknown as {
+					__timetableTrayDragImage?: { text: string; x: number; y: number };
+				}
+			).__timetableTrayDragImage = {
+				text: image instanceof HTMLElement ? (image.textContent ?? '') : '',
+				x,
+				y
+			};
+			return nativeSetDragImage.call(this, image, x, y);
+		};
+	});
+	await installTimetableMock(page, {
+		requiredPeriods: 0,
+		includeSynchronizedDemand: true
+	});
+	await page.goto(timetableUrl());
+
+	const trayCard = page.locator('aside article').filter({ hasText: 'ชุมนุม' });
+	const box = await trayCard.boundingBox();
+	expect(box).not.toBeNull();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', {
+		dataTransfer,
+		clientX: box!.x + 32,
+		clientY: box!.y + 21
+	});
+
+	const dragImage = await page.evaluate(
+		() =>
+			(
+				window as unknown as {
+					__timetableTrayDragImage?: { text: string; x: number; y: number };
+				}
+			).__timetableTrayDragImage ?? null
+	);
+	expect(dragImage?.text).toContain('ชุมนุม');
+	expect(dragImage?.x).toBeGreaterThanOrEqual(31);
+	expect(dragImage?.x).toBeLessThanOrEqual(33);
+	expect(dragImage?.y).toBeGreaterThanOrEqual(20);
+	expect(dragImage?.y).toBeLessThanOrEqual(22);
 });
 
 test('requires an exact teacher choice when a group has several eligible teachers', async ({

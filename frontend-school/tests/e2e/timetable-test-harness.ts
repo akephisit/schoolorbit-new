@@ -39,6 +39,7 @@ export interface TimetableMockOptions {
 	blockedPeriodId?: string;
 	periodCount?: number;
 	includeSynchronizedDemand?: boolean;
+	previewDelayMs?: number;
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -444,6 +445,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/placement-preview') {
 				previewRequests += 1;
+				if (options.previewDelayMs) {
+					await new Promise((resolve) => setTimeout(resolve, options.previewDelayMs));
+				}
 				const body = route.request().postDataJSON();
 				const sourceBlockId = body.source.kind === 'existing_block' ? body.source.blockId : null;
 				const target = blocks.find(
@@ -475,14 +479,14 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					return;
 				}
 				await fulfill(route, {
-					state: target ? 'swap' : 'move',
+					state: sourceBlockId ? (target ? 'swap' : 'move') : 'source',
 					sourceBlockId,
 					targetBlockId: target?.id ?? null,
 					targetDayOfWeek: body.targetDayOfWeek,
 					targetBellSchedulePeriodId: body.targetBellSchedulePeriodId,
 					normalizedCandidate: body.candidate,
 					conflicts: [],
-					mutation: body.source.kind === 'ordinary_demand' ? 'create' : target ? 'swap' : 'move'
+					mutation: sourceBlockId ? (target ? 'swap' : 'move') : 'create'
 				});
 				return;
 			}
