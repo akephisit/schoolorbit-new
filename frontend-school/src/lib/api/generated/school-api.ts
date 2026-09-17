@@ -12927,6 +12927,10 @@ export interface components {
 			name: string;
 			preferredRoomIds: string[];
 		};
+		CreateLearningOfferingQuery: {
+			/** Format: uuid */
+			timetableVersionId?: string | null;
+		};
 		CreateLearningOfferingRequest:
 			| (components['schemas']['CreateCourseOfferingRequest'] & {
 					/** @enum {string} */
@@ -27956,7 +27960,9 @@ export interface operations {
 	};
 	createLearningOffering: {
 		parameters: {
-			query?: never;
+			query?: {
+				timetableVersionId?: string;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;

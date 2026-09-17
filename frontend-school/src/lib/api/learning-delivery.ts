@@ -78,6 +78,9 @@ function selectedTerm(academicTermId: string): string {
 type ListLearningOfferingsQuery = NonNullable<
 	operations['listLearningOfferings']['parameters']['query']
 >;
+type CreateLearningOfferingQuery = NonNullable<
+	operations['createLearningOffering']['parameters']['query']
+>;
 type ListLearningGroupsForTermQuery = NonNullable<
 	operations['listLearningGroupsForTerm']['parameters']['query']
 >;
@@ -184,11 +187,18 @@ export const getLearningOffering = (id: string, options: ApiRequestOptions = {})
 		apiClient.get<LearningOffering>(`/api/academic/offerings/${id}`, options),
 		'ไม่สามารถโหลดรายการเปิดสอนได้'
 	);
-export const createLearningOffering = (body: CreateLearningOfferingRequest) =>
-	deliveryData(
-		apiClient.post<LearningOffering>('/api/academic/offerings', body),
+export const createLearningOffering = (
+	body: CreateLearningOfferingRequest,
+	timetableVersionId?: string | null
+) => {
+	const query = {
+		...(timetableVersionId ? { timetableVersionId } : {})
+	} satisfies CreateLearningOfferingQuery;
+	return deliveryData(
+		apiClient.post<LearningOffering>('/api/academic/offerings', body, { query }),
 		'สร้างรายการเปิดสอนไม่สำเร็จ'
 	);
+};
 export const updateLearningOffering = (id: string, body: UpdateLearningOfferingRequest) =>
 	deliveryData(
 		apiClient.patch<LearningOffering>(`/api/academic/offerings/${id}`, body),

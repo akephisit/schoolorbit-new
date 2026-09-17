@@ -4658,6 +4658,55 @@ async fn course_offering_persists_exact_assessment_total() {
 }
 
 #[tokio::test]
+async fn manual_offering_creation_adds_the_target_to_an_existing_draft() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_manual_draft_target").await;
+    let context = planning_runtime_context(&pool).await;
+    let (term_start, bell_schedule_id): (NaiveDate, Uuid) =
+        sqlx::query_as("SELECT start_date, bell_schedule_id FROM academic_terms WHERE id = $1")
+            .bind(context.term_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let draft_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_versions (
+               id, academic_term_id, academic_year_id, effective_from, status,
+               bell_schedule_id, created_by
+           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6)"#,
+    )
+    .bind(draft_id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .bind(term_start.checked_add_signed(Duration::days(7)).unwrap())
+    .bind(bell_schedule_id)
+    .bind(context.teacher_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let offering = offerings::create_for_timetable(
+        &pool,
+        context.teacher_id,
+        Some(draft_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let weekly_period_target: Option<i32> = sqlx::query_scalar(
+        r#"SELECT weekly_period_target
+           FROM academic_timetable_version_targets
+           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
+    )
+    .bind(draft_id)
+    .bind(offering.id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(weekly_period_target, Some(3));
+}
+
+#[tokio::test]
 async fn course_offering_snapshot_keeps_the_catalog_standard_immutable() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_weekly_period_target").await;
     let context = planning_runtime_context(&pool).await;
@@ -6280,6 +6329,11 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     )
     .await
     .expect("homeroom workspace should load");
+    assert_eq!(before.timetable_version_id, Some(draft_version_id));
+    assert_eq!(
+        before.timetable_version_status,
+        Some(school_academic_core::models::TimetableVersionStatus::Draft)
+    );
     let room = before
         .homerooms
         .iter()

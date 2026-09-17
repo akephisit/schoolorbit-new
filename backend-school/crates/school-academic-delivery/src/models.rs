@@ -786,6 +786,13 @@ impl CreateLearningOfferingRequest {
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateLearningOfferingQuery {
+    pub timetable_version_id: Option<Uuid>,
+}
+
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateLearningOfferingRequest {

@@ -184,6 +184,21 @@ pub async fn homeroom_delivery_workspace_for_version(
                 ));
             }
             selected
+        } else if let Some(draft) = sqlx::query_as(
+            r#"SELECT id, status, effective_from
+               FROM academic_timetable_versions
+               WHERE academic_term_id = $1
+                 AND academic_year_id = $2
+                 AND status = 'draft'
+               ORDER BY effective_from DESC, created_at DESC, id
+               LIMIT 1"#,
+        )
+        .bind(academic_term_id)
+        .bind(academic_year_id)
+        .fetch_optional(pool)
+        .await?
+        {
+            Some(draft)
         } else {
             match term_status.as_str() {
                 "planning" | "ready" => {

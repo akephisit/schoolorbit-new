@@ -1319,6 +1319,7 @@ use utoipa::OpenApi;
         CreateCourseOfferingRequest,
         CreateActivityOfferingRequest,
         CreateLearningOfferingRequest,
+        CreateLearningOfferingQuery,
         UpdateLearningOfferingRequest,
         PublishLearningOfferingRequest,
         LearningOfferingQuery,

@@ -353,6 +353,7 @@ pub async fn get_delivery_management_options(
     path = "/api/academic/offerings",
     operation_id = "createLearningOffering",
     tag = "academic",
+    params(CreateLearningOfferingQuery),
     request_body = CreateLearningOfferingRequest,
     responses(
         (status = 201, description = "Learning offering created", body = ApiResponse<LearningOffering>),
@@ -365,6 +366,7 @@ pub async fn get_delivery_management_options(
 pub async fn create_offering(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<CreateLearningOfferingQuery>,
     Json(request): Json<CreateLearningOfferingRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
@@ -381,7 +383,26 @@ pub async fn create_offering(
             "ไม่มีสิทธิ์เปิดสอนรายการจากทะเบียนนี้".to_string(),
         ));
     }
-    let offering = offerings::create(&context.tenant.pool, context.actor.user_id, request).await?;
+    if let Some(timetable_version_id) = query.timetable_version_id {
+        require_timetable_resources(
+            &context.tenant.pool,
+            &context.actor,
+            TimetableAction::Manage,
+            &TimetableResourceSet {
+                timetable_version_ids: vec![timetable_version_id],
+                ..TimetableResourceSet::default()
+            },
+        )
+        .await?;
+    }
+    let offering = offerings::create(
+        &TIMETABLE_MUTATIONS,
+        &context.tenant.pool,
+        context.actor.user_id,
+        query.timetable_version_id,
+        request,
+    )
+    .await?;
     signal_delivery_changed(
         &state,
         &session,

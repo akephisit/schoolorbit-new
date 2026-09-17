@@ -125,7 +125,8 @@
 								outcomes: ['pass', 'fail']
 							},
 							targets
-						}
+						},
+				timetableVersionId
 			);
 			onCreated({
 				offering,

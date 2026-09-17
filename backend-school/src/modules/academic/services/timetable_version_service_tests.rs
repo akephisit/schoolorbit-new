@@ -362,6 +362,78 @@ async fn include_offering_target_adds_existing_deferred_activity_only_to_a_draft
 }
 
 #[tokio::test]
+async fn migration_080_reconciles_eligible_offerings_into_existing_drafts() {
+    let pool = migrated_pool("timetable_version_reconcile_existing_draft").await;
+    apply_migrations_through(&pool, 79).await.unwrap();
+    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let (term_id, year_id, term_start, source_id, bell_schedule_id): (
+        Uuid,
+        Uuid,
+        NaiveDate,
+        Uuid,
+        Uuid,
+    ) = sqlx::query_as(
+        r#"SELECT term.id, term.academic_year_id, term.start_date,
+                  version.id, version.bell_schedule_id
+           FROM academic_terms term
+           JOIN academic_timetable_versions version
+             ON version.academic_term_id = term.id
+            AND version.status = 'published'
+           WHERE term.status = 'active'
+           ORDER BY version.effective_from, version.id
+           LIMIT 1"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let draft_id = Uuid::new_v4();
+    sqlx::query(
+        r#"INSERT INTO academic_timetable_versions (
+               id, academic_term_id, academic_year_id, effective_from, status,
+               source_version_id, bell_schedule_id, created_by
+           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)"#,
+    )
+    .bind(draft_id)
+    .bind(term_id)
+    .bind(year_id)
+    .bind(term_start.checked_add_days(Days::new(7)).unwrap())
+    .bind(source_id)
+    .bind(bell_schedule_id)
+    .bind(actor_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let offering_id =
+        insert_deferred_synchronized_offering(&pool, term_id, year_id, "MIGRATION-080").await;
+
+    apply_migrations_through(&pool, 80)
+        .await
+        .expect("migration 080 must reconcile existing draft targets");
+
+    let reconciled: Option<(i32, serde_json::Value)> = sqlx::query_as(
+        r#"SELECT weekly_period_target, migration_provenance
+           FROM academic_timetable_version_targets
+           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
+    )
+    .bind(draft_id)
+    .bind(offering_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        reconciled,
+        Some((1, serde_json::json!({ "reconciledByMigration": 80 })))
+    );
+    let row_version: i64 =
+        sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id = $1")
+            .bind(draft_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(row_version, 2);
+}
+
+#[tokio::test]
 async fn cloned_timetable_version_preserves_exact_instructor_sets() {
     let pool = migrated_pool("timetable_version_clone_exact_instructors").await;
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();

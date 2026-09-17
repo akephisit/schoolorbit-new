@@ -300,13 +300,16 @@ pub async fn catalog_owners_for_curriculum_request(
 }
 
 pub async fn create(
+    timetable_mutations: &dyn TimetableMutationPort,
     pool: &PgPool,
     actor_user_id: Uuid,
+    timetable_version_id: Option<Uuid>,
     request: CreateLearningOfferingRequest,
 ) -> Result<LearningOffering, AppError> {
     let term_id = request.academic_term_id();
     let mut transaction = pool.begin().await?;
-    let term = require_writable_term(&mut transaction, term_id, false).await?;
+    let term =
+        require_writable_term(&mut transaction, term_id, timetable_version_id.is_some()).await?;
     validate_targets(&mut transaction, &term, request.targets()).await?;
     let id = Uuid::new_v4();
     match request {
@@ -316,6 +319,11 @@ pub async fn create(
         CreateLearningOfferingRequest::Activity(request) => {
             insert_activity(&mut transaction, id, &term, request).await?;
         }
+    }
+    if let Some(timetable_version_id) = timetable_version_id {
+        timetable_mutations
+            .include_offering_target(&mut transaction, timetable_version_id, id)
+            .await?;
     }
     transaction.commit().await?;
     let offering = get(pool, id).await?;

@@ -26603,6 +26603,19 @@
         ],
         "type": "object"
       },
+      "CreateLearningOfferingQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "CreateLearningOfferingRequest": {
         "oneOf": [
           {
@@ -60614,6 +60627,17 @@
       },
       "post": {
         "operationId": "createLearningOffering",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "timetableVersionId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
