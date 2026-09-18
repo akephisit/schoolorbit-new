@@ -332,3 +332,16 @@ test('canonical docs own the academic cutover boundaries and unfinished lifecycl
 	assert.match(sch002, /Thai academic documents/);
 	assert.doesNotMatch(sch002, /still owns Gradebook\/results/);
 });
+
+test('development rules own route data loading and navigation performance', async () => {
+	const rules = await readFile(path.join(repoRoot, '.rules'), 'utf8');
+
+	assert.match(rules, /### Route data loading and navigation performance/);
+	assert.match(rules, /\+page\.ts.*\+layout\.ts[\s\S]*primary route data/);
+	assert.match(rules, /load event's `fetch`/);
+	assert.match(rules, /academic context in menu destinations/);
+	assert.match(rules, /page-view endpoint/);
+	assert.match(rules, /Independent initial reads[\s\S]*concurrently/);
+	assert.match(rules, /invalidateAll\(\)/);
+	assert.match(rules, /cache[\s\S]*tenant[\s\S]*invalidation/);
+});

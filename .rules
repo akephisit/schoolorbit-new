@@ -231,6 +231,18 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Use shared app states from `src/lib/components/app-state/`: `PageSkeleton`, `PageState`, and `LoadingButton`.
 - Mutation controls use action-specific loading state. When a typed mutation returns a resource, patch only the affected local state; reserve broad reloads for intentionally broad dependencies or manual refresh.
 
+### Route data loading and navigation performance
+
+- Load primary route data from `+page.ts` or the narrowest applicable `+layout.ts`; do not defer primary reads to component `onMount`. The route loader remains the owner of primary route data. `onMount` remains valid for browser-only listeners, observers, and interaction-only features.
+- Use the SvelteKit load event's `fetch` through typed feature API modules so safe read navigation can benefit from data preloading and dependency tracking. Preloaded operations must be bounded, idempotent GET requests with no state-changing side effects.
+- Keep required academic context in menu destinations so hover preloading can issue the primary read. A navigation control that is not an ordinary link must preload and navigate to the same resolved destination.
+- Keep hover preload for safe, reasonably sized, stable reads. Use tap or disable data preload for expensive or highly volatile routes where false-positive traffic or staleness is material.
+- When datasets are always consumed together and share route parameters, authorization, and freshness, use a named typed page-view endpoint if measurement shows material round-trip overhead. Do not add generic batch endpoints or include inactive tabs, dialogs, exports, or action-only data in the page view.
+- Independent initial reads run concurrently. Sequential awaits require a real data dependency.
+- Load optional data and data guarded by create, update, approve, export, or other exact permissions only after the relevant permission passes and the user opens that workflow.
+- After a typed mutation returns a resource, patch only the affected local state. Otherwise invalidate a named route dependency. Reserve `invalidateAll()` for deliberately session-wide dependencies or an explicit manual refresh.
+- A client read cache must name its owner, tenant and route-context key, maximum age, mutation and realtime invalidation events, and logout/user-change cleanup. Do not add a generic cache for auth, permissions, or sensitive user data.
+
 ### Permissions and routing
 
 - `/api/auth/me` is the only current-user permission source. It populates the auth/permission stores.
