@@ -69,6 +69,10 @@ test('applying a curriculum proposal always requires at least one reviewed group
 
 test('delivery workspace is homeroom-first, loads offering overview lazily, and keeps management options lazy', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.svelte');
+	const loader = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.ts');
+	const readiness = await readProjectFile(
+		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
+	);
 	const table = await readProjectFile(
 		'src/lib/components/learning-delivery/OfferingOverviewTable.svelte'
 	);
@@ -81,10 +85,19 @@ test('delivery workspace is homeroom-first, loads offering overview lazily, and 
 	const preparation = await readProjectFile(
 		'src/lib/components/learning-delivery/OfferingCurriculumPreview.svelte'
 	);
-	assert.match(page, /getHomeroomDeliveryWorkspace/);
+	assert.match(loader, /import type \{\s*PageLoad/);
+	assert.match(loader, /depends\(LEARNING_DELIVERY_PAGE_DEPENDENCY\)/);
+	assert.match(loader, /getLearningDeliveryPageView/);
+	assert.match(loader, /requestFetch:\s*fetch/);
+	assert.match(loader, /captureRouteLoad/);
+	assert.doesNotMatch(page, /getHomeroomDeliveryWorkspace|listAcademicTermChangeSets/);
+	assert.doesNotMatch(page, /getAcademicContextStore|\bonMount\b/);
+	assert.match(page, /invalidate\(LEARNING_DELIVERY_PAGE_DEPENDENCY\)/);
+	assert.doesNotMatch(page, /\binvalidateAll\s*\(/);
 	assert.match(page, /viewMode = \$state<'homerooms' \| 'offerings'>\('homerooms'\)/);
 	assert.match(page, /getLearningDeliveryOverview/);
-	assert.match(page, /listAcademicTermChangeSets/);
+	assert.match(page, /viewMode === 'offerings'/);
+	assert.match(readiness, /onChanged\(updated,\s*'page'\)/);
 	assert.match(page, /{#if canManage[\s\S]*AcademicChangeSetDialog/);
 	assert.match(page, /academicTermId/);
 	assert.match(page, /kind=activity|kindFilter|initialKind/);

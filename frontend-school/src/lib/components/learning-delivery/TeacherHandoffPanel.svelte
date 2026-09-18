@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { LearningDeliveryRefreshScope } from '$lib/academic/learning-delivery-page';
 	import {
 		applyTeacherHandoff,
 		getAcademicTermChangeSet,
@@ -43,7 +44,10 @@
 		changeSet: AcademicTermChangeSet;
 		teacherChangeItem: StopTeacherItem;
 		managementOptions: DeliveryManagementOptions;
-		onChanged: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
+		onChanged: (
+			changeSet: AcademicTermChangeSet,
+			refreshScope?: LearningDeliveryRefreshScope
+		) => void | Promise<void>;
 		onApplied: (result: ApplyTeacherHandoffResponse) => void | Promise<void>;
 		onClose: () => void;
 	} = $props();

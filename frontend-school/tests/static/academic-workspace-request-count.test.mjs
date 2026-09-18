@@ -55,13 +55,21 @@ test('academic core setup uses the bounded setup workspace', async () => {
 
 test('learning delivery loads one homeroom workspace without per-room requests', async () => {
 	const page = await readPage('delivery');
+	const loader = await readFile(
+		path.join(projectRoot, academicRoutes, 'delivery', '+page.ts'),
+		'utf8'
+	);
 	const table = await readFile(
 		path.join(projectRoot, 'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'),
 		'utf8'
 	);
-	assertCancellable(page, 'learning delivery');
-	assert.match(page, /getHomeroomDeliveryWorkspace/);
-	assert.match(page, /changeViewMode/);
+	assert.match(loader, /getLearningDeliveryPageView/);
+	assert.doesNotMatch(
+		page,
+		/getHomeroomDeliveryWorkspace|listAcademicTermChangeSets|workspaceRequest/
+	);
+	assert.match(page, /overviewRequest\s*=\s*new LatestRequest/);
+	assert.match(page, /getLearningDeliveryOverview/);
 	assert.doesNotMatch(table, /getLearningOffering|getLearningGroup|listLearningGroups/);
 });
 

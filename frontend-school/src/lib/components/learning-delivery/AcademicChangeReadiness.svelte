@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { LearningDeliveryRefreshScope } from '$lib/academic/learning-delivery-page';
 	import {
 		cancelAcademicTermChangeSet,
 		getAcademicTermChangeSet,
@@ -32,7 +33,10 @@
 	}: {
 		changeSet: AcademicTermChangeSet;
 		canManage: boolean;
-		onChanged: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
+		onChanged: (
+			changeSet: AcademicTermChangeSet,
+			refreshScope?: LearningDeliveryRefreshScope
+		) => void | Promise<void>;
 	} = $props();
 
 	let preview = $state.raw<AcademicTermChangeSetPreview | null>(null);
@@ -175,7 +179,7 @@
 				acknowledgedWarningCodes: [...new Set(warningFindings.map((finding) => finding.code))],
 				idempotencyKey: crypto.randomUUID()
 			});
-			await onChanged(updated);
+			await onChanged(updated, 'page');
 			preview = null;
 		} catch (error) {
 			if (error instanceof ApiClientError && error.status === 409) {

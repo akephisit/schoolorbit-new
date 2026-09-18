@@ -1,20 +1,23 @@
 <script lang="ts">
+	import type { PageData } from './$types';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { invalidate, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { onMount } from 'svelte';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { untrack } from 'svelte';
+	import {
+		LEARNING_DELIVERY_PAGE_DEPENDENCY,
+		type LearningDeliveryRefreshScope
+	} from '$lib/academic/learning-delivery-page';
 	import {
 		buildSynchronizedActivityPreparationTarget,
 		type SynchronizedActivityPreparationTarget
 	} from '$lib/academic/synchronized-activity-delivery';
 	import {
-		getHomeroomDeliveryWorkspace,
 		getLearningDeliveryOverview,
-		listAcademicTermChangeSets,
 		type AcademicTermChangeSet,
 		type HomeroomDeliveryWorkspace as HomeroomWorkspace,
 		type LearningDeliveryOverview,
+		type LearningDeliveryPageView,
 		type LearningOfferingOverviewItem
 	} from '$lib/api/learning-delivery';
 	import { includeTimetableVersionOffering } from '$lib/api/timetable';
@@ -35,18 +38,17 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
-	const academicContext = getAcademicContextStore();
-	const academicYearId = $derived($academicContext.selected.academicYearId);
-	const academicTermId = $derived($academicContext.selected.academicTermId);
-	const workspaceRequest = new LatestRequest();
+	let { data }: { data: PageData } = $props();
+	const academicYearId = $derived(data.context?.academicYearId ?? null);
+	const academicTermId = $derived(data.context?.academicTermId ?? null);
 	const overviewRequest = new LatestRequest();
 	let workspace = $state.raw<HomeroomWorkspace | null>(null);
 	let overview = $state.raw<LearningDeliveryOverview | null>(null);
 	let changeSets = $state.raw<AcademicTermChangeSet[]>([]);
 	let selectedChangeSetId = $state('');
-	let loading = $state(false);
 	let overviewLoading = $state(false);
 	let errorMessage = $state('');
+	let pageLoadError = $derived(data.pageView && !data.pageView.ok ? data.pageView.error : '');
 	let viewMode = $state<'homerooms' | 'offerings'>('homerooms');
 	let offeringDialog = $state<{
 		openCurriculumPreparation: (
@@ -121,44 +123,16 @@
 		return `${formatDate(changeSet.effectiveFrom)} · ${status} · ${changeSet.reason}`;
 	}
 
-	async function loadWorkspace(yearId: string, termId: string, versionId?: string) {
-		const { revision, signal } = workspaceRequest.begin();
-		loading = true;
-		errorMessage = '';
-		try {
-			const timetableVersionId =
-				versionId ?? (page.url.searchParams.get('timetableVersionId')?.trim() || undefined);
-			const homeroomResult = await getHomeroomDeliveryWorkspace(yearId, termId, {
-				signal,
-				timetableVersionId
-			});
-			const loadedChangeSets = await listAcademicTermChangeSets(termId, { signal });
-			if (!workspaceRequest.isCurrent(revision)) return;
-			workspace = homeroomResult;
-			changeSets = loadedChangeSets;
-			if (!loadedChangeSets.some((changeSet) => changeSet.id === selectedChangeSetId)) {
-				const requestedChangeSetId = page.url.searchParams.get('changeSetId')?.trim() ?? '';
-				selectedChangeSetId =
-					loadedChangeSets.find((changeSet) => changeSet.id === requestedChangeSetId)?.id ??
-					loadedChangeSets.find((changeSet) => changeSet.status === 'draft')?.id ??
-					loadedChangeSets[0]?.id ??
-					'';
-			}
-			if (
-				(loadedChangeSets.some((changeSet) => changeSet.items.length > 0) ||
-					(canManage && loadedChangeSets.some((changeSet) => changeSet.status === 'draft'))) &&
-				!overview &&
-				!overviewLoading
-			)
-				void loadOverview(termId);
-		} catch (error) {
-			if (isAbortError(error)) return;
-			if (workspaceRequest.isCurrent(revision))
-				errorMessage =
-					error instanceof Error ? error.message : 'โหลดพื้นที่จัดการการเปิดสอนไม่สำเร็จ';
-		} finally {
-			if (workspaceRequest.isCurrent(revision)) loading = false;
-		}
+	function applyPageView(loaded: LearningDeliveryPageView) {
+		workspace = loaded.workspace;
+		changeSets = loaded.changeSets;
+		overview = loaded.overview;
+		const requestedId = page.url.searchParams.get('changeSetId')?.trim() ?? '';
+		selectedChangeSetId =
+			loaded.changeSets.find((item) => item.id === requestedId)?.id ??
+			loaded.changeSets.find((item) => item.status === 'draft')?.id ??
+			loaded.changeSets[0]?.id ??
+			'';
 	}
 
 	async function loadOverview(termId: string) {
@@ -174,6 +148,16 @@
 		} finally {
 			if (overviewRequest.isCurrent(revision)) overviewLoading = false;
 		}
+	}
+
+	async function ensureOverview() {
+		if (!academicTermId || overview || overviewLoading) return;
+		await loadOverview(academicTermId);
+	}
+
+	async function refreshDeliveryPage(refreshOverview = viewMode === 'offerings') {
+		await invalidate(LEARNING_DELIVERY_PAGE_DEPENDENCY);
+		if (refreshOverview && academicTermId) await loadOverview(academicTermId);
 	}
 
 	function changeViewMode(value: string) {
@@ -195,13 +179,7 @@
 				)
 			};
 		}
-		if (academicYearId && academicTermId) void loadWorkspace(academicYearId, academicTermId);
-	}
-
-	async function reloadAfterApply() {
-		if (!academicYearId || !academicTermId) return;
-		await loadWorkspace(academicYearId, academicTermId);
-		if (viewMode === 'offerings' || overview) await loadOverview(academicTermId);
+		void refreshDeliveryPage(true);
 	}
 
 	function prepareSynchronizedActivity(catalogVersionId: string) {
@@ -235,7 +213,7 @@
 			await includeTimetableVersionOffering(workspace.timetableVersionId, {
 				learningOfferingId: offeringId
 			});
-			await loadWorkspace(academicYearId, academicTermId, workspace.timetableVersionId);
+			await refreshDeliveryPage();
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'เพิ่มรายการเข้ารุ่นตารางไม่สำเร็จ';
 		}
@@ -250,7 +228,7 @@
 		url.searchParams.set('timetableVersionId', created.targetTimetableVersionId);
 		url.searchParams.set('changeSetId', created.id);
 		replaceState(resolve(`/staff/academic/delivery?${url.searchParams.toString()}`), page.state);
-		await loadWorkspace(academicYearId, academicTermId, created.targetTimetableVersionId);
+		await refreshDeliveryPage();
 		if (pending?.kind !== 'activate' || !workspace || !offeringDialog) return;
 		const target = buildSynchronizedActivityPreparationTarget(workspace, pending.catalogVersionId);
 		if (!target) return;
@@ -260,52 +238,37 @@
 	function addChangeSet(created: AcademicTermChangeSet) {
 		changeSets = [created, ...changeSets.filter((changeSet) => changeSet.id !== created.id)];
 		selectedChangeSetId = created.id;
-		if (academicTermId && !overviewLoading) void loadOverview(academicTermId);
 	}
 
-	async function updateChangeSet(updated: AcademicTermChangeSet) {
+	async function updateChangeSet(
+		updated: AcademicTermChangeSet,
+		refreshScope: LearningDeliveryRefreshScope = 'local'
+	) {
 		selectedChangeSetId = updated.id;
 		changeSets = changeSets
 			.map((changeSet) => (changeSet.id === updated.id ? updated : changeSet))
 			.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-		if (!academicYearId || !academicTermId) return;
-		await loadOverview(academicTermId);
-		await loadWorkspace(academicYearId, academicTermId);
+		if (updated.items.length > 0 && !overview && academicTermId) {
+			await loadOverview(academicTermId);
+		}
+		if (refreshScope === 'page') {
+			await invalidate(LEARNING_DELIVERY_PAGE_DEPENDENCY);
+		}
 	}
 
-	onMount(() => {
-		let loadedContext = '';
-		const unsubscribe = academicContext.subscribe((state) => {
-			const yearId = state.selected.academicYearId;
-			const termId = state.selected.academicTermId;
-			const contextKey = yearId && termId ? `${yearId}:${termId}` : '';
-			if (yearId && termId && contextKey !== loadedContext) {
-				loadedContext = contextKey;
-				workspaceRequest.abort();
-				overviewRequest.abort();
-				workspace = null;
-				overview = null;
-				changeSets = [];
-				selectedChangeSetId = '';
-				errorMessage = '';
-				void loadWorkspace(yearId, termId).then(() => {
-					if (viewMode === 'offerings') void loadOverview(termId);
-				});
-			} else if (!contextKey) {
-				loadedContext = '';
-				workspace = null;
-				overview = null;
-				changeSets = [];
-				selectedChangeSetId = '';
-				loading = false;
-				errorMessage = '';
-				workspaceRequest.abort();
-				overviewRequest.abort();
-			}
-		});
+	$effect(() => {
+		const routeResult = data.pageView;
+		overviewRequest.abort();
+		errorMessage = '';
+		if (routeResult?.ok) {
+			untrack(() => applyPageView(routeResult.data));
+		} else {
+			workspace = null;
+			overview = null;
+			changeSets = [];
+			selectedChangeSetId = '';
+		}
 		return () => {
-			unsubscribe();
-			workspaceRequest.abort();
 			overviewRequest.abort();
 		};
 	});
@@ -321,7 +284,7 @@
 				bind:this={offeringDialog}
 				{academicTermId}
 				onCreated={addCreated}
-				onApplied={reloadAfterApply}
+				onApplied={() => refreshDeliveryPage(true)}
 				defaultTimetableVersionId={workspace?.timetableVersionStatus === 'draft'
 					? workspace.timetableVersionId
 					: null}
@@ -341,15 +304,13 @@
 
 	{#if !academicYearId || !academicTermId}
 		<AcademicPrerequisiteNotice prerequisite={missingTermPrerequisite} />
-	{:else if loading && !workspace}
-		<PageSkeleton variant="table" rows={7} />
-	{:else if errorMessage && !workspace}
+	{:else if pageLoadError && !workspace}
 		<PageState
 			variant="error"
 			title="โหลดพื้นที่จัดการการเปิดสอนไม่สำเร็จ"
-			description={errorMessage}
+			description={pageLoadError}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadWorkspace(academicYearId, academicTermId)}
+			onaction={() => invalidate(LEARNING_DELIVERY_PAGE_DEPENDENCY)}
 		/>
 	{:else}
 		<div class="space-y-4">
@@ -387,6 +348,7 @@
 						changeSet={activeChangeSet}
 						offerings={items}
 						{canManage}
+						ensureOfferings={ensureOverview}
 						initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
 						onChanged={updateChangeSet}
 					/>

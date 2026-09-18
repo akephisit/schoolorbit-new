@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { LearningDeliveryRefreshScope } from '$lib/academic/learning-delivery-page';
 	import {
 		deleteAcademicTermChangeItem,
 		getAcademicTermChangeSet,
@@ -46,13 +47,18 @@
 		offerings,
 		canManage,
 		initialTeacherChangeItemId = '',
-		onChanged
+		onChanged,
+		ensureOfferings
 	}: {
 		changeSet: AcademicTermChangeSet;
 		offerings: LearningOfferingOverviewItem[];
 		canManage: boolean;
 		initialTeacherChangeItemId?: string;
-		onChanged: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
+		onChanged: (
+			changeSet: AcademicTermChangeSet,
+			refreshScope?: LearningDeliveryRefreshScope
+		) => void | Promise<void>;
+		ensureOfferings: () => Promise<void>;
 	} = $props();
 
 	let managementOptions = $state.raw<DeliveryManagementOptions | null>(null);
@@ -142,7 +148,7 @@
 		teacherFormOpen = false;
 		handoffItemId = '';
 		itemFormOpen = true;
-		await loadManagementOptions();
+		await Promise.all([loadManagementOptions(), ensureOfferings()]);
 	}
 
 	async function showTeacherForm() {
@@ -209,6 +215,7 @@
 	}
 
 	async function handoffApplied(_result: ApplyTeacherHandoffResponse) {
+		await onChanged(changeSet, 'page');
 		readinessRevision += 1;
 	}
 
