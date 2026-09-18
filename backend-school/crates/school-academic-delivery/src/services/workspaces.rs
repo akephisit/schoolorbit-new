@@ -12,15 +12,16 @@ use school_authorization::AcademicResourceListFilter;
 use school_errors::AppError;
 
 use super::super::models::{
-    ActivitySchedulingMode, CurriculumDeliveryAlignmentState, CurriculumDeliveryExtraOffering,
+    AcademicTermChangeItem, AcademicTermChangeSet, ActivitySchedulingMode,
+    CurriculumDeliveryAlignmentState, CurriculumDeliveryExtraOffering,
     DeliveryCatalogVersionOption, DeliveryManagementOptions, DeliveryPrerequisite,
     HomeroomDeliveryGroupSummary, HomeroomDeliveryItem, HomeroomDeliveryRoom,
     HomeroomDeliveryWorkspace, HomeroomGroupMode, HomeroomOfferingState, HomeroomTeacherState,
-    HomeroomTimetableState, LearningDeliveryOverview, LearningOfferingKind,
-    LearningOfferingOverviewItem, LearningOfferingQuery, LearningOfferingStatus, Room,
-    RosterStatus, StaffLookupItem, UnlinkedDeliveryItem,
+    HomeroomTimetableState, LearningDeliveryOverview, LearningDeliveryPageView,
+    LearningOfferingKind, LearningOfferingOverviewItem, LearningOfferingQuery,
+    LearningOfferingStatus, Room, RosterStatus, StaffLookupItem, UnlinkedDeliveryItem,
 };
-use super::{groups, offerings};
+use super::{change_sets, groups, offerings};
 
 const MAX_WORKSPACE_GROUPS: i64 = 2_000;
 const MAX_WORKSPACE_HOMEROOMS: usize = 500;
@@ -835,6 +836,50 @@ fn delivery_group_summary(group: &DeliveryGroupRow) -> HomeroomDeliveryGroupSumm
     }
 }
 
+fn page_view_requires_overview(change_sets: &[AcademicTermChangeSet]) -> bool {
+    change_sets
+        .iter()
+        .flat_map(|change_set| &change_set.items)
+        .any(|item| {
+            matches!(
+                item,
+                AcademicTermChangeItem::AddOffering { .. }
+                    | AcademicTermChangeItem::StopOffering { .. }
+                    | AcademicTermChangeItem::AdjustWeeklyPeriodTarget { .. }
+            )
+        })
+}
+
+pub async fn delivery_page_view(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    requested_timetable_version_id: Option<Uuid>,
+    filter: &AcademicResourceListFilter,
+) -> Result<LearningDeliveryPageView, AppError> {
+    let (workspace, change_sets) = futures::try_join!(
+        homeroom_delivery_workspace_for_version(
+            pool,
+            academic_year_id,
+            academic_term_id,
+            requested_timetable_version_id,
+            filter,
+        ),
+        change_sets::list_change_sets(pool, academic_term_id),
+    )?;
+    let overview = if page_view_requires_overview(&change_sets) {
+        Some(delivery_overview(pool, academic_term_id, filter).await?)
+    } else {
+        None
+    };
+
+    Ok(LearningDeliveryPageView {
+        workspace,
+        change_sets,
+        overview,
+    })
+}
+
 pub async fn delivery_overview(
     pool: &PgPool,
     academic_term_id: Uuid,
@@ -1257,8 +1302,55 @@ fn grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{HomeroomGroupMode, HomeroomTeacherState, HomeroomTimetableState};
+    use crate::models::{
+        AcademicTermChangeItem, AcademicTermChangeSet, AcademicTermChangeSetStatus,
+        HomeroomGroupMode, HomeroomTeacherState, HomeroomTimetableState,
+    };
+    use chrono::{NaiveDate, Utc};
     use school_academic_core::models::RequirementKind;
+
+    fn change_set_with(items: Vec<AcademicTermChangeItem>) -> AcademicTermChangeSet {
+        let now = Utc::now();
+        AcademicTermChangeSet {
+            id: Uuid::nil(),
+            academic_term_id: Uuid::nil(),
+            academic_year_id: Uuid::nil(),
+            effective_from: NaiveDate::from_ymd_opt(2026, 9, 18).unwrap(),
+            reason: "test".to_string(),
+            status: AcademicTermChangeSetStatus::Draft,
+            base_timetable_version_id: Uuid::nil(),
+            target_timetable_version_id: Uuid::nil(),
+            row_version: 1,
+            created_by: Uuid::nil(),
+            published_by: None,
+            published_at: None,
+            cancelled_by: None,
+            cancelled_at: None,
+            created_at: now,
+            updated_at: now,
+            items,
+        }
+    }
+
+    #[test]
+    fn page_view_requires_overview_only_for_visible_offering_labels() {
+        assert!(!page_view_requires_overview(&[]));
+        assert!(!page_view_requires_overview(&[change_set_with(Vec::new())]));
+
+        let now = Utc::now();
+        let offering_item = AcademicTermChangeItem::AddOffering {
+            id: Uuid::nil(),
+            learning_offering_id: Uuid::nil(),
+            weekly_period_target: 4,
+            row_version: 1,
+            created_by: Uuid::nil(),
+            created_at: now,
+            updated_at: now,
+        };
+        assert!(page_view_requires_overview(&[change_set_with(vec![
+            offering_item,
+        ])]));
+    }
 
     #[test]
     fn grade_level_labels_are_human_readable_and_stably_ordered() {

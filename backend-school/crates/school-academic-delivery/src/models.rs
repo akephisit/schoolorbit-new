@@ -984,6 +984,15 @@ pub struct LearningDeliveryOverview {
     pub offerings: Vec<LearningOfferingOverviewItem>,
 }
 
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningDeliveryPageView {
+    pub workspace: HomeroomDeliveryWorkspace,
+    pub change_sets: Vec<AcademicTermChangeSet>,
+    #[schema(required = true)]
+    pub overview: Option<LearningDeliveryOverview>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomOfferingState {

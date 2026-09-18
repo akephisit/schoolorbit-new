@@ -592,6 +592,34 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
 }
 
 #[tokio::test]
+async fn delivery_page_view_batches_primary_reads_without_forcing_overview() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_page_view").await;
+    let context = planning_runtime_context(&pool).await;
+    assert!(change_sets::list_change_sets(&pool, context.term_id)
+        .await
+        .unwrap()
+        .is_empty());
+
+    let view = workspaces::delivery_page_view(
+        &pool,
+        context.year_id,
+        context.term_id,
+        None,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("delivery page view should load");
+
+    assert_eq!(view.workspace.academic_year_id, context.year_id);
+    assert_eq!(view.workspace.academic_term_id, context.term_id);
+    assert!(view.change_sets.is_empty());
+    assert!(view.overview.is_none());
+}
+
+#[tokio::test]
 async fn lifecycle_delivery_closure_checks_the_year_and_keeps_closing_editable() {
     let pool = prepare_delivery_runtime_fixture("delivery_lifecycle_states").await;
     let context = planning_runtime_context(&pool).await;
