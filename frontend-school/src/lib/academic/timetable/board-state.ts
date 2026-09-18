@@ -81,11 +81,18 @@ export function patchTimetableWorkspaceBlocks(
 		...workspace.blocks.map((block) => changedById.get(block.id) ?? block),
 		...changedBlocks.filter((block) => !existingIds.has(block.id))
 	];
+	return setTimetableWorkspaceBlocks(workspace, blocks);
+}
+
+export function setTimetableWorkspaceBlocks(
+	workspace: TimetableBlockWorkspace,
+	blocks: readonly TimetableBlock[]
+): TimetableBlockWorkspace {
 	const activeBlocks = blocks.filter((block) => block.isActive);
 
 	return {
 		...workspace,
-		blocks,
+		blocks: [...blocks],
 		ordinaryDemands: workspace.ordinaryDemands.map((demand) => {
 			const scheduledPeriods = activeBlocks.filter((block) =>
 				block.groups.some((group) => group.learningGroupId === demand.learningGroupId)

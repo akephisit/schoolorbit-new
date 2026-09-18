@@ -99,6 +99,110 @@ test('shows the dragged lesson preview only in the cell currently under the poin
 	await expect(preview).toHaveCount(0);
 });
 
+test('places immediately and keeps other timetable cards editable while saves run in background', async ({
+	page
+}) => {
+	const movableBlock = makeTimetableBlock(timetableIds.blockB, timetableIds.period3, {
+		groupId: timetableIds.groupB,
+		offeringId: timetableIds.offeringB,
+		code: 'ว21101',
+		name: 'วิทยาศาสตร์พื้นฐาน',
+		instructorIds: [timetableIds.teacherB]
+	});
+	const mock = await installTimetableMock(page, {
+		blocks: [movableBlock],
+		requiredPeriods: 2,
+		previewDelayMs: 600,
+		createDelayMs: 500,
+		updateDelayMs: 500
+	});
+	await page.goto(timetableUrl());
+
+	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
+	const secondPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 2"]').first();
+	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
+	const createTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer: createTransfer });
+	await firstPeriod.dispatchEvent('dragover', { dataTransfer: createTransfer });
+	await firstPeriod.dispatchEvent('drop', { dataTransfer: createTransfer });
+	await trayCard.dispatchEvent('dragend', { dataTransfer: createTransfer });
+
+	await expect(firstPeriod.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toBeVisible({
+		timeout: 300
+	});
+	await expect(page.getByText('เหลือ 1/2')).toBeVisible({ timeout: 300 });
+
+	const movableCard = page.locator(`article[data-block-id="${timetableIds.blockB}"]`);
+	const moveTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await movableCard.dispatchEvent('dragstart', { dataTransfer: moveTransfer });
+	await secondPeriod.dispatchEvent('dragover', { dataTransfer: moveTransfer });
+	await secondPeriod.dispatchEvent('drop', { dataTransfer: moveTransfer });
+	await movableCard.dispatchEvent('dragend', { dataTransfer: moveTransfer });
+
+	await expect(secondPeriod.getByLabel('กำลังบันทึกคาบ วิทยาศาสตร์พื้นฐาน')).toBeVisible({
+		timeout: 300
+	});
+	await expect(page.getByLabel(/^กำลังบันทึกคาบ /)).toHaveCount(0, { timeout: 4000 });
+	expect(mock.createRequestCount()).toBe(1);
+	expect(mock.updateRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(1);
+});
+
+test('rolls an optimistic placement back when background validation rejects it', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page, {
+		requiredPeriods: 1,
+		blockedPeriodId: timetableIds.period2,
+		previewDelayMs: 3000
+	});
+	await page.goto(timetableUrl());
+
+	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
+	const destination = page.locator('td[aria-label^="วันจันทร์ คาบ 2"]').first();
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await trayCard.dispatchEvent('dragstart', { dataTransfer });
+	await destination.dispatchEvent('dragover', { dataTransfer });
+	await destination.dispatchEvent('drop', { dataTransfer });
+
+	await expect(destination.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toBeVisible({
+		timeout: 300
+	});
+	await expect(trayCard).toHaveCount(0, { timeout: 300 });
+	await expect(
+		page.getByText('วางคาบไม่ได้: ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว', { exact: true })
+	).toBeVisible();
+	await expect(destination.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toHaveCount(0);
+	await expect(page.getByText('เหลือ 1/1')).toBeVisible();
+	expect(mock.createRequestCount()).toBe(0);
+});
+
+test('removes immediately and restores the card when the background delete fails', async ({
+	page
+}) => {
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	const mock = await installTimetableMock(page, {
+		blocks: [block],
+		deleteDelayMs: 600,
+		failDelete: true
+	});
+	await page.goto(timetableUrl());
+
+	const cell = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
+	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
+	await card.getByRole('button', { name: /นำ .* ออกจากตาราง/ }).click();
+	await page.getByRole('button', { name: 'ยืนยันนำออก' }).click();
+
+	await expect(page.getByRole('alertdialog')).toHaveCount(0, { timeout: 300 });
+	await expect(card).toHaveCount(0, { timeout: 300 });
+	await expect(cell.getByLabel('กำลังลบคาบ')).toBeVisible({ timeout: 300 });
+	await expect(card).toBeVisible({ timeout: 3000 });
+	await expect(cell.getByLabel('กำลังลบคาบ')).toHaveCount(0);
+	await expect(page.getByText(/ข้อมูลคาบเปลี่ยนแปลงแล้ว/)).toBeVisible();
+	expect(mock.deleteRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(1);
+});
+
 test('keeps timetable row geometry stable while drag feedback is active', async ({ page }) => {
 	await installTimetableMock(page, { requiredPeriods: 1 });
 	await page.goto(timetableUrl());
@@ -174,7 +278,6 @@ test('keeps a quick drop alive while its placement preview is still loading', as
 	await trayCard.dispatchEvent('dragstart', { dataTransfer });
 	await firstPeriod.dispatchEvent('dragover', { dataTransfer });
 	await firstPeriod.dispatchEvent('drop', { dataTransfer });
-	await trayCard.dispatchEvent('dragend', { dataTransfer });
 
 	await expect(page.getByText('บันทึกตำแหน่งคาบแล้ว', { exact: true })).toBeVisible();
 	expect(mock.createRequestCount()).toBe(1);

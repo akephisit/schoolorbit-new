@@ -11,6 +11,7 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { LoaderCircle } from 'lucide-svelte';
 	import TimetablePlacementPreviewCard, {
 		type TimetablePlacementCard
 	} from './TimetablePlacementPreviewCard.svelte';
@@ -26,6 +27,7 @@
 		onHoverIntent,
 		onActivateIntent,
 		placementCard = null,
+		pendingRemoval = false,
 		children
 	}: {
 		dayOfWeek: string;
@@ -38,6 +40,7 @@
 		onHoverIntent?: () => void;
 		onActivateIntent?: () => void;
 		placementCard?: TimetablePlacementCard | null;
+		pendingRemoval?: boolean;
 		children?: Snippet;
 	} = $props();
 
@@ -98,5 +101,13 @@
 	{/if}
 	{#if placementCard}
 		<TimetablePlacementPreviewCard card={placementCard} {state} />
+	{/if}
+	{#if pendingRemoval}
+		<span
+			class="pointer-events-none absolute right-2 top-2 z-30 grid size-6 place-items-center rounded-full border bg-background/95 text-primary shadow-sm"
+			aria-label="กำลังลบคาบ"
+		>
+			<LoaderCircle class="size-3.5 animate-spin" />
+		</span>
 	{/if}
 </td>

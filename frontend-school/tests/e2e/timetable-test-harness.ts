@@ -40,6 +40,10 @@ export interface TimetableMockOptions {
 	periodCount?: number;
 	includeSynchronizedDemand?: boolean;
 	previewDelayMs?: number;
+	createDelayMs?: number;
+	updateDelayMs?: number;
+	deleteDelayMs?: number;
+	failDelete?: boolean;
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -269,6 +273,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let synchronizedCreateRequests = 0;
 	let updateRequests = 0;
 	let swapRequests = 0;
+	let deleteRequests = 0;
 	let lastSynchronizedCreateBody: Record<string, unknown> | null = null;
 	let lastUpdateBody: Record<string, unknown> | null = null;
 
@@ -492,6 +497,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/ordinary' && method === 'POST') {
 				createRequests += 1;
+				if (options.createDelayMs) {
+					await new Promise((resolve) => setTimeout(resolve, options.createDelayMs));
+				}
 				const body = route.request().postDataJSON();
 				const created = {
 					...makeTimetableBlock(timetableIds.createdBlock, body.bellSchedulePeriodId, {
@@ -549,6 +557,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (/^\/api\/academic\/timetable-blocks\/[^/]+$/.test(url.pathname) && method === 'PUT') {
 				updateRequests += 1;
+				if (options.updateDelayMs) {
+					await new Promise((resolve) => setTimeout(resolve, options.updateDelayMs));
+				}
 				const id = url.pathname.split('/').at(-1);
 				const body = route.request().postDataJSON();
 				lastUpdateBody = body;
@@ -574,6 +585,14 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				return;
 			}
 			if (/^\/api\/academic\/timetable-blocks\/[^/]+$/.test(url.pathname) && method === 'DELETE') {
+				deleteRequests += 1;
+				if (options.deleteDelayMs) {
+					await new Promise((resolve) => setTimeout(resolve, options.deleteDelayMs));
+				}
+				if (options.failDelete) {
+					await fulfill(route, 'ข้อมูลคาบเปลี่ยนแปลงแล้ว', 409);
+					return;
+				}
 				const id = url.pathname.split('/').at(-1);
 				const existing = blocks.find((block) => block.id === id);
 				if (!existing) throw new Error('Mock delete block not found');
@@ -615,6 +634,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		synchronizedCreateRequestCount: () => synchronizedCreateRequests,
 		updateRequestCount: () => updateRequests,
 		swapRequestCount: () => swapRequests,
+		deleteRequestCount: () => deleteRequests,
 		lastSynchronizedCreateBody: () => lastSynchronizedCreateBody,
 		lastUpdateBody: () => lastUpdateBody,
 		blocks: () => blocks

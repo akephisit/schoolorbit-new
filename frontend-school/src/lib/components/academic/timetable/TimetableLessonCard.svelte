@@ -4,7 +4,7 @@
 	import type { TimetableBlock } from '$lib/api/timetable';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { DoorOpen, GripVertical, Trash2, Users } from 'lucide-svelte';
+	import { DoorOpen, GripVertical, LoaderCircle, Trash2, Users } from 'lucide-svelte';
 
 	let {
 		block,
@@ -13,6 +13,7 @@
 		showTeacher = true,
 		selected = false,
 		canEdit = false,
+		pending = false,
 		onSelect,
 		onDragStart,
 		onDragEnd,
@@ -24,6 +25,7 @@
 		showTeacher?: boolean;
 		selected?: boolean;
 		canEdit?: boolean;
+		pending?: boolean;
 		onSelect?: (block: TimetableBlock) => void;
 		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
 		onDragEnd?: () => void;
@@ -83,6 +85,7 @@
 	data-timetable-lesson-card
 	data-block-id={block.id}
 	data-row-id={rowId}
+	data-pending={pending ? 'true' : undefined}
 	draggable={canEdit}
 	class={[
 		'group relative flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
@@ -90,6 +93,7 @@
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45'
 	]}
 	aria-label={accessibleLabel}
+	aria-busy={pending}
 	ondragstart={dragStart}
 	ondragend={() => onDragEnd?.()}
 >
@@ -107,6 +111,7 @@
 			type="button"
 			class={['min-w-0 flex-1 text-left', canEdit && 'pl-3']}
 			aria-label={`ดูรายละเอียด ${accessibleLabel}`}
+			disabled={pending}
 			onclick={() => onSelect?.(block)}
 		>
 			{#if showCode}
@@ -184,5 +189,13 @@
 		>
 			<Trash2 class="size-3" />
 		</Button>
+	{/if}
+	{#if pending}
+		<span
+			class="absolute right-1 top-1 z-10 grid size-5 place-items-center rounded-full bg-background/90 text-primary shadow-sm"
+			aria-label={`กำลังบันทึกคาบ ${title}`}
+		>
+			<LoaderCircle class="size-3.5 animate-spin" />
+		</span>
 	{/if}
 </article>

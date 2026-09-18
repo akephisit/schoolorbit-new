@@ -49,8 +49,12 @@ test('lesson tray and board expose native drag with tap-to-place parity', async 
 	assert.match(page, /previewTimetableBlockPlacement/);
 	assert.match(page, /swapTimetableBlocks/);
 	assert.match(page, /placementFailureMessage\(preview\)/);
-	assert.match(page, /toast\.error\(failureMessage\)/);
-	assert.match(page, /previewCellKey === targetCellKey[\s\S]*controller\.preview/);
+	assert.match(page, /if \(failureMessage\) throw new Error\(failureMessage\)/);
+	assert.match(
+		page,
+		/activePreviewRequest\?\.session === placementSession[\s\S]*reusablePreviewRequest\?\.promise/
+	);
+	assert.match(page, /beginPendingOperation\(pendingIds\)[\s\S]*persistOptimisticPlacement/);
 });
 
 test('teacher projection and structural blocks are first-class scheduling views', async () => {

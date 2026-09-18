@@ -12,8 +12,15 @@
 		blocksForTimetableCell,
 		localPlacementPreview,
 		patchTimetableWorkspaceBlocks,
+		setTimetableWorkspaceBlocks,
 		type TimetablePageView
 	} from '$lib/academic/timetable/board-state';
+	import {
+		createOptimisticTimetableBlock,
+		moveTimetableBlockOptimistically,
+		removeTimetableTargetOptimistically,
+		swapTimetableBlocksOptimistically
+	} from '$lib/academic/timetable/optimistic-block';
 	import {
 		placementCellState,
 		placementFailureMessage
@@ -93,6 +100,27 @@
 	} from 'lucide-svelte';
 
 	type RemovalMode = 'target' | 'block' | 'series';
+	type OptimisticPlacementOperation = {
+		controller: TimetableWorkspaceController;
+		dragSource: TimetableDragSource;
+		dayOfWeek: string;
+		periodId: string;
+		previewPromise: Promise<TimetableBlockPlacementPreview>;
+		pendingBlockIds: string[];
+		optimisticKind: 'create' | 'move' | 'swap';
+		temporaryBlockId?: string;
+		originalBlocks: TimetableBlock[];
+		targetBlock: TimetableBlock | null;
+	};
+	type OptimisticRemovalOperation = {
+		controller: TimetableWorkspaceController;
+		mode: RemovalMode;
+		originalBlocks: TimetableBlock[];
+		pendingBlockIds: string[];
+		pendingCellKeys: string[];
+		target: ReturnType<typeof currentRemovalTarget>;
+		versionId: string;
+	};
 	type StructuralForm = {
 		kind: TimetableStructuralKind;
 		title: string;
@@ -149,7 +177,6 @@
 	const academicTermId = $derived($academicContext.selected.academicTermId);
 	const academicYearId = $derived($academicContext.selected.academicYearId);
 	const request = new LatestRequest();
-	const placementRequest = new LatestRequest();
 
 	let versions = $state<TimetableVersion[]>([]);
 	let controller = $state.raw<TimetableWorkspaceController | null>(null);
@@ -157,7 +184,19 @@
 	let loading = $state(false);
 	let busy = $state(false);
 	let previewing = $state(false);
-	let applyingPlacement = false;
+	let pendingBlockIds = $state.raw<Set<string>>(new Set());
+	let pendingRemovalCellKeys = $state.raw<Set<string>>(new Set());
+	let pendingOperationCount = $state(0);
+	let reconcileAfterPending = false;
+	let optimisticSequence = 0;
+	let placementSession = 0;
+	let previewRevision = 0;
+	let activePreviewRequest: {
+		session: number;
+		cellKey: string;
+		promise: Promise<TimetableBlockPlacementPreview>;
+		abortController: AbortController;
+	} | null = null;
 	let exportingTeacherLoad = $state(false);
 	let errorMessage = $state('');
 	let draftRevision = $state(0);
@@ -379,6 +418,11 @@
 
 	async function reload(message?: string): Promise<void> {
 		if (!controller || !academicTermId || !academicYearId) return;
+		if (pendingOperationCount > 0) {
+			reconcileAfterPending = true;
+			if (message) toast.success(message);
+			return;
+		}
 		controller.setRefreshing(true);
 		try {
 			const workspace = await getTimetableBlockWorkspace({
@@ -386,6 +430,10 @@
 				academicTermId,
 				timetableVersionId: controller.workspace.version.id
 			});
+			if (pendingOperationCount > 0) {
+				reconcileAfterPending = true;
+				return;
+			}
 			controller.setWorkspace(workspace);
 			draftRevision += 1;
 			if (message) toast.success(message);
@@ -394,6 +442,40 @@
 		} finally {
 			controller?.setRefreshing(false);
 		}
+	}
+
+	function beginPendingOperation(
+		blockIds: readonly string[],
+		cellKeys: readonly string[] = []
+	): void {
+		pendingOperationCount += 1;
+		pendingBlockIds = new Set([...pendingBlockIds, ...blockIds]);
+		pendingRemovalCellKeys = new Set([...pendingRemovalCellKeys, ...cellKeys]);
+	}
+
+	function finishPendingOperation(
+		blockIds: readonly string[],
+		cellKeys: readonly string[] = []
+	): void {
+		pendingBlockIds = new Set(
+			[...pendingBlockIds].filter((blockId) => !blockIds.includes(blockId))
+		);
+		pendingRemovalCellKeys = new Set(
+			[...pendingRemovalCellKeys].filter((key) => !cellKeys.includes(key))
+		);
+		pendingOperationCount = Math.max(0, pendingOperationCount - 1);
+		if (pendingOperationCount === 0 && reconcileAfterPending) {
+			reconcileAfterPending = false;
+			void reload();
+		}
+	}
+
+	function requestReconcile(): void {
+		if (pendingOperationCount > 0) {
+			reconcileAfterPending = true;
+			return;
+		}
+		void reload();
 	}
 
 	function changeView(view: TimetablePageView): void {
@@ -423,7 +505,8 @@
 	}
 
 	function startExistingPlacement(block: TimetableBlock): void {
-		controller?.startPlacement(
+		if (pendingBlockIds.has(block.id)) return;
+		startPlacement(
 			{ kind: 'existing_block', blockId: block.id, rowVersion: block.rowVersion },
 			candidateForBlock(block)
 		);
@@ -433,18 +516,34 @@
 		source: TimetableBlockPlacementSource,
 		candidate: TimetableBlockPlacementCandidate
 	): void {
+		startPlacement(source, candidate);
+	}
+
+	function startPlacement(
+		source: TimetableBlockPlacementSource,
+		candidate: TimetableBlockPlacementCandidate
+	): void {
+		activePreviewRequest?.abortController.abort();
+		placementSession += 1;
+		previewRevision += 1;
+		activePreviewRequest = null;
+		previewing = false;
+		previewCellKey = '';
 		controller?.startPlacement(source, candidate);
 	}
 
 	function cancelPlacement(): void {
-		placementRequest.abort();
+		activePreviewRequest?.abortController.abort();
+		placementSession += 1;
+		previewRevision += 1;
+		activePreviewRequest = null;
 		previewing = false;
 		previewCellKey = '';
 		controller?.clearPlacement();
 	}
 
 	function finishPlacementDrag(): void {
-		if (!applyingPlacement) cancelPlacement();
+		cancelPlacement();
 	}
 
 	function cellKey(dayOfWeek: string, periodId: string): string {
@@ -452,6 +551,18 @@
 	}
 
 	function cellState(dayOfWeek: string, periodId: string): TimetableCellState {
+		if (pendingRemovalCellKeys.has(cellKey(dayOfWeek, periodId))) return 'saving';
+		if (
+			controller?.selectedOwnerId &&
+			blocksForTimetableCell(controller.board, {
+				view: controller.view,
+				rowId: controller.selectedOwnerId,
+				dayOfWeek,
+				bellSchedulePeriodId: periodId
+			}).some((block) => pendingBlockIds.has(block.id))
+		) {
+			return 'saving';
+		}
 		if (!controller?.dragSource || !controller.selectedOwnerId) return 'neutral';
 		const source = controller.dragSource.source;
 		if (source.kind === 'existing_block') {
@@ -470,6 +581,14 @@
 			...controller.dragSource
 		});
 		return local.state === 'source' ? 'dragging' : local.state;
+	}
+
+	function isBlockPending(blockId: string): boolean {
+		return pendingBlockIds.has(blockId);
+	}
+
+	function isCellPendingRemoval(dayOfWeek: string, periodId: string): boolean {
+		return pendingRemovalCellKeys.has(cellKey(dayOfWeek, periodId));
 	}
 
 	function placementPreview(dayOfWeek: string, periodId: string): TimetablePlacementCard | null {
@@ -515,126 +634,280 @@
 		);
 	}
 
+	function requestPlacementPreview(
+		dayOfWeek: string,
+		periodId: string,
+		dragSource: TimetableDragSource,
+		target: TimetableBlock | null,
+		workspace: TimetableBlockWorkspace,
+		signal?: AbortSignal
+	): Promise<TimetableBlockPlacementPreview> {
+		if (!academicTermId) return Promise.reject(new Error('ไม่พบภาคเรียนที่กำลังจัดตาราง'));
+		return previewTimetableBlockPlacement(
+			{
+				academicTermId,
+				timetableVersionId: workspace.version.id,
+				targetDayOfWeek: dayOfWeek,
+				targetBellSchedulePeriodId: periodId,
+				expectedTargetBlockId: target?.id ?? null,
+				expectedTargetRowVersion: target?.rowVersion ?? null,
+				...dragSource
+			},
+			{ signal }
+		);
+	}
+
 	async function fetchPlacementPreview(
 		dayOfWeek: string,
 		periodId: string
 	): Promise<TimetableBlockPlacementPreview | null> {
 		if (!controller?.dragSource || !academicTermId) return null;
+		const currentController = controller;
+		const dragSource: TimetableDragSource = controller.dragSource;
 		const target = targetBlock(dayOfWeek, periodId);
 		const requestedCellKey = cellKey(dayOfWeek, periodId);
-		const { revision, signal } = placementRequest.begin();
+		const requestedSession = placementSession;
+		const revision = ++previewRevision;
+		activePreviewRequest?.abortController.abort();
+		const abortController = new AbortController();
+		const promise = requestPlacementPreview(
+			dayOfWeek,
+			periodId,
+			dragSource,
+			target,
+			currentController.workspace,
+			abortController.signal
+		);
+		activePreviewRequest = {
+			session: requestedSession,
+			cellKey: requestedCellKey,
+			promise,
+			abortController
+		};
 		previewCellKey = requestedCellKey;
 		controller.setPreview(null);
 		previewing = true;
 		try {
-			const preview = await previewTimetableBlockPlacement(
-				{
-					academicTermId,
-					timetableVersionId: controller.workspace.version.id,
-					targetDayOfWeek: dayOfWeek,
-					targetBellSchedulePeriodId: periodId,
-					expectedTargetBlockId: target?.id ?? null,
-					expectedTargetRowVersion: target?.rowVersion ?? null,
-					...controller.dragSource
-				},
-				{ signal }
-			);
-			if (!placementRequest.isCurrent(revision) || previewCellKey !== requestedCellKey) return null;
-			controller.setPreview(preview);
+			const preview = await promise;
+			if (
+				placementSession !== requestedSession ||
+				previewRevision !== revision ||
+				previewCellKey !== requestedCellKey ||
+				controller !== currentController
+			)
+				return null;
+			currentController.setPreview(preview);
 			return preview;
 		} catch (error) {
-			if (!isAbortError(error) && !(error instanceof ApiClientError && error.status === 409)) {
+			if (
+				placementSession === requestedSession &&
+				previewRevision === revision &&
+				!isAbortError(error) &&
+				!(error instanceof ApiClientError && error.status === 409)
+			) {
 				toast.error(error instanceof Error ? error.message : 'ตรวจตำแหน่งวางคาบไม่สำเร็จ');
 			}
 			return null;
 		} finally {
-			if (placementRequest.isCurrent(revision)) previewing = false;
+			if (placementSession === requestedSession && previewRevision === revision) previewing = false;
 		}
 	}
 
-	async function applyPlacement(dayOfWeek: string, periodId: string): Promise<void> {
-		if (!controller?.dragSource || !academicTermId || busy || applyingPlacement) return;
-		applyingPlacement = true;
+	function applyPlacement(dayOfWeek: string, periodId: string): void {
+		if (!controller?.dragSource || !academicTermId || busy) return;
+		const operationController = controller;
 		const dragSource: TimetableDragSource = controller.dragSource;
+		const target = targetBlock(dayOfWeek, periodId);
+		if (
+			pendingRemovalCellKeys.has(cellKey(dayOfWeek, periodId)) ||
+			(target && pendingBlockIds.has(target.id)) ||
+			(dragSource.source.kind === 'existing_block' &&
+				pendingBlockIds.has(dragSource.source.blockId))
+		) {
+			cancelPlacement();
+			toast.error('รายการนี้กำลังบันทึก กรุณาเลือกคาบอื่นก่อน');
+			return;
+		}
+		const requestedCellKey = cellKey(dayOfWeek, periodId);
+		const reusablePreviewRequest =
+			activePreviewRequest?.session === placementSession &&
+			activePreviewRequest.cellKey === requestedCellKey
+				? activePreviewRequest
+				: null;
+		if (reusablePreviewRequest) activePreviewRequest = null;
+		const previewPromise =
+			reusablePreviewRequest?.promise ??
+			requestPlacementPreview(
+				dayOfWeek,
+				periodId,
+				dragSource,
+				target,
+				operationController.workspace
+			);
+		const originalBlocks: TimetableBlock[] = [];
+		let optimisticKind: OptimisticPlacementOperation['optimisticKind'];
+		let temporaryBlockId: string | undefined;
+		let changedBlocks: TimetableBlock[];
+
 		try {
-			const targetCellKey = cellKey(dayOfWeek, periodId);
-			const preview =
-				!previewing && previewCellKey === targetCellKey && controller.preview
-					? controller.preview
-					: await fetchPlacementPreview(dayOfWeek, periodId);
-			if (!preview) {
-				cancelPlacement();
-				toast.error('ตรวจตำแหน่งวางคาบไม่สำเร็จ กรุณาลองใหม่');
-				return;
-			}
-			const failureMessage = placementFailureMessage(preview);
-			if (failureMessage) {
-				cancelPlacement();
-				toast.error(failureMessage);
-				return;
-			}
-			busy = true;
-			try {
-				let changedBlocks: TimetableBlock[];
-				if (dragSource.source.kind === 'ordinary_demand') {
-					changedBlocks = [
-						await createOrdinaryTimetableBlock({
-							academicTermId,
-							timetableVersionId: controller.workspace.version.id,
-							learningGroupId: dragSource.source.learningGroupId,
-							dayOfWeek,
-							bellSchedulePeriodId: periodId,
-							roomId: dragSource.candidate.roomId,
-							instructorIds: dragSource.candidate.instructorIds ?? [],
-							note: null
-						})
-					];
-				} else if (dragSource.source.kind === 'synchronized_offering') {
-					changedBlocks = [
-						await createSynchronizedTimetableBlock({
-							academicTermId,
-							timetableVersionId: controller.workspace.version.id,
-							learningOfferingId: dragSource.source.learningOfferingId,
-							intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
-							teacherIds: dragSource.candidate.teacherIds ?? [],
-							dayOfWeek,
-							bellSchedulePeriodId: periodId,
-							roomId: dragSource.candidate.roomId,
-							note: null
-						})
-					];
-				} else if (preview.state === 'swap' && preview.targetBlockId) {
-					const other = controller.board.blocksById.get(preview.targetBlockId);
-					if (!other) throw new Error('ไม่พบคาบปลายทาง กรุณาโหลดข้อมูลล่าสุด');
-					const swapped = await swapTimetableBlocks({
-						timetableVersionId: controller.workspace.version.id,
-						blockAId: dragSource.source.blockId,
-						blockARowVersion: dragSource.source.rowVersion,
-						blockBId: other.id,
-						blockBRowVersion: other.rowVersion
-					});
-					changedBlocks = [swapped.blockA, swapped.blockB];
+			if (dragSource.source.kind !== 'existing_block') {
+				optimisticKind = 'create';
+				temporaryBlockId = `optimistic:${Date.now()}:${++optimisticSequence}`;
+				changedBlocks = [
+					createOptimisticTimetableBlock(
+						operationController.workspace,
+						dragSource,
+						dayOfWeek,
+						periodId,
+						temporaryBlockId
+					)
+				];
+			} else {
+				const sourceBlock = operationController.board.blocksById.get(dragSource.source.blockId);
+				if (!sourceBlock) throw new Error('ไม่พบคาบต้นทาง กรุณาโหลดข้อมูลล่าสุด');
+				originalBlocks.push(sourceBlock);
+				if (target) {
+					optimisticKind = 'swap';
+					originalBlocks.push(target);
+					changedBlocks = swapTimetableBlocksOptimistically(
+						operationController.workspace,
+						sourceBlock,
+						target
+					);
 				} else {
+					optimisticKind = 'move';
 					changedBlocks = [
-						await updateTimetableBlock(dragSource.source.blockId, {
-							timetableVersionId: controller.workspace.version.id,
-							rowVersion: dragSource.source.rowVersion,
+						moveTimetableBlockOptimistically(
+							operationController.workspace,
+							sourceBlock,
 							dayOfWeek,
-							bellSchedulePeriodId: periodId
-						})
+							periodId
+						)
 					];
 				}
-				controller.setWorkspace(patchTimetableWorkspaceBlocks(controller.workspace, changedBlocks));
-				draftRevision += 1;
-				cancelPlacement();
-				toast.success('บันทึกตำแหน่งคาบแล้ว');
-			} catch (error) {
-				toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
-			} finally {
-				busy = false;
 			}
+		} catch (error) {
+			cancelPlacement();
+			toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
+			return;
+		}
+
+		const pendingIds = changedBlocks.map((block) => block.id);
+		operationController.setWorkspace(
+			patchTimetableWorkspaceBlocks(operationController.workspace, changedBlocks)
+		);
+		beginPendingOperation(pendingIds);
+		cancelPlacement();
+		void persistOptimisticPlacement({
+			controller: operationController,
+			dragSource,
+			dayOfWeek,
+			periodId,
+			previewPromise,
+			pendingBlockIds: pendingIds,
+			optimisticKind,
+			temporaryBlockId,
+			originalBlocks,
+			targetBlock: target
+		});
+	}
+
+	async function persistOptimisticPlacement(
+		operation: OptimisticPlacementOperation
+	): Promise<void> {
+		const { dragSource } = operation;
+		try {
+			const preview = await operation.previewPromise;
+			const failureMessage = placementFailureMessage(preview);
+			if (failureMessage) throw new Error(failureMessage);
+			if (
+				(operation.optimisticKind === 'swap' &&
+					(preview.state !== 'swap' || preview.targetBlockId !== operation.targetBlock?.id)) ||
+				(operation.optimisticKind === 'move' && preview.state === 'swap')
+			) {
+				throw new Error('ข้อมูลในช่องเปลี่ยนแปลงแล้ว กรุณาลองวางใหม่');
+			}
+
+			let savedBlocks: TimetableBlock[];
+			if (dragSource.source.kind === 'ordinary_demand') {
+				savedBlocks = [
+					await createOrdinaryTimetableBlock({
+						academicTermId: operation.controller.workspace.version.academicTermId,
+						timetableVersionId: operation.controller.workspace.version.id,
+						learningGroupId: dragSource.source.learningGroupId,
+						dayOfWeek: operation.dayOfWeek,
+						bellSchedulePeriodId: operation.periodId,
+						roomId: dragSource.candidate.roomId,
+						instructorIds: dragSource.candidate.instructorIds ?? [],
+						note: null
+					})
+				];
+			} else if (dragSource.source.kind === 'synchronized_offering') {
+				savedBlocks = [
+					await createSynchronizedTimetableBlock({
+						academicTermId: operation.controller.workspace.version.academicTermId,
+						timetableVersionId: operation.controller.workspace.version.id,
+						learningOfferingId: dragSource.source.learningOfferingId,
+						intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
+						teacherIds: dragSource.candidate.teacherIds ?? [],
+						dayOfWeek: operation.dayOfWeek,
+						bellSchedulePeriodId: operation.periodId,
+						roomId: dragSource.candidate.roomId,
+						note: null
+					})
+				];
+			} else if (preview.state === 'swap' && preview.targetBlockId) {
+				const other = operation.targetBlock;
+				if (!other || other.id !== preview.targetBlockId) {
+					throw new Error('ไม่พบคาบปลายทาง กรุณาลองวางใหม่');
+				}
+				const swapped = await swapTimetableBlocks({
+					timetableVersionId: operation.controller.workspace.version.id,
+					blockAId: dragSource.source.blockId,
+					blockARowVersion: dragSource.source.rowVersion,
+					blockBId: other.id,
+					blockBRowVersion: other.rowVersion
+				});
+				savedBlocks = [swapped.blockA, swapped.blockB];
+			} else {
+				savedBlocks = [
+					await updateTimetableBlock(dragSource.source.blockId, {
+						timetableVersionId: operation.controller.workspace.version.id,
+						rowVersion: dragSource.source.rowVersion,
+						dayOfWeek: operation.dayOfWeek,
+						bellSchedulePeriodId: operation.periodId
+					})
+				];
+			}
+
+			if (controller === operation.controller) {
+				let workspace = operation.controller.workspace;
+				if (operation.temporaryBlockId) {
+					workspace = setTimetableWorkspaceBlocks(
+						workspace,
+						workspace.blocks.filter((block) => block.id !== operation.temporaryBlockId)
+					);
+				}
+				operation.controller.setWorkspace(patchTimetableWorkspaceBlocks(workspace, savedBlocks));
+				draftRevision += 1;
+			}
+			toast.success('บันทึกตำแหน่งคาบแล้ว');
+		} catch (error) {
+			if (controller === operation.controller) {
+				let workspace = operation.controller.workspace;
+				if (operation.temporaryBlockId) {
+					workspace = setTimetableWorkspaceBlocks(
+						workspace,
+						workspace.blocks.filter((block) => block.id !== operation.temporaryBlockId)
+					);
+				}
+				operation.controller.setWorkspace(
+					patchTimetableWorkspaceBlocks(workspace, operation.originalBlocks)
+				);
+			}
+			toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
 		} finally {
-			applyingPlacement = false;
+			finishPendingOperation(operation.pendingBlockIds);
 		}
 	}
 
@@ -816,37 +1089,104 @@
 		removeOpen = true;
 	}
 
-	async function confirmRemove(): Promise<void> {
-		if (!controller || !selectedBlock || busy) return;
-		busy = true;
+	function confirmRemove(): void {
+		if (!controller || !selectedBlock || busy || pendingBlockIds.has(selectedBlock.id)) return;
+		const operationController = controller;
+		const block = selectedBlock;
+		const mode = removeMode;
+		const target = mode === 'target' ? currentRemovalTarget(block) : null;
+		if (mode === 'target' && !target) {
+			toast.error('ไม่พบห้องหรือครูที่จะนำออกจากคาบ');
+			return;
+		}
+		if (mode === 'series' && !block.seriesId) {
+			toast.error('คาบนี้ไม่ได้อยู่ในชุดคาบพิเศษ');
+			return;
+		}
+
+		const originalBlocks =
+			mode === 'series'
+				? operationController.workspace.blocks.filter((item) => item.seriesId === block.seriesId)
+				: [block];
+		if (originalBlocks.some((item) => pendingBlockIds.has(item.id))) {
+			toast.error('รายการนี้กำลังบันทึก กรุณารอให้เสร็จก่อน');
+			return;
+		}
+		const pendingIds = originalBlocks.map((item) => item.id);
+		const pendingCells = [
+			...new Set(originalBlocks.map((item) => cellKey(item.dayOfWeek, item.bellSchedulePeriodId)))
+		];
+		let nextBlocks: TimetableBlock[];
+		if (mode === 'target' && target) {
+			const optimisticBlock = removeTimetableTargetOptimistically(block, target.kind, target.id);
+			nextBlocks = operationController.workspace.blocks.map((item) =>
+				item.id === block.id ? optimisticBlock : item
+			);
+		} else {
+			nextBlocks = operationController.workspace.blocks.filter(
+				(item) => !pendingIds.includes(item.id)
+			);
+		}
+
+		operationController.setWorkspace(
+			setTimetableWorkspaceBlocks(operationController.workspace, nextBlocks)
+		);
+		removeOpen = false;
+		selectedBlockId = null;
+		beginPendingOperation(pendingIds, pendingCells);
+		void persistOptimisticRemoval({
+			controller: operationController,
+			mode,
+			originalBlocks,
+			pendingBlockIds: pendingIds,
+			pendingCellKeys: pendingCells,
+			target,
+			versionId: operationController.workspace.version.id
+		});
+	}
+
+	async function persistOptimisticRemoval(operation: OptimisticRemovalOperation): Promise<void> {
+		const block = operation.originalBlocks[0];
+		if (!block) {
+			finishPendingOperation(operation.pendingBlockIds, operation.pendingCellKeys);
+			return;
+		}
 		try {
-			if (removeMode === 'target') {
-				const target = currentRemovalTarget(selectedBlock);
-				if (!target) throw new Error('ไม่พบห้องหรือครูที่จะนำออกจากคาบ');
-				await removeTimetableBlockTarget(selectedBlock.id, {
-					timetableVersionId: controller.workspace.version.id,
-					blockRowVersion: selectedBlock.rowVersion,
-					targetKind: target.kind,
-					targetId: target.id,
-					targetRowVersion: target.rowVersion
+			if (operation.mode === 'target') {
+				if (!operation.target) throw new Error('ไม่พบห้องหรือครูที่จะนำออกจากคาบ');
+				const saved = await removeTimetableBlockTarget(block.id, {
+					timetableVersionId: operation.versionId,
+					blockRowVersion: block.rowVersion,
+					targetKind: operation.target.kind,
+					targetId: operation.target.id,
+					targetRowVersion: operation.target.rowVersion
 				});
-			} else if (removeMode === 'series') {
-				if (!selectedBlock.seriesId) throw new Error('คาบนี้ไม่ได้อยู่ในชุดคาบพิเศษ');
-				await deleteTimetableBlockSeries(selectedBlock.seriesId, controller.workspace.version.id);
+				if (controller === operation.controller) {
+					const workspace = saved.isActive
+						? patchTimetableWorkspaceBlocks(operation.controller.workspace, [saved])
+						: setTimetableWorkspaceBlocks(
+								operation.controller.workspace,
+								operation.controller.workspace.blocks.filter((item) => item.id !== saved.id)
+							);
+					operation.controller.setWorkspace(workspace);
+				}
+			} else if (operation.mode === 'series') {
+				if (!block.seriesId) throw new Error('คาบนี้ไม่ได้อยู่ในชุดคาบพิเศษ');
+				await deleteTimetableBlockSeries(block.seriesId, operation.versionId);
 			} else {
-				await deleteTimetableBlock(
-					selectedBlock.id,
-					selectedBlock.rowVersion,
-					controller.workspace.version.id
+				await deleteTimetableBlock(block.id, block.rowVersion, operation.versionId);
+			}
+			draftRevision += 1;
+			toast.success('นำรายการออกจากตารางแล้ว');
+		} catch (error) {
+			if (controller === operation.controller) {
+				operation.controller.setWorkspace(
+					patchTimetableWorkspaceBlocks(operation.controller.workspace, operation.originalBlocks)
 				);
 			}
-			removeOpen = false;
-			selectedBlockId = null;
-			await reload('นำรายการออกจากตารางแล้ว');
-		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ');
 		} finally {
-			busy = false;
+			finishPendingOperation(operation.pendingBlockIds, operation.pendingCellKeys);
 		}
 	}
 
@@ -967,11 +1307,10 @@
 			synchronize();
 		});
 		const unsubscribeRefresh = refreshTrigger.subscribe((value) => {
-			if (value > 0 && controller) void reload();
+			if (value > 0 && controller) requestReconcile();
 		});
 		return () => {
 			request.abort();
-			placementRequest.abort();
 			unsubscribeContext();
 			unsubscribeAuth();
 			unsubscribeRefresh();
@@ -1058,7 +1397,7 @@
 			<TimetableWorkspaceHeader
 				version={controller.workspace.version}
 				view={activeView}
-				isSaving={busy || previewing}
+				isSaving={busy || previewing || pendingOperationCount > 0}
 				isRefreshing={controller.isRefreshing}
 				onViewChange={changeView}
 			/>
@@ -1278,7 +1617,7 @@
 						staff={controller.workspace.staff}
 						disabled={!canEdit}
 						onChooseDemand={chooseDemand}
-						onDragStartDemand={(source, candidate) => controller?.startPlacement(source, candidate)}
+						onDragStartDemand={startPlacement}
 						onCancelDrag={finishPlacementDrag}
 						onOpenStructural={openStructuralDialog}
 					/>
@@ -1290,6 +1629,8 @@
 						{canEdit}
 						{cellState}
 						{placementPreview}
+						{isBlockPending}
+						{isCellPendingRemoval}
 						onHoverIntent={previewPlacement}
 						onDropIntent={applyPlacement}
 						onActivateIntent={applyPlacement}

@@ -25,6 +25,8 @@
 		onActivateIntent,
 		onHoverIntent,
 		placementPreview,
+		isBlockPending,
+		isCellPendingRemoval,
 		onSelectBlock,
 		onDragStart,
 		onCancelDrag,
@@ -40,6 +42,8 @@
 		onActivateIntent?: (dayOfWeek: string, periodId: string) => void;
 		onHoverIntent?: (dayOfWeek: string, periodId: string) => void;
 		placementPreview?: (dayOfWeek: string, periodId: string) => TimetablePlacementCard | null;
+		isBlockPending?: (blockId: string) => boolean;
+		isCellPendingRemoval?: (dayOfWeek: string, periodId: string) => boolean;
 		onSelectBlock?: (block: TimetableBlock) => void;
 		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
 		onCancelDrag?: () => void;
@@ -122,18 +126,21 @@
 								state={currentCellState}
 								disabled={!canEdit}
 								placementCard={placementPreview?.(day.id, period.id) ?? null}
+								pendingRemoval={isCellPendingRemoval?.(day.id, period.id) ?? false}
 								onHoverIntent={() => onHoverIntent?.(day.id, period.id)}
 								onDropIntent={() => onDropIntent?.(day.id, period.id)}
 								onActivateIntent={() => onActivateIntent?.(day.id, period.id)}
 							>
 								{#each blocks as block (`${block.id}:${row.id}`)}
+									{@const pending = isBlockPending?.(block.id) ?? false}
 									<TimetableLessonCard
 										{block}
 										rowId={row.id}
 										targetLabel={buildSchedulerTargetLabel(block, view, homeroomNamesById)}
 										showTeacher={view !== 'teacher'}
 										selected={selectedBlockId === block.id}
-										{canEdit}
+										canEdit={canEdit && !pending}
+										{pending}
 										onSelect={onSelectBlock}
 										{onDragStart}
 										onDragEnd={onCancelDrag}
