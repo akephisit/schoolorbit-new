@@ -510,6 +510,7 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::transfer_placement,
         crate::modules::academic::delivery::handlers::list_offerings,
         crate::modules::academic::delivery::handlers::get_delivery_overview,
+        crate::modules::academic::delivery::handlers::get_learning_delivery_page_view,
         crate::modules::academic::delivery::handlers::get_homeroom_delivery_workspace,
         crate::modules::academic::delivery::handlers::get_delivery_management_options,
         crate::modules::academic::delivery::handlers::create_offering,
@@ -1334,6 +1335,7 @@ use utoipa::OpenApi;
         LearningOffering,
         LearningOfferingOverviewItem,
         LearningDeliveryOverview,
+        LearningDeliveryPageView,
         HomeroomOfferingState,
         HomeroomGroupMode,
         HomeroomTeacherState,
@@ -1405,6 +1407,7 @@ use utoipa::OpenApi;
         ApiResponse<Vec<LearningOffering>>,
         ApiResponse<LearningOffering>,
         ApiResponse<LearningDeliveryOverview>,
+        ApiResponse<LearningDeliveryPageView>,
         ApiResponse<TeacherHandoffPreview>,
         ApiResponse<ApplyTeacherHandoffResponse>,
         ApiResponse<HomeroomDeliveryWorkspace>,
@@ -3167,6 +3170,11 @@ mod tests {
                 "#/components/schemas/ApiResponse_LearningDeliveryOverview",
             ),
             (
+                "/api/academic/delivery/page-view",
+                "getLearningDeliveryPageView",
+                "#/components/schemas/ApiResponse_LearningDeliveryPageView",
+            ),
+            (
                 "/api/academic/delivery/management-options",
                 "getLearningDeliveryManagementOptions",
                 "#/components/schemas/ApiResponse_DeliveryManagementOptions",
@@ -3215,6 +3223,7 @@ mod tests {
             "CurriculumStructureWorkspace",
             "AcademicSetupWorkspace",
             "LearningDeliveryOverview",
+            "LearningDeliveryPageView",
             "LearningOfferingOverviewItem",
             "DeliveryCatalogVersionOption",
             "DeliveryManagementOptions",
@@ -3231,6 +3240,14 @@ mod tests {
         let document = school_api_value().expect("document should serialize");
         assert_eq!(
             query_contract(&document, "/api/academic/delivery/homerooms", "get"),
+            BTreeSet::from([
+                ("academicTermId".to_string(), true),
+                ("academicYearId".to_string(), true),
+                ("timetableVersionId".to_string(), false),
+            ])
+        );
+        assert_eq!(
+            query_contract(&document, "/api/academic/delivery/page-view", "get"),
             BTreeSet::from([
                 ("academicTermId".to_string(), true),
                 ("academicYearId".to_string(), true),

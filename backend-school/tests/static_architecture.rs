@@ -7336,6 +7336,15 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
     assert!(!handlers.contains(".execute("));
     assert!(!handlers.contains(".begin("));
 
+    let page_view = extract_braced_block(
+        &handlers,
+        "pub async fn get_learning_delivery_page_view",
+        false,
+    );
+    assert!(page_view.contains("require_learning_offering_list_access"));
+    assert!(page_view.contains("OfferingAction::Read"));
+    assert!(!page_view.contains("OfferingAction::Manage"));
+
     for (handler_name, action) in [
         ("list_offerings", "OfferingAction::Read"),
         ("create_offering", "OfferingAction::Manage"),
