@@ -1,6 +1,8 @@
 import { expect, test, type Route } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 
+import { makeTimetableBlock, timetableIds } from './timetable-test-harness';
+
 test.use({ serviceWorkers: 'block' });
 
 function fulfillJson(route: Route, data: unknown) {
@@ -152,27 +154,10 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 
 	await fulfillJson(pendingTimetableRoute, [
 		{
-			id: '40000000-0000-4000-8000-000000000001',
+			...makeTimetableBlock(timetableIds.blockA, timetableIds.period1),
 			academicTermId: '30000000-0000-4000-8000-000000000001',
 			academicYearId: '20000000-0000-4000-8000-000000000001',
-			bellScheduleId: '71000000-0000-4000-8000-000000000001',
-			bellSchedulePeriodId: '70000000-0000-4000-8000-000000000001',
-			createdAt: '2026-08-07T00:00:00Z',
-			dayOfWeek: 'SAT',
-			endTime: '09:20:00',
-			entryType: 'COURSE',
-			instructors: [],
-			isActive: true,
-			learningGroupName: 'ม.1/1',
-			note: null,
-			offeringCode: 'ค21101',
-			offeringName: 'คณิตศาสตร์',
-			periodName: 'คาบ 1',
-			roomCode: 'MATH-1',
-			rowVersion: 1,
-			startTime: '08:30:00',
-			title: null,
-			updatedAt: '2026-08-07T00:00:00Z'
+			dayOfWeek: 'SAT'
 		}
 	]);
 

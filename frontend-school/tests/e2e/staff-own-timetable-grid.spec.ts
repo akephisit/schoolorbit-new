@@ -1,72 +1,25 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
+import {
+	makeStructuralTimetableBlock,
+	makeSynchronizedTimetableBlock,
+	makeTimetableBlock,
+	timetableIds
+} from './timetable-test-harness';
+
 test.use({ serviceWorkers: 'block' });
 
 const academicYearId = '20000000-0000-4000-8000-000000000001';
 const academicTermId = '30000000-0000-4000-8000-000000000001';
-const bellScheduleId = '71000000-0000-4000-8000-000000000001';
-const periodIds = {
-	first: '70000000-0000-4000-8000-000000000001',
-	second: '70000000-0000-4000-8000-000000000002',
-	third: '70000000-0000-4000-8000-000000000003'
-};
-
-const configuredPeriods = [
-	{
-		id: periodIds.first,
-		name: 'คาบ 1',
-		startTime: '08:00:00',
-		endTime: '08:50:00'
-	},
-	{
-		id: periodIds.second,
-		name: 'คาบ 2',
-		startTime: '09:00:00',
-		endTime: '09:50:00'
-	},
-	{
-		id: periodIds.third,
-		name: 'คาบ 3',
-		startTime: '10:00:00',
-		endTime: '10:50:00'
-	}
+const configuredPeriodEntries = [
+	makeStructuralTimetableBlock(timetableIds.blockA, timetableIds.period1, 'ช่วงเตรียมการ 1', [
+		timetableIds.teacherA
+	]),
+	makeStructuralTimetableBlock(timetableIds.blockB, timetableIds.period2, 'ช่วงเตรียมการ 2', [
+		timetableIds.teacherA
+	]),
+	makeTimetableBlock(timetableIds.createdBlock, timetableIds.period3)
 ];
-
-const thirdPeriodEntry = {
-	id: '40000000-0000-4000-8000-000000000001',
-	academicTermId,
-	academicYearId,
-	bellScheduleId,
-	bellSchedulePeriodId: periodIds.third,
-	createdAt: '2026-08-07T00:00:00Z',
-	dayOfWeek: 'MON',
-	endTime: '10:50:00',
-	entryType: 'COURSE',
-	instructors: [],
-	isActive: true,
-	learningGroupName: 'ม.1/1',
-	note: null,
-	offeringCode: 'ค21101',
-	offeringName: 'คณิตศาสตร์',
-	periodName: 'คาบ 3',
-	roomCode: 'MATH-1',
-	rowVersion: 1,
-	startTime: '10:00:00',
-	title: null,
-	updatedAt: '2026-08-07T00:00:00Z'
-};
-
-const configuredPeriodEntries = configuredPeriods.map((period, index) => ({
-	...thirdPeriodEntry,
-	id: `40000000-0000-4000-8000-00000000000${index + 1}`,
-	bellSchedulePeriodId: period.id,
-	periodName: period.name,
-	startTime: period.startTime,
-	endTime: period.endTime,
-	offeringCode: index === 2 ? 'ค21101' : `พัก-${index + 1}`,
-	offeringName: index === 2 ? 'คณิตศาสตร์' : 'ช่วงเตรียมการ',
-	entryType: index === 2 ? 'COURSE' : 'BREAK'
-}));
 
 function fulfillJson(route: Route, data: unknown) {
 	return route.fulfill({
@@ -208,4 +161,70 @@ test('shows an explicit empty state when the teacher has no lessons', async ({ p
 
 	await expect(page.getByText('ยังไม่มีตารางสอน', { exact: true })).toBeVisible();
 	await expect(page.getByText('ยังไม่มีคาบสอนของคุณในภาคเรียนนี้')).toBeVisible();
+});
+
+test('shows compact multiline shared cards without codes teachers or shared labels', async ({
+	page
+}) => {
+	const structuralTitle = 'ประชุมครู\nประจำเดือน';
+	const synchronizedTitle = 'ชุมนุม\nถ่ายภาพ';
+	const structuralBlock = makeStructuralTimetableBlock(
+		timetableIds.blockA,
+		timetableIds.period1,
+		structuralTitle,
+		[timetableIds.teacherA]
+	);
+	const synchronizedBlock = {
+		...makeSynchronizedTimetableBlock(timetableIds.blockB, timetableIds.period2, [
+			timetableIds.teacherB
+		]),
+		offeringName: synchronizedTitle
+	};
+	const courseBlock = makeTimetableBlock(timetableIds.createdBlock, timetableIds.period3);
+	await mockStaffTimetableApis(page, [structuralBlock, synchronizedBlock, courseBlock]);
+
+	await page.goto('/staff/timetable');
+
+	const structuralTitleElement = page.getByText(structuralTitle, { exact: true });
+	await expect(structuralTitleElement).toBeVisible();
+	expect(
+		await structuralTitleElement.evaluate((element) => ({
+			whiteSpace: getComputedStyle(element).whiteSpace,
+			lineClamp: getComputedStyle(element).webkitLineClamp
+		}))
+	).toEqual({ whiteSpace: 'pre-line', lineClamp: '3' });
+
+	const synchronizedTitleElement = page.getByText(synchronizedTitle, { exact: true });
+	await expect(synchronizedTitleElement).toBeVisible();
+	expect(
+		await synchronizedTitleElement.evaluate((element) => ({
+			whiteSpace: getComputedStyle(element).whiteSpace,
+			lineClamp: getComputedStyle(element).webkitLineClamp
+		}))
+	).toEqual({ whiteSpace: 'pre-line', lineClamp: '3' });
+
+	const structuralCard = structuralTitleElement.locator('..');
+	const structuralCell = structuralCard.locator('..');
+	const [cardBox, cellBox] = await Promise.all([
+		structuralCard.boundingBox(),
+		structuralCell.boundingBox()
+	]);
+	expect(cardBox).not.toBeNull();
+	expect(cellBox).not.toBeNull();
+	const edgeGaps = [
+		cardBox!.x - cellBox!.x,
+		cellBox!.x + cellBox!.width - cardBox!.x - cardBox!.width,
+		cardBox!.y - cellBox!.y,
+		cellBox!.y + cellBox!.height - cardBox!.y - cardBox!.height
+	];
+	expect(Math.max(...edgeGaps) - Math.min(...edgeGaps)).toBeLessThanOrEqual(2);
+
+	await expect(page.getByText('CLUB', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('กิจกรรมรวม', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('กิจกรรมพร้อมกัน', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('ครูคณิตศาสตร์ A', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('ครูคณิตศาสตร์ B', { exact: true })).toHaveCount(0);
+
+	await expect(page.getByText('ค21101', { exact: true })).toBeVisible();
+	await expect(page.getByText('คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
 });

@@ -128,8 +128,13 @@
 		);
 	}
 
+	function blockCode(block: TimetableBlock): string | null {
+		return block.blockKind === 'course' ? block.offeringCode : null;
+	}
+
 	function blockTitle(block: TimetableBlock): string {
-		return block.offeringCode ?? block.title ?? 'กิจกรรม';
+		if (block.blockKind === 'structural') return block.title ?? 'กิจกรรม';
+		return block.offeringName ?? block.title ?? 'กิจกรรม';
 	}
 
 	function blockColor(blockKind: TimetableBlock['blockKind']): string {
@@ -202,18 +207,22 @@
 								<td class="h-24 border p-1 align-top">
 									{#each cellBlocks as block (block.id)}
 										{@const display = buildTimetableBlockDisplay(block, 'personal')}
+										{@const code = blockCode(block)}
 										<div
-											class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
+											class={`flex h-full min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
 										>
-											<p class="truncate font-semibold">{blockTitle(block)}</p>
-											{#if block.offeringName}<p class="mt-1 line-clamp-2 opacity-80">
-													{block.offeringName}
-												</p>{/if}
-											{#if display.contextLabel}
-												<p class="mt-auto pt-1 text-[0.68rem] font-medium opacity-70">
-													{display.contextLabel}
-												</p>
-											{:else if display.groupLabel}<p
+											{#if code}<p class="truncate font-semibold">{code}</p>{/if}
+											<p
+												class={[
+													code && 'mt-1',
+													block.blockKind === 'course'
+														? 'line-clamp-2 opacity-80'
+														: 'line-clamp-3 whitespace-pre-line font-semibold'
+												]}
+											>
+												{blockTitle(block)}
+											</p>
+											{#if display.groupLabel}<p
 													class="mt-auto flex items-center gap-1 truncate opacity-70"
 												>
 													<School class="size-3" />
