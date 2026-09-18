@@ -46,6 +46,15 @@ test('homeroom delivery contract is camelCase and preparation requires reviewed 
 	);
 });
 
+test('manual learning-group mutations keep the internal code server-owned', async () => {
+	const openapi = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
+	for (const schemaName of ['CreateLearningGroupRequest', 'UpdateLearningGroupRequest']) {
+		const schema = openapi.components.schemas[schemaName];
+		assert.equal(schema.properties.code, undefined);
+		assert.ok(!schema.required.includes('code'));
+	}
+});
+
 test('applying a curriculum proposal always requires at least one reviewed group', async () => {
 	const preview = await readProjectFile(
 		'src/lib/components/learning-delivery/OfferingCurriculumPreview.svelte'

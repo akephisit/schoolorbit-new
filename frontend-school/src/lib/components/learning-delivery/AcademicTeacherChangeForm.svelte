@@ -44,7 +44,7 @@
 	let groupOptions = $derived(
 		publishedGroups.map((group) => ({
 			id: group.id,
-			label: `${group.code} — ${group.name}`,
+			label: group.name,
 			description: `${group.teacherAssignments.length} ช่วงความรับผิดชอบ`
 		}))
 	);

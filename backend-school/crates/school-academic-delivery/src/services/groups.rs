@@ -250,7 +250,9 @@ pub async fn create(
     offering_id: Uuid,
     request: CreateLearningGroupRequest,
 ) -> Result<LearningGroup, AppError> {
-    validate_group_fields(&request.code, &request.name, request.capacity)?;
+    validate_group_fields(&request.name, request.capacity)?;
+    let id = Uuid::new_v4();
+    let internal_code = internal_group_code(&request.name)?;
     let mut transaction = pool.begin().await?;
     require_writable_offering_term(&mut transaction, offering_id).await?;
     let (term_id, year_id, offering_status): (Uuid, Uuid, LearningOfferingStatus) = sqlx::query_as(
@@ -267,9 +269,8 @@ pub async fn create(
     ) {
         return Err(AppError::Conflict("รายการเปิดสอนปิดแล้ว".to_string()));
     }
-    ensure_unique_group_code(&mut transaction, offering_id, None, &request.code).await?;
+    ensure_unique_internal_group_code(&mut transaction, offering_id, &internal_code).await?;
     validate_preferred_rooms(&mut transaction, &request.preferred_room_ids).await?;
-    let id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO learning_groups (
                id, learning_offering_id, academic_term_id, academic_year_id,
@@ -280,7 +281,7 @@ pub async fn create(
     .bind(offering_id)
     .bind(term_id)
     .bind(year_id)
-    .bind(request.code.trim().to_uppercase())
+    .bind(internal_code)
     .bind(request.name.trim())
     .bind(request.description)
     .bind(request.capacity)
@@ -320,25 +321,17 @@ pub async fn update(
     request: UpdateLearningGroupRequest,
 ) -> Result<LearningGroup, AppError> {
     validate_row_version(request.row_version)?;
-    validate_group_fields(&request.code, &request.name, request.capacity)?;
+    validate_group_fields(&request.name, request.capacity)?;
     let mut transaction = pool.begin().await?;
     let term_id = find_group_term(&mut transaction, id).await?;
     require_writable_term(&mut transaction, term_id, false).await?;
     let group = lock_offering_then_group(&mut transaction, id, term_id).await?;
     require_mutable_group(&group, request.row_version, false)?;
-    ensure_unique_group_code(
-        &mut transaction,
-        group.learning_offering_id,
-        Some(id),
-        &request.code,
-    )
-    .await?;
     validate_preferred_rooms(&mut transaction, &request.preferred_room_ids).await?;
     sqlx::query(
-        "UPDATE learning_groups SET code = $1, name = $2, description = $3, capacity = $4, \
-         row_version = row_version + 1, updated_at = now() WHERE id = $5",
+        "UPDATE learning_groups SET name = $1, description = $2, capacity = $3, \
+         row_version = row_version + 1, updated_at = now() WHERE id = $4",
     )
-    .bind(request.code.trim().to_uppercase())
     .bind(request.name.trim())
     .bind(request.description)
     .bind(request.capacity)
@@ -916,11 +909,19 @@ fn require_draft_group_teachers(group: &GroupLockRow) -> Result<(), AppError> {
     }
 }
 
-fn validate_group_fields(code: &str, name: &str, capacity: Option<i32>) -> Result<(), AppError> {
-    if code.trim().is_empty() || name.trim().is_empty() {
-        return Err(AppError::ValidationError(
-            "รหัสและชื่อกลุ่มเรียนห้ามว่าง".to_string(),
-        ));
+fn internal_group_code(name: &str) -> Result<String, AppError> {
+    let normalized_name = name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let hash = stable_hash(&normalized_name)?;
+    Ok(format!("GROUP-{}", &hash[..24]))
+}
+
+fn validate_group_fields(name: &str, capacity: Option<i32>) -> Result<(), AppError> {
+    if name.trim().is_empty() {
+        return Err(AppError::ValidationError("ชื่อกลุ่มเรียนห้ามว่าง".to_string()));
     }
     if capacity.is_some_and(|value| value <= 0) {
         return Err(AppError::ValidationError("ความจุต้องมากกว่าศูนย์".to_string()));
@@ -928,26 +929,21 @@ fn validate_group_fields(code: &str, name: &str, capacity: Option<i32>) -> Resul
     Ok(())
 }
 
-async fn ensure_unique_group_code(
+async fn ensure_unique_internal_group_code(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
-    except_id: Option<Uuid>,
     code: &str,
 ) -> Result<(), AppError> {
     let duplicate: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM learning_groups \
-         WHERE learning_offering_id = $1 AND lower(btrim(code)) = lower(btrim($2)) \
-           AND ($3::uuid IS NULL OR id <> $3))",
+         WHERE learning_offering_id = $1 AND code = $2)",
     )
     .bind(offering_id)
     .bind(code)
-    .bind(except_id)
     .fetch_one(&mut **transaction)
     .await?;
     if duplicate {
-        Err(AppError::Conflict(
-            "รหัสกลุ่มเรียนซ้ำในรายการเปิดสอนนี้".to_string(),
-        ))
+        Err(AppError::Conflict("ชื่อกลุ่มเรียนซ้ำในรายการเปิดสอนนี้".to_string()))
     } else {
         Ok(())
     }
@@ -1388,4 +1384,20 @@ async fn append_group_audit(
         serde_json::json!({ "learningOfferingId": group.learning_offering_id }),
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::internal_group_code;
+
+    #[test]
+    fn internal_group_code_is_stable_across_terms_without_user_input() {
+        let first = internal_group_code("  กลุ่ม ห้อง 1 ").expect("code must be generated");
+        let same_name = internal_group_code("กลุ่ม ห้อง 1").expect("code must be generated");
+        let other_name = internal_group_code("กลุ่ม ห้อง 2").expect("code must be generated");
+
+        assert_eq!(first, same_name);
+        assert_ne!(first, other_name);
+        assert!(first.starts_with("GROUP-"));
+    }
 }

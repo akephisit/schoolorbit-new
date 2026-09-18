@@ -211,11 +211,14 @@
 					{#each visibleSynchronized as demand (demand.learningOfferingId)}
 						<article
 							draggable={!disabled}
-							class="cursor-grab rounded-lg border border-l-4 border-l-violet-500 bg-violet-50/40 p-3 active:cursor-grabbing dark:bg-violet-950/10"
+							class="relative cursor-grab rounded-lg border border-l-4 border-l-violet-500 bg-violet-50/40 p-3 active:cursor-grabbing dark:bg-violet-950/10"
 							ondragstart={(event) => dragSynchronized(demand, event)}
 							ondragend={onCancelDrag}
 						>
-							<div class="flex items-start gap-2">
+							<Badge variant="secondary" class="absolute right-3 top-3">
+								{demand.requiredPeriods - demand.scheduledPeriods}/{demand.requiredPeriods}
+							</Badge>
+							<div class="flex items-start gap-2 pr-12">
 								<GripVertical class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 								<button
 									type="button"
@@ -231,12 +234,11 @@
 									</p>
 									<p class="text-sm font-medium">{demand.offeringName}</p>
 									<p class="mt-1 text-[0.7rem] text-muted-foreground">
-										พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง · เหลือ
-										{demand.requiredPeriods - demand.scheduledPeriods} คาบ
+										พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง
 									</p>
 								</button>
 							</div>
-							<div class="mt-3 grid grid-cols-2 gap-2" data-timetable-tray-settings>
+							<div class="mt-3 space-y-2" data-timetable-tray-settings>
 								<div class="min-w-0">
 									<TimetableTeacherTargetPicker
 										{staff}
@@ -272,15 +274,17 @@
 						<h3 class="text-xs font-semibold">รายวิชาและกิจกรรมรายกลุ่ม</h3>
 					</div>
 					{#each visibleOrdinary as demand (demand.learningGroupId)}
-						{@const group = groupById.get(demand.learningGroupId)}
 						{@const selectedIds = selectedInstructorIds(demand)}
 						<article
 							draggable={!disabled && selectedIds.length > 0}
-							class="rounded-lg border border-l-4 border-l-primary bg-muted/15 p-3"
+							class="relative rounded-lg border border-l-4 border-l-primary bg-muted/15 p-3"
 							ondragstart={(event) => dragOrdinary(demand, event)}
 							ondragend={onCancelDrag}
 						>
-							<div class="flex items-start gap-2">
+							<Badge variant="secondary" class="absolute right-3 top-3">
+								{demand.remainingPeriods}/{demand.requiredPeriods}
+							</Badge>
+							<div class="flex items-start gap-2 pr-12">
 								<GripVertical
 									class={`mt-0.5 size-4 shrink-0 ${selectedIds.length ? 'text-muted-foreground' : 'text-muted'}`}
 								/>
@@ -295,13 +299,9 @@
 								>
 									<p class="font-mono text-xs font-semibold text-primary">{demand.offeringCode}</p>
 									<p class="line-clamp-2 text-sm font-medium">{demand.offeringName}</p>
-									<p class="mt-1 text-[0.7rem] text-muted-foreground">
-										{group?.code ?? 'กลุ่มเรียน'} · เหลือ {demand.remainingPeriods}/{demand.requiredPeriods}
-										คาบ
-									</p>
 								</button>
 							</div>
-							<div class="mt-3 grid grid-cols-2 gap-2" data-timetable-tray-settings>
+							<div class="mt-3 space-y-2" data-timetable-tray-settings>
 								<div class="min-w-0">
 									<Popover.Root>
 										<Popover.Trigger>

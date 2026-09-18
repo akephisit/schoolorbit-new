@@ -643,7 +643,6 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "LOCK-ORDER".into(),
             name: "Lock ordering".into(),
             description: None,
             capacity: Some(40),
@@ -652,6 +651,7 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
     )
     .await
     .unwrap();
+    assert!(group.code.starts_with("GROUP-"));
     for operation in 0..5 {
         let offering = offerings::get(&pool, offering.id).await.unwrap();
         let group = groups::get(&pool, group.id).await.unwrap();
@@ -686,7 +686,6 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
                     actor,
                     offering.id,
                     CreateLearningGroupRequest {
-                        code: "LOCK-SECOND".into(),
                         name: "Second group".into(),
                         description: None,
                         capacity: Some(40),
@@ -701,7 +700,6 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
                     group.id,
                     super::models::UpdateLearningGroupRequest {
                         row_version: group.row_version,
-                        code: group.code,
                         name: group.name,
                         description: None,
                         capacity: Some(40),
@@ -791,7 +789,6 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "CLOSED".into(),
             name: "Historical group".into(),
             description: None,
             capacity: Some(40),
@@ -829,7 +826,6 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
                 context.teacher_id,
                 offering.id,
                 CreateLearningGroupRequest {
-                    code: "NEW".into(),
                     name: "Must not exist".into(),
                     description: None,
                     capacity: None,
@@ -844,7 +840,6 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
                 group.id,
                 super::models::UpdateLearningGroupRequest {
                     row_version: group.row_version,
-                    code: group.code.clone(),
                     name: "Changed".into(),
                     description: None,
                     capacity: None,
@@ -4910,7 +4905,6 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "M1-A".to_string(),
             name: "กลุ่มทดสอบ".to_string(),
             description: None,
             capacity: Some(40),
@@ -4935,20 +4929,19 @@ async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
         Err(AppError::ValidationError(_))
     ));
 
-    let duplicate = groups::create(
+    let duplicate_name = groups::create(
         &pool,
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "m1-a".to_string(),
-            name: "กลุ่มซ้ำ".to_string(),
+            name: "  กลุ่มทดสอบ  ".to_string(),
             description: None,
             capacity: None,
             preferred_room_ids: Vec::new(),
         },
     )
     .await;
-    assert!(matches!(duplicate, Err(AppError::Conflict(_))));
+    assert!(matches!(duplicate_name, Err(AppError::Conflict(_))));
 
     let duplicate_teacher = groups::replace_teachers(
         &pool,
@@ -5198,7 +5191,6 @@ async fn roster_publication_and_apply_serialize_in_canonical_lock_order() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "LOCK-ORDER".to_string(),
             name: "ทดสอบลำดับล็อก roster".to_string(),
             description: None,
             capacity: Some(40),
@@ -5620,7 +5612,6 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         context.teacher_id,
         offering_id,
         CreateLearningGroupRequest {
-            code: "MANUAL-CONFLICT".to_string(),
             name: "กลุ่มที่ครูจัดเอง".to_string(),
             description: None,
             capacity: Some(40),
@@ -5713,7 +5704,6 @@ async fn self_registration_activity_uses_common_delivery() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "ACT-SELF".to_string(),
             name: "กิจกรรมสมัครเอง".to_string(),
             description: None,
             capacity: Some(1),
@@ -5871,7 +5861,6 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "ACT-STUDENT-A".to_string(),
             name: "ชุมนุมดาราศาสตร์".to_string(),
             description: Some("เรียนรู้ท้องฟ้าผ่านการสังเกตจริง".to_string()),
             capacity: Some(1),
@@ -5910,7 +5899,6 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "ACT-STUDENT-B".to_string(),
             name: "ชุมนุมหุ่นยนต์".to_string(),
             description: None,
             capacity: Some(2),
@@ -6084,7 +6072,6 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "WORKSPACE-A".to_string(),
             name: "กลุ่มภาพรวมหนึ่ง".to_string(),
             description: None,
             capacity: Some(40),
@@ -6124,7 +6111,6 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "WORKSPACE-B".to_string(),
             name: "กลุ่มภาพรวมสอง".to_string(),
             description: None,
             capacity: Some(40),
@@ -6362,7 +6348,6 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         context.teacher_id,
         offering_id,
         CreateLearningGroupRequest {
-            code: "ROOM-WORKSPACE".to_string(),
             name: "กลุ่มห้องประจำชั้น".to_string(),
             description: None,
             capacity: Some(40),
@@ -6690,7 +6675,6 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "MANAGE-OPTIONS".to_string(),
             name: "กลุ่มตัวเลือกกลางภาค".to_string(),
             description: None,
             capacity: None,
@@ -6777,7 +6761,6 @@ async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
-            code: "ROSTER-DISPLAY".to_string(),
             name: "กลุ่มตรวจข้อมูลรายชื่อ".to_string(),
             description: None,
             capacity: Some(40),
@@ -6915,7 +6898,6 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         context.teacher_id,
         course_offering.id,
         CreateLearningGroupRequest {
-            code: "BATCH-A".to_string(),
             name: "กลุ่มชุดที่หนึ่ง".to_string(),
             description: None,
             capacity: Some(40),
@@ -6954,7 +6936,6 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         context.teacher_id,
         course_offering.id,
         CreateLearningGroupRequest {
-            code: "BATCH-B".to_string(),
             name: "กลุ่มชุดที่สอง".to_string(),
             description: None,
             capacity: Some(40),
@@ -6968,7 +6949,6 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         context.teacher_id,
         activity_offering.id,
         CreateLearningGroupRequest {
-            code: "BATCH-C".to_string(),
             name: "กลุ่มกิจกรรม".to_string(),
             description: None,
             capacity: Some(40),

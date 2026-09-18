@@ -36,7 +36,7 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 	let preferredRoomId = $state('');
-	let draft = $state({ code: '', name: '', description: '', capacity: null as number | null });
+	let draft = $state({ name: '', description: '', capacity: null as number | null });
 
 	async function showCreate() {
 		createOpen = true;
@@ -59,13 +59,12 @@
 		errorMessage = '';
 		try {
 			await onCreate({
-				code: draft.code.trim(),
 				name: draft.name.trim(),
 				description: draft.description.trim() || null,
 				capacity: draft.capacity,
 				preferredRoomIds: preferredRoomId ? [preferredRoomId] : []
 			});
-			draft = { code: '', name: '', description: '', capacity: null };
+			draft = { name: '', description: '', capacity: null };
 			preferredRoomId = '';
 			createOpen = false;
 		} catch (error) {
@@ -109,10 +108,7 @@
 						<UsersRound class="size-4" />
 					</div>
 					<div class="min-w-0 flex-1">
-						<div class="flex flex-wrap items-center gap-2">
-							<p class="font-medium">{group.name}</p>
-							<span class="font-mono text-xs text-muted-foreground">{group.code}</span>
-						</div>
+						<p class="font-medium">{group.name}</p>
 						<p class="mt-1 text-xs text-muted-foreground">
 							ครู {group.teacherAssignments.length} คน · ห้องต้นทาง {group.homeroomIds.length} ห้อง ·
 							ห้องเรียนที่ต้องการ {group.preferredRoomIds.length} ห้อง
@@ -143,23 +139,13 @@
 				<div class="h-24 animate-pulse rounded-md bg-muted"></div>
 			</div>{:else if managementOptions}
 			<form class="space-y-4" onsubmit={createGroup}>
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="delivery-group-code">รหัสกลุ่ม</Label><Input
-							id="delivery-group-code"
-							bind:value={draft.code}
-							placeholder="เช่น ม.1/1-A"
-							required
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="delivery-group-capacity">ความจุ (ถ้ามี)</Label><Input
-							id="delivery-group-capacity"
-							type="number"
-							min="1"
-							bind:value={draft.capacity}
-						/>
-					</div>
+				<div class="space-y-2">
+					<Label for="delivery-group-capacity">ความจุ (ถ้ามี)</Label><Input
+						id="delivery-group-capacity"
+						type="number"
+						min="1"
+						bind:value={draft.capacity}
+					/>
 				</div>
 				<div class="space-y-2">
 					<Label for="delivery-group-name">ชื่อกลุ่ม</Label><Input
@@ -196,7 +182,7 @@
 						type="submit"
 						loading={saving}
 						loadingLabel="กำลังสร้าง"
-						disabled={!draft.code.trim() || !draft.name.trim()}>สร้างกลุ่มเรียน</LoadingButton
+						disabled={!draft.name.trim()}>สร้างกลุ่มเรียน</LoadingButton
 					></Dialog.Footer
 				>
 			</form>

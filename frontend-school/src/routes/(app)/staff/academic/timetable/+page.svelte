@@ -1784,168 +1784,175 @@
 	</Dialog.Root>
 
 	<Dialog.Root bind:open={structuralOpen}>
-		<Dialog.Content class="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+		<Dialog.Content
+			class="flex max-h-[92dvh] w-[96vw] max-w-[96vw] flex-col overflow-hidden sm:max-w-[96rem]"
+		>
 			<Dialog.Header>
 				<Dialog.Title>เพิ่มคาบพิเศษ</Dialog.Title>
 				<Dialog.Description>
 					สร้างพร้อมกันได้หลายห้อง หลายครู และหลายวัน แต่ภายหลังสามารถนำแต่ละห้องหรือครูออกแยกกันได้
 				</Dialog.Description>
 			</Dialog.Header>
-			<div class="grid gap-5 py-2 lg:grid-cols-2">
-				<div class="space-y-4">
-					<div class="space-y-1.5">
-						<Label>ประเภท</Label>
-						<Select.Root
-							type="single"
-							value={structuralForm.kind}
-							onValueChange={(value) => setStructuralKind(value as TimetableStructuralKind)}
-						>
-							<Select.Trigger class="w-full" aria-label="เลือกประเภทคาบพิเศษ">
-								{structuralForm.title}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="flag_ceremony">กิจกรรมหน้าเสาธง</Select.Item>
-								<Select.Item value="homeroom">โฮมรูม</Select.Item>
-								<Select.Item value="break">พัก</Select.Item>
-								<Select.Item value="teacher_meeting">ประชุมครู</Select.Item>
-								<Select.Item value="academic">กิจกรรมวิชาการ</Select.Item>
-								<Select.Item value="other">กิจกรรมอื่น</Select.Item>
-							</Select.Content>
-						</Select.Root>
+			<div class="min-h-0 flex-1 overflow-y-auto pr-1">
+				<div class="grid gap-5 py-2 lg:grid-cols-2">
+					<div class="space-y-4">
+						<div class="space-y-1.5">
+							<Label>ประเภท</Label>
+							<Select.Root
+								type="single"
+								value={structuralForm.kind}
+								onValueChange={(value) => setStructuralKind(value as TimetableStructuralKind)}
+							>
+								<Select.Trigger class="w-full" aria-label="เลือกประเภทคาบพิเศษ">
+									{structuralForm.title}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="flag_ceremony">กิจกรรมหน้าเสาธง</Select.Item>
+									<Select.Item value="homeroom">โฮมรูม</Select.Item>
+									<Select.Item value="break">พัก</Select.Item>
+									<Select.Item value="teacher_meeting">ประชุมครู</Select.Item>
+									<Select.Item value="academic">กิจกรรมวิชาการ</Select.Item>
+									<Select.Item value="other">กิจกรรมอื่น</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-1.5">
+							<Label for="structural-title">ชื่อที่แสดง</Label>
+							<Input id="structural-title" bind:value={structuralForm.title} />
+						</div>
+						<div class="space-y-1.5">
+							<Label>ห้องที่ใช้</Label>
+							<Select.Root type="single" bind:value={structuralForm.roomId}>
+								<Select.Trigger class="w-full" aria-label="เลือกห้องสำหรับคาบพิเศษ">
+									{structuralForm.roomId === noRoomValue
+										? 'ไม่ระบุห้อง'
+										: (controller?.workspace.rooms.find((room) => room.id === structuralForm.roomId)
+												?.name ?? 'เลือกห้อง')}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
+									{#each controller?.workspace.rooms ?? [] as room (room.id)}
+										<Select.Item value={room.id}
+											>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
+										>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-1.5">
+							<Label for="structural-note">หมายเหตุ</Label>
+							<Textarea id="structural-note" bind:value={structuralForm.note} rows={3} />
+						</div>
 					</div>
-					<div class="space-y-1.5">
-						<Label for="structural-title">ชื่อที่แสดง</Label>
-						<Input id="structural-title" bind:value={structuralForm.title} />
-					</div>
-					<div class="space-y-1.5">
-						<Label>ห้องที่ใช้</Label>
-						<Select.Root type="single" bind:value={structuralForm.roomId}>
-							<Select.Trigger class="w-full" aria-label="เลือกห้องสำหรับคาบพิเศษ">
-								{structuralForm.roomId === noRoomValue
-									? 'ไม่ระบุห้อง'
-									: (controller?.workspace.rooms.find((room) => room.id === structuralForm.roomId)
-											?.name ?? 'เลือกห้อง')}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value={noRoomValue}>ไม่ระบุห้อง</Select.Item>
-								{#each controller?.workspace.rooms ?? [] as room (room.id)}
-									<Select.Item value={room.id}
-										>{room.code ? `${room.code} · ` : ''}{room.name}</Select.Item
-									>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="space-y-1.5">
-						<Label for="structural-note">หมายเหตุ</Label>
-						<Textarea id="structural-note" bind:value={structuralForm.note} rows={3} />
+
+					<div class="space-y-5">
+						<section class="space-y-2">
+							<div class="flex items-center justify-between gap-2">
+								<Label>ห้องประจำชั้น</Label>
+								<Button
+									type="button"
+									size="sm"
+									variant={structuralForm.allHomerooms ? 'default' : 'outline'}
+									onclick={() => (structuralForm.allHomerooms = !structuralForm.allHomerooms)}
+								>
+									{#if structuralForm.allHomerooms}<Check class="size-3.5" />{/if} ทุกห้อง
+								</Button>
+							</div>
+							{#if !structuralForm.allHomerooms}
+								<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
+									{#each controller?.workspace.homerooms ?? [] as homeroom (homeroom.id)}
+										<Button
+											type="button"
+											size="sm"
+											variant={structuralForm.homeroomIds.includes(homeroom.id)
+												? 'default'
+												: 'outline'}
+											onclick={() => toggleListValue('homeroomIds', homeroom.id)}
+										>
+											{homeroom.name}
+										</Button>
+									{/each}
+								</div>
+							{/if}
+						</section>
+						<section class="space-y-2">
+							<div class="flex items-center justify-between gap-2">
+								<Label>ครู</Label>
+								<Button
+									type="button"
+									size="sm"
+									variant={structuralForm.allTeachers ? 'default' : 'outline'}
+									onclick={() => (structuralForm.allTeachers = !structuralForm.allTeachers)}
+								>
+									{#if structuralForm.allTeachers}<Check class="size-3.5" />{/if} ครูทุกคน
+								</Button>
+							</div>
+							{#if !structuralForm.allTeachers}
+								<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
+									{#each controller?.workspace.staff ?? [] as teacher (teacher.id)}
+										<Button
+											type="button"
+											size="sm"
+											variant={structuralForm.teacherIds.includes(teacher.id)
+												? 'default'
+												: 'outline'}
+											onclick={() => toggleListValue('teacherIds', teacher.id)}
+										>
+											{teacher.displayName}
+										</Button>
+									{/each}
+								</div>
+							{/if}
+						</section>
 					</div>
 				</div>
 
-				<div class="space-y-5">
-					<section class="space-y-2">
-						<div class="flex items-center justify-between gap-2">
-							<Label>ห้องประจำชั้น</Label>
-							<Button
-								type="button"
-								size="sm"
-								variant={structuralForm.allHomerooms ? 'default' : 'outline'}
-								onclick={() => (structuralForm.allHomerooms = !structuralForm.allHomerooms)}
-							>
-								{#if structuralForm.allHomerooms}<Check class="size-3.5" />{/if} ทุกห้อง
-							</Button>
+				<section class="space-y-2 border-t pt-4">
+					<div class="flex items-center justify-between gap-2">
+						<div>
+							<Label>ช่องเวลาที่ต้องการเพิ่ม</Label>
+							<p class="text-xs text-muted-foreground">เลือกได้หลายวันและหลายคาบในครั้งเดียว</p>
 						</div>
-						{#if !structuralForm.allHomerooms}
-							<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
-								{#each controller?.workspace.homerooms ?? [] as homeroom (homeroom.id)}
-									<Button
-										type="button"
-										size="sm"
-										variant={structuralForm.homeroomIds.includes(homeroom.id)
-											? 'default'
-											: 'outline'}
-										onclick={() => toggleListValue('homeroomIds', homeroom.id)}
-									>
-										{homeroom.name}
-									</Button>
-								{/each}
-							</div>
-						{/if}
-					</section>
-					<section class="space-y-2">
-						<div class="flex items-center justify-between gap-2">
-							<Label>ครู</Label>
-							<Button
-								type="button"
-								size="sm"
-								variant={structuralForm.allTeachers ? 'default' : 'outline'}
-								onclick={() => (structuralForm.allTeachers = !structuralForm.allTeachers)}
-							>
-								{#if structuralForm.allTeachers}<Check class="size-3.5" />{/if} ครูทุกคน
-							</Button>
-						</div>
-						{#if !structuralForm.allTeachers}
-							<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
-								{#each controller?.workspace.staff ?? [] as teacher (teacher.id)}
-									<Button
-										type="button"
-										size="sm"
-										variant={structuralForm.teacherIds.includes(teacher.id) ? 'default' : 'outline'}
-										onclick={() => toggleListValue('teacherIds', teacher.id)}
-									>
-										{teacher.displayName}
-									</Button>
-								{/each}
-							</div>
-						{/if}
-					</section>
-				</div>
-			</div>
-
-			<section class="space-y-2 border-t pt-4">
-				<div class="flex items-center justify-between gap-2">
-					<div>
-						<Label>ช่องเวลาที่ต้องการเพิ่ม</Label>
-						<p class="text-xs text-muted-foreground">เลือกได้หลายวันและหลายคาบในครั้งเดียว</p>
+						<Badge variant="secondary">{structuralForm.slots.length} ช่อง</Badge>
 					</div>
-					<Badge variant="secondary">{structuralForm.slots.length} ช่อง</Badge>
-				</div>
-				<div class="overflow-x-auto rounded-lg border">
-					<table class="w-full border-collapse text-xs">
-						<thead>
-							<tr class="bg-muted/35">
-								<th class="min-w-24 border-b border-r p-2 text-left">วัน / คาบ</th>
-								{#each controller?.workspace.bellPeriods ?? [] as period (period.id)}
-									<th class="min-w-28 border-b border-r p-2 text-center">{periodLabel(period)}</th>
-								{/each}
-							</tr>
-						</thead>
-						<tbody>
-							{#each days as day (day.id)}
-								<tr>
-									<th class="border-b border-r p-2 text-left">{day.label}</th>
+					<div class="overflow-x-auto rounded-lg border">
+						<table class="w-full min-w-max border-collapse text-xs">
+							<thead>
+								<tr class="bg-muted/35">
+									<th class="min-w-24 border-b border-r p-2 text-left">วัน / คาบ</th>
 									{#each controller?.workspace.bellPeriods ?? [] as period (period.id)}
-										{@const slot = `${day.id}:${period.id}`}
-										<td class="border-b border-r p-1">
-											<Button
-												type="button"
-												size="sm"
-												variant={structuralForm.slots.includes(slot) ? 'default' : 'ghost'}
-												class="w-full"
-												aria-pressed={structuralForm.slots.includes(slot)}
-												onclick={() => toggleListValue('slots', slot)}
-											>
-												{#if structuralForm.slots.includes(slot)}<Check class="size-3.5" /> เลือกแล้ว{:else}เลือก{/if}
-											</Button>
-										</td>
+										<th class="min-w-28 border-b border-r p-2 text-center">{periodLabel(period)}</th
+										>
 									{/each}
 								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			</section>
-			<Dialog.Footer>
+							</thead>
+							<tbody>
+								{#each days as day (day.id)}
+									<tr>
+										<th class="border-b border-r p-2 text-left">{day.label}</th>
+										{#each controller?.workspace.bellPeriods ?? [] as period (period.id)}
+											{@const slot = `${day.id}:${period.id}`}
+											<td class="border-b border-r p-1">
+												<Button
+													type="button"
+													size="sm"
+													variant={structuralForm.slots.includes(slot) ? 'default' : 'ghost'}
+													class="w-full"
+													aria-pressed={structuralForm.slots.includes(slot)}
+													onclick={() => toggleListValue('slots', slot)}
+												>
+													{#if structuralForm.slots.includes(slot)}<Check class="size-3.5" /> เลือกแล้ว{:else}เลือก{/if}
+												</Button>
+											</td>
+										{/each}
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</section>
+			</div>
+			<Dialog.Footer class="shrink-0 border-t pt-4">
 				<Button variant="outline" disabled={busy} onclick={() => (structuralOpen = false)}
 					>ยกเลิก</Button
 				>

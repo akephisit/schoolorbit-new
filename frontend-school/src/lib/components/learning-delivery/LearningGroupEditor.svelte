@@ -36,7 +36,6 @@
 
 	let details = $state(
 		untrack(() => ({
-			code: group.code,
 			name: group.name,
 			description: group.description ?? '',
 			capacity: group.capacity ?? null,
@@ -142,7 +141,6 @@
 			'details',
 			() =>
 				onSaveGroup({
-					code: details.code.trim(),
 					name: details.name.trim(),
 					description: details.description.trim() || null,
 					capacity: details.capacity,
@@ -168,21 +166,15 @@
 				<h3 class="font-medium">ข้อมูลกลุ่มและห้องเรียน</h3>
 				<p class="text-xs text-muted-foreground">ชื่อที่ครูเห็นและห้องที่เหมาะกับการจัดตาราง</p>
 			</div>
-			<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-				<div class="space-y-2">
-					<Label for="group-editor-code">รหัสกลุ่ม</Label>
-					<Input id="group-editor-code" bind:value={details.code} required disabled={!canManage} />
-				</div>
-				<div class="space-y-2">
-					<Label for="group-editor-capacity">ความจุ (ถ้ามี)</Label>
-					<Input
-						id="group-editor-capacity"
-						type="number"
-						min="1"
-						bind:value={details.capacity}
-						disabled={!canManage}
-					/>
-				</div>
+			<div class="space-y-2">
+				<Label for="group-editor-capacity">ความจุ (ถ้ามี)</Label>
+				<Input
+					id="group-editor-capacity"
+					type="number"
+					min="1"
+					bind:value={details.capacity}
+					disabled={!canManage}
+				/>
 			</div>
 			<div class="space-y-2">
 				<Label for="group-editor-name">ชื่อกลุ่ม</Label>
@@ -249,7 +241,7 @@
 					variant="outline"
 					loading={busySection === 'details'}
 					loadingLabel="กำลังบันทึก"
-					disabled={!details.code.trim() || !details.name.trim()}>บันทึกข้อมูลกลุ่ม</LoadingButton
+					disabled={!details.name.trim()}>บันทึกข้อมูลกลุ่ม</LoadingButton
 				>
 			{/if}
 		</form>

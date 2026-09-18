@@ -632,8 +632,8 @@ async fn resolve_target_group(
     let stable_resource_id = stable_resource_id.ok_or_else(|| {
         AppError::ValidationError("แม่แบบขาด stable resource identity".to_string())
     })?;
-    let group_code =
-        group_code.ok_or_else(|| AppError::ValidationError("แม่แบบขาดรหัสกลุ่มเรียน".to_string()))?;
+    let group_code = group_code
+        .ok_or_else(|| AppError::ValidationError("แม่แบบขาดข้อมูลกลุ่มเรียนภายใน".to_string()))?;
     let group_id: Option<Uuid> = match resource_kind {
         "course" => {
             sqlx::query_scalar(
@@ -676,9 +676,7 @@ async fn resolve_target_group(
         }
     };
     group_id.map(Some).ok_or_else(|| {
-        AppError::ValidationError(format!(
-            "ไม่พบกลุ่มเรียนรหัส {group_code} ที่ตรงกับแม่แบบในภาคเรียนเป้าหมาย"
-        ))
+        AppError::ValidationError("ไม่พบกลุ่มเรียนที่ตรงกับแม่แบบในภาคเรียนเป้าหมาย".to_string())
     })
 }
 

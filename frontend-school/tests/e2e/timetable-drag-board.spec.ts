@@ -41,7 +41,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 	const mock = await installTimetableMock(page, { requiredPeriods: 3 });
 	await page.goto(timetableUrl());
 
-	await expect(page.getByText('เหลือ 3/3')).toBeVisible();
+	await expect(page.getByText('3/3', { exact: true })).toBeVisible();
 	expect(mock.workspaceRequestCount()).toBe(1);
 	const trayCard = page.locator('aside article[draggable="true"]').first();
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
@@ -52,7 +52,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await firstPeriod.dispatchEvent('drop', { dataTransfer });
 	await trayCard.dispatchEvent('dragend', { dataTransfer });
 
-	await expect(page.getByText('เหลือ 2/3')).toBeVisible();
+	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 	expect(mock.previewRequestCount()).toBe(1);
 	expect(mock.createRequestCount()).toBe(1);
 	expect(mock.workspaceRequestCount()).toBe(1);
@@ -75,6 +75,9 @@ test('preselects the first preferred room and lets the scheduler override it bef
 	const teacherPicker = trayCard.getByRole('button', { name: /เลือกครู/ });
 	const roomPicker = trayCard.getByRole('button', { name: 'เลือกห้องเรียน' });
 	await expect(roomPicker).toContainText('LAB-2');
+	await expect(trayCard).not.toContainText('M1-1-A');
+	const remainingCount = trayCard.getByText('1/1', { exact: true });
+	await expect(remainingCount).toBeVisible();
 	const [teacherBox, roomBox] = await Promise.all([
 		teacherPicker.boundingBox(),
 		roomPicker.boundingBox()
@@ -82,7 +85,8 @@ test('preselects the first preferred room and lets the scheduler override it bef
 	expect(teacherBox).not.toBeNull();
 	expect(roomBox).not.toBeNull();
 	expect(teacherBox!.width).toBeCloseTo(roomBox!.width, 1);
-	expect(teacherBox!.height).toBeCloseTo(roomBox!.height, 1);
+	expect(teacherBox!.x).toBeCloseTo(roomBox!.x, 1);
+	expect(roomBox!.y).toBeGreaterThanOrEqual(teacherBox!.y + teacherBox!.height + 4);
 	await roomPicker.click();
 	await page.getByRole('option', { name: /MATH-1/ }).click();
 	await expect(roomPicker).toContainText('MATH-1');
@@ -94,6 +98,23 @@ test('preselects the first preferred room and lets the scheduler override it bef
 		'MATH-1'
 	);
 	expect(mock.lastCreateBody()).toMatchObject({ roomId: timetableIds.room });
+});
+
+test('keeps every period and the actions visible in the special-period dialog', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1920, height: 1080 });
+	await installTimetableMock(page, { periodCount: 10 });
+	await page.goto(timetableUrl());
+
+	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
+	const dialog = page.getByRole('dialog', { name: 'เพิ่มคาบพิเศษ' });
+	const dialogBox = await dialog.boundingBox();
+	expect(dialogBox).not.toBeNull();
+	expect(dialogBox!.width).toBeGreaterThan(1200);
+	await expect(dialog.locator('thead th')).toHaveCount(11);
+	await expect(dialog.getByRole('columnheader', { name: 'คาบ 10' })).toBeInViewport();
+	await expect(dialog.getByRole('button', { name: 'เพิ่ม 0 ช่อง' })).toBeInViewport();
 });
 
 test('shows the dragged lesson preview only in the cell currently under the pointer', async ({
@@ -164,7 +185,7 @@ test('places immediately and keeps other timetable cards editable while saves ru
 	await expect(firstPeriod.getByLabel('กำลังบันทึกคาบ คณิตศาสตร์พื้นฐาน')).toBeVisible({
 		timeout: 300
 	});
-	await expect(page.getByText('เหลือ 1/2')).toBeVisible({ timeout: 300 });
+	await expect(page.getByText('1/2', { exact: true })).toBeVisible({ timeout: 300 });
 
 	const movableCard = page.locator(`article[data-block-id="${timetableIds.blockB}"]`);
 	const moveTransfer = await page.evaluateHandle(() => new DataTransfer());
@@ -278,7 +299,7 @@ test('rolls an optimistic placement back when background validation rejects it',
 		page.getByText('วางคาบไม่ได้: ครูคณิตศาสตร์ A มีคาบสอนอยู่แล้ว', { exact: true })
 	).toBeVisible();
 	await expect(destination.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toHaveCount(0);
-	await expect(page.getByText('เหลือ 1/1')).toBeVisible();
+	await expect(page.getByText('1/1', { exact: true })).toBeVisible();
 	expect(mock.createRequestCount()).toBe(0);
 });
 
@@ -559,7 +580,7 @@ test('requires an exact teacher choice when a group has several eligible teacher
 	await page.keyboard.press('Escape');
 	await trayCard.locator('button').first().click();
 	await page.getByRole('button', { name: 'วางคาบที่นี่' }).first().click();
-	await expect(page.getByText('เหลือ 2/3')).toBeVisible();
+	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 
 	expect(mock.createRequestCount()).toBe(1);
 	expect(mock.blocks()[0]?.groups[0]?.instructors.map((teacher) => teacher.teacherId)).toEqual([
@@ -586,8 +607,9 @@ test('reserves selected teachers when placing a synchronized activity and edits 
 	]);
 	expect(teacherBox).not.toBeNull();
 	expect(roomBox).not.toBeNull();
-	expect(teacherBox!.y).toBeCloseTo(roomBox!.y, 1);
-	expect(teacherBox!.height).toBeCloseTo(roomBox!.height, 1);
+	expect(teacherBox!.width).toBeCloseTo(roomBox!.width, 1);
+	expect(teacherBox!.x).toBeCloseTo(roomBox!.x, 1);
+	expect(roomBox!.y).toBeGreaterThanOrEqual(teacherBox!.y + teacherBox!.height + 4);
 	await roomPicker.click();
 	await page.getByRole('option', { name: /LAB-2/ }).click();
 	await teacherPicker.click();

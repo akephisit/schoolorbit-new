@@ -12922,7 +12922,6 @@ export interface components {
 		CreateLearningGroupRequest: {
 			/** Format: int32 */
 			capacity?: number | null;
-			code: string;
 			description?: string | null;
 			name: string;
 			preferredRoomIds: string[];
@@ -18466,7 +18465,6 @@ export interface components {
 		UpdateLearningGroupRequest: {
 			/** Format: int32 */
 			capacity?: number | null;
-			code: string;
 			description?: string | null;
 			name: string;
 			preferredRoomIds: string[];

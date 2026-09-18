@@ -26576,9 +26576,6 @@
               "null"
             ]
           },
-          "code": {
-            "type": "string"
-          },
           "description": {
             "type": [
               "string",
@@ -26597,7 +26594,6 @@
           }
         },
         "required": [
-          "code",
           "name",
           "preferredRoomIds"
         ],
@@ -46563,9 +46559,6 @@
               "null"
             ]
           },
-          "code": {
-            "type": "string"
-          },
           "description": {
             "type": [
               "string",
@@ -46589,7 +46582,6 @@
         },
         "required": [
           "rowVersion",
-          "code",
           "name",
           "preferredRoomIds"
         ],

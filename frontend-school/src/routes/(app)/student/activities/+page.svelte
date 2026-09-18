@@ -309,8 +309,7 @@
 							>
 								<div class="flex items-start justify-between gap-3">
 									<div>
-										<p class="text-muted-foreground font-mono text-xs">{group.code}</p>
-										<h3 class="mt-1 font-semibold">{group.name}</h3>
+										<h3 class="font-semibold">{group.name}</h3>
 									</div>
 									{#if group.enrolled}
 										<CheckCircle2 class="size-5 shrink-0 text-emerald-600" />

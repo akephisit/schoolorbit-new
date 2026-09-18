@@ -1226,7 +1226,6 @@ pub struct ApplyCurriculumOfferingsResult {
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateLearningGroupRequest {
-    pub code: String,
     pub name: String,
     pub description: Option<String>,
     pub capacity: Option<i32>,
@@ -1237,7 +1236,6 @@ pub struct CreateLearningGroupRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateLearningGroupRequest {
     pub row_version: i64,
-    pub code: String,
     pub name: String,
     pub description: Option<String>,
     pub capacity: Option<i32>,
