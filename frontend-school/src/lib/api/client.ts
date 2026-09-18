@@ -32,6 +32,7 @@ export interface ApiResponse<T, E = never> {
 export interface ApiRequestOptions {
 	signal?: AbortSignal;
 	query?: ApiQuery;
+	requestFetch?: typeof globalThis.fetch;
 }
 
 type ApiTransport = 'session' | 'public';
@@ -186,7 +187,8 @@ class APIClient {
 	private async fetchBackend(
 		endpoint: string,
 		options: RequestInit = {},
-		transport: ApiTransport = 'session'
+		transport: ApiTransport = 'session',
+		requestFetch: typeof globalThis.fetch = globalThis.fetch
 	): Promise<Response> {
 		const method = (options.method ?? 'GET').toUpperCase();
 		const callerHeaders = new Headers(options.headers);
@@ -208,7 +210,7 @@ class APIClient {
 		}
 		let response: Response;
 		try {
-			response = await fetch(`${this.baseURL}${endpoint}`, requestOptions);
+			response = await requestFetch(`${this.baseURL}${endpoint}`, requestOptions);
 		} catch (error) {
 			if (!(error instanceof DOMException && error.name === 'AbortError')) {
 				await probeDeploymentStatus();
@@ -239,14 +241,20 @@ class APIClient {
 	private async request<T, E = never>(
 		endpoint: string,
 		options: RequestInit = {},
-		transport: ApiTransport = 'session'
+		transport: ApiTransport = 'session',
+		requestFetch: typeof globalThis.fetch = globalThis.fetch
 	): Promise<ApiResponse<T, E>> {
 		const headers = new Headers(options.headers);
 		if (options.body !== undefined && !headers.has('Content-Type')) {
 			headers.set('Content-Type', 'application/json');
 		}
 
-		const response = await this.fetchBackend(endpoint, { ...options, headers }, transport);
+		const response = await this.fetchBackend(
+			endpoint,
+			{ ...options, headers },
+			transport,
+			requestFetch
+		);
 		const data = await this.parseResponse(response);
 		await this.observeMaintenance(response, data);
 		const metadata = this.responseMetadata(response);
@@ -291,22 +299,33 @@ class APIClient {
 		endpoint: string,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
-			method: 'GET',
-			signal: options.signal
-		});
+		return this.request<T, E>(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'GET',
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 	}
 
 	async getBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
-		const response = await this.fetchBackend(appendApiQuery(endpoint, options.query), {
-			method: 'GET',
-			signal: options.signal
-		});
+		const response = await this.fetchBackend(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'GET',
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 		return this.blobResponse(response);
 	}
 
 	async getExternalBlob(url: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
-		const response = await fetch(url, {
+		const requestFetch = options.requestFetch ?? globalThis.fetch;
+		const response = await requestFetch(url, {
 			method: 'GET',
 			mode: 'cors',
 			credentials: 'omit',
@@ -328,11 +347,16 @@ class APIClient {
 		body?: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
-			method: 'POST',
-			body: body === undefined ? undefined : JSON.stringify(body),
-			signal: options.signal
-		});
+		return this.request<T, E>(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'POST',
+				body: body === undefined ? undefined : JSON.stringify(body),
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 	}
 
 	async postPublic<T, E = never>(
@@ -347,15 +371,21 @@ class APIClient {
 				body: JSON.stringify(body),
 				signal: options.signal
 			},
-			'public'
+			'public',
+			options.requestFetch
 		);
 	}
 
 	async postBlob(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Blob>> {
-		const response = await this.fetchBackend(appendApiQuery(endpoint, options.query), {
-			method: 'POST',
-			signal: options.signal
-		});
+		const response = await this.fetchBackend(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'POST',
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 		return this.blobResponse(response);
 	}
 
@@ -364,12 +394,17 @@ class APIClient {
 		body: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<Blob>> {
-		const response = await this.fetchBackend(appendApiQuery(endpoint, options.query), {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body),
-			signal: options.signal
-		});
+		const response = await this.fetchBackend(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 		return this.blobResponse(response);
 	}
 
@@ -378,11 +413,16 @@ class APIClient {
 		body?: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
-			method: 'PUT',
-			body: body === undefined ? undefined : JSON.stringify(body),
-			signal: options.signal
-		});
+		return this.request<T, E>(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'PUT',
+				body: body === undefined ? undefined : JSON.stringify(body),
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 	}
 
 	async patch<T, E = never>(
@@ -390,21 +430,31 @@ class APIClient {
 		body?: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
-			method: 'PATCH',
-			body: body === undefined ? undefined : JSON.stringify(body),
-			signal: options.signal
-		});
+		return this.request<T, E>(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'PATCH',
+				body: body === undefined ? undefined : JSON.stringify(body),
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 	}
 
 	async delete<T, E = never>(
 		endpoint: string,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
-			method: 'DELETE',
-			signal: options.signal
-		});
+		return this.request<T, E>(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'DELETE',
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 	}
 
 	async deleteWithBody<T, E = never>(
@@ -412,18 +462,33 @@ class APIClient {
 		body: unknown,
 		options: ApiRequestOptions = {}
 	): Promise<ApiResponse<T, E>> {
-		return this.request<T, E>(appendApiQuery(endpoint, options.query), {
-			method: 'DELETE',
-			body: JSON.stringify(body),
-			signal: options.signal
-		});
+		return this.request<T, E>(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'DELETE',
+				body: JSON.stringify(body),
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 	}
 
-	async postMultipart<T, E = never>(endpoint: string, body: FormData): Promise<ApiResponse<T, E>> {
-		const response = await this.fetchBackend(endpoint, {
-			method: 'POST',
-			body
-		});
+	async postMultipart<T, E = never>(
+		endpoint: string,
+		body: FormData,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<T, E>> {
+		const response = await this.fetchBackend(
+			appendApiQuery(endpoint, options.query),
+			{
+				method: 'POST',
+				body,
+				signal: options.signal
+			},
+			'session',
+			options.requestFetch
+		);
 		const data = await this.parseResponse(response);
 		await this.observeMaintenance(response, data);
 		const metadata = this.responseMetadata(response);

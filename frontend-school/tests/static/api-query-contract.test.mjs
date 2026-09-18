@@ -108,6 +108,41 @@ test('all central HTTP transports preserve typed query and abort options', async
 	}
 });
 
+test('the shared client can execute through the SvelteKit load fetch', async () => {
+	const source = await readFile(path.join(projectRoot, 'src/lib/api/client.ts'), 'utf8');
+
+	assert.match(
+		source,
+		/interface ApiRequestOptions[\s\S]*requestFetch\?: typeof globalThis\.fetch/
+	);
+	assert.match(source, /response = await requestFetch\(`/);
+	const requestOptionsStart = source.indexOf('const requestOptions: RequestInit = {');
+	assert.notEqual(requestOptionsStart, -1);
+	const requestOptionsEnd = source.indexOf('\n\t\t};', requestOptionsStart);
+	assert.notEqual(requestOptionsEnd, -1);
+	assert.doesNotMatch(source.slice(requestOptionsStart, requestOptionsEnd), /requestFetch/);
+	for (const method of [
+		'get',
+		'getBlob',
+		'getExternalBlob',
+		'post',
+		'postPublic',
+		'postBlob',
+		'postBlobWithBody',
+		'put',
+		'patch',
+		'delete',
+		'deleteWithBody',
+		'postMultipart'
+	]) {
+		const start = source.indexOf(`async ${method}`);
+		assert.notEqual(start, -1, `missing ${method}`);
+		const next = source.indexOf('\n\tasync ', start + 1);
+		const block = source.slice(start, next === -1 ? source.length : next);
+		assert.match(block, /options\.requestFetch/, `${method} must forward requestFetch`);
+	}
+});
+
 test('generated API exposes repaired academic query operations', async () => {
 	const generated = await readFile(
 		path.join(projectRoot, 'src/lib/api/generated/school-api.ts'),
