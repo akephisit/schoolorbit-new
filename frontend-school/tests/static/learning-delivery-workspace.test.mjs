@@ -12,6 +12,10 @@ test('delivery workspace uses generated term query contracts', async () => {
 	assert.match(api, /operations\['getLearningDeliveryOverview'\]/);
 	assert.match(api, /operations\['getHomeroomDeliveryWorkspace'\]/);
 	assert.match(api, /operations\['getLearningDeliveryManagementOptions'\]/);
+	assert.match(api, /Schemas\['LearningDeliveryPageView'\]/);
+	assert.match(api, /operations\['getLearningDeliveryPageView'\]/);
+	assert.match(api, /getLearningDeliveryPageView/);
+	assert.match(api, /requestFetch/);
 	assert.match(api, /getLearningDeliveryOverview/);
 	assert.match(api, /getHomeroomDeliveryWorkspace/);
 	assert.match(api, /getLearningDeliveryManagementOptions/);

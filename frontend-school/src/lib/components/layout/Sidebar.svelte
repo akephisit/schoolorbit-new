@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ChevronDown, ChevronLeft, GraduationCap, Inbox } from 'lucide-svelte';
-	import { goto } from '$app/navigation';
+	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth';
@@ -12,6 +12,8 @@
 	import { workStore } from '$lib/stores/work';
 	import { cn } from '$lib/utils';
 	import { getIconComponent } from '$lib/utils/icon-mapper';
+	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
 	import {
 		buildSidebarNavigation,
 		type SidebarMenuItem,
@@ -24,6 +26,7 @@
 	let isMobileOpen = $state(false);
 	let menuGroups = $state<MenuGroup[]>([]);
 	let menuLoading = $state(true);
+	const academicContext = getAcademicContextStore();
 
 	async function loadMenu() {
 		try {
@@ -120,9 +123,19 @@
 		);
 	}
 
+	function menuHref(item: SidebarMenuItem): string {
+		return academicContextualMenuPath(item.path, $academicContext.selected);
+	}
+
+	function preloadMenuItem(item: SidebarMenuItem) {
+		const href = menuHref(item);
+		void preloadData(resolve(href as any)).catch(() => undefined);
+	}
+
 	function navigateToMenuItem(item: SidebarMenuItem) {
 		handleNavClick();
-		void goto(resolve(item.path as any));
+		const href = menuHref(item);
+		void goto(resolve(href as any));
 	}
 
 	// Check if a route is active
@@ -315,6 +328,9 @@
 											{@const Icon = getIconComponent(item.icon)}
 											<DropdownMenu.Item
 												onclick={() => navigateToMenuItem(item)}
+												onpointerenter={() => preloadMenuItem(item)}
+												onfocus={() => preloadMenuItem(item)}
+												ontouchstart={() => preloadMenuItem(item)}
 												class={cn(
 													'cursor-pointer gap-2',
 													isActive(item.path) && 'bg-accent text-accent-foreground font-medium'
@@ -362,7 +378,7 @@
 									{#each section.items as item (item.id)}
 										{@const Icon = getIconComponent(item.icon)}
 										<Button
-											href={item.path}
+											href={menuHref(item)}
 											variant="ghost"
 											onclick={handleNavClick}
 											class={navItemClass(item, true)}

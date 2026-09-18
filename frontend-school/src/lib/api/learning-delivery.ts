@@ -11,6 +11,7 @@ type Schemas = components['schemas'];
 
 export type LearningOffering = Schemas['LearningOffering'];
 export type LearningDeliveryOverview = Schemas['LearningDeliveryOverview'];
+export type LearningDeliveryPageView = Schemas['LearningDeliveryPageView'];
 export type LearningOfferingOverviewItem = Schemas['LearningOfferingOverviewItem'];
 export type HomeroomDeliveryWorkspace = Schemas['HomeroomDeliveryWorkspace'];
 export type HomeroomDeliveryRoom = Schemas['HomeroomDeliveryRoom'];
@@ -93,6 +94,9 @@ type DeliveryManagementOptionsQuery = NonNullable<
 type HomeroomDeliveryWorkspaceQuery = NonNullable<
 	operations['getHomeroomDeliveryWorkspace']['parameters']['query']
 >;
+type LearningDeliveryPageViewQuery = NonNullable<
+	operations['getLearningDeliveryPageView']['parameters']['query']
+>;
 type HomeroomDeliveryRequestOptions = ApiRequestOptions & { timetableVersionId?: string };
 type ListAcademicTermChangeSetsQuery = NonNullable<
 	operations['listAcademicTermChangeSets']['parameters']['query']
@@ -138,6 +142,30 @@ export const getHomeroomDeliveryWorkspace = (
 			query
 		}),
 		'ไม่สามารถโหลดภาพรวมรายห้องประจำชั้นได้'
+	);
+};
+
+export const getLearningDeliveryPageView = (
+	academicYearId: string,
+	academicTermId: string,
+	options: HomeroomDeliveryRequestOptions = {}
+) => {
+	const yearId = academicYearId.trim();
+	if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
+	const timetableVersionId = options.timetableVersionId?.trim();
+	const { timetableVersionId: _selectedVersion, requestFetch, ...requestOptions } = options;
+	const query = {
+		academicYearId: yearId,
+		academicTermId: selectedTerm(academicTermId),
+		...(timetableVersionId ? { timetableVersionId } : {})
+	} satisfies LearningDeliveryPageViewQuery;
+	return deliveryData(
+		apiClient.get<LearningDeliveryPageView>('/api/academic/delivery/page-view', {
+			...requestOptions,
+			requestFetch,
+			query
+		}),
+		'โหลดหน้าจัดการการเปิดสอนไม่สำเร็จ'
 	);
 };
 

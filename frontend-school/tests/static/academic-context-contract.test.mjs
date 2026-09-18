@@ -191,6 +191,38 @@ test('route requirements are validated, inherited, and staff-only', async () => 
 	);
 });
 
+test('menu destinations carry only the academic context required by the target route', async () => {
+	const { academicContextualMenuPath } = await importRouteContext();
+	const selected = { academicYearId: 'year-active', academicTermId: 'term-active' };
+	const requirement = (routeId) =>
+		routeId.endsWith('/delivery')
+			? 'term_required'
+			: routeId.endsWith('/student-years')
+				? 'year_required'
+				: 'none';
+
+	assert.equal(
+		academicContextualMenuPath('/staff/academic/delivery', selected, requirement),
+		'/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+	);
+	assert.equal(
+		academicContextualMenuPath('/staff/academic/student-years', selected, requirement),
+		'/staff/academic/student-years?academicYearId=year-active'
+	);
+	assert.equal(academicContextualMenuPath('/staff/work', selected, requirement), '/staff/work');
+});
+
+test('sidebar preloads and navigates to the same context-bearing destination', async () => {
+	const sidebar = await readProjectFile('src/lib/components/layout/Sidebar.svelte');
+	assert.match(sidebar, /academicContextualMenuPath/);
+	assert.match(sidebar, /href=\{menuHref\(item\)\}/);
+	assert.match(sidebar, /preloadData\(resolve\(href/);
+	assert.match(sidebar, /goto\(resolve\(href/);
+	assert.match(sidebar, /onpointerenter=\{\(\) => preloadMenuItem\(item\)\}/);
+	assert.match(sidebar, /onfocus=\{\(\) => preloadMenuItem\(item\)\}/);
+	assert.match(sidebar, /ontouchstart=\{\(\) => preloadMenuItem\(item\)\}/);
+});
+
 test('application route metadata uses only supported academic context requirements', async () => {
 	const { createAcademicContextRouteResolver } = await importRouteContext();
 	const routeFiles = (await sourceFiles('src/routes')).filter((file) => file.endsWith('/+page.ts'));

@@ -12,7 +12,7 @@ type RouteMetaModule = {
 };
 
 type RouteModuleMap = Record<string, RouteMetaModule>;
-type AcademicContextRouteResolver = (routeId: string | null) => AcademicContextRequirement;
+export type AcademicContextRouteResolver = (routeId: string | null) => AcademicContextRequirement;
 
 const requirements = new Set<AcademicContextRequirement>([
 	'none',
@@ -88,6 +88,30 @@ export function readAcademicContextFromUrl(url: URL): SelectedAcademicContext {
 		academicYearId: url.searchParams.get('academicYearId'),
 		academicTermId: url.searchParams.get('academicTermId')
 	};
+}
+
+export function academicContextualMenuPath(
+	path: string,
+	selected: SelectedAcademicContext,
+	resolveRequirement: AcademicContextRouteResolver = getAcademicContextRequirement
+): string {
+	const target = new URL(path, 'https://schoolorbit.invalid');
+	const requirement = resolveRequirement(`/(app)${target.pathname}`);
+	if (requirement === 'none') return path;
+
+	target.searchParams.delete('academicYearId');
+	target.searchParams.delete('academicTermId');
+	if (selected.academicYearId) {
+		target.searchParams.set('academicYearId', selected.academicYearId);
+	}
+	if (
+		selected.academicYearId &&
+		selected.academicTermId &&
+		(requirement === 'term_required' || requirement === 'term_optional')
+	) {
+		target.searchParams.set('academicTermId', selected.academicTermId);
+	}
+	return `${target.pathname}${target.search}${target.hash}`;
 }
 
 function resolution(
