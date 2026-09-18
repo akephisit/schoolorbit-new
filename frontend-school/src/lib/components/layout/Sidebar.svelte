@@ -40,14 +40,15 @@
 		);
 	}
 
-	async function loadMenu() {
+	async function loadMenu(primeAcademicContext: boolean) {
 		try {
 			menuLoading = true;
+			const academicContextReady = primeAcademicContext ? academicContext.primeOptions() : null;
 			const response = await getUserMenu();
-			menuGroups = response.groups;
-			if (hasAcademicContextDestination(response.groups)) {
-				void academicContext.primeOptions();
+			if (academicContextReady && hasAcademicContextDestination(response.groups)) {
+				await academicContextReady;
 			}
+			menuGroups = response.groups;
 		} catch (error) {
 			console.error('Failed to load menu:', error);
 			menuGroups = [];
@@ -59,7 +60,7 @@
 	$effect(() => {
 		const user = $authStore.user;
 		if (user?.id) {
-			loadMenu();
+			loadMenu(user.user_type === 'staff');
 			void workStore.fetchCounts({ silent: true });
 		} else {
 			menuGroups = [];

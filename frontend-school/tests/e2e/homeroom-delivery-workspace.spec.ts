@@ -100,7 +100,7 @@ function homeroomWorkspace(timetableVersionId: string | null = null) {
 	};
 }
 
-async function mockDelivery(page: Page) {
+async function mockDelivery(page: Page, contextGate?: Promise<void>, menuGate?: Promise<void>) {
 	let pageViewRequests = 0;
 	let legacyPrimaryRequests = 0;
 	let offeringOverviewRequests = 0;
@@ -126,6 +126,7 @@ async function mockDelivery(page: Page) {
 				return;
 			}
 			if (url.pathname === '/api/academic/context/options') {
+				await contextGate;
 				await fulfill(route, {
 					activeAcademicYearId: ids.year,
 					activeAcademicTermId: ids.term,
@@ -158,6 +159,7 @@ async function mockDelivery(page: Page) {
 				return;
 			}
 			if (url.pathname === '/api/menu/user') {
+				await menuGate;
 				await fulfill(route, {
 					groups: [
 						{
@@ -245,6 +247,24 @@ async function mockDelivery(page: Page) {
 	};
 }
 
+test('starts academic context priming without waiting for the menu response', async ({ page }) => {
+	let releaseMenu: () => void = () => {};
+	const menuGate = new Promise<void>((resolve) => {
+		releaseMenu = resolve;
+	});
+	await mockDelivery(page, undefined, menuGate);
+	const contextRequest = page.waitForRequest(
+		(request) => new URL(request.url()).pathname === '/api/academic/context/options'
+	);
+
+	try {
+		await page.goto('/staff/academic/core');
+		await contextRequest;
+	} finally {
+		releaseMenu();
+	}
+});
+
 test('opens homeroom-first and loads the offering projection only after changing tabs', async ({
 	page
 }) => {
@@ -286,6 +306,49 @@ test('primes a complete Delivery destination before hover preload and navigation
 	await expect.poll(pageViewRequestCount).toBe(1);
 
 	await deliveryLink.click();
+	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.year}`));
+	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.term}`));
+	await expect(page.getByText('เลือกปีการศึกษาและภาคเรียนก่อน')).toHaveCount(0);
+	expect(pageViewRequestCount()).toBe(1);
+});
+
+test('does not expose academic navigation before its destination context is ready', async ({
+	page
+}) => {
+	let releaseContext: () => void = () => {};
+	const contextGate = new Promise<void>((resolve) => {
+		releaseContext = resolve;
+	});
+	const { pageViewRequestCount } = await mockDelivery(page, contextGate);
+	const menuResponse = page.waitForResponse(
+		(response) => new URL(response.url()).pathname === '/api/menu/user'
+	);
+	await page.goto('/staff/work');
+	await menuResponse;
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) => {
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+			})
+	);
+
+	const academicSection = page.getByRole('button', {
+		name: 'การจัดการเรียนการสอน',
+		exact: true
+	});
+	try {
+		await expect(academicSection).toHaveCount(0);
+	} finally {
+		releaseContext();
+	}
+	await academicSection.click();
+	const deliveryLink = page.getByRole('link', { name: 'การเปิดสอน', exact: true });
+	await expect(deliveryLink).toHaveAttribute(
+		'href',
+		new RegExp(`academicYearId=${ids.year}.*academicTermId=${ids.term}`)
+	);
+	await deliveryLink.click();
+
 	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.year}`));
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.term}`));
 	await expect(page.getByText('เลือกปีการศึกษาและภาคเรียนก่อน')).toHaveCount(0);
