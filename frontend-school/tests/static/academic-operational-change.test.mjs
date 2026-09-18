@@ -42,10 +42,12 @@ test('published delivery rows expose date-derived state and a permission-gated e
 	assert.match(page, /AcademicChangeSetPanel/);
 	assert.match(page, /selectedChangeSetId/);
 	assert.match(page, /เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว/);
-	assert.match(page, /changeSet\.items\.length > 0/);
+	assert.match(page, /updated\.items\.length > 0/);
+	assert.match(page, /\$effect\(\(\) => {[\s\S]*const routeResult = data\.pageView/);
+	assert.match(page, /if \(routeResult\?\.ok\) {[\s\S]*applyPageView\(routeResult\.data\)/);
 	assert.match(
 		page,
-		/contextKey !== loadedContext[\s\S]*workspace = null;[\s\S]*changeSets = \[\];[\s\S]*selectedChangeSetId = '';[\s\S]*loadWorkspace/
+		/else {[\s\S]*workspace = null;[\s\S]*overview = null;[\s\S]*changeSets = \[\];[\s\S]*selectedChangeSetId = '';/
 	);
 	assert.match(table, /startsOn/);
 	assert.match(table, /endsOn/);

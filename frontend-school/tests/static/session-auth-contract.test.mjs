@@ -64,12 +64,17 @@ test('all backend fetches share capture and feature modules cannot set security 
 	assert.match(client, /private\s+async\s+fetchBackend\s*\(/);
 	assert.match(
 		client,
-		/fetchBackend[\s\S]*?await\s+fetch\s*\([\s\S]*?captureSessionSecurityHeaders\(response\.headers\)/
+		/fetchBackend[\s\S]*?await\s+requestFetch\s*\([\s\S]*?captureSessionSecurityHeaders\(response\.headers\)/
+	);
+	assert.equal(
+		[...client.matchAll(/\brequestFetch\s*\(/g)].length,
+		2,
+		'only fetchBackend and isolated getExternalBlob may call the selected fetch transport'
 	);
 	assert.equal(
 		[...client.matchAll(/\bfetch\s*\(/g)].length,
-		2,
-		'only fetchBackend and isolated getExternalBlob may call fetch directly'
+		0,
+		'raw global fetch calls are forbidden'
 	);
 	for (const method of ['request', 'getBlob', 'postBlob', 'postBlobWithBody', 'postMultipart']) {
 		assert.match(client, new RegExp(`${method}[\\s\\S]*?this\\.fetchBackend\\(`));

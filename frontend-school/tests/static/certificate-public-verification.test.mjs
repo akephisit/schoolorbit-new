@@ -26,7 +26,7 @@ test('public certificate API uses generated contracts without cookies or referre
 	assert.match(client, /type ApiTransport = ['"]session['"] \| ['"]public['"]/);
 	assert.match(client, /credentials:\s*usesSession\s*\?\s*['"]include['"]\s*:\s*['"]omit['"]/);
 	assert.match(client, /if \(!usesSession\)[\s\S]*?referrerPolicy = ['"]no-referrer['"]/);
-	assert.match(client, /this\.request<[\s\S]*?['"]public['"]\s*\)/);
+	assert.match(client, /this\.request<[\s\S]*?['"]public['"]\s*,\s*options\.requestFetch\s*\)/);
 	assert.match(transport, /cache = ['"]no-store['"]/);
 	assert.match(transport, /X-School-Subdomain/);
 	assert.doesNotMatch(api, /proof=.*(?:\?|&)|URLSearchParams\([^)]*proof/);

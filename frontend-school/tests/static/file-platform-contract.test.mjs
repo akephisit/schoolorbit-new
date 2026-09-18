@@ -145,7 +145,8 @@ test('typed file helper uses generated DTOs and file IDs as identity', async () 
 	assert.match(source, /apiClient\.getExternalBlob\(url/);
 	assert.doesNotMatch(source, /\bfetch\s*\(/);
 	assert.match(client, /async\s+getExternalBlob/);
-	assert.match(client, /fetch\(url/);
+	assert.match(client, /const requestFetch = options\.requestFetch \?\? globalThis\.fetch/);
+	assert.match(client, /requestFetch\(url/);
 	assert.match(client, /credentials:\s*'omit'/);
 	assert.match(client, /referrerPolicy:\s*'no-referrer'/);
 	assert.doesNotMatch(source, /\.postBlob\(/);

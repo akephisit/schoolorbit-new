@@ -11,6 +11,7 @@ test('delivery renders set-based curriculum alignment and exact context links', 
 		'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'
 	);
 	const page = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.svelte');
+	const pageLoad = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.ts');
 
 	for (const copy of [
 		'ตรงกับหลักสูตร',
@@ -28,10 +29,10 @@ test('delivery renders set-based curriculum alignment and exact context links', 
 	assert.match(workspace, /academicTermId/);
 	assert.match(workspace, /studyProgramId/);
 	assert.match(workspace, /versionId/);
-	assert.match(page, /page\.url\.searchParams\.get\('timetableVersionId'\)/);
-	assert.match(page, /getHomeroomDeliveryWorkspace\([\s\S]*timetableVersionId/);
+	assert.match(pageLoad, /readLearningDeliveryRouteContext\(url\)/);
+	assert.match(pageLoad, /getLearningDeliveryPageView\([\s\S]*timetableVersionId/);
 	assert.doesNotMatch(
-		`${page}\n${workspace}`,
+		`${pageLoad}\n${page}\n${workspace}`,
 		/getLearningOffering|getLearningGroup|listLearningGroups/
 	);
 });
