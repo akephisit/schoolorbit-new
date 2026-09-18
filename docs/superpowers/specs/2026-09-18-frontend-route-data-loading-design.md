@@ -2,7 +2,7 @@
 
 Date: 2026-09-18
 
-Status: Approved in chat; awaiting written-spec review
+Status: Approved in chat and after written-spec review
 
 ## Purpose
 
@@ -110,6 +110,13 @@ The existing body-level hover preload remains the default for idempotent, reason
 permission-safe reads. It allows SvelteKit to import route code and run `load` before the click when
 the user's connection settings permit it.
 
+Context-scoped menu links must carry the currently selected academic year and term when the target
+route declares that requirement. Otherwise the speculative loader cannot issue its primary request
+until a second navigation repairs the URL. Navigation controls that are not rendered as ordinary
+links, such as the collapsed sidebar menu, call SvelteKit `preloadData` on pointer hover, keyboard
+focus, or touch start with the same context-bearing destination, and then navigate to that exact
+destination so the preloaded result can be reused.
+
 Routes with expensive or highly volatile primary reads override the link to `tap`. Routes must not
 use hover preload for mutations. Backend authorization remains authoritative even when a permitted
 menu link speculatively preloads a GET request.
@@ -215,6 +222,8 @@ The Frontend: SvelteKit 5 section will gain a route-loading subsection with thes
   component `onMount`.
 - Use the SvelteKit load event's `fetch` through typed API modules so safe read navigation can benefit
   from data preloading and dependency tracking.
+- Carry required academic context in menu destinations; non-link navigation controls preload the
+  same resolved destination that they later navigate to.
 - Use hover preload only for safe, bounded, idempotent reads; use tap or disable data preload for
   expensive or highly volatile routes.
 - Combine always-co-consumed datasets behind a named typed page-view endpoint when measurement shows
