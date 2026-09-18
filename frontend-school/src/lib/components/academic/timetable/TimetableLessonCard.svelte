@@ -4,7 +4,7 @@
 	import type { TimetableBlock } from '$lib/api/timetable';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { DoorOpen, GripVertical, LoaderCircle, Trash2, Users } from 'lucide-svelte';
+	import { DoorOpen, LoaderCircle, Trash2, Users } from 'lucide-svelte';
 
 	let {
 		block,
@@ -98,18 +98,9 @@
 	ondragend={() => onDragEnd?.()}
 >
 	<div class="flex min-w-0 items-start">
-		{#if canEdit}
-			<span
-				data-timetable-drag-handle="true"
-				class="absolute top-1.5 left-0.5 z-10"
-				aria-hidden="true"
-			>
-				<GripVertical class="size-3.5 text-muted-foreground" />
-			</span>
-		{/if}
 		<button
 			type="button"
-			class={['min-w-0 flex-1 text-left', canEdit && 'pl-3']}
+			class="min-w-0 flex-1 text-left"
 			aria-label={`ดูรายละเอียด ${accessibleLabel}`}
 			disabled={pending}
 			onclick={() => onSelect?.(block)}
@@ -132,24 +123,14 @@
 			>
 				{title}
 			</h4>
-			{#if display.contextLabel || display.scopeLabel}
+			{#if block.blockKind !== 'structural' && display.contextLabel}
 				<div class="mt-1 flex min-w-0 flex-nowrap gap-0.5 overflow-hidden">
-					{#if display.contextLabel}
-						<Badge
-							variant="outline"
-							class="h-4 min-w-0 truncate px-1 text-[8px] leading-[14px] font-medium"
-						>
-							{display.contextLabel}
-						</Badge>
-					{/if}
-					{#if display.scopeLabel}
-						<Badge
-							variant="secondary"
-							class="h-4 min-w-0 truncate px-1 text-[8px] leading-[14px] font-medium"
-						>
-							{display.scopeLabel}
-						</Badge>
-					{/if}
+					<Badge
+						variant="outline"
+						class="h-4 min-w-0 truncate px-1 text-[8px] leading-[14px] font-medium"
+					>
+						{display.contextLabel}
+					</Badge>
 				</div>
 			{:else if resolvedTargetLabel}
 				<p

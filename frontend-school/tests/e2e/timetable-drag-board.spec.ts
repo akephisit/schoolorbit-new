@@ -153,6 +153,35 @@ test('preserves multiline special-period titles while creating, editing, and dis
 	await expect(createTitle).toHaveValue(title);
 });
 
+test('keeps timetable and tray cards draggable without drag icons or structural badges', async ({
+	page
+}) => {
+	const structuralBlock = makeStructuralTimetableBlock(
+		timetableIds.blockA,
+		timetableIds.period1,
+		'โฮมรูม'
+	);
+	await installTimetableMock(page, {
+		blocks: [structuralBlock],
+		requiredPeriods: 1,
+		includeSynchronizedDemand: true
+	});
+	await page.goto(timetableUrl());
+
+	const cellCard = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
+	await expect(cellCard).toHaveAttribute('draggable', 'true');
+	await expect(cellCard).not.toContainText('กิจกรรมรวม');
+	await expect(cellCard).not.toContainText('1 ห้อง');
+	await expect(cellCard.locator('svg.lucide-grip-vertical')).toHaveCount(0);
+
+	const trayCards = page.locator('aside article[draggable="true"]');
+	await expect(trayCards).toHaveCount(2);
+	for (let index = 0; index < 2; index += 1) {
+		await expect(trayCards.nth(index)).toHaveAttribute('draggable', 'true');
+		await expect(trayCards.nth(index).locator('svg.lucide-grip-vertical')).toHaveCount(0);
+	}
+});
+
 test('shows the dragged lesson preview only in the cell currently under the pointer', async ({
 	page
 }) => {

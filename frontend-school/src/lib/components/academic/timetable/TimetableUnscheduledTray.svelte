@@ -12,7 +12,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Check, ChevronDown, GripVertical, Inbox, Plus, UsersRound } from 'lucide-svelte';
+	import { Check, ChevronDown, Inbox, Plus, UsersRound } from 'lucide-svelte';
 	import TimetableRoomPicker from './TimetableRoomPicker.svelte';
 	import TimetableTeacherTargetPicker from './TimetableTeacherTargetPicker.svelte';
 
@@ -218,8 +218,7 @@
 							<Badge variant="secondary" class="absolute right-3 top-3">
 								{demand.requiredPeriods - demand.scheduledPeriods}/{demand.requiredPeriods}
 							</Badge>
-							<div class="flex items-start gap-2 pr-12">
-								<GripVertical class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+							<div class="flex items-start pr-12">
 								<button
 									type="button"
 									class="min-w-0 flex-1 text-left"
@@ -284,10 +283,7 @@
 							<Badge variant="secondary" class="absolute right-3 top-3">
 								{demand.remainingPeriods}/{demand.requiredPeriods}
 							</Badge>
-							<div class="flex items-start gap-2 pr-12">
-								<GripVertical
-									class={`mt-0.5 size-4 shrink-0 ${selectedIds.length ? 'text-muted-foreground' : 'text-muted'}`}
-								/>
+							<div class="flex items-start pr-12">
 								<button
 									type="button"
 									class="min-w-0 flex-1 text-left"
