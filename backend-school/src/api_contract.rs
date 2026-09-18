@@ -510,7 +510,6 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::transfer_placement,
         crate::modules::academic::delivery::handlers::list_offerings,
         crate::modules::academic::delivery::handlers::get_delivery_overview,
-        crate::modules::academic::delivery::handlers::get_learning_delivery_page_view,
         crate::modules::academic::delivery::handlers::get_homeroom_delivery_workspace,
         crate::modules::academic::delivery::handlers::get_delivery_management_options,
         crate::modules::academic::delivery::handlers::create_offering,
@@ -1335,7 +1334,6 @@ use utoipa::OpenApi;
         LearningOffering,
         LearningOfferingOverviewItem,
         LearningDeliveryOverview,
-        LearningDeliveryPageView,
         HomeroomOfferingState,
         HomeroomGroupMode,
         HomeroomTeacherState,
@@ -1374,6 +1372,7 @@ use utoipa::OpenApi;
         AcademicTermChangeActionKind,
         AcademicTermChangeItem,
         AcademicTermChangeSet,
+        AcademicTermChangeSetSummary,
         CreateAcademicTermChangeSetRequest,
         UpdateAcademicTermChangeSetRequest,
         CancelAcademicTermChangeSetRequest,
@@ -1407,7 +1406,6 @@ use utoipa::OpenApi;
         ApiResponse<Vec<LearningOffering>>,
         ApiResponse<LearningOffering>,
         ApiResponse<LearningDeliveryOverview>,
-        ApiResponse<LearningDeliveryPageView>,
         ApiResponse<TeacherHandoffPreview>,
         ApiResponse<ApplyTeacherHandoffResponse>,
         ApiResponse<HomeroomDeliveryWorkspace>,
@@ -1420,6 +1418,7 @@ use utoipa::OpenApi;
         ApiResponse<Vec<LearningGroupTeacherAssignment>>,
         ApiResponse<RosterPreview>,
         ApiResponse<Vec<AcademicTermChangeSet>>,
+        ApiResponse<Vec<AcademicTermChangeSetSummary>>,
         ApiResponse<AcademicTermChangeSet>,
         ApiResponse<AcademicTermChangeSetPreview>,
         ApiResponse<Vec<DatedRosterMembership>>,
@@ -2626,8 +2625,23 @@ mod tests {
         assert_eq!(
             document["paths"]["/api/academic/term-change-sets"]["get"]["responses"]["200"]
                 ["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_Vec_AcademicTermChangeSet"
+            "#/components/schemas/ApiResponse_Vec_AcademicTermChangeSetSummary"
         );
+        let summary = &document["components"]["schemas"]["AcademicTermChangeSetSummary"];
+        assert_eq!(
+            required(summary),
+            vec![
+                "academicTermId",
+                "academicYearId",
+                "effectiveFrom",
+                "id",
+                "reason",
+                "status",
+                "targetTimetableVersionId",
+                "updatedAt",
+            ]
+        );
+        assert!(summary["properties"]["items"].is_null());
         assert_eq!(
             document["paths"]["/api/academic/term-change-sets/{id}/preview"]["get"]["responses"]
                 ["200"]["content"]["application/json"]["schema"]["$ref"],
@@ -3170,11 +3184,6 @@ mod tests {
                 "#/components/schemas/ApiResponse_LearningDeliveryOverview",
             ),
             (
-                "/api/academic/delivery/page-view",
-                "getLearningDeliveryPageView",
-                "#/components/schemas/ApiResponse_LearningDeliveryPageView",
-            ),
-            (
                 "/api/academic/delivery/management-options",
                 "getLearningDeliveryManagementOptions",
                 "#/components/schemas/ApiResponse_DeliveryManagementOptions",
@@ -3223,7 +3232,6 @@ mod tests {
             "CurriculumStructureWorkspace",
             "AcademicSetupWorkspace",
             "LearningDeliveryOverview",
-            "LearningDeliveryPageView",
             "LearningOfferingOverviewItem",
             "DeliveryCatalogVersionOption",
             "DeliveryManagementOptions",
@@ -3238,16 +3246,10 @@ mod tests {
     #[test]
     fn curriculum_alignment_and_clone_handoff_are_typed() {
         let document = school_api_value().expect("document should serialize");
+        assert!(document["paths"]["/api/academic/delivery/page-view"].is_null());
+        assert!(document["components"]["schemas"]["LearningDeliveryPageView"].is_null());
         assert_eq!(
             query_contract(&document, "/api/academic/delivery/homerooms", "get"),
-            BTreeSet::from([
-                ("academicTermId".to_string(), true),
-                ("academicYearId".to_string(), true),
-                ("timetableVersionId".to_string(), false),
-            ])
-        );
-        assert_eq!(
-            query_contract(&document, "/api/academic/delivery/page-view", "get"),
             BTreeSet::from([
                 ("academicTermId".to_string(), true),
                 ("academicYearId".to_string(), true),

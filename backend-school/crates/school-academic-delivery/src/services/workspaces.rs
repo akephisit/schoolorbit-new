@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::time::{Duration, Instant};
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -13,16 +14,15 @@ use school_authorization::AcademicResourceListFilter;
 use school_errors::AppError;
 
 use super::super::models::{
-    AcademicTermChangeItem, AcademicTermChangeSet, ActivitySchedulingMode,
-    CurriculumDeliveryAlignmentState, CurriculumDeliveryExtraOffering,
+    ActivitySchedulingMode, CurriculumDeliveryAlignmentState, CurriculumDeliveryExtraOffering,
     DeliveryCatalogVersionOption, DeliveryManagementOptions, DeliveryPrerequisite,
     HomeroomDeliveryGroupSummary, HomeroomDeliveryItem, HomeroomDeliveryRoom,
     HomeroomDeliveryWorkspace, HomeroomGroupMode, HomeroomOfferingState, HomeroomTeacherState,
-    HomeroomTimetableState, LearningDeliveryOverview, LearningDeliveryPageView,
-    LearningOfferingKind, LearningOfferingOverviewItem, LearningOfferingQuery,
-    LearningOfferingStatus, Room, RosterStatus, StaffLookupItem, UnlinkedDeliveryItem,
+    HomeroomTimetableState, LearningDeliveryOverview, LearningOfferingKind,
+    LearningOfferingOverviewItem, LearningOfferingQuery, LearningOfferingStatus, Room,
+    RosterStatus, StaffLookupItem, UnlinkedDeliveryItem,
 };
-use super::{change_sets, groups, offerings};
+use super::{groups, offerings};
 
 const MAX_WORKSPACE_GROUPS: i64 = 2_000;
 const MAX_WORKSPACE_HOMEROOMS: usize = 500;
@@ -140,6 +140,33 @@ struct WorkspaceTimetableVersionRow {
     effective_from: chrono::NaiveDate,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+struct WorkspaceContextRow {
+    term_type: String,
+    type_occurrence: i64,
+    timetable_version_id: Option<Uuid>,
+    timetable_version_status: Option<TimetableVersionStatus>,
+    timetable_version_effective_from: Option<chrono::NaiveDate>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct HomeroomDeliveryTiming {
+    pub context_and_homerooms: Duration,
+    pub resources: Duration,
+    pub assembly: Duration,
+}
+
+async fn join_context_and_homeroom_reads<Context, Homerooms>(
+    context: Context,
+    homerooms: Homerooms,
+) -> Result<(Option<WorkspaceContextRow>, Vec<HomeroomDeliveryBaseRow>), sqlx::Error>
+where
+    Context: Future<Output = Result<Option<WorkspaceContextRow>, sqlx::Error>>,
+    Homerooms: Future<Output = Result<Vec<HomeroomDeliveryBaseRow>, sqlx::Error>>,
+{
+    futures::try_join!(context, homerooms)
+}
+
 async fn join_workspace_resource_reads<ExpectedRows, OfferingRows, GroupRows>(
     expected_rows: ExpectedRows,
     offering_rows: OfferingRows,
@@ -167,118 +194,125 @@ pub async fn homeroom_delivery_workspace_for_version(
     requested_timetable_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<HomeroomDeliveryWorkspace, AppError> {
-    let (term_type, type_occurrence, term_status): (String, i64, String) = sqlx::query_as(
-        r#"SELECT selected.term_type,
-                  count(sibling.id)::bigint AS type_occurrence,
-                  selected.status
-           FROM academic_terms selected
-           JOIN academic_terms sibling
-             ON sibling.academic_year_id = selected.academic_year_id
-            AND sibling.term_type = selected.term_type
-            AND sibling.sequence_no <= selected.sequence_no
-           WHERE selected.id = $1
-             AND selected.academic_year_id = $2
-           GROUP BY selected.id, selected.term_type, selected.status"#,
+    Ok(homeroom_delivery_workspace_with_timing(
+        pool,
+        academic_year_id,
+        academic_term_id,
+        requested_timetable_version_id,
+        filter,
+    )
+    .await?
+    .0)
+}
+
+pub async fn homeroom_delivery_workspace_with_timing(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+    requested_timetable_version_id: Option<Uuid>,
+    filter: &AcademicResourceListFilter,
+) -> Result<(HomeroomDeliveryWorkspace, HomeroomDeliveryTiming), AppError> {
+    let context_and_homerooms_started_at = Instant::now();
+    let context = sqlx::query_as(
+        r#"WITH selected_term AS (
+               SELECT selected.id,
+                      selected.academic_year_id,
+                      selected.term_type,
+                      count(sibling.id)::bigint AS type_occurrence,
+                      selected.status AS term_status
+               FROM academic_terms selected
+               JOIN academic_terms sibling
+                 ON sibling.academic_year_id = selected.academic_year_id
+                AND sibling.term_type = selected.term_type
+                AND sibling.sequence_no <= selected.sequence_no
+               WHERE selected.id = $1
+                 AND selected.academic_year_id = $2
+               GROUP BY selected.id, selected.academic_year_id,
+                        selected.term_type, selected.status
+           )
+           SELECT term.term_type,
+                  term.type_occurrence,
+                  version.id AS timetable_version_id,
+                  version.status AS timetable_version_status,
+                  version.effective_from AS timetable_version_effective_from
+           FROM selected_term term
+           LEFT JOIN LATERAL (
+               SELECT candidate.id, candidate.status, candidate.effective_from
+               FROM academic_timetable_versions candidate
+               WHERE candidate.academic_term_id = term.id
+                 AND candidate.academic_year_id = term.academic_year_id
+                 AND (
+                     ($3::uuid IS NOT NULL AND candidate.id = $3)
+                     OR ($3::uuid IS NULL AND candidate.status IN ('draft', 'published'))
+                 )
+               ORDER BY
+                   CASE
+                       WHEN $3::uuid IS NOT NULL THEN 0
+                       WHEN candidate.status = 'draft' THEN 0
+                       ELSE 1
+                   END,
+                   CASE WHEN $3::uuid IS NULL AND candidate.status = 'draft'
+                        THEN candidate.effective_from END DESC,
+                   CASE WHEN $3::uuid IS NULL AND candidate.status = 'draft'
+                        THEN candidate.created_at END DESC,
+                   CASE WHEN $3::uuid IS NULL AND candidate.status = 'draft'
+                        THEN candidate.id END,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status IN ('planning', 'ready')
+                        THEN candidate.effective_from END,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status IN ('planning', 'ready')
+                        THEN candidate.id END,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status = 'active'
+                                  AND candidate.effective_from <= CURRENT_DATE
+                        THEN 0
+                        WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status = 'active'
+                        THEN 1
+                        ELSE 0
+                   END,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status = 'active'
+                                  AND candidate.effective_from <= CURRENT_DATE
+                        THEN candidate.effective_from END DESC,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status = 'active'
+                                  AND candidate.effective_from <= CURRENT_DATE
+                        THEN candidate.id END,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status = 'active'
+                                  AND candidate.effective_from > CURRENT_DATE
+                        THEN candidate.effective_from END,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status = 'active'
+                                  AND candidate.effective_from > CURRENT_DATE
+                        THEN candidate.id END,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status NOT IN ('planning', 'ready', 'active')
+                        THEN candidate.effective_from END DESC,
+                   CASE WHEN $3::uuid IS NULL
+                                  AND candidate.status = 'published'
+                                  AND term.term_status NOT IN ('planning', 'ready', 'active')
+                        THEN candidate.id END DESC
+               LIMIT 1
+           ) version ON TRUE"#,
     )
     .bind(academic_term_id)
     .bind(academic_year_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
+    .bind(requested_timetable_version_id)
+    .fetch_optional(pool);
 
-    let timetable_version: Option<WorkspaceTimetableVersionRow> =
-        if let Some(version_id) = requested_timetable_version_id {
-            let selected = sqlx::query_as(
-                r#"SELECT id, status, effective_from
-               FROM academic_timetable_versions
-               WHERE id = $1
-                 AND academic_term_id = $2
-                 AND academic_year_id = $3"#,
-            )
-            .bind(version_id)
-            .bind(academic_term_id)
-            .bind(academic_year_id)
-            .fetch_optional(pool)
-            .await?;
-            if selected.is_none() {
-                return Err(AppError::ValidationError(
-                    "รุ่นตารางเรียนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
-                ));
-            }
-            selected
-        } else if let Some(draft) = sqlx::query_as(
-            r#"SELECT id, status, effective_from
-               FROM academic_timetable_versions
-               WHERE academic_term_id = $1
-                 AND academic_year_id = $2
-                 AND status = 'draft'
-               ORDER BY effective_from DESC, created_at DESC, id
-               LIMIT 1"#,
-        )
-        .bind(academic_term_id)
-        .bind(academic_year_id)
-        .fetch_optional(pool)
-        .await?
-        {
-            Some(draft)
-        } else {
-            match term_status.as_str() {
-                "planning" | "ready" => {
-                    sqlx::query_as(
-                        r#"SELECT id, status, effective_from
-               FROM academic_timetable_versions
-               WHERE academic_term_id = $1 AND status = 'published'
-               ORDER BY effective_from, id LIMIT 1"#,
-                    )
-                    .bind(academic_term_id)
-                    .fetch_optional(pool)
-                    .await?
-                }
-                "active" => {
-                    let current: Option<WorkspaceTimetableVersionRow> = sqlx::query_as(
-                        r#"SELECT id, status, effective_from
-                   FROM academic_timetable_versions
-                   WHERE academic_term_id = $1
-                     AND status = 'published'
-                     AND effective_from <= CURRENT_DATE
-                   ORDER BY effective_from DESC, id LIMIT 1"#,
-                    )
-                    .bind(academic_term_id)
-                    .fetch_optional(pool)
-                    .await?;
-                    if current.is_some() {
-                        current
-                    } else {
-                        sqlx::query_as(
-                            r#"SELECT id, status, effective_from
-                       FROM academic_timetable_versions
-                       WHERE academic_term_id = $1 AND status = 'published'
-                       ORDER BY effective_from, id LIMIT 1"#,
-                        )
-                        .bind(academic_term_id)
-                        .fetch_optional(pool)
-                        .await?
-                    }
-                }
-                _ => {
-                    sqlx::query_as(
-                        r#"SELECT id, status, effective_from
-                   FROM academic_timetable_versions
-                   WHERE academic_term_id = $1 AND status = 'published'
-                   ORDER BY effective_from DESC, id DESC LIMIT 1"#,
-                    )
-                    .bind(academic_term_id)
-                    .fetch_optional(pool)
-                    .await?
-                }
-            }
-        };
-    let timetable_version_id = timetable_version.as_ref().map(|version| version.id);
-    let timetable_version_effective_from = timetable_version
-        .as_ref()
-        .map(|version| version.effective_from);
-
-    let homeroom_rows: Vec<HomeroomDeliveryBaseRow> = sqlx::query_as(
+    let homeroom_rows = sqlx::query_as(
         r#"SELECT homeroom.id AS homeroom_id,
                   homeroom.name AS homeroom_name,
                   grade.id AS grade_level_id,
@@ -310,8 +344,36 @@ pub async fn homeroom_delivery_workspace_for_version(
     )
     .bind(academic_year_id)
     .bind((MAX_WORKSPACE_HOMEROOMS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
+    .fetch_all(pool);
+
+    let (context, homeroom_rows) = join_context_and_homeroom_reads(context, homeroom_rows).await?;
+    let context_and_homerooms = context_and_homerooms_started_at.elapsed();
+    let context =
+        context.ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
+    if requested_timetable_version_id.is_some() && context.timetable_version_id.is_none() {
+        return Err(AppError::ValidationError(
+            "รุ่นตารางเรียนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
+        ));
+    }
+    let timetable_version = match context.timetable_version_id {
+        Some(id) => Some(WorkspaceTimetableVersionRow {
+            id,
+            status: context.timetable_version_status.ok_or_else(|| {
+                AppError::InternalServerError("สถานะรุ่นตารางเรียนไม่สมบูรณ์".to_string())
+            })?,
+            effective_from: context.timetable_version_effective_from.ok_or_else(|| {
+                AppError::InternalServerError("วันที่มีผลของรุ่นตารางเรียนไม่สมบูรณ์".to_string())
+            })?,
+        }),
+        None => None,
+    };
+    let term_type = context.term_type;
+    let type_occurrence = context.type_occurrence;
+    let timetable_version_id = timetable_version.as_ref().map(|version| version.id);
+    let timetable_version_effective_from = timetable_version
+        .as_ref()
+        .map(|version| version.effective_from);
+
     ensure_option_size(
         homeroom_rows.len(),
         MAX_WORKSPACE_HOMEROOMS,
@@ -322,6 +384,7 @@ pub async fn homeroom_delivery_workspace_for_version(
         .map(|homeroom| homeroom.homeroom_id)
         .collect::<Vec<_>>();
 
+    let resources_started_at = Instant::now();
     let expected_rows = sqlx::query_as(
         r#"SELECT homeroom.id AS homeroom_id,
                   requirement.id AS requirement_id,
@@ -424,49 +487,80 @@ pub async fn homeroom_delivery_workspace_for_version(
     .fetch_all(pool);
 
     let group_rows = sqlx::query_as(
-        r#"SELECT learning_group.id,
+        r#"WITH relevant_groups AS MATERIALIZED (
+               SELECT learning_group.id,
+                      learning_group.learning_offering_id,
+                      learning_group.academic_term_id,
+                      learning_group.academic_year_id,
+                      learning_group.code,
+                      learning_group.name,
+                      learning_group.status,
+                      learning_group.roster_status
+               FROM learning_groups learning_group
+               JOIN learning_offerings offering
+                 ON offering.id = learning_group.learning_offering_id
+               WHERE learning_group.academic_term_id = $1
+                 AND learning_group.academic_year_id = $2
+                 AND ($3 OR offering.owning_organization_unit_id = ANY($4))
+               ORDER BY learning_group.code, learning_group.id
+               LIMIT $6
+           ),
+           homeroom_coverage AS (
+               SELECT coverage.learning_group_id,
+                      array_agg(homeroom.id ORDER BY homeroom.name, homeroom.id)
+                          AS homeroom_ids,
+                      array_agg(homeroom.name ORDER BY homeroom.name, homeroom.id)
+                          AS homeroom_names
+               FROM learning_group_homerooms coverage
+               JOIN relevant_groups learning_group
+                 ON learning_group.id = coverage.learning_group_id
+               JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
+               GROUP BY coverage.learning_group_id
+           ),
+           teacher_counts AS (
+               SELECT teacher.learning_group_id,
+                      count(*)::bigint AS primary_teacher_count
+               FROM learning_group_teachers teacher
+               JOIN relevant_groups learning_group
+                 ON learning_group.id = teacher.learning_group_id
+               JOIN users teacher_user ON teacher_user.id = teacher.teacher_id
+               WHERE teacher.role = 'primary'
+                 AND teacher_user.user_type = 'staff'
+                 AND teacher_user.status = 'active'
+               GROUP BY teacher.learning_group_id
+           ),
+           timetable_counts AS (
+               SELECT block_group.learning_group_id,
+                      count(*)::bigint AS timetable_entry_count
+               FROM academic_timetable_block_groups block_group
+               JOIN relevant_groups learning_group
+                 ON learning_group.id = block_group.learning_group_id
+                AND learning_group.academic_term_id = block_group.academic_term_id
+                AND learning_group.academic_year_id = block_group.academic_year_id
+               JOIN academic_timetable_blocks block ON block.id = block_group.block_id
+               WHERE block.timetable_version_id = $5
+                 AND block.is_active
+                 AND block_group.is_active
+               GROUP BY block_group.learning_group_id
+           )
+           SELECT learning_group.id,
                   learning_group.learning_offering_id,
                   learning_group.code,
                   learning_group.name,
                   learning_group.status,
                   learning_group.roster_status,
-                  coalesce(
-                      array_agg(homeroom.id ORDER BY homeroom.name, homeroom.id)
-                          FILTER (WHERE homeroom.id IS NOT NULL),
-                      ARRAY[]::uuid[]
-                  ) AS homeroom_ids,
-                  coalesce(
-                      array_agg(homeroom.name ORDER BY homeroom.name, homeroom.id)
-                          FILTER (WHERE homeroom.id IS NOT NULL),
-                      ARRAY[]::text[]
-                  ) AS homeroom_names,
-                  (SELECT count(*)::bigint
-                   FROM learning_group_teachers teacher
-                   JOIN users teacher_user ON teacher_user.id = teacher.teacher_id
-                   WHERE teacher.learning_group_id = learning_group.id
-                     AND teacher.role = 'primary'
-                     AND teacher_user.user_type = 'staff'
-                     AND teacher_user.status = 'active') AS primary_teacher_count,
-                  (SELECT count(*)::bigint
-                   FROM academic_timetable_block_groups block_group
-                   JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-                   WHERE block_group.learning_group_id = learning_group.id
-                     AND block_group.academic_term_id = learning_group.academic_term_id
-                     AND block_group.academic_year_id = learning_group.academic_year_id
-                     AND block.timetable_version_id = $5
-                     AND block.is_active
-                     AND block_group.is_active) AS timetable_entry_count
-           FROM learning_groups learning_group
-           JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
-           LEFT JOIN learning_group_homerooms coverage
+                  coalesce(coverage.homeroom_ids, ARRAY[]::uuid[]) AS homeroom_ids,
+                  coalesce(coverage.homeroom_names, ARRAY[]::text[]) AS homeroom_names,
+                  coalesce(teacher.primary_teacher_count, 0) AS primary_teacher_count,
+                  coalesce(timetable.timetable_entry_count, 0) AS timetable_entry_count
+           FROM relevant_groups learning_group
+           LEFT JOIN homeroom_coverage coverage
              ON coverage.learning_group_id = learning_group.id
-           LEFT JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
-           WHERE learning_group.academic_term_id = $1
-             AND learning_group.academic_year_id = $2
-             AND ($3 OR offering.owning_organization_unit_id = ANY($4))
-           GROUP BY learning_group.id
-           ORDER BY learning_group.code, learning_group.id
-           LIMIT $6"#,
+           LEFT JOIN teacher_counts teacher
+             ON teacher.learning_group_id = learning_group.id
+           LEFT JOIN timetable_counts timetable
+             ON timetable.learning_group_id = learning_group.id
+           ORDER BY learning_group.code, learning_group.id"#,
     )
     .bind(academic_term_id)
     .bind(academic_year_id)
@@ -478,6 +572,7 @@ pub async fn homeroom_delivery_workspace_for_version(
 
     let (expected_rows, offering_rows, group_rows) =
         join_workspace_resource_reads(expected_rows, offering_rows, group_rows).await?;
+    let resources = resources_started_at.elapsed();
     ensure_option_size(
         expected_rows.len(),
         MAX_WORKSPACE_ITEMS,
@@ -494,6 +589,7 @@ pub async fn homeroom_delivery_workspace_for_version(
         "กลุ่มเรียนในพื้นที่ทำงาน",
     )?;
 
+    let assembly_started_at = Instant::now();
     let mut expected_by_homeroom: HashMap<Uuid, Vec<ExpectedDeliveryRow>> = HashMap::new();
     for expected in expected_rows {
         expected_by_homeroom
@@ -701,7 +797,7 @@ pub async fn homeroom_delivery_workspace_for_version(
     }
     unlinked.sort_by(|left, right| left.code.cmp(&right.code).then(left.name.cmp(&right.name)));
 
-    Ok(HomeroomDeliveryWorkspace {
+    let workspace = HomeroomDeliveryWorkspace {
         academic_term_id,
         academic_year_id,
         timetable_version_id,
@@ -709,7 +805,16 @@ pub async fn homeroom_delivery_workspace_for_version(
         timetable_version_effective_from,
         homerooms: rooms,
         unlinked,
-    })
+    };
+    let assembly = assembly_started_at.elapsed();
+    Ok((
+        workspace,
+        HomeroomDeliveryTiming {
+            context_and_homerooms,
+            resources,
+            assembly,
+        },
+    ))
 }
 
 fn target_applies_to_room(
@@ -855,50 +960,6 @@ fn delivery_group_summary(group: &DeliveryGroupRow) -> HomeroomDeliveryGroupSumm
         primary_teacher_count: group.primary_teacher_count,
         timetable_entry_count: group.timetable_entry_count,
     }
-}
-
-fn page_view_requires_overview(change_sets: &[AcademicTermChangeSet]) -> bool {
-    change_sets
-        .iter()
-        .flat_map(|change_set| &change_set.items)
-        .any(|item| {
-            matches!(
-                item,
-                AcademicTermChangeItem::AddOffering { .. }
-                    | AcademicTermChangeItem::StopOffering { .. }
-                    | AcademicTermChangeItem::AdjustWeeklyPeriodTarget { .. }
-            )
-        })
-}
-
-pub async fn delivery_page_view(
-    pool: &PgPool,
-    academic_year_id: Uuid,
-    academic_term_id: Uuid,
-    requested_timetable_version_id: Option<Uuid>,
-    filter: &AcademicResourceListFilter,
-) -> Result<LearningDeliveryPageView, AppError> {
-    let (workspace, change_sets) = futures::try_join!(
-        homeroom_delivery_workspace_for_version(
-            pool,
-            academic_year_id,
-            academic_term_id,
-            requested_timetable_version_id,
-            filter,
-        ),
-        change_sets::list_change_sets(pool, academic_term_id),
-    )?;
-    let overview = if page_view_requires_overview(&change_sets) {
-        Some(delivery_overview(pool, academic_term_id, filter).await?)
-    } else {
-        None
-    };
-
-    Ok(LearningDeliveryPageView {
-        workspace,
-        change_sets,
-        overview,
-    })
 }
 
 pub async fn delivery_overview(
@@ -1323,15 +1384,39 @@ fn grade_level_label(level_type: Option<&str>, year: Option<i32>) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{
-        AcademicTermChangeItem, AcademicTermChangeSet, AcademicTermChangeSetStatus,
-        HomeroomGroupMode, HomeroomTeacherState, HomeroomTimetableState,
-    };
-    use chrono::{NaiveDate, Utc};
+    use crate::models::{HomeroomGroupMode, HomeroomTeacherState, HomeroomTimetableState};
     use school_academic_core::models::RequirementKind;
     use std::sync::Arc;
     use tokio::sync::Barrier;
     use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn context_and_homeroom_reads_start_concurrently() {
+        let barrier = Arc::new(Barrier::new(3));
+        let context_barrier = Arc::clone(&barrier);
+        let homeroom_barrier = Arc::clone(&barrier);
+
+        let joined = tokio::spawn(join_context_and_homeroom_reads(
+            async move {
+                context_barrier.wait().await;
+                Ok::<Option<WorkspaceContextRow>, sqlx::Error>(None)
+            },
+            async move {
+                homeroom_barrier.wait().await;
+                Ok::<Vec<HomeroomDeliveryBaseRow>, sqlx::Error>(Vec::new())
+            },
+        ));
+
+        timeout(Duration::from_secs(1), barrier.wait())
+            .await
+            .expect("context and homeroom reads must start before either completes");
+        let (context, homerooms) = joined
+            .await
+            .expect("context and homeroom join task must complete")
+            .expect("empty context and homeroom reads must succeed");
+        assert!(context.is_none());
+        assert!(homerooms.is_empty());
+    }
 
     #[tokio::test]
     async fn workspace_resource_reads_start_concurrently() {
@@ -1365,49 +1450,6 @@ mod tests {
         assert!(expected.is_empty());
         assert!(offerings.is_empty());
         assert!(groups.is_empty());
-    }
-
-    fn change_set_with(items: Vec<AcademicTermChangeItem>) -> AcademicTermChangeSet {
-        let now = Utc::now();
-        AcademicTermChangeSet {
-            id: Uuid::nil(),
-            academic_term_id: Uuid::nil(),
-            academic_year_id: Uuid::nil(),
-            effective_from: NaiveDate::from_ymd_opt(2026, 9, 18).unwrap(),
-            reason: "test".to_string(),
-            status: AcademicTermChangeSetStatus::Draft,
-            base_timetable_version_id: Uuid::nil(),
-            target_timetable_version_id: Uuid::nil(),
-            row_version: 1,
-            created_by: Uuid::nil(),
-            published_by: None,
-            published_at: None,
-            cancelled_by: None,
-            cancelled_at: None,
-            created_at: now,
-            updated_at: now,
-            items,
-        }
-    }
-
-    #[test]
-    fn page_view_requires_overview_only_for_visible_offering_labels() {
-        assert!(!page_view_requires_overview(&[]));
-        assert!(!page_view_requires_overview(&[change_set_with(Vec::new())]));
-
-        let now = Utc::now();
-        let offering_item = AcademicTermChangeItem::AddOffering {
-            id: Uuid::nil(),
-            learning_offering_id: Uuid::nil(),
-            weekly_period_target: 4,
-            row_version: 1,
-            created_by: Uuid::nil(),
-            created_at: now,
-            updated_at: now,
-        };
-        assert!(page_view_requires_overview(&[change_set_with(vec![
-            offering_item,
-        ])]));
     }
 
     #[test]

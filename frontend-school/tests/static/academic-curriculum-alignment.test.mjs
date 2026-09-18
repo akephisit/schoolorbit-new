@@ -30,7 +30,7 @@ test('delivery renders set-based curriculum alignment and exact context links', 
 	assert.match(workspace, /studyProgramId/);
 	assert.match(workspace, /versionId/);
 	assert.match(pageLoad, /readLearningDeliveryRouteContext\(url\)/);
-	assert.match(pageLoad, /getLearningDeliveryPageView\([\s\S]*timetableVersionId/);
+	assert.match(pageLoad, /getHomeroomDeliveryWorkspace\([\s\S]*timetableVersionId/);
 	assert.doesNotMatch(
 		`${pageLoad}\n${page}\n${workspace}`,
 		/getLearningOffering|getLearningGroup|listLearningGroups/

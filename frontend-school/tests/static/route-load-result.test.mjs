@@ -26,7 +26,7 @@ test('captureRouteLoad returns the concrete error message or fallback', async ()
 	);
 });
 
-test('delivery route context requires year and term and preserves an optional version', () => {
+test('delivery route context requires year and term and preserves optional selections', () => {
 	assert.equal(
 		readLearningDeliveryRouteContext(new URL('https://school.test/staff/academic/delivery')),
 		null
@@ -37,18 +37,24 @@ test('delivery route context requires year and term and preserves an optional ve
 				'https://school.test/staff/academic/delivery?academicYearId=year-1&academicTermId=term-1'
 			)
 		),
-		{ academicYearId: 'year-1', academicTermId: 'term-1', timetableVersionId: undefined }
+		{
+			academicYearId: 'year-1',
+			academicTermId: 'term-1',
+			timetableVersionId: undefined,
+			changeSetId: undefined
+		}
 	);
 	assert.deepEqual(
 		readLearningDeliveryRouteContext(
 			new URL(
-				'https://school.test/staff/academic/delivery?academicYearId=year-1&academicTermId=term-1&timetableVersionId=version-1'
+				'https://school.test/staff/academic/delivery?academicYearId=year-1&academicTermId=term-1&timetableVersionId=version-1&changeSetId=change-set-1'
 			)
 		),
 		{
 			academicYearId: 'year-1',
 			academicTermId: 'term-1',
-			timetableVersionId: 'version-1'
+			timetableVersionId: 'version-1',
+			changeSetId: 'change-set-1'
 		}
 	);
 });

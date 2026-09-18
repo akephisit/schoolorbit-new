@@ -215,7 +215,7 @@
 	}
 
 	async function handoffApplied(_result: ApplyTeacherHandoffResponse) {
-		await onChanged(changeSet, 'page');
+		await onChanged(changeSet, 'homerooms');
 		readinessRevision += 1;
 	}
 

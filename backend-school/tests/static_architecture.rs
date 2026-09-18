@@ -765,6 +765,26 @@ fn academic_assessment_and_results_have_acyclic_workspace_owners() {
 }
 
 #[test]
+fn homeroom_delivery_workspace_keeps_database_reads_bounded_and_set_based() {
+    let source = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/services/workspaces.rs"),
+    ));
+    let workspace = extract_braced_block(
+        &source,
+        "pub async fn homeroom_delivery_workspace_with_timing",
+        false,
+    );
+
+    assert!(workspace.contains("join_context_and_homeroom_reads"));
+    assert!(!workspace.contains("else if let Some(draft)"));
+    assert!(source.contains("LEFT JOIN LATERAL"));
+    assert!(source.contains("WITH relevant_groups AS"));
+    assert!(source.contains("teacher_counts AS"));
+    assert!(source.contains("timetable_counts AS"));
+    assert!(!source.contains("(SELECT count(*)::bigint"));
+}
+
+#[test]
 fn academic_lifecycle_has_one_top_level_workspace_owner_and_typed_external_ports() {
     let manifest = read_source(manifest_dir().join("Cargo.toml"));
     let lifecycle_root = workspace_crate_dir("school-academic-lifecycle");
@@ -7336,14 +7356,14 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
     assert!(!handlers.contains(".execute("));
     assert!(!handlers.contains(".begin("));
 
-    let page_view = extract_braced_block(
+    let homeroom_workspace = extract_braced_block(
         &handlers,
-        "pub async fn get_learning_delivery_page_view",
+        "pub async fn get_homeroom_delivery_workspace",
         false,
     );
-    assert!(page_view.contains("require_learning_offering_list_access"));
-    assert!(page_view.contains("OfferingAction::Read"));
-    assert!(!page_view.contains("OfferingAction::Manage"));
+    assert!(homeroom_workspace.contains("require_learning_offering_list_access"));
+    assert!(homeroom_workspace.contains("OfferingAction::Read"));
+    assert!(!homeroom_workspace.contains("OfferingAction::Manage"));
 
     for (handler_name, action) in [
         ("list_offerings", "OfferingAction::Read"),
@@ -7793,6 +7813,22 @@ fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
         !timetable_n_plus_one.is_match(&timetable),
         "timetable list hydration must fetch instructors in batches"
     );
+}
+
+#[test]
+fn academic_term_change_set_summaries_do_not_hydrate_detail_rows() {
+    let change_sets = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/services/change_sets.rs"),
+    ));
+    let summaries = extract_braced_block(
+        &change_sets,
+        "pub async fn list_change_set_summaries",
+        false,
+    );
+
+    assert!(!summaries.contains("hydrate_many"));
+    assert!(!summaries.contains("academic_term_change_items"));
+    assert!(summaries.contains("fetch_all"));
 }
 
 #[test]

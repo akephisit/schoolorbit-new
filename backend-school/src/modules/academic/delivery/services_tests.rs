@@ -592,34 +592,6 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
 }
 
 #[tokio::test]
-async fn delivery_page_view_batches_primary_reads_without_forcing_overview() {
-    let pool = prepare_delivery_runtime_fixture("academic_delivery_page_view").await;
-    let context = planning_runtime_context(&pool).await;
-    assert!(change_sets::list_change_sets(&pool, context.term_id)
-        .await
-        .unwrap()
-        .is_empty());
-
-    let view = workspaces::delivery_page_view(
-        &pool,
-        context.year_id,
-        context.term_id,
-        None,
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
-    )
-    .await
-    .expect("delivery page view should load");
-
-    assert_eq!(view.workspace.academic_year_id, context.year_id);
-    assert_eq!(view.workspace.academic_term_id, context.term_id);
-    assert!(view.change_sets.is_empty());
-    assert!(view.overview.is_none());
-}
-
-#[tokio::test]
 async fn lifecycle_delivery_closure_checks_the_year_and_keeps_closing_editable() {
     let pool = prepare_delivery_runtime_fixture("delivery_lifecycle_states").await;
     let context = planning_runtime_context(&pool).await;
@@ -2294,7 +2266,7 @@ async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
     .expect_err("the same idempotency key must reject different normalized input");
     assert!(matches!(mismatched, AppError::Conflict(_)));
 
-    let listed = change_sets::list_change_sets(&pool, context.term_id)
+    let listed = change_sets::list_change_set_summaries(&pool, context.term_id)
         .await
         .unwrap();
     assert!(listed.iter().any(|item| item.id == created.id));
@@ -2304,6 +2276,77 @@ async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
     assert_eq!(
         fetched.target_timetable_version_id,
         created.target_timetable_version_id
+    );
+}
+
+#[tokio::test]
+async fn academic_term_change_set_summary_omits_hydrated_detail() {
+    let pool = prepare_delivery_runtime_fixture("academic_change_set_summary").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let change_set = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        12,
+        "change-set:summary:idempotency",
+    )
+    .await;
+    let (offering_id, base_target): (Uuid, i32) = sqlx::query_as(
+        r#"SELECT learning_offering_id, weekly_period_target
+           FROM academic_timetable_version_targets
+           WHERE timetable_version_id = $1
+           ORDER BY learning_offering_id
+           LIMIT 1"#,
+    )
+    .bind(change_set.base_timetable_version_id)
+    .fetch_one(&pool)
+    .await
+    .expect("base version must contain an offering target");
+    let detailed = change_sets::upsert_change_item(
+        &pool,
+        context.teacher_id,
+        change_set.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: change_set.row_version,
+            item_row_version: None,
+            learning_offering_id: offering_id,
+            weekly_period_target: base_target + 1,
+        },
+    )
+    .await
+    .expect("fixture change set must contain a detail item");
+    assert_eq!(detailed.items.len(), 1);
+
+    let summaries = change_sets::list_change_set_summaries(&pool, context.term_id)
+        .await
+        .expect("summary list must load without detail hydration");
+    let summary = summaries
+        .iter()
+        .find(|summary| summary.id == change_set.id)
+        .expect("created change set must be listed");
+    let value = serde_json::to_value(summary).expect("summary must serialize");
+    let keys = value
+        .as_object()
+        .expect("summary must serialize as an object")
+        .keys()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        keys,
+        std::collections::BTreeSet::from([
+            "academicTermId".to_string(),
+            "academicYearId".to_string(),
+            "effectiveFrom".to_string(),
+            "id".to_string(),
+            "reason".to_string(),
+            "status".to_string(),
+            "targetTimetableVersionId".to_string(),
+            "updatedAt".to_string(),
+        ])
+    );
+    assert_eq!(
+        summary.target_timetable_version_id,
+        detailed.target_timetable_version_id
     );
 }
 

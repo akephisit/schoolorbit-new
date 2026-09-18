@@ -179,7 +179,7 @@
 				acknowledgedWarningCodes: [...new Set(warningFindings.map((finding) => finding.code))],
 				idempotencyKey: crypto.randomUUID()
 			});
-			await onChanged(updated, 'page');
+			await onChanged(updated, 'homerooms');
 			preview = null;
 		} catch (error) {
 			if (error instanceof ApiClientError && error.status === 409) {

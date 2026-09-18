@@ -18,10 +18,6 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/delivery/workspace", get(handlers::get_delivery_overview))
         .route(
-            "/delivery/page-view",
-            get(handlers::get_learning_delivery_page_view),
-        )
-        .route(
             "/delivery/homerooms",
             get(handlers::get_homeroom_delivery_workspace),
         )

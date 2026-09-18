@@ -1030,6 +1030,51 @@
         ],
         "type": "string"
       },
+      "AcademicTermChangeSetSummary": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
+          },
+          "targetTimetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "academicYearId",
+          "effectiveFrom",
+          "reason",
+          "status",
+          "targetTimetableVersionId",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "AcademicTermOption": {
         "properties": {
           "academicYearId": {
@@ -9044,50 +9089,6 @@
         ],
         "type": "object"
       },
-      "ApiResponse_LearningDeliveryPageView": {
-        "properties": {
-          "data": {
-            "properties": {
-              "changeSets": {
-                "items": {
-                  "$ref": "#/components/schemas/AcademicTermChangeSet"
-                },
-                "type": "array"
-              },
-              "overview": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/LearningDeliveryOverview"
-                  }
-                ]
-              },
-              "workspace": {
-                "$ref": "#/components/schemas/HomeroomDeliveryWorkspace"
-              }
-            },
-            "required": [
-              "workspace",
-              "changeSets",
-              "overview"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
       "ApiResponse_LearningGroup": {
         "properties": {
           "data": {
@@ -14443,6 +14444,69 @@
                 "createdAt",
                 "updatedAt",
                 "items"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_AcademicTermChangeSetSummary": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicTermId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "effectiveFrom": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
+                },
+                "targetTimetableVersionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "academicTermId",
+                "academicYearId",
+                "effectiveFrom",
+                "reason",
+                "status",
+                "targetTimetableVersionId",
+                "updatedAt"
               ],
               "type": "object"
             },
@@ -34071,35 +34135,6 @@
         ],
         "type": "object"
       },
-      "LearningDeliveryPageView": {
-        "properties": {
-          "changeSets": {
-            "items": {
-              "$ref": "#/components/schemas/AcademicTermChangeSet"
-            },
-            "type": "array"
-          },
-          "overview": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/LearningDeliveryOverview"
-              }
-            ]
-          },
-          "workspace": {
-            "$ref": "#/components/schemas/HomeroomDeliveryWorkspace"
-          }
-        },
-        "required": [
-          "workspace",
-          "changeSets",
-          "overview"
-        ],
-        "type": "object"
-      },
       "LearningGroup": {
         "properties": {
           "academicTermId": {
@@ -52960,95 +52995,6 @@
         ]
       }
     },
-    "/api/academic/delivery/page-view": {
-      "get": {
-        "operationId": "getLearningDeliveryPageView",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "timetableVersionId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LearningDeliveryPageView"
-                }
-              }
-            },
-            "description": "Primary learning delivery page view"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid academic year or term query"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Learning offering read permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Academic term not found in the selected year"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
     "/api/academic/delivery/workspace": {
       "get": {
         "operationId": "getLearningDeliveryOverview",
@@ -65045,11 +64991,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_AcademicTermChangeSet"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AcademicTermChangeSetSummary"
                 }
               }
             },
-            "description": "Operational academic changes for the selected term"
+            "description": "Operational academic change summaries for the selected term"
           },
           "400": {
             "content": {

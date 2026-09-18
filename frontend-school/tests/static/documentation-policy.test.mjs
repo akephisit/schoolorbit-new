@@ -366,8 +366,21 @@ test('development rules own route data loading and navigation performance', asyn
 		/Resolve required academic year and term before normal menu preload and navigation/
 	);
 	assert.match(rules, /URL repair is a fallback for direct, stale, or external links/);
-	assert.match(rules, /page-view endpoint/);
-	assert.match(rules, /Independent initial reads[\s\S]*concurrently/);
+	assert.match(rules, /independently renderable UI region/);
+	assert.match(rules, /route-wide `\/page-view`/);
+	assert.match(rules, /typed in-flight/);
+	assert.match(rules, /real data dependency/);
+	assert.match(rules, /visible independent region reads[\s\S]*concurrently/);
 	assert.match(rules, /invalidateAll\(\)/);
 	assert.match(rules, /cache[\s\S]*tenant[\s\S]*invalidation/);
+});
+
+test('development rules require efficient measured SQL reads', async () => {
+	const rules = await readFile(path.join(repoRoot, '.rules'), 'utf8');
+
+	assert.match(rules, /minimize database round trips/);
+	assert.match(rules, /N\+1/);
+	assert.match(rules, /set-based/);
+	assert.match(rules, /tenant pool capacity/);
+	assert.match(rules, /EXPLAIN \(ANALYZE, BUFFERS\)/);
 });

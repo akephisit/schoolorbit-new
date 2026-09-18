@@ -27,6 +27,8 @@ test('operational academic change API consumes generated contracts and camelCase
 	}
 	assert.match(api, /academicTermId:\s*selectedTerm\(academicTermId\)/);
 	assert.match(api, /satisfies ListAcademicTermChangeSetsQuery/);
+	assert.match(api, /apiClient\.get<AcademicTermChangeSetSummary\[]>/);
+	assert.match(api, /apiClient\.get<AcademicTermChangeSet>\(changeSetPath\(id\)/);
 	assert.match(api, /deleteWithBody<AcademicTermChangeSet>/);
 	assert.doesNotMatch(api, /academic_term_id|ApiResponse<unknown>|Record<string, unknown>/);
 });
@@ -43,12 +45,10 @@ test('published delivery rows expose date-derived state and a permission-gated e
 	assert.match(page, /selectedChangeSetId/);
 	assert.match(page, /เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว/);
 	assert.match(page, /updated\.items\.length > 0/);
-	assert.match(page, /\$effect\(\(\) => {[\s\S]*const routeResult = data\.pageView/);
-	assert.match(page, /if \(routeResult\?\.ok\) {[\s\S]*applyPageView\(routeResult\.data\)/);
-	assert.match(
-		page,
-		/else {[\s\S]*workspace = null;[\s\S]*overview = null;[\s\S]*changeSets = \[\];[\s\S]*selectedChangeSetId = '';/
-	);
+	assert.match(page, /const routeResult = data\.homerooms/);
+	assert.match(page, /const routeResult = data\.changeSetSummaries/);
+	assert.match(page, /const routeResult = data\.selectedChangeSet/);
+	assert.doesNotMatch(page, /applyPageView|data\.pageView/);
 	assert.match(table, /startsOn/);
 	assert.match(table, /endsOn/);
 	assert.match(table, /กำลังจะเริ่ม|กำลังสอน|สิ้นสุดแล้ว/);

@@ -9,7 +9,7 @@ use crate::models::{
     AcademicChangeFinding, AcademicChangeFindingCode, AcademicChangeFindingSeverity,
     AcademicChangeImpactCounts, AcademicOfferingScheduleCount, AcademicTermChangeActionKind,
     AcademicTermChangeItem, AcademicTermChangeSet, AcademicTermChangeSetPreview,
-    AcademicTermChangeSetStatus, CancelAcademicTermChangeSetRequest,
+    AcademicTermChangeSetStatus, AcademicTermChangeSetSummary, CancelAcademicTermChangeSetRequest,
     CreateAcademicTermChangeSetRequest, DeleteAcademicTermChangeItemRequest,
     LearningOfferingStatus, LearningTeacherRole, PublishAcademicTermChangeSetRequest,
     UpdateAcademicTermChangeSetRequest, UpsertAcademicTermChangeItemRequest,
@@ -43,6 +43,18 @@ struct ChangeSetRow {
     cancelled_by: Option<Uuid>,
     cancelled_at: Option<chrono::DateTime<Utc>>,
     created_at: chrono::DateTime<Utc>,
+    updated_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct ChangeSetSummaryRow {
+    id: Uuid,
+    academic_term_id: Uuid,
+    academic_year_id: Uuid,
+    effective_from: NaiveDate,
+    reason: String,
+    status: AcademicTermChangeSetStatus,
+    target_timetable_version_id: Option<Uuid>,
     updated_at: chrono::DateTime<Utc>,
 }
 
@@ -117,20 +129,38 @@ const CHANGE_SET_COLUMNS: &str = r#"
     created_at, updated_at
 "#;
 
-pub async fn list_change_sets(
+pub async fn list_change_set_summaries(
     pool: &PgPool,
     academic_term_id: Uuid,
-) -> Result<Vec<AcademicTermChangeSet>, AppError> {
-    let query = format!(
-        "SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets \
-         WHERE academic_term_id = $1 \
-         ORDER BY effective_from DESC, created_at DESC, id"
-    );
-    let rows = sqlx::query_as::<_, ChangeSetRow>(&query)
-        .bind(academic_term_id)
-        .fetch_all(pool)
-        .await?;
-    hydrate_many(pool, rows).await
+) -> Result<Vec<AcademicTermChangeSetSummary>, AppError> {
+    let rows = sqlx::query_as::<_, ChangeSetSummaryRow>(
+        r#"SELECT id, academic_term_id, academic_year_id, effective_from, reason, status,
+                  target_timetable_version_id, updated_at
+           FROM academic_term_change_sets
+           WHERE academic_term_id = $1
+           ORDER BY effective_from DESC, created_at DESC, id"#,
+    )
+    .bind(academic_term_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(AcademicTermChangeSetSummary {
+                id: row.id,
+                academic_term_id: row.academic_term_id,
+                academic_year_id: row.academic_year_id,
+                effective_from: row.effective_from,
+                reason: row.reason,
+                status: row.status,
+                target_timetable_version_id: required_version_id(
+                    row.target_timetable_version_id,
+                    "ชุดการเปลี่ยนแปลงไม่มีตารางเป้าหมาย",
+                )?,
+                updated_at: row.updated_at,
+            })
+        })
+        .collect()
 }
 
 pub async fn get_change_set(pool: &PgPool, id: Uuid) -> Result<AcademicTermChangeSet, AppError> {

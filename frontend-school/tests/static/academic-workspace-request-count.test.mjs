@@ -53,7 +53,7 @@ test('academic core setup uses the bounded setup workspace', async () => {
 	assert.doesNotMatch(page, /listBellSchedules\(year\.id\)/);
 });
 
-test('learning delivery loads one homeroom workspace without per-room requests', async () => {
+test('learning delivery starts cohesive visible regions without per-room requests', async () => {
 	const page = await readPage('delivery');
 	const loader = await readFile(
 		path.join(projectRoot, academicRoutes, 'delivery', '+page.ts'),
@@ -63,11 +63,12 @@ test('learning delivery loads one homeroom workspace without per-room requests',
 		path.join(projectRoot, 'src/lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte'),
 		'utf8'
 	);
-	assert.match(loader, /getLearningDeliveryPageView/);
-	assert.doesNotMatch(
-		page,
-		/getHomeroomDeliveryWorkspace|listAcademicTermChangeSets|workspaceRequest/
-	);
+	assert.match(loader, /getHomeroomDeliveryWorkspace/);
+	assert.match(loader, /listAcademicTermChangeSets/);
+	assert.match(loader, /getAcademicTermChangeSet/);
+	assert.doesNotMatch(loader, /getLearningDeliveryPageView|getLearningDeliveryOverview/);
+	assert.match(page, /homeroomRequest\s*=\s*new LatestRequest/);
+	assert.match(page, /changeSetRequest\s*=\s*new LatestRequest/);
 	assert.match(page, /overviewRequest\s*=\s*new LatestRequest/);
 	assert.match(page, /getLearningDeliveryOverview/);
 	assert.doesNotMatch(table, /getLearningOffering|getLearningGroup|listLearningGroups/);

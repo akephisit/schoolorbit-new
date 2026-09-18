@@ -142,20 +142,21 @@ async function mockAcademicContextApis(
 				return;
 			}
 
-			if (url.pathname === '/api/academic/delivery/page-view') {
+			if (url.pathname === '/api/academic/delivery/homerooms') {
 				await fulfillJson(route, {
-					workspace: {
-						academicYearId: url.searchParams.get('academicYearId'),
-						academicTermId: url.searchParams.get('academicTermId'),
-						timetableVersionId: null,
-						timetableVersionStatus: null,
-						timetableVersionEffectiveFrom: null,
-						homerooms: [],
-						unlinked: []
-					},
-					changeSets: [],
-					overview: null
+					academicYearId: url.searchParams.get('academicYearId'),
+					academicTermId: url.searchParams.get('academicTermId'),
+					timetableVersionId: null,
+					timetableVersionStatus: null,
+					timetableVersionEffectiveFrom: null,
+					homerooms: [],
+					unlinked: []
 				});
+				return;
+			}
+
+			if (url.pathname === '/api/academic/term-change-sets') {
+				await fulfillJson(route, []);
 				return;
 			}
 

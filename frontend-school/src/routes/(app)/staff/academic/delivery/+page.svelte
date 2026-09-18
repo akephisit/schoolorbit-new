@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { page } from '$app/state';
-	import { invalidate, replaceState } from '$app/navigation';
+	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
 	import {
-		LEARNING_DELIVERY_PAGE_DEPENDENCY,
+		selectAcademicTermChangeSetSummary,
+		summarizeAcademicTermChangeSet,
 		type LearningDeliveryRefreshScope
 	} from '$lib/academic/learning-delivery-page';
 	import {
@@ -13,11 +14,14 @@
 		type SynchronizedActivityPreparationTarget
 	} from '$lib/academic/synchronized-activity-delivery';
 	import {
+		getAcademicTermChangeSet,
+		getHomeroomDeliveryWorkspace,
 		getLearningDeliveryOverview,
+		listAcademicTermChangeSets,
 		type AcademicTermChangeSet,
+		type AcademicTermChangeSetSummary,
 		type HomeroomDeliveryWorkspace as HomeroomWorkspace,
 		type LearningDeliveryOverview,
-		type LearningDeliveryPageView,
 		type LearningOfferingOverviewItem
 	} from '$lib/api/learning-delivery';
 	import { includeTimetableVersionOffering } from '$lib/api/timetable';
@@ -41,14 +45,23 @@
 	let { data }: { data: PageData } = $props();
 	const academicYearId = $derived(data.context?.academicYearId ?? null);
 	const academicTermId = $derived(data.context?.academicTermId ?? null);
+	const homeroomRequest = new LatestRequest();
+	const changeSetSummaryRequest = new LatestRequest();
+	const changeSetRequest = new LatestRequest();
 	const overviewRequest = new LatestRequest();
 	let workspace = $state.raw<HomeroomWorkspace | null>(null);
 	let overview = $state.raw<LearningDeliveryOverview | null>(null);
-	let changeSets = $state.raw<AcademicTermChangeSet[]>([]);
+	let changeSets = $state.raw<AcademicTermChangeSetSummary[]>([]);
+	let activeChangeSet = $state.raw<AcademicTermChangeSet | null>(null);
 	let selectedChangeSetId = $state('');
+	let homeroomLoading = $state(false);
+	let changeSetSummaryLoading = $state(false);
+	let changeSetLoading = $state(false);
 	let overviewLoading = $state(false);
+	let homeroomError = $state('');
+	let changeSetSummaryError = $state('');
+	let changeSetError = $state('');
 	let errorMessage = $state('');
-	let pageLoadError = $derived(data.pageView && !data.pageView.ok ? data.pageView.error : '');
 	let viewMode = $state<'homerooms' | 'offerings'>('homerooms');
 	let offeringDialog = $state<{
 		openCurriculumPreparation: (
@@ -80,14 +93,13 @@
 		)
 	);
 	let items = $derived(overview?.offerings ?? []);
-	let activeChangeSet = $derived(
-		changeSets.find((changeSet) => changeSet.id === selectedChangeSetId) ??
-			changeSets.find((changeSet) => changeSet.status === 'draft') ??
-			changeSets[0] ??
-			null
+	let activeChangeSetSummary = $derived(
+		changeSets.find((changeSet) => changeSet.id === selectedChangeSetId) ?? null
 	);
 	let activeChangeSetLabel = $derived(
-		activeChangeSet ? formatChangeSetOption(activeChangeSet) : 'เลือกชุดการเปลี่ยนแปลง'
+		activeChangeSetSummary
+			? formatChangeSetOption(activeChangeSetSummary)
+			: 'เลือกชุดการเปลี่ยนแปลง'
 	);
 
 	const missingTermPrerequisite: AcademicPrerequisite = {
@@ -113,7 +125,7 @@
 		);
 	}
 
-	function formatChangeSetOption(changeSet: AcademicTermChangeSet): string {
+	function formatChangeSetOption(changeSet: AcademicTermChangeSetSummary): string {
 		const status =
 			changeSet.status === 'draft'
 				? 'แบบร่าง'
@@ -123,16 +135,93 @@
 		return `${formatDate(changeSet.effectiveFrom)} · ${status} · ${changeSet.reason}`;
 	}
 
-	function applyPageView(loaded: LearningDeliveryPageView) {
-		workspace = loaded.workspace;
-		changeSets = loaded.changeSets;
-		overview = loaded.overview;
-		const requestedId = page.url.searchParams.get('changeSetId')?.trim() ?? '';
-		selectedChangeSetId =
-			loaded.changeSets.find((item) => item.id === requestedId)?.id ??
-			loaded.changeSets.find((item) => item.status === 'draft')?.id ??
-			loaded.changeSets[0]?.id ??
-			'';
+	function updateSelectedChangeSetUrl(id: string) {
+		const url = new URL(page.url);
+		if (id) url.searchParams.set('changeSetId', id);
+		else url.searchParams.delete('changeSetId');
+		replaceState(resolve(`/staff/academic/delivery?${url.searchParams.toString()}`), page.state);
+	}
+
+	function applyChangeSetSummaries(loaded: AcademicTermChangeSetSummary[]) {
+		changeSets = loaded;
+		const selected = selectAcademicTermChangeSetSummary(
+			loaded,
+			page.url.searchParams.get('changeSetId')?.trim() || selectedChangeSetId
+		);
+		selectedChangeSetId = selected?.id ?? '';
+		if (!selected) activeChangeSet = null;
+		return selected;
+	}
+
+	async function loadHomerooms() {
+		if (!academicYearId || !academicTermId) return;
+		const { revision, signal } = homeroomRequest.begin();
+		homeroomLoading = true;
+		homeroomError = '';
+		try {
+			const result = await getHomeroomDeliveryWorkspace(academicYearId, academicTermId, {
+				timetableVersionId: page.url.searchParams.get('timetableVersionId') ?? undefined,
+				signal
+			});
+			if (homeroomRequest.isCurrent(revision)) workspace = result;
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (homeroomRequest.isCurrent(revision)) {
+				homeroomError = error instanceof Error ? error.message : 'โหลดภาพรวมรายห้องไม่สำเร็จ';
+			}
+		} finally {
+			if (homeroomRequest.isCurrent(revision)) homeroomLoading = false;
+		}
+	}
+
+	async function loadSelectedChangeSet(id: string, updateUrl = true) {
+		if (!id || !academicTermId) {
+			activeChangeSet = null;
+			changeSetLoading = false;
+			return;
+		}
+		const { revision, signal } = changeSetRequest.begin();
+		selectedChangeSetId = id;
+		activeChangeSet = null;
+		changeSetLoading = true;
+		changeSetError = '';
+		if (updateUrl) updateSelectedChangeSetUrl(id);
+		try {
+			const result = await getAcademicTermChangeSet(id, { signal });
+			if (result.academicTermId !== academicTermId) {
+				throw new Error('ชุดการเปลี่ยนแปลงไม่อยู่ในภาคเรียนที่เลือก');
+			}
+			if (changeSetRequest.isCurrent(revision)) activeChangeSet = result;
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (changeSetRequest.isCurrent(revision)) {
+				changeSetError =
+					error instanceof Error ? error.message : 'โหลดรายละเอียดชุดการเปลี่ยนแปลงไม่สำเร็จ';
+			}
+		} finally {
+			if (changeSetRequest.isCurrent(revision)) changeSetLoading = false;
+		}
+	}
+
+	async function loadChangeSetSummaries() {
+		if (!academicTermId) return;
+		const { revision, signal } = changeSetSummaryRequest.begin();
+		changeSetSummaryLoading = true;
+		changeSetSummaryError = '';
+		try {
+			const result = await listAcademicTermChangeSets(academicTermId, { signal });
+			if (!changeSetSummaryRequest.isCurrent(revision)) return;
+			const selected = applyChangeSetSummaries(result);
+			if (selected) await loadSelectedChangeSet(selected.id, false);
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (changeSetSummaryRequest.isCurrent(revision)) {
+				changeSetSummaryError =
+					error instanceof Error ? error.message : 'โหลดรายการเปลี่ยนแปลงกลางภาคไม่สำเร็จ';
+			}
+		} finally {
+			if (changeSetSummaryRequest.isCurrent(revision)) changeSetSummaryLoading = false;
+		}
 	}
 
 	async function loadOverview(termId: string) {
@@ -155,9 +244,10 @@
 		await loadOverview(academicTermId);
 	}
 
-	async function refreshDeliveryPage(refreshOverview = viewMode === 'offerings') {
-		await invalidate(LEARNING_DELIVERY_PAGE_DEPENDENCY);
-		if (refreshOverview && academicTermId) await loadOverview(academicTermId);
+	async function refreshDeliveryRegions(refreshOverview = viewMode === 'offerings') {
+		const requests: Promise<void>[] = [loadHomerooms()];
+		if (refreshOverview && academicTermId) requests.push(loadOverview(academicTermId));
+		await Promise.all(requests);
 	}
 
 	function changeViewMode(value: string) {
@@ -179,7 +269,7 @@
 				)
 			};
 		}
-		void refreshDeliveryPage(true);
+		void loadHomerooms();
 	}
 
 	function prepareSynchronizedActivity(catalogVersionId: string) {
@@ -213,7 +303,7 @@
 			await includeTimetableVersionOffering(workspace.timetableVersionId, {
 				learningOfferingId: offeringId
 			});
-			await refreshDeliveryPage();
+			await loadHomerooms();
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'เพิ่มรายการเข้ารุ่นตารางไม่สำเร็จ';
 		}
@@ -228,7 +318,7 @@
 		url.searchParams.set('timetableVersionId', created.targetTimetableVersionId);
 		url.searchParams.set('changeSetId', created.id);
 		replaceState(resolve(`/staff/academic/delivery?${url.searchParams.toString()}`), page.state);
-		await refreshDeliveryPage();
+		await loadHomerooms();
 		if (pending?.kind !== 'activate' || !workspace || !offeringDialog) return;
 		const target = buildSynchronizedActivityPreparationTarget(workspace, pending.catalogVersionId);
 		if (!target) return;
@@ -236,8 +326,11 @@
 	}
 
 	function addChangeSet(created: AcademicTermChangeSet) {
-		changeSets = [created, ...changeSets.filter((changeSet) => changeSet.id !== created.id)];
+		const summary = summarizeAcademicTermChangeSet(created);
+		changeSets = [summary, ...changeSets.filter((changeSet) => changeSet.id !== created.id)];
 		selectedChangeSetId = created.id;
+		activeChangeSet = created;
+		updateSelectedChangeSetUrl(created.id);
 	}
 
 	async function updateChangeSet(
@@ -245,32 +338,98 @@
 		refreshScope: LearningDeliveryRefreshScope = 'local'
 	) {
 		selectedChangeSetId = updated.id;
+		activeChangeSet = updated;
+		const summary = summarizeAcademicTermChangeSet(updated);
 		changeSets = changeSets
-			.map((changeSet) => (changeSet.id === updated.id ? updated : changeSet))
+			.map((changeSet) => (changeSet.id === updated.id ? summary : changeSet))
 			.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 		if (updated.items.length > 0 && !overview && academicTermId) {
 			await loadOverview(academicTermId);
 		}
-		if (refreshScope === 'page') {
-			await invalidate(LEARNING_DELIVERY_PAGE_DEPENDENCY);
-		}
+		if (refreshScope === 'homerooms') await loadHomerooms();
 	}
 
 	$effect(() => {
-		const routeResult = data.pageView;
-		overviewRequest.abort();
-		errorMessage = '';
-		if (routeResult?.ok) {
-			untrack(() => applyPageView(routeResult.data));
-		} else {
+		const routeResult = data.homerooms;
+		const { revision } = homeroomRequest.begin();
+		untrack(() => {
 			workspace = null;
-			overview = null;
-			changeSets = [];
-			selectedChangeSetId = '';
+			homeroomLoading = Boolean(routeResult);
+			homeroomError = '';
+		});
+		if (routeResult) {
+			void routeResult.then((result) => {
+				if (!homeroomRequest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) workspace = result.data;
+					else homeroomError = result.error;
+					homeroomLoading = false;
+				});
+			});
 		}
 		return () => {
-			overviewRequest.abort();
+			if (homeroomRequest.isCurrent(revision)) homeroomRequest.abort();
 		};
+	});
+
+	$effect(() => {
+		const routeResult = data.changeSetSummaries;
+		const { revision } = changeSetSummaryRequest.begin();
+		untrack(() => {
+			changeSets = [];
+			changeSetSummaryLoading = Boolean(routeResult);
+			changeSetSummaryError = '';
+		});
+		if (routeResult) {
+			void routeResult.then((result) => {
+				if (!changeSetSummaryRequest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) applyChangeSetSummaries(result.data);
+					else changeSetSummaryError = result.error;
+					changeSetSummaryLoading = false;
+				});
+			});
+		}
+		return () => {
+			if (changeSetSummaryRequest.isCurrent(revision)) changeSetSummaryRequest.abort();
+		};
+	});
+
+	$effect(() => {
+		const routeResult = data.selectedChangeSet;
+		const { revision } = changeSetRequest.begin();
+		untrack(() => {
+			activeChangeSet = null;
+			changeSetLoading = Boolean(routeResult);
+			changeSetError = '';
+		});
+		if (routeResult) {
+			void routeResult.then((result) => {
+				if (!changeSetRequest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) {
+						activeChangeSet = result.data;
+						if (result.data) selectedChangeSetId = result.data.id;
+					} else changeSetError = result.error;
+					changeSetLoading = false;
+				});
+			});
+		}
+		return () => {
+			if (changeSetRequest.isCurrent(revision)) changeSetRequest.abort();
+		};
+	});
+
+	$effect(() => {
+		const termId = academicTermId;
+		overviewRequest.abort();
+		untrack(() => {
+			overview = null;
+			overviewLoading = false;
+			errorMessage = '';
+			if (!termId) viewMode = 'homerooms';
+		});
+		return () => overviewRequest.abort();
 	});
 </script>
 
@@ -284,7 +443,7 @@
 				bind:this={offeringDialog}
 				{academicTermId}
 				onCreated={addCreated}
-				onApplied={() => refreshDeliveryPage(true)}
+				onApplied={() => refreshDeliveryRegions(true)}
 				defaultTimetableVersionId={workspace?.timetableVersionStatus === 'draft'
 					? workspace.timetableVersionId
 					: null}
@@ -304,66 +463,80 @@
 
 	{#if !academicYearId || !academicTermId}
 		<AcademicPrerequisiteNotice prerequisite={missingTermPrerequisite} />
-	{:else if pageLoadError && !workspace}
-		<PageState
-			variant="error"
-			title="โหลดพื้นที่จัดการการเปิดสอนไม่สำเร็จ"
-			description={pageLoadError}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => invalidate(LEARNING_DELIVERY_PAGE_DEPENDENCY)}
-		/>
 	{:else}
 		<div class="space-y-4">
-			{#if changeSets.length > 1}
-				<section
-					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
-				>
-					<div>
-						<p class="text-sm font-medium">ชุดการเปลี่ยนแปลงกลางภาค</p>
-						<p class="text-xs text-muted-foreground">
-							เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว
-						</p>
-					</div>
-					<Select.Root
-						type="single"
-						value={activeChangeSet?.id ?? ''}
-						onValueChange={(value) => (selectedChangeSetId = value)}
+			{#if changeSetSummaryLoading && changeSets.length === 0 && !activeChangeSet}
+				<PageSkeleton variant="detail" />
+			{:else if changeSetSummaryError && changeSets.length === 0 && !activeChangeSet}
+				<PageState
+					variant="error"
+					title="โหลดรายการเปลี่ยนแปลงกลางภาคไม่สำเร็จ"
+					description={changeSetSummaryError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadChangeSetSummaries}
+				/>
+			{:else}
+				{#if changeSets.length > 1}
+					<section
+						class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
 					>
-						<Select.Trigger class="w-full sm:w-[430px]">
-							<span class="truncate">{activeChangeSetLabel}</span>
-						</Select.Trigger>
-						<Select.Content>
-							{#each changeSets as changeSet (changeSet.id)}
-								<Select.Item value={changeSet.id}>
-									{formatChangeSetOption(changeSet)}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</section>
-			{/if}
-			{#if activeChangeSet}
-				{#key activeChangeSet.id}
-					<AcademicChangeSetPanel
-						changeSet={activeChangeSet}
-						offerings={items}
-						{canManage}
-						ensureOfferings={ensureOverview}
-						initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
-						onChanged={updateChangeSet}
+						<div>
+							<p class="text-sm font-medium">ชุดการเปลี่ยนแปลงกลางภาค</p>
+							<p class="text-xs text-muted-foreground">
+								เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว
+							</p>
+						</div>
+						<Select.Root
+							type="single"
+							value={selectedChangeSetId}
+							onValueChange={(value) => void loadSelectedChangeSet(value)}
+						>
+							<Select.Trigger class="w-full sm:w-[430px]">
+								<span class="truncate">{activeChangeSetLabel}</span>
+							</Select.Trigger>
+							<Select.Content>
+								{#each changeSets as changeSet (changeSet.id)}
+									<Select.Item value={changeSet.id}>
+										{formatChangeSetOption(changeSet)}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</section>
+				{/if}
+				{#if changeSetLoading && !activeChangeSet}
+					<PageSkeleton variant="detail" />
+				{:else if changeSetError && !activeChangeSet}
+					<PageState
+						variant="error"
+						title="โหลดรายละเอียดชุดการเปลี่ยนแปลงไม่สำเร็จ"
+						description={changeSetError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={() => loadSelectedChangeSet(selectedChangeSetId, false)}
 					/>
-				{/key}
-			{:else if canManage}
-				<section
-					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-amber-500/35 bg-amber-500/5 p-3 text-sm"
-				>
-					<div>
-						<p class="font-medium text-amber-900">เมื่อเปิดสอนแล้วและต้องเปลี่ยนกลางภาค</p>
-						<p class="text-xs text-muted-foreground">
-							ใช้ปุ่ม “เพิ่ม/ปรับ/หยุดกลางภาค” ด้านบน ระบบจะแยกรุ่นตารางและเก็บประวัติเดิมให้
-						</p>
-					</div>
-				</section>
+				{:else if activeChangeSet}
+					{#key activeChangeSet.id}
+						<AcademicChangeSetPanel
+							changeSet={activeChangeSet}
+							offerings={items}
+							{canManage}
+							ensureOfferings={ensureOverview}
+							initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
+							onChanged={updateChangeSet}
+						/>
+					{/key}
+				{:else if canManage}
+					<section
+						class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-amber-500/35 bg-amber-500/5 p-3 text-sm"
+					>
+						<div>
+							<p class="font-medium text-amber-900">เมื่อเปิดสอนแล้วและต้องเปลี่ยนกลางภาค</p>
+							<p class="text-xs text-muted-foreground">
+								ใช้ปุ่ม “เพิ่ม/ปรับ/หยุดกลางภาค” ด้านบน ระบบจะแยกรุ่นตารางและเก็บประวัติเดิมให้
+							</p>
+						</div>
+					</section>
+				{/if}
 			{/if}
 			<Tabs.Root value={viewMode} onValueChange={changeViewMode}>
 				<Tabs.List class="grid w-full grid-cols-2 sm:w-[430px]">
@@ -371,7 +544,17 @@
 					<Tabs.Trigger value="offerings">มุมมองรายวิชา/กิจกรรม</Tabs.Trigger>
 				</Tabs.List>
 				<Tabs.Content value="homerooms" class="mt-4">
-					{#if workspace}
+					{#if homeroomLoading && !workspace}
+						<PageSkeleton variant="cards" rows={4} />
+					{:else if homeroomError && !workspace}
+						<PageState
+							variant="error"
+							title="โหลดภาพรวมรายห้องไม่สำเร็จ"
+							description={homeroomError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadHomerooms}
+						/>
+					{:else if workspace}
 						<HomeroomDeliveryWorkspace
 							{workspace}
 							{canManage}

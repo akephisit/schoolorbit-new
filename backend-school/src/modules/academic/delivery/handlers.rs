@@ -24,16 +24,18 @@ use school_http::{ApiErrorResponse, ApiResponse};
 
 use super::adapters::TIMETABLE_MUTATIONS;
 
-fn with_delivery_page_timing(
+fn with_homeroom_delivery_timing(
     mut response: Response,
     authorization: Duration,
-    page_view: Duration,
+    workspace: workspaces::HomeroomDeliveryTiming,
     total: Duration,
 ) -> Response {
     let timing = format!(
-        "authorization;dur={:.1}, page_view;dur={:.1}, total;dur={:.1}",
+        "authorization;dur={:.1}, context_homerooms;dur={:.1}, resources;dur={:.1}, assembly;dur={:.1}, total;dur={:.1}",
         authorization.as_secs_f64() * 1_000.0,
-        page_view.as_secs_f64() * 1_000.0,
+        workspace.context_and_homerooms.as_secs_f64() * 1_000.0,
+        workspace.resources.as_secs_f64() * 1_000.0,
+        workspace.assembly.as_secs_f64() * 1_000.0,
         total.as_secs_f64() * 1_000.0,
     );
     match HeaderValue::try_from(timing) {
@@ -43,7 +45,7 @@ fn with_delivery_page_timing(
                 .insert(HeaderName::from_static("server-timing"), value);
         }
         Err(error) => {
-            tracing::warn!(?error, "failed to encode delivery page timing header");
+            tracing::warn!(?error, "failed to encode homeroom delivery timing header");
         }
     }
     response
@@ -55,12 +57,16 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn delivery_page_response_exposes_timing_breakdown() {
-        let response = with_delivery_page_timing(
+    fn homeroom_delivery_response_exposes_timing_breakdown() {
+        let response = with_homeroom_delivery_timing(
             ok(serde_json::json!({ "workspace": "test" })),
             Duration::from_millis(12),
-            Duration::from_millis(34),
-            Duration::from_millis(50),
+            workspaces::HomeroomDeliveryTiming {
+                context_and_homerooms: Duration::from_millis(20),
+                resources: Duration::from_millis(30),
+                assembly: Duration::from_millis(8),
+            },
+            Duration::from_millis(74),
         );
 
         assert_eq!(
@@ -68,8 +74,10 @@ mod tests {
                 .headers()
                 .get("server-timing")
                 .and_then(|value| value.to_str().ok()),
-            Some("authorization;dur=12.0, page_view;dur=34.0, total;dur=50.0")
-        );
+			Some(
+				"authorization;dur=12.0, context_homerooms;dur=20.0, resources;dur=30.0, assembly;dur=8.0, total;dur=74.0"
+			)
+		);
     }
 }
 
@@ -330,52 +338,6 @@ pub async fn get_delivery_overview(
 
 #[utoipa::path(
     get,
-    path = "/api/academic/delivery/page-view",
-    operation_id = "getLearningDeliveryPageView",
-    tag = "academic",
-    params(HomeroomDeliveryQuery),
-    responses(
-        (status = 200, description = "Primary learning delivery page view", body = ApiResponse<LearningDeliveryPageView>),
-        (status = 400, description = "Invalid academic year or term query", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Academic term not found in the selected year", body = ApiErrorResponse)
-    )
-)]
-pub async fn get_learning_delivery_page_view(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<HomeroomDeliveryQuery>,
-) -> Result<Response, AppError> {
-    let started_at = Instant::now();
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let filter = learning_offering_access_policy::require_learning_offering_list_access(
-        &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Read,
-    )
-    .await?;
-    let authorization_duration = started_at.elapsed();
-    let page_view_started_at = Instant::now();
-    let page_view = workspaces::delivery_page_view(
-        &context.tenant.pool,
-        query.academic_year_id,
-        query.academic_term_id,
-        query.timetable_version_id,
-        &filter,
-    )
-    .await?;
-    let page_view_duration = page_view_started_at.elapsed();
-    Ok(with_delivery_page_timing(
-        ok(page_view),
-        authorization_duration,
-        page_view_duration,
-        started_at.elapsed(),
-    ))
-}
-
-#[utoipa::path(
-    get,
     path = "/api/academic/delivery/homerooms",
     operation_id = "getHomeroomDeliveryWorkspace",
     tag = "academic",
@@ -393,6 +355,7 @@ pub async fn get_homeroom_delivery_workspace(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<HomeroomDeliveryQuery>,
 ) -> Result<Response, AppError> {
+    let started_at = Instant::now();
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let filter = learning_offering_access_policy::require_learning_offering_list_access(
         &context.tenant.pool,
@@ -400,14 +363,21 @@ pub async fn get_homeroom_delivery_workspace(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(workspaces::homeroom_delivery_workspace_for_version(
+    let authorization_duration = started_at.elapsed();
+    let (workspace, timing) = workspaces::homeroom_delivery_workspace_with_timing(
         &context.tenant.pool,
         query.academic_year_id,
         query.academic_term_id,
         query.timetable_version_id,
         &filter,
     )
-    .await?))
+    .await?;
+    Ok(with_homeroom_delivery_timing(
+        ok(workspace),
+        authorization_duration,
+        timing,
+        started_at.elapsed(),
+    ))
 }
 
 #[utoipa::path(
@@ -1161,7 +1131,7 @@ pub async fn publish_group_roster(
     tag = "academic",
     params(AcademicTermChangeSetQuery),
     responses(
-        (status = 200, description = "Operational academic changes for the selected term", body = ApiResponse<Vec<AcademicTermChangeSet>>),
+        (status = 200, description = "Operational academic change summaries for the selected term", body = ApiResponse<Vec<AcademicTermChangeSetSummary>>),
         (status = 400, description = "Invalid academic term query", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
@@ -1181,7 +1151,7 @@ pub async fn list_term_change_sets(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(change_sets::list_change_sets(
+    Ok(ok(change_sets::list_change_set_summaries(
         &context.tenant.pool,
         query.academic_term_id,
     )

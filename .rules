@@ -146,6 +146,15 @@ Feature toggles are optional. Add one only for staged rollout or operational con
 - A service feeding a JSON endpoint returns typed structs/outcomes, not ad-hoc `serde_json::Value`.
 - Prefer compile-time-checked SQLx queries where practical.
 
+### SQL read efficiency
+
+- Backend read paths must minimize database round trips while preserving authorization, consistency, bounded results, and maintainable domain ownership. A lower request or query count is not sufficient evidence when one larger operation costs more.
+- Select only fields used by the typed result. Normalize and deduplicate identifiers, eliminate N+1 reads, and batch same-shape lookups with bounded set-based SQL.
+- Prefer joins, filtered aggregates, and pre-aggregated CTEs over repeated correlated work when representative query plans support the change.
+- Start only genuinely independent reads concurrently and keep their concurrency within the tenant pool capacity. Keep reads sequential when one requires the exact result of another.
+- Do not repeat the same context, authorization, or identifier-resolution read inside one request when it can be safely reused or combined without creating an oversized cross-domain query.
+- Substantiate performance claims with endpoint phase timing and representative `EXPLAIN (ANALYZE, BUFFERS)` evidence from a safe environment. Add an index only when predicates, ordering, cardinality, and the query plan justify it, and always through a new migration.
+
 ### API Response Contract
 
 All JSON endpoints use one envelope:
@@ -245,8 +254,11 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Keep required academic context in menu destinations so hover preloading can issue the primary read. A navigation control that is not an ordinary link must preload and navigate to the same resolved destination.
 - Resolve required academic year and term before normal menu preload and navigation from the current valid selection or already-loaded active context. URL repair is a fallback for direct, stale, or external links; while fallback resolution is pending, render a neutral route skeleton instead of a false prerequisite.
 - Keep hover preload for safe, reasonably sized, stable reads. Use tap or disable data preload for expensive or highly volatile routes where false-positive traffic or staleness is material.
-- When datasets are always consumed together and share route parameters, authorization, and freshness, use a named typed page-view endpoint if measurement shows material round-trip overhead. Do not add generic batch endpoints or include inactive tabs, dialogs, exports, or action-only data in the page view.
-- Independent initial reads run concurrently. Sequential awaits require a real data dependency.
+- Divide primary route data by independently renderable UI region. Each region must be able to render, fail, retry, refresh, and reconcile mutations independently.
+- Start all visible independent region reads concurrently from the SvelteKit route loader and expose typed in-flight results so one slow region does not block successful siblings. Sequential reads require a real data dependency; visual order is not a dependency.
+- Keep inactive tabs, dialogs, exports, expanded details, and action-only data lazy.
+- Give each region a focused skeleton, safe error, retry, cancellation or supersession behavior, and mutation reconciliation rule. Name an invalidation dependency when invalidation is selected, and do not use it when rerunning the owning loader would refetch unrelated regions.
+- Do not create route-wide `/page-view` or equivalent generic batch endpoints. A cohesive typed domain endpoint remains valid when one independently renderable UI region needs all returned fields together and they share parameters, authorization, freshness, and invalidation.
 - Load optional data and data guarded by create, update, approve, export, or other exact permissions only after the relevant permission passes and the user opens that workflow.
 - After a typed mutation returns a resource, patch only the affected local state. Otherwise invalidate a named route dependency. Reserve `invalidateAll()` for deliberately session-wide dependencies or an explicit manual refresh.
 - A client read cache must name its owner, tenant and route-context key, maximum age, mutation and realtime invalidation events, and logout/user-change cleanup. Do not add a generic cache for auth, permissions, or sensitive user data.

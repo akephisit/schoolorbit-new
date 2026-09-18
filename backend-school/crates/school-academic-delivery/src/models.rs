@@ -305,6 +305,19 @@ pub struct AcademicTermChangeSet {
     pub items: Vec<AcademicTermChangeItem>,
 }
 
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AcademicTermChangeSetSummary {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub effective_from: NaiveDate,
+    pub reason: String,
+    pub status: AcademicTermChangeSetStatus,
+    pub target_timetable_version_id: Uuid,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAcademicTermChangeSetRequest {
@@ -982,15 +995,6 @@ pub struct LearningOfferingOverviewItem {
 pub struct LearningDeliveryOverview {
     pub academic_term_id: Uuid,
     pub offerings: Vec<LearningOfferingOverviewItem>,
-}
-
-#[derive(Clone, Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LearningDeliveryPageView {
-    pub workspace: HomeroomDeliveryWorkspace,
-    pub change_sets: Vec<AcademicTermChangeSet>,
-    #[schema(required = true)]
-    pub overview: Option<LearningDeliveryOverview>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]

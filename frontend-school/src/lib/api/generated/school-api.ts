@@ -613,22 +613,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/delivery/page-view': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['getLearningDeliveryPageView'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/api/academic/delivery/workspace': {
 		parameters: {
 			query?: never;
@@ -6023,6 +6007,22 @@ export interface components {
 		};
 		/** @enum {string} */
 		AcademicTermChangeSetStatus: 'draft' | 'published' | 'cancelled';
+		AcademicTermChangeSetSummary: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: uuid */
+			id: string;
+			reason: string;
+			status: components['schemas']['AcademicTermChangeSetStatus'];
+			/** Format: uuid */
+			targetTimetableVersionId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
 		AcademicTermOption: {
 			/** Format: uuid */
 			academicYearId: string;
@@ -8203,15 +8203,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_LearningDeliveryPageView: {
-			data: {
-				changeSets: components['schemas']['AcademicTermChangeSet'][];
-				overview: null | components['schemas']['LearningDeliveryOverview'];
-				workspace: components['schemas']['HomeroomDeliveryWorkspace'];
-			};
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_LearningGroup: {
 			data: {
 				/** Format: uuid */
@@ -9636,6 +9627,26 @@ export interface components {
 				reason: string;
 				/** Format: int64 */
 				rowVersion: number;
+				status: components['schemas']['AcademicTermChangeSetStatus'];
+				/** Format: uuid */
+				targetTimetableVersionId: string;
+				/** Format: date-time */
+				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AcademicTermChangeSetSummary: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: uuid */
+				id: string;
+				reason: string;
 				status: components['schemas']['AcademicTermChangeSetStatus'];
 				/** Format: uuid */
 				targetTimetableVersionId: string;
@@ -14996,11 +15007,6 @@ export interface components {
 			/** Format: uuid */
 			academicTermId: string;
 			offerings: components['schemas']['LearningOfferingOverviewItem'][];
-		};
-		LearningDeliveryPageView: {
-			changeSets: components['schemas']['AcademicTermChangeSet'][];
-			overview: null | components['schemas']['LearningDeliveryOverview'];
-			workspace: components['schemas']['HomeroomDeliveryWorkspace'];
 		};
 		LearningGroup: {
 			/** Format: uuid */
@@ -22476,66 +22482,6 @@ export interface operations {
 				};
 			};
 			/** @description Academic term not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	getLearningDeliveryPageView: {
-		parameters: {
-			query: {
-				academicTermId: string;
-				academicYearId: string;
-				timetableVersionId?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Primary learning delivery page view */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_LearningDeliveryPageView'];
-				};
-			};
-			/** @description Invalid academic year or term query */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Learning offering read permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic term not found in the selected year */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -31044,13 +30990,13 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Operational academic changes for the selected term */
+			/** @description Operational academic change summaries for the selected term */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_AcademicTermChangeSet'];
+					'application/json': components['schemas']['ApiResponse_Vec_AcademicTermChangeSetSummary'];
 				};
 			};
 			/** @description Invalid academic term query */

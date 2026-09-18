@@ -12,10 +12,12 @@ test('delivery workspace uses generated term query contracts', async () => {
 	assert.match(api, /operations\['getLearningDeliveryOverview'\]/);
 	assert.match(api, /operations\['getHomeroomDeliveryWorkspace'\]/);
 	assert.match(api, /operations\['getLearningDeliveryManagementOptions'\]/);
-	assert.match(api, /Schemas\['LearningDeliveryPageView'\]/);
-	assert.match(api, /operations\['getLearningDeliveryPageView'\]/);
-	assert.match(api, /getLearningDeliveryPageView/);
-	assert.match(api, /requestFetch/);
+	assert.match(api, /Schemas\['AcademicTermChangeSetSummary'\]/);
+	assert.match(api, /apiClient\.get<AcademicTermChangeSetSummary\[]>/);
+	assert.doesNotMatch(
+		api,
+		/LearningDeliveryPageView|getLearningDeliveryPageView|delivery\/page-view/
+	);
 	assert.match(api, /getLearningDeliveryOverview/);
 	assert.match(api, /getHomeroomDeliveryWorkspace/);
 	assert.match(api, /getLearningDeliveryManagementOptions/);
@@ -27,6 +29,8 @@ test('delivery workspace uses generated term query contracts', async () => {
 test('homeroom delivery contract is camelCase and preparation requires reviewed choices', async () => {
 	const openapi = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
 	const operation = openapi.paths['/api/academic/delivery/homerooms'].get;
+	assert.equal(openapi.paths['/api/academic/delivery/page-view'], undefined);
+	assert.equal(openapi.components.schemas.LearningDeliveryPageView, undefined);
 	assert.equal(operation.operationId, 'getHomeroomDeliveryWorkspace');
 	assert.deepEqual(operation.parameters.map((parameter) => parameter.name).sort(), [
 		'academicTermId',
@@ -86,18 +90,28 @@ test('delivery workspace is homeroom-first, loads offering overview lazily, and 
 		'src/lib/components/learning-delivery/OfferingCurriculumPreview.svelte'
 	);
 	assert.match(loader, /import type \{\s*PageLoad/);
-	assert.match(loader, /depends\(LEARNING_DELIVERY_PAGE_DEPENDENCY\)/);
-	assert.match(loader, /getLearningDeliveryPageView/);
+	assert.match(loader, /depends\(LEARNING_DELIVERY_HOMEROOMS_DEPENDENCY\)/);
+	assert.match(loader, /depends\(LEARNING_DELIVERY_CHANGE_SETS_DEPENDENCY\)/);
+	assert.match(loader, /depends\(LEARNING_DELIVERY_CHANGE_SET_DETAIL_DEPENDENCY\)/);
+	assert.match(loader, /getHomeroomDeliveryWorkspace/);
+	assert.match(loader, /listAcademicTermChangeSets/);
+	assert.match(loader, /getAcademicTermChangeSet/);
 	assert.match(loader, /requestFetch:\s*fetch/);
 	assert.match(loader, /captureRouteLoad/);
-	assert.doesNotMatch(page, /getHomeroomDeliveryWorkspace|listAcademicTermChangeSets/);
+	assert.doesNotMatch(loader, /await\s+captureRouteLoad/);
+	assert.doesNotMatch(loader, /getLearningDeliveryWorkspace|getLearningDeliveryPageView/);
 	assert.doesNotMatch(page, /getAcademicContextStore|\bonMount\b/);
-	assert.match(page, /invalidate\(LEARNING_DELIVERY_PAGE_DEPENDENCY\)/);
+	assert.doesNotMatch(page, /LEARNING_DELIVERY_PAGE_DEPENDENCY|data\.pageView/);
 	assert.doesNotMatch(page, /\binvalidateAll\s*\(/);
+	assert.match(page, /data\.homerooms/);
+	assert.match(page, /data\.changeSetSummaries/);
+	assert.match(page, /data\.selectedChangeSet/);
+	assert.match(page, /getHomeroomDeliveryWorkspace/);
+	assert.match(page, /getAcademicTermChangeSet/);
 	assert.match(page, /viewMode = \$state<'homerooms' \| 'offerings'>\('homerooms'\)/);
 	assert.match(page, /getLearningDeliveryOverview/);
 	assert.match(page, /viewMode === 'offerings'/);
-	assert.match(readiness, /onChanged\(updated,\s*'page'\)/);
+	assert.match(readiness, /onChanged\(updated,\s*'homerooms'\)/);
 	assert.match(page, /{#if canManage[\s\S]*AcademicChangeSetDialog/);
 	assert.match(page, /academicTermId/);
 	assert.match(page, /kind=activity|kindFilter|initialKind/);

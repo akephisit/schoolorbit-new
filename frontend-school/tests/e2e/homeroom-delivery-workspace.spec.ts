@@ -15,7 +15,8 @@ const ids = {
 	catalog: '71000000-0000-4000-8000-000000000001',
 	offering: '80000000-0000-4000-8000-000000000001',
 	group: '81000000-0000-4000-8000-000000000001',
-	version: '82000000-0000-4000-8000-000000000001'
+	version: '82000000-0000-4000-8000-000000000001',
+	changeSet: '83000000-0000-4000-8000-000000000001'
 };
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -100,9 +101,51 @@ function homeroomWorkspace(timetableVersionId: string | null = null) {
 	};
 }
 
-async function mockDelivery(page: Page, contextGate?: Promise<void>, menuGate?: Promise<void>) {
+function changeSetSummary() {
+	return {
+		id: ids.changeSet,
+		academicTermId: ids.term,
+		academicYearId: ids.year,
+		effectiveFrom: '2027-08-01',
+		reason: 'ปรับการเปิดสอนทดสอบ',
+		status: 'draft',
+		targetTimetableVersionId: ids.version,
+		updatedAt: '2027-07-01T00:00:00Z'
+	};
+}
+
+function changeSetDetail() {
+	return {
+		...changeSetSummary(),
+		baseTimetableVersionId: ids.version,
+		rowVersion: 1,
+		createdBy: '90000000-0000-4000-8000-000000000001',
+		publishedBy: null,
+		publishedAt: null,
+		cancelledBy: null,
+		cancelledAt: null,
+		createdAt: '2027-07-01T00:00:00Z',
+		items: []
+	};
+}
+
+type DeliveryMockOptions = {
+	homeroomGate?: Promise<void>;
+	changeSetSummaryGate?: Promise<void>;
+	changeSetDetailGate?: Promise<void>;
+	failHomeroomAttempts?: number;
+};
+
+async function mockDelivery(
+	page: Page,
+	contextGate?: Promise<void>,
+	menuGate?: Promise<void>,
+	options: DeliveryMockOptions = {}
+) {
 	let pageViewRequests = 0;
-	let legacyPrimaryRequests = 0;
+	let homeroomRequests = 0;
+	let changeSetSummaryRequests = 0;
+	let changeSetDetailRequests = 0;
 	let offeringOverviewRequests = 0;
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
@@ -194,24 +237,32 @@ async function mockDelivery(page: Page, contextGate?: Promise<void>, menuGate?: 
 			}
 			if (url.pathname === '/api/academic/delivery/page-view') {
 				pageViewRequests += 1;
-				expect(url.searchParams.get('academicYearId')).toBe(ids.year);
-				expect(url.searchParams.get('academicTermId')).toBe(ids.term);
-				await fulfill(route, {
-					workspace: homeroomWorkspace(url.searchParams.get('timetableVersionId')),
-					changeSets: [],
-					overview: null
-				});
+				await fulfill(route, 'page-view must not be requested', 500);
 				return;
 			}
-			if (
-				url.pathname === '/api/academic/delivery/homerooms' ||
-				url.pathname === '/api/academic/term-change-sets'
-			) {
-				legacyPrimaryRequests += 1;
-				await fulfill(
-					route,
-					url.pathname === '/api/academic/delivery/homerooms' ? homeroomWorkspace() : []
-				);
+			if (url.pathname === '/api/academic/delivery/homerooms') {
+				homeroomRequests += 1;
+				expect(url.searchParams.get('academicYearId')).toBe(ids.year);
+				expect(url.searchParams.get('academicTermId')).toBe(ids.term);
+				await options.homeroomGate;
+				if (homeroomRequests <= (options.failHomeroomAttempts ?? 0)) {
+					await fulfill(route, 'โหลดข้อมูลห้องประจำชั้นไม่สำเร็จ', 503);
+				} else {
+					await fulfill(route, homeroomWorkspace(url.searchParams.get('timetableVersionId')));
+				}
+				return;
+			}
+			if (url.pathname === '/api/academic/term-change-sets') {
+				changeSetSummaryRequests += 1;
+				expect(url.searchParams.get('academicTermId')).toBe(ids.term);
+				await options.changeSetSummaryGate;
+				await fulfill(route, [changeSetSummary()]);
+				return;
+			}
+			if (url.pathname === `/api/academic/term-change-sets/${ids.changeSet}`) {
+				changeSetDetailRequests += 1;
+				await options.changeSetDetailGate;
+				await fulfill(route, changeSetDetail());
 				return;
 			}
 			if (url.pathname === '/api/academic/delivery/workspace') {
@@ -242,7 +293,9 @@ async function mockDelivery(page: Page, contextGate?: Promise<void>, menuGate?: 
 	);
 	return {
 		pageViewRequestCount: () => pageViewRequests,
-		legacyPrimaryRequestCount: () => legacyPrimaryRequests,
+		homeroomRequestCount: () => homeroomRequests,
+		changeSetSummaryRequestCount: () => changeSetSummaryRequests,
+		changeSetDetailRequestCount: () => changeSetDetailRequests,
 		overviewRequestCount: () => offeringOverviewRequests
 	};
 }
@@ -265,35 +318,46 @@ test('starts academic context priming without waiting for the menu response', as
 	}
 });
 
-test('opens homeroom-first and loads the offering projection only after changing tabs', async ({
+test('opens visible regions independently and loads the offering projection only after changing tabs', async ({
 	page
 }) => {
-	const { pageViewRequestCount, legacyPrimaryRequestCount, overviewRequestCount } =
-		await mockDelivery(page);
+	const {
+		pageViewRequestCount,
+		homeroomRequestCount,
+		changeSetSummaryRequestCount,
+		changeSetDetailRequestCount,
+		overviewRequestCount
+	} = await mockDelivery(page);
 	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
 	await expect(page.getByRole('heading', { name: 'จัดการการเปิดสอน' })).toBeVisible();
 	await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
 	await expect(page.getByText('เรียนรวมหลายห้อง')).toBeVisible();
-	expect(pageViewRequestCount()).toBe(1);
-	expect(legacyPrimaryRequestCount()).toBe(0);
+	expect(pageViewRequestCount()).toBe(0);
+	expect(homeroomRequestCount()).toBe(1);
+	expect(changeSetSummaryRequestCount()).toBe(1);
+	expect(changeSetDetailRequestCount()).toBe(1);
 	expect(overviewRequestCount()).toBe(0);
 
 	const nextVersionLink = page.getByRole('link', { name: 'การเปิดสอนรุ่นถัดไป' });
 	await nextVersionLink.hover();
-	await expect.poll(pageViewRequestCount).toBe(2);
+	await expect.poll(homeroomRequestCount).toBe(2);
+	await expect.poll(changeSetSummaryRequestCount).toBe(2);
+	await expect.poll(changeSetDetailRequestCount).toBe(2);
 	await nextVersionLink.click();
 	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${ids.version}`));
-	expect(pageViewRequestCount()).toBe(2);
+	expect(homeroomRequestCount()).toBe(2);
+	expect(changeSetSummaryRequestCount()).toBe(2);
+	expect(changeSetDetailRequestCount()).toBe(2);
 
 	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม' }).click();
 	await expect.poll(overviewRequestCount).toBe(1);
-	expect(pageViewRequestCount()).toBe(2);
+	expect(pageViewRequestCount()).toBe(0);
 });
 
 test('primes a complete Delivery destination before hover preload and navigation', async ({
 	page
 }) => {
-	const { pageViewRequestCount } = await mockDelivery(page);
+	const { homeroomRequestCount, changeSetSummaryRequestCount } = await mockDelivery(page);
 	await page.goto('/staff/work');
 
 	await page.getByRole('button', { name: 'การจัดการเรียนการสอน', exact: true }).click();
@@ -303,13 +367,15 @@ test('primes a complete Delivery destination before hover preload and navigation
 		new RegExp(`academicYearId=${ids.year}.*academicTermId=${ids.term}`)
 	);
 	await deliveryLink.hover();
-	await expect.poll(pageViewRequestCount).toBe(1);
+	await expect.poll(homeroomRequestCount).toBe(1);
+	await expect.poll(changeSetSummaryRequestCount).toBe(1);
 
 	await deliveryLink.click();
 	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.year}`));
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.term}`));
 	await expect(page.getByText('เลือกปีการศึกษาและภาคเรียนก่อน')).toHaveCount(0);
-	expect(pageViewRequestCount()).toBe(1);
+	expect(homeroomRequestCount()).toBe(1);
+	expect(changeSetSummaryRequestCount()).toBe(1);
 });
 
 test('does not expose academic navigation before its destination context is ready', async ({
@@ -319,7 +385,10 @@ test('does not expose academic navigation before its destination context is read
 	const contextGate = new Promise<void>((resolve) => {
 		releaseContext = resolve;
 	});
-	const { pageViewRequestCount } = await mockDelivery(page, contextGate);
+	const { homeroomRequestCount, changeSetSummaryRequestCount } = await mockDelivery(
+		page,
+		contextGate
+	);
 	const menuResponse = page.waitForResponse(
 		(response) => new URL(response.url()).pathname === '/api/menu/user'
 	);
@@ -352,5 +421,77 @@ test('does not expose academic navigation before its destination context is read
 	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.year}`));
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.term}`));
 	await expect(page.getByText('เลือกปีการศึกษาและภาคเรียนก่อน')).toHaveCount(0);
-	expect(pageViewRequestCount()).toBe(1);
+	expect(homeroomRequestCount()).toBe(1);
+	expect(changeSetSummaryRequestCount()).toBe(1);
+});
+
+test('renders change-set detail while homerooms are still loading', async ({ page }) => {
+	let releaseHomerooms: () => void = () => {};
+	const homeroomGate = new Promise<void>((resolve) => {
+		releaseHomerooms = resolve;
+	});
+	await mockDelivery(page, undefined, undefined, { homeroomGate });
+
+	try {
+		await page.goto(
+			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`
+		);
+		await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
+		await expect(page.getByText('ม.1/1', { exact: true })).toHaveCount(0);
+	} finally {
+		releaseHomerooms();
+	}
+});
+
+test('renders homerooms while change-set summaries are still loading', async ({ page }) => {
+	let releaseSummaries: () => void = () => {};
+	const changeSetSummaryGate = new Promise<void>((resolve) => {
+		releaseSummaries = resolve;
+	});
+	await mockDelivery(page, undefined, undefined, { changeSetSummaryGate });
+
+	try {
+		await page.goto(
+			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`
+		);
+		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
+		await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toHaveCount(0);
+	} finally {
+		releaseSummaries();
+	}
+});
+
+test('loads an explicitly selected change-set without waiting for its summary list', async ({
+	page
+}) => {
+	let releaseSummaries: () => void = () => {};
+	const changeSetSummaryGate = new Promise<void>((resolve) => {
+		releaseSummaries = resolve;
+	});
+	const { changeSetDetailRequestCount } = await mockDelivery(page, undefined, undefined, {
+		changeSetSummaryGate
+	});
+
+	try {
+		await page.goto(
+			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&changeSetId=${ids.changeSet}`
+		);
+		await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
+		expect(changeSetDetailRequestCount()).toBe(1);
+	} finally {
+		releaseSummaries();
+	}
+});
+
+test('retries only the failed homeroom region', async ({ page }) => {
+	const { homeroomRequestCount, changeSetSummaryRequestCount, changeSetDetailRequestCount } =
+		await mockDelivery(page, undefined, undefined, { failHomeroomAttempts: 1 });
+	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
+
+	await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
+	expect(homeroomRequestCount()).toBe(2);
+	expect(changeSetSummaryRequestCount()).toBe(1);
+	expect(changeSetDetailRequestCount()).toBe(1);
 });
