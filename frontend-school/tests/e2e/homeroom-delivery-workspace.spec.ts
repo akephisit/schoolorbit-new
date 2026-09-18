@@ -226,6 +226,7 @@ async function mockDelivery(page: Page) {
 					closed: 0,
 					total: 0
 				}));
+			if (url.pathname === '/api/me/work-items') return void (await fulfill(route, { items: [] }));
 			if (url.pathname === '/api/notifications')
 				return void (await fulfill(route, { items: [], unread_count: 0 }));
 			if (url.pathname === '/api/notifications/stream')
@@ -267,4 +268,26 @@ test('opens homeroom-first and loads the offering projection only after changing
 	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม' }).click();
 	await expect.poll(overviewRequestCount).toBe(1);
 	expect(pageViewRequestCount()).toBe(2);
+});
+
+test('primes a complete Delivery destination before hover preload and navigation', async ({
+	page
+}) => {
+	const { pageViewRequestCount } = await mockDelivery(page);
+	await page.goto('/staff/work');
+
+	await page.getByRole('button', { name: 'การจัดการเรียนการสอน', exact: true }).click();
+	const deliveryLink = page.getByRole('link', { name: 'การเปิดสอน', exact: true });
+	await expect(deliveryLink).toHaveAttribute(
+		'href',
+		new RegExp(`academicYearId=${ids.year}.*academicTermId=${ids.term}`)
+	);
+	await deliveryLink.hover();
+	await expect.poll(pageViewRequestCount).toBe(1);
+
+	await deliveryLink.click();
+	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.year}`));
+	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.term}`));
+	await expect(page.getByText('เลือกปีการศึกษาและภาคเรียนก่อน')).toHaveCount(0);
+	expect(pageViewRequestCount()).toBe(1);
 });

@@ -59,6 +59,7 @@ export function createAcademicContextStore({
 	let latestRouteId: string | null = null;
 	let latestUrl: URL | null = null;
 	let revision = 0;
+	let sessionGeneration = 0;
 
 	function optionsForSession(): Promise<AcademicContextOptionsResponse> {
 		cachedOptions ??= loadOptions().catch((error: unknown) => {
@@ -68,6 +69,19 @@ export function createAcademicContextStore({
 		return cachedOptions;
 	}
 
+	async function primeOptions(): Promise<void> {
+		const currentGeneration = sessionGeneration;
+		try {
+			const options = await optionsForSession();
+			if (currentGeneration !== sessionGeneration) return;
+			state.update((current) =>
+				current.requirement === 'none' ? { ...current, options } : current
+			);
+		} catch {
+			// An unrelated route stays hidden; a later prime or route sync retries the read.
+		}
+	}
+
 	async function sync(routeId: string | null, url: URL): Promise<void> {
 		const currentRevision = ++revision;
 		latestRouteId = routeId;
@@ -75,7 +89,7 @@ export function createAcademicContextStore({
 		const requirement = getAcademicContextRequirement(routeId);
 
 		if (requirement === 'none') {
-			state.set(initialState());
+			state.update((current) => ({ ...current, requirement: 'none', status: 'hidden' }));
 			return;
 		}
 
@@ -172,6 +186,7 @@ export function createAcademicContextStore({
 
 	function reset(): void {
 		revision += 1;
+		sessionGeneration += 1;
 		cachedOptions = null;
 		latestRouteId = null;
 		latestUrl = null;
@@ -181,6 +196,7 @@ export function createAcademicContextStore({
 
 	return {
 		subscribe: state.subscribe,
+		primeOptions,
 		sync,
 		selectYear,
 		selectTerm,

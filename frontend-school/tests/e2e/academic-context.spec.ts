@@ -98,7 +98,10 @@ function fulfillJson(route: Route, data: unknown, status = 200) {
 	});
 }
 
-async function mockAcademicContextApis(page: Page, options: { contextFailure?: boolean } = {}) {
+async function mockAcademicContextApis(
+	page: Page,
+	options: { contextFailure?: boolean; contextGate?: Promise<void> } = {}
+) {
 	const contextRequests: Array<{ method: string; pathname: string }> = [];
 
 	await page.route(
@@ -130,11 +133,29 @@ async function mockAcademicContextApis(page: Page, options: { contextFailure?: b
 			}
 
 			if (url.pathname === '/api/academic/context/options') {
+				await options.contextGate;
 				if (options.contextFailure) {
 					await fulfillJson(route, 'ไม่สามารถโหลดบริบทการศึกษาได้', 503);
 				} else {
 					await fulfillJson(route, contextOptions);
 				}
+				return;
+			}
+
+			if (url.pathname === '/api/academic/delivery/page-view') {
+				await fulfillJson(route, {
+					workspace: {
+						academicYearId: url.searchParams.get('academicYearId'),
+						academicTermId: url.searchParams.get('academicTermId'),
+						timetableVersionId: null,
+						timetableVersionStatus: null,
+						timetableVersionEffectiveFrom: null,
+						homerooms: [],
+						unlinked: []
+					},
+					changeSets: [],
+					overview: null
+				});
 				return;
 			}
 
@@ -215,6 +236,27 @@ test('missing required IDs use active defaults with replaceState and no mutation
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
 	expect(await page.evaluate(() => window.__academicReplaceCount ?? 0)).toBeGreaterThan(0);
 	expect(requests).toEqual([{ method: 'GET', pathname: '/api/academic/context/options' }]);
+});
+
+test('missing direct-link context stays neutral while fallback repair is pending', async ({
+	page
+}) => {
+	let releaseContext: () => void = () => {};
+	const contextGate = new Promise<void>((resolve) => {
+		releaseContext = resolve;
+	});
+	await mockAcademicContextApis(page, { contextGate });
+	await page.goto('/staff/academic/delivery');
+	await expect(page.getByTestId('academic-context-switcher')).toBeVisible();
+
+	try {
+		await expect(page.getByText('เลือกปีการศึกษาและภาคเรียนก่อน')).toHaveCount(0);
+	} finally {
+		releaseContext();
+	}
+
+	await expect(page).toHaveURL(new RegExp(`academicYearId=${ids.activeYear}`));
+	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
 });
 
 test('year changes remove an incompatible term and term-optional routes offer all year', async ({

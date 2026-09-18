@@ -55,6 +55,22 @@ async function importScopedYear() {
 	return import(moduleUrl);
 }
 
+let academicContextStoreServer;
+
+async function importAcademicContextStore() {
+	academicContextStoreServer ??= await createViteServer({
+		root: projectRoot,
+		appType: 'custom',
+		logLevel: 'silent',
+		server: { middlewareMode: true }
+	});
+	return academicContextStoreServer.ssrLoadModule('/src/lib/academic-context/store.ts');
+}
+
+test.after(async () => {
+	await academicContextStoreServer?.close();
+});
+
 function contextOptions() {
 	return {
 		activeAcademicYearId: 'year-active',
@@ -156,6 +172,103 @@ test('academic context files own the typed read-only contract', async () => {
 	assert.doesNotMatch(store, /localStorage|sessionStorage|activate|is_active/i);
 });
 
+test('session option priming shares one request and survives non-context routes', async () => {
+	const { createAcademicContextStore } = await importAcademicContextStore();
+	const options = contextOptions();
+	let loadCount = 0;
+	let snapshot;
+	const store = createAcademicContextStore({
+		navigate: async () => {},
+		loadOptions: async () => {
+			loadCount += 1;
+			return options;
+		}
+	});
+	const unsubscribe = store.subscribe((value) => (snapshot = value));
+
+	await Promise.all([store.primeOptions(), store.primeOptions()]);
+	assert.equal(loadCount, 1);
+	assert.equal(snapshot.status, 'hidden');
+	assert.deepEqual(snapshot.options, options);
+
+	await store.sync(
+		'/(app)/staff/academic/delivery',
+		new URL(
+			'https://school.test/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+		)
+	);
+	assert.equal(snapshot.status, 'ready');
+	assert.deepEqual(snapshot.selected, {
+		academicYearId: 'year-active',
+		academicTermId: 'term-active'
+	});
+
+	await store.sync(null, new URL('https://school.test/staff/work'));
+	assert.equal(snapshot.status, 'hidden');
+	assert.deepEqual(snapshot.options, options);
+	assert.deepEqual(snapshot.selected, {
+		academicYearId: 'year-active',
+		academicTermId: 'term-active'
+	});
+	assert.equal(loadCount, 1);
+
+	unsubscribe();
+	store.reset();
+});
+
+test('failed option priming retries without exposing an unrelated route error', async () => {
+	const { createAcademicContextStore } = await importAcademicContextStore();
+	const options = contextOptions();
+	let loadCount = 0;
+	let snapshot;
+	const store = createAcademicContextStore({
+		navigate: async () => {},
+		loadOptions: async () => {
+			loadCount += 1;
+			if (loadCount === 1) throw new Error('temporary failure');
+			return options;
+		}
+	});
+	const unsubscribe = store.subscribe((value) => (snapshot = value));
+
+	await store.primeOptions();
+	assert.equal(snapshot.status, 'hidden');
+	assert.equal(snapshot.options, null);
+
+	await store.primeOptions();
+	assert.equal(loadCount, 2);
+	assert.equal(snapshot.status, 'hidden');
+	assert.deepEqual(snapshot.options, options);
+
+	unsubscribe();
+	store.reset();
+});
+
+test('reset prevents stale priming responses from repopulating session context', async () => {
+	const { createAcademicContextStore } = await importAcademicContextStore();
+	let resolveOptions;
+	let snapshot;
+	const store = createAcademicContextStore({
+		navigate: async () => {},
+		loadOptions: () =>
+			new Promise((resolve) => {
+				resolveOptions = resolve;
+			})
+	});
+	const unsubscribe = store.subscribe((value) => (snapshot = value));
+
+	const pendingPrime = store.primeOptions();
+	store.reset();
+	resolveOptions(contextOptions());
+	await pendingPrime;
+
+	assert.equal(snapshot.status, 'hidden');
+	assert.equal(snapshot.options, null);
+	assert.deepEqual(snapshot.selected, { academicYearId: null, academicTermId: null });
+
+	unsubscribe();
+});
+
 test('route requirements are validated, inherited, and staff-only', async () => {
 	const { createAcademicContextRouteResolver } = await importRouteContext();
 	const resolveRequirement = createAcademicContextRouteResolver({
@@ -191,30 +304,96 @@ test('route requirements are validated, inherited, and staff-only', async () => 
 	);
 });
 
-test('menu destinations carry only the academic context required by the target route', async () => {
+test('menu destinations complete the context required by the target route', async () => {
 	const { academicContextualMenuPath } = await importRouteContext();
+	const options = contextOptions();
 	const selected = { academicYearId: 'year-active', academicTermId: 'term-active' };
 	const requirement = (routeId) =>
 		routeId.endsWith('/delivery')
 			? 'term_required'
-			: routeId.endsWith('/student-years')
-				? 'year_required'
-				: 'none';
+			: routeId.endsWith('/supervision')
+				? 'term_optional'
+				: routeId.endsWith('/student-years')
+					? 'year_required'
+					: 'none';
 
 	assert.equal(
-		academicContextualMenuPath('/staff/academic/delivery', selected, requirement),
+		academicContextualMenuPath('/staff/academic/delivery', selected, options, requirement),
 		'/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
 	);
 	assert.equal(
-		academicContextualMenuPath('/staff/academic/student-years', selected, requirement),
+		academicContextualMenuPath('/staff/academic/student-years', selected, options, requirement),
 		'/staff/academic/student-years?academicYearId=year-active'
 	);
-	assert.equal(academicContextualMenuPath('/staff/work', selected, requirement), '/staff/work');
+	assert.equal(
+		academicContextualMenuPath(
+			'/staff/academic/delivery?view=grid#offerings',
+			{ academicYearId: 'year-active', academicTermId: null },
+			options,
+			requirement
+		),
+		'/staff/academic/delivery?view=grid&academicYearId=year-active&academicTermId=term-active#offerings'
+	);
+	assert.equal(
+		academicContextualMenuPath(
+			'/staff/academic/delivery',
+			{ academicYearId: null, academicTermId: null },
+			options,
+			requirement
+		),
+		'/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+	);
+	assert.equal(
+		academicContextualMenuPath(
+			'/staff/academic/supervision',
+			{ academicYearId: 'year-active', academicTermId: null },
+			options,
+			requirement
+		),
+		'/staff/academic/supervision?academicYearId=year-active'
+	);
+	assert.equal(
+		academicContextualMenuPath('/staff/work', selected, options, requirement),
+		'/staff/work'
+	);
+});
+
+test('incomplete required context holds the page only while URL repair can finish', async () => {
+	const { shouldHoldAcademicContextPage } = await importRouteContext();
+	const missingTerm = new URL(
+		'https://school.test/staff/academic/delivery?academicYearId=year-active'
+	);
+	const completeTerm = new URL(
+		'https://school.test/staff/academic/delivery?academicYearId=year-active&academicTermId=term-active'
+	);
+
+	for (const status of ['hidden', 'loading', 'ready']) {
+		assert.equal(shouldHoldAcademicContextPage('term_required', missingTerm, status), true);
+	}
+	for (const status of ['unavailable', 'error']) {
+		assert.equal(shouldHoldAcademicContextPage('term_required', missingTerm, status), false);
+	}
+	assert.equal(shouldHoldAcademicContextPage('term_required', completeTerm, 'loading'), false);
+	assert.equal(shouldHoldAcademicContextPage('term_optional', missingTerm, 'loading'), false);
+	assert.equal(
+		shouldHoldAcademicContextPage(
+			'year_required',
+			new URL('https://school.test/staff/academic/student-years'),
+			'loading'
+		),
+		true
+	);
 });
 
 test('sidebar preloads and navigates to the same context-bearing destination', async () => {
 	const sidebar = await readProjectFile('src/lib/components/layout/Sidebar.svelte');
 	assert.match(sidebar, /academicContextualMenuPath/);
+	assert.match(sidebar, /getAcademicContextRequirement/);
+	assert.match(sidebar, /academicContext\.primeOptions\(\)/);
+	assert.match(
+		sidebar,
+		/academicContextualMenuPath\([\s\S]*?\$academicContext\.selected[\s\S]*?\$academicContext\.options/
+	);
 	assert.match(sidebar, /href=\{menuHref\(item\)\}/);
 	assert.match(sidebar, /preloadData\(resolve\(href/);
 	assert.match(sidebar, /goto\(resolve\(href/);
@@ -325,6 +504,8 @@ test('layout initialization and responsive topbar remain explicit', async () => 
 	assert.match(layout, /setAcademicContextStore/);
 	assert.match(layout, /academicContext\.sync/);
 	assert.match(layout, /academicContext\.reset/);
+	assert.match(layout, /shouldHoldAcademicContextPage/);
+	assert.match(layout, /<PageSkeleton/);
 	assert.match(header, /<AcademicContextSwitcher/);
 	assert.match(switcher, /<Select\.Root/);
 	assert.match(switcher, /<Sheet\.Root/);

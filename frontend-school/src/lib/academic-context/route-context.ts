@@ -2,6 +2,7 @@ import type {
 	AcademicContextOptionsResponse,
 	AcademicContextRequirement,
 	AcademicContextResolution,
+	AcademicContextState,
 	SelectedAcademicContext
 } from './types';
 
@@ -93,25 +94,55 @@ export function readAcademicContextFromUrl(url: URL): SelectedAcademicContext {
 export function academicContextualMenuPath(
 	path: string,
 	selected: SelectedAcademicContext,
+	options: AcademicContextOptionsResponse | null,
 	resolveRequirement: AcademicContextRouteResolver = getAcademicContextRequirement
 ): string {
 	const target = new URL(path, 'https://schoolorbit.invalid');
 	const requirement = resolveRequirement(`/(app)${target.pathname}`);
 	if (requirement === 'none') return path;
 
+	const selectedYearIsValid =
+		!options || options.years.some((year) => year.id === selected.academicYearId);
+	const activeYearIsValid = options?.years.some((year) => year.id === options.activeAcademicYearId);
+	const academicYearId = selectedYearIsValid
+		? selected.academicYearId
+		: activeYearIsValid
+			? (options?.activeAcademicYearId ?? null)
+			: null;
+	const selectedTerm = options?.terms.find((term) => term.id === selected.academicTermId);
+	const activeTerm = options?.terms.find((term) => term.id === options.activeAcademicTermId);
+	const academicTermId =
+		selected.academicTermId && (!options || selectedTerm?.academicYearId === academicYearId)
+			? selected.academicTermId
+			: requirement === 'term_required' && activeTerm?.academicYearId === academicYearId
+				? activeTerm.id
+				: null;
+
 	target.searchParams.delete('academicYearId');
 	target.searchParams.delete('academicTermId');
-	if (selected.academicYearId) {
-		target.searchParams.set('academicYearId', selected.academicYearId);
+	if (academicYearId) {
+		target.searchParams.set('academicYearId', academicYearId);
 	}
 	if (
-		selected.academicYearId &&
-		selected.academicTermId &&
+		academicYearId &&
+		academicTermId &&
 		(requirement === 'term_required' || requirement === 'term_optional')
 	) {
-		target.searchParams.set('academicTermId', selected.academicTermId);
+		target.searchParams.set('academicTermId', academicTermId);
 	}
 	return `${target.pathname}${target.search}${target.hash}`;
+}
+
+export function shouldHoldAcademicContextPage(
+	requirement: AcademicContextRequirement,
+	url: URL,
+	status: AcademicContextState['status']
+): boolean {
+	if (requirement === 'none' || status === 'unavailable' || status === 'error') return false;
+
+	const selected = readAcademicContextFromUrl(url);
+	if (!selected.academicYearId) return true;
+	return requirement === 'term_required' && !selected.academicTermId;
 }
 
 function resolution(

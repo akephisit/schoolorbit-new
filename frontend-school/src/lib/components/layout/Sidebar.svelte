@@ -13,7 +13,10 @@
 	import { cn } from '$lib/utils';
 	import { getIconComponent } from '$lib/utils/icon-mapper';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
-	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
+	import {
+		academicContextualMenuPath,
+		getAcademicContextRequirement
+	} from '$lib/academic-context/route-context';
 	import {
 		buildSidebarNavigation,
 		type SidebarMenuItem,
@@ -28,11 +31,23 @@
 	let menuLoading = $state(true);
 	const academicContext = getAcademicContextStore();
 
+	function hasAcademicContextDestination(groups: MenuGroup[]): boolean {
+		return groups.some((group) =>
+			group.items.some((item) => {
+				const target = new URL(item.path, 'https://schoolorbit.invalid');
+				return getAcademicContextRequirement(`/(app)${target.pathname}`) !== 'none';
+			})
+		);
+	}
+
 	async function loadMenu() {
 		try {
 			menuLoading = true;
 			const response = await getUserMenu();
 			menuGroups = response.groups;
+			if (hasAcademicContextDestination(response.groups)) {
+				void academicContext.primeOptions();
+			}
 		} catch (error) {
 			console.error('Failed to load menu:', error);
 			menuGroups = [];
@@ -124,7 +139,11 @@
 	}
 
 	function menuHref(item: SidebarMenuItem): string {
-		return academicContextualMenuPath(item.path, $academicContext.selected);
+		return academicContextualMenuPath(
+			item.path,
+			$academicContext.selected,
+			$academicContext.options
+		);
 	}
 
 	function preloadMenuItem(item: SidebarMenuItem) {

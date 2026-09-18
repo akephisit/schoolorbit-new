@@ -361,6 +361,11 @@ test('development rules own route data loading and navigation performance', asyn
 	assert.match(rules, /\+page\.ts.*\+layout\.ts[\s\S]*primary route data/);
 	assert.match(rules, /load event's `fetch`/);
 	assert.match(rules, /academic context in menu destinations/);
+	assert.match(
+		rules,
+		/Resolve required academic year and term before normal menu preload and navigation/
+	);
+	assert.match(rules, /URL repair is a fallback for direct, stale, or external links/);
 	assert.match(rules, /page-view endpoint/);
 	assert.match(rules, /Independent initial reads[\s\S]*concurrently/);
 	assert.match(rules, /invalidateAll\(\)/);

@@ -6,12 +6,16 @@
 	import { page } from '$app/state';
 	import { onDestroy, onMount } from 'svelte';
 	import { createAcademicContextStore, setAcademicContextStore } from '$lib/academic-context/store';
+	import {
+		getAcademicContextRequirement,
+		shouldHoldAcademicContextPage
+	} from '$lib/academic-context/route-context';
 	import { authAPI } from '$lib/api/auth';
 	import type { AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
 	import { userCanAccessRoute } from '$lib/auth/route-access';
 	import { authStore } from '$lib/stores/auth';
 	import { userPermissions } from '$lib/stores/permissions';
-	import { AuthCheckingState, PageState } from '$lib/components/app-state';
+	import { AuthCheckingState, PageSkeleton, PageState } from '$lib/components/app-state';
 	import { toast } from 'svelte-sonner';
 
 	import { uiPreferences } from '$lib/stores/ui-preferences';
@@ -27,6 +31,10 @@
 		navigate: goto
 	});
 	setAcademicContextStore(academicContext);
+	let academicContextRequirement = $derived(getAcademicContextRequirement(page.route.id));
+	let holdAcademicContextPage = $derived(
+		shouldHoldAcademicContextPage(academicContextRequirement, page.url, $academicContext.status)
+	);
 
 	function handleMenuClick() {
 		if (sidebarRef?.toggleMobileSidebar) {
@@ -154,7 +162,13 @@
 			<!-- Main Content - scroll อยู่ที่นี่ -->
 			<main class="flex-1 min-h-0 overflow-y-auto">
 				<div class="h-full">
-					{@render children()}
+					{#if holdAcademicContextPage}
+						<div class="p-4 sm:p-6">
+							<PageSkeleton variant="table" rows={7} />
+						</div>
+					{:else}
+						{@render children()}
+					{/if}
 				</div>
 			</main>
 		</div>
