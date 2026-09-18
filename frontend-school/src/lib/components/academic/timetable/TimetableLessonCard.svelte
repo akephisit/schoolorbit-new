@@ -2,7 +2,6 @@
 	import { buildTimetableBlockDisplay } from '$lib/academic/timetable/block-display';
 	import { alignDragImageToPointer } from '$lib/academic/timetable/drag-image';
 	import type { TimetableBlock } from '$lib/api/timetable';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { DoorOpen, LoaderCircle, Trash2, Users } from 'lucide-svelte';
 
@@ -48,6 +47,9 @@
 	);
 	const display = $derived(buildTimetableBlockDisplay(block, 'scheduler'));
 	const showCode = $derived(block.blockKind === 'course');
+	const shouldShowTeacher = $derived(
+		showTeacher && block.blockKind !== 'structural' && block.schedulingMode !== 'synchronized'
+	);
 	const resolvedTargetLabel = $derived(
 		targetLabel === undefined ? display.groupLabel : targetLabel
 	);
@@ -56,7 +58,7 @@
 			showCode ? code : null,
 			title,
 			allTargetNames.join(', '),
-			showTeacher ? `ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}` : null
+			shouldShowTeacher ? `ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}` : null
 		]
 			.filter(Boolean)
 			.join(' ')
@@ -123,16 +125,7 @@
 			>
 				{title}
 			</h4>
-			{#if block.blockKind !== 'structural' && display.contextLabel}
-				<div class="mt-1 flex min-w-0 flex-nowrap gap-0.5 overflow-hidden">
-					<Badge
-						variant="outline"
-						class="h-4 min-w-0 truncate px-1 text-[8px] leading-[14px] font-medium"
-					>
-						{display.contextLabel}
-					</Badge>
-				</div>
-			{:else if resolvedTargetLabel}
+			{#if resolvedTargetLabel}
 				<p
 					data-timetable-card-line
 					class="mt-1 truncate text-[8px] leading-[14px] text-muted-foreground"
@@ -148,7 +141,7 @@
 			canEdit && 'pr-5'
 		]}
 	>
-		{#if showTeacher}
+		{#if shouldShowTeacher}
 			<p class="flex min-w-0 items-center gap-1.5">
 				<Users class="size-3 shrink-0" />
 				<span data-timetable-card-line class="min-w-0 truncate"

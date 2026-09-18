@@ -182,6 +182,41 @@ test('keeps timetable and tray cards draggable without drag icons or structural 
 	}
 });
 
+test('hides shared scheduling metadata while preserving course teacher names', async ({ page }) => {
+	const structuralBlock = makeStructuralTimetableBlock(
+		timetableIds.blockA,
+		timetableIds.period1,
+		'โฮมรูม',
+		[timetableIds.teacherA]
+	);
+	const synchronizedBlock = makeSynchronizedTimetableBlock(
+		timetableIds.blockB,
+		timetableIds.period2,
+		[timetableIds.teacherB]
+	);
+	const courseBlock = makeTimetableBlock(timetableIds.createdBlock, timetableIds.period3);
+	await installTimetableMock(page, {
+		blocks: [structuralBlock, synchronizedBlock, courseBlock],
+		requiredPeriods: 0
+	});
+	await page.goto(timetableUrl());
+
+	const structuralCard = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
+	await expect(structuralCard).not.toContainText('ครูคณิตศาสตร์ A');
+	await expect(structuralCard).not.toHaveAttribute('aria-label', /ครูคณิตศาสตร์ A/);
+	await expect(structuralCard.locator('svg.lucide-users')).toHaveCount(0);
+
+	const synchronizedCard = page.locator(`article[data-block-id="${timetableIds.blockB}"]`);
+	await expect(synchronizedCard).not.toContainText('กิจกรรมพร้อมกัน');
+	await expect(synchronizedCard).not.toContainText('ครูคณิตศาสตร์ B');
+	await expect(synchronizedCard).not.toHaveAttribute('aria-label', /ครูคณิตศาสตร์ B/);
+	await expect(synchronizedCard.locator('svg.lucide-users')).toHaveCount(0);
+
+	const courseCard = page.locator(`article[data-block-id="${timetableIds.createdBlock}"]`);
+	await expect(courseCard).toContainText('ครูคณิตศาสตร์ A');
+	await expect(courseCard).toHaveAttribute('aria-label', /ครูคณิตศาสตร์ A/);
+});
+
 test('shows the dragged lesson preview only in the cell currently under the pointer', async ({
 	page
 }) => {

@@ -220,7 +220,8 @@ export function makeSynchronizedTimetableBlock(
 export function makeStructuralTimetableBlock(
 	id: string,
 	periodId: string,
-	title: string
+	title: string,
+	teacherIds: string[] = []
 ): MockBlock {
 	const ordinary = makeTimetableBlock(id, periodId);
 	return {
@@ -245,7 +246,7 @@ export function makeStructuralTimetableBlock(
 				isActive: true
 			}
 		],
-		teachers: []
+		teachers: teacherTargets(teacherIds)
 	} as unknown as MockBlock;
 }
 
