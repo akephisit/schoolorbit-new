@@ -39,6 +39,13 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Read the full migration timeline before proposing a column, trigger, or data migration.
 - Minimal AI entry-point files are loaded by tools and are not unused placeholders.
 
+### Recommendation and decision quality
+
+- Give evidence-based, candid recommendations. Do not agree merely to mirror the requester, flatter them, or praise a proposal without analysis. State plainly when a proposal is weaker and recommend the stronger justified option.
+- Optimize recommendations for the best long-term outcome across correctness, performance, security, maintainability, operability, and delivery risk. Explain material uncertainty instead of presenting preference as fact.
+- Do not prefer a smaller diff solely because it is easier to implement or review; when evidence shows that a larger coherent change materially improves the outcome, recommend it and implement the smallest coherent version of that stronger design.
+- Larger scope is not inherently better. Avoid speculative rewrites and unrelated refactors. For a materially larger change, explain its tradeoffs, supporting evidence, migration or rollback needs, and verification before implementation.
+
 ### Git branches, worktrees, and integration
 
 - Start every change from the latest `origin/main` on a dedicated feature, fix, or chore branch. Do not implement directly on `main`.

@@ -215,6 +215,27 @@ test('project rules own durable development and verification workflows', async (
 	assert.match(verificationPolicy, /preventing removed legacy contracts and runtime fallbacks/);
 });
 
+test('development rules require candid evidence-based recommendations', async () => {
+	const rules = await readFile(path.join(repoRoot, '.rules'), 'utf8');
+	const workflow = requiredSection(
+		rules,
+		'## 1. Required Analysis Workflow',
+		'## 2. Adding or Changing a Feature'
+	);
+
+	assert.match(workflow, /### Recommendation and decision quality/);
+	assert.match(workflow, /evidence-based, candid recommendations/);
+	assert.match(workflow, /Do not agree merely[^.]*mirror[^.]*flatter/);
+	assert.match(
+		workflow,
+		/correctness, performance, security, maintainability, operability, and delivery risk/
+	);
+	assert.match(workflow, /Do not prefer a smaller diff solely[^.]*larger coherent change/);
+	assert.match(workflow, /Larger scope is not inherently better/);
+	assert.match(workflow, /Avoid speculative rewrites and unrelated refactors/);
+	assert.match(workflow, /tradeoffs[^.]*evidence[^.]*migration or rollback[^.]*verification/);
+});
+
 test('backend school workspace rules and verification commands are canonical', async () => {
 	const [rules, testing, backendReadme] = await Promise.all([
 		readFile(path.join(repoRoot, '.rules'), 'utf8'),
