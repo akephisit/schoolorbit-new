@@ -217,6 +217,38 @@ export function makeSynchronizedTimetableBlock(
 	} as unknown as MockBlock;
 }
 
+export function makeStructuralTimetableBlock(
+	id: string,
+	periodId: string,
+	title: string
+): MockBlock {
+	const ordinary = makeTimetableBlock(id, periodId);
+	return {
+		...ordinary,
+		blockKind: 'structural',
+		learningOfferingId: null,
+		offeringCode: null,
+		offeringName: null,
+		schedulingMode: null,
+		structuralKind: 'homeroom',
+		title,
+		groups: [],
+		homerooms: [
+			{
+				id: 'f1000000-0000-4000-8000-000000000201',
+				homeroomId: timetableIds.homeroom,
+				code: 'M1-1',
+				name: 'ม.1/1',
+				roomId: null,
+				roomCode: null,
+				rowVersion: 1,
+				isActive: true
+			}
+		],
+		teachers: []
+	} as unknown as MockBlock;
+}
+
 function periodId(orderIndex: number): string {
 	if (orderIndex === 1) return timetableIds.period1;
 	if (orderIndex === 2) return timetableIds.period2;

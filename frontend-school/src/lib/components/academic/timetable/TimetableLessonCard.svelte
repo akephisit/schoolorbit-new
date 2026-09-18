@@ -122,7 +122,14 @@
 					{code}
 				</p>
 			{/if}
-			<h4 data-timetable-card-line class="truncate text-[9px] leading-[14px] font-semibold">
+			<h4
+				data-timetable-card-line
+				data-timetable-card-title
+				class={[
+					'text-[9px] leading-[14px] font-semibold',
+					block.blockKind === 'structural' ? 'line-clamp-3 whitespace-pre-line' : 'truncate'
+				]}
+			>
 				{title}
 			</h4>
 			{#if display.contextLabel || display.scopeLabel}

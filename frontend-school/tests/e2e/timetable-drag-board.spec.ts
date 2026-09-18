@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import {
 	installTimetableMock,
+	makeStructuralTimetableBlock,
 	makeSynchronizedTimetableBlock,
 	makeTimetableBlock,
 	timetableIds
@@ -115,6 +116,41 @@ test('keeps every period and the actions visible in the special-period dialog', 
 	await expect(dialog.locator('thead th')).toHaveCount(11);
 	await expect(dialog.getByRole('columnheader', { name: 'คาบ 10' })).toBeInViewport();
 	await expect(dialog.getByRole('button', { name: 'เพิ่ม 0 ช่อง' })).toBeInViewport();
+});
+
+test('preserves multiline special-period titles while creating, editing, and displaying them', async ({
+	page
+}) => {
+	const title = 'โฮมรูม\nป้องกัน\nการทุจริต';
+	const structuralBlock = makeStructuralTimetableBlock(
+		timetableIds.blockA,
+		timetableIds.period1,
+		title
+	);
+	await installTimetableMock(page, { blocks: [structuralBlock], requiredPeriods: 0 });
+	await page.goto(timetableUrl());
+
+	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
+	const cardTitle = card.locator('[data-timetable-card-title]');
+	await expect(cardTitle).toHaveText(title);
+	expect(
+		await cardTitle.evaluate((element) => ({
+			whiteSpace: getComputedStyle(element).whiteSpace,
+			lineClamp: getComputedStyle(element).webkitLineClamp
+		}))
+	).toEqual({ whiteSpace: 'pre-line', lineClamp: '3' });
+
+	await card.getByRole('button', { name: /ดูรายละเอียด/ }).click();
+	const editTitle = page.locator('#timetable-block-title');
+	await expect(editTitle).toHaveValue(title);
+	expect(await editTitle.evaluate((element) => element.tagName)).toBe('TEXTAREA');
+	await page.getByRole('button', { name: 'ปิด' }).click();
+
+	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
+	const createTitle = page.locator('#structural-title');
+	expect(await createTitle.evaluate((element) => element.tagName)).toBe('TEXTAREA');
+	await createTitle.fill(title);
+	await expect(createTitle).toHaveValue(title);
 });
 
 test('shows the dragged lesson preview only in the cell currently under the pointer', async ({

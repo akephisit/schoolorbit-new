@@ -1714,12 +1714,22 @@
 			<div class="space-y-4 py-2">
 				<div class="space-y-1.5">
 					<Label for="timetable-block-title">ชื่อที่แสดงในตาราง</Label>
-					<Input
-						id="timetable-block-title"
-						bind:value={editTitle}
-						disabled={!canEdit}
-						placeholder={selectedBlock?.offeringName ?? 'ใช้ชื่อจากรายการเปิดสอน'}
-					/>
+					{#if selectedBlock?.blockKind === 'structural'}
+						<Textarea
+							id="timetable-block-title"
+							bind:value={editTitle}
+							disabled={!canEdit}
+							rows={3}
+							placeholder="กด Enter เพื่อขึ้นบรรทัดใหม่"
+						/>
+					{:else}
+						<Input
+							id="timetable-block-title"
+							bind:value={editTitle}
+							disabled={!canEdit}
+							placeholder={selectedBlock?.offeringName ?? 'ใช้ชื่อจากรายการเปิดสอน'}
+						/>
+					{/if}
 				</div>
 				<div class="space-y-1.5">
 					<Label>ห้องเรียน</Label>
@@ -1818,7 +1828,12 @@
 						</div>
 						<div class="space-y-1.5">
 							<Label for="structural-title">ชื่อที่แสดง</Label>
-							<Input id="structural-title" bind:value={structuralForm.title} />
+							<Textarea
+								id="structural-title"
+								bind:value={structuralForm.title}
+								rows={3}
+								placeholder="กด Enter เพื่อขึ้นบรรทัดใหม่"
+							/>
 						</div>
 						<div class="space-y-1.5">
 							<Label>ห้องที่ใช้</Label>
