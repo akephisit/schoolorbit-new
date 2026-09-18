@@ -14,7 +14,8 @@ const ids = {
 	requirement: '70000000-0000-4000-8000-000000000001',
 	catalog: '71000000-0000-4000-8000-000000000001',
 	offering: '80000000-0000-4000-8000-000000000001',
-	group: '81000000-0000-4000-8000-000000000001'
+	group: '81000000-0000-4000-8000-000000000001',
+	version: '82000000-0000-4000-8000-000000000001'
 };
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -25,7 +26,83 @@ function fulfill(route: Route, data: unknown, status = 200) {
 	});
 }
 
+function homeroomWorkspace(timetableVersionId: string | null = null) {
+	return {
+		academicYearId: ids.year,
+		academicTermId: ids.term,
+		timetableVersionId,
+		timetableVersionStatus: null,
+		timetableVersionEffectiveFrom: null,
+		homerooms: [
+			{
+				homeroom: {
+					id: ids.homeroom,
+					name: 'ม.1/1',
+					gradeLevel: 'มัธยมศึกษาปีที่ 1',
+					gradeLevelId: ids.grade
+				},
+				gradeLevel: {
+					id: ids.grade,
+					code: 'M1',
+					name: 'มัธยมศึกษาปีที่ 1',
+					short_name: 'ม.1',
+					level_type: 'secondary',
+					level_order: 301
+				},
+				studyProgram: {
+					id: ids.program,
+					code: 'DEFAULT',
+					name: 'แผนมาตรฐาน',
+					curriculumId: ids.curriculum,
+					curriculumName: 'หลักสูตร 2570'
+				},
+				curriculumVersionId: ids.curriculum,
+				expectedCount: 1,
+				readyCount: 1,
+				blockers: [],
+				extraOfferings: [],
+				items: [
+					{
+						requirementId: ids.requirement,
+						resourceKind: 'course',
+						catalogVersionId: ids.catalog,
+						code: 'ค21101',
+						name: 'คณิตศาสตร์พื้นฐาน',
+						requirementKind: 'required',
+						offeringId: ids.offering,
+						offeringState: 'draft',
+						groupMode: 'combined',
+						alignmentStates: ['matches_curriculum'],
+						schedulingMode: null,
+						standardPeriodsPerWeek: 4,
+						weeklyPeriodTarget: 4,
+						teacherState: 'assigned',
+						timetableState: 'scheduled',
+						groups: [
+							{
+								id: ids.group,
+								code: 'MATH-COMBINE',
+								name: 'คณิตเรียนรวม',
+								status: 'draft',
+								rosterStatus: 'draft',
+								teachersLocked: false,
+								homeroomIds: [ids.homeroom, ids.otherHomeroom],
+								homeroomNames: ['ม.1/1', 'ม.1/2'],
+								primaryTeacherCount: 1,
+								timetableEntryCount: 3
+							}
+						]
+					}
+				]
+			}
+		],
+		unlinked: []
+	};
+}
+
 async function mockDelivery(page: Page) {
+	let pageViewRequests = 0;
+	let legacyPrimaryRequests = 0;
 	let offeringOverviewRequests = 0;
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
@@ -80,74 +157,59 @@ async function mockDelivery(page: Page) {
 				});
 				return;
 			}
-			if (url.pathname === '/api/academic/delivery/homerooms') {
-				expect(url.searchParams.get('academicYearId')).toBe(ids.year);
-				expect(url.searchParams.get('academicTermId')).toBe(ids.term);
+			if (url.pathname === '/api/menu/user') {
 				await fulfill(route, {
-					academicYearId: ids.year,
-					academicTermId: ids.term,
-					homerooms: [
+					groups: [
 						{
-							homeroom: {
-								id: ids.homeroom,
-								name: 'ม.1/1',
-								gradeLevel: 'มัธยมศึกษาปีที่ 1',
-								gradeLevelId: ids.grade
-							},
-							gradeLevel: {
-								id: ids.grade,
-								code: 'M1',
-								name: 'มัธยมศึกษาปีที่ 1',
-								short_name: 'ม.1',
-								level_type: 'secondary',
-								level_order: 301
-							},
-							studyProgram: {
-								id: ids.program,
-								code: 'DEFAULT',
-								name: 'แผนมาตรฐาน',
-								curriculumId: ids.curriculum,
-								curriculumName: 'หลักสูตร 2570'
-							},
-							expectedCount: 1,
-							readyCount: 1,
-							blockers: [],
+							code: 'academic_delivery',
+							displayOrder: 1,
+							icon: 'Workflow',
+							name: 'การจัดการเรียนการสอน',
+							workspaceCode: 'academic',
+							workspaceIcon: 'GraduationCap',
+							workspaceName: 'วิชาการ',
+							workspaceOrder: 1,
 							items: [
 								{
-									requirementId: ids.requirement,
-									resourceKind: 'course',
-									catalogVersionId: ids.catalog,
-									code: 'ค21101',
-									name: 'คณิตศาสตร์พื้นฐาน',
-									requirementKind: 'required',
-									offeringId: ids.offering,
-									offeringState: 'draft',
-									groupMode: 'combined',
-									teacherState: 'assigned',
-									timetableState: 'scheduled',
-									groups: [
-										{
-											id: ids.group,
-											code: 'MATH-COMBINE',
-											name: 'คณิตเรียนรวม',
-											status: 'draft',
-											rosterStatus: 'draft',
-											homeroomIds: [ids.homeroom, ids.otherHomeroom],
-											homeroomNames: ['ม.1/1', 'ม.1/2'],
-											primaryTeacherCount: 1,
-											timetableEntryCount: 3
-										}
-									]
+									id: 'a0000000-0000-4000-8000-000000000001',
+									code: 'delivery',
+									name: 'การเปิดสอน',
+									icon: 'Workflow',
+									path: '/staff/academic/delivery'
+								},
+								{
+									id: 'a0000000-0000-4000-8000-000000000002',
+									code: 'delivery-version',
+									name: 'การเปิดสอนรุ่นถัดไป',
+									icon: 'Workflow',
+									path: `/staff/academic/delivery?timetableVersionId=${ids.version}`
 								}
 							]
 						}
-					],
-					unlinked: []
+					]
 				});
 				return;
 			}
-			if (url.pathname === '/api/academic/term-change-sets') {
-				await fulfill(route, []);
+			if (url.pathname === '/api/academic/delivery/page-view') {
+				pageViewRequests += 1;
+				expect(url.searchParams.get('academicYearId')).toBe(ids.year);
+				expect(url.searchParams.get('academicTermId')).toBe(ids.term);
+				await fulfill(route, {
+					workspace: homeroomWorkspace(url.searchParams.get('timetableVersionId')),
+					changeSets: [],
+					overview: null
+				});
+				return;
+			}
+			if (
+				url.pathname === '/api/academic/delivery/homerooms' ||
+				url.pathname === '/api/academic/term-change-sets'
+			) {
+				legacyPrimaryRequests += 1;
+				await fulfill(
+					route,
+					url.pathname === '/api/academic/delivery/homerooms' ? homeroomWorkspace() : []
+				);
 				return;
 			}
 			if (url.pathname === '/api/academic/delivery/workspace') {
@@ -155,7 +217,6 @@ async function mockDelivery(page: Page) {
 				await fulfill(route, { academicTermId: ids.term, offerings: [] });
 				return;
 			}
-			if (url.pathname === '/api/menu/user') return void (await fulfill(route, { groups: [] }));
 			if (url.pathname === '/api/me/work-items/counts')
 				return void (await fulfill(route, {
 					open: 0,
@@ -176,19 +237,34 @@ async function mockDelivery(page: Page) {
 			await fulfill(route, {});
 		}
 	);
-	return () => offeringOverviewRequests;
+	return {
+		pageViewRequestCount: () => pageViewRequests,
+		legacyPrimaryRequestCount: () => legacyPrimaryRequests,
+		overviewRequestCount: () => offeringOverviewRequests
+	};
 }
 
 test('opens homeroom-first and loads the offering projection only after changing tabs', async ({
 	page
 }) => {
-	const overviewRequestCount = await mockDelivery(page);
+	const { pageViewRequestCount, legacyPrimaryRequestCount, overviewRequestCount } =
+		await mockDelivery(page);
 	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
 	await expect(page.getByRole('heading', { name: 'จัดการการเปิดสอน' })).toBeVisible();
 	await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
 	await expect(page.getByText('เรียนรวมหลายห้อง')).toBeVisible();
+	expect(pageViewRequestCount()).toBe(1);
+	expect(legacyPrimaryRequestCount()).toBe(0);
 	expect(overviewRequestCount()).toBe(0);
+
+	const nextVersionLink = page.getByRole('link', { name: 'การเปิดสอนรุ่นถัดไป' });
+	await nextVersionLink.hover();
+	await expect.poll(pageViewRequestCount).toBe(2);
+	await nextVersionLink.click();
+	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${ids.version}`));
+	expect(pageViewRequestCount()).toBe(2);
 
 	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม' }).click();
 	await expect.poll(overviewRequestCount).toBe(1);
+	expect(pageViewRequestCount()).toBe(2);
 });
