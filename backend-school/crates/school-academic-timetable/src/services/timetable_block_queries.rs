@@ -118,6 +118,7 @@ struct WorkspaceGroupRow {
     scheduling_mode: Option<ActivitySchedulingMode>,
     weekly_period_target: i32,
     homeroom_ids: Vec<Uuid>,
+    preferred_room_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, FromRow)]
@@ -232,6 +233,11 @@ pub(crate) async fn get_workspace(
                   activity_detail.scheduling_mode,
                   target.weekly_period_target,
                   COALESCE((
+                      SELECT array_agg(preference.room_id ORDER BY preference.rank, preference.room_id)
+                      FROM learning_group_preferred_rooms preference
+                      WHERE preference.learning_group_id = learning_group.id
+                  ), ARRAY[]::uuid[]) AS preferred_room_ids,
+                  COALESCE((
                       SELECT array_agg(coverage.homeroom_id ORDER BY coverage.homeroom_id)
                       FROM learning_group_homerooms coverage
                       WHERE coverage.learning_group_id = learning_group.id
@@ -334,6 +340,7 @@ pub(crate) async fn get_workspace(
             offering_code: group.offering_code.clone(),
             offering_name: group.offering_name.clone(),
             homeroom_ids: group.homeroom_ids.clone(),
+            preferred_room_ids: group.preferred_room_ids.clone(),
             eligible_instructors: eligible_by_group
                 .get(&group.id)
                 .cloned()
@@ -503,6 +510,11 @@ pub(crate) async fn get_workspace(
                 .filter_map(|group| group.room_id)
                 .chain(block.homerooms.iter().filter_map(|target| target.room_id))
         })
+        .chain(
+            learning_groups
+                .iter()
+                .flat_map(|group| group.preferred_room_ids.iter().copied()),
+        )
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();

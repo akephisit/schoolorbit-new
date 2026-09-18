@@ -11,6 +11,7 @@
 		lockedIds = [],
 		disabled = false,
 		label = 'ครูที่กันเวลาไว้',
+		showLabel = true,
 		onValueChange
 	}: {
 		staff: TimetableBlockWorkspaceStaff[];
@@ -18,6 +19,7 @@
 		lockedIds?: string[];
 		disabled?: boolean;
 		label?: string;
+		showLabel?: boolean;
 		onValueChange: (value: string[]) => void;
 	} = $props();
 
@@ -55,8 +57,8 @@
 	}
 </script>
 
-<div class="space-y-1.5">
-	<Label>{label}</Label>
+<div class:space-y-1.5={showLabel}>
+	{#if showLabel}<Label>{label}</Label>{/if}
 	<Popover.Root>
 		<Popover.Trigger>
 			{#snippet child({ props })}

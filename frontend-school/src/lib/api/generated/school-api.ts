@@ -18116,6 +18116,7 @@ export interface components {
 			offeringCode: string;
 			offeringKind: string;
 			offeringName: string;
+			preferredRoomIds: string[];
 			rosterStatus: string;
 			status: string;
 		};

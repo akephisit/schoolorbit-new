@@ -11,6 +11,14 @@ export interface TimetableOptimisticPlacementSource {
 	candidate: TimetableBlockPlacementCandidate;
 }
 
+export interface TimetableOptimisticBlockEdit {
+	title: string | null;
+	note: string | null;
+	roomId: string | null;
+	instructorIds: string[] | null;
+	teacherIds: string[] | null;
+}
+
 function periodDetails(
 	workspace: TimetableBlockWorkspace,
 	bellSchedulePeriodId: string
@@ -57,6 +65,81 @@ export function swapTimetableBlocksOptimistically(
 			blockA.bellSchedulePeriodId
 		)
 	];
+}
+
+export function editTimetableBlockOptimistically(
+	workspace: TimetableBlockWorkspace,
+	block: TimetableBlock,
+	edit: TimetableOptimisticBlockEdit
+): TimetableBlock {
+	const room = workspace.rooms.find((item) => item.id === edit.roomId);
+	const currentInstructors = block.groups.flatMap((group) => group.instructors);
+	const editsGroupRoom =
+		block.blockKind !== 'structural' && block.schedulingMode !== 'synchronized';
+	const editsHomeroomRoom =
+		block.blockKind === 'structural' || block.schedulingMode === 'synchronized';
+	return {
+		...block,
+		title: edit.title,
+		note: edit.note,
+		groups: block.groups.map((group) => {
+			const learningGroup = workspace.learningGroups.find(
+				(item) => item.id === group.learningGroupId
+			);
+			return {
+				...group,
+				roomId: editsGroupRoom ? edit.roomId : group.roomId,
+				roomCode: editsGroupRoom ? (room?.code ?? null) : group.roomCode,
+				instructors:
+					edit.instructorIds === null
+						? group.instructors
+						: edit.instructorIds.map((teacherId, index) => {
+								const current = currentInstructors.find(
+									(instructor) => instructor.teacherId === teacherId
+								);
+								const eligible = learningGroup?.eligibleInstructors.find(
+									(instructor) => instructor.teacherId === teacherId
+								);
+								return {
+									teacherId,
+									displayName:
+										current?.displayName ??
+										eligible?.displayName ??
+										workspace.staff.find((teacher) => teacher.id === teacherId)?.displayName ??
+										'ครูผู้สอน',
+									role: current?.role ?? eligible?.role ?? (index === 0 ? 'primary' : 'secondary'),
+									orderIndex: current?.orderIndex ?? eligible?.orderIndex ?? index
+								};
+							})
+			};
+		}),
+		homerooms: block.homerooms.map((homeroom) =>
+			editsHomeroomRoom
+				? {
+						...homeroom,
+						roomId: edit.roomId,
+						roomCode: room?.code ?? null
+					}
+				: homeroom
+		),
+		teachers:
+			edit.teacherIds === null
+				? block.teachers
+				: edit.teacherIds.map((teacherId, index) => {
+						const current = block.teachers.find((teacher) => teacher.teacherId === teacherId);
+						return (
+							current ?? {
+								id: `${block.id}:optimistic-teacher:${index}`,
+								teacherId,
+								displayName:
+									workspace.staff.find((teacher) => teacher.id === teacherId)?.displayName ??
+									'ครูผู้สอน',
+								rowVersion: 0,
+								isActive: true
+							}
+						);
+					})
+	};
 }
 
 export function createOptimisticTimetableBlock(

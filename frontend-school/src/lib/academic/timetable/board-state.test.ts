@@ -92,6 +92,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 				offeringKind: 'course',
 				offeringName: 'คณิตศาสตร์พื้นฐาน',
 				homeroomIds: ['homeroom-1', 'homeroom-2'],
+				preferredRoomIds: [],
 				eligibleInstructors: []
 			},
 			{
@@ -105,6 +106,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 				offeringKind: 'course',
 				offeringName: 'ภาษาอังกฤษ',
 				homeroomIds: ['homeroom-2'],
+				preferredRoomIds: [],
 				eligibleInstructors: []
 			}
 		],

@@ -19,6 +19,7 @@ export const timetableIds = {
 	groupB: '71000000-0000-4000-8000-000000000202',
 	homeroom: '81000000-0000-4000-8000-000000000201',
 	room: '91000000-0000-4000-8000-000000000201',
+	roomB: '91000000-0000-4000-8000-000000000202',
 	publishedVersion: 'a1000000-0000-4000-8000-000000000201',
 	draftVersion: 'a1000000-0000-4000-8000-000000000202',
 	changeSet: 'b1000000-0000-4000-8000-000000000201',
@@ -44,6 +45,8 @@ export interface TimetableMockOptions {
 	updateDelayMs?: number;
 	deleteDelayMs?: number;
 	failDelete?: boolean;
+	failUpdate?: boolean;
+	preferredRoomIds?: string[];
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -120,12 +123,16 @@ export function makeTimetableBlock(
 		code?: string;
 		name?: string;
 		instructorIds?: string[];
+		roomId?: string | null;
 	} = {}
 ): MockBlock {
 	const groupId = options.groupId ?? timetableIds.groupA;
 	const offeringId = options.offeringId ?? timetableIds.offeringA;
 	const code = options.code ?? 'ค21101';
 	const name = options.name ?? 'คณิตศาสตร์พื้นฐาน';
+	const roomId = options.roomId === undefined ? timetableIds.room : options.roomId;
+	const roomCode =
+		roomId === timetableIds.roomB ? 'LAB-2' : roomId === timetableIds.room ? 'MATH-1' : null;
 	const blockGroupId =
 		groupId === timetableIds.groupA ? timetableIds.blockGroupA : timetableIds.blockGroupB;
 	return {
@@ -156,8 +163,8 @@ export function makeTimetableBlock(
 				name: groupId === timetableIds.groupA ? 'ม.1/1 คณิตศาสตร์' : 'ม.1/1 วิทยาศาสตร์',
 				homeroomIds: [timetableIds.homeroom],
 				instructors: instructors(options.instructorIds ?? [timetableIds.teacherA]),
-				roomId: timetableIds.room,
-				roomCode: 'MATH-1',
+				roomId,
+				roomCode,
 				rowVersion: 1,
 				isActive: true,
 				syncStatus: null
@@ -176,7 +183,8 @@ export function makeSynchronizedTimetableBlock(
 	id: string,
 	periodId: string,
 	teacherIds: string[] = [],
-	groupInstructorIds: string[] = []
+	groupInstructorIds: string[] = [],
+	roomId: string | null = null
 ): MockBlock {
 	const ordinary = makeTimetableBlock(id, periodId, {
 		offeringId: timetableIds.offeringSync,
@@ -198,8 +206,9 @@ export function makeSynchronizedTimetableBlock(
 				homeroomId: timetableIds.homeroom,
 				code: 'M1-1',
 				name: 'ม.1/1',
-				roomId: null,
-				roomCode: null,
+				roomId,
+				roomCode:
+					roomId === timetableIds.roomB ? 'LAB-2' : roomId === timetableIds.room ? 'MATH-1' : null,
 				rowVersion: 1,
 				isActive: true
 			}
@@ -275,6 +284,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let swapRequests = 0;
 	let deleteRequests = 0;
 	let lastSynchronizedCreateBody: Record<string, unknown> | null = null;
+	let lastCreateBody: Record<string, unknown> | null = null;
 	let lastUpdateBody: Record<string, unknown> | null = null;
 
 	const workspace = () => {
@@ -300,6 +310,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					offeringCode: 'ค21101',
 					offeringName: 'คณิตศาสตร์พื้นฐาน',
 					homeroomIds: [timetableIds.homeroom],
+					preferredRoomIds: options.preferredRoomIds ?? [],
 					eligibleInstructors: instructors(eligibleInstructorIds)
 				},
 				{
@@ -313,6 +324,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					offeringCode: 'ว21101',
 					offeringName: 'วิทยาศาสตร์พื้นฐาน',
 					homeroomIds: [timetableIds.homeroom],
+					preferredRoomIds: [],
 					eligibleInstructors: instructors([timetableIds.teacherB])
 				}
 			],
@@ -328,7 +340,10 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					isActive: true
 				}
 			],
-			rooms: [{ id: timetableIds.room, code: 'MATH-1', name: 'ห้องคณิตศาสตร์', status: 'ACTIVE' }],
+			rooms: [
+				{ id: timetableIds.room, code: 'MATH-1', name: 'ห้องคณิตศาสตร์', status: 'ACTIVE' },
+				{ id: timetableIds.roomB, code: 'LAB-2', name: 'ห้องปฏิบัติการ 2', status: 'ACTIVE' }
+			],
 			staff: [
 				{ id: timetableIds.teacherA, displayName: 'ครูคณิตศาสตร์ A', status: 'active' },
 				{ id: timetableIds.teacherB, displayName: 'ครูคณิตศาสตร์ B', status: 'active' }
@@ -501,11 +516,13 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					await new Promise((resolve) => setTimeout(resolve, options.createDelayMs));
 				}
 				const body = route.request().postDataJSON();
+				lastCreateBody = body;
 				const created = {
 					...makeTimetableBlock(timetableIds.createdBlock, body.bellSchedulePeriodId, {
 						versionId: body.timetableVersionId,
 						groupId: body.learningGroupId,
-						instructorIds: body.instructorIds
+						instructorIds: body.instructorIds,
+						roomId: body.roomId
 					}),
 					dayOfWeek: body.dayOfWeek
 				};
@@ -521,7 +538,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					...makeSynchronizedTimetableBlock(
 						timetableIds.createdBlock,
 						body.bellSchedulePeriodId,
-						body.teacherIds ?? []
+						body.teacherIds ?? [],
+						[],
+						body.roomId
 					),
 					dayOfWeek: body.dayOfWeek
 				};
@@ -560,23 +579,63 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				if (options.updateDelayMs) {
 					await new Promise((resolve) => setTimeout(resolve, options.updateDelayMs));
 				}
+				if (options.failUpdate) {
+					await fulfill(route, 'ข้อมูลคาบเปลี่ยนแปลงแล้ว', 409);
+					return;
+				}
 				const id = url.pathname.split('/').at(-1);
 				const body = route.request().postDataJSON();
 				lastUpdateBody = body;
 				const existing = blocks.find((block) => block.id === id);
 				if (!existing) throw new Error('Mock update block not found');
 				const periodId = body.bellSchedulePeriodId ?? existing.bellSchedulePeriodId;
+				const nextRoomId = body.clearRoom
+					? null
+					: Object.hasOwn(body, 'roomId')
+						? body.roomId
+						: undefined;
+				const nextRoomCode =
+					nextRoomId === timetableIds.roomB
+						? 'LAB-2'
+						: nextRoomId === timetableIds.room
+							? 'MATH-1'
+							: null;
 				const updated = {
 					...existing,
 					dayOfWeek: body.dayOfWeek ?? existing.dayOfWeek,
 					bellSchedulePeriodId: periodId,
 					...periodDetails(periodId),
-					groups: body.instructorIds
-						? existing.groups.map((group) => ({
-								...group,
-								instructors: instructors(body.instructorIds)
-							}))
-						: existing.groups,
+					title: body.clearTitle ? null : (body.title ?? existing.title),
+					note: body.clearNote ? null : (body.note ?? existing.note),
+					groups: existing.groups.map((group) => ({
+						...group,
+						instructors: body.instructorIds ? instructors(body.instructorIds) : group.instructors,
+						roomId:
+							nextRoomId === undefined ||
+							existing.blockKind === 'structural' ||
+							existing.schedulingMode === 'synchronized'
+								? group.roomId
+								: nextRoomId,
+						roomCode:
+							nextRoomId === undefined ||
+							existing.blockKind === 'structural' ||
+							existing.schedulingMode === 'synchronized'
+								? group.roomCode
+								: nextRoomCode
+					})),
+					homerooms: existing.homerooms.map((homeroom) => ({
+						...homeroom,
+						roomId:
+							nextRoomId === undefined ||
+							(existing.blockKind !== 'structural' && existing.schedulingMode !== 'synchronized')
+								? homeroom.roomId
+								: nextRoomId,
+						roomCode:
+							nextRoomId === undefined ||
+							(existing.blockKind !== 'structural' && existing.schedulingMode !== 'synchronized')
+								? homeroom.roomCode
+								: nextRoomCode
+					})),
 					teachers: body.teacherIds ? teacherTargets(body.teacherIds) : existing.teachers,
 					rowVersion: existing.rowVersion + 1
 				};
@@ -636,6 +695,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		swapRequestCount: () => swapRequests,
 		deleteRequestCount: () => deleteRequests,
 		lastSynchronizedCreateBody: () => lastSynchronizedCreateBody,
+		lastCreateBody: () => lastCreateBody,
 		lastUpdateBody: () => lastUpdateBody,
 		blocks: () => blocks
 	};

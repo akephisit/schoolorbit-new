@@ -4,6 +4,7 @@
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
 		TimetableBlockWorkspaceLearningGroup,
+		TimetableBlockWorkspaceRoom,
 		TimetableBlockWorkspaceStaff,
 		TimetableOrdinaryDemand,
 		TimetableSynchronizedDemand
@@ -12,6 +13,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Check, ChevronDown, GripVertical, Inbox, Plus, UsersRound } from 'lucide-svelte';
+	import TimetableRoomPicker from './TimetableRoomPicker.svelte';
 	import TimetableTeacherTargetPicker from './TimetableTeacherTargetPicker.svelte';
 
 	type DemandSelection = {
@@ -23,6 +25,7 @@
 		ordinaryDemands,
 		synchronizedDemands,
 		groups,
+		rooms,
 		staff,
 		disabled = false,
 		onChooseDemand,
@@ -33,6 +36,7 @@
 		ordinaryDemands: TimetableOrdinaryDemand[];
 		synchronizedDemands: TimetableSynchronizedDemand[];
 		groups: TimetableBlockWorkspaceLearningGroup[];
+		rooms: TimetableBlockWorkspaceRoom[];
 		staff: TimetableBlockWorkspaceStaff[];
 		disabled?: boolean;
 		onChooseDemand: (
@@ -49,8 +53,13 @@
 	} = $props();
 
 	let instructorChoices = $state<Record<string, string[]>>({});
+	let ordinaryRoomChoices = $state<Record<string, string | null>>({});
+	let synchronizedRoomChoices = $state<Record<string, string | null>>({});
 	let synchronizedTeacherChoices = $state<Record<string, string[]>>({});
 	const groupById = $derived(new Map(groups.map((group) => [group.id, group])));
+	const availableRoomIds = $derived(
+		new Set(rooms.filter((room) => room.status.toUpperCase() === 'ACTIVE').map((room) => room.id))
+	);
 	const visibleOrdinary = $derived(ordinaryDemands.filter((demand) => demand.remainingPeriods > 0));
 	const visibleSynchronized = $derived(
 		synchronizedDemands.filter((demand) => demand.scheduledPeriods < demand.requiredPeriods)
@@ -77,6 +86,18 @@
 		};
 	}
 
+	function selectedOrdinaryRoomId(demand: TimetableOrdinaryDemand): string | null {
+		if (Object.hasOwn(ordinaryRoomChoices, demand.learningGroupId)) {
+			return ordinaryRoomChoices[demand.learningGroupId] ?? null;
+		}
+		const group = groupById.get(demand.learningGroupId);
+		return group?.preferredRoomIds.find((roomId) => availableRoomIds.has(roomId)) ?? null;
+	}
+
+	function selectedSynchronizedRoomId(demand: TimetableSynchronizedDemand): string | null {
+		return synchronizedRoomChoices[demand.learningOfferingId] ?? null;
+	}
+
 	function ordinarySelection(demand: TimetableOrdinaryDemand): DemandSelection {
 		const group = groupById.get(demand.learningGroupId);
 		return {
@@ -89,7 +110,7 @@
 				blockKind: group?.offeringKind === 'activity' ? 'activity' : 'course',
 				learningGroupId: demand.learningGroupId,
 				learningOfferingId: demand.learningOfferingId,
-				roomId: null,
+				roomId: selectedOrdinaryRoomId(demand),
 				instructorIds: selectedInstructorIds(demand),
 				homeroomIds: demand.homeroomIds,
 				teacherIds: []
@@ -107,7 +128,7 @@
 				blockKind: 'activity',
 				learningGroupId: null,
 				learningOfferingId: demand.learningOfferingId,
-				roomId: null,
+				roomId: selectedSynchronizedRoomId(demand),
 				instructorIds: [],
 				homeroomIds: demand.intendedHomeroomIds,
 				teacherIds: synchronizedTeacherChoices[demand.learningOfferingId] ?? []
@@ -154,7 +175,7 @@
 	<div class="flex items-center justify-between gap-3 border-b px-4 py-3">
 		<div>
 			<h2 class="font-semibold">ถาดคาบที่รอจัด</h2>
-			<p class="text-xs text-muted-foreground">เลือกครูให้คาบนั้น แล้วลากลงสมุดตาราง</p>
+			<p class="text-xs text-muted-foreground">เลือกครูและห้องให้คาบนั้น แล้วลากลงสมุดตาราง</p>
 		</div>
 		<Badge variant="secondary">{visibleOrdinary.length + visibleSynchronized.length} รายการ</Badge>
 	</div>
@@ -215,14 +236,29 @@
 									</p>
 								</button>
 							</div>
-							<div class="mt-3">
-								<TimetableTeacherTargetPicker
-									{staff}
-									value={synchronizedTeacherChoices[demand.learningOfferingId] ?? []}
-									label="ครูที่กันเวลาไว้"
-									{disabled}
-									onValueChange={(teacherIds) => setSynchronizedTeachers(demand, teacherIds)}
-								/>
+							<div class="mt-3 grid grid-cols-2 gap-2" data-timetable-tray-settings>
+								<div class="min-w-0">
+									<TimetableTeacherTargetPicker
+										{staff}
+										value={synchronizedTeacherChoices[demand.learningOfferingId] ?? []}
+										label="ครูที่กันเวลาไว้"
+										showLabel={false}
+										{disabled}
+										onValueChange={(teacherIds) => setSynchronizedTeachers(demand, teacherIds)}
+									/>
+								</div>
+								<div class="min-w-0">
+									<TimetableRoomPicker
+										{rooms}
+										value={selectedSynchronizedRoomId(demand)}
+										{disabled}
+										onValueChange={(roomId) =>
+											(synchronizedRoomChoices = {
+												...synchronizedRoomChoices,
+												[demand.learningOfferingId]: roomId
+											})}
+									/>
+								</div>
 							</div>
 						</article>
 					{/each}
@@ -265,68 +301,85 @@
 									</p>
 								</button>
 							</div>
-							<Popover.Root>
-								<Popover.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											type="button"
-											size="sm"
-											variant="outline"
-											class="mt-3 w-full justify-between"
-											disabled={disabled || demand.eligibleInstructors.length === 0}
-										>
-											<span class="flex min-w-0 items-center gap-1.5">
-												<UsersRound class="size-3.5" />
-												<span class="truncate">
-													{selectedIds.length > 0
-														? `เลือกครู ${selectedIds.length} คน`
-														: 'กรุณาเลือกครู'}
-												</span>
-											</span>
-											<ChevronDown class="size-3.5" />
-										</Button>
-									{/snippet}
-								</Popover.Trigger>
-								<Popover.Content class="w-72 p-2" align="start">
-									<p class="px-2 pb-2 text-xs font-medium">ครูที่สอนคาบนี้</p>
-									{#if demand.eligibleInstructors.length === 0}
-										<p class="px-2 py-3 text-xs text-destructive">
-											ยังไม่ได้กำหนดครูในหน้าจัดการเรียน
-										</p>
-									{:else}
-										{#each demand.eligibleInstructors as teacher (teacher.teacherId)}
-											<Button
-												type="button"
-												variant="ghost"
-												class="h-auto w-full justify-start px-2 py-2 text-left"
-												aria-pressed={selectedIds.includes(teacher.teacherId)}
-												onclick={() => toggleInstructor(demand, teacher.teacherId)}
-											>
-												<span
-													class={[
-														'flex size-4 shrink-0 items-center justify-center rounded border',
-														selectedIds.includes(teacher.teacherId) &&
-															'border-primary bg-primary text-primary-foreground'
-													]}
+							<div class="mt-3 grid grid-cols-2 gap-2" data-timetable-tray-settings>
+								<div class="min-w-0">
+									<Popover.Root>
+										<Popover.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													type="button"
+													variant="outline"
+													class="w-full justify-between"
+													disabled={disabled || demand.eligibleInstructors.length === 0}
 												>
-													{#if selectedIds.includes(teacher.teacherId)}<Check class="size-3" />{/if}
-												</span>
-												<span>
-													<span class="block text-xs font-medium">{teacher.displayName}</span>
-													<span class="block text-[0.68rem] text-muted-foreground">
-														{teacher.role === 'primary'
-															? 'ครูหลัก'
-															: teacher.role === 'assistant'
-																? 'ครูผู้ช่วย'
-																: 'ครูร่วมสอน'}
+													<span class="flex min-w-0 items-center gap-1.5">
+														<UsersRound class="size-3.5" />
+														<span class="truncate">
+															{selectedIds.length > 0
+																? `เลือกครู ${selectedIds.length} คน`
+																: 'กรุณาเลือกครู'}
+														</span>
 													</span>
-												</span>
-											</Button>
-										{/each}
-									{/if}
-								</Popover.Content>
-							</Popover.Root>
+													<ChevronDown class="size-3.5" />
+												</Button>
+											{/snippet}
+										</Popover.Trigger>
+										<Popover.Content class="w-72 p-2" align="start">
+											<p class="px-2 pb-2 text-xs font-medium">ครูที่สอนคาบนี้</p>
+											{#if demand.eligibleInstructors.length === 0}
+												<p class="px-2 py-3 text-xs text-destructive">
+													ยังไม่ได้กำหนดครูในหน้าจัดการเรียน
+												</p>
+											{:else}
+												{#each demand.eligibleInstructors as teacher (teacher.teacherId)}
+													<Button
+														type="button"
+														variant="ghost"
+														class="h-auto w-full justify-start px-2 py-2 text-left"
+														aria-pressed={selectedIds.includes(teacher.teacherId)}
+														onclick={() => toggleInstructor(demand, teacher.teacherId)}
+													>
+														<span
+															class={[
+																'flex size-4 shrink-0 items-center justify-center rounded border',
+																selectedIds.includes(teacher.teacherId) &&
+																	'border-primary bg-primary text-primary-foreground'
+															]}
+														>
+															{#if selectedIds.includes(teacher.teacherId)}<Check
+																	class="size-3"
+																/>{/if}
+														</span>
+														<span>
+															<span class="block text-xs font-medium">{teacher.displayName}</span>
+															<span class="block text-[0.68rem] text-muted-foreground">
+																{teacher.role === 'primary'
+																	? 'ครูหลัก'
+																	: teacher.role === 'assistant'
+																		? 'ครูผู้ช่วย'
+																		: 'ครูร่วมสอน'}
+															</span>
+														</span>
+													</Button>
+												{/each}
+											{/if}
+										</Popover.Content>
+									</Popover.Root>
+								</div>
+								<div class="min-w-0">
+									<TimetableRoomPicker
+										{rooms}
+										value={selectedOrdinaryRoomId(demand)}
+										{disabled}
+										onValueChange={(roomId) =>
+											(ordinaryRoomChoices = {
+												...ordinaryRoomChoices,
+												[demand.learningGroupId]: roomId
+											})}
+									/>
+								</div>
+							</div>
 						</article>
 					{/each}
 				</section>

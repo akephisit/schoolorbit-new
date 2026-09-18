@@ -115,6 +115,15 @@ test('block placement contract models ordinary synchronized and existing sources
 	assert.match(controller, /\$derived/);
 });
 
+test('timetable workspace exposes ranked preferred rooms for each learning group', async () => {
+	const openapi = JSON.parse(await read('../contracts/openapi/school-api.json'));
+	const learningGroup = openapi.components.schemas.TimetableBlockWorkspaceLearningGroup;
+
+	assert.ok(learningGroup.required.includes('preferredRoomIds'));
+	assert.equal(learningGroup.properties.preferredRoomIds.type, 'array');
+	assert.equal(learningGroup.properties.preferredRoomIds.items.format, 'uuid');
+});
+
 test('date-based personal timetable reads carry the selected date', async () => {
 	const api = await read('src/lib/api/timetable.ts');
 	const parents = await read('src/lib/api/parents.ts');

@@ -17,6 +17,7 @@
 	} from '$lib/academic/timetable/board-state';
 	import {
 		createOptimisticTimetableBlock,
+		editTimetableBlockOptimistically,
 		moveTimetableBlockOptimistically,
 		removeTimetableTargetOptimistically,
 		swapTimetableBlocksOptimistically
@@ -52,6 +53,7 @@
 		type TimetableStructuralKind,
 		type TimetableTargetKind,
 		type TimetableVersion,
+		type UpdateTimetableBlockRequest,
 		type TimetableBlockWorkspace
 	} from '$lib/api/timetable';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
@@ -120,6 +122,11 @@
 		pendingCellKeys: string[];
 		target: ReturnType<typeof currentRemovalTarget>;
 		versionId: string;
+	};
+	type OptimisticBlockEditOperation = {
+		controller: TimetableWorkspaceController;
+		originalBlock: TimetableBlock;
+		request: UpdateTimetableBlockRequest;
 	};
 	type StructuralForm = {
 		kind: TimetableStructuralKind;
@@ -491,13 +498,19 @@
 		syncUrl();
 	}
 
+	function roomIdForBlockEdit(block: TimetableBlock): string | null {
+		return block.schedulingMode === 'synchronized' || block.blockKind === 'structural'
+			? (block.homerooms[0]?.roomId ?? null)
+			: (block.groups[0]?.roomId ?? block.homerooms[0]?.roomId ?? null);
+	}
+
 	function candidateForBlock(block: TimetableBlock): TimetableBlockPlacementCandidate {
 		const group = block.groups[0];
 		return {
 			blockKind: block.blockKind,
 			learningGroupId: block.groups.length === 1 ? (group?.learningGroupId ?? null) : null,
 			learningOfferingId: block.learningOfferingId,
-			roomId: group?.roomId ?? block.homerooms[0]?.roomId ?? null,
+			roomId: roomIdForBlockEdit(block),
 			instructorIds: block.blockKind === 'structural' ? [] : blockInstructorIds(block),
 			homeroomIds: blockHomeroomIds(block),
 			teacherIds: blockTargetTeacherIds(block)
@@ -962,7 +975,7 @@
 		selectedBlockId = block.id;
 		editTitle = block.title ?? '';
 		editNote = block.note ?? '';
-		editRoomId = block.groups[0]?.roomId ?? block.homerooms[0]?.roomId ?? noRoomValue;
+		editRoomId = roomIdForBlockEdit(block) ?? noRoomValue;
 		editInstructorIds = block.groups.flatMap((group) =>
 			group.instructors.map((teacher) => teacher.teacherId)
 		);
@@ -1010,33 +1023,70 @@
 		];
 	}
 
-	async function saveBlock(): Promise<void> {
-		if (!controller || !selectedBlock || busy) return;
-		busy = true;
+	function saveBlock(): void {
+		if (!controller || !selectedBlock || busy || pendingBlockIds.has(selectedBlock.id)) return;
+		const operationController = controller;
+		const originalBlock = selectedBlock;
+		const title = editTitle.trim() || null;
+		const note = editNote.trim() || null;
+		const roomId = editRoomId === noRoomValue ? null : editRoomId;
+		const instructorIds =
+			originalBlock.blockKind !== 'structural' &&
+			originalBlock.schedulingMode !== 'synchronized' &&
+			originalBlock.groups.length === 1
+				? editInstructorIds
+				: null;
+		const teacherIds = originalBlock.schedulingMode === 'synchronized' ? editTeacherIds : null;
+		const request: UpdateTimetableBlockRequest = {
+			timetableVersionId: operationController.workspace.version.id,
+			rowVersion: originalBlock.rowVersion,
+			title,
+			clearTitle: title === null,
+			note,
+			clearNote: note === null,
+			roomId,
+			clearRoom: roomId === null,
+			instructorIds,
+			teacherIds
+		};
+		const optimisticBlock = editTimetableBlockOptimistically(
+			operationController.workspace,
+			originalBlock,
+			{ title, note, roomId, instructorIds, teacherIds }
+		);
+		operationController.setWorkspace(
+			patchTimetableWorkspaceBlocks(operationController.workspace, [optimisticBlock])
+		);
+		editOpen = false;
+		beginPendingOperation([originalBlock.id]);
+		void persistOptimisticBlockEdit({
+			controller: operationController,
+			originalBlock,
+			request
+		});
+	}
+
+	async function persistOptimisticBlockEdit(
+		operation: OptimisticBlockEditOperation
+	): Promise<void> {
 		try {
-			await updateTimetableBlock(selectedBlock.id, {
-				timetableVersionId: controller.workspace.version.id,
-				rowVersion: selectedBlock.rowVersion,
-				title: editTitle.trim() || null,
-				clearTitle: editTitle.trim().length === 0,
-				note: editNote.trim() || null,
-				clearNote: editNote.trim().length === 0,
-				roomId: editRoomId === noRoomValue ? null : editRoomId,
-				clearRoom: editRoomId === noRoomValue,
-				instructorIds:
-					selectedBlock.blockKind !== 'structural' &&
-					selectedBlock.schedulingMode !== 'synchronized' &&
-					selectedBlock.groups.length === 1
-						? editInstructorIds
-						: null,
-				teacherIds: selectedBlock.schedulingMode === 'synchronized' ? editTeacherIds : null
-			});
-			editOpen = false;
-			await reload('แก้รายละเอียดคาบแล้ว');
+			const saved = await updateTimetableBlock(operation.originalBlock.id, operation.request);
+			if (controller === operation.controller) {
+				operation.controller.setWorkspace(
+					patchTimetableWorkspaceBlocks(operation.controller.workspace, [saved])
+				);
+				draftRevision += 1;
+			}
+			toast.success('แก้รายละเอียดคาบแล้ว');
 		} catch (error) {
+			if (controller === operation.controller) {
+				operation.controller.setWorkspace(
+					patchTimetableWorkspaceBlocks(operation.controller.workspace, [operation.originalBlock])
+				);
+			}
 			toast.error(error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ');
 		} finally {
-			busy = false;
+			finishPendingOperation([operation.originalBlock.id]);
 		}
 	}
 
@@ -1614,6 +1664,7 @@
 						ordinaryDemands={visibleOrdinaryDemands}
 						synchronizedDemands={visibleSynchronizedDemands}
 						groups={controller.workspace.learningGroups}
+						rooms={controller.workspace.rooms}
 						staff={controller.workspace.staff}
 						disabled={!canEdit}
 						onChooseDemand={chooseDemand}

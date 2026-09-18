@@ -202,6 +202,7 @@ pub struct TimetableBlockWorkspaceLearningGroup {
     pub offering_code: String,
     pub offering_name: String,
     pub homeroom_ids: Vec<Uuid>,
+    pub preferred_room_ids: Vec<Uuid>,
     pub eligible_instructors: Vec<TimetableBlockInstructor>,
 }
 

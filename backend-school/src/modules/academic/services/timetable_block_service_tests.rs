@@ -365,6 +365,23 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     .execute(&pool)
     .await
     .unwrap();
+    let preferred_room_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM rooms WHERE status = 'ACTIVE' ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .expect("fixture must include an active room");
+    sqlx::query(
+        r#"INSERT INTO learning_group_preferred_rooms (
+               learning_group_id, academic_term_id, academic_year_id, room_id, rank
+           ) VALUES ($1, $2, $3, $4, 1)"#,
+    )
+    .bind(group_id)
+    .bind(term_id)
+    .bind(offering_year_id)
+    .bind(preferred_room_id)
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         r#"INSERT INTO learning_group_teachers (
                id, learning_group_id, academic_term_id, academic_year_id,
@@ -429,6 +446,12 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         .ordinary_demands
         .iter()
         .any(|demand| demand.learning_group_id == group_id));
+    let workspace_group = workspace
+        .learning_groups
+        .iter()
+        .find(|group| group.id == group_id)
+        .expect("created group must be available in the timetable workspace");
+    assert_eq!(workspace_group.preferred_room_ids, vec![preferred_room_id]);
 
     assert!(matches!(
         timetable_block_service::create_ordinary_block(&pool, actor_id, request).await,

@@ -45283,6 +45283,13 @@
           "offeringName": {
             "type": "string"
           },
+          "preferredRoomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "rosterStatus": {
             "type": "string"
           },
@@ -45301,6 +45308,7 @@
           "offeringCode",
           "offeringName",
           "homeroomIds",
+          "preferredRoomIds",
           "eligibleInstructors"
         ],
         "type": "object"
