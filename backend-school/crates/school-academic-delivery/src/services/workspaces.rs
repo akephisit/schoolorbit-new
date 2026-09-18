@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -137,6 +138,26 @@ struct WorkspaceTimetableVersionRow {
     id: Uuid,
     status: TimetableVersionStatus,
     effective_from: chrono::NaiveDate,
+}
+
+async fn join_workspace_resource_reads<ExpectedRows, OfferingRows, GroupRows>(
+    expected_rows: ExpectedRows,
+    offering_rows: OfferingRows,
+    group_rows: GroupRows,
+) -> Result<
+    (
+        Vec<ExpectedDeliveryRow>,
+        Vec<OfferingTargetRow>,
+        Vec<DeliveryGroupRow>,
+    ),
+    sqlx::Error,
+>
+where
+    ExpectedRows: Future<Output = Result<Vec<ExpectedDeliveryRow>, sqlx::Error>>,
+    OfferingRows: Future<Output = Result<Vec<OfferingTargetRow>, sqlx::Error>>,
+    GroupRows: Future<Output = Result<Vec<DeliveryGroupRow>, sqlx::Error>>,
+{
+    futures::try_join!(expected_rows, offering_rows, group_rows)
 }
 
 pub async fn homeroom_delivery_workspace_for_version(
@@ -301,7 +322,7 @@ pub async fn homeroom_delivery_workspace_for_version(
         .map(|homeroom| homeroom.homeroom_id)
         .collect::<Vec<_>>();
 
-    let expected_rows: Vec<ExpectedDeliveryRow> = sqlx::query_as(
+    let expected_rows = sqlx::query_as(
         r#"SELECT homeroom.id AS homeroom_id,
                   requirement.id AS requirement_id,
                   'course'::text AS resource_kind,
@@ -356,16 +377,10 @@ pub async fn homeroom_delivery_workspace_for_version(
     .bind(&term_type)
     .bind(type_occurrence as i32)
     .bind((MAX_WORKSPACE_ITEMS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
-    ensure_option_size(
-        expected_rows.len(),
-        MAX_WORKSPACE_ITEMS,
-        "รายการตามโครงสร้างในพื้นที่ทำงาน",
-    )?;
+    .fetch_all(pool);
 
     let owner_ids = filter.allowed_organization_unit_ids();
-    let offering_rows: Vec<OfferingTargetRow> = sqlx::query_as(
+    let offering_rows = sqlx::query_as(
         r#"SELECT offering.id AS offering_id,
                   offering.kind AS resource_kind,
                   CASE offering.kind
@@ -406,15 +421,9 @@ pub async fn homeroom_delivery_workspace_for_version(
     .bind(&owner_ids)
     .bind(timetable_version_id)
     .bind((MAX_WORKSPACE_TARGET_ROWS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
-    ensure_option_size(
-        offering_rows.len(),
-        MAX_WORKSPACE_TARGET_ROWS,
-        "เป้าหมายรายการเปิดสอนในพื้นที่ทำงาน",
-    )?;
+    .fetch_all(pool);
 
-    let group_rows: Vec<DeliveryGroupRow> = sqlx::query_as(
+    let group_rows = sqlx::query_as(
         r#"SELECT learning_group.id,
                   learning_group.learning_offering_id,
                   learning_group.code,
@@ -465,8 +474,20 @@ pub async fn homeroom_delivery_workspace_for_version(
     .bind(&owner_ids)
     .bind(timetable_version_id)
     .bind(MAX_WORKSPACE_GROUPS + 1)
-    .fetch_all(pool)
-    .await?;
+    .fetch_all(pool);
+
+    let (expected_rows, offering_rows, group_rows) =
+        join_workspace_resource_reads(expected_rows, offering_rows, group_rows).await?;
+    ensure_option_size(
+        expected_rows.len(),
+        MAX_WORKSPACE_ITEMS,
+        "รายการตามโครงสร้างในพื้นที่ทำงาน",
+    )?;
+    ensure_option_size(
+        offering_rows.len(),
+        MAX_WORKSPACE_TARGET_ROWS,
+        "เป้าหมายรายการเปิดสอนในพื้นที่ทำงาน",
+    )?;
     ensure_option_size(
         group_rows.len(),
         MAX_WORKSPACE_GROUPS as usize,
@@ -1308,6 +1329,43 @@ mod tests {
     };
     use chrono::{NaiveDate, Utc};
     use school_academic_core::models::RequirementKind;
+    use std::sync::Arc;
+    use tokio::sync::Barrier;
+    use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn workspace_resource_reads_start_concurrently() {
+        let barrier = Arc::new(Barrier::new(4));
+        let expected_barrier = Arc::clone(&barrier);
+        let offering_barrier = Arc::clone(&barrier);
+        let group_barrier = Arc::clone(&barrier);
+
+        let joined = tokio::spawn(join_workspace_resource_reads(
+            async move {
+                expected_barrier.wait().await;
+                Ok::<Vec<ExpectedDeliveryRow>, sqlx::Error>(Vec::new())
+            },
+            async move {
+                offering_barrier.wait().await;
+                Ok::<Vec<OfferingTargetRow>, sqlx::Error>(Vec::new())
+            },
+            async move {
+                group_barrier.wait().await;
+                Ok::<Vec<DeliveryGroupRow>, sqlx::Error>(Vec::new())
+            },
+        ));
+
+        timeout(Duration::from_secs(1), barrier.wait())
+            .await
+            .expect("all independent workspace reads must start before any one completes");
+        let (expected, offerings, groups) = joined
+            .await
+            .expect("workspace read join task must complete")
+            .expect("empty workspace reads must succeed");
+        assert!(expected.is_empty());
+        assert!(offerings.is_empty());
+        assert!(groups.is_empty());
+    }
 
     fn change_set_with(items: Vec<AcademicTermChangeItem>) -> AcademicTermChangeSet {
         let now = Utc::now();

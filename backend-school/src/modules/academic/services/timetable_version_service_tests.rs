@@ -150,25 +150,40 @@ async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     .unwrap();
     assert_eq!(cloned.source_version_id, Some(source_id));
     assert_eq!(cloned.effective_from, effective_from);
+    for source_target in &listed[0].targets {
+        let cloned_target = cloned
+            .targets
+            .iter()
+            .find(|target| target.learning_offering_id == source_target.learning_offering_id)
+            .expect("a clone must preserve every source timetable target");
+        assert_eq!(
+            (
+                cloned_target.weekly_period_target,
+                cloned_target.standard_periods_per_week,
+            ),
+            (
+                source_target.weekly_period_target,
+                source_target.standard_periods_per_week,
+            )
+        );
+    }
+    let expected_auto_included_ids = [
+        Uuid::parse_str("70000000-0000-0000-0000-000000000001").unwrap(),
+        Uuid::parse_str("70000000-0000-0000-0000-000000000002").unwrap(),
+    ];
+    for &offering_id in &expected_auto_included_ids {
+        assert!(
+            cloned
+                .targets
+                .iter()
+                .any(|target| target.learning_offering_id == offering_id),
+            "a clone must include fixture offerings that became eligible after the source was published"
+        );
+    }
     assert_eq!(
-        cloned
-            .targets
-            .iter()
-            .map(|target| (
-                target.learning_offering_id,
-                target.weekly_period_target,
-                target.standard_periods_per_week,
-            ))
-            .collect::<Vec<_>>(),
-        listed[0]
-            .targets
-            .iter()
-            .map(|target| (
-                target.learning_offering_id,
-                target.weekly_period_target,
-                target.standard_periods_per_week,
-            ))
-            .collect::<Vec<_>>()
+        cloned.targets.len(),
+        listed[0].targets.len() + expected_auto_included_ids.len(),
+        "the clone must contain exactly the source targets and the two eligible fixture offerings"
     );
 
     let source_entry_count: i64 = sqlx::query_scalar(

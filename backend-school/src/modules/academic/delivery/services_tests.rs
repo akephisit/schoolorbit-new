@@ -1188,22 +1188,39 @@ async fn planning_runtime_context(pool: &PgPool) -> RuntimeContext {
 }
 
 async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
-    let term_id: Uuid = sqlx::query_scalar(
-        r#"SELECT term.id
+    let (term_id, fixture_future_start, base_version_id): (Uuid, NaiveDate, Uuid) = sqlx::query_as(
+        r#"SELECT term.id, year.end_date, version.id
            FROM academic_terms term
+           JOIN academic_years year ON year.id = term.academic_year_id
+           JOIN academic_timetable_versions version
+             ON version.academic_term_id = term.id
+            AND version.status = 'published'
            WHERE term.status = 'active'
-             AND EXISTS (
-                 SELECT 1
-                 FROM academic_timetable_versions version
-                 WHERE version.academic_term_id = term.id
-                   AND version.status = 'published'
-             )
-           ORDER BY term.start_date, term.id
+           ORDER BY term.start_date, term.id, version.effective_from DESC, version.id
            LIMIT 1"#,
     )
     .fetch_one(pool)
     .await
     .expect("fixture must contain an active term with a published timetable base");
+    sqlx::query(
+        r#"UPDATE learning_offerings offering
+           SET starts_on = $3,
+               updated_at = now()
+           WHERE offering.academic_term_id = $1
+             AND offering.status IN ('draft', 'published')
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM academic_timetable_version_targets target
+                 WHERE target.timetable_version_id = $2
+                   AND target.learning_offering_id = offering.id
+             )"#,
+    )
+    .bind(term_id)
+    .bind(base_version_id)
+    .bind(fixture_future_start)
+    .execute(pool)
+    .await
+    .expect("operational change fixture must defer offerings absent from its published baseline");
     sqlx::query("UPDATE academic_terms SET status = 'planning' WHERE id = $1")
         .bind(term_id)
         .execute(pool)

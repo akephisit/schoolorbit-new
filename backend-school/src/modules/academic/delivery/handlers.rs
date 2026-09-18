@@ -1,9 +1,10 @@
 use axum::{
     extract::{Extension, Path, Query, State},
-    http::StatusCode,
+    http::{HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::policies::learning_offering_access_policy::{self, OfferingAction};
@@ -22,6 +23,55 @@ use school_http::HttpError as AppError;
 use school_http::{ApiErrorResponse, ApiResponse};
 
 use super::adapters::TIMETABLE_MUTATIONS;
+
+fn with_delivery_page_timing(
+    mut response: Response,
+    authorization: Duration,
+    page_view: Duration,
+    total: Duration,
+) -> Response {
+    let timing = format!(
+        "authorization;dur={:.1}, page_view;dur={:.1}, total;dur={:.1}",
+        authorization.as_secs_f64() * 1_000.0,
+        page_view.as_secs_f64() * 1_000.0,
+        total.as_secs_f64() * 1_000.0,
+    );
+    match HeaderValue::try_from(timing) {
+        Ok(value) => {
+            response
+                .headers_mut()
+                .insert(HeaderName::from_static("server-timing"), value);
+        }
+        Err(error) => {
+            tracing::warn!(?error, "failed to encode delivery page timing header");
+        }
+    }
+    response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn delivery_page_response_exposes_timing_breakdown() {
+        let response = with_delivery_page_timing(
+            ok(serde_json::json!({ "workspace": "test" })),
+            Duration::from_millis(12),
+            Duration::from_millis(34),
+            Duration::from_millis(50),
+        );
+
+        assert_eq!(
+            response
+                .headers()
+                .get("server-timing")
+                .and_then(|value| value.to_str().ok()),
+            Some("authorization;dur=12.0, page_view;dur=34.0, total;dur=50.0")
+        );
+    }
+}
 
 fn ok<T: serde::Serialize>(data: T) -> Response {
     Json(ApiResponse::ok(data)).into_response()
@@ -297,6 +347,7 @@ pub async fn get_learning_delivery_page_view(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<HomeroomDeliveryQuery>,
 ) -> Result<Response, AppError> {
+    let started_at = Instant::now();
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let filter = learning_offering_access_policy::require_learning_offering_list_access(
         &context.tenant.pool,
@@ -304,14 +355,23 @@ pub async fn get_learning_delivery_page_view(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(workspaces::delivery_page_view(
+    let authorization_duration = started_at.elapsed();
+    let page_view_started_at = Instant::now();
+    let page_view = workspaces::delivery_page_view(
         &context.tenant.pool,
         query.academic_year_id,
         query.academic_term_id,
         query.timetable_version_id,
         &filter,
     )
-    .await?))
+    .await?;
+    let page_view_duration = page_view_started_at.elapsed();
+    Ok(with_delivery_page_timing(
+        ok(page_view),
+        authorization_duration,
+        page_view_duration,
+        started_at.elapsed(),
+    ))
 }
 
 #[utoipa::path(
