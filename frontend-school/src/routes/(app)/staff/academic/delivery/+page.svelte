@@ -27,7 +27,7 @@
 	import { includeTimetableVersionOffering } from '$lib/api/timetable';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -349,7 +349,7 @@
 		if (refreshScope === 'homerooms') await loadHomerooms();
 	}
 
-	$effect(() => {
+	$effect.pre(() => {
 		const routeResult = data.homerooms;
 		const { revision } = homeroomRequest.begin();
 		untrack(() => {
@@ -372,7 +372,7 @@
 		};
 	});
 
-	$effect(() => {
+	$effect.pre(() => {
 		const routeResult = data.changeSetSummaries;
 		const { revision } = changeSetSummaryRequest.begin();
 		untrack(() => {
@@ -395,7 +395,7 @@
 		};
 	});
 
-	$effect(() => {
+	$effect.pre(() => {
 		const routeResult = data.selectedChangeSet;
 		const { revision } = changeSetRequest.begin();
 		untrack(() => {
@@ -420,7 +420,7 @@
 		};
 	});
 
-	$effect(() => {
+	$effect.pre(() => {
 		const termId = academicTermId;
 		overviewRequest.abort();
 		untrack(() => {
@@ -465,128 +465,151 @@
 		<AcademicPrerequisiteNotice prerequisite={missingTermPrerequisite} />
 	{:else}
 		<div class="space-y-4">
-			{#if changeSetSummaryLoading && changeSets.length === 0 && !activeChangeSet}
-				<PageSkeleton variant="detail" />
-			{:else if changeSetSummaryError && changeSets.length === 0 && !activeChangeSet}
-				<PageState
-					variant="error"
-					title="โหลดรายการเปลี่ยนแปลงกลางภาคไม่สำเร็จ"
-					description={changeSetSummaryError}
-					actionLabel="ลองอีกครั้ง"
-					onaction={loadChangeSetSummaries}
-				/>
-			{:else}
-				{#if changeSets.length > 1}
-					<section
-						class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
-					>
-						<div>
-							<p class="text-sm font-medium">ชุดการเปลี่ยนแปลงกลางภาค</p>
-							<p class="text-xs text-muted-foreground">
-								เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว
-							</p>
-						</div>
-						<Select.Root
-							type="single"
-							value={selectedChangeSetId}
-							onValueChange={(value) => void loadSelectedChangeSet(value)}
-						>
-							<Select.Trigger class="w-full sm:w-[430px]">
-								<span class="truncate">{activeChangeSetLabel}</span>
-							</Select.Trigger>
-							<Select.Content>
-								{#each changeSets as changeSet (changeSet.id)}
-									<Select.Item value={changeSet.id}>
-										{formatChangeSetOption(changeSet)}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</section>
-				{/if}
-				{#if changeSetLoading && !activeChangeSet}
+			<section
+				class="relative space-y-4"
+				aria-label="ชุดการเปลี่ยนแปลงกลางภาค"
+				aria-busy={changeSetSummaryLoading || changeSetLoading}
+			>
+				{#if changeSetSummaryLoading && changeSets.length === 0 && !activeChangeSet}
 					<PageSkeleton variant="detail" />
-				{:else if changeSetError && !activeChangeSet}
+				{:else if changeSetSummaryError && changeSets.length === 0 && !activeChangeSet}
 					<PageState
 						variant="error"
-						title="โหลดรายละเอียดชุดการเปลี่ยนแปลงไม่สำเร็จ"
-						description={changeSetError}
+						title="โหลดรายการเปลี่ยนแปลงกลางภาคไม่สำเร็จ"
+						description={changeSetSummaryError}
 						actionLabel="ลองอีกครั้ง"
-						onaction={() => loadSelectedChangeSet(selectedChangeSetId, false)}
+						onaction={loadChangeSetSummaries}
 					/>
-				{:else if activeChangeSet}
-					{#key activeChangeSet.id}
-						<AcademicChangeSetPanel
-							changeSet={activeChangeSet}
-							offerings={items}
-							{canManage}
-							ensureOfferings={ensureOverview}
-							initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
-							onChanged={updateChangeSet}
+				{:else}
+					{#if (changeSetSummaryLoading || changeSetLoading) && activeChangeSet}
+						<RegionUpdatingState label="กำลังอัปเดตชุดการเปลี่ยนแปลงกลางภาค" />
+					{/if}
+					{#if changeSets.length > 1}
+						<section
+							class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
+						>
+							<div>
+								<p class="text-sm font-medium">ชุดการเปลี่ยนแปลงกลางภาค</p>
+								<p class="text-xs text-muted-foreground">
+									เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว
+								</p>
+							</div>
+							<Select.Root
+								type="single"
+								value={selectedChangeSetId}
+								onValueChange={(value) => void loadSelectedChangeSet(value)}
+							>
+								<Select.Trigger class="w-full sm:w-[430px]">
+									<span class="truncate">{activeChangeSetLabel}</span>
+								</Select.Trigger>
+								<Select.Content>
+									{#each changeSets as changeSet (changeSet.id)}
+										<Select.Item value={changeSet.id}>
+											{formatChangeSetOption(changeSet)}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</section>
+					{/if}
+					{#if changeSetLoading && !activeChangeSet}
+						<PageSkeleton variant="detail" />
+					{:else if changeSetError && !activeChangeSet}
+						<PageState
+							variant="error"
+							title="โหลดรายละเอียดชุดการเปลี่ยนแปลงไม่สำเร็จ"
+							description={changeSetError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={() => loadSelectedChangeSet(selectedChangeSetId, false)}
 						/>
-					{/key}
-				{:else if canManage}
-					<section
-						class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-amber-500/35 bg-amber-500/5 p-3 text-sm"
-					>
-						<div>
-							<p class="font-medium text-amber-900">เมื่อเปิดสอนแล้วและต้องเปลี่ยนกลางภาค</p>
-							<p class="text-xs text-muted-foreground">
-								ใช้ปุ่ม “เพิ่ม/ปรับ/หยุดกลางภาค” ด้านบน ระบบจะแยกรุ่นตารางและเก็บประวัติเดิมให้
-							</p>
-						</div>
-					</section>
+					{:else if activeChangeSet}
+						{#key activeChangeSet.id}
+							<AcademicChangeSetPanel
+								changeSet={activeChangeSet}
+								offerings={items}
+								{canManage}
+								ensureOfferings={ensureOverview}
+								initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
+								onChanged={updateChangeSet}
+							/>
+						{/key}
+					{:else if canManage}
+						<section
+							class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-amber-500/35 bg-amber-500/5 p-3 text-sm"
+						>
+							<div>
+								<p class="font-medium text-amber-900">เมื่อเปิดสอนแล้วและต้องเปลี่ยนกลางภาค</p>
+								<p class="text-xs text-muted-foreground">
+									ใช้ปุ่ม “เพิ่ม/ปรับ/หยุดกลางภาค” ด้านบน ระบบจะแยกรุ่นตารางและเก็บประวัติเดิมให้
+								</p>
+							</div>
+						</section>
+					{/if}
 				{/if}
-			{/if}
+			</section>
 			<Tabs.Root value={viewMode} onValueChange={changeViewMode}>
 				<Tabs.List class="grid w-full grid-cols-2 sm:w-[430px]">
 					<Tabs.Trigger value="homerooms">มุมมองรายห้อง</Tabs.Trigger>
 					<Tabs.Trigger value="offerings">มุมมองรายวิชา/กิจกรรม</Tabs.Trigger>
 				</Tabs.List>
 				<Tabs.Content value="homerooms" class="mt-4">
-					{#if homeroomLoading && !workspace}
-						<PageSkeleton variant="cards" rows={4} />
-					{:else if homeroomError && !workspace}
-						<PageState
-							variant="error"
-							title="โหลดภาพรวมรายห้องไม่สำเร็จ"
-							description={homeroomError}
-							actionLabel="ลองอีกครั้ง"
-							onaction={loadHomerooms}
-						/>
-					{:else if workspace}
-						<HomeroomDeliveryWorkspace
-							{workspace}
-							{canManage}
-							{canManageTimetable}
-							onPrepareSynchronizedActivity={prepareSynchronizedActivity}
-							onIncludeOfferingInTimetable={includeOfferingInTimetable}
-						/>
-					{/if}
+					<section class="relative" aria-label="มุมมองรายห้อง" aria-busy={homeroomLoading}>
+						{#if homeroomLoading && workspace}
+							<RegionUpdatingState label="กำลังอัปเดตภาพรวมรายห้อง" />
+						{/if}
+						{#if homeroomLoading && !workspace}
+							<PageSkeleton variant="cards" rows={4} />
+						{:else if homeroomError && !workspace}
+							<PageState
+								variant="error"
+								title="โหลดภาพรวมรายห้องไม่สำเร็จ"
+								description={homeroomError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadHomerooms}
+							/>
+						{:else if workspace}
+							<HomeroomDeliveryWorkspace
+								{workspace}
+								{canManage}
+								{canManageTimetable}
+								onPrepareSynchronizedActivity={prepareSynchronizedActivity}
+								onIncludeOfferingInTimetable={includeOfferingInTimetable}
+							/>
+						{/if}
+					</section>
 				</Tabs.Content>
 				<Tabs.Content value="offerings" class="mt-4">
-					{#if overviewLoading && !overview}
-						<PageSkeleton variant="table" rows={6} />
-					{:else if items.length === 0}
-						<AcademicPrerequisiteNotice prerequisite={noOfferingPrerequisite} />
-					{:else}
-						<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
-							<div
-								class="flex flex-wrap items-start justify-between gap-4 border-b bg-muted/25 p-4"
-							>
-								<div>
-									<h2 class="font-semibold">รายการเปิดสอนของภาคเรียน</h2>
-									<p class="mt-1 text-sm text-muted-foreground">
-										ใช้มุมมองนี้เมื่อต้องจัดรายละเอียดของรายวิชาหรือกิจกรรมใดกิจกรรมหนึ่ง
+					<section
+						class="relative"
+						aria-label="มุมมองรายวิชาและกิจกรรม"
+						aria-busy={overviewLoading}
+					>
+						{#if overviewLoading && overview}
+							<RegionUpdatingState label="กำลังอัปเดตรายการเปิดสอน" />
+						{/if}
+						{#if overviewLoading && !overview}
+							<PageSkeleton variant="table" rows={6} />
+						{:else if items.length === 0}
+							<AcademicPrerequisiteNotice prerequisite={noOfferingPrerequisite} />
+						{:else}
+							<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
+								<div
+									class="flex flex-wrap items-start justify-between gap-4 border-b bg-muted/25 p-4"
+								>
+									<div>
+										<h2 class="font-semibold">รายการเปิดสอนของภาคเรียน</h2>
+										<p class="mt-1 text-sm text-muted-foreground">
+											ใช้มุมมองนี้เมื่อต้องจัดรายละเอียดของรายวิชาหรือกิจกรรมใดกิจกรรมหนึ่ง
+										</p>
+									</div>
+									<p class="rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
+										{items.length} รายการ
 									</p>
 								</div>
-								<p class="rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
-									{items.length} รายการ
-								</p>
-							</div>
-							<OfferingOverviewTable {items} {initialKind} />
-						</section>
-					{/if}
+								<OfferingOverviewTable {items} {initialKind} />
+							</section>
+						{/if}
+					</section>
 				</Tabs.Content>
 			</Tabs.Root>
 

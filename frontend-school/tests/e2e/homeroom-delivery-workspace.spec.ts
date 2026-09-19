@@ -27,12 +27,15 @@ function fulfill(route: Route, data: unknown, status = 200) {
 	});
 }
 
-function homeroomWorkspace(timetableVersionId: string | null = null) {
+function homeroomWorkspace(
+	timetableVersionId: string | null = null,
+	timetableVersionStatus: 'draft' | 'published' | null = null
+) {
 	return {
 		academicYearId: ids.year,
 		academicTermId: ids.term,
 		timetableVersionId,
-		timetableVersionStatus: null,
+		timetableVersionStatus,
 		timetableVersionEffectiveFrom: null,
 		homerooms: [
 			{
@@ -76,9 +79,9 @@ function homeroomWorkspace(timetableVersionId: string | null = null) {
 						alignmentStates: ['matches_curriculum'],
 						schedulingMode: null,
 						standardPeriodsPerWeek: 4,
-						weeklyPeriodTarget: 4,
+						weeklyPeriodTarget: timetableVersionStatus === 'draft' ? null : 4,
 						teacherState: 'assigned',
-						timetableState: 'scheduled',
+						timetableState: timetableVersionStatus === 'draft' ? 'unscheduled' : 'scheduled',
 						groups: [
 							{
 								id: ids.group,
@@ -131,9 +134,11 @@ function changeSetDetail() {
 
 type DeliveryMockOptions = {
 	homeroomGate?: Promise<void>;
+	homeroomRefreshGate?: Promise<void>;
 	changeSetSummaryGate?: Promise<void>;
 	changeSetDetailGate?: Promise<void>;
 	failHomeroomAttempts?: number;
+	timetableVersionStatus?: 'draft' | 'published' | null;
 };
 
 async function mockDelivery(
@@ -245,11 +250,25 @@ async function mockDelivery(
 				expect(url.searchParams.get('academicYearId')).toBe(ids.year);
 				expect(url.searchParams.get('academicTermId')).toBe(ids.term);
 				await options.homeroomGate;
+				if (homeroomRequests > 1) await options.homeroomRefreshGate;
 				if (homeroomRequests <= (options.failHomeroomAttempts ?? 0)) {
 					await fulfill(route, 'โหลดข้อมูลห้องประจำชั้นไม่สำเร็จ', 503);
 				} else {
-					await fulfill(route, homeroomWorkspace(url.searchParams.get('timetableVersionId')));
+					await fulfill(
+						route,
+						homeroomWorkspace(
+							url.searchParams.get('timetableVersionId'),
+							options.timetableVersionStatus
+						)
+					);
 				}
+				return;
+			}
+			if (
+				url.pathname === `/api/academic/timetable-versions/${ids.version}/targets` &&
+				route.request().method() === 'POST'
+			) {
+				await fulfill(route, {});
 				return;
 			}
 			if (url.pathname === '/api/academic/term-change-sets') {
@@ -352,6 +371,113 @@ test('opens visible regions independently and loads the offering projection only
 	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม' }).click();
 	await expect.poll(overviewRequestCount).toBe(1);
 	expect(pageViewRequestCount()).toBe(0);
+});
+
+test('marks unresolved visible regions busy and renders their skeletons', async ({ page }) => {
+	let releaseHomerooms: () => void = () => {};
+	let releaseSummaries: () => void = () => {};
+	const homeroomGate = new Promise<void>((resolve) => {
+		releaseHomerooms = resolve;
+	});
+	const changeSetSummaryGate = new Promise<void>((resolve) => {
+		releaseSummaries = resolve;
+	});
+	await mockDelivery(page, undefined, undefined, { homeroomGate, changeSetSummaryGate });
+
+	try {
+		await page.goto(
+			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`
+		);
+		const changeSetRegion = page.getByRole('region', {
+			name: 'ชุดการเปลี่ยนแปลงกลางภาค'
+		});
+		const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
+
+		await expect(changeSetRegion).toHaveAttribute('aria-busy', 'true');
+		await expect(changeSetRegion.locator('[data-slot="skeleton"]')).not.toHaveCount(0);
+		await expect(homeroomRegion).toHaveAttribute('aria-busy', 'true');
+		await expect(homeroomRegion.locator('[data-slot="skeleton"]')).not.toHaveCount(0);
+		await expect(page.getByText('เมื่อเปิดสอนแล้วและต้องเปลี่ยนกลางภาค')).toHaveCount(0);
+	} finally {
+		releaseHomerooms();
+		releaseSummaries();
+	}
+});
+
+test('renders warm preloaded regions immediately without forcing skeletons', async ({ page }) => {
+	const { homeroomRequestCount, changeSetSummaryRequestCount, changeSetDetailRequestCount } =
+		await mockDelivery(page);
+	await page.goto('/staff/work');
+	await page.getByRole('button', { name: 'การจัดการเรียนการสอน', exact: true }).click();
+	const deliveryLink = page.getByRole('link', { name: 'การเปิดสอน', exact: true });
+
+	await deliveryLink.hover();
+	await expect.poll(homeroomRequestCount).toBe(1);
+	await expect.poll(changeSetSummaryRequestCount).toBe(1);
+	await expect.poll(changeSetDetailRequestCount).toBe(1);
+	await deliveryLink.click();
+
+	const changeSetRegion = page.getByRole('region', {
+		name: 'ชุดการเปลี่ยนแปลงกลางภาค'
+	});
+	const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
+	await expect(changeSetRegion).toHaveAttribute('aria-busy', 'false');
+	await expect(homeroomRegion).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
+	await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
+	await expect(changeSetRegion.locator('[data-slot="skeleton"]')).toHaveCount(0);
+	await expect(homeroomRegion.locator('[data-slot="skeleton"]')).toHaveCount(0);
+});
+
+test('clears incompatible homerooms before painting a new route context', async ({ page }) => {
+	let releaseContextChange: () => void = () => {};
+	const homeroomRefreshGate = new Promise<void>((resolve) => {
+		releaseContextChange = resolve;
+	});
+	await mockDelivery(page, undefined, undefined, { homeroomRefreshGate });
+	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
+	await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
+
+	try {
+		await page.getByRole('link', { name: 'การเปิดสอนรุ่นถัดไป' }).click();
+		const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
+
+		await expect(page).toHaveURL(new RegExp(`timetableVersionId=${ids.version}`));
+		await expect(homeroomRegion).toHaveAttribute('aria-busy', 'true');
+		await expect(homeroomRegion.locator('[data-slot="skeleton"]')).not.toHaveCount(0);
+		await expect(page.getByText('ม.1/1', { exact: true })).toHaveCount(0);
+	} finally {
+		releaseContextChange();
+	}
+});
+
+test('keeps loaded homerooms visible and announces a background refresh', async ({ page }) => {
+	let releaseRefresh: () => void = () => {};
+	const homeroomRefreshGate = new Promise<void>((resolve) => {
+		releaseRefresh = resolve;
+	});
+	await mockDelivery(page, undefined, undefined, {
+		homeroomRefreshGate,
+		timetableVersionStatus: 'draft'
+	});
+
+	try {
+		await page.goto(
+			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.version}`
+		);
+		const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
+		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'เพิ่มเข้ารุ่นตาราง' }).click();
+
+		await expect(homeroomRegion).toHaveAttribute('aria-busy', 'true');
+		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
+		await expect(
+			homeroomRegion.getByRole('status', { name: 'กำลังอัปเดตภาพรวมรายห้อง' })
+		).toBeVisible();
+		await expect(homeroomRegion.locator('[data-slot="skeleton"]')).toHaveCount(0);
+	} finally {
+		releaseRefresh();
+	}
 });
 
 test('primes a complete Delivery destination before hover preload and navigation', async ({
