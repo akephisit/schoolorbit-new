@@ -8,7 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { cn } from '$lib/utils';
-	import { AlertTriangle, Inbox, ShieldAlert } from 'lucide-svelte';
+	import { AlertTriangle, Inbox, ShieldAlert } from '@lucide/svelte';
 
 	let {
 		variant = 'empty',

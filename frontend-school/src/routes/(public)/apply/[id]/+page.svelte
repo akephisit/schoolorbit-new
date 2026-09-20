@@ -32,7 +32,7 @@
 		Copy,
 		ZoomIn,
 		ZoomOut
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
 	import PortalFileImage from '$lib/components/files/PortalFileImage.svelte';
 

@@ -17,7 +17,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { User, Edit, Save, X } from 'lucide-svelte';
+	import { User, Edit, Save, X } from '@lucide/svelte';
 	import { getOwnProfile, updateOwnProfile, type Student } from '$lib/api/students';
 
 	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);

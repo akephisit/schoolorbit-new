@@ -5,7 +5,7 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { LoaderCircle } from 'lucide-svelte';
+	import { LoaderCircle } from '@lucide/svelte';
 	import TimetablePlacementPreviewCard, {
 		type TimetablePlacementCard
 	} from './TimetablePlacementPreviewCard.svelte';

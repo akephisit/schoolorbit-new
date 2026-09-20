@@ -27,7 +27,7 @@
 		RefreshCw,
 		UsersRound,
 		X
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	type ChangeItem = AcademicTermChangeSet['items'][number];

@@ -45,7 +45,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { CheckCircle2, GitBranchPlus, History } from 'lucide-svelte';
+	import { CheckCircle2, GitBranchPlus, History } from '@lucide/svelte';
 
 	let {
 		kind,

@@ -26,7 +26,7 @@
 		Plus,
 		School,
 		TimerReset
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type StepKey = 'year' | 'schedule' | 'periods' | 'term';
 

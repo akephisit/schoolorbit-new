@@ -8,7 +8,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { LoaderCircle, Power } from 'lucide-svelte';
+	import { LoaderCircle, Power } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let features = $state<FeatureToggle[]>([]);

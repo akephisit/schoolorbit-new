@@ -43,7 +43,7 @@
 		Settings,
 		RefreshCw,
 		Check
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let { params }: PageProps = $props();
 	let id = $derived(params.id);

@@ -14,7 +14,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { Plus, X } from 'lucide-svelte';
+	import { Plus, X } from '@lucide/svelte';
 	import { untrack } from 'svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 

@@ -14,7 +14,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { Edit, Save, X, Trash2 } from 'lucide-svelte';
+	import { Edit, Save, X, Trash2 } from '@lucide/svelte';
 	import * as Select from '$lib/components/ui/select';
 	import {
 		getStudent,

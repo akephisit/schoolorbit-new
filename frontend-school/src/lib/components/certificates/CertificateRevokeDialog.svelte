@@ -8,7 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { AlertTriangle, FilePlus2, ShieldAlert } from 'lucide-svelte';
+	import { AlertTriangle, FilePlus2, ShieldAlert } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let {

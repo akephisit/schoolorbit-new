@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
-	import { RefreshCw, ArrowUpRight } from 'lucide-svelte';
+	import { RefreshCw, ArrowUpRight } from '@lucide/svelte';
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource

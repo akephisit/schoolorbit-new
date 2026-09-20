@@ -27,7 +27,7 @@
 		ArrowRight,
 		Check,
 		LoaderCircle
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	// Form state

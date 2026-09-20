@@ -7,7 +7,7 @@
 		RotateCcw,
 		Search,
 		Users
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import type { StaffPublishedExamScheduleRound } from '$lib/api/examSchedule';
 	import { PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';

@@ -35,7 +35,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { PERMISSION_MODULES } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { ArrowUpRight, Plus, Search, SlidersHorizontal, Sparkles } from 'lucide-svelte';
+	import { ArrowUpRight, Plus, Search, SlidersHorizontal, Sparkles } from '@lucide/svelte';
 
 	type VersionDraft = {
 		name: string;

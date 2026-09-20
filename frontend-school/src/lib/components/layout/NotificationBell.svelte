@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { notificationStore } from '$lib/stores/notification';
-	import { Bell, CheckCheck } from 'lucide-svelte';
+	import { Bell, CheckCheck } from '@lucide/svelte';
 	import { fade } from 'svelte/transition';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Button, buttonVariants } from '$lib/components/ui/button';

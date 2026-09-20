@@ -28,7 +28,7 @@
 		Clock3,
 		Search,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let {
 		workspace,

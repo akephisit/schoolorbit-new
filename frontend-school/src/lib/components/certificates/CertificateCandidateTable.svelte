@@ -3,7 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
-	import { Pencil, Trash2, UserCheck, UserRoundCheck } from 'lucide-svelte';
+	import { Pencil, Trash2, UserCheck, UserRoundCheck } from '@lucide/svelte';
 
 	let {
 		candidates,

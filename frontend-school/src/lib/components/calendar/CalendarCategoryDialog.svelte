@@ -13,7 +13,7 @@
 		UpsertCalendarTagRequest
 	} from '$lib/api/calendar';
 	import { cn } from '$lib/utils';
-	import { Plus, Tag, Trash2 } from 'lucide-svelte';
+	import { Plus, Tag, Trash2 } from '@lucide/svelte';
 
 	type DeleteCandidate =
 		{ kind: 'category'; item: CalendarCategory } | { kind: 'tag'; item: CalendarTag };

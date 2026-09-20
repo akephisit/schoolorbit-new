@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { type Snippet } from 'svelte';
-	import { Upload, X, Image as ImageIcon } from 'lucide-svelte';
+	import { Upload, X, Image as ImageIcon } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 

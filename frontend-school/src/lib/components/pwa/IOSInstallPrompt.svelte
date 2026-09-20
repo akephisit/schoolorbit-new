@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { X, Share, Plus } from 'lucide-svelte';
+	import { X, Share, Plus } from '@lucide/svelte';
 	import { fade, slide } from 'svelte/transition';
 
 	let showIOSPrompt = $state(false);

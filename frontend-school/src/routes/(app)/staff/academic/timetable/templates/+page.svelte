@@ -26,7 +26,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { Eraser, Play, Plus, Trash2 } from 'lucide-svelte';
+	import { Eraser, Play, Plus, Trash2 } from '@lucide/svelte';
 
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);

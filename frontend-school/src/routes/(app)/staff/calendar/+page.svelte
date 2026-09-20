@@ -66,7 +66,7 @@
 		RefreshCw,
 		Search,
 		SlidersHorizontal
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type VisibilityFilter = '' | 'public' | 'private';
 	type AudienceFilter = '' | CalendarAudienceType;

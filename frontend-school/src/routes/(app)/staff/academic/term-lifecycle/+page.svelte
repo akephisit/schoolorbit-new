@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { ArrowUpRight, RefreshCw, ShieldCheck } from 'lucide-svelte';
+	import { ArrowUpRight, RefreshCw, ShieldCheck } from '@lucide/svelte';
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource

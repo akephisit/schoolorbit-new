@@ -20,7 +20,7 @@
 		DialogTitle
 	} from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Shield, Plus, Trash2, Star } from 'lucide-svelte';
+	import { Shield, Plus, Trash2, Star } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {

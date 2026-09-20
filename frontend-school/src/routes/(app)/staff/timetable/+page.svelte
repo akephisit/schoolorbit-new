@@ -21,7 +21,7 @@
 		runStaffOwnTimetablePdfDownload,
 		staffOwnTimetableSelectionKey
 	} from '$lib/utils/staff-own-timetable-pdf';
-	import { Download, Loader2, MapPin, School } from 'lucide-svelte';
+	import { Download, Loader2, MapPin, School } from '@lucide/svelte';
 
 	const dayOptions = [
 		{ value: 'MON', label: 'จันทร์' },

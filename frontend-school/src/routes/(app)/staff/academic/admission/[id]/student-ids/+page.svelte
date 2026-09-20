@@ -29,7 +29,7 @@
 		LoaderCircle,
 		Upload,
 		FileDown
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 
 	let { params }: PageProps = $props();

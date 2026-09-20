@@ -6,7 +6,7 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { ArrowLeft, BookCheck, ChevronDown, CircleAlert, Clock3 } from 'lucide-svelte';
+	import { ArrowLeft, BookCheck, ChevronDown, CircleAlert, Clock3 } from '@lucide/svelte';
 
 	let {
 		workspace,

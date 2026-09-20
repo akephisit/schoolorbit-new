@@ -44,7 +44,7 @@
 		Info,
 		Pencil,
 		Users
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 
 	const { params }: PageProps = $props();

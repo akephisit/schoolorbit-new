@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { TimetableBlockWorkspaceRoom } from '$lib/api/timetable';
 	import * as Select from '$lib/components/ui/select';
-	import { Building2 } from 'lucide-svelte';
+	import { Building2 } from '@lucide/svelte';
 
 	const noRoomValue = '__none__';
 

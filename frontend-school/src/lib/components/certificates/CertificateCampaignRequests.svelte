@@ -20,7 +20,7 @@
 		RotateCcw,
 		ShieldCheck,
 		Undo2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 

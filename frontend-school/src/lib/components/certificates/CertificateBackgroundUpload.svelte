@@ -23,7 +23,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { AlertTriangle, Eye, FileCheck2, RefreshCw, Trash2, Upload } from 'lucide-svelte';
+	import { AlertTriangle, Eye, FileCheck2, RefreshCw, Trash2, Upload } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	type GeometryAction = AttachCertificateBackgroundRequest['geometryAction'];

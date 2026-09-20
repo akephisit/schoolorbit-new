@@ -14,7 +14,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { Layers3, Plus, Save, Trash2 } from 'lucide-svelte';
+	import { Layers3, Plus, Save, Trash2 } from '@lucide/svelte';
 
 	let groups = $state<SubjectGroup[]>([]);
 	let loading = $state(true);

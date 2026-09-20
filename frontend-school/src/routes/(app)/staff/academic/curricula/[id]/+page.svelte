@@ -44,7 +44,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { ArrowLeft } from 'lucide-svelte';
+	import { ArrowLeft } from '@lucide/svelte';
 
 	const detailRequest = new LatestRequest();
 	const versionRequest = new LatestRequest();

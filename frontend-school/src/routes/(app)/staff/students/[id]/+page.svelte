@@ -11,7 +11,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { Edit } from 'lucide-svelte';
+	import { Edit } from '@lucide/svelte';
 	import { getStudent, type Student } from '$lib/api/students';
 
 	let { params }: PageProps = $props();

@@ -24,7 +24,7 @@
 		Send,
 		TriangleAlert,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let {
 		changeSet,

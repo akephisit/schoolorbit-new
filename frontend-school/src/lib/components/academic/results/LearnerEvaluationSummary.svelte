@@ -3,7 +3,7 @@
 	import type { StudentLearnerEvaluationSummary } from '$lib/api/academicLearnerEvaluations';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
-	import { BookOpenCheck, CircleAlert, ShieldCheck } from 'lucide-svelte';
+	import { BookOpenCheck, CircleAlert, ShieldCheck } from '@lucide/svelte';
 
 	let {
 		summary,

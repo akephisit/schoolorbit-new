@@ -23,7 +23,7 @@
 		TableRow
 	} from '$lib/components/ui/table';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
-	import { Plus, Trash2 } from 'lucide-svelte';
+	import { Plus, Trash2 } from '@lucide/svelte';
 
 	type BlockedWindowForm = BlockedWindowInput & { localId: string };
 

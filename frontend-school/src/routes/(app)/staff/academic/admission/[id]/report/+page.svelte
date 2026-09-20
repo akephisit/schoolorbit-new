@@ -14,7 +14,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { Settings, ChevronDown } from 'lucide-svelte';
+	import { Settings, ChevronDown } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { SvelteMap } from 'svelte/reactivity';
 

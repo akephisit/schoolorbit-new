@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
-	import { Braces, CornerDownLeft } from 'lucide-svelte';
+	import { Braces, CornerDownLeft } from '@lucide/svelte';
 
 	const NO_VARIABLE_VALUE = '__no_variable__';
 

@@ -10,7 +10,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowRight, History } from 'lucide-svelte';
+	import { ArrowRight, History } from '@lucide/svelte';
 
 	let {
 		open,

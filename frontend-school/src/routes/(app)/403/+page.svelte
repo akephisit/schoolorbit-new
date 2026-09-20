@@ -2,7 +2,7 @@
 	import type { PageProps } from './$types';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { ArrowLeft, Home } from 'lucide-svelte';
+	import { ArrowLeft, Home } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageState } from '$lib/components/app-state';

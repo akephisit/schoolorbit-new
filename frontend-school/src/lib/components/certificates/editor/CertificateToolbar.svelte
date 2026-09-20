@@ -18,7 +18,7 @@
 		Save,
 		ShieldCheck,
 		Trash2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let {
 		templateName,

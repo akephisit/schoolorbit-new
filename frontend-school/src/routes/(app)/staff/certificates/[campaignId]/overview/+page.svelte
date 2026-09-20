@@ -39,7 +39,7 @@
 		RotateCcw,
 		Trash2,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	type CertificateAcademicYearOption = Omit<AcademicYearLookupItem, 'status'> & {

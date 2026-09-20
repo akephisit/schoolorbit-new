@@ -38,7 +38,7 @@
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Badge } from '$lib/components/ui/badge';
-	import { AlertTriangle, Power, RotateCcw, Save, Shield } from 'lucide-svelte';
+	import { AlertTriangle, Power, RotateCcw, Save, Shield } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let { params }: PageProps = $props();

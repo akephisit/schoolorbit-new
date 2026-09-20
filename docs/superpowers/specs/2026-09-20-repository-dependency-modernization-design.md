@@ -49,8 +49,9 @@ the repository runtime, not the numerically newest registry entry at any cost.
   succeed.
 - Prefer stable releases; release candidates and prereleases are excluded.
 - Keep `@types/node` on major 24 because both frontends require Node `>=24 <25`.
-- Use TypeScript 6, not TypeScript 7, until both SvelteKit and `typescript-eslint` declare support
-  for TypeScript 7.
+- Use TypeScript 6 in `frontend-admin`, not TypeScript 7, until both SvelteKit and
+  `typescript-eslint` declare support for TypeScript 7. Keep `frontend-school` on TypeScript 5.9.3
+  until the latest stable `openapi-typescript` supports TypeScript 6; do not bypass its peer range.
 - Upgrade ESLint to 10 because current `typescript-eslint`, `eslint-plugin-svelte`, and
   `@eslint/compat` releases declare ESLint 10 support.
 - Preserve exact-version pins where the project intentionally owns reproducibility. Replace the
@@ -68,6 +69,8 @@ the repository runtime, not the numerically newest registry entry at any cost.
   the deprecated import while `@lucide/svelte` currently has no source consumers.
 - The latest TypeScript registry release is 7, but SvelteKit 2.70 and `typescript-eslint` 8.70 only
   declare support through TypeScript 6.
+- `openapi-typescript` 7.13.0 is the latest stable generator and declares TypeScript `^5.x`, so the
+  school frontend must retain TypeScript 5.9.3 while the admin frontend can move to 6.0.3.
 - Rust major upgrades exist for SQLx, Reqwest, JsonWebToken, Rand, AES-GCM, HMAC, SHA-2, Base64,
   and Lopdf. These affect independent runtime boundaries and must not be hidden inside one release.
 
@@ -89,10 +92,11 @@ behavioral refactors or suppress newly surfaced warnings.
 
 ### Wave 2: Frontend Major and Deprecated-Package Migration
 
-Upgrade both frontends to the supported major toolchain baseline, including TypeScript 6, ESLint
-10, Prettier Svelte plugin 4, and other latest compatible JavaScript packages. Migrate every
-`lucide-svelte` import to `@lucide/svelte`, remove the deprecated package, and pin the SheetJS
-artifact.
+Upgrade both frontends to the supported major toolchain baseline, including TypeScript 6 in
+`frontend-admin`, TypeScript 5.9.3 in `frontend-school` until its stable OpenAPI generator supports
+6, ESLint 10, Prettier Svelte plugin 4, and other latest compatible JavaScript packages. Migrate
+every `lucide-svelte` import to `@lucide/svelte`, remove the deprecated package, and pin the
+SheetJS artifact.
 
 Required source edits are limited to compiler, linter, formatter, component-library, and package
 API compatibility. Formatting changes must remain mechanical and must not be mixed with UI

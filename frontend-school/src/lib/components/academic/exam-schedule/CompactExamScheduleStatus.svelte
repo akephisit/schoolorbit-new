@@ -10,7 +10,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { examScheduleReadinessLabel } from '$lib/utils/exam-schedule-readiness';
-	import { AlertTriangle, CheckCircle2 } from 'lucide-svelte';
+	import { AlertTriangle, CheckCircle2 } from '@lucide/svelte';
 
 	let {
 		status = 'draft',

@@ -3,7 +3,7 @@
 	import { alignDragImageToPointer } from '$lib/academic/timetable/drag-image';
 	import type { TimetableBlock } from '$lib/api/timetable';
 	import { Button } from '$lib/components/ui/button';
-	import { DoorOpen, LoaderCircle, Trash2, Users } from 'lucide-svelte';
+	import { DoorOpen, LoaderCircle, Trash2, Users } from '@lucide/svelte';
 
 	let {
 		block,

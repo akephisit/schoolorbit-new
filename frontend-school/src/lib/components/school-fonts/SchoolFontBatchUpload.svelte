@@ -20,7 +20,14 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { AlertTriangle, CheckCircle2, FileType2, RefreshCw, Trash2, Upload } from 'lucide-svelte';
+	import {
+		AlertTriangle,
+		CheckCircle2,
+		FileType2,
+		RefreshCw,
+		Trash2,
+		Upload
+	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	const MAX_FONT_BATCH_FILES = 40;

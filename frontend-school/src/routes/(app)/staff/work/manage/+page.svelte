@@ -35,7 +35,7 @@
 		RefreshCw,
 		Send,
 		TimerReset
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type AssigneeMode = 'user' | 'organization_unit' | 'organization_position';
 

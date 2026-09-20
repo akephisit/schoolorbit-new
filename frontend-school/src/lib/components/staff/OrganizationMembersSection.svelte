@@ -29,7 +29,7 @@
 		UserRound,
 		Check,
 		ChevronsUpDown
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	interface Props {
 		organizationUnitId: string;

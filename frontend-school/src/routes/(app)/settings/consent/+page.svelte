@@ -9,7 +9,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import StatusBadge from '$lib/components/consent/StatusBadge.svelte';
-	import { LoaderCircle, CheckCircle2, XCircle, Clock, Shield, Info } from 'lucide-svelte';
+	import { LoaderCircle, CheckCircle2, XCircle, Clock, Shield, Info } from '@lucide/svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
 

@@ -21,7 +21,7 @@
 		Award,
 		Plus,
 		IdCard
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import type { Achievement } from '$lib/types/achievement';
 	import {
 		getAchievements,

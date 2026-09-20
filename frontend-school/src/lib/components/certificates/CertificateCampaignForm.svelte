@@ -17,7 +17,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { AlertCircle, Award, Building2, CalendarDays, GraduationCap, Save } from 'lucide-svelte';
+	import { AlertCircle, Award, Building2, CalendarDays, GraduationCap, Save } from '@lucide/svelte';
 
 	const SCHOOL_OWNER_VALUE = '__school__';
 	type AcademicYearFormOption = Omit<AcademicYearLookupItem, 'status'> & {

@@ -2,7 +2,7 @@
 	import type { CertificateRenderManifest, CertificateTemplateDetail } from '$lib/api/certificates';
 	import CertificateBackgroundUpload from '$lib/components/certificates/CertificateBackgroundUpload.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { ArrowRight, Maximize2, RotateCcw, Scale } from 'lucide-svelte';
+	import { ArrowRight, Maximize2, RotateCcw, Scale } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let {

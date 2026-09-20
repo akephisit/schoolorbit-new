@@ -18,7 +18,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
-	import { Save, User, Calendar, Mail, Phone, MapPin, Shield, Lock } from 'lucide-svelte';
+	import { Save, User, Calendar, Mail, Phone, MapPin, Shield, Lock } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	const user = $derived($authStore.user);

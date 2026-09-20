@@ -11,7 +11,7 @@
 		Sigma,
 		Type,
 		Undo2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { buttonVariants, Button } from '$lib/components/ui/button';
 	import {
 		createQuestionEditorExtensions,

@@ -8,7 +8,7 @@
 	} from '$lib/api/admission';
 	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
 	import { Button } from '$lib/components/ui/button';
-	import { GraduationCap, CalendarDays, ArrowRight, Search } from 'lucide-svelte';
+	import { GraduationCap, CalendarDays, ArrowRight, Search } from '@lucide/svelte';
 	import { publicFileUrl } from '$lib/api/files';
 
 	let loadingRounds = $state(true);

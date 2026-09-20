@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { X, Download } from 'lucide-svelte';
+	import { X, Download } from '@lucide/svelte';
 	import { fade, slide } from 'svelte/transition';
 	import { pwaStore } from '$lib/stores/pwa';
 

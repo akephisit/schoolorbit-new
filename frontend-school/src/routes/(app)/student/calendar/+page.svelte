@@ -26,7 +26,7 @@
 		monthRange,
 		toIsoDate
 	} from '$lib/utils/calendar';
-	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 
 	let events = $state.raw<CalendarViewerEvent[]>([]);
 	let loading = $state(true);

@@ -31,7 +31,7 @@
 		RotateCcw,
 		Trash2,
 		WandSparkles
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let {
 		academicTermId,

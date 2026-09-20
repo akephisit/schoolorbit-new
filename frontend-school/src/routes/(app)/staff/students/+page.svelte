@@ -17,7 +17,7 @@
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { Plus, Search, Pencil, Trash2, Eye } from 'lucide-svelte';
+	import { Plus, Search, Pencil, Trash2, Eye } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	const canReadStudents = $derived(

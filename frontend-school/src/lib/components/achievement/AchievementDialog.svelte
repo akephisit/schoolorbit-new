@@ -13,7 +13,7 @@
 		DialogHeader,
 		DialogTitle
 	} from '$lib/components/ui/dialog';
-	import { LoaderCircle, Upload, X } from 'lucide-svelte';
+	import { LoaderCircle, Upload, X } from '@lucide/svelte';
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
 	import { achievementSchema } from '$lib/validation/schemas';
@@ -57,7 +57,7 @@
 	import { uploadFile } from '$lib/api/files';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
-	import { Check, ChevronsUpDown } from 'lucide-svelte';
+	import { Check, ChevronsUpDown } from '@lucide/svelte';
 	import { cn } from '$lib/utils';
 
 	let staffList = $state<StaffListItem[]>([]);

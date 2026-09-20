@@ -13,7 +13,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { AlertTriangle, FileImage, ImagePlus, RefreshCw, Trash2, Upload } from 'lucide-svelte';
+	import { AlertTriangle, FileImage, ImagePlus, RefreshCw, Trash2, Upload } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import CertificateFontBatchUpload from './CertificateFontBatchUpload.svelte';

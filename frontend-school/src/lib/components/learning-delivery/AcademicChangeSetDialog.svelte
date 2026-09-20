@@ -9,7 +9,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { CalendarClock, TriangleAlert } from 'lucide-svelte';
+	import { CalendarClock, TriangleAlert } from '@lucide/svelte';
 
 	type ChangePurpose = 'operational_change' | 'timetable_revision';
 

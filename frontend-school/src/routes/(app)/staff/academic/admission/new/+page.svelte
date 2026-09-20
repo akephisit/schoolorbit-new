@@ -20,7 +20,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
-	import { Plus, Loader2 } from 'lucide-svelte';
+	import { Plus, Loader2 } from '@lucide/svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 

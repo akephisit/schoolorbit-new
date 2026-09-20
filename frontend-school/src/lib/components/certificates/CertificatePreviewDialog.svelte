@@ -3,7 +3,7 @@
 	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Maximize2 } from 'lucide-svelte';
+	import { Maximize2 } from '@lucide/svelte';
 	import CertificatePreviewFullscreenDialog from './CertificatePreviewFullscreenDialog.svelte';
 	import CertificatePreviewSurface from './CertificatePreviewSurface.svelte';
 

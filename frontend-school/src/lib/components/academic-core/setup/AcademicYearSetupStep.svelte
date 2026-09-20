@@ -16,7 +16,7 @@
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { ChevronDown, Save } from 'lucide-svelte';
+	import { ChevronDown, Save } from '@lucide/svelte';
 
 	const WEEKDAYS: Array<{ code: AcademicWeekday; label: string; short: string }> = [
 		{ code: 'MON', label: 'วันจันทร์', short: 'จ' },

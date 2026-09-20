@@ -12,7 +12,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Check, ChevronDown, Inbox, Plus, UsersRound } from 'lucide-svelte';
+	import { Check, ChevronDown, Inbox, Plus, UsersRound } from '@lucide/svelte';
 	import TimetableRoomPicker from './TimetableRoomPicker.svelte';
 	import TimetableTeacherTargetPicker from './TimetableTeacherTargetPicker.svelte';
 

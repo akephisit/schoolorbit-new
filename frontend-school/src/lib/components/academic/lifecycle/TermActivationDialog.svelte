@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ArrowRight, ArrowUpRight, CheckCircle2, PlayCircle } from 'lucide-svelte';
+	import { ArrowRight, ArrowUpRight, CheckCircle2, PlayCircle } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
 	import {

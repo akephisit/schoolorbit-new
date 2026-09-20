@@ -12,7 +12,7 @@
 		TableHeader,
 		TableRow
 	} from '$lib/components/ui/table';
-	import { GripVertical } from 'lucide-svelte';
+	import { GripVertical } from '@lucide/svelte';
 	import {
 		formatInvigilatorMinutes,
 		INVIGILATOR_STAFF_DRAG_TYPE,

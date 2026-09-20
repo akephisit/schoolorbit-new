@@ -22,7 +22,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { Search, Check, X, Eye, Filter, LoaderCircle, Trash2, RotateCcw } from 'lucide-svelte';
+	import { Search, Check, X, Eye, Filter, LoaderCircle, Trash2, RotateCcw } from '@lucide/svelte';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';

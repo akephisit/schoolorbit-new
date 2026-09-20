@@ -9,7 +9,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
-	import { ClipboardCheck, ShieldCheck } from 'lucide-svelte';
+	import { ClipboardCheck, ShieldCheck } from '@lucide/svelte';
 
 	let {
 		gradebookControls,

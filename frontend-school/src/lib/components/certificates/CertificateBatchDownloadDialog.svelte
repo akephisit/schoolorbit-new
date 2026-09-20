@@ -12,7 +12,7 @@
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { FileArchive, Files, ShieldCheck } from 'lucide-svelte';
+	import { FileArchive, Files, ShieldCheck } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let {

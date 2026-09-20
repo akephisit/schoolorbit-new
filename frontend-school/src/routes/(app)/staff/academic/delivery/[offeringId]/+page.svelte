@@ -51,7 +51,7 @@
 		Pencil,
 		Send,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	const detailRequest = new LatestRequest();
 	const groupRequest = new LatestRequest();

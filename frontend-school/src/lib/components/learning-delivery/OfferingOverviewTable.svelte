@@ -12,7 +12,7 @@
 		Sparkles,
 		UserRoundCheck,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let {
 		items,

@@ -14,7 +14,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { addMinutes, validateExamSessionPlacement } from '$lib/utils/examScheduleTime';
-	import { CalendarPlus, GripVertical } from 'lucide-svelte';
+	import { CalendarPlus, GripVertical } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 
 	const ALL_FILTER_VALUE = '__all__';

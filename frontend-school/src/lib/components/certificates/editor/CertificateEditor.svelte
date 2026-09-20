@@ -33,7 +33,7 @@
 	import CertificatePreviewDialog from '$lib/components/certificates/CertificatePreviewDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-svelte';
+	import { AlertTriangle, RefreshCw, ShieldAlert } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import CertificateBackgroundReplaceDialog from './CertificateBackgroundReplaceDialog.svelte';

@@ -6,7 +6,7 @@
 	import { downloadCertificatePdf } from '$lib/certificates/download';
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
 	import { LoadingButton } from '$lib/components/app-state';
-	import { Download } from 'lucide-svelte';
+	import { Download } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let {

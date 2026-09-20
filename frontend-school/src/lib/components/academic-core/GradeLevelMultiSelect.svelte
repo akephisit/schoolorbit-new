@@ -5,7 +5,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Command from '$lib/components/ui/command';
 	import * as Popover from '$lib/components/ui/popover';
-	import { ChevronsUpDown } from 'lucide-svelte';
+	import { ChevronsUpDown } from '@lucide/svelte';
 
 	interface Props {
 		value?: string[];

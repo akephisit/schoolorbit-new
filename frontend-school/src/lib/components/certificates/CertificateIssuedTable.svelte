@@ -23,7 +23,7 @@
 		Search,
 		ShieldAlert,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 

@@ -4,7 +4,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { AuthCheckingState } from '$lib/components/app-state';
-	import { GraduationCap, ArrowLeft } from 'lucide-svelte';
+	import { GraduationCap, ArrowLeft } from '@lucide/svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';

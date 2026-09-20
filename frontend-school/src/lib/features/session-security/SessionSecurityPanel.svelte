@@ -17,7 +17,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { keepCurrentSession, passwordValidation, removeRevokedSession } from './session-state';
-	import { Clock3, KeyRound, Laptop, LogOut, ShieldCheck, Trash2 } from 'lucide-svelte';
+	import { Clock3, KeyRound, Laptop, LogOut, ShieldCheck, Trash2 } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let sessions = $state.raw<SessionDto[]>([]);

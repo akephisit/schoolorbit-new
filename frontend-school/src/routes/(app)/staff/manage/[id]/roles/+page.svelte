@@ -3,7 +3,7 @@
 	import { PageShell } from '$lib/components/app-layout';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
-	import { User, Shield } from 'lucide-svelte';
+	import { User, Shield } from '@lucide/svelte';
 	import UserRoleManager from '$lib/components/UserRoleManager.svelte';
 
 	let { params }: PageProps = $props();

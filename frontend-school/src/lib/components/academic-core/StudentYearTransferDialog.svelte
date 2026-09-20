@@ -11,7 +11,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { ArrowRightLeft } from 'lucide-svelte';
+	import { ArrowRightLeft } from '@lucide/svelte';
 
 	let {
 		open,

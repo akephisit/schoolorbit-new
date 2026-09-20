@@ -15,7 +15,7 @@
 		type OrganizationUnit
 	} from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
-	import { LoaderCircle, Shield, Layers, UsersRound } from 'lucide-svelte';
+	import { LoaderCircle, Shield, Layers, UsersRound } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	type PermissionPositionValue =

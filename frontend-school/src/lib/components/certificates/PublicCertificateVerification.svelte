@@ -26,7 +26,7 @@
 		Search,
 		ShieldCheck,
 		ShieldX
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	let {

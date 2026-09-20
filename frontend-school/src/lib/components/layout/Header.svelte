@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Search, Menu, Sun, Moon } from 'lucide-svelte';
+	import { Search, Menu, Sun, Moon } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import AcademicContextSwitcher from './AcademicContextSwitcher.svelte';
 	import ProfileMenu from './ProfileMenu.svelte';

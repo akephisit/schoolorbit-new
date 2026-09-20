@@ -4,7 +4,7 @@
 	import { PageState } from '$lib/components/app-state';
 	import { cn } from '$lib/utils';
 	import { formatCalendarDate } from '$lib/utils/calendar';
-	import { CalendarRange, Clock3, Globe2, MapPin, Pencil, Trash2, Users } from 'lucide-svelte';
+	import { CalendarRange, Clock3, Globe2, MapPin, Pencil, Trash2, Users } from '@lucide/svelte';
 	import type { CalendarDisplayEvent } from './CalendarMonthGrid.svelte';
 
 	interface CalendarListEvent extends CalendarDisplayEvent {

@@ -16,7 +16,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
-	import { Plus, Eye, Trash2, ToggleRight, Users, Calendar } from 'lucide-svelte';
+	import { Plus, Eye, Trash2, ToggleRight, Users, Calendar } from '@lucide/svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 

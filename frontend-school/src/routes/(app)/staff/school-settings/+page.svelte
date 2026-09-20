@@ -13,7 +13,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Save, Upload, ImageOff, X } from 'lucide-svelte';
+	import { Save, Upload, ImageOff, X } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '$lib/api/school';
 	import { publicFileUrl, uploadFile } from '$lib/api/files';

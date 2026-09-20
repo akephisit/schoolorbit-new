@@ -33,7 +33,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import * as Table from '$lib/components/ui/table';
-	import { ArrowUpRight, BookOpen, Plus, Save, Search, SlidersHorizontal } from 'lucide-svelte';
+	import { ArrowUpRight, BookOpen, Plus, Save, Search, SlidersHorizontal } from '@lucide/svelte';
 
 	type VersionDraft = {
 		name: string;

@@ -33,7 +33,7 @@
 		QrCode,
 		Trash2,
 		Type
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import CertificateVariablePicker from './CertificateVariablePicker.svelte';
 
 	const NO_IMAGE_ASSET_VALUE = '__no_image_asset__';

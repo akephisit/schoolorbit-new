@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { Award, FilePenLine } from 'lucide-svelte';
+	import { Award, FilePenLine } from '@lucide/svelte';
 	import { PERMISSION_MODULES, PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import type { LayoutProps } from './$types';

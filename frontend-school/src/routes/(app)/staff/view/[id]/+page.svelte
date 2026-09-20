@@ -23,13 +23,13 @@
 		Award,
 		User,
 		FileText
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { getPublicStaffProfile } from '$lib/api/staff';
 	import { getAchievements } from '$lib/api/achievement';
 	import type { PublicStaffProfileResponse } from '$lib/api/staff';
 	import type { Achievement } from '$lib/types/achievement';
 	import { toast } from 'svelte-sonner';
-	import { LoaderCircle } from 'lucide-svelte';
+	import { LoaderCircle } from '@lucide/svelte';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	const { params }: PageProps = $props();

@@ -32,7 +32,7 @@
 		Plus,
 		Trash2,
 		Copy
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type PortalStep = 'login' | 'status';
 

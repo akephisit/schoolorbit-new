@@ -4,7 +4,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
-	import { ArrowUpRight, BookOpenCheck } from 'lucide-svelte';
+	import { ArrowUpRight, BookOpenCheck } from '@lucide/svelte';
 
 	let { items }: { items: CurriculumOverviewItem[] } = $props();
 

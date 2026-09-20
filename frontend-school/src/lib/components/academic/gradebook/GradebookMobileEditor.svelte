@@ -12,7 +12,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
-	import { AlertCircle, Check, ChevronLeft, Loader2, RotateCcw } from 'lucide-svelte';
+	import { AlertCircle, Check, ChevronLeft, Loader2, RotateCcw } from '@lucide/svelte';
 
 	let {
 		open,

@@ -29,7 +29,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { getIconComponent } from '$lib/utils/icon-mapper';
-	import { GripVertical, Pencil } from 'lucide-svelte';
+	import { GripVertical, Pencil } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	type GroupContainer = {

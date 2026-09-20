@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { type DateValue, getLocalTimeZone, parseDate } from '@internationalized/date';
-	import CalendarIcon from 'lucide-svelte/icons/calendar';
-	import XIcon from 'lucide-svelte/icons/x';
+	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Calendar } from '$lib/components/ui/calendar/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';

@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { ArrowRight, CalendarRange, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-svelte';
+	import {
+		ArrowRight,
+		CalendarRange,
+		LoaderCircle,
+		RefreshCw,
+		TriangleAlert
+	} from '@lucide/svelte';
 	import {
 		getAcademicContextStore,
 		hasAcademicContextDirtySource

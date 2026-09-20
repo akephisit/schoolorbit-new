@@ -49,7 +49,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { BookOpenCheck, CheckCircle2, ClipboardCheck, Shapes, ShieldCheck } from 'lucide-svelte';
+	import { BookOpenCheck, CheckCircle2, ClipboardCheck, Shapes, ShieldCheck } from '@lucide/svelte';
 
 	type ResultSection = 'course' | 'activity' | 'learner';
 	type CourseGroupRow = AcademicResultReadiness['courses'][number]['groups'][number] & {

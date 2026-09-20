@@ -17,7 +17,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
-	import { DoorOpen, Pencil, Plus, Trash2, UserRoundCog, Users } from 'lucide-svelte';
+	import { DoorOpen, Pencil, Plus, Trash2, UserRoundCog, Users } from '@lucide/svelte';
 
 	type HomeroomDraft = Omit<CreateHomeroomRequest, 'academicYearId'>;
 	type AdvisorDraft = ReplaceHomeroomAdvisorsRequest['advisors'][number];

@@ -25,7 +25,7 @@
 	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { MapPin, School } from 'lucide-svelte';
+	import { MapPin, School } from '@lucide/svelte';
 
 	const dayOptions = [
 		{ value: 'MON', label: 'จันทร์' },

@@ -2,7 +2,7 @@
 	import type { ExamInvigilatorAssignmentSummary } from '$lib/api/examSchedule';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { X } from 'lucide-svelte';
+	import { X } from '@lucide/svelte';
 	import { INVIGILATOR_STAFF_DRAG_TYPE } from './invigilatorDrag';
 
 	let {

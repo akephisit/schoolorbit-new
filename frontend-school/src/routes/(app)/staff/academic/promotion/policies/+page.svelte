@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Plus, RefreshCw, Trash2, ArrowRight } from 'lucide-svelte';
+	import { Plus, RefreshCw, Trash2, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';

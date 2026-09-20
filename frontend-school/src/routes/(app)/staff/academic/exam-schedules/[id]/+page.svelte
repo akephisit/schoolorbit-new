@@ -66,7 +66,7 @@
 		type ExamScheduleExportSheet
 	} from '$lib/utils/exam-schedule-export';
 	import { addMinutes } from '$lib/utils/examScheduleTime';
-	import { Download, RefreshCw, Send } from 'lucide-svelte';
+	import { Download, RefreshCw, Send } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 

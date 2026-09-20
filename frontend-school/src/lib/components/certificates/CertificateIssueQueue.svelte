@@ -12,7 +12,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
-	import { AlertTriangle, ArrowRight, RefreshCw, ShieldCheck } from 'lucide-svelte';
+	import { AlertTriangle, ArrowRight, RefreshCw, ShieldCheck } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	let { canIssue }: { canIssue: boolean } = $props();

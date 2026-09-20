@@ -7,7 +7,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { cn } from '$lib/utils';
-	import { Award, FileBadge2, LayoutDashboard, Send, UsersRound } from 'lucide-svelte';
+	import { Award, FileBadge2, LayoutDashboard, Send, UsersRound } from '@lucide/svelte';
 
 	let {
 		campaignId,

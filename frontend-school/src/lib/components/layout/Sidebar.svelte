@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, ChevronLeft, GraduationCap, Inbox } from 'lucide-svelte';
+	import { ChevronDown, ChevronLeft, GraduationCap, Inbox } from '@lucide/svelte';
 	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';

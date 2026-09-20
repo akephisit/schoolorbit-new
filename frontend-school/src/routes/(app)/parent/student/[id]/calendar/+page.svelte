@@ -26,7 +26,7 @@
 		monthRange,
 		toIsoDate
 	} from '$lib/utils/calendar';
-	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 
 	const ALL_TERMS_VALUE = '__all_terms__';
 

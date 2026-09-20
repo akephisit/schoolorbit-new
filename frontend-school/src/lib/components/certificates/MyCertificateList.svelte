@@ -12,7 +12,7 @@
 		RefreshCw,
 		ShieldCheck,
 		ShieldX
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageState } from '$lib/components/app-state';

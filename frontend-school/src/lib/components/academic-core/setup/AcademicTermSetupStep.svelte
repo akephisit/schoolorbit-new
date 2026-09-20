@@ -20,7 +20,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { ChevronDown, Pencil, Plus, Save, X } from 'lucide-svelte';
+	import { ChevronDown, Pencil, Plus, Save, X } from '@lucide/svelte';
 
 	const TERM_TYPES: Array<{ value: AcademicTermType; label: string; description: string }> = [
 		{ value: 'regular', label: 'ภาคปกติ', description: 'ภาคเรียนหลัก เช่น ภาคเรียนที่ 1 และ 2' },

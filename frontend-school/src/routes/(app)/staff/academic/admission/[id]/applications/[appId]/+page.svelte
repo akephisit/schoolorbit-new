@@ -50,7 +50,7 @@
 		RotateCcw,
 		Save,
 		Copy
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';

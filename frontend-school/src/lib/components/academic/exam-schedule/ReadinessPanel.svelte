@@ -8,7 +8,7 @@
 	} from '$lib/api/examSchedule';
 	import { Badge } from '$lib/components/ui/badge';
 	import { examScheduleReadinessLabel } from '$lib/utils/exam-schedule-readiness';
-	import { AlertCircle, CheckCircle2, CircleDashed } from 'lucide-svelte';
+	import { AlertCircle, CheckCircle2, CircleDashed } from '@lucide/svelte';
 
 	let {
 		status = 'draft',

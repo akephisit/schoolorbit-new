@@ -43,7 +43,7 @@ export async function scanRoutes(projectRoot = process.cwd()): Promise<RouteMeta
 			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`Failed to parse menu metadata in ${file}: ${message}`);
+			throw new Error(`Failed to parse menu metadata in ${file}: ${message}`, { cause: error });
 		}
 
 		if (meta?.menu) {
@@ -136,7 +136,9 @@ export function extractMeta(content: string): { menu?: unknown } | null {
 		return { menu: menuObj };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Menu metadata is not valid JSON-compatible syntax: ${message}`);
+		throw new Error(`Menu metadata is not valid JSON-compatible syntax: ${message}`, {
+			cause: error
+		});
 	}
 }
 

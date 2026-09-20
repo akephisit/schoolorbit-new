@@ -1,10 +1,8 @@
 // Icon Mapper Utility
 // Maps icon name strings to Lucide Svelte components
 
-import * as Icons from 'lucide-svelte';
-import { Icon as LucideIcon } from 'lucide-svelte';
-
-type LucideIconCtor = typeof LucideIcon;
+import * as Icons from '@lucide/svelte';
+import type { LucideIcon } from '@lucide/svelte';
 
 /**
  * Map icon name string to Lucide Svelte component
@@ -15,7 +13,7 @@ type LucideIconCtor = typeof LucideIcon;
  * @param iconName - Icon name in kebab-case (e.g., 'layout-dashboard', 'users', 'shield')
  * @returns Lucide Svelte icon component
  */
-export function getIconComponent(iconName?: string | null): LucideIconCtor {
+export function getIconComponent(iconName?: string | null): LucideIcon {
 	if (!iconName) return Icons.Circle;
 
 	// Convert 'layout-dashboard' to 'LayoutDashboard'
@@ -24,6 +22,6 @@ export function getIconComponent(iconName?: string | null): LucideIconCtor {
 		.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
 		.join('');
 
-	const iconMap = Icons as unknown as Record<string, LucideIconCtor>;
+	const iconMap = Icons as unknown as Record<string, LucideIcon>;
 	return iconMap[componentName] ?? Icons.Circle;
 }

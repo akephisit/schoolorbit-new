@@ -2,7 +2,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
 	import { Button } from '$lib/components/ui/button';
-	import { Check, ChevronsUpDown } from 'lucide-svelte';
+	import { Check, ChevronsUpDown } from '@lucide/svelte';
 	import { cn } from '$lib/utils';
 
 	interface School {

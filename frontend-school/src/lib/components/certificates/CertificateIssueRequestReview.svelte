@@ -33,7 +33,7 @@
 		RotateCcw,
 		ShieldCheck,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 

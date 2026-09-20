@@ -22,7 +22,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
-	import { ArrowLeft, LoaderCircle, Save, User, Building2, BookOpen, Check } from 'lucide-svelte';
+	import { ArrowLeft, LoaderCircle, Save, User, Building2, BookOpen, Check } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	const { params }: PageProps = $props();

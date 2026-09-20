@@ -15,7 +15,7 @@
 		Settings2,
 		Trash2,
 		UsersRound
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import CertificateAssetManager from './CertificateAssetManager.svelte';
 	import CertificateBackgroundUpload from './CertificateBackgroundUpload.svelte';
 	import { toast } from 'svelte-sonner';

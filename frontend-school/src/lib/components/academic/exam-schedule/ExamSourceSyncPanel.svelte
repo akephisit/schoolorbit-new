@@ -15,7 +15,7 @@
 		ListRestart,
 		RefreshCw,
 		ShieldCheck
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let {
 		preview,

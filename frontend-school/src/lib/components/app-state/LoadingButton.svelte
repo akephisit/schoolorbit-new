@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { LoaderCircle } from 'lucide-svelte';
+	import { LoaderCircle } from '@lucide/svelte';
 	import { Button, type ButtonProps } from '$lib/components/ui/button';
 
 	let {

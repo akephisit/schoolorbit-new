@@ -23,7 +23,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { History, Search } from 'lucide-svelte';
+	import { History, Search } from '@lucide/svelte';
 
 	const academicContext = getAcademicContextStore();
 	const request = new LatestRequest();

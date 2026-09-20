@@ -11,7 +11,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowRight, UserRoundPlus, X } from 'lucide-svelte';
+	import { ArrowRight, UserRoundPlus, X } from '@lucide/svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	type TeacherAction = 'add_group_teacher' | 'adjust_group_teacher_role' | 'stop_group_teacher';

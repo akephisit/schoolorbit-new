@@ -18,7 +18,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { FileBadge2, Plus, Trash2 } from 'lucide-svelte';
+	import { FileBadge2, Plus, Trash2 } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let campaign = $state.raw<CertificateCampaignDetail | null>(null);

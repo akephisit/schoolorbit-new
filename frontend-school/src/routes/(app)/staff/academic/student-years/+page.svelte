@@ -33,7 +33,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { loadStudentYearCollections } from '$lib/workspaces/academic-batch';
-	import { Plus, Search, UserRoundSearch } from 'lucide-svelte';
+	import { Plus, Search, UserRoundSearch } from '@lucide/svelte';
 
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived($academicContext.selected.academicYearId);

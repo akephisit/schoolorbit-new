@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Achievement } from '$lib/types/achievement';
-	import { Calendar, Trash2, Pencil } from 'lucide-svelte';
+	import { Calendar, Trash2, Pencil } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import {

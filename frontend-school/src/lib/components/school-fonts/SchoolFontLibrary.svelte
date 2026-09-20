@@ -20,7 +20,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Library, RefreshCw, Trash2, Type } from 'lucide-svelte';
+	import { Library, RefreshCw, Trash2, Type } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import SchoolFontBatchUpload from './SchoolFontBatchUpload.svelte';
 

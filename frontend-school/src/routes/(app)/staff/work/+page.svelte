@@ -15,7 +15,7 @@
 		ExternalLink,
 		LockKeyhole,
 		TimerReset
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type WorkFilter = 'all' | WorkItemState;
 

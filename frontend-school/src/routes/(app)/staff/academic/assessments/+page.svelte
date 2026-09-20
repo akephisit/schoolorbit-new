@@ -54,7 +54,7 @@
 		UserRoundCheck,
 		UsersRound,
 		X
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type ReadyFilter = 'all' | 'ready' | 'attention';
 	type ExamFilter = 'all' | AssessmentExamArrangement;

@@ -39,7 +39,7 @@
 		Search,
 		School,
 		Users
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import OrganizationUnitDialog from '$lib/components/staff/OrganizationUnitDialog.svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { toast } from 'svelte-sonner';

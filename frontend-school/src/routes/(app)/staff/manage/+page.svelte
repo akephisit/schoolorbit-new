@@ -31,7 +31,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import { ChevronLeft, ChevronRight, Eye, Pencil, Plus, Search, Trash2 } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, Eye, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
 
 	let staffList: StaffListItem[] = $state([]);
 	let loading = $state(true);

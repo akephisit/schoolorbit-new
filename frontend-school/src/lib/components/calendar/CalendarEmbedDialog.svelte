@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { buildCalendarEmbedCode, buildCalendarEmbedUrl } from '$lib/utils/calendar';
-	import { Copy } from 'lucide-svelte';
+	import { Copy } from '@lucide/svelte';
 
 	let {
 		open = $bindable(false),

@@ -10,7 +10,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
-	import { CheckCircle2, CircleAlert, LockKeyhole } from 'lucide-svelte';
+	import { CheckCircle2, CircleAlert, LockKeyhole } from '@lucide/svelte';
 
 	let {
 		workspace,

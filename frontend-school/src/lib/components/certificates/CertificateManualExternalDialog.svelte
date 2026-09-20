@@ -8,7 +8,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
-	import { UserPlus } from 'lucide-svelte';
+	import { UserPlus } from '@lucide/svelte';
 
 	const NO_TEMPLATE_VALUE = '__no_template__';
 

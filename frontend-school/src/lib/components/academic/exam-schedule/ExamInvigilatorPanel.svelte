@@ -8,7 +8,7 @@
 	import { LoadingButton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
-	import { RefreshCw } from 'lucide-svelte';
+	import { RefreshCw } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import InvigilatorRoomBoard from './InvigilatorRoomBoard.svelte';
 	import InvigilatorStaffList from './InvigilatorStaffList.svelte';

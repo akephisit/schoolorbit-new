@@ -23,7 +23,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { CheckCircle2, Clock3, UserRound, UsersRound, X } from 'lucide-svelte';
+	import { CheckCircle2, Clock3, UserRound, UsersRound, X } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);

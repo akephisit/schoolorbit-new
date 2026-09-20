@@ -7,7 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Select from '$lib/components/ui/select';
-	import { CheckCheck, ListChecks, Smartphone } from 'lucide-svelte';
+	import { CheckCheck, ListChecks, Smartphone } from '@lucide/svelte';
 
 	let {
 		workspace,

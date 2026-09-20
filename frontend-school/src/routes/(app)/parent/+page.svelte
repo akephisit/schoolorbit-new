@@ -15,7 +15,7 @@
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
-	import { User, ChevronRight } from 'lucide-svelte';
+	import { User, ChevronRight } from '@lucide/svelte';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);

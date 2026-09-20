@@ -40,7 +40,7 @@
 		Printer,
 		RefreshCw,
 		Search
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type SelectedCell = {
 		teacher: DailyTeachingTeacher;

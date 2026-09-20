@@ -7,7 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { AlertTriangle, Eye, FileBadge2, Hash, ShieldCheck, UsersRound } from 'lucide-svelte';
+	import { AlertTriangle, Eye, FileBadge2, Hash, ShieldCheck, UsersRound } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 
 	let {

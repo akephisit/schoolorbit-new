@@ -82,7 +82,7 @@ const verifyApplicationMount = async (origin) => {
 		if (pageErrorCount > 0) throw new Error('mount_page_error');
 	} catch (error) {
 		if (error instanceof Error && /^[a-z0-9_]+$/.test(error.message)) throw error;
-		throw new Error('mount_failed');
+		throw new Error('mount_failed', { cause: error });
 	} finally {
 		await browser.close();
 	}
@@ -97,7 +97,9 @@ const waitForCondition = async ({ phase, maxAttempts, retryDelayMs, check, onAtt
 			const reason = boundedReason(error);
 			onAttemptFailure({ phase, attempt, maxAttempts, reason });
 			if (attempt === maxAttempts) {
-				throw new Error(`${phase}_readiness_failed_after_${maxAttempts}_attempts_${reason}`);
+				throw new Error(`${phase}_readiness_failed_after_${maxAttempts}_attempts_${reason}`, {
+					cause: error
+				});
 			}
 			await delay(retryDelayMs);
 		}

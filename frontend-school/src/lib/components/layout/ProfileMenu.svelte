@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Settings, LogOut, ShieldCheck, UserCircle } from 'lucide-svelte';
+	import { Settings, LogOut, ShieldCheck, UserCircle } from '@lucide/svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { authStore } from '$lib/stores/auth';
 	import { authAPI } from '$lib/api/auth';

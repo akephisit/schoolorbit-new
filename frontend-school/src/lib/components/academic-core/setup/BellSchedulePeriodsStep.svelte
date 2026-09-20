@@ -14,7 +14,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { Plus, Save, Trash2 } from 'lucide-svelte';
+	import { Plus, Save, Trash2 } from '@lucide/svelte';
 
 	type PeriodDraft = ReplaceBellSchedulePeriodsRequest['periods'][number];
 

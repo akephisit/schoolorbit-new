@@ -8,7 +8,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Pencil, Plus, Trash2, X } from 'lucide-svelte';
+	import { Pencil, Plus, Trash2, X } from '@lucide/svelte';
 
 	let {
 		open,

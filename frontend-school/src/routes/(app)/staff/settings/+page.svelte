@@ -19,7 +19,7 @@
 		CheckCircle2,
 		BellRing,
 		ShieldCheck
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { pwaStore } from '$lib/stores/pwa';
 

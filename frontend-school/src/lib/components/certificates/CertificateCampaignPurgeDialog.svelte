@@ -23,7 +23,7 @@
 		RefreshCw,
 		ShieldAlert,
 		Trash2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type ViewPhase =
 		'loading_impact' | 'confirm' | 'starting' | 'load_error' | CertificateCampaignPurgePhase;

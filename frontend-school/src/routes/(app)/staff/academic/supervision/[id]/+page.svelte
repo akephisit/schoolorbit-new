@@ -8,7 +8,7 @@
 		RefreshCw,
 		Trash2,
 		UserCheck
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {

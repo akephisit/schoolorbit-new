@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { type Snippet } from 'svelte';
 	import { cn } from '$lib/utils';
-	import { User } from 'lucide-svelte';
+	import { User } from '@lucide/svelte';
 
 	interface Props {
 		src?: string | null | undefined;

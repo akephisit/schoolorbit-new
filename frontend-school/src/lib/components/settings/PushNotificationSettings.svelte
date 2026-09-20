@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { AlertTriangle, BellRing, CheckCircle2, RefreshCw, XCircle } from 'lucide-svelte';
+	import { AlertTriangle, BellRing, CheckCircle2, RefreshCw, XCircle } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';

@@ -34,7 +34,7 @@
 	} from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { CalendarClock, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
+	import { CalendarClock, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 

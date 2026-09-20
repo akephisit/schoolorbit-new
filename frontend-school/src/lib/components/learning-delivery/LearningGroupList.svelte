@@ -11,7 +11,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { ArrowRight, Plus, UsersRound } from 'lucide-svelte';
+	import { ArrowRight, Plus, UsersRound } from '@lucide/svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	let {

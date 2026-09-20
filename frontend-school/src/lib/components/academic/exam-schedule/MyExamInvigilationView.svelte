@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CalendarDays, CheckCircle2, Clock3, DoorOpen } from 'lucide-svelte';
+	import { CalendarDays, CheckCircle2, Clock3, DoorOpen } from '@lucide/svelte';
 	import { PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';

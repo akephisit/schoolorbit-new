@@ -11,7 +11,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { User, Save, GraduationCap } from 'lucide-svelte';
+	import { User, Save, GraduationCap } from '@lucide/svelte';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Switch } from '$lib/components/ui/switch';
 	import { createStudent } from '$lib/api/students';

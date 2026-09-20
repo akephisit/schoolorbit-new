@@ -2,7 +2,7 @@
 	import { LoadingButton } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { CircleAlert } from 'lucide-svelte';
+	import { CircleAlert } from '@lucide/svelte';
 
 	let {
 		open,

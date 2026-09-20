@@ -12,7 +12,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { AlertCircle, FileUp, Save, Trash2 } from 'lucide-svelte';
+	import { AlertCircle, FileUp, Save, Trash2 } from '@lucide/svelte';
 
 	type RecipientType = CertificateTemplateDetail['allowedRecipientTypes'][number];
 

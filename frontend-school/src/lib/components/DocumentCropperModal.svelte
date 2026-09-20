@@ -7,7 +7,7 @@
 		DialogTitle,
 		DialogFooter
 	} from '$lib/components/ui/dialog';
-	import { LoaderCircle } from 'lucide-svelte';
+	import { LoaderCircle } from '@lucide/svelte';
 
 	// ===========================
 	// Types

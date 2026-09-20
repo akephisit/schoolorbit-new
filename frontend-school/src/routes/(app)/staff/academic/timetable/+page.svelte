@@ -99,7 +99,7 @@
 		Plus,
 		RefreshCw,
 		Trash2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	type RemovalMode = 'target' | 'block' | 'series';
 	type OptimisticPlacementOperation = {

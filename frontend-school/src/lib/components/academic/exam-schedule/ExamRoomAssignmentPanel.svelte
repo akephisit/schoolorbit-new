@@ -21,7 +21,7 @@
 		TableRow
 	} from '$lib/components/ui/table';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
-	import { Armchair, Plus } from 'lucide-svelte';
+	import { Armchair, Plus } from '@lucide/svelte';
 
 	let {
 		days = [],

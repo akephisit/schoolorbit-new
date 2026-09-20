@@ -2,7 +2,7 @@
 	import type { LearningGroup, RosterPreview } from '$lib/api/learning-delivery';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { AlertTriangle, CheckCircle2, RefreshCw, Send, UserRound } from 'lucide-svelte';
+	import { AlertTriangle, CheckCircle2, RefreshCw, Send, UserRound } from '@lucide/svelte';
 
 	let {
 		group,

@@ -11,7 +11,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { BookCopy, Plus, Sparkles } from 'lucide-svelte';
+	import { BookCopy, Plus, Sparkles } from '@lucide/svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 	import OfferingCurriculumPreview from './OfferingCurriculumPreview.svelte';
 

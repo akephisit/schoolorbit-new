@@ -33,7 +33,7 @@
 		Pencil,
 		ExternalLink,
 		LoaderCircle
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import {
 		getAchievements,
 		createAchievement,

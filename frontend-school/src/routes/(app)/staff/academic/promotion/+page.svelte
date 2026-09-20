@@ -3,7 +3,7 @@
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { Plus, RefreshCw, ArrowRight } from 'lucide-svelte';
+	import { Plus, RefreshCw, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';

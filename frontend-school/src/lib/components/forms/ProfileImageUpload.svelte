@@ -3,7 +3,7 @@
 	import { type Snippet } from 'svelte';
 	import { uploadProfileImage } from '$lib/api/files';
 	import { toast } from 'svelte-sonner';
-	import { Pencil, Camera, Trash2, UserCircle, LoaderCircle } from 'lucide-svelte';
+	import { Pencil, Camera, Trash2, UserCircle, LoaderCircle } from '@lucide/svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import ImageCropper from './ImageCropper.svelte';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';

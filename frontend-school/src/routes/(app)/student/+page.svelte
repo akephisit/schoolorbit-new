@@ -14,7 +14,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
 	import { resolveScopedAcademicYearUrl } from '$lib/academic-context/scoped-year';
-	import { User, Calendar, BookOpen, Award } from 'lucide-svelte';
+	import { User, Calendar, BookOpen, Award } from '@lucide/svelte';
 	import { getOwnProfile, type Student } from '$lib/api/students';
 	import { toast } from 'svelte-sonner';
 

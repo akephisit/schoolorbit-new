@@ -23,7 +23,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { Check, Loader2, Plus, Trash2, Copy } from 'lucide-svelte';
+	import { Check, Loader2, Plus, Trash2, Copy } from '@lucide/svelte';
 
 	interface ParentEntry extends AdmissionEnrollmentParentData {
 		title: string;

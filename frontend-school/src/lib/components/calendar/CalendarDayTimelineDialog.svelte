@@ -3,7 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import { formatCalendarDate } from '$lib/utils/calendar';
-	import { CalendarRange, Clock3, MapPin } from 'lucide-svelte';
+	import { CalendarRange, Clock3, MapPin } from '@lucide/svelte';
 	import type { CalendarDisplayEvent } from './CalendarMonthGrid.svelte';
 
 	interface CalendarTimelineEvent extends CalendarDisplayEvent {

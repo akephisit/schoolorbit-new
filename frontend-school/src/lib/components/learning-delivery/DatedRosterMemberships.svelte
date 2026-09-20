@@ -15,7 +15,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Label } from '$lib/components/ui/label';
-	import { CalendarMinus, CalendarPlus, History, Plus, X } from 'lucide-svelte';
+	import { CalendarMinus, CalendarPlus, History, Plus, X } from '@lucide/svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	let {

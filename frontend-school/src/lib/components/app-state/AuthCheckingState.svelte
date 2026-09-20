@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { GraduationCap } from 'lucide-svelte';
+	import { GraduationCap } from '@lucide/svelte';
 
 	let { message }: { message: string } = $props();
 </script>

@@ -15,7 +15,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
-	import { CheckCheck, Pencil, Plus, Smartphone } from 'lucide-svelte';
+	import { CheckCheck, Pencil, Plus, Smartphone } from '@lucide/svelte';
 
 	let {
 		workspaces,

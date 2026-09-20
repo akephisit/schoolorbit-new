@@ -10,7 +10,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { CheckCircle2, CircleAlert, LockKeyhole, ShieldCheck } from 'lucide-svelte';
+	import { CheckCircle2, CircleAlert, LockKeyhole, ShieldCheck } from '@lucide/svelte';
 
 	let {
 		readiness,

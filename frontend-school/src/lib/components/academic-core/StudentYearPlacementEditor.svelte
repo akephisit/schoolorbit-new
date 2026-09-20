@@ -6,7 +6,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
-	import { ArrowRightLeft, CalendarPlus, History } from 'lucide-svelte';
+	import { ArrowRightLeft, CalendarPlus, History } from '@lucide/svelte';
 	import StudentYearTransferDialog from './StudentYearTransferDialog.svelte';
 
 	let {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Component, Snippet } from 'svelte';
-	import { ArrowLeft } from 'lucide-svelte';
+	import { ArrowLeft } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 

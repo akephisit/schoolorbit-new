@@ -6,7 +6,7 @@
 	} from '$lib/certificates/preview-fit';
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
 	import { Button } from '$lib/components/ui/button';
-	import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-svelte';
+	import { AlertTriangle, LoaderCircle, RefreshCw } from '@lucide/svelte';
 	import type { Attachment } from 'svelte/attachments';
 
 	type Props = {

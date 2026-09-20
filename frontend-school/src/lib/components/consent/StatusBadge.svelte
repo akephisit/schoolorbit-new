@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge';
-	import { Icon as LucideIcon } from 'lucide-svelte';
+	import type { LucideIcon } from '@lucide/svelte';
 
 	interface Props {
 		variant: 'default' | 'secondary' | 'destructive' | 'outline';
-		icon: typeof LucideIcon;
+		icon: LucideIcon;
 		label: string;
 	}
 

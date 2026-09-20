@@ -7,7 +7,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
-	import { LoaderCircle, AlertCircle, CheckCircle2 } from 'lucide-svelte';
+	import { LoaderCircle, AlertCircle, CheckCircle2 } from '@lucide/svelte';
 
 	// Props
 	interface Props {

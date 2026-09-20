@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { resolve } from '$app/paths';
-	import { RefreshCw, ArrowRight } from 'lucide-svelte';
+	import { RefreshCw, ArrowRight } from '@lucide/svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import PromotionImpactsDialog from './PromotionImpactsDialog.svelte';
 	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';

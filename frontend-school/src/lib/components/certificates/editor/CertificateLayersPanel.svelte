@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { CertificateElement, LayerDirection } from '$lib/certificates/editor-state';
 	import { Button } from '$lib/components/ui/button';
-	import { ArrowDown, ArrowUp, Braces, Image as ImageIcon, Layers3, QrCode } from 'lucide-svelte';
+	import { ArrowDown, ArrowUp, Braces, Image as ImageIcon, Layers3, QrCode } from '@lucide/svelte';
 
 	let {
 		elements,

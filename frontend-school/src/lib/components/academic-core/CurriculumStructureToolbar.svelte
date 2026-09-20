@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { PencilLine, ShieldAlert } from 'lucide-svelte';
+	import { PencilLine, ShieldAlert } from '@lucide/svelte';
 
 	let {
 		workspace,

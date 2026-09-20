@@ -3,7 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Check, ChevronDown, LockKeyhole, UsersRound } from 'lucide-svelte';
+	import { Check, ChevronDown, LockKeyhole, UsersRound } from '@lucide/svelte';
 
 	let {
 		staff,

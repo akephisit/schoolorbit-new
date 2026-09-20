@@ -17,7 +17,7 @@
 	import { interpolateCertificateText } from '$lib/certificates/interpolation';
 	import { pointsToMillimetres } from '$lib/certificates/layout';
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
-	import { AlertTriangle, Image as ImageIcon, QrCode } from 'lucide-svelte';
+	import { AlertTriangle, Image as ImageIcon, QrCode } from '@lucide/svelte';
 	import { untrack } from 'svelte';
 
 	type Interaction = {

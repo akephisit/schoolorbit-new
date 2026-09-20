@@ -27,7 +27,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
-	import { Save, Loader2, DoorOpen, UserX } from 'lucide-svelte';
+	import { Save, Loader2, DoorOpen, UserX } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	let { params }: PageProps = $props();

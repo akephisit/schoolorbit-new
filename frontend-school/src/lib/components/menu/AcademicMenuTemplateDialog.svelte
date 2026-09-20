@@ -12,7 +12,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Table from '$lib/components/ui/table';
-	import { ArrowRight, LayoutTemplate, RefreshCw, ShieldCheck } from 'lucide-svelte';
+	import { ArrowRight, LayoutTemplate, RefreshCw, ShieldCheck } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ArrowRight, CalendarRange, CheckCircle2, Layers3, RefreshCw } from 'lucide-svelte';
+	import { ArrowRight, CalendarRange, CheckCircle2, Layers3, RefreshCw } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import {
 		getAcademicContextStore,

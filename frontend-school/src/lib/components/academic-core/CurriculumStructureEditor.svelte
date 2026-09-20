@@ -15,7 +15,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import * as Table from '$lib/components/ui/table';
-	import { ArrowDownToLine, RotateCcw, Save, Search, Trash2 } from 'lucide-svelte';
+	import { ArrowDownToLine, RotateCcw, Save, Search, Trash2 } from '@lucide/svelte';
 
 	let {
 		workspace,

@@ -2,7 +2,7 @@
 	import type { MenuGroup } from '$lib/api/menu-admin';
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { GripVertical, CircleAlert } from 'lucide-svelte';
+	import { GripVertical, CircleAlert } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {

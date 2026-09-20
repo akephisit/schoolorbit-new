@@ -12,7 +12,7 @@
 		parseCertificateImport,
 		type ParsedCertificateImport
 	} from '$lib/certificates/importer';
-	import { Download, FileSpreadsheet, Upload } from 'lucide-svelte';
+	import { Download, FileSpreadsheet, Upload } from '@lucide/svelte';
 
 	let {
 		open,

@@ -28,7 +28,7 @@
 		Trash2,
 		UserRoundPlus,
 		X
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import AcademicChangeReadiness from './AcademicChangeReadiness.svelte';
 	import AcademicTeacherChangeForm from './AcademicTeacherChangeForm.svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';

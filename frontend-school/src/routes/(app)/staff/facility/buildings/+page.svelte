@@ -36,7 +36,7 @@
 		Search,
 		Settings,
 		Trash2
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	// Constants
 	const ROOM_TYPES = [

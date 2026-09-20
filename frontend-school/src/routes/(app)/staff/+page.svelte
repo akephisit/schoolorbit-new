@@ -27,7 +27,7 @@
 		LayoutGrid,
 		RefreshCw,
 		Users
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived(

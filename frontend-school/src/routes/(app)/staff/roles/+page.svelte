@@ -16,7 +16,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Edit, Eye, Plus, Shield } from 'lucide-svelte';
+	import { Edit, Eye, Plus, Shield } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
 	let roles = $state<Role[]>([]);

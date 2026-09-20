@@ -61,7 +61,7 @@
 		X,
 		DoorOpen,
 		Hash
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
