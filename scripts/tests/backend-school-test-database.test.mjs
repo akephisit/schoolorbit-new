@@ -510,6 +510,16 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
     assert.match(provision, /--set=ON_ERROR_STOP=1/);
     assert.match(provision, /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;/);
     assert.match(provision, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;/);
+    const compatibilityTests = workflow.slice(testAt, deleteAt);
+    assert.match(
+        compatibilityTests,
+        /migration_060 --bin backend-school -- --nocapture --test-threads=4/
+    );
+    assert.match(
+        compatibilityTests,
+        /gradebook_results_status --bin backend-school -- --nocapture --test-threads=4/
+    );
+    assert.doesNotMatch(compatibilityTests, /--test-threads=1/);
     const deletion = workflow.slice(deleteAt);
     assert.match(deletion, /if:\s*\$\{\{ always\(\)/);
     assert.match(deletion, /steps\.create_branch\.outputs\.created == 'true'/);
