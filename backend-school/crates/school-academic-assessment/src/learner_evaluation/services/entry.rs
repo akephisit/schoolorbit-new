@@ -99,7 +99,7 @@ pub(super) fn hash(value: &impl serde::Serialize) -> Result<String, AppError> {
     let bytes = serde_json::to_vec(value).map_err(|_| {
         AppError::InternalServerError("Could not encode evaluation revision".into())
     })?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 pub(super) fn checksums(
     group: Uuid,

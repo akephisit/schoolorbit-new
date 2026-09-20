@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
+hex = { workspace = true }
 school-academic-core = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }

@@ -1,8 +1,8 @@
 use std::{fmt, net::IpAddr};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use hmac::{digest::Key, Hmac, Mac};
-use rand::TryRngCore;
+use hmac::{digest::Key, Hmac, KeyInit, Mac};
+use rand::TryRng;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -47,7 +47,7 @@ impl SessionHmacKey {
 
     fn hmac(&self) -> HmacSha256 {
         let key: Key<HmacSha256> = self.0.into();
-        <HmacSha256 as Mac>::new(&key)
+        HmacSha256::new(&key)
     }
 }
 
@@ -63,7 +63,7 @@ pub struct RawSessionToken([u8; 32]);
 impl RawSessionToken {
     pub fn generate() -> Result<Self, AppError> {
         let mut bytes = [0_u8; 32];
-        rand::rngs::OsRng
+        rand::rngs::SysRng
             .try_fill_bytes(&mut bytes)
             .map_err(|_| AppError::ServiceUnavailable("session_rng".to_string()))?;
         Ok(Self(bytes))
@@ -344,7 +344,31 @@ mod tests {
         assert_eq!(token.token_hash(), same.token_hash());
         assert_ne!(token.token_hash(), different.token_hash());
         assert_eq!(token.token_hash().as_bytes().len(), 32);
+        assert_eq!(
+            hex::encode(token.token_hash().as_bytes()),
+            "8c0cc17a04942cc4f8e0fe0b302606d3108860c126428ba2ceeb5f9ed41c2b05",
+        );
         assert_eq!(format!("{:?}", token.token_hash()), "TokenHash([REDACTED])");
+    }
+
+    #[test]
+    fn csrf_and_throttle_hmac_outputs_remain_stable() {
+        let key = SessionHmacKey::for_tests([7_u8; 32]);
+        let tenant = Uuid::nil();
+        let session = Uuid::from_u128(1);
+
+        assert_eq!(
+            session_csrf_token(&key, tenant, session).expose_for_header(),
+            "kW1kSYKYiGjNyOSlllnyodRuchSkrbOz6rRW_klbMSQ",
+        );
+        assert_eq!(
+            hex::encode(identifier_bucket(&key, tenant, "teacher.one").as_bytes()),
+            "4d03f9b95ed261e64480fdcfed01d62652515f919ef91c6a47a20912f180a811",
+        );
+        assert_eq!(
+            hex::encode(source_bucket(&key, tenant, "203.0.113.9".parse().unwrap()).as_bytes(),),
+            "4131ad434dcd458df1a0bd57a0260259485d2a64a2cc104b5727fc94e87f76eb",
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@ use school_errors::AppError;
 use std::fmt;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use rand::RngCore;
+use rand::TryRng;
 use zeroize::Zeroizing;
 
 use school_crypto as field_encryption;
@@ -42,7 +42,9 @@ impl fmt::Debug for CertificateProof {
 
 pub fn generate_certificate_proof() -> Result<CertificateProof, AppError> {
     let mut bytes = Zeroizing::new([0_u8; 32]);
-    rand::rng().fill_bytes(&mut *bytes);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut *bytes)
+        .map_err(|_| proof_crypto_error("certificate proof randomness unavailable".to_string()))?;
     let plaintext = Zeroizing::new(URL_SAFE_NO_PAD.encode(&*bytes));
     let encrypted = field_encryption::encrypt(&plaintext).map_err(proof_crypto_error)?;
     let hash = field_encryption::hash_for_search_with_domain("certificate-qr-proof-v1", &plaintext)

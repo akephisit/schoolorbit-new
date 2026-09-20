@@ -145,7 +145,7 @@ fn pre_file_platform_migrations_are_unchanged() {
     for (filename, expected_sha256) in PRE_FILE_PLATFORM_MIGRATIONS {
         let contents = fs::read(migrations_dir().join(filename))
             .unwrap_or_else(|error| panic!("could not read migration {filename}: {error}"));
-        let actual_sha256 = format!("{:x}", Sha256::digest(contents));
+        let actual_sha256 = hex::encode(Sha256::digest(contents));
 
         assert_eq!(
             actual_sha256, *expected_sha256,

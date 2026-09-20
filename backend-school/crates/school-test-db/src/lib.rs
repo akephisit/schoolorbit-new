@@ -32,7 +32,7 @@ fn named_test_schema(test_name: &str, _process_id: u32) -> String {
     }
 
     let readable_prefix = &sanitized[..32];
-    let digest = format!("{:x}", Sha256::digest(test_name.as_bytes()));
+    let digest = hex::encode(Sha256::digest(test_name.as_bytes()));
     format!("schoolorbit_test_{readable_prefix}_{}", &digest[..12])
 }
 

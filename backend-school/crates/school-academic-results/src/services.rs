@@ -86,7 +86,7 @@ pub(super) fn check_version(expected: Option<i64>, actual: Option<i64>) -> Resul
 pub(super) fn hash(value: &impl serde::Serialize) -> Result<String, AppError> {
     let bytes = serde_json::to_vec(value)
         .map_err(|_| AppError::InternalServerError("Could not encode result revision".into()))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 pub(super) async fn validate_context(

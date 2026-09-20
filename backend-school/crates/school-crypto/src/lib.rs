@@ -1,12 +1,12 @@
 //! Environment-backed field encryption and domain-separated blind indexes.
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{consts::U12, Aead},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose, Engine as _};
-use hmac::{Hmac, Mac};
-use rand::RngCore;
+use hmac::{Hmac, KeyInit, Mac};
+use rand::TryRng;
 use sha2::{Digest, Sha256};
 use std::env;
 
@@ -28,11 +28,9 @@ fn get_cipher() -> Result<Aes256Gcm, String> {
     let key_str = env::var("ENCRYPTION_KEY").map_err(|_| "ENCRYPTION_KEY not set".to_string())?;
 
     // Derive 32-byte key using SHA-256
-    let mut hasher = Sha256::new();
-    hasher.update(key_str.as_bytes());
-    let key_bytes = hasher.finalize();
+    let key_bytes = Sha256::digest(key_str.as_bytes());
 
-    Ok(Aes256Gcm::new(&key_bytes))
+    Ok(<Aes256Gcm as aes_gcm::KeyInit>::new(&key_bytes))
 }
 
 /// Encrypt any string data
@@ -42,23 +40,24 @@ pub fn encrypt(plaintext: &str) -> Result<String, String> {
         return Ok(String::new());
     }
 
-    let cipher = get_cipher()?;
-
     // Generate random 12-byte nonce
-    let mut nonce_bytes = [0u8; 12];
-    rand::rng().fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let mut nonce_bytes = [0_u8; 12];
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut nonce_bytes)
+        .map_err(|_| "Random number generation failed".to_string())?;
+    encrypt_with_nonce(plaintext, nonce_bytes)
+}
 
-    // Encrypt
+fn encrypt_with_nonce(plaintext: &str, nonce_bytes: [u8; 12]) -> Result<String, String> {
+    let cipher = get_cipher()?;
+    let nonce = Nonce::<U12>::try_from(nonce_bytes.as_slice())
+        .map_err(|_| "Invalid encryption nonce".to_string())?;
     let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        .encrypt(&nonce, plaintext.as_bytes())
+        .map_err(|error| format!("Encryption failed: {error}"))?;
 
-    // Prepend nonce to ciphertext
     let mut result = nonce_bytes.to_vec();
     result.extend_from_slice(&ciphertext);
-
-    // Encode as base64
     Ok(general_purpose::STANDARD.encode(result))
 }
 
@@ -79,13 +78,14 @@ pub fn decrypt(encrypted_base64: &str) -> Result<String, String> {
     }
 
     let (nonce_bytes, ciphertext) = encrypted.split_at(12);
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce =
+        Nonce::<U12>::try_from(nonce_bytes).map_err(|_| "Invalid encryption nonce".to_string())?;
 
     let cipher = get_cipher()?;
 
     // Decrypt
     let plaintext = cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|e| format!("Decryption failed: {}", e))?;
 
     String::from_utf8(plaintext).map_err(|e| format!("UTF-8 decode failed: {}", e))
@@ -121,7 +121,7 @@ fn get_blind_index_key() -> Result<String, String> {
 /// Uses HMAC-SHA256 keyed by BLIND_INDEX_KEY.
 pub fn hash_for_search(text: &str) -> Result<String, String> {
     let key = get_blind_index_key()?;
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(key.as_bytes())
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key.as_bytes())
         .map_err(|_| "Invalid BLIND_INDEX_KEY".to_string())?;
     mac.update(text.as_bytes());
 
@@ -138,7 +138,7 @@ pub fn hash_for_search_with_domain(domain: &str, value: &str) -> Result<String, 
         return Err("Invalid blind-index domain".to_string());
     }
     let key = get_blind_index_key()?;
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(key.as_bytes())
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key.as_bytes())
         .map_err(|_| "Invalid BLIND_INDEX_KEY".to_string())?;
     mac.update(b"schoolorbit-domain-separated-hmac-v1\0");
     mac.update(&(domain.len() as u32).to_be_bytes());
@@ -175,15 +175,24 @@ mod tests {
     fn standard_base64_and_legacy_ciphertext_remain_compatible() {
         let _guard = test_env_lock();
         env::set_var("ENCRYPTION_KEY", "test-key-for-testing-only");
+        const STORED_FORMAT_CIPHERTEXT: &str =
+            "AAECAwQFBgcICQoLMz5OUZn55E+f9hdUy/hd2vqHkvCmExY6AzMgW9b6NkAGj9uHkA==";
 
         assert_eq!(
             general_purpose::STANDARD.encode([0_u8, 1, 2, 253, 254, 255]),
             "AAEC/f7/"
         );
         assert_eq!(
-            decrypt("AAECAwQFBgcICQoLMz5OUZn55E+f9hdUy/hd2vqHkvCmExY6AzMgW9b6NkAGj9uHkA==")
-                .expect("legacy ciphertext fixture should decrypt"),
-            "stored-format-fixture"
+            encrypt_with_nonce(
+                "stored-format-fixture",
+                [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            )
+            .unwrap(),
+            STORED_FORMAT_CIPHERTEXT,
+        );
+        assert_eq!(
+            decrypt(STORED_FORMAT_CIPHERTEXT).unwrap(),
+            "stored-format-fixture",
         );
     }
 
@@ -250,6 +259,9 @@ mod tests {
             certificate,
             hash_for_search("synthetic-proof-value").unwrap()
         );
-        assert_eq!(certificate.len(), 64);
+        assert_eq!(
+            certificate,
+            "cdc708938d1e5a4b21e8105a67ead62d59c1af4953bd1475c929109def59bbfe",
+        );
     }
 }

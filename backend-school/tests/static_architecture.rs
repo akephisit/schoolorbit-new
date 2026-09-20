@@ -69,9 +69,44 @@ fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
         "base64 = { version = \"0.23.1\", default-features = false, features = [\"std\"] }"
     ));
     assert!(school_manifest.contains("lopdf = { version = \"0.45.0\", default-features = false }"));
-    assert!(school_manifest.contains(
-        "rand = \"0.9.5\" # Held for Wave 4 because every direct consumer generates security-sensitive bytes."
+}
+
+#[test]
+fn admin_auth_dependencies_follow_the_reviewed_policy() {
+    let admin_manifest = read_source(repo_root().join("backend-admin/Cargo.toml"));
+    assert!(admin_manifest.contains(
+        "jsonwebtoken = { version = \"11.1.0\", default-features = false, features = [\"rust_crypto\"] }"
     ));
+    assert!(admin_manifest.contains(
+        "bcrypt = { version = \"0.19.3\", default-features = false, features = [\"std\", \"zeroize\"] }"
+    ));
+    let jwt_source = read_source(repo_root().join("backend-admin/src/auth/jwt.rs"));
+    assert!(!jwt_source.contains(".expect("));
+    assert!(!jwt_source.contains("insecure_decode"));
+    assert!(!read_source(manifest_dir().join("Cargo.toml")).contains("jsonwebtoken"));
+}
+
+#[test]
+fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
+    let manifest = read_source(manifest_dir().join("Cargo.toml"));
+    assert!(manifest.contains(
+        "aes-gcm = { version = \"0.11.1\", default-features = false, features = [\"aes\", \"alloc\", \"zeroize\"] }"
+    ));
+    assert!(manifest.contains(
+        "bcrypt = { version = \"0.19.3\", default-features = false, features = [\"std\", \"zeroize\"] }"
+    ));
+    assert!(manifest.contains(
+        "hmac = { version = \"0.13.0\", default-features = false, features = [\"zeroize\"] }"
+    ));
+    assert!(manifest.contains(
+        "rand = { version = \"0.10.2\", default-features = false, features = [\"sys_rng\"] }"
+    ));
+    assert!(manifest.contains(
+        "sha2 = { version = \"0.11.0\", default-features = false, features = [\"zeroize\"] }"
+    ));
+    assert!(!manifest
+        .lines()
+        .any(|line| { line.trim_start().starts_with("sha256 =") }));
 
     let rand_consumers = backend_rs_files()
         .into_iter()
@@ -85,6 +120,32 @@ fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
             "backend-school/crates/school-certificates/src/services/proof.rs".to_string(),
             "backend-school/crates/school-crypto/src/lib.rs".to_string(),
         ])
+    );
+
+    for relative_path in [
+        "crates/school-auth/src/session_crypto.rs",
+        "crates/school-certificates/src/services/proof.rs",
+        "crates/school-crypto/src/lib.rs",
+    ] {
+        let source = read_source(manifest_dir().join(relative_path));
+        assert!(source.contains("rand::rngs::SysRng"));
+        assert!(source.contains(".try_fill_bytes("));
+        assert!(!source.contains("rand::rng()"));
+        assert!(!source.contains("rand::rngs::OsRng"));
+    }
+    assert!(
+        read_source(manifest_dir().join("crates/school-auth/src/session_crypto.rs"))
+            .contains("ServiceUnavailable(\"session_rng\".to_string())")
+    );
+    assert!(
+        read_source(manifest_dir().join("crates/school-crypto/src/lib.rs"))
+            .contains("Random number generation failed")
+    );
+    assert!(
+        read_source(manifest_dir().join("crates/school-certificates/src/services/proof.rs"))
+            .contains(
+                "proof_crypto_error(\"certificate proof randomness unavailable\".to_string())"
+            )
     );
 }
 
