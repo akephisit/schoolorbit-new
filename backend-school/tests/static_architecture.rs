@@ -60,6 +60,12 @@ fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
         "sqlx = { version = \"0.9.0\", default-features = false, features = [\"runtime-tokio\", \"postgres\", \"macros\", \"migrate\", \"chrono\", \"uuid\", \"json\", \"tls-native-tls\"] }"
     ));
     assert!(school_manifest.contains(
+        "reqwest = { version = \"0.13.5\", default-features = false, features = [\"json\", \"native-tls\", \"charset\", \"http2\", \"system-proxy\"] }"
+    ));
+    assert!(admin_manifest.contains(
+        "reqwest = { version = \"0.13.5\", default-features = false, features = [\"json\", \"query\", \"native-tls\", \"charset\", \"http2\", \"system-proxy\"] }"
+    ));
+    assert!(school_manifest.contains(
         "rand = \"0.9.5\" # Held for Wave 4 because every direct consumer generates security-sensitive bytes."
     ));
 

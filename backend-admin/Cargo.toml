@@ -18,7 +18,7 @@ bcrypt = "0.15.1"
 dotenv = "0.15"
 chrono = { version = "0.4.45", features = ["serde"] }
 uuid = { version = "1.26.1", features = ["serde", "v4"] }
-reqwest = { version = "0.12.28", features = ["json"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "query", "native-tls", "charset", "http2", "system-proxy"] }
 cookie = "0.18.2"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
