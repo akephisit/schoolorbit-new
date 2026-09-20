@@ -833,7 +833,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bcrypt",
  "bigdecimal",
  "bytes",
@@ -4315,7 +4315,7 @@ name = "school-auth"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bcrypt",
  "chrono",
  "dotenvy",
@@ -4375,7 +4375,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "chrono-tz",
@@ -4409,7 +4409,7 @@ name = "school-crypto"
 version = "0.1.0"
 dependencies = [
  "aes-gcm 0.10.3",
- "base64 0.22.1",
+ "base64 0.23.1",
  "hex",
  "hmac 0.12.1",
  "rand 0.9.5",

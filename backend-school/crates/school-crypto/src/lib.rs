@@ -172,6 +172,22 @@ mod tests {
     }
 
     #[test]
+    fn standard_base64_and_legacy_ciphertext_remain_compatible() {
+        let _guard = test_env_lock();
+        env::set_var("ENCRYPTION_KEY", "test-key-for-testing-only");
+
+        assert_eq!(
+            general_purpose::STANDARD.encode([0_u8, 1, 2, 253, 254, 255]),
+            "AAEC/f7/"
+        );
+        assert_eq!(
+            decrypt("AAECAwQFBgcICQoLMz5OUZn55E+f9hdUy/hd2vqHkvCmExY6AzMgW9b6NkAGj9uHkA==")
+                .expect("legacy ciphertext fixture should decrypt"),
+            "stored-format-fixture"
+        );
+    }
+
+    #[test]
     fn test_empty_string() {
         let _guard = test_env_lock();
         env::set_var("ENCRYPTION_KEY", "test-key");
