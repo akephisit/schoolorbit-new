@@ -59,7 +59,7 @@ http = "1.5.0"
 http-body-util = "0.1.5"
 image = "0.25.10"
 ipnet = "2.12.2"
-lopdf = { version = "0.38.0", default-features = false }
+lopdf = { version = "0.45.0", default-features = false }
 mime_guess = "2.0.5"
 rand = "0.9.5" # Held for Wave 4 because every direct consumer generates security-sensitive bytes.
 regex = "1.13.1"

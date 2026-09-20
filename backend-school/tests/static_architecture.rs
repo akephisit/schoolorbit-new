@@ -68,6 +68,7 @@ fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
     assert!(school_manifest.contains(
         "base64 = { version = \"0.23.1\", default-features = false, features = [\"std\"] }"
     ));
+    assert!(school_manifest.contains("lopdf = { version = \"0.45.0\", default-features = false }"));
     assert!(school_manifest.contains(
         "rand = \"0.9.5\" # Held for Wave 4 because every direct consumer generates security-sensitive bytes."
     ));

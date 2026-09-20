@@ -573,7 +573,7 @@ mod tests {
         platform_types::{
             DetectedContent, FileInspectionMetadata, FilePurpose, FontInspectionStyle, PdfPageBox,
         },
-        purpose_registry::ContentLimits,
+        purpose_registry::{purpose_definition, ContentLimits},
     };
 
     fn encoded_image(format: ImageFormat, width: u32, height: u32) -> Vec<u8> {
@@ -1078,6 +1078,23 @@ mod tests {
             .expect("xref table, trailer root, and final startxref must be accepted");
 
         assert_eq!(inspection.detected_content(), DetectedContent::Pdf);
+    }
+
+    #[test]
+    fn pdf_shaped_payload_over_the_purpose_limit_is_rejected_before_parsing() {
+        let limits = purpose_definition(FilePurpose::Transcript)
+            .expect("transcript purpose should exist")
+            .limits;
+        let mut oversized = b"%PDF-1.7\n".to_vec();
+        oversized.resize(
+            usize::try_from(limits.max_bytes).expect("test byte limit should fit usize") + 1,
+            b' ',
+        );
+
+        assert_eq!(
+            inspect_file(FilePurpose::Transcript, &oversized),
+            Err(FileInspectionError::ByteLimitExceeded)
+        );
     }
 
     #[test]
