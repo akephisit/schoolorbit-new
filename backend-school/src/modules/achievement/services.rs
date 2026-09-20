@@ -54,7 +54,7 @@ pub async fn list_achievements(
 
     query.push_str(" ORDER BY a.achievement_date DESC, a.created_at DESC");
 
-    let mut query_builder = sqlx::query_as::<_, Achievement>(&query);
+    let mut query_builder = sqlx::query_as::<_, Achievement>(sqlx::AssertSqlSafe(query));
     if let Some(user_id) = scoped_user_id {
         query_builder = query_builder.bind(user_id);
     }

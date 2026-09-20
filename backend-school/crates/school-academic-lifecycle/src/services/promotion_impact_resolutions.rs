@@ -94,13 +94,13 @@ pub async fn resolve_promotion_impact(
         }
     };
     let id = Uuid::new_v4();
-    let resolution: PromotionImpactResolution = sqlx::query_as(&format!(
+    let resolution: PromotionImpactResolution = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "INSERT INTO academic_promotion_impact_resolutions(
              id,request_id,run_id,item_id,correction_id,impact_id,resolution_kind,
              replacement_decision,reason,source_checksum,request_checksum,outcome,resolved_by
          ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          RETURNING {COLUMNS}"
-    ))
+    )))
     .bind(id)
     .bind(input.request_id)
     .bind(run_id)
@@ -305,9 +305,9 @@ async fn replay(
             "รหัสคำขอนี้ถูกใช้กับการจัดการผลกระทบอื่นแล้ว".into(),
         ));
     }
-    let resolution = sqlx::query_as(&format!(
+    let resolution = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM academic_promotion_impact_resolutions WHERE request_id=$1"
-    ))
+    )))
     .bind(request_id)
     .fetch_one(&mut **tx)
     .await?;

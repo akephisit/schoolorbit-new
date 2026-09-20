@@ -1094,7 +1094,10 @@ async fn apply_contract_cutover(pool: &PgPool) -> Result<(), sqlx::Error> {
     let migration =
         fs::read_to_string(migrations_dir().join("032_file_platform_contract_cutover.sql"))
             .expect("migration 032 must exist before contract cutover tests can pass");
-    sqlx::raw_sql(&migration).execute(pool).await.map(|_| ())
+    sqlx::raw_sql(sqlx::AssertSqlSafe(migration))
+        .execute(pool)
+        .await
+        .map(|_| ())
 }
 
 async fn assert_cutover_rejected_without_schema_change(pool: &PgPool) {

@@ -291,6 +291,16 @@ mod tests {
     }
 
     #[test]
+    fn token_encoding_remains_url_safe_without_padding() {
+        let token = RawSessionToken::from_bytes([1_u8; 32]);
+
+        assert_eq!(
+            token.encode().expose_for_cookie(),
+            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+        );
+    }
+
+    #[test]
     fn token_parser_rejects_noncanonical_or_wrong_length_values() {
         for value in [
             format!("{}=", URL_SAFE_NO_PAD.encode([1_u8; 32])),

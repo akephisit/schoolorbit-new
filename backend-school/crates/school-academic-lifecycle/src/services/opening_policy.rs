@@ -22,9 +22,9 @@ pub async fn get_opening_policy(
 pub(crate) async fn read_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
 ) -> Result<OpeningPolicy, AppError> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {COLUMNS} FROM academic_opening_policy WHERE id=1"
-    ))
+    )))
     .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| AppError::InternalServerError("ไม่พบการตั้งค่าเงื่อนไขเปิดภาคเรียน".into()))
@@ -45,9 +45,9 @@ pub async fn update_opening_policy(
     let mut tx = pool.begin().await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
     let before = read_in_transaction(&mut tx).await?;
-    let result: OpeningPolicy = sqlx::query_as(&format!(
+    let result: OpeningPolicy = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "UPDATE academic_opening_policy SET require_homeroom_placements=$1,require_published_offerings=$2,require_published_timetable=$3,row_version=row_version+1,updated_by=$4,updated_at=now() WHERE id=1 AND row_version=$5 RETURNING {COLUMNS}"
-    )).bind(input.require_homeroom_placements).bind(input.require_published_offerings).bind(input.require_published_timetable)
+    ))).bind(input.require_homeroom_placements).bind(input.require_published_offerings).bind(input.require_published_timetable)
         .bind(actor.user_id).bind(input.row_version).fetch_optional(&mut *tx).await?
         .ok_or_else(|| AppError::Conflict("เงื่อนไขเปิดภาคเรียนเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".into()))?;
     years_terms::append_audit(

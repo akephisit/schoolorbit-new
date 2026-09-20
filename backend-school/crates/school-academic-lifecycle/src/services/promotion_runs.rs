@@ -88,9 +88,9 @@ pub async fn create_run(
                 "รหัสคำขอนี้เคยใช้กับข้อมูลหรือผู้ดำเนินการอื่นแล้ว".into(),
             ));
         }
-        let run = sqlx::query_as(&format!(
+        let run = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-        ))
+        )))
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
@@ -108,7 +108,7 @@ pub async fn create_run(
     if !exists {
         return Err(AppError::NotFound("ไม่พบเกณฑ์เลื่อนชั้นที่ยืนยันแล้ว".into()));
     }
-    let run:PromotionRun=sqlx::query_as(&format!("INSERT INTO academic_promotion_runs(source_year_id,target_year_id,policy_id,request_id,request_checksum,created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING {RUN_COLUMNS}"))
+    let run:PromotionRun=sqlx::query_as(sqlx::AssertSqlSafe(format!("INSERT INTO academic_promotion_runs(source_year_id,target_year_id,policy_id,request_id,request_checksum,created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING {RUN_COLUMNS}")))
         .bind(input.source_year_id).bind(input.target_year_id).bind(input.policy_id)
         .bind(input.request_id).bind(checksum).bind(actor.user_id).fetch_one(&mut *tx).await?;
     sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_run.created','promotion_run',$1,$2,$3)")

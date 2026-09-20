@@ -29,9 +29,9 @@ pub async fn review_item(
     }
     let mut tx = pool.begin().await?;
     lifecycle_guard::lock_transition(&mut tx).await?;
-    let run: PromotionRun = sqlx::query_as(&format!(
+    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    ))
+    )))
     .bind(run_id)
     .fetch_optional(&mut *tx)
     .await?
@@ -49,7 +49,7 @@ pub async fn review_item(
         .bind(run_id)
         .execute(&mut *tx)
         .await?;
-    let item:PromotionRunItem=sqlx::query_as(&format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1 AND run_id=$2 FOR UPDATE"))
+    let item:PromotionRunItem=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1 AND run_id=$2 FOR UPDATE")))
         .bind(item_id).bind(run_id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบรายการในรอบเลื่อนชั้นนี้".into()))?;
     if item.row_version != input.row_version || item.status == PromotionItemStatus::Executed {
         return Err(AppError::Conflict(
@@ -91,11 +91,11 @@ pub async fn review_item(
     let core_decision = input.decision.core_command();
     promotion_targets::validate_destination(&mut tx, &source, run.target_year_id, &core_decision)
         .await?;
-    let item:PromotionRunItem=sqlx::query_as(&format!("UPDATE academic_promotion_run_items SET decision=$1,reviewed_by=$2,reviewed_at=now(),status='reviewed',row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING {ITEM_COLUMNS}"))
+    let item:PromotionRunItem=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_run_items SET decision=$1,reviewed_by=$2,reviewed_at=now(),status='reviewed',row_version=row_version+1,updated_at=now() WHERE id=$3 RETURNING {ITEM_COLUMNS}")))
         .bind(sqlx::types::Json(&input.decision)).bind(actor.user_id).bind(item_id).fetch_one(&mut *tx).await?;
     let all_reviewed:bool=sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM academic_promotion_run_items WHERE run_id=$1 AND status NOT IN ('reviewed','executed'))")
         .bind(run_id).fetch_one(&mut *tx).await?;
-    let run:PromotionRun=sqlx::query_as(&format!("UPDATE academic_promotion_runs SET status=$1,row_version=row_version+1,reviewed_by=CASE WHEN $2 THEN $3 ELSE NULL END,reviewed_at=CASE WHEN $2 THEN now() ELSE NULL END,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}"))
+    let run:PromotionRun=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status=$1,row_version=row_version+1,reviewed_by=CASE WHEN $2 THEN $3 ELSE NULL END,reviewed_at=CASE WHEN $2 THEN now() ELSE NULL END,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}")))
         .bind(if all_reviewed {PromotionRunStatus::Reviewed}else{PromotionRunStatus::Calculated}).bind(all_reviewed).bind(actor.user_id).bind(run_id).fetch_one(&mut *tx).await?;
     let audit = ReviewAudit {
         run_id,

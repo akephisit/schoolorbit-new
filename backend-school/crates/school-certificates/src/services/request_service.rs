@@ -440,11 +440,11 @@ pub async fn list_campaign_requests(
         CertificateAction::Read,
     )
     .await?;
-    let rows = sqlx::query_as::<_, IssueRequestRow>(&format!(
+    let rows = sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
         "{REQUEST_SELECT}
          WHERE request.campaign_id = $1
          ORDER BY request.submitted_at DESC, request.id DESC"
-    ))
+    )))
     .bind(campaign_id)
     .fetch_all(pool)
     .await
@@ -459,21 +459,21 @@ pub async fn list_issue_queue(
 ) -> Result<Vec<CertificateIssueRequestSummary>, AppError> {
     actor.require_permission(codes::CERTIFICATE_ISSUE_SCHOOL)?;
     let rows = if let Some(status) = query.status {
-        sqlx::query_as::<_, IssueRequestRow>(&format!(
+        sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
             "{REQUEST_SELECT}
              WHERE request.status = $1
              ORDER BY request.submitted_at, request.id"
-        ))
+        )))
         .bind(status.as_str())
         .fetch_all(pool)
         .await
         .map_err(request_db_error)?
     } else {
-        sqlx::query_as::<_, IssueRequestRow>(&format!(
+        sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
             "{REQUEST_SELECT}
              ORDER BY CASE request.status WHEN 'pending' THEN 0 WHEN 'reviewing' THEN 1 ELSE 2 END,
                       request.submitted_at, request.id"
-        ))
+        )))
         .fetch_all(pool)
         .await
         .map_err(request_db_error)?
@@ -906,13 +906,14 @@ async fn fetch_request_detail_unchecked(
     actor: &ActorContext,
     request_id: Uuid,
 ) -> Result<CertificateIssueRequestDetail, AppError> {
-    let row =
-        sqlx::query_as::<_, IssueRequestRow>(&format!("{REQUEST_SELECT} WHERE request.id = $1"))
-            .bind(request_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(request_db_error)?
-            .ok_or_else(request_not_found)?;
+    let row = sqlx::query_as::<_, IssueRequestRow>(sqlx::AssertSqlSafe(format!(
+        "{REQUEST_SELECT} WHERE request.id = $1"
+    )))
+    .bind(request_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(request_db_error)?
+    .ok_or_else(request_not_found)?;
     let items = fetch_request_items(pool, request_id).await?;
     let context = capability_context(pool, actor).await?;
     detail_from_row(row, items, actor, &context)

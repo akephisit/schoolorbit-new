@@ -41,9 +41,9 @@ pub async fn calculate_run(
         tx.commit().await?;
         return Ok(outcome);
     }
-    let run: PromotionRun = sqlx::query_as(&format!(
+    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    ))
+    )))
     .bind(run_id)
     .fetch_optional(&mut *tx)
     .await?
@@ -137,9 +137,9 @@ pub async fn calculate_run(
              WHERE academic_promotion_run_items.status<>'executed'"
         ).bind(run.id).bind(run.source_year_id).bind(run.target_year_id).bind(Json(prepared)).execute(&mut *tx).await?;
     }
-    let run:PromotionRun=sqlx::query_as(&format!("UPDATE academic_promotion_runs SET status='calculated',row_version=row_version+1,reviewed_by=NULL,reviewed_at=NULL,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$1 RETURNING {RUN_COLUMNS}"))
+    let run:PromotionRun=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status='calculated',row_version=row_version+1,reviewed_by=NULL,reviewed_at=NULL,approved_by=NULL,approved_at=NULL,approval_id=NULL,updated_at=now() WHERE id=$1 RETURNING {RUN_COLUMNS}")))
         .bind(run_id).fetch_one(&mut *tx).await?;
-    let items=sqlx::query_as(&format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001"))
+    let items=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")))
         .bind(run_id).fetch_all(&mut *tx).await?;
     let outcome = PromotionRunCalculation { run, items };
     sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_run.calculated','promotion_run',$1,$2,$3)")

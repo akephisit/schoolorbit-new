@@ -274,7 +274,7 @@ async fn migration_060_rejects_invalid_correction_targets() {
         "uuid_generate_v4(),uuid_generate_v4(),NULL",
     ] {
         let sql = format!("INSERT INTO academic_result_corrections (course_result_id,activity_result_id,subject_student_evaluation_id,expected_effective_version,corrected_by) VALUES ({targets},1,'50000000-0000-0000-0000-000000000002')");
-        let error = sqlx::query(&sql)
+        let error = sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(&pool)
             .await
             .expect_err("correction must identify exactly one result family");
@@ -319,10 +319,16 @@ async fn migration_060_copies_permission_grants_by_lineage() {
             _ => "s.from_user_id=t.from_user_id AND s.to_user_id=t.to_user_id AND s.organization_unit_id IS NOT DISTINCT FROM t.organization_unit_id AND s.reason=t.reason AND s.started_at=t.started_at AND s.expires_at=t.expires_at AND s.revoked_at IS NOT DISTINCT FROM t.revoked_at AND s.created_at=t.created_at",
         };
         let sql = format!("SELECT count(*) FROM {table} s JOIN permissions sp ON sp.id=s.permission_id CROSS JOIN permissions tp WHERE sp.module='academic_assessment' AND tp.module IN ('academic_gradebook','academic_result','academic_learner_evaluation') AND ((tp.action=sp.action AND tp.scope=sp.scope) OR (sp.action='manage' AND sp.scope='school' AND tp.action IN ('lock','correct'))) AND NOT EXISTS (SELECT 1 FROM {table} t WHERE t.permission_id=tp.id AND {principal})");
-        let missing: i64 = sqlx::query_scalar(&sql).fetch_one(&pool).await.unwrap();
+        let missing: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(missing, 0, "missing copied {table}");
         let sql = format!("SELECT count(*) FROM {table} t JOIN permissions tp ON tp.id=t.permission_id WHERE tp.module IN ('academic_gradebook','academic_result','academic_learner_evaluation') AND NOT EXISTS (SELECT 1 FROM {table} s JOIN permissions sp ON sp.id=s.permission_id WHERE sp.module='academic_assessment' AND ((tp.action=sp.action AND tp.scope=sp.scope) OR (sp.action='manage' AND sp.scope='school' AND tp.scope='school' AND tp.action IN ('lock','correct'))) AND {principal})");
-        let extra: i64 = sqlx::query_scalar(&sql).fetch_one(&pool).await.unwrap();
+        let extra: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(extra, 0, "unearned capability in {table}");
     }
 }

@@ -407,7 +407,7 @@ pub async fn list_staff(
 }
 
 fn push_staff_list_filters<'args>(
-    query: &mut QueryBuilder<'args, Postgres>,
+    query: &mut QueryBuilder<Postgres>,
     filter: &'args StaffListFilter,
     search_pattern: Option<&'args str>,
     access: StaffListAccess,
@@ -435,7 +435,7 @@ fn push_staff_list_filters<'args>(
     push_staff_list_access_filter(query, access);
 }
 
-fn push_staff_list_access_filter(query: &mut QueryBuilder<'_, Postgres>, access: StaffListAccess) {
+fn push_staff_list_access_filter(query: &mut QueryBuilder<Postgres>, access: StaffListAccess) {
     match access {
         StaffListAccess::School => {}
         StaffListAccess::Own(actor_user_id) | StaffListAccess::Assigned(actor_user_id) => {

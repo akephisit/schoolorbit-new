@@ -687,7 +687,7 @@ async fn load_authentication_row_for_update(
     presented_hash: TokenHash,
 ) -> Result<Option<AuthenticationRow>, AppError> {
     let query = format!("{AUTHENTICATION_COLUMNS} FOR UPDATE OF s");
-    let rows = sqlx::query_as::<_, AuthenticationRow>(&query)
+    let rows = sqlx::query_as::<_, AuthenticationRow>(sqlx::AssertSqlSafe(query))
         .bind(presented_hash.as_bytes().as_slice())
         .fetch_all(&mut **transaction)
         .await

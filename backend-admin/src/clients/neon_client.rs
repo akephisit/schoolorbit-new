@@ -481,11 +481,13 @@ impl NeonClient {
 mod tests {
     use super::NeonClient;
     use axum::{
-        http::StatusCode,
+        extract::Query,
+        http::{header::AUTHORIZATION, HeaderMap, StatusCode},
         routing::{get, post},
         Json, Router,
     };
     use serde_json::json;
+    use std::collections::HashMap;
 
     async fn start_neon_api(app: Router) -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -505,62 +507,99 @@ mod tests {
 
     #[tokio::test]
     async fn named_branch_is_resolved_before_creating_a_database() {
+        let api_key = uuid::Uuid::new_v4().to_string();
+        let expected_branch_authorization = format!("Bearer {api_key}");
+        let expected_create_authorization = expected_branch_authorization.clone();
         let app = Router::new()
             .route(
                 "/api/v2/projects/quiet-test-123/branches",
-                get(|| async {
-                    Json(json!({
-                        "branches": [{
-                            "id": "br-primary-abc123",
-                            "project_id": "quiet-test-123",
-                            "parent_id": null,
-                            "parent_lsn": null,
-                            "parent_timestamp": null,
-                            "name": "main",
-                            "current_state": "ready",
-                            "pending_state": null,
-                            "state_changed_at": "2026-08-26T00:00:00Z",
-                            "creation_source": "console",
-                            "primary": true,
-                            "default": true,
-                            "protected": false,
-                            "cpu_used_sec": 0,
-                            "compute_time_seconds": 0,
-                            "active_time_seconds": 0,
-                            "written_data_bytes": 0,
-                            "data_transfer_bytes": 0,
-                            "created_at": "2026-08-26T00:00:00Z",
-                            "updated_at": "2026-08-26T00:00:00Z",
-                            "created_by": {"name": "SchoolOrbit", "image": ""},
-                            "init_source": "parent-data"
-                        }],
-                        "pagination": {"sort_by": "updated_at", "sort_order": "DESC"}
-                    }))
-                }),
+                get(
+                    move |headers: HeaderMap, Query(query): Query<HashMap<String, String>>| {
+                        let expected_authorization = expected_branch_authorization.clone();
+                        async move {
+                            assert!(
+                                headers.get(AUTHORIZATION).is_some_and(|value| {
+                                    value.as_bytes() == expected_authorization.as_bytes()
+                                }),
+                                "branch lookup must send the configured bearer credential"
+                            );
+                            assert_eq!(query.get("search").map(String::as_str), Some("main"));
+
+                            Json(json!({
+                                "branches": [{
+                                    "id": "br-primary-abc123",
+                                    "project_id": "quiet-test-123",
+                                    "parent_id": null,
+                                    "parent_lsn": null,
+                                    "parent_timestamp": null,
+                                    "name": "main",
+                                    "current_state": "ready",
+                                    "pending_state": null,
+                                    "state_changed_at": "2026-08-26T00:00:00Z",
+                                    "creation_source": "console",
+                                    "primary": true,
+                                    "default": true,
+                                    "protected": false,
+                                    "cpu_used_sec": 0,
+                                    "compute_time_seconds": 0,
+                                    "active_time_seconds": 0,
+                                    "written_data_bytes": 0,
+                                    "data_transfer_bytes": 0,
+                                    "created_at": "2026-08-26T00:00:00Z",
+                                    "updated_at": "2026-08-26T00:00:00Z",
+                                    "created_by": {"name": "SchoolOrbit", "image": ""},
+                                    "init_source": "parent-data"
+                                }],
+                                "pagination": {"sort_by": "updated_at", "sort_order": "DESC"}
+                            }))
+                        }
+                    },
+                ),
             )
             .route(
                 "/api/v2/projects/quiet-test-123/branches/br-primary-abc123/databases",
-                post(|| async {
-                    (
-                        StatusCode::CREATED,
-                        Json(json!({
-                            "database": {
-                                "id": 42,
-                                "branch_id": "br-primary-abc123",
-                                "name": "schoolorbit_demo",
-                                "owner_name": "neondb_owner",
-                                "created_at": "2026-08-26T00:00:00Z",
-                                "updated_at": "2026-08-26T00:00:00Z"
-                            },
-                            "operations": []
-                        })),
-                    )
-                }),
+                post(
+                    move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
+                        let expected_authorization = expected_create_authorization.clone();
+                        async move {
+                            assert!(
+                                headers.get(AUTHORIZATION).is_some_and(|value| {
+                                    value.as_bytes() == expected_authorization.as_bytes()
+                                }),
+                                "database creation must send the configured bearer credential"
+                            );
+                            assert_eq!(
+                                body,
+                                json!({
+                                    "database": {
+                                        "name": "schoolorbit_demo",
+                                        "owner_name": "neondb_owner"
+                                    }
+                                })
+                            );
+
+                            (
+                                StatusCode::CREATED,
+                                Json(json!({
+                                    "database": {
+                                        "id": 42,
+                                        "branch_id": "br-primary-abc123",
+                                        "name": "schoolorbit_demo",
+                                        "owner_name": "neondb_owner",
+                                        "created_at": "2026-08-26T00:00:00Z",
+                                        "updated_at": "2026-08-26T00:00:00Z"
+                                    },
+                                    "operations": []
+                                })),
+                            )
+                        }
+                    },
+                ),
             );
         let (api_base_url, server) = start_neon_api(app).await;
         let client = NeonClient::from_config(
             reqwest::Client::new(),
-            "test-api-key".to_string(),
+            api_key,
             "quiet-test-123".to_string(),
             "main".to_string(),
             api_base_url,

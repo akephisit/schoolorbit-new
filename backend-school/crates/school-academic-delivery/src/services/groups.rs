@@ -189,7 +189,7 @@ pub async fn list(pool: &PgPool, offering_id: Uuid) -> Result<Vec<LearningGroup>
         "SELECT {GROUP_COLUMNS} FROM learning_groups WHERE learning_offering_id = $1 \
          ORDER BY code, id LIMIT 500"
     );
-    let rows: Vec<LearningGroupRow> = sqlx::query_as(&sql)
+    let rows: Vec<LearningGroupRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(offering_id)
         .fetch_all(pool)
         .await?;
@@ -217,7 +217,7 @@ pub async fn list_for_term(
          ORDER BY learning_group.code, learning_group.id \
          LIMIT $5"
     );
-    let rows: Vec<LearningGroupRow> = sqlx::query_as(&sql)
+    let rows: Vec<LearningGroupRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(academic_term_id)
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
@@ -235,7 +235,7 @@ pub async fn list_for_term(
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningGroup, AppError> {
     let sql = format!("SELECT {GROUP_COLUMNS} FROM learning_groups WHERE id = $1");
-    let row: LearningGroupRow = sqlx::query_as(&sql)
+    let row: LearningGroupRow = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?

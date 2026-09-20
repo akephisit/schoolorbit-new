@@ -181,9 +181,9 @@ pub async fn list_templates(
 ) -> Result<Vec<CertificateTemplateDetail>, AppError> {
     let owner_id = campaign_owner(pool, campaign_id).await?;
     require_owner_action(pool, actor, owner_id, CertificateAction::Read).await?;
-    let rows = sqlx::query_as::<_, TemplateRow>(&format!(
+    let rows = sqlx::query_as::<_, TemplateRow>(sqlx::AssertSqlSafe(format!(
         "{TEMPLATE_SELECT} WHERE t.campaign_id = $1 ORDER BY t.created_at, t.id"
-    ))
+    )))
     .bind(campaign_id)
     .fetch_all(pool)
     .await
@@ -1040,21 +1040,23 @@ async fn fetch_detail_with_capabilities(
 }
 
 async fn fetch_template_row(pool: &PgPool, template_id: Uuid) -> Result<TemplateRow, AppError> {
-    sqlx::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE t.id = $1"))
-        .bind(template_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(template_db_error)?
-        .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))
+    sqlx::query_as::<_, TemplateRow>(sqlx::AssertSqlSafe(format!(
+        "{TEMPLATE_SELECT} WHERE t.id = $1"
+    )))
+    .bind(template_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(template_db_error)?
+    .ok_or_else(|| AppError::NotFound("ไม่พบแม่แบบเกียรติบัตร".to_string()))
 }
 
 async fn lock_template(
     tx: &mut Transaction<'_, Postgres>,
     template_id: Uuid,
 ) -> Result<TemplateRow, AppError> {
-    sqlx::query_as::<_, TemplateRow>(&format!(
+    sqlx::query_as::<_, TemplateRow>(sqlx::AssertSqlSafe(format!(
         "{TEMPLATE_SELECT} WHERE t.id = $1 FOR UPDATE OF t"
-    ))
+    )))
     .bind(template_id)
     .fetch_optional(&mut **tx)
     .await

@@ -50,6 +50,45 @@ fn permission_registry_has_one_workspace_owner() {
 }
 
 #[test]
+fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
+    let school_manifest = read_source(manifest_dir().join("Cargo.toml"));
+    assert!(school_manifest.contains(
+        "sqlx = { version = \"0.9.0\", default-features = false, features = [\"runtime-tokio\", \"postgres\", \"macros\", \"migrate\", \"chrono\", \"uuid\", \"bigdecimal\", \"json\", \"tls-native-tls\"] }"
+    ));
+    let admin_manifest = read_source(repo_root().join("backend-admin/Cargo.toml"));
+    assert!(admin_manifest.contains(
+        "sqlx = { version = \"0.9.0\", default-features = false, features = [\"runtime-tokio\", \"postgres\", \"macros\", \"migrate\", \"chrono\", \"uuid\", \"json\", \"tls-native-tls\"] }"
+    ));
+    assert!(school_manifest.contains(
+        "reqwest = { version = \"0.13.5\", default-features = false, features = [\"json\", \"native-tls\", \"charset\", \"http2\", \"system-proxy\"] }"
+    ));
+    assert!(admin_manifest.contains(
+        "reqwest = { version = \"0.13.5\", default-features = false, features = [\"json\", \"query\", \"native-tls\", \"charset\", \"http2\", \"system-proxy\"] }"
+    ));
+    assert!(school_manifest.contains(
+        "base64 = { version = \"0.23.1\", default-features = false, features = [\"std\"] }"
+    ));
+    assert!(school_manifest.contains("lopdf = { version = \"0.45.0\", default-features = false }"));
+    assert!(school_manifest.contains(
+        "rand = \"0.9.5\" # Held for Wave 4 because every direct consumer generates security-sensitive bytes."
+    ));
+
+    let rand_consumers = backend_rs_files()
+        .into_iter()
+        .filter(|file| read_source(file).contains("rand::"))
+        .map(|file| repo_relative(&file))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        rand_consumers,
+        BTreeSet::from([
+            "backend-school/crates/school-auth/src/session_crypto.rs".to_string(),
+            "backend-school/crates/school-certificates/src/services/proof.rs".to_string(),
+            "backend-school/crates/school-crypto/src/lib.rs".to_string(),
+        ])
+    );
+}
+
+#[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
     let approved_graph: [(&str, &[&str]); 25] = [

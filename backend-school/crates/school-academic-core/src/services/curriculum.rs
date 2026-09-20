@@ -134,7 +134,7 @@ pub async fn update(
 
 pub async fn get_version(pool: &PgPool, id: Uuid) -> Result<CurriculumVersion, AppError> {
     let sql = format!("SELECT {VERSION_COLUMNS} FROM curriculum_versions WHERE id = $1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -213,7 +213,7 @@ pub async fn clone_version_draft(
     let source: CurriculumVersion = {
         let sql =
             format!("SELECT {VERSION_COLUMNS} FROM curriculum_versions WHERE id = $1 FOR UPDATE");
-        sqlx::query_as(&sql)
+        sqlx::query_as(sqlx::AssertSqlSafe(sql))
             .bind(source_version_id)
             .fetch_optional(&mut *transaction)
             .await?
@@ -418,7 +418,7 @@ pub async fn publish_version(
     let version: CurriculumVersion = {
         let sql =
             format!("SELECT {VERSION_COLUMNS} FROM curriculum_versions WHERE id = $1 FOR UPDATE");
-        sqlx::query_as(&sql)
+        sqlx::query_as(sqlx::AssertSqlSafe(sql))
             .bind(id)
             .fetch_optional(&mut *transaction)
             .await?
@@ -462,7 +462,7 @@ pub(super) async fn list_programs_for_version(
         "SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE curriculum_version_id = $1 \
          ORDER BY is_default DESC, code, id"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(version_id)
         .fetch_all(pool)
         .await?)
@@ -516,7 +516,7 @@ pub async fn list_study_program_options_for_year(
 
 pub async fn get_program(pool: &PgPool, id: Uuid) -> Result<StudyProgram, AppError> {
     let sql = format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE id = $1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?

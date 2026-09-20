@@ -400,7 +400,7 @@ pub async fn assign_exam_seats(
         order_clause
     );
 
-    let applicants = sqlx::query_as::<_, AppRow>(&query)
+    let applicants = sqlx::query_as::<_, AppRow>(sqlx::AssertSqlSafe(query))
         .bind(round_id)
         .fetch_all(pool)
         .await

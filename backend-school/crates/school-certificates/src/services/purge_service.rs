@@ -527,7 +527,7 @@ async fn load_counts_in_transaction(
          FROM ({}) AS impact",
         impact_sql()
     );
-    let row = sqlx::query_as::<_, CountRow>(&sql)
+    let row = sqlx::query_as::<_, CountRow>(sqlx::AssertSqlSafe(sql))
         .bind(campaign_id)
         .fetch_optional(&mut **transaction)
         .await?

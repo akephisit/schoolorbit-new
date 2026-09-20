@@ -314,7 +314,7 @@ async fn get_user_type(pool: &PgPool, user_id: Uuid) -> Result<String, AppError>
         })
 }
 
-async fn count_scalar(pool: &PgPool, query: &str) -> Result<i64, AppError> {
+async fn count_scalar(pool: &PgPool, query: &'static str) -> Result<i64, AppError> {
     sqlx::query_scalar(query)
         .fetch_one(pool)
         .await

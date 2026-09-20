@@ -231,7 +231,7 @@ async fn load_context(
 
 async fn count(
     tx: &mut Transaction<'_, Postgres>,
-    sql: &str,
+    sql: &'static str,
     term_id: Uuid,
 ) -> Result<usize, AppError> {
     let value: i64 = sqlx::query_scalar(sql)
@@ -243,7 +243,7 @@ async fn count(
 
 async fn json_rows(
     tx: &mut Transaction<'_, Postgres>,
-    sql: &str,
+    sql: &'static str,
     term_id: Uuid,
 ) -> Result<Vec<String>, AppError> {
     let rows: Vec<String> = sqlx::query_scalar(sql)
@@ -282,12 +282,11 @@ async fn module_source_fingerprint(
             ));
         }
         TermPreparationModule::Timetable => {
-            let selected = "SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1";
             tables.push((
                 "version",
                 json_rows(
                     tx,
-                    &format!("SELECT to_jsonb(version)::text FROM academic_timetable_versions version WHERE version.id=({selected})"),
+                    "SELECT to_jsonb(version)::text FROM academic_timetable_versions version WHERE version.id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1)",
                     term_id,
                 )
                 .await?,
@@ -296,7 +295,7 @@ async fn module_source_fingerprint(
                 "targets",
                 json_rows(
                     tx,
-                    &format!("SELECT to_jsonb(target)::text FROM academic_timetable_version_targets target WHERE target.timetable_version_id=({selected}) ORDER BY target.learning_offering_id"),
+                    "SELECT to_jsonb(target)::text FROM academic_timetable_version_targets target WHERE target.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) ORDER BY target.learning_offering_id",
                     term_id,
                 )
                 .await?,
@@ -948,7 +947,7 @@ async fn add_timetable_mapping_seeds(
     result: &mut Vec<(TermPreparationMappingKind, Vec<MappingSeed>)>,
 ) -> Result<(), AppError> {
     let source_cte = "WITH source_version AS (SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) ";
-    result.push((TermPreparationMappingKind::LearningOffering, sqlx::query_as(&(source_cte.to_owned() +
+    result.push((TermPreparationMappingKind::LearningOffering, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT offering.id AS source_id, offering.code_snapshot || ' · ' || offering.name_snapshot AS source_label,
                   (SELECT target.id FROM learning_offerings target
                    LEFT JOIN course_offering_details td ON td.learning_offering_id=target.id
@@ -963,14 +962,14 @@ async fn add_timetable_mapping_seeds(
            JOIN learning_offerings offering ON offering.id=version_target.learning_offering_id
            ORDER BY source_id"#))
         .bind(context.source_term_id).bind(context.target_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::LearningGroup, sqlx::query_as(&(source_cte.to_owned() +
+    result.push((TermPreparationMappingKind::LearningGroup, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT learning_group.id AS source_id, learning_group.name AS source_label, NULL::uuid AS suggested_target_id
            FROM source_version JOIN academic_timetable_block_groups block_group ON true
            JOIN academic_timetable_blocks block ON block.id=block_group.block_id AND block.timetable_version_id=source_version.id
            JOIN learning_groups learning_group ON learning_group.id=block_group.learning_group_id
            WHERE block_group.is_active ORDER BY source_id"#))
         .bind(context.source_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Teacher, sqlx::query_as(&(source_cte.to_owned() +
+    result.push((TermPreparationMappingKind::Teacher, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT teacher.id AS source_id,
                   coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(teacher.title,''),teacher.first_name),''), nullif(teacher.last_name,'')),''), teacher.username) AS source_label,
                   CASE WHEN teacher.status='active' THEN teacher.id END AS suggested_target_id
@@ -984,7 +983,7 @@ async fn add_timetable_mapping_seeds(
            ) used ON used.timetable_version_id=source_version.id
            JOIN users teacher ON teacher.id=used.teacher_id ORDER BY source_id"#))
         .bind(context.source_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Room, sqlx::query_as(&(source_cte.to_owned() +
+    result.push((TermPreparationMappingKind::Room, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT room.id AS source_id, coalesce(room.code || ' · ','') || room.name_th AS source_label,
                   CASE WHEN room.status='ACTIVE' THEN room.id END AS suggested_target_id
            FROM source_version JOIN (
@@ -992,14 +991,14 @@ async fn add_timetable_mapping_seeds(
                UNION ALL SELECT block.timetable_version_id,bh.room_id FROM academic_timetable_blocks block JOIN academic_timetable_block_homerooms bh ON bh.block_id=block.id WHERE bh.room_id IS NOT NULL AND bh.is_active
            ) used ON used.timetable_version_id=source_version.id JOIN rooms room ON room.id=used.room_id ORDER BY source_id"#))
         .bind(context.source_term_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::Homeroom, sqlx::query_as(&(source_cte.to_owned() +
+    result.push((TermPreparationMappingKind::Homeroom, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT homeroom.id AS source_id, homeroom.name AS source_label,
                   (SELECT target.id FROM homerooms target WHERE target.academic_year_id=$2 AND target.is_active AND target.name=homeroom.name AND target.grade_level_id=homeroom.grade_level_id ORDER BY target.id LIMIT 1) AS suggested_target_id
            FROM source_version JOIN academic_timetable_blocks block ON block.timetable_version_id=source_version.id
            JOIN academic_timetable_block_homerooms bh ON bh.block_id=block.id AND bh.is_active
            JOIN homerooms homeroom ON homeroom.id=bh.homeroom_id ORDER BY source_id"#))
         .bind(context.source_term_id).bind(context.target_year_id).fetch_all(&mut **tx).await?));
-    result.push((TermPreparationMappingKind::BellPeriod, sqlx::query_as(&(source_cte.to_owned() +
+    result.push((TermPreparationMappingKind::BellPeriod, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT period.id AS source_id,
                   period.order_index::text || ' · ' || coalesce(period.name, to_char(period.start_time,'HH24:MI')) AS source_label,
                   (SELECT target_period.id FROM academic_terms target_term JOIN bell_schedule_periods target_period ON target_period.bell_schedule_id=target_term.bell_schedule_id

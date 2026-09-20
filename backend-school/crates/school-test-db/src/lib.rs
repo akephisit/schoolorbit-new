@@ -88,15 +88,19 @@ async fn ensure_test_schema(database_url: &str, schema: &str) {
         .await
         .expect("Failed to connect to TEST_DATABASE_URL for test schema setup");
 
-    sqlx::query(&format!(r#"DROP SCHEMA IF EXISTS "{schema}" CASCADE"#))
-        .execute(&admin_pool)
-        .await
-        .expect("Failed to reset isolated test schema");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        r#"DROP SCHEMA IF EXISTS "{schema}" CASCADE"#
+    )))
+    .execute(&admin_pool)
+    .await
+    .expect("Failed to reset isolated test schema");
 
-    sqlx::query(&format!(r#"CREATE SCHEMA IF NOT EXISTS "{schema}""#))
-        .execute(&admin_pool)
-        .await
-        .expect("Failed to create isolated test schema");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        r#"CREATE SCHEMA IF NOT EXISTS "{schema}""#
+    )))
+    .execute(&admin_pool)
+    .await
+    .expect("Failed to create isolated test schema");
 
     admin_pool.close().await;
     let _ = TEST_SCHEMA_READY.set(());
@@ -109,12 +113,14 @@ async fn reset_test_schema(database_url: &str, schema: &str) {
         .await
         .expect("Failed to connect to TEST_DATABASE_URL for named test schema setup");
 
-    sqlx::query(&format!(r#"DROP SCHEMA IF EXISTS "{schema}" CASCADE"#))
-        .execute(&admin_pool)
-        .await
-        .expect("Failed to reset named test schema");
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        r#"DROP SCHEMA IF EXISTS "{schema}" CASCADE"#
+    )))
+    .execute(&admin_pool)
+    .await
+    .expect("Failed to reset named test schema");
 
-    sqlx::query(&format!(r#"CREATE SCHEMA "{schema}""#))
+    sqlx::query(sqlx::AssertSqlSafe(format!(r#"CREATE SCHEMA "{schema}""#)))
         .execute(&admin_pool)
         .await
         .expect("Failed to create named test schema");
@@ -129,7 +135,9 @@ fn pool_with_search_path(schema: &str, max_connections: u32) -> PgPoolOptions {
         .after_connect(move |connection, _metadata| {
             let search_path_sql = search_path_sql.clone();
             Box::pin(async move {
-                sqlx::query(&search_path_sql).execute(connection).await?;
+                sqlx::query(sqlx::AssertSqlSafe(search_path_sql))
+                    .execute(connection)
+                    .await?;
                 Ok(())
             })
         })

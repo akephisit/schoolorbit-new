@@ -443,8 +443,10 @@ scores, outcomes, credentials, or source rows. A legitimate school edit to gradi
 configuration is not a deployment invariant and must not keep the tenant in maintenance.
 
 The manual Neon migration compatibility workflow runs the same focused checks on a fresh disposable
-child branch through its direct non-pooled endpoint, then deletes the branch. Repository secrets and
-variables remain the only credential source, and workflow output must not expose the connection URI.
+child branch through its direct non-pooled endpoint. Schema-isolated migration cases use four test
+threads so network round trips do not serialize the entire gate, while each individual test pool
+still has one connection. The workflow then deletes the branch. Repository secrets and variables
+remain the only credential source, and workflow output must not expose the connection URI.
 An authenticated academic smoke samples at most two canonical terms and reads the Gradebook subject
 workspace, learner-evaluation subject workspace, and result-readiness summary for each selected term.
 Response bodies remain in the smoke script's private temporary directory and are removed on exit.

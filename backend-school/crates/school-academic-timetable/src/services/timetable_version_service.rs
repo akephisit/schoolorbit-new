@@ -127,7 +127,7 @@ pub async fn list_versions(
                   CASE version.status WHEN 'draft' THEN 0 WHEN 'published' THEN 1 ELSE 2 END, \
                   version.id"
     );
-    let rows = sqlx::query_as::<_, TimetableVersionRow>(&sql)
+    let rows = sqlx::query_as::<_, TimetableVersionRow>(sqlx::AssertSqlSafe(sql))
         .bind(term_id)
         .fetch_all(pool)
         .await?;
@@ -141,7 +141,7 @@ pub async fn resolve_for_date(
 ) -> Result<TimetableVersion, AppError> {
     let version_id = resolve_version_id_for_date(pool, term_id, on_date).await?;
     let sql = format!("{VERSION_SELECT} WHERE version.id = $1");
-    let row = sqlx::query_as::<_, TimetableVersionRow>(&sql)
+    let row = sqlx::query_as::<_, TimetableVersionRow>(sqlx::AssertSqlSafe(sql))
         .bind(version_id)
         .fetch_one(pool)
         .await?;
@@ -695,7 +695,7 @@ pub(crate) async fn get_version(
     display_date: NaiveDate,
 ) -> Result<TimetableVersion, AppError> {
     let sql = format!("{VERSION_SELECT} WHERE version.id = $1");
-    let row = sqlx::query_as::<_, TimetableVersionRow>(&sql)
+    let row = sqlx::query_as::<_, TimetableVersionRow>(sqlx::AssertSqlSafe(sql))
         .bind(version_id)
         .fetch_optional(pool)
         .await?

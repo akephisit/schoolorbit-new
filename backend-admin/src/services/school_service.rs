@@ -674,7 +674,7 @@ impl SchoolService {
 
         query.push_str(&format!(" WHERE id = ${} RETURNING *", bind_count));
 
-        let mut q = sqlx::query_as::<_, School>(&query);
+        let mut q = sqlx::query_as::<_, School>(sqlx::AssertSqlSafe(query));
 
         if let Some(name) = data.name {
             q = q.bind(name);

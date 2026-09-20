@@ -167,7 +167,7 @@ pub(super) async fn invalidate_group_academic_confirmations(
              WHERE learning_group_id = ANY($1) \
                AND NOT COALESCE((source_snapshot->>'invalidated')::boolean, false)"
         );
-        sqlx::query(&query)
+        sqlx::query(sqlx::AssertSqlSafe(query))
             .bind(&group_ids)
             .execute(&mut **transaction)
             .await?;

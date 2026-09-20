@@ -1472,7 +1472,7 @@ async fn insert_block(
 
 async fn deactivate_child(
     transaction: &mut Transaction<'_, Postgres>,
-    table: &str,
+    table: &'static str,
     target_id: Uuid,
     block_id: Uuid,
     row_version: i64,
@@ -1483,7 +1483,7 @@ async fn deactivate_child(
          updated_by = $4, updated_at = now() \
          WHERE id = $1 AND block_id = $2 AND row_version = $3 AND is_active"
     );
-    let changed = sqlx::query(&query)
+    let changed = sqlx::query(sqlx::AssertSqlSafe(query))
         .bind(target_id)
         .bind(block_id)
         .bind(row_version)

@@ -127,7 +127,7 @@ pub async fn lookup_staff(
 
     sql.push_str(&format!(" ORDER BY first_name, last_name LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, StaffRow>(&sql);
+    let mut query_builder = sqlx::query_as::<_, StaffRow>(sqlx::AssertSqlSafe(sql));
     if let Some(ref pattern) = search_pattern {
         query_builder = query_builder.bind(pattern);
     }
@@ -167,7 +167,7 @@ pub async fn lookup_roles(
 
     sql.push_str(&format!(" ORDER BY level DESC, name LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, RoleRow>(&sql);
+    let mut query_builder = sqlx::query_as::<_, RoleRow>(sqlx::AssertSqlSafe(sql));
     if let Some(ref pattern) = search_pattern {
         query_builder = query_builder.bind(pattern);
     }
@@ -230,7 +230,7 @@ pub async fn lookup_organization_units(
 
     sql.push_str(&format!(" ORDER BY display_order, name LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, OrganizationUnitRow>(&sql);
+    let mut query_builder = sqlx::query_as::<_, OrganizationUnitRow>(sqlx::AssertSqlSafe(sql));
     if member_only {
         query_builder = query_builder.bind(user_id);
     }
@@ -303,7 +303,8 @@ pub async fn lookup_grade_levels(
          END, gl.year ASC LIMIT 500",
     );
 
-    let mut query_builder = sqlx::query_as::<_, GradeLevelRow>(&sql).bind(query.academic_year_id);
+    let mut query_builder =
+        sqlx::query_as::<_, GradeLevelRow>(sqlx::AssertSqlSafe(sql)).bind(query.academic_year_id);
     if let Some(ref level_type) = bind_level_type {
         query_builder = query_builder.bind(level_type);
     }
@@ -350,7 +351,8 @@ pub async fn lookup_homerooms(
 
     sql.push_str(&format!(" ORDER BY g.year, h.name LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, HomeroomRow>(&sql).bind(query.academic_year_id);
+    let mut query_builder =
+        sqlx::query_as::<_, HomeroomRow>(sqlx::AssertSqlSafe(sql)).bind(query.academic_year_id);
     if let Some(ref pattern) = search_pattern {
         query_builder = query_builder.bind(pattern);
     }
@@ -394,7 +396,7 @@ pub async fn lookup_academic_years(
         limit
     ));
 
-    let mut query_builder = sqlx::query_as::<_, AcademicYearRow>(&sql);
+    let mut query_builder = sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql));
     if let Some(ref pattern) = search_pattern {
         query_builder = query_builder.bind(pattern);
     }
@@ -460,8 +462,8 @@ pub async fn lookup_students(
         limit
     ));
 
-    let mut query_builder =
-        sqlx::query_as::<_, StudentWithInfoRow>(&sql).bind(query.academic_year_id);
+    let mut query_builder = sqlx::query_as::<_, StudentWithInfoRow>(sqlx::AssertSqlSafe(sql))
+        .bind(query.academic_year_id);
     if let Some(ref pattern) = search_pattern {
         query_builder = query_builder.bind(pattern);
     }
@@ -555,7 +557,8 @@ pub async fn lookup_subjects(
 
     sql.push_str(&format!(" ORDER BY code, name_th LIMIT {}", limit));
 
-    let mut query_builder = sqlx::query_as::<_, SubjectRow>(&sql).bind(query.academic_year_id);
+    let mut query_builder =
+        sqlx::query_as::<_, SubjectRow>(sqlx::AssertSqlSafe(sql)).bind(query.academic_year_id);
     if let Some(ref subject_type) = bind_subject_type {
         query_builder = query_builder.bind(subject_type);
     }

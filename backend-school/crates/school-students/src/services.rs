@@ -180,7 +180,7 @@ pub async fn list_students(
     query.push_str(" ORDER BY CASE gl.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END, gl.year NULLS LAST, h.name NULLS LAST, s.student_number");
     query.push_str(&format!(" LIMIT ${limit_idx} OFFSET ${offset_idx}"));
 
-    let mut q = sqlx::query_as::<_, StudentListItem>(&query);
+    let mut q = sqlx::query_as::<_, StudentListItem>(sqlx::AssertSqlSafe(query));
     q = q.bind(filter.academic_year_id);
     if let Some(status) = &filter.status {
         q = q.bind(status);
@@ -246,11 +246,10 @@ fn bind_student_list_access_filter<'q>(
         'q,
         Postgres,
         StudentListItem,
-        <Postgres as sqlx::Database>::Arguments<'q>,
+        <Postgres as sqlx::Database>::Arguments,
     >,
     access: StudentListAccess,
-) -> sqlx::query::QueryAs<'q, Postgres, StudentListItem, <Postgres as sqlx::Database>::Arguments<'q>>
-{
+) -> sqlx::query::QueryAs<'q, Postgres, StudentListItem, <Postgres as sqlx::Database>::Arguments> {
     match access {
         StudentListAccess::School
         | StudentListAccess::OrganizationUnit(_)

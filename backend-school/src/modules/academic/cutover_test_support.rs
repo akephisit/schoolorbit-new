@@ -48,6 +48,8 @@ pub async fn apply_migrations_through(pool: &PgPool, version: i64) -> TestSuppor
         ignore_missing: false,
         locking: false,
         no_tx: active.no_tx,
+        table_name: active.table_name,
+        create_schemas: active.create_schemas,
     };
 
     migrator.run(pool).await?;

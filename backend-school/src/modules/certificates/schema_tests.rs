@@ -368,7 +368,10 @@ async fn apply_school_font_cutover(pool: &PgPool) -> Result<(), sqlx::Error> {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/040_school_font_library.sql"),
     )
     .expect("migration 040 must exist before cutover tests can pass");
-    sqlx::raw_sql(&migration).execute(pool).await.map(|_| ())
+    sqlx::raw_sql(sqlx::AssertSqlSafe(migration))
+        .execute(pool)
+        .await
+        .map(|_| ())
 }
 
 async fn certificate_relation_exists(pool: &PgPool, relation: &str) -> bool {
@@ -975,10 +978,11 @@ async fn purge_finalizer_removes_complete_campaign_file_and_audit_graph() {
         ("certificate_issue_run_problems", 0),
         ("certificates", 0),
     ] {
-        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
-            .fetch_one(&pool)
-            .await
-            .expect("purged domain table should remain queryable");
+        let count: i64 =
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
+                .fetch_one(&pool)
+                .await
+                .expect("purged domain table should remain queryable");
         assert_eq!(count, expected_count, "unexpected rows in {table}");
     }
 

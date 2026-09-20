@@ -55,7 +55,7 @@ pub async fn list_roles(pool: &PgPool, include_inactive: bool) -> Result<Vec<Rol
         "{} {} GROUP BY r.id ORDER BY r.level DESC, r.name",
         ROLE_SELECT_WITH_PERMISSIONS, active_filter
     );
-    sqlx::query_as::<_, Role>(&sql)
+    sqlx::query_as::<_, Role>(sqlx::AssertSqlSafe(sql))
         .fetch_all(pool)
         .await
         .map_err(|e| {
@@ -69,7 +69,7 @@ pub async fn get_role(pool: &PgPool, role_id: Uuid) -> Result<Role, AppError> {
         "{} WHERE r.id = $1 GROUP BY r.id",
         ROLE_SELECT_WITH_PERMISSIONS
     );
-    sqlx::query_as::<_, Role>(&sql)
+    sqlx::query_as::<_, Role>(sqlx::AssertSqlSafe(sql))
         .bind(role_id)
         .fetch_optional(pool)
         .await

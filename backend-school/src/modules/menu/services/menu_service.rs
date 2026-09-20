@@ -94,7 +94,7 @@ pub async fn update_menu_workspace(
          RETURNING id, code, name, name_en, icon, display_order, is_active",
         updates.join(", ")
     );
-    let mut qb = sqlx::query_as::<_, MenuWorkspace>(&query).bind(id);
+    let mut qb = sqlx::query_as::<_, MenuWorkspace>(sqlx::AssertSqlSafe(query)).bind(id);
     if let Some(value) = &data.name {
         qb = qb.bind(value);
     }
@@ -303,7 +303,7 @@ pub async fn update_menu_group(
          RETURNING id, code, name, name_en, icon, workspace_code, display_order, is_active",
         updates.join(", ")
     );
-    let mut qb = sqlx::query_as::<_, MenuGroup>(&query).bind(id);
+    let mut qb = sqlx::query_as::<_, MenuGroup>(sqlx::AssertSqlSafe(query)).bind(id);
     if let Some(v) = &data.name {
         qb = qb.bind(v);
     }
@@ -512,7 +512,7 @@ pub async fn update_menu_item(
                    group_id, parent_id, user_type, display_order, is_active",
         updates.join(", ")
     );
-    let mut qb = sqlx::query_as::<_, MenuItem>(&query).bind(id);
+    let mut qb = sqlx::query_as::<_, MenuItem>(sqlx::AssertSqlSafe(query)).bind(id);
     if let Some(v) = &data.name {
         qb = qb.bind(v);
     }

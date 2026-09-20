@@ -38,7 +38,7 @@ pub async fn list_subjects(
         "SELECT {SUBJECT_COLUMNS} FROM subjects \
          WHERE $1 OR owning_organization_unit_id = ANY($2) ORDER BY code, id LIMIT 500"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
         .fetch_all(pool)
@@ -59,10 +59,10 @@ pub async fn list_subject_overview(
     let versions: Vec<SubjectVersion> = if subject_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(&subject_version_select(
+        sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
             "version.subject_id = ANY($1)",
             "version.subject_id, version.version_no DESC",
-        ))
+        )))
         .bind(&subject_ids)
         .fetch_all(pool)
         .await?
@@ -113,7 +113,7 @@ pub async fn list_subject_overview(
 
 pub async fn get_subject(pool: &PgPool, id: Uuid) -> Result<CatalogSubject, AppError> {
     let sql = format!("SELECT {SUBJECT_COLUMNS} FROM subjects WHERE id = $1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -131,7 +131,7 @@ pub async fn create_subject(
         "INSERT INTO subjects (id, code, identity_key, subject_group_id, owning_organization_unit_id) \
          VALUES ($1, $2, $3, $4, $5) RETURNING {SUBJECT_COLUMNS}"
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(&code)
         .bind(code.to_lowercase())
@@ -157,7 +157,7 @@ pub async fn update_subject(
          row_version = row_version + 1, updated_at = now() WHERE id = $6 AND row_version = $7 \
          RETURNING {SUBJECT_COLUMNS}"
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(&code)
         .bind(code.to_lowercase())
         .bind(request.subject_group_id)
@@ -176,21 +176,24 @@ pub async fn list_subject_versions(
     subject_id: Uuid,
 ) -> Result<Vec<SubjectVersion>, AppError> {
     ensure_subject_exists(pool, subject_id).await?;
-    Ok(sqlx::query_as(&subject_version_select(
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
         "version.subject_id = $1",
         "version.version_no DESC",
-    ))
+    )))
     .bind(subject_id)
     .fetch_all(pool)
     .await?)
 }
 
 pub async fn get_subject_version(pool: &PgPool, id: Uuid) -> Result<SubjectVersion, AppError> {
-    sqlx::query_as(&subject_version_select("version.id = $1", "version.id"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))
+    sqlx::query_as(sqlx::AssertSqlSafe(subject_version_select(
+        "version.id = $1",
+        "version.id",
+    )))
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันรายวิชา".to_string()))
 }
 
 pub async fn create_subject_version(
@@ -361,7 +364,7 @@ pub async fn list_activities(
         "SELECT {ACTIVITY_COLUMNS} FROM activities \
          WHERE $1 OR owning_organization_unit_id = ANY($2) ORDER BY code, id LIMIT 500"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
         .fetch_all(pool)
@@ -382,10 +385,10 @@ pub async fn list_activity_overview(
     let versions: Vec<ActivityVersion> = if activity_ids.is_empty() {
         Vec::new()
     } else {
-        sqlx::query_as(&activity_version_select(
+        sqlx::query_as(sqlx::AssertSqlSafe(activity_version_select(
             "version.activity_id = ANY($1)",
             "version.activity_id, version.version_no DESC",
-        ))
+        )))
         .bind(&activity_ids)
         .fetch_all(pool)
         .await?
@@ -437,7 +440,7 @@ pub async fn list_activity_overview(
 
 pub async fn get_activity(pool: &PgPool, id: Uuid) -> Result<CatalogActivity, AppError> {
     let sql = format!("SELECT {ACTIVITY_COLUMNS} FROM activities WHERE id = $1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -463,7 +466,7 @@ pub async fn create_activity(
         "INSERT INTO activities (id, code, identity_key, activity_type, owning_organization_unit_id) \
          VALUES ($1, $2, $3, $4, $5) RETURNING {ACTIVITY_COLUMNS}"
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(code)
         .bind(identity_key)
@@ -492,7 +495,7 @@ pub async fn update_activity(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $5 AND row_version = $6 RETURNING {ACTIVITY_COLUMNS}"
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(code)
         .bind(identity_key)
         .bind(request.activity_type.trim().to_lowercase())
@@ -510,21 +513,24 @@ pub async fn list_activity_versions(
     activity_id: Uuid,
 ) -> Result<Vec<ActivityVersion>, AppError> {
     get_activity(pool, activity_id).await?;
-    Ok(sqlx::query_as(&activity_version_select(
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(activity_version_select(
         "version.activity_id = $1",
         "version.version_no DESC",
-    ))
+    )))
     .bind(activity_id)
     .fetch_all(pool)
     .await?)
 }
 
 pub async fn get_activity_version(pool: &PgPool, id: Uuid) -> Result<ActivityVersion, AppError> {
-    sqlx::query_as(&activity_version_select("version.id = $1", "version.id"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))
+    sqlx::query_as(sqlx::AssertSqlSafe(activity_version_select(
+        "version.id = $1",
+        "version.id",
+    )))
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบเวอร์ชันกิจกรรม".to_string()))
 }
 
 pub async fn create_activity_version(
@@ -1279,7 +1285,7 @@ async fn publish_version(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $1 AND row_version = $2 AND status = 'draft'"
     );
-    let result = sqlx::query(&sql)
+    let result = sqlx::query(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(row_version)
         .execute(pool)
@@ -1311,7 +1317,7 @@ async fn replace_default_teachers(
     }
     let mut transaction = pool.begin().await?;
     let lock_sql = format!("SELECT row_version FROM {stable_table} WHERE id = $1 FOR UPDATE");
-    let actual: i64 = sqlx::query_scalar(&lock_sql)
+    let actual: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(lock_sql))
         .bind(resource_id)
         .fetch_optional(&mut *transaction)
         .await?
@@ -1320,7 +1326,7 @@ async fn replace_default_teachers(
         return Err(AppError::Conflict("ข้อมูลถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
     let delete_sql = format!("DELETE FROM {link_table} WHERE {foreign_key} = $1");
-    sqlx::query(&delete_sql)
+    sqlx::query(sqlx::AssertSqlSafe(delete_sql))
         .bind(resource_id)
         .execute(&mut *transaction)
         .await?;
@@ -1328,7 +1334,7 @@ async fn replace_default_teachers(
         "INSERT INTO {link_table} (id, {foreign_key}, instructor_id, role) VALUES ($1, $2, $3, $4)"
     );
     for teacher in request.teachers {
-        sqlx::query(&insert_sql)
+        sqlx::query(sqlx::AssertSqlSafe(insert_sql.as_str()))
             .bind(Uuid::new_v4())
             .bind(resource_id)
             .bind(teacher.user_id)
@@ -1339,7 +1345,7 @@ async fn replace_default_teachers(
     let update_sql = format!(
         "UPDATE {stable_table} SET row_version = row_version + 1, updated_at = now() WHERE id = $1"
     );
-    sqlx::query(&update_sql)
+    sqlx::query(sqlx::AssertSqlSafe(update_sql))
         .bind(resource_id)
         .execute(&mut *transaction)
         .await?;

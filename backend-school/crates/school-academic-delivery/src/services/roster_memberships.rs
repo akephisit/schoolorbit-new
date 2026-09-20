@@ -94,7 +94,7 @@ pub async fn list_memberships(
         "{MEMBERSHIP_SELECT} WHERE membership.learning_group_id = $1 \
          ORDER BY student.first_name, student.last_name, membership.joined_at, membership.id"
     );
-    let rows = sqlx::query_as::<_, MembershipRow>(&query)
+    let rows = sqlx::query_as::<_, MembershipRow>(sqlx::AssertSqlSafe(query))
         .bind(group_id)
         .fetch_all(pool)
         .await?;
@@ -368,7 +368,7 @@ async fn get_membership(
     membership_id: Uuid,
 ) -> Result<DatedRosterMembership, AppError> {
     let query = format!("{MEMBERSHIP_SELECT} WHERE membership.id = $1");
-    let row = sqlx::query_as::<_, MembershipRow>(&query)
+    let row = sqlx::query_as::<_, MembershipRow>(sqlx::AssertSqlSafe(query))
         .bind(membership_id)
         .fetch_optional(pool)
         .await?

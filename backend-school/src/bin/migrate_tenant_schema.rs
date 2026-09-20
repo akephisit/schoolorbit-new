@@ -22,7 +22,9 @@ async fn main() -> MigrationResult<()> {
         .after_connect(move |connection, _metadata| {
             let search_path_sql = search_path_sql.clone();
             Box::pin(async move {
-                sqlx::query(&search_path_sql).execute(connection).await?;
+                sqlx::query(sqlx::AssertSqlSafe(search_path_sql))
+                    .execute(connection)
+                    .await?;
                 Ok(())
             })
         })

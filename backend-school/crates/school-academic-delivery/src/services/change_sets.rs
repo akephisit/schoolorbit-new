@@ -165,7 +165,7 @@ pub async fn list_change_set_summaries(
 
 pub async fn get_change_set(pool: &PgPool, id: Uuid) -> Result<AcademicTermChangeSet, AppError> {
     let query = format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1");
-    let row = sqlx::query_as::<_, ChangeSetRow>(&query)
+    let row = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(query))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -294,9 +294,9 @@ pub async fn publish_change_set(
         ));
     }
 
-    let change_set = sqlx::query_as::<_, ChangeSetRow>(&format!(
+    let change_set = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1"
-    ))
+    )))
     .bind(id)
     .fetch_one(&mut *transaction)
     .await?;
@@ -666,7 +666,7 @@ async fn build_preview_in_transaction(
     };
     let change_query =
         format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1 {lock}");
-    let change_set = sqlx::query_as::<_, ChangeSetRow>(&change_query)
+    let change_set = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(change_query))
         .bind(id)
         .fetch_optional(&mut **transaction)
         .await?
@@ -705,7 +705,7 @@ async fn build_preview_in_transaction(
         "SELECT id, status, row_version, change_set_id \
          FROM academic_timetable_versions WHERE id = $1 {version_lock}"
     );
-    let target = sqlx::query_as::<_, TargetVersionPreviewRow>(&target_query)
+    let target = sqlx::query_as::<_, TargetVersionPreviewRow>(sqlx::AssertSqlSafe(target_query))
         .bind(target_version_id)
         .fetch_optional(&mut **transaction)
         .await?
@@ -723,7 +723,7 @@ async fn build_preview_in_transaction(
            WHERE change_set_id = $1
            ORDER BY id {lock}"#
     );
-    let items = sqlx::query_as::<_, ChangeItemRow>(&item_query)
+    let items = sqlx::query_as::<_, ChangeItemRow>(sqlx::AssertSqlSafe(item_query))
         .bind(change_set.id)
         .fetch_all(&mut **transaction)
         .await?;
@@ -3643,7 +3643,7 @@ async fn require_draft_change_set_for_update(
         "SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets \
          WHERE id = $1 FOR UPDATE"
     );
-    let row = sqlx::query_as::<_, ChangeSetRow>(&query)
+    let row = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(query))
         .bind(id)
         .fetch_optional(&mut **transaction)
         .await?

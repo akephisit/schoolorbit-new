@@ -100,7 +100,7 @@ pub async fn list_rooms(pool: &PgPool, filter: RoomFilter) -> Result<Vec<Room>, 
 
     sql.push_str(" ORDER BY b.code NULLS LAST, r.floor NULLS FIRST, r.code ASC");
 
-    let mut query = sqlx::query_as::<_, Room>(&sql);
+    let mut query = sqlx::query_as::<_, Room>(sqlx::AssertSqlSafe(sql));
     if let Some(building_id) = filter.building_id {
         query = query.bind(building_id);
     }

@@ -200,7 +200,7 @@ pub async fn list(
            )) \
          ORDER BY kind, code_snapshot, id LIMIT $5"
     );
-    let rows: Vec<LearningOfferingRow> = sqlx::query_as(&sql)
+    let rows: Vec<LearningOfferingRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(query.academic_term_id)
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
@@ -218,7 +218,7 @@ pub async fn list(
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningOffering, AppError> {
     let sql = format!("SELECT {OFFERING_COLUMNS} FROM learning_offerings WHERE id = $1");
-    let row: LearningOfferingRow = sqlx::query_as(&sql)
+    let row: LearningOfferingRow = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -1646,7 +1646,7 @@ async fn build_curriculum_preview_for_term(
                     >= (SELECT start_date FROM academic_years WHERE id = $2)){}",
         if lock_rows { " FOR SHARE" } else { "" }
     );
-    let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(&valid_program_query)
+    let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(sqlx::AssertSqlSafe(valid_program_query))
         .bind(program_ids)
         .bind(term.academic_year_id)
         .fetch_all(&mut **transaction)

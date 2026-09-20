@@ -49,7 +49,7 @@ impl From<AdmissionTrackRow> for AdmissionTrack {
 }
 
 pub async fn list_public_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, AppError> {
-    sqlx::query_as::<_, AdmissionRound>(&format!(
+    sqlx::query_as::<_, AdmissionRound>(sqlx::AssertSqlSafe(format!(
         r#"SELECT ar.*, ay.name AS academic_year_name,
                   {grade_case} AS grade_level_name,
                   0::bigint AS application_count
@@ -59,7 +59,7 @@ pub async fn list_public_rounds(pool: &PgPool) -> Result<Vec<AdmissionRound>, Ap
            WHERE ar.is_visible = true
            ORDER BY ar.apply_start_date ASC"#,
         grade_case = ROUND_GRADE_LEVEL_CASE
-    ))
+    )))
     .fetch_all(pool)
     .await
     .map_err(|e| {
@@ -72,7 +72,7 @@ pub async fn get_public_round_info(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<(AdmissionRound, Vec<AdmissionTrack>), AppError> {
-    let round = sqlx::query_as::<_, AdmissionRound>(&format!(
+    let round = sqlx::query_as::<_, AdmissionRound>(sqlx::AssertSqlSafe(format!(
         r#"SELECT ar.*, ay.name AS academic_year_name,
                   {grade_case} AS grade_level_name,
                   0::bigint AS application_count
@@ -81,7 +81,7 @@ pub async fn get_public_round_info(
            JOIN grade_levels gl ON ar.grade_level_id = gl.id
            WHERE ar.id = $1 AND ar.is_visible = true"#,
         grade_case = ROUND_GRADE_LEVEL_CASE
-    ))
+    )))
     .bind(id)
     .fetch_optional(pool)
     .await
@@ -120,7 +120,7 @@ pub async fn list_rounds(
     pool: &PgPool,
     academic_year_id: Uuid,
 ) -> Result<Vec<AdmissionRound>, AppError> {
-    sqlx::query_as::<_, AdmissionRound>(&format!(
+    sqlx::query_as::<_, AdmissionRound>(sqlx::AssertSqlSafe(format!(
         r#"SELECT ar.*, ay.name AS academic_year_name,
                   {grade_case} AS grade_level_name,
                   (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_round_id = ar.id) AS application_count
@@ -130,7 +130,7 @@ pub async fn list_rounds(
            WHERE ar.academic_year_id = $1
            ORDER BY ar.created_at DESC"#,
         grade_case = ROUND_GRADE_LEVEL_CASE
-    ))
+    )))
     .bind(academic_year_id)
     .fetch_all(pool).await
     .map_err(|e| {
@@ -140,7 +140,7 @@ pub async fn list_rounds(
 }
 
 pub async fn get_round(pool: &PgPool, id: Uuid) -> Result<AdmissionRound, AppError> {
-    sqlx::query_as::<_, AdmissionRound>(&format!(
+    sqlx::query_as::<_, AdmissionRound>(sqlx::AssertSqlSafe(format!(
         r#"SELECT ar.*, ay.name AS academic_year_name,
                   {grade_case} AS grade_level_name,
                   (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_round_id = ar.id) AS application_count
@@ -149,7 +149,7 @@ pub async fn get_round(pool: &PgPool, id: Uuid) -> Result<AdmissionRound, AppErr
            JOIN grade_levels gl ON ar.grade_level_id = gl.id
            WHERE ar.id = $1"#,
         grade_case = ROUND_GRADE_LEVEL_CASE
-    ))
+    )))
     .bind(id).fetch_optional(pool).await
     .map_err(|e| {
         tracing::error!("Failed to fetch round {}: {}", id, e);

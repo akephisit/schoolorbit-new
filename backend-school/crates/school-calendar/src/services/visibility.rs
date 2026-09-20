@@ -365,7 +365,7 @@ async fn validate_calendar_query_context(
 }
 
 fn push_base_event_filters(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     query: &CalendarEventQuery,
     from: NaiveDate,
     to: NaiveDate,
@@ -383,7 +383,7 @@ fn push_base_event_filters(
     builder.push_bind(from);
 }
 
-fn push_event_query_filters(builder: &mut QueryBuilder<'_, Postgres>, query: &CalendarEventQuery) {
+fn push_event_query_filters(builder: &mut QueryBuilder<Postgres>, query: &CalendarEventQuery) {
     push_category_and_tag_query_filters(builder, query);
 
     match query.visibility.as_ref() {
@@ -398,7 +398,7 @@ fn push_event_query_filters(builder: &mut QueryBuilder<'_, Postgres>, query: &Ca
 }
 
 fn push_category_and_tag_query_filters(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     query: &CalendarEventQuery,
 ) {
     if let Some(category_id) = query.category_id {
@@ -475,7 +475,7 @@ async fn active_user_type(pool: &PgPool, user_id: Uuid) -> Result<String, AppErr
 }
 
 fn push_target_audience_query_filter(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     audience: Option<&CalendarAudienceType>,
 ) {
     if let Some(audience) = audience {
@@ -485,7 +485,7 @@ fn push_target_audience_query_filter(
 }
 
 fn push_my_event_target_filter(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     user_id: Uuid,
     user_type: &str,
     audience: Option<&CalendarAudienceType>,
@@ -546,7 +546,7 @@ fn push_my_event_target_filter(
 }
 
 fn push_child_event_target_filter(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     parent_id: Uuid,
     student_id: Uuid,
     audience: Option<&CalendarAudienceType>,
@@ -612,7 +612,7 @@ fn push_child_event_target_filter(
     );
 }
 
-fn push_search_filter(builder: &mut QueryBuilder<'_, Postgres>, query: Option<&str>) {
+fn push_search_filter(builder: &mut QueryBuilder<Postgres>, query: Option<&str>) {
     let Some(search) = query.map(str::trim).filter(|value| !value.is_empty()) else {
         return;
     };
@@ -653,6 +653,6 @@ pub(super) fn calendar_search_pattern(search: &str) -> String {
     pattern
 }
 
-fn push_event_order(builder: &mut QueryBuilder<'_, Postgres>) {
+fn push_event_order(builder: &mut QueryBuilder<Postgres>) {
     builder.push(" ORDER BY e.start_date, e.start_time NULLS FIRST, e.created_at");
 }

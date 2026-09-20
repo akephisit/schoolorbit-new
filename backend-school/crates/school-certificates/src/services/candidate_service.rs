@@ -1456,11 +1456,11 @@ async fn fetch_duplicate_fingerprints_excluding(
     campaign_id: Uuid,
     excluded_ids: &[Uuid],
 ) -> Result<BTreeSet<DuplicateFingerprint>, AppError> {
-    let rows = sqlx::query_as::<_, CandidateRow>(&format!(
+    let rows = sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
         "{CANDIDATE_SELECT}
          WHERE candidate.campaign_id = $1 AND candidate.deleted_at IS NULL
            AND NOT (candidate.id = ANY($2::uuid[]))"
-    ))
+    )))
     .bind(campaign_id)
     .bind(excluded_ids)
     .fetch_all(&mut **tx)
@@ -1505,12 +1505,12 @@ async fn recompute_campaign_duplicate_warnings(
     actor_user_id: Uuid,
     campaign_id: Uuid,
 ) -> Result<(), AppError> {
-    let rows = sqlx::query_as::<_, CandidateRow>(&format!(
+    let rows = sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
         "{CANDIDATE_SELECT}
          WHERE candidate.campaign_id = $1 AND candidate.deleted_at IS NULL
          ORDER BY candidate.id
          FOR UPDATE OF candidate"
-    ))
+    )))
     .bind(campaign_id)
     .fetch_all(&mut **tx)
     .await
@@ -1825,9 +1825,9 @@ async fn lock_candidate(
     tx: &mut Transaction<'_, Postgres>,
     candidate_id: Uuid,
 ) -> Result<CandidateRow, AppError> {
-    sqlx::query_as::<_, CandidateRow>(&format!(
+    sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
         "{CANDIDATE_SELECT} WHERE candidate.id = $1 FOR UPDATE OF candidate"
-    ))
+    )))
     .bind(candidate_id)
     .fetch_optional(&mut **tx)
     .await
@@ -1839,12 +1839,12 @@ async fn lock_candidates(
     tx: &mut Transaction<'_, Postgres>,
     candidate_ids: &[Uuid],
 ) -> Result<Vec<CandidateRow>, AppError> {
-    sqlx::query_as::<_, CandidateRow>(&format!(
+    sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
         "{CANDIDATE_SELECT}
          WHERE candidate.id = ANY($1::uuid[])
          ORDER BY candidate.id
          FOR UPDATE OF candidate"
-    ))
+    )))
     .bind(candidate_ids)
     .fetch_all(&mut **tx)
     .await
@@ -1881,9 +1881,9 @@ async fn fetch_candidate_row(
     } else {
         " AND candidate.deleted_at IS NULL"
     };
-    sqlx::query_as::<_, CandidateRow>(&format!(
+    sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
         "{CANDIDATE_SELECT} WHERE candidate.id = $1{deleted_filter}"
-    ))
+    )))
     .bind(candidate_id)
     .fetch_optional(pool)
     .await
@@ -1905,11 +1905,11 @@ async fn fetch_candidate_details(
     } else {
         " AND candidate.deleted_at IS NULL"
     };
-    let rows = sqlx::query_as::<_, CandidateRow>(&format!(
+    let rows = sqlx::query_as::<_, CandidateRow>(sqlx::AssertSqlSafe(format!(
         "{CANDIDATE_SELECT}
          WHERE candidate.id = ANY($1::uuid[]){deleted_filter}
          ORDER BY candidate.created_at, candidate.id"
-    ))
+    )))
     .bind(candidate_ids)
     .fetch_all(pool)
     .await

@@ -248,7 +248,7 @@ pub async fn get_round_ranking(
             tiebreak_order
         );
 
-        let rows = sqlx::query_as::<_, RankRow>(&query)
+        let rows = sqlx::query_as::<_, RankRow>(sqlx::AssertSqlSafe(query))
             .bind(&all_ids)
             .bind(track_id)
             .fetch_all(pool)
@@ -361,7 +361,7 @@ pub async fn get_track_ranking(
         tiebreak_order
     );
 
-    let rows = sqlx::query_as::<_, RankRowDetailed>(&query)
+    let rows = sqlx::query_as::<_, RankRowDetailed>(sqlx::AssertSqlSafe(query))
         .bind(&selection_ids)
         .bind(track_id)
         .fetch_all(pool)
@@ -589,7 +589,7 @@ pub async fn assign_rooms(
         tiebreak_order
     );
 
-    let rows = sqlx::query_as::<_, RankRow>(&query)
+    let rows = sqlx::query_as::<_, RankRow>(sqlx::AssertSqlSafe(query))
         .bind(&selection_ids)
         .bind(track_id)
         .fetch_all(pool)
