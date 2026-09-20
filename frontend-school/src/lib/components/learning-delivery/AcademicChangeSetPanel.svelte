@@ -35,10 +35,7 @@
 	import TeacherHandoffPanel from './TeacherHandoffPanel.svelte';
 
 	type ChangeAction =
-		| 'add_course'
-		| 'add_activity'
-		| 'stop_offering'
-		| 'adjust_weekly_period_target';
+		'add_course' | 'add_activity' | 'stop_offering' | 'adjust_weekly_period_target';
 	type ChangeItem = AcademicTermChangeSet['items'][number];
 	type StopTeacherItem = Extract<ChangeItem, { actionKind: 'stop_group_teacher' }>;
 

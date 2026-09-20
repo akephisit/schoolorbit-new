@@ -14,8 +14,7 @@ export type CertificateTemplateFilePurpose = Extract<
 >;
 
 export type SchoolFontUploadContext =
-	| { type: 'central' }
-	| { type: 'certificate_template'; templateId: string };
+	{ type: 'central' } | { type: 'certificate_template'; templateId: string };
 
 function resourceQuery(resourceId?: string): string {
 	if (!resourceId) return '';

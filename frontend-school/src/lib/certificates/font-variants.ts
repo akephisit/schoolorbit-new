@@ -79,17 +79,15 @@ export function certificateFontVariants(
 		style: 'normal',
 		label: variantLabel(weight, 'normal')
 	}));
-	const uploaded = fonts.map(
-		(font): CertificateFontVariant => ({
-			source: { type: 'school_font', font_id: font.id },
-			family: font.fontFamily,
-			familyKey: `school_font:${normalizedFamily(font.fontFamily)}`,
-			familyLabel: `${font.fontFamily} (คลังโรงเรียน)`,
-			weight: font.fontWeight,
-			style: font.fontStyle,
-			label: variantLabel(font.fontWeight, font.fontStyle)
-		})
-	);
+	const uploaded = fonts.map((font): CertificateFontVariant => ({
+		source: { type: 'school_font', font_id: font.id },
+		family: font.fontFamily,
+		familyKey: `school_font:${normalizedFamily(font.fontFamily)}`,
+		familyLabel: `${font.fontFamily} (คลังโรงเรียน)`,
+		weight: font.fontWeight,
+		style: font.fontStyle,
+		label: variantLabel(font.fontWeight, font.fontStyle)
+	}));
 	return [...builtIn, ...uploaded].sort(compareVariants);
 }
 

@@ -1,6 +1,5 @@
 export type RouteLoadResult<T> =
-	| { ok: true; data: T; error: null }
-	| { ok: false; data: null; error: string };
+	{ ok: true; data: T; error: null } | { ok: false; data: null; error: string };
 
 export async function captureRouteLoad<T>(
 	operation: Promise<T>,

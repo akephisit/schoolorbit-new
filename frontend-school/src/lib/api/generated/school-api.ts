@@ -6289,9 +6289,7 @@ export interface components {
 			| 'reviewed_hold_not_allowed';
 		/** @enum {string} */
 		AggregateHoldFinding:
-			| 'exceptional_course_outcomes'
-			| 'failed_activities'
-			| 'failed_learner_evaluations';
+			'exceptional_course_outcomes' | 'failed_activities' | 'failed_learner_evaluations';
 		AggregateLockInput: {
 			/** Format: int64 */
 			expectedRevision?: number | null;
@@ -15685,12 +15683,7 @@ export interface components {
 		};
 		/** @enum {string} */
 		PromotionDecisionOutcome:
-			| 'promote'
-			| 'repeat'
-			| 'graduate'
-			| 'transfer_out'
-			| 'hold'
-			| 'conditional';
+			'promote' | 'repeat' | 'graduate' | 'transfer_out' | 'hold' | 'conditional';
 		PromotionExecutionFailure: {
 			/** Format: uuid */
 			itemId: string;
@@ -15948,13 +15941,7 @@ export interface components {
 		};
 		/** @enum {string} */
 		PromotionRunStatus:
-			| 'draft'
-			| 'calculated'
-			| 'reviewed'
-			| 'approved'
-			| 'executing'
-			| 'completed'
-			| 'failed';
+			'draft' | 'calculated' | 'reviewed' | 'approved' | 'executing' | 'completed' | 'failed';
 		PromotionRunStudent: {
 			annualResultCurrent: boolean;
 			item: components['schemas']['PromotionRunItem'];
@@ -17436,18 +17423,10 @@ export interface components {
 		};
 		/** @enum {string} */
 		SupervisionTemplateStepActionKind:
-			| 'submit'
-			| 'approve'
-			| 'return_for_revision'
-			| 'publish'
-			| 'acknowledge'
-			| 'sign';
+			'submit' | 'approve' | 'return_for_revision' | 'publish' | 'acknowledge' | 'sign';
 		/** @enum {string} */
 		SupervisionTemplateStepActorKind:
-			| 'supervisor'
-			| 'observed_teacher'
-			| 'permission'
-			| 'organization_position';
+			'supervisor' | 'observed_teacher' | 'permission' | 'organization_position';
 		SupervisionTimetableOption: {
 			/** Format: uuid */
 			bellSchedulePeriodId: string;
@@ -18099,11 +18078,7 @@ export interface components {
 		};
 		/** @enum {string} */
 		TimetableBlockSyncStatus:
-			| 'linked'
-			| 'waiting_for_data'
-			| 'conflict'
-			| 'outside_scope'
-			| 'excluded';
+			'linked' | 'waiting_for_data' | 'conflict' | 'outside_scope' | 'excluded';
 		TimetableBlockTeacher: {
 			displayName: string;
 			/** Format: uuid */
@@ -18186,12 +18161,7 @@ export interface components {
 		};
 		/** @enum {string} */
 		TimetableStructuralKind:
-			| 'break'
-			| 'homeroom'
-			| 'flag_ceremony'
-			| 'teacher_meeting'
-			| 'academic'
-			| 'other';
+			'break' | 'homeroom' | 'flag_ceremony' | 'teacher_meeting' | 'academic' | 'other';
 		TimetableStructuralSlotInput: {
 			/** Format: uuid */
 			bellSchedulePeriodId: string;

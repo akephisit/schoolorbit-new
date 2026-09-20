@@ -1,10 +1,6 @@
 <script lang="ts" module>
 	export type CertificateCampaignSectionPath =
-		| '/overview'
-		| '/templates'
-		| '/recipients'
-		| '/requests'
-		| '/issued';
+		'/overview' | '/templates' | '/recipients' | '/requests' | '/issued';
 </script>
 
 <script lang="ts">

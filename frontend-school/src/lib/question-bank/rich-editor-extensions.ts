@@ -64,16 +64,14 @@ function createMathNode(name: 'inline_math' | 'math_block', inline: boolean) {
 
 		addNodeView() {
 			const onMathFocus = this.options.onMathFocus as
-				| QuestionEditorExtensionOptions['onMathFocus']
-				| undefined;
+				QuestionEditorExtensionOptions['onMathFocus'] | undefined;
 			return ({ node, editor, getPos }) => {
 				let currentNode = node;
 				const container = document.createElement(inline ? 'span' : 'div');
 				container.className = inline ? 'question-inline-math' : 'question-math-block';
 				container.contentEditable = 'false';
 				const mathfieldConstructor = window.customElements.get('math-field') as
-					| MathfieldElementConstructor
-					| undefined;
+					MathfieldElementConstructor | undefined;
 				if (mathfieldConstructor && mathfieldConstructor.soundsDirectory !== null) {
 					mathfieldConstructor.soundsDirectory = null;
 				}

@@ -18,11 +18,7 @@ export type SynchronizedActivityPreparationTarget = CurriculumPreparationFocus &
 };
 
 export type DeliveryTimetableAction =
-	| 'none'
-	| 'activate'
-	| 'revise_then_activate'
-	| 'include'
-	| 'revise_then_include';
+	'none' | 'activate' | 'revise_then_activate' | 'include' | 'revise_then_include';
 
 export function deliveryTimetableAction(
 	item: HomeroomDeliveryItem,

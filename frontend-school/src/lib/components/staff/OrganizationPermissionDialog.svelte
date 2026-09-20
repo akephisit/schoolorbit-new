@@ -19,13 +19,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 
 	type PermissionPositionValue =
-		| 'all'
-		| 'director'
-		| 'deputy_director'
-		| 'head'
-		| 'deputy_head'
-		| 'coordinator'
-		| 'member';
+		'all' | 'director' | 'deputy_director' | 'head' | 'deputy_head' | 'coordinator' | 'member';
 
 	type PermissionPositionColumn = {
 		value: PermissionPositionValue;

@@ -194,12 +194,10 @@
 
 		let res;
 		if (payload.id) {
-			if (
-				!(
-					canUpdateAll ||
-					(canUpdateOwn && selectedAchievement && selectedAchievement.user_id === userId)
-				)
-			) {
+			if (!(
+				canUpdateAll ||
+				(canUpdateOwn && selectedAchievement && selectedAchievement.user_id === userId)
+			)) {
 				return;
 			}
 			res = await updateAchievement(payload.id, {

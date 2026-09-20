@@ -1,12 +1,6 @@
 <script lang="ts" module>
 	export type TimetableCellState =
-		| 'neutral'
-		| 'dragging'
-		| 'move'
-		| 'swap'
-		| 'blocked'
-		| 'saving'
-		| 'stale';
+		'neutral' | 'dragging' | 'move' | 'swap' | 'blocked' | 'saving' | 'stale';
 </script>
 
 <script lang="ts">

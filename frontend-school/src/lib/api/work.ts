@@ -2,13 +2,7 @@ import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
 
 export type WorkflowWindowStatus = 'draft' | 'open' | 'closed' | 'archived';
 export type WorkflowWindowTimeState =
-	| 'draft'
-	| 'scheduled'
-	| 'open'
-	| 'due_soon'
-	| 'overdue'
-	| 'closed'
-	| 'archived';
+	'draft' | 'scheduled' | 'open' | 'due_soon' | 'overdue' | 'closed' | 'archived';
 
 export interface WorkflowWindowMetadata {
 	tags: string[];
@@ -55,13 +49,7 @@ export type WorkItemLifecycleStatus = 'active' | 'closed' | 'cancelled' | 'archi
 export type WorkItemAssigneeType = 'user' | 'organization_unit' | 'organization_position';
 export type WorkItemAssigneeStatus = 'assigned' | 'read' | 'submitted' | 'dismissed';
 export type WorkItemState =
-	| 'scheduled'
-	| 'open'
-	| 'due_soon'
-	| 'overdue'
-	| 'submitted'
-	| 'closed'
-	| 'archived';
+	'scheduled' | 'open' | 'due_soon' | 'overdue' | 'submitted' | 'closed' | 'archived';
 
 export interface WorkItemMetadata {
 	tags: string[];

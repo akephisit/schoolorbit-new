@@ -1,10 +1,7 @@
 import type { TimetableBlock, TimetableBlockInstructor } from '$lib/api/timetable';
 
 export type TeacherLoadCategory =
-	| 'course'
-	| 'independentActivity'
-	| 'synchronizedActivity'
-	| 'unspecifiedActivity';
+	'course' | 'independentActivity' | 'synchronizedActivity' | 'unspecifiedActivity';
 
 export type TeacherLoadDetailKind =
 	| 'homeGroupPrimaryCourse'

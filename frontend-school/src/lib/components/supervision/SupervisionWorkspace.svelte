@@ -83,13 +83,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 
 	export type SupervisionWorkspaceSection =
-		| 'mine'
-		| 'evaluate'
-		| 'requests'
-		| 'cycles'
-		| 'templates'
-		| 'overview'
-		| 'approvals';
+		'mine' | 'evaluate' | 'requests' | 'cycles' | 'templates' | 'overview' | 'approvals';
 
 	type SectionConfig = {
 		title: string;

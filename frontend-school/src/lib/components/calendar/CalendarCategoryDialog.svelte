@@ -16,8 +16,7 @@
 	import { Plus, Tag, Trash2 } from 'lucide-svelte';
 
 	type DeleteCandidate =
-		| { kind: 'category'; item: CalendarCategory }
-		| { kind: 'tag'; item: CalendarTag };
+		{ kind: 'category'; item: CalendarCategory } | { kind: 'tag'; item: CalendarTag };
 
 	const colorOptions = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
 

@@ -8,10 +8,7 @@ import type { Readable } from 'svelte/store';
 export type { AcademicContextOptionsResponse, AcademicTermOption, AcademicYearOption };
 
 export type AcademicContextRequirement =
-	| 'none'
-	| 'year_required'
-	| 'term_required'
-	| 'term_optional';
+	'none' | 'year_required' | 'term_required' | 'term_optional';
 
 export type SelectedAcademicContext = {
 	academicYearId: string | null;

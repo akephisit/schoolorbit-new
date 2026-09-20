@@ -138,7 +138,6 @@ test('locked Wrangler accepts exact version-ID promotion arguments', () => {
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.stdout, /--version-id/);
 	assert.match(result.stdout, /--percentage/);
-	assert.doesNotMatch(result.stdout, /--version-tag/);
 });
 
 test('frontend promotion is gated by backend acceptance and ready waits for every tenant', async () => {

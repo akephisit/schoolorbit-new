@@ -39,12 +39,7 @@
 	}
 
 	type PositionCode =
-		| 'director'
-		| 'deputy_director'
-		| 'head'
-		| 'deputy_head'
-		| 'coordinator'
-		| 'member';
+		'director' | 'deputy_director' | 'head' | 'deputy_head' | 'coordinator' | 'member';
 
 	type PositionOption = {
 		value: PositionCode;

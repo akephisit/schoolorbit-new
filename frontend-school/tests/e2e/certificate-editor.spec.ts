@@ -639,8 +639,8 @@ test('editor adds, moves, duplicates, saves, previews, and resolves conflicts ex
 	await expect
 		.poll(() => page.evaluate(() => window.certificateEditorHarness.rendererCalls()))
 		.toBeGreaterThan(1);
-	const previewPayload = await page.evaluate(
-		() => window.certificateEditorHarness.previewPayloads().at(-1)!
+	const previewPayload = await page.evaluate(() =>
+		window.certificateEditorHarness.previewPayloads().at(-1)!
 	);
 	expect(previewPayload.layout.elements).toHaveLength(4);
 	await page.keyboard.press('Escape');

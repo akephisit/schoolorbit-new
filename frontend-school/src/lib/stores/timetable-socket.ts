@@ -72,9 +72,7 @@ export type TimetableEvent =
 
 type SequencedTimetableEvent = TimetableEvent & { seq?: number };
 type MutationEvent =
-	| AcademicCoreChangedEvent
-	| LearningDeliveryChangedEvent
-	| TimetableChangedEvent;
+	AcademicCoreChangedEvent | LearningDeliveryChangedEvent | TimetableChangedEvent;
 
 export const activeUsers: Writable<UserPresence[]> = writable([]);
 export const remoteCursors: Writable<
