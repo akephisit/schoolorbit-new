@@ -1089,7 +1089,7 @@ WHERE id = ANY($1)
 }
 
 fn push_list_filters(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     query: &QuestionBankListQuery,
     access: &QuestionBankAccess,
 ) {
@@ -1146,7 +1146,7 @@ fn push_list_filters(
     }
 }
 
-fn push_read_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &QuestionBankAccess) {
+fn push_read_expression(builder: &mut QueryBuilder<Postgres>, access: &QuestionBankAccess) {
     let mut has_predicate = false;
     if let Some(actor_id) = access.read_assigned_user_id {
         builder.push("(q.owner_user_id = ");
@@ -1170,7 +1170,7 @@ fn push_read_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &Quest
     }
 }
 
-fn push_manage_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &QuestionBankAccess) {
+fn push_manage_expression(builder: &mut QueryBuilder<Postgres>, access: &QuestionBankAccess) {
     if access.manage_school {
         builder.push("TRUE");
         return;
@@ -1198,10 +1198,7 @@ fn push_manage_expression(builder: &mut QueryBuilder<'_, Postgres>, access: &Que
     builder.push(")");
 }
 
-fn push_subject_read_expression(
-    builder: &mut QueryBuilder<'_, Postgres>,
-    access: &QuestionBankAccess,
-) {
+fn push_subject_read_expression(builder: &mut QueryBuilder<Postgres>, access: &QuestionBankAccess) {
     if access.read_school {
         builder.push("TRUE");
         return;
@@ -1231,7 +1228,7 @@ fn push_subject_read_expression(
 }
 
 fn push_subject_manage_expression(
-    builder: &mut QueryBuilder<'_, Postgres>,
+    builder: &mut QueryBuilder<Postgres>,
     access: &QuestionBankAccess,
 ) {
     if access.manage_school {
@@ -1479,8 +1476,8 @@ mod tests {
     fn assigned_scope_uses_learning_group_teachers() {
         let mut builder = QueryBuilder::<Postgres>::new("");
         push_read_expression(&mut builder, &assigned_access(Uuid::new_v4()));
-        assert!(builder.sql().contains("course_offering_details"));
-        assert!(builder.sql().contains("learning_group_teachers"));
+        assert!(builder.sql().as_str().contains("course_offering_details"));
+        assert!(builder.sql().as_str().contains("learning_group_teachers"));
     }
 
     #[test]

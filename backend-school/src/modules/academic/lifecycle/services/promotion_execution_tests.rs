@@ -73,9 +73,9 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
     assert_eq!(first.receipts.len(), 1);
     assert_eq!(first.remaining_count, 1);
     let completed_id = first.receipts[0].item_id;
-    let completed_before: PromotionRunItem = sqlx::query_as(&format!(
+    let completed_before: PromotionRunItem = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1"
-    ))
+    )))
     .bind(completed_id)
     .fetch_one(&pool)
     .await
@@ -235,7 +235,7 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
     )
     .await
     .unwrap();
-    let items: Vec<PromotionRunItem> = sqlx::query_as(&format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id")).bind(run.id).fetch_all(&pool).await.unwrap();
+    let items: Vec<PromotionRunItem> = sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id"))).bind(run.id).fetch_all(&pool).await.unwrap();
     let approved_again = promotion_approval::approve_run(
         &pool,
         &approver,
@@ -265,9 +265,9 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
     assert_eq!(finished.hold_count, 1);
     assert_eq!(finished.receipts.len(), 1);
     assert_eq!(finished.receipts[0].item_id, pending.id);
-    let original: PromotionExecutionReceipt = sqlx::query_as(&format!(
+    let original: PromotionExecutionReceipt = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {RECEIPT_COLUMNS} FROM academic_promotion_execution_receipts WHERE item_id=$1"
-    ))
+    )))
     .bind(completed_id)
     .fetch_one(&pool)
     .await
@@ -276,9 +276,9 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
         serde_json::to_value(original).unwrap(),
         serde_json::to_value(&first.receipts[0]).unwrap()
     );
-    let completed_after: PromotionRunItem = sqlx::query_as(&format!(
+    let completed_after: PromotionRunItem = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1"
-    ))
+    )))
     .bind(completed_id)
     .fetch_one(&pool)
     .await

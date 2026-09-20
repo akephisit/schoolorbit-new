@@ -41,7 +41,7 @@ pub async fn list_runs(
     } else {
         None
     };
-    let mut runs:Vec<PromotionRun>=sqlx::query_as(&format!("SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE source_year_id=$1 AND ($2::uuid IS NULL OR target_year_id=$2) AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT 51"))
+    let mut runs:Vec<PromotionRun>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE source_year_id=$1 AND ($2::uuid IS NULL OR target_year_id=$2) AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4)) ORDER BY created_at DESC,id DESC LIMIT 51")))
         .bind(query.source_year_id).bind(query.target_year_id).bind(cursor.map(|row|row.0)).bind(cursor.map(|row|row.1)).fetch_all(&mut *tx).await?;
     let has_more = runs.len() > 50;
     runs.truncate(50);
@@ -63,16 +63,16 @@ pub async fn get_run_workspace(
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
         .await?;
-    let run: PromotionRun = sqlx::query_as(&format!(
+    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    ))
+    )))
     .bind(run_id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรอบเลื่อนชั้น".into()))?;
     let source_year = year_transitions::read_context(&mut tx, run.source_year_id).await?;
     let target_year = year_transitions::read_context(&mut tx, run.target_year_id).await?;
-    let items:Vec<PromotionRunItem>=sqlx::query_as(&format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001"))
+    let items:Vec<PromotionRunItem>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001")))
         .bind(run_id).fetch_all(&mut *tx).await?;
     if items.len() > 10000 {
         return Err(AppError::ValidationError(

@@ -22,7 +22,7 @@ pub async fn list_organization_units(
         "SELECT * FROM organization_units {} ORDER BY display_order, name",
         active_filter
     );
-    sqlx::query_as::<_, OrganizationUnit>(&sql)
+    sqlx::query_as::<_, OrganizationUnit>(sqlx::AssertSqlSafe(sql))
         .fetch_all(pool)
         .await
         .map_err(|e| {

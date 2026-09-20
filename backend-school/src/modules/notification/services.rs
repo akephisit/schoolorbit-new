@@ -33,7 +33,7 @@ pub async fn list_notifications(
 
     sql.push_str(" ORDER BY created_at DESC LIMIT $2 OFFSET $3");
 
-    let items = sqlx::query_as::<_, Notification>(&sql)
+    let items = sqlx::query_as::<_, Notification>(sqlx::AssertSqlSafe(sql))
         .bind(user_id)
         .bind(params.limit)
         .bind(params.offset)

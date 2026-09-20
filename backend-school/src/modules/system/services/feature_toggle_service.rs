@@ -30,7 +30,7 @@ pub async fn update_feature(
     let mut query = feature_update_set_clause(is_enabled);
     query.push_str(" WHERE id = $1 RETURNING id, code, name, name_en, module, is_enabled");
 
-    sqlx::query_as::<_, FeatureToggle>(&query)
+    sqlx::query_as::<_, FeatureToggle>(sqlx::AssertSqlSafe(query))
         .bind(id)
         .fetch_optional(pool)
         .await

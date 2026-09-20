@@ -1742,9 +1742,9 @@ async fn create_term_seeds_phase_controls() {
             vec!["desirable_characteristic", "reading_thinking_writing"],
         ),
     ] {
-        let controls: Vec<(String, bool, i64, Uuid, Option<Uuid>)> = sqlx::query_as(&format!(
+        let controls: Vec<(String, bool, i64, Uuid, Option<Uuid>)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT {code}, {enabled}, row_version, academic_year_id, updated_by FROM {table} WHERE academic_term_id = $1 ORDER BY {code}"
-        )).bind(created.id).fetch_all(&pool).await.unwrap();
+        ))).bind(created.id).fetch_all(&pool).await.unwrap();
         assert_eq!(
             controls
                 .iter()
@@ -1866,7 +1866,7 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
         ),
         ("academic_learner_evaluation_controls", "entry_enabled", 2),
     ] {
-        let totals: (i64, i64) = sqlx::query_as(&format!("SELECT count(*),count(*) FILTER (WHERE {enabled}) FROM {table} WHERE academic_term_id=$1"))
+        let totals: (i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT count(*),count(*) FILTER (WHERE {enabled}) FROM {table} WHERE academic_term_id=$1")))
             .bind(created.id).fetch_one(&pool).await.unwrap();
         assert_eq!(totals, (count, 0));
     }

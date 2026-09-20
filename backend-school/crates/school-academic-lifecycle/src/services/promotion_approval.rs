@@ -54,9 +54,9 @@ pub async fn approve_run(
         tx.commit().await?;
         return Ok(outcome);
     }
-    let run: PromotionRun = sqlx::query_as(&format!(
+    let run: PromotionRun = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    ))
+    )))
     .bind(run_id)
     .fetch_optional(&mut *tx)
     .await?
@@ -71,7 +71,7 @@ pub async fn approve_run(
         .bind(run_id)
         .execute(&mut *tx)
         .await?;
-    let items:Vec<PromotionRunItem>=sqlx::query_as(&format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001 FOR UPDATE"))
+    let items:Vec<PromotionRunItem>=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE run_id=$1 ORDER BY student_academic_year_id LIMIT 10001 FOR UPDATE")))
         .bind(run_id).fetch_all(&mut *tx).await?;
     if items.is_empty()
         || items.len() > 10000
@@ -161,7 +161,7 @@ pub async fn approve_run(
     let intent = PromotionRunCalculation { run, items };
     sqlx::query("INSERT INTO academic_promotion_run_approvals(id,run_id,approved_run_version,source_checksum,intent,approved_by) VALUES($1,$2,$3,$4,$5,$6)")
         .bind(input.request_id).bind(run_id).bind(next_version).bind(&input.source_checksum).bind(Json(&intent)).bind(actor.user_id).execute(&mut *tx).await?;
-    let run:PromotionRun=sqlx::query_as(&format!("UPDATE academic_promotion_runs SET status='approved',row_version=$1,approved_by=$2,approved_at=now(),approval_id=$3,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}"))
+    let run:PromotionRun=sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status='approved',row_version=$1,approved_by=$2,approved_at=now(),approval_id=$3,updated_at=now() WHERE id=$4 RETURNING {RUN_COLUMNS}")))
         .bind(next_version).bind(actor.user_id).bind(input.request_id).bind(run_id).fetch_one(&mut *tx).await?;
     let audit = ApprovalAudit {
         approval_id: input.request_id,

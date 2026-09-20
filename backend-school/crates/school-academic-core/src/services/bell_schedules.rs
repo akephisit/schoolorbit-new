@@ -23,7 +23,7 @@ pub async fn list(pool: &PgPool, academic_year_id: Uuid) -> Result<Vec<BellSched
         "SELECT {SCHEDULE_COLUMNS} FROM bell_schedules WHERE academic_year_id = $1 \
          ORDER BY is_default DESC, code, id"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(academic_year_id)
         .fetch_all(pool)
         .await?)
@@ -35,12 +35,14 @@ pub(super) async fn list_all(pool: &PgPool) -> Result<Vec<BellSchedule>, AppErro
          JOIN academic_years year ON year.id = schedule.academic_year_id \
          ORDER BY year.year DESC, year.id, schedule.is_default DESC, schedule.code, schedule.id"
     );
-    Ok(sqlx::query_as(&sql).fetch_all(pool).await?)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        .fetch_all(pool)
+        .await?)
 }
 
 pub async fn get(pool: &PgPool, id: Uuid) -> Result<BellSchedule, AppError> {
     let sql = format!("SELECT {SCHEDULE_COLUMNS} FROM bell_schedules WHERE id = $1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -72,7 +74,7 @@ pub async fn create(
          owning_organization_unit_id) VALUES ($1, $2, $3, $4, $5, 'draft', $6) \
          RETURNING {SCHEDULE_COLUMNS}"
     );
-    let schedule: BellSchedule = sqlx::query_as(&sql)
+    let schedule: BellSchedule = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(request.academic_year_id)
         .bind(code)
@@ -126,7 +128,7 @@ pub async fn update(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $4 AND row_version = $5 RETURNING {SCHEDULE_COLUMNS}"
     );
-    let schedule: BellSchedule = sqlx::query_as(&sql)
+    let schedule: BellSchedule = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(request.name.trim())
         .bind(request.is_default)
         .bind(request.owning_organization_unit_id)

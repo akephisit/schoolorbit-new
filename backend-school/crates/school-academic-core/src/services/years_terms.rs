@@ -163,7 +163,7 @@ const TERM_COLUMNS: &str = r#"
 
 pub async fn list_years(pool: &PgPool) -> Result<Vec<AcademicYear>, AppError> {
     let sql = format!("SELECT {YEAR_COLUMNS} FROM academic_years ORDER BY year DESC, id");
-    let rows = sqlx::query_as::<_, AcademicYearRow>(&sql)
+    let rows = sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
         .fetch_all(pool)
         .await?;
     Ok(rows.into_iter().map(Into::into).collect())
@@ -171,7 +171,7 @@ pub async fn list_years(pool: &PgPool) -> Result<Vec<AcademicYear>, AppError> {
 
 pub async fn get_year(pool: &PgPool, id: Uuid) -> Result<AcademicYear, AppError> {
     let sql = format!("SELECT {YEAR_COLUMNS} FROM academic_years WHERE id = $1");
-    sqlx::query_as::<_, AcademicYearRow>(&sql)
+    sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -198,7 +198,7 @@ pub async fn create_year(
         "INSERT INTO academic_years (id, year, name, start_date, end_date, school_days, status) \
          VALUES ($1, $2, $3, $4, $5, $6, 'planning') RETURNING {YEAR_COLUMNS}"
     );
-    let row = sqlx::query_as::<_, AcademicYearRow>(&sql)
+    let row = sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(request.year)
         .bind(name)
@@ -245,7 +245,7 @@ pub async fn update_year(
          school_days = $5, row_version = row_version + 1, updated_at = now() \
          WHERE id = $6 AND row_version = $7 AND status = 'planning' RETURNING {YEAR_COLUMNS}"
     );
-    let row = sqlx::query_as::<_, AcademicYearRow>(&sql)
+    let row = sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
         .bind(request.year)
         .bind(name)
         .bind(request.start_date)
@@ -287,7 +287,7 @@ pub async fn list_terms(
         "SELECT {TERM_COLUMNS} FROM academic_terms WHERE academic_year_id = $1 \
          ORDER BY sequence_no, start_date, id"
     );
-    let rows = sqlx::query_as::<_, AcademicTermRow>(&sql)
+    let rows = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
         .bind(academic_year_id)
         .fetch_all(pool)
         .await?;
@@ -300,7 +300,7 @@ pub(super) async fn list_all_terms(pool: &PgPool) -> Result<Vec<AcademicTerm>, A
          JOIN academic_years year ON year.id = term.academic_year_id \
          ORDER BY year.year DESC, year.id, term.sequence, term.start_date, term.id"
     );
-    let rows = sqlx::query_as::<_, AcademicTermRow>(&sql)
+    let rows = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
         .fetch_all(pool)
         .await?;
     Ok(rows.into_iter().map(Into::into).collect())
@@ -308,7 +308,7 @@ pub(super) async fn list_all_terms(pool: &PgPool) -> Result<Vec<AcademicTerm>, A
 
 pub async fn get_term(pool: &PgPool, id: Uuid) -> Result<AcademicTerm, AppError> {
     let sql = format!("SELECT {TERM_COLUMNS} FROM academic_terms WHERE id = $1");
-    sqlx::query_as::<_, AcademicTermRow>(&sql)
+    sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -354,7 +354,7 @@ pub async fn create_term(
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'planning') \
          RETURNING {TERM_COLUMNS}"
     );
-    let row = sqlx::query_as::<_, AcademicTermRow>(&sql)
+    let row = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .bind(request.academic_year_id)
         .bind(sequence)
@@ -462,7 +462,7 @@ pub async fn update_term(
          row_version = row_version + 1, updated_at = now() \
          WHERE id = $8 AND row_version = $9 AND status = 'planning' RETURNING {TERM_COLUMNS}"
     );
-    let row = sqlx::query_as::<_, AcademicTermRow>(&sql)
+    let row = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
         .bind(identity.name)
         .bind(request.term_type)
         .bind(request.start_date)

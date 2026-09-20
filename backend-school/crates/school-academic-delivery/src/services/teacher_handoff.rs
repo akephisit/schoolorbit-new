@@ -346,7 +346,7 @@ async fn preview_in_tx(
     } else {
         "FOR SHARE OF change_set, version"
     };
-    let context: HandoffContextRow = sqlx::query_as(&format!(
+    let context: HandoffContextRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         r#"SELECT change_set.row_version AS change_set_row_version,
                   change_set.effective_from, change_set.academic_term_id,
                   change_set.academic_year_id,
@@ -360,7 +360,7 @@ async fn preview_in_tx(
              AND version.status = 'draft'
              AND version.change_set_id = change_set.id
            {context_lock}"#,
-    ))
+    )))
     .bind(change_set_id)
     .fetch_optional(&mut **transaction)
     .await?
@@ -378,7 +378,7 @@ async fn preview_in_tx(
     } else {
         "FOR SHARE"
     };
-    let item: TeacherChangeItemRow = sqlx::query_as(&format!(
+    let item: TeacherChangeItemRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         r#"SELECT id, action_kind, learning_group_id,
                   learning_group_teacher_id, teacher_id
            FROM academic_term_change_items
@@ -389,7 +389,7 @@ async fn preview_in_tx(
                  'stop_group_teacher'
              )
            {item_lock}"#,
-    ))
+    )))
     .bind(request.teacher_change_item_id)
     .bind(change_set_id)
     .fetch_optional(&mut **transaction)
@@ -556,7 +556,7 @@ async fn load_affected_entries(
     } else {
         "FOR SHARE OF block_group"
     };
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         r#"SELECT block_group.id, block_group.row_version, block_group.learning_group_id,
                   concat_ws(' · ', nullif(learning_group.code, ''), learning_group.name)
                     AS learning_group_label,
@@ -584,7 +584,7 @@ async fn load_affected_entries(
              )
            ORDER BY block.day_of_week, period.order_index, block_group.id
            {lock}"#,
-    ))
+    )))
     .bind(version_id)
     .bind(group_id)
     .bind(teacher_id)
@@ -606,7 +606,7 @@ async fn load_instructors(
     } else {
         "FOR SHARE OF instructor"
     };
-    let rows: Vec<EntryInstructorRow> = sqlx::query_as(&format!(
+    let rows: Vec<EntryInstructorRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         r#"SELECT instructor.block_group_id AS entry_id, instructor.instructor_id,
                   coalesce(
                       nullif(concat_ws(' ',
@@ -625,7 +625,7 @@ async fn load_instructors(
                     instructor.display_order,
                     instructor.instructor_id
            {lock}"#,
-    ))
+    )))
     .bind(entry_ids)
     .fetch_all(&mut **transaction)
     .await?;

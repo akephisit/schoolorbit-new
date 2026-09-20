@@ -53,6 +53,13 @@ fn permission_registry_has_one_workspace_owner() {
 fn rust_data_transport_document_dependencies_follow_the_reviewed_policy() {
     let school_manifest = read_source(manifest_dir().join("Cargo.toml"));
     assert!(school_manifest.contains(
+        "sqlx = { version = \"0.9.0\", default-features = false, features = [\"runtime-tokio\", \"postgres\", \"macros\", \"migrate\", \"chrono\", \"uuid\", \"bigdecimal\", \"json\", \"tls-native-tls\"] }"
+    ));
+    let admin_manifest = read_source(repo_root().join("backend-admin/Cargo.toml"));
+    assert!(admin_manifest.contains(
+        "sqlx = { version = \"0.9.0\", default-features = false, features = [\"runtime-tokio\", \"postgres\", \"macros\", \"migrate\", \"chrono\", \"uuid\", \"json\", \"tls-native-tls\"] }"
+    ));
+    assert!(school_manifest.contains(
         "rand = \"0.9.5\" # Held for Wave 4 because every direct consumer generates security-sensitive bytes."
     ));
 

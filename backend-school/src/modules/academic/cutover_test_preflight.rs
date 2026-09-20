@@ -968,7 +968,7 @@ async fn collect_counts(
 ) -> Result<BTreeMap<String, i64>, PreflightError> {
     let mut counts = BTreeMap::new();
     for (key, sql) in queries {
-        let count = sqlx::query_scalar::<_, i64>(sql)
+        let count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(*sql))
             .fetch_one(&mut *connection)
             .await
             .map_err(|_| PreflightError::QueryFailed)?;

@@ -71,6 +71,8 @@ fn all_migrations_without_db_lock() -> Migrator {
         ignore_missing: base.ignore_missing,
         locking: false,
         no_tx: base.no_tx,
+        table_name: base.table_name,
+        create_schemas: base.create_schemas,
     }
 }
 

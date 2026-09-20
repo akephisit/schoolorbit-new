@@ -174,7 +174,7 @@ pub async fn list_campaigns(
            AND ($7::text IS NULL OR c.name ILIKE '%' || $7 || '%')
          ORDER BY c.event_date DESC, c.created_at DESC, c.id"
     );
-    let rows = sqlx::query_as::<_, CampaignRow>(&sql)
+    let rows = sqlx::query_as::<_, CampaignRow>(sqlx::AssertSqlSafe(sql))
         .bind(read_school_scope)
         .bind(read_exact_units)
         .bind(delete_school_scope)
@@ -523,7 +523,7 @@ async fn fetch_detail_with_capabilities(
 
 async fn fetch_campaign_row(pool: &PgPool, campaign_id: Uuid) -> Result<CampaignRow, AppError> {
     let sql = format!("{CAMPAIGN_SELECT} WHERE c.id = $1 AND c.status <> 'purging'");
-    sqlx::query_as::<_, CampaignRow>(&sql)
+    sqlx::query_as::<_, CampaignRow>(sqlx::AssertSqlSafe(sql))
         .bind(campaign_id)
         .fetch_optional(pool)
         .await

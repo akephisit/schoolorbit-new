@@ -234,10 +234,10 @@ async fn promotion_review_requires_manage_current_evidence_and_explicit_decision
         review_item(&pool, &actor, calc.run.id, item.id, hold(1)).await,
         Err(AppError::Conflict(_))
     ));
-    let saved: PromotionRunItem = sqlx::query_as(&format!(
+    let saved: PromotionRunItem = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {} FROM academic_promotion_run_items WHERE id=$1",
         super::promotion_calculation::ITEM_COLUMNS
-    ))
+    )))
     .bind(item.id)
     .fetch_one(&pool)
     .await

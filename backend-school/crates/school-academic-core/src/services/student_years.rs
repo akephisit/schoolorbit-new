@@ -104,7 +104,7 @@ pub async fn list_homerooms(
         "SELECT {HOMEROOM_COLUMNS} FROM homerooms WHERE academic_year_id = $1 \
          ORDER BY grade_level_id, room_number NULLS LAST, code, id LIMIT 500"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(academic_year_id)
         .fetch_all(pool)
         .await?)
@@ -112,7 +112,7 @@ pub async fn list_homerooms(
 
 pub async fn get_homeroom(pool: &PgPool, id: Uuid) -> Result<Homeroom, AppError> {
     let sql = format!("SELECT {HOMEROOM_COLUMNS} FROM homerooms WHERE id = $1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -343,7 +343,7 @@ pub async fn list_student_years(
         LIMIT 1000
         "#
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(filter.academic_year_id)
         .bind(filter.student_id)
         .bind(filter.grade_level_id)
@@ -401,7 +401,7 @@ pub async fn get_student_year(pool: &PgPool, id: Uuid) -> Result<StudentAcademic
         "SELECT {STUDENT_YEAR_COLUMNS} FROM student_academic_years student_year \
          {STUDENT_YEAR_JOINS} WHERE student_year.id = $1"
     );
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -783,7 +783,7 @@ pub async fn list_placements(
          WHERE student_academic_year_id = $1 \
          ORDER BY start_date, created_at, id"
     );
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(student_year_id)
         .fetch_all(pool)
         .await?)
@@ -799,7 +799,7 @@ pub async fn list_placements_for_year(
          WHERE academic_year_id = $1 \
          ORDER BY student_academic_year_id, start_date, created_at, id LIMIT $2"
     );
-    let placements = sqlx::query_as(&sql)
+    let placements = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(academic_year_id)
         .bind((MAX_YEAR_RELATIONSHIP_ROWS + 1) as i64)
         .fetch_all(pool)
@@ -827,7 +827,7 @@ async fn require_academic_year(pool: &PgPool, academic_year_id: Uuid) -> Result<
 
 async fn get_placement(pool: &PgPool, id: Uuid) -> Result<HomeroomPlacement, AppError> {
     let sql = format!("SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements WHERE id = $1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -840,7 +840,7 @@ async fn get_placement_for_update(
 ) -> Result<HomeroomPlacement, AppError> {
     let sql =
         format!("SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements WHERE id = $1 FOR UPDATE");
-    sqlx::query_as(&sql)
+    sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(&mut **transaction)
         .await?
@@ -868,11 +868,11 @@ async fn replay_transfer(
         return Ok(None);
     };
     let sql = format!("SELECT {PLACEMENT_COLUMNS} FROM homeroom_placements WHERE id = $1");
-    let ended_placement = sqlx::query_as(&sql)
+    let ended_placement = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(old_id)
         .fetch_one(&mut **transaction)
         .await?;
-    let new_placement = sqlx::query_as(&sql)
+    let new_placement = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(new_id)
         .fetch_one(&mut **transaction)
         .await?;

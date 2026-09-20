@@ -106,9 +106,9 @@ pub async fn read_run(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<PromotionRun, AppError> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {RUN_COLUMNS} FROM academic_promotion_runs WHERE id=$1"
-    ))
+    )))
     .bind(id)
     .fetch_optional(&mut **tx)
     .await?
@@ -198,7 +198,7 @@ pub async fn execute_item(pool: &PgPool, batch: &Batch, item_id: Uuid) -> Result
         .bind(run.id)
         .execute(&mut *tx)
         .await?;
-    let item:PromotionRunItem=sqlx::query_as(&format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1 AND run_id=$2 FOR UPDATE"))
+    let item:PromotionRunItem=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {ITEM_COLUMNS} FROM academic_promotion_run_items WHERE id=$1 AND run_id=$2 FOR UPDATE")))
         .bind(item_id).bind(run.id).fetch_optional(&mut *tx).await?.ok_or_else(||AppError::NotFound("ไม่พบรายการในรอบ".into()))?;
     if !matches!(
         item.status,
@@ -347,10 +347,10 @@ async fn finish_batch(
         }
         current
     } else {
-        sqlx::query_as(&format!("UPDATE academic_promotion_runs SET status=$1,row_version=row_version+1,updated_at=now(),executed_by=CASE WHEN $2 THEN $3 ELSE executed_by END,executed_at=CASE WHEN $2 THEN now() ELSE executed_at END WHERE id=$4 RETURNING {RUN_COLUMNS}"))
+        sqlx::query_as(sqlx::AssertSqlSafe(format!("UPDATE academic_promotion_runs SET status=$1,row_version=row_version+1,updated_at=now(),executed_by=CASE WHEN $2 THEN $3 ELSE executed_by END,executed_at=CASE WHEN $2 THEN now() ELSE executed_at END WHERE id=$4 RETURNING {RUN_COLUMNS}")))
         .bind(status).bind(remaining_count==0).bind(batch.actor_user_id).bind(batch.run_id).fetch_one(&mut *tx).await?
     };
-    let receipts=sqlx::query_as(&format!("SELECT {RECEIPT_COLUMNS} FROM academic_promotion_execution_receipts WHERE run_id=$1 AND item_id=ANY($2) ORDER BY item_id"))
+    let receipts=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {RECEIPT_COLUMNS} FROM academic_promotion_execution_receipts WHERE run_id=$1 AND item_id=ANY($2) ORDER BY item_id")))
         .bind(batch.run_id).bind(&batch.item_ids).fetch_all(&mut *tx).await?;
     let result = PromotionExecutionResult {
         run,

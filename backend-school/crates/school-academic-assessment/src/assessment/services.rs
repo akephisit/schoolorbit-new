@@ -628,7 +628,7 @@ async fn resolve_offering_scope(
     pool: &PgPool,
     offering_id: Uuid,
 ) -> Result<AssessmentOfferingScopeRow, AppError> {
-    sqlx::query_as(&offering_scope_sql(false))
+    sqlx::query_as(sqlx::AssertSqlSafe(offering_scope_sql(false)))
         .bind(offering_id)
         .fetch_optional(pool)
         .await?
@@ -645,11 +645,12 @@ async fn resolve_offering_scope_in_tx(
     ).bind(offering_id).fetch_optional(&mut **transaction).await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".into()))?;
     lifecycle_guard::require_term_write(transaction, year, term).await?;
-    let scope: AssessmentOfferingScopeRow = sqlx::query_as(&offering_scope_sql(true))
-        .bind(offering_id)
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))?;
+    let scope: AssessmentOfferingScopeRow =
+        sqlx::query_as(sqlx::AssertSqlSafe(offering_scope_sql(true)))
+            .bind(offering_id)
+            .fetch_optional(&mut **transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาที่เปิดสอน".to_string()))?;
     Ok(scope)
 }
 
