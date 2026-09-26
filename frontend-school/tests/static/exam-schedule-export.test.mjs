@@ -512,7 +512,7 @@ describe('exam schedule export helpers', () => {
 		);
 	});
 
-	it('keeps short paper transfer exam days on the same printed page', () => {
+	it('starts each short paper transfer exam day on a new printed page', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace(
 				[
@@ -565,7 +565,7 @@ describe('exam schedule export helpers', () => {
 		);
 
 		assert.equal(secondDayIndex > 0, true);
-		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], []);
+		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], [secondDayIndex - 1]);
 		assert.deepEqual(workbook.paperTransferReport.rows[secondDayIndex + 1], [
 			'วิชา',
 			'รหัสวิชา',
@@ -580,7 +580,7 @@ describe('exam schedule export helpers', () => {
 		]);
 	});
 
-	it('fits the next exam day after a 19-row transfer day with three time slots', () => {
+	it('keeps a 19-row transfer day together before starting the next day on a new page', () => {
 		const firstDaySessions = Array.from({ length: 19 }, (_, index) => {
 			const startTime = index < 9 ? '09:00:00' : index < 12 ? '09:30:00' : '10:00:00';
 			const endTime = index < 9 ? '10:00:00' : index < 12 ? '10:30:00' : '11:00:00';
@@ -617,7 +617,7 @@ describe('exam schedule export helpers', () => {
 		);
 
 		assert.equal(secondDayIndex > 0, true);
-		assert.deepEqual(report['!rowBreaks'], []);
+		assert.deepEqual(report['!rowBreaks'], [secondDayIndex - 1]);
 		assert.equal(report.rows[secondDayIndex + 1]?.[0], 'วิชา');
 		assert.equal(report.rows[secondDayIndex + 2]?.[0], 'เวลา 09.00-10.00 น.');
 		assert.equal(report.rows[secondDayIndex + 3]?.[0], 'ภาษาไทยพื้นฐาน');

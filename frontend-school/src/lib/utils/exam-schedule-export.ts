@@ -963,26 +963,15 @@ function paperTransferRows(
 
 	const sessionsByDay = groupByText(sessions, (session) => safeText(session.examDayId));
 	const pageContentHeightLimit = paperTransferPageContentHeight(sessions);
-	let pageContentHeight = 0;
-	for (const [, daySessions] of sessionsByDay) {
+	for (const [dayIndex, [, daySessions]] of sessionsByDay.entries()) {
 		const dayLabelText = paperTransferDateLabel(workspace, daySessions[0]);
-		const startDayOnNewPage =
-			pageContentHeight > 0 &&
-			shouldStartNewPaperTransferPage(
-				pageContentHeight,
-				PAPER_TRANSFER_DAY_TABLE_HEADER_HEIGHT +
-					PAPER_TRANSFER_TIME_HEADER_HEIGHT +
-					PAPER_TRANSFER_DETAIL_ROW_HEIGHT,
-				pageContentHeightLimit
-			);
-		const dayHeaderHeight = appendPaperTransferPageHeader(
+		let pageContentHeight = appendPaperTransferPageHeader(
 			rows,
 			mergeRanges,
 			rowBreaks,
 			dayLabelText,
-			startDayOnNewPage
+			dayIndex > 0
 		);
-		pageContentHeight = startDayOnNewPage ? dayHeaderHeight : pageContentHeight + dayHeaderHeight;
 
 		const sessionsByTime = groupByText(daySessions, printableTimeRangeLabel);
 		for (const [, timeSessions] of sessionsByTime) {
