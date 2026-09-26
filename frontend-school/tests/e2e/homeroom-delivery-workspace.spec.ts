@@ -471,6 +471,7 @@ test('keeps loaded homerooms visible and announces a background refresh', async 
 
 		await expect(homeroomRegion).toHaveAttribute('aria-busy', 'true');
 		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
 		await expect(
 			homeroomRegion.getByRole('status', { name: 'กำลังอัปเดตภาพรวมรายห้อง' })
 		).toBeVisible();

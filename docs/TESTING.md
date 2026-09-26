@@ -183,6 +183,16 @@ node --test tests/static/<area>.test.mjs
 
 `test:route-loading` checks authenticated-route inventory coverage and prevents new page-mount API reads while the planned routes move to route-owned loading.
 
+For the Academic Delivery region-loading browser gate, build and preview the frontend with a local API origin in one terminal, then run the mocked Chromium spec in another:
+
+```bash
+PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run build
+PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run preview -- --host 127.0.0.1 --port 4173
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/route-region-loading.spec.ts --project=chromium
+```
+
+The spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.
+
 For coordinated school release behavior, run:
 
 ```bash

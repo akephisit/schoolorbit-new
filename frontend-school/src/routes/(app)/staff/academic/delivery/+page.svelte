@@ -56,6 +56,7 @@
 	let selectedChangeSetId = $state('');
 	let homeroomLoading = $state(false);
 	let changeSetSummaryLoading = $state(false);
+	let changeSetSummaryResolved = $state(false);
 	let changeSetLoading = $state(false);
 	let overviewLoading = $state(false);
 	let homeroomError = $state('');
@@ -207,11 +208,13 @@
 		if (!academicTermId) return;
 		const { revision, signal } = changeSetSummaryRequest.begin();
 		changeSetSummaryLoading = true;
+		changeSetSummaryResolved = false;
 		changeSetSummaryError = '';
 		try {
 			const result = await listAcademicTermChangeSets(academicTermId, { signal });
 			if (!changeSetSummaryRequest.isCurrent(revision)) return;
 			const selected = applyChangeSetSummaries(result);
+			changeSetSummaryResolved = true;
 			if (selected) await loadSelectedChangeSet(selected.id, false);
 		} catch (error) {
 			if (isAbortError(error)) return;
@@ -378,14 +381,17 @@
 		untrack(() => {
 			changeSets = [];
 			changeSetSummaryLoading = Boolean(routeResult);
+			changeSetSummaryResolved = false;
 			changeSetSummaryError = '';
 		});
 		if (routeResult) {
 			void routeResult.then((result) => {
 				if (!changeSetSummaryRequest.isCurrent(revision)) return;
 				untrack(() => {
-					if (result.ok) applyChangeSetSummaries(result.data);
-					else changeSetSummaryError = result.error;
+					if (result.ok) {
+						applyChangeSetSummaries(result.data);
+						changeSetSummaryResolved = true;
+					} else changeSetSummaryError = result.error;
 					changeSetSummaryLoading = false;
 				});
 			});
@@ -469,6 +475,13 @@
 				class="relative space-y-4"
 				aria-label="ชุดการเปลี่ยนแปลงกลางภาค"
 				aria-busy={changeSetSummaryLoading || changeSetLoading}
+				data-testid={changeSetSummaryResolved &&
+				!changeSetSummaryLoading &&
+				!changeSetLoading &&
+				!changeSetSummaryError &&
+				!changeSetError
+					? 'delivery-change-set-ready'
+					: undefined}
 			>
 				{#if changeSetSummaryLoading && changeSets.length === 0 && !activeChangeSet}
 					<PageSkeleton variant="detail" />
@@ -553,7 +566,12 @@
 					<Tabs.Trigger value="offerings">มุมมองรายวิชา/กิจกรรม</Tabs.Trigger>
 				</Tabs.List>
 				<Tabs.Content value="homerooms" class="mt-4">
-					<section class="relative" aria-label="มุมมองรายห้อง" aria-busy={homeroomLoading}>
+					<section
+						class="relative"
+						aria-label="มุมมองรายห้อง"
+						aria-busy={homeroomLoading}
+						data-testid={workspace ? 'delivery-homerooms-ready' : undefined}
+					>
 						{#if homeroomLoading && workspace}
 							<RegionUpdatingState label="กำลังอัปเดตภาพรวมรายห้อง" />
 						{/if}
@@ -583,6 +601,7 @@
 						class="relative"
 						aria-label="มุมมองรายวิชาและกิจกรรม"
 						aria-busy={overviewLoading}
+						data-testid={overview ? 'delivery-offerings-ready' : undefined}
 					>
 						{#if overviewLoading && overview}
 							<RegionUpdatingState label="กำลังอัปเดตรายการเปิดสอน" />
