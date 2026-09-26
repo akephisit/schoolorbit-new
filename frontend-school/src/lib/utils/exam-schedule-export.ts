@@ -670,13 +670,11 @@ const PAPER_TRANSFER_BOTTOM_MARGIN_INCHES = 0.45;
 const PAPER_TRANSFER_TITLE_ROW_HEIGHT = 24;
 const PAPER_TRANSFER_SUBTITLE_ROW_HEIGHT = 22;
 const PAPER_TRANSFER_SPACER_ROW_HEIGHT = 6;
-const PAPER_TRANSFER_A4_CONTENT_HEIGHT = Math.floor(
+const PAPER_TRANSFER_A4_PRINTABLE_HEIGHT =
 	A4_HEIGHT_POINTS -
-		(PAPER_TRANSFER_TOP_MARGIN_INCHES + PAPER_TRANSFER_BOTTOM_MARGIN_INCHES) * POINTS_PER_INCH -
-		PAPER_TRANSFER_TITLE_ROW_HEIGHT -
-		PAPER_TRANSFER_SUBTITLE_ROW_HEIGHT -
-		PAPER_TRANSFER_SPACER_ROW_HEIGHT
-);
+	(PAPER_TRANSFER_TOP_MARGIN_INCHES + PAPER_TRANSFER_BOTTOM_MARGIN_INCHES) * POINTS_PER_INCH;
+// At the export's A4 portrait margins, about 100 Excel column-width units fit without scaling.
+const PAPER_TRANSFER_A4_PRINTABLE_WIDTH = 100;
 const PAPER_TRANSFER_DAY_HEADER_HEIGHT = 22;
 const PAPER_TRANSFER_TABLE_HEADER_HEIGHT = 42;
 const PAPER_TRANSFER_TIME_HEADER_HEIGHT = 22;
@@ -724,10 +722,36 @@ function appendPaperTransferPageHeader(
 	return PAPER_TRANSFER_DAY_TABLE_HEADER_HEIGHT;
 }
 
-function shouldStartNewPaperTransferPage(currentHeight: number, nextHeight: number): boolean {
+function paperTransferPageContentHeight(sessions: ExamSession[]): number {
+	const reportWidths = examScheduleReportColumnWidths({
+		name: 'รับส่งข้อสอบ',
+		rows: [
+			paperTransferTableHeaderRow(),
+			...sessions.map((session) => [
+				subjectLabel(session),
+				safeText(session.subjectCode, '-'),
+				sessionHomeroomLabel(session)
+			])
+		]
+	});
+	const totalColumnWidth = reportWidths.reduce((width, column) => width + column.wch, 0);
+	const widthScale = Math.max(1, totalColumnWidth / PAPER_TRANSFER_A4_PRINTABLE_WIDTH);
+	return Math.floor(
+		PAPER_TRANSFER_A4_PRINTABLE_HEIGHT * widthScale -
+			PAPER_TRANSFER_TITLE_ROW_HEIGHT -
+			PAPER_TRANSFER_SUBTITLE_ROW_HEIGHT -
+			PAPER_TRANSFER_SPACER_ROW_HEIGHT
+	);
+}
+
+function shouldStartNewPaperTransferPage(
+	currentHeight: number,
+	nextHeight: number,
+	pageContentHeight: number
+): boolean {
 	return (
 		currentHeight > PAPER_TRANSFER_DAY_TABLE_HEADER_HEIGHT &&
-		currentHeight + nextHeight > PAPER_TRANSFER_A4_CONTENT_HEIGHT
+		currentHeight + nextHeight > pageContentHeight
 	);
 }
 
@@ -938,15 +962,27 @@ function paperTransferRows(
 	}
 
 	const sessionsByDay = groupByText(sessions, (session) => safeText(session.examDayId));
-	for (const [dayIndex, [, daySessions]] of sessionsByDay.entries()) {
+	const pageContentHeightLimit = paperTransferPageContentHeight(sessions);
+	let pageContentHeight = 0;
+	for (const [, daySessions] of sessionsByDay) {
 		const dayLabelText = paperTransferDateLabel(workspace, daySessions[0]);
-		let pageContentHeight = appendPaperTransferPageHeader(
+		const startDayOnNewPage =
+			pageContentHeight > 0 &&
+			shouldStartNewPaperTransferPage(
+				pageContentHeight,
+				PAPER_TRANSFER_DAY_TABLE_HEADER_HEIGHT +
+					PAPER_TRANSFER_TIME_HEADER_HEIGHT +
+					PAPER_TRANSFER_DETAIL_ROW_HEIGHT,
+				pageContentHeightLimit
+			);
+		const dayHeaderHeight = appendPaperTransferPageHeader(
 			rows,
 			mergeRanges,
 			rowBreaks,
 			dayLabelText,
-			dayIndex > 0
+			startDayOnNewPage
 		);
+		pageContentHeight = startDayOnNewPage ? dayHeaderHeight : pageContentHeight + dayHeaderHeight;
 
 		const sessionsByTime = groupByText(daySessions, printableTimeRangeLabel);
 		for (const [, timeSessions] of sessionsByTime) {
@@ -963,7 +999,9 @@ function paperTransferRows(
 				const nextRowHeight =
 					(hasTimeHeaderOnPage ? 0 : PAPER_TRANSFER_TIME_HEADER_HEIGHT) +
 					PAPER_TRANSFER_DETAIL_ROW_HEIGHT;
-				if (shouldStartNewPaperTransferPage(pageContentHeight, nextRowHeight)) {
+				if (
+					shouldStartNewPaperTransferPage(pageContentHeight, nextRowHeight, pageContentHeightLimit)
+				) {
 					pageContentHeight = appendPaperTransferPageHeader(
 						rows,
 						mergeRanges,

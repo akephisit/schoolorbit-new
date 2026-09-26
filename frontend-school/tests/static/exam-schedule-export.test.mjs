@@ -512,7 +512,7 @@ describe('exam schedule export helpers', () => {
 		);
 	});
 
-	it('starts each paper transfer exam day on a new printed page', () => {
+	it('keeps short paper transfer exam days on the same printed page', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace(
 				[
@@ -565,7 +565,7 @@ describe('exam schedule export helpers', () => {
 		);
 
 		assert.equal(secondDayIndex > 0, true);
-		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], [secondDayIndex - 1]);
+		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], []);
 		assert.deepEqual(workbook.paperTransferReport.rows[secondDayIndex + 1], [
 			'วิชา',
 			'รหัสวิชา',
@@ -580,10 +580,93 @@ describe('exam schedule export helpers', () => {
 		]);
 	});
 
+	it('fits the next exam day after a 19-row transfer day with three time slots', () => {
+		const firstDaySessions = Array.from({ length: 19 }, (_, index) => {
+			const startTime = index < 9 ? '09:00:00' : index < 12 ? '09:30:00' : '10:00:00';
+			const endTime = index < 9 ? '10:00:00' : index < 12 ? '10:30:00' : '11:00:00';
+			return scheduledSession({
+				id: `session-day-1-${index + 1}`,
+				startsAt: startTime,
+				endsAt: endTime,
+				homeroomName: `ม.1/${index + 1}`,
+				homeroomId: `homeroom-m1-${index + 1}`,
+				subjectNameTh: 'คณิตศาสตร์พื้นฐาน',
+				subjectCode: 'ค21101'
+			});
+		});
+		const secondDaySession = scheduledSession({
+			id: 'session-day-2',
+			examDayId: 'day-2',
+			examDate: '2026-03-05',
+			startsAt: '09:00:00',
+			endsAt: '10:00:00',
+			subjectNameTh: 'ภาษาไทยพื้นฐาน',
+			subjectCode: 'ท21102'
+		});
+		const secondDay = {
+			...exportWorkspace([]).days[0],
+			id: 'day-2',
+			examDate: '2026-03-05'
+		};
+		const report = buildExamScheduleExportWorkbook(
+			exportWorkspace([...firstDaySessions, secondDaySession], [secondDay]),
+			invigilatorWorkspace
+		).paperTransferReport;
+		const secondDayIndex = report.rows.findIndex(
+			(row) => row[0] === 'วันพฤหัสบดีที่ 5 มีนาคม 2569'
+		);
+
+		assert.equal(secondDayIndex > 0, true);
+		assert.deepEqual(report['!rowBreaks'], []);
+		assert.equal(report.rows[secondDayIndex + 1]?.[0], 'วิชา');
+		assert.equal(report.rows[secondDayIndex + 2]?.[0], 'เวลา 09.00-10.00 น.');
+		assert.equal(report.rows[secondDayIndex + 3]?.[0], 'ภาษาไทยพื้นฐาน');
+	});
+
+	it('moves a new paper transfer day with its first entry when the page is full', () => {
+		const firstDaySessions = Array.from({ length: 24 }, (_, index) =>
+			scheduledSession({
+				id: `session-day-1-${index + 1}`,
+				startsAt: '09:00:00',
+				endsAt: '10:00:00',
+				homeroomName: `ม.1/${index + 1}`,
+				homeroomId: `homeroom-m1-${index + 1}`,
+				subjectNameTh: `วิทยาศาสตร์พื้นฐาน ${index + 1}`,
+				subjectCode: `ว21${String(index + 1).padStart(3, '0')}`
+			})
+		);
+		const secondDaySession = scheduledSession({
+			id: 'session-day-2',
+			examDayId: 'day-2',
+			examDate: '2026-03-05',
+			startsAt: '09:00:00',
+			endsAt: '10:00:00',
+			subjectNameTh: 'ภาษาไทยพื้นฐาน',
+			subjectCode: 'ท21102'
+		});
+		const secondDay = {
+			...exportWorkspace([]).days[0],
+			id: 'day-2',
+			examDate: '2026-03-05'
+		};
+		const workbook = buildExamScheduleExportWorkbook(
+			exportWorkspace([...firstDaySessions, secondDaySession], [secondDay]),
+			invigilatorWorkspace
+		);
+		const rows = workbook.paperTransferReport.rows;
+		const secondDayIndex = rows.findIndex((row) => row[0] === 'วันพฤหัสบดีที่ 5 มีนาคม 2569');
+
+		assert.equal(secondDayIndex > 0, true);
+		assert.deepEqual(workbook.paperTransferReport['!rowBreaks'], [secondDayIndex - 1]);
+		assert.equal(rows[secondDayIndex + 1]?.[0], 'วิชา');
+		assert.equal(rows[secondDayIndex + 2]?.[0], 'เวลา 09.00-10.00 น.');
+		assert.equal(rows[secondDayIndex + 3]?.[0], 'ภาษาไทยพื้นฐาน');
+	});
+
 	it('repeats paper transfer day headers when a day spans multiple printed pages', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace(
-				Array.from({ length: 22 }, (_, index) =>
+				Array.from({ length: 32 }, (_, index) =>
 					scheduledSession({
 						id: `session-long-day-${index + 1}`,
 						startsAt: '09:00:00',
@@ -625,12 +708,12 @@ describe('exam schedule export helpers', () => {
 	it('counts paper transfer time headers when fitting rows onto A4 pages', () => {
 		const workbook = buildExamScheduleExportWorkbook(
 			exportWorkspace(
-				Array.from({ length: 13 }, (_, index) =>
+				Array.from({ length: 18 }, (_, index) =>
 					scheduledSession({
 						id: `session-many-slots-${index + 1}`,
-						startsAt: `${String(8 + index).padStart(2, '0')}:00:00`,
-						endsAt: `${String(8 + index).padStart(2, '0')}:45:00`,
-						durationMinutes: 45,
+						startsAt: `${String(8 + Math.floor(index / 2)).padStart(2, '0')}:${index % 2 === 0 ? '00' : '30'}:00`,
+						endsAt: `${String(8 + Math.floor(index / 2)).padStart(2, '0')}:${index % 2 === 0 ? '20' : '50'}:00`,
+						durationMinutes: 20,
 						homeroomName: `ม.1/${index + 1}`,
 						homeroomId: `homeroom-m1-${index + 1}`,
 						gradeLevelName: 'ม.1',
@@ -659,7 +742,7 @@ describe('exam schedule export helpers', () => {
 			'ลงชื่อรับไปตรวจ\n(ครูผู้สอน)'
 		]);
 		assert.deepEqual(workbook.paperTransferReport.rows[repeatedDayIndex + 2], [
-			'เวลา 20.00-20.45 น.'
+			'เวลา 15.00-15.20 น.'
 		]);
 	});
 });
