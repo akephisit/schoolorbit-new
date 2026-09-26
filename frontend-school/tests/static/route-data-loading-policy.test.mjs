@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 const appRoutes = path.join(projectRoot, 'src/routes/(app)');
+const inventoryPath = path.join(projectRoot, 'tests/fixtures/route-data-loading-inventory.json');
 
 async function pageFiles(directory) {
 	const files = [];
@@ -27,24 +27,36 @@ async function sourceFiles(directory) {
 	return files;
 }
 
-test('legacy onMount primary reads only shrink during route migration', async () => {
-	const violations = [];
+test('legacy page-mount API reads only shrink during route migration', async () => {
+	const inventory = JSON.parse(await readFile(inventoryPath, 'utf8'));
+	const records = new Map(inventory.routes.map((record) => [record.route, record]));
+	const candidates = [];
 	for (const file of await pageFiles(appRoutes)) {
 		const source = await readFile(file, 'utf8');
 		if (/\bonMount\b/.test(source) && /\$lib\/api\//.test(source)) {
-			violations.push(path.relative(projectRoot, file));
+			const route = path.relative(appRoutes, path.dirname(file)).split(path.sep).join('/');
+			const record = records.get(route);
+			assert.equal(record?.legacyMountApiCandidate, true, `${route}: new page-mount API read`);
+			assert.equal(record?.dataOwner, 'component-primary', `${route}: completed route regressed`);
+			assert.equal(record?.status, 'planned', `${route}: completed route regressed`);
+			candidates.push(route);
 		}
 	}
-	violations.sort();
-	assert.equal(violations.length, 71, violations.join('\n'));
-	assert.equal(
-		createHash('sha256').update(violations.join('\n')).digest('hex'),
-		'3f6cfffc91f19190281984451c57d0cc6a4780cdd63b0283c65cdbb174c12734',
-		violations.join('\n')
+	assert.ok(!candidates.includes('staff/academic/delivery'));
+	const delivery = records.get('staff/academic/delivery');
+	assert.equal(delivery?.dataOwner, 'route');
+	assert.equal(delivery?.status, 'complete');
+	const loader = await readFile(path.join(appRoutes, 'staff/academic/delivery/+page.ts'), 'utf8');
+	assert.match(loader, /\$lib\/api\/learning-delivery/);
+});
+
+test('API contract contains no route-wide page-view endpoint', async () => {
+	const contract = JSON.parse(
+		await readFile(path.join(projectRoot, '../contracts/openapi/school-api.json'), 'utf8')
 	);
-	assert.ok(
-		!violations.includes('src/routes/(app)/staff/academic/delivery/+page.svelte'),
-		'Delivery must keep its primary read in +page.ts'
+	assert.deepEqual(
+		Object.keys(contract.paths).filter((apiPath) => apiPath.endsWith('/page-view')),
+		[]
 	);
 });
 

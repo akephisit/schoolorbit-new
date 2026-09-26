@@ -171,6 +171,7 @@ From `frontend-school`:
 npm run lint
 PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
 npm run test:menu-sync
+npm run test:route-loading
 npm run test:static
 ```
 
@@ -179,6 +180,8 @@ During implementation, run the relevant static file directly:
 ```bash
 node --test tests/static/<area>.test.mjs
 ```
+
+`test:route-loading` checks authenticated-route inventory coverage and prevents new page-mount API reads while the planned routes move to route-owned loading.
 
 For coordinated school release behavior, run:
 

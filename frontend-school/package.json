@@ -23,6 +23,7 @@
 		"check:docs": "node --test tests/static/documentation-policy.test.mjs",
 		"test:static": "node --test tests/static/*.test.mjs",
 		"test:menu-sync": "node --test tests/runtime/menu-route-registration.test.mjs",
+		"test:route-loading": "node --test tests/static/route-data-loading-inventory.test.mjs tests/static/route-data-loading-policy.test.mjs",
 		"test:e2e": "playwright test",
 		"test:e2e:headed": "playwright test --headed",
 		"format": "prettier --write .",
