@@ -5,7 +5,7 @@
 		ExamInvigilatorStaffOption,
 		ExamInvigilatorWorkspace
 	} from '$lib/api/examSchedule';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
 	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
 	import { RefreshCw } from '@lucide/svelte';
@@ -22,6 +22,8 @@
 		days = [],
 		workspace,
 		staff = [],
+		staffLoading = false,
+		staffLoadError = '',
 		loading = false,
 		loadError = '',
 		readonly = false,
@@ -32,6 +34,8 @@
 		days: ExamDayDetail[];
 		workspace: ExamInvigilatorWorkspace | null;
 		staff: ExamInvigilatorStaffOption[];
+		staffLoading?: boolean;
+		staffLoadError?: string;
 		loading?: boolean;
 		loadError?: string;
 		readonly?: boolean;
@@ -219,10 +223,12 @@
 			onaction={onRetry}
 		/>
 	</section>
+{:else if localWorkspace === null && loading}
+	<PageSkeleton variant="detail" />
 {:else if localWorkspace === null}
 	<section class="rounded-md border bg-background">
 		<PageState
-			title={loading ? 'กำลังโหลดข้อมูลกรรมการคุมสอบ' : 'ยังไม่มีข้อมูลกรรมการคุมสอบ'}
+			title="ยังไม่มีข้อมูลกรรมการคุมสอบ"
 			description="ข้อมูลอ้างอิงจากห้องสอบที่กำหนดไว้ในรอบนี้"
 		/>
 	</section>
@@ -265,6 +271,8 @@
 			<div class="grid min-h-0 flex-1 gap-3 p-3 xl:grid-cols-[28rem_minmax(0,1fr)]">
 				<InvigilatorStaffList
 					staffCards={displayedStaffCards}
+					loading={staffLoading}
+					unavailable={Boolean(staffLoadError)}
 					search={staffSearch}
 					{showAvailableOnly}
 					{readonly}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
@@ -143,8 +143,7 @@
 			}
 			toast.success('สร้างรอบตารางสอบแล้ว');
 			createDialogOpen = false;
-			if (input.academicTermId === academicTermId)
-				goto(resolve(`/staff/academic/exam-schedules/${round.id}`));
+			if (input.academicTermId === academicTermId) goto(detailHref(round));
 			return true;
 		} catch (createError) {
 			toast.error(createError instanceof Error ? createError.message : 'สร้างรอบตารางสอบไม่สำเร็จ');
@@ -173,6 +172,16 @@
 			month: 'short',
 			day: 'numeric'
 		});
+	}
+
+	function detailHref(round: ExamRound) {
+		return resolve(
+			`/staff/academic/exam-schedules/${round.id}?academicYearId=${encodeURIComponent(round.academicYearId)}&academicTermId=${encodeURIComponent(round.academicTermId)}`
+		);
+	}
+
+	function preloadRound(round: ExamRound) {
+		void preloadData(detailHref(round)).catch(() => undefined);
 	}
 
 	$effect.pre(() => {
@@ -298,7 +307,8 @@
 								{#each rounds as round (round.id)}
 									<TableRow
 										class="cursor-pointer hover:bg-muted/50"
-										onclick={() => goto(resolve(`/staff/academic/exam-schedules/${round.id}`))}
+										onpointerdown={() => preloadRound(round)}
+										onclick={() => goto(detailHref(round))}
 									>
 										<TableCell>
 											<div class="flex min-w-0 items-center gap-3">
@@ -338,7 +348,7 @@
 													size="sm"
 													onclick={(event) => {
 														event.stopPropagation();
-														goto(resolve(`/staff/academic/exam-schedules/${round.id}`));
+														goto(detailHref(round));
 													}}
 												>
 													เปิด

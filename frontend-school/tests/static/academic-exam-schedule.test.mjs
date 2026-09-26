@@ -709,7 +709,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 	assert.match(packageJson, /"exceljs"/);
 	assert.match(
 		handleExport,
-		/buildExamScheduleExportWorkbook\(workspace,\s*invigilatorData,\s*\{\s*homerooms\s*\}\)/
+		/buildExamScheduleExportWorkbook\(exportWorkspace,\s*invigilatorData,\s*\{\s*homerooms:\s*exportHomerooms\s*\}\)/
 	);
 	assert.match(handleExport, /for \(const reportSheet of exportWorkbook\.reportSheets\)/);
 	assert.match(handleExport, /appendReportSheet\(workbook,\s*reportSheet\)/);
@@ -1278,6 +1278,10 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
 	);
+	const pageLoad = readFileSync(
+		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.ts'),
+		'utf8'
+	);
 	const listPage = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/+page.svelte'),
 		'utf8'
@@ -1298,9 +1302,10 @@ test('staff workspace reloads by route round id and keeps form input on failed s
 	assert.match(page, /async function loadWorkspace\(roundId: string,\s*initial = false\)/);
 	assert.match(page, /getExamScheduleWorkspace\(roundId\)/);
 	assert.match(page, /resetWorkspaceForRound\(roundId\)/);
-	assert.match(page, /loadWorkspace\(roundId,\s*true\)/);
-	assert.match(page, /let requestedRoundId = '';/);
-	assert.doesNotMatch(page, /let requestedRoundId = \$state/);
+	assert.match(pageLoad, /getExamScheduleWorkspace\(params\.id,\s*\{ requestFetch: fetch \}\)/);
+	assert.match(page, /\$effect\.pre\(\(\) => \{/);
+	assert.match(page, /let activeRouteRoundId = '';/);
+	assert.doesNotMatch(page, /let activeRouteRoundId = \$state/);
 	assert.doesNotMatch(page, /onMount\(\(\) => \{\s*loadWorkspace\(true\)/);
 
 	assert.match(

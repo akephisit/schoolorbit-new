@@ -130,10 +130,14 @@ export async function deleteExamRound(roundId: string): Promise<Schemas['EmptyDa
 	);
 }
 
-export async function getExamScheduleWorkspace(roundId: string): Promise<ExamScheduleWorkspace> {
+export async function getExamScheduleWorkspace(
+	roundId: string,
+	options: ApiRequestOptions = {}
+): Promise<ExamScheduleWorkspace> {
 	return apiData(
 		await apiClient.get<ExamScheduleWorkspace>(
-			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}`
+			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}`,
+			options
 		),
 		'ไม่สามารถโหลดพื้นที่จัดตารางสอบได้'
 	);

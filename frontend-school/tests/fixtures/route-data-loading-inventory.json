@@ -331,12 +331,12 @@
 		{
 			"route": "staff/academic/exam-schedules/[id]",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "exam-round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school exam-schedule",
-			"notes": "Component API reads include listGradeLevelOptions, getExamInvigilatorWorkspace, getExamScheduleWorkspace, listExamInvigilatorStaffOptions, lookupHomerooms; classify default and optional regions during migration."
+			"notes": "Route-owned workspace paints before dependent grade-level options; heavy detail links preload on tap. Room options load only on the managed rooms tab, invigilator/staff options only on their tab, and exports only on action."
 		},
 		{
 			"route": "staff/academic/gradebook",

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
@@ -24,6 +24,8 @@
 		staffCards = [],
 		search = '',
 		showAvailableOnly = false,
+		loading = false,
+		unavailable = false,
 		readonly = false,
 		pendingStaffIds = [],
 		activeDragStaffId = null,
@@ -35,6 +37,8 @@
 		staffCards: InvigilatorStaffCardView[];
 		search?: string;
 		showAvailableOnly?: boolean;
+		loading?: boolean;
+		unavailable?: boolean;
 		readonly?: boolean;
 		pendingStaffIds?: string[];
 		activeDragStaffId?: string | null;
@@ -124,7 +128,17 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto">
-		{#if staffCards.length === 0}
+		{#if loading && staffCards.length === 0}
+			<PageSkeleton variant="table" rows={4} columns={3} />
+		{:else if unavailable && staffCards.length === 0}
+			<div class="p-3">
+				<PageState
+					variant="error"
+					title="รายชื่อครูยังไม่พร้อม"
+					description="ลองโหลดครูอีกครั้งจากข้อความด้านบน"
+				/>
+			</div>
+		{:else if staffCards.length === 0}
 			<div class="p-3">
 				<PageState title="ไม่พบรายชื่อครู" description="ลองค้นหาด้วยคำอื่น" />
 			</div>

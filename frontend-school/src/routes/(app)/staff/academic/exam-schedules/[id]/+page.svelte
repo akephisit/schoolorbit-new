@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { Alignment, Borders, Fill, Workbook, Worksheet } from 'exceljs';
 	import type { PageProps } from './$types';
@@ -47,7 +48,12 @@
 	import ExamSourceSyncPanel from '$lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte';
 	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		LoadingButton,
+		PageSkeleton,
+		PageState,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -77,6 +83,9 @@
 	let activeTab = $state<'setup' | 'rooms' | 'schedule' | 'invigilators'>('setup');
 	let workspace = $state<ExamScheduleWorkspace | null>(null);
 	let gradeLevels = $state<GradeLevelOption[]>([]);
+	let gradeLevelsLoading = $state(false);
+	let gradeLevelsLoaded = $state(false);
+	let gradeLevelsError = $state('');
 	let homerooms = $state<HomeroomLookupItem[]>([]);
 	let rooms = $state<RoomLookupItem[]>([]);
 	let staff = $state<ExamInvigilatorStaffOption[]>([]);
@@ -85,8 +94,10 @@
 	let invigilatorLoadError = $state('');
 	let staffLoading = $state(false);
 	let staffRequested = $state(false);
+	let staffLoadError = $state('');
 	let optionsLoading = $state(false);
 	let optionsRequested = $state(false);
+	let optionsError = $state('');
 	let syncingSources = $state(false);
 	let selectedSourceIds = $state<string[]>([]);
 	let sourceSyncResults = $state.raw<ExamSourceSyncItemResult[]>([]);
@@ -98,9 +109,10 @@
 	let generatingAssignmentId = $state<string | null>(null);
 	let placingItemIds = $state<string[]>([]);
 	let unschedulingSessionIds = $state<string[]>([]);
-	let requestedRoundId = '';
+	let activeRouteRoundId = '';
 	let loadedRoundId = $state('');
 	let workspaceRequestToken = 0;
+	let gradeLevelsRequestToken = 0;
 	let managementOptionsRequestToken = 0;
 	let invigilatorWorkspaceRequestToken = 0;
 	let staffOptionsRequestToken = 0;
@@ -115,6 +127,13 @@
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL)
 	);
 	const pageTitle = $derived(workspace?.round.name ?? data.title);
+	const backHref = $derived.by(() => {
+		const yearId = workspace?.round.academicYearId ?? data.academicYearId;
+		const termId = workspace?.round.academicTermId ?? data.academicTermId;
+		return yearId && termId
+			? `/staff/academic/exam-schedules?academicYearId=${encodeURIComponent(yearId)}&academicTermId=${encodeURIComponent(termId)}`
+			: '/staff/academic/exam-schedules';
+	});
 	const termLabel = $derived(
 		$academicContext.options?.terms.find((item) => item.id === workspace?.round.academicTermId)
 			?.name ?? null
@@ -144,14 +163,22 @@
 			.map((change) => change.sourceId);
 	}
 
+	function isCurrentRound(roundId: string): boolean {
+		return activeRouteRoundId === roundId && workspace?.round.id === roundId;
+	}
+
 	function resetWorkspaceForRound(roundId: string) {
 		workspaceRequestToken += 1;
+		gradeLevelsRequestToken += 1;
 		managementOptionsRequestToken += 1;
 		loadedRoundId = '';
 		error = '';
 		activeTab = 'setup';
 		workspace = null;
 		gradeLevels = [];
+		gradeLevelsLoading = !!roundId;
+		gradeLevelsLoaded = false;
+		gradeLevelsError = '';
 		homerooms = [];
 		rooms = [];
 		staff = [];
@@ -160,10 +187,12 @@
 		invigilatorLoadError = '';
 		staffLoading = false;
 		staffRequested = false;
+		staffLoadError = '';
 		invigilatorWorkspaceRequestToken += 1;
 		staffOptionsRequestToken += 1;
 		optionsRequested = false;
 		optionsLoading = false;
+		optionsError = '';
 		syncingSources = false;
 		selectedSourceIds = [];
 		sourceSyncResults = [];
@@ -193,14 +222,12 @@
 
 		try {
 			const workspaceData = await getExamScheduleWorkspace(roundId);
-			const loadedGradeLevels = await listGradeLevelOptions(workspaceData.round.academicYearId);
 			if (requestToken !== workspaceRequestToken) return;
 
 			const previewChanged =
 				workspace?.sourcePreview.previewToken !== workspaceData.sourcePreview.previewToken;
 			workspace = workspaceData;
 			if (previewChanged) selectedSourceIds = recommendedSourceIds(workspaceData);
-			gradeLevels = loadedGradeLevels;
 			loadedRoundId = roundId;
 		} catch (loadError) {
 			if (requestToken !== workspaceRequestToken) return;
@@ -215,6 +242,27 @@
 		}
 	}
 
+	async function loadGradeLevels() {
+		const yearId = workspace?.round.academicYearId;
+		if (!yearId) return;
+		const requestToken = ++gradeLevelsRequestToken;
+		gradeLevelsLoading = true;
+		gradeLevelsError = '';
+		try {
+			const result = await listGradeLevelOptions(yearId);
+			if (requestToken !== gradeLevelsRequestToken || workspace?.round.academicYearId !== yearId)
+				return;
+			gradeLevels = result;
+			gradeLevelsLoaded = true;
+		} catch (loadError) {
+			if (requestToken !== gradeLevelsRequestToken) return;
+			gradeLevelsError =
+				loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดระดับชั้นได้';
+		} finally {
+			if (requestToken === gradeLevelsRequestToken) gradeLevelsLoading = false;
+		}
+	}
+
 	async function refreshWorkspace(refreshInvigilators = false) {
 		const roundId = workspace?.round.id ?? loadedRoundId;
 		if (!roundId) return;
@@ -222,7 +270,7 @@
 			refreshInvigilators || invigilatorWorkspace !== null || activeTab === 'invigilators';
 
 		await loadWorkspace(roundId, false);
-		if (shouldRefreshInvigilators) {
+		if (shouldRefreshInvigilators && isCurrentRound(roundId)) {
 			await refreshOrInvalidateInvigilators(roundId);
 		}
 	}
@@ -445,29 +493,37 @@
 	}
 
 	async function loadManagementOptions() {
-		if (!workspace || optionsLoading || optionsRequested) return;
+		if (
+			!workspace ||
+			!canManageExamSchedules ||
+			workspace.round.status === 'published' ||
+			optionsLoading ||
+			optionsRequested
+		)
+			return;
 
 		const requestToken = ++managementOptionsRequestToken;
 		const roundId = workspace.round.id;
 		const termId = workspace.round.academicTermId;
 		const yearId = workspace.round.academicYearId;
 
-		optionsRequested = true;
 		optionsLoading = true;
+		optionsError = '';
 		try {
-			const loadedHomerooms = await lookupHomerooms({ academicYearId: yearId, limit: 500 });
-			const loadedRooms = await lookupRooms({ limit: 500 });
+			const [loadedHomerooms, loadedRooms] = await Promise.all([
+				lookupHomerooms({ academicYearId: yearId, limit: 500 }),
+				lookupRooms({ limit: 500 })
+			]);
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) return;
 
 			homerooms = loadedHomerooms;
 			rooms = loadedRooms;
+			optionsRequested = true;
 		} catch (loadError) {
 			if (!isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) return;
 
-			optionsRequested = false;
-			toast.error(
-				loadError instanceof Error ? loadError.message : 'โหลดตัวเลือกสำหรับจัดห้องสอบไม่สำเร็จ'
-			);
+			optionsError =
+				loadError instanceof Error ? loadError.message : 'โหลดตัวเลือกสำหรับจัดห้องสอบไม่สำเร็จ';
 		} finally {
 			if (isCurrentManagementOptionsRequest(requestToken, roundId, termId, yearId)) {
 				optionsLoading = false;
@@ -484,19 +540,19 @@
 		if (!roundId || staffLoading || staffRequested) return;
 
 		const requestToken = ++staffOptionsRequestToken;
-		staffRequested = true;
 		staffLoading = true;
+		staffLoadError = '';
 		try {
 			const staffOptions = await listExamInvigilatorStaffOptions(roundId, { limit: 500 });
 			if (!isCurrentStaffOptionsRequest(requestToken, roundId)) return;
 
 			staff = staffOptions;
+			staffRequested = true;
 		} catch (loadError) {
 			if (!isCurrentStaffOptionsRequest(requestToken, roundId)) return;
 
-			toast.error(
-				loadError instanceof Error ? loadError.message : 'โหลดรายชื่อครูสำหรับจัดกรรมการไม่สำเร็จ'
-			);
+			staffLoadError =
+				loadError instanceof Error ? loadError.message : 'โหลดรายชื่อครูสำหรับจัดกรรมการไม่สำเร็จ';
 		} finally {
 			if (isCurrentStaffOptionsRequest(requestToken, roundId)) {
 				staffLoading = false;
@@ -548,8 +604,10 @@
 		if (invigilatorWorkspace?.roundId === roundId) return invigilatorWorkspace;
 
 		const invigilatorData = await getExamInvigilatorWorkspace(roundId);
-		invigilatorWorkspace = invigilatorData;
-		invigilatorLoadError = '';
+		if (isCurrentRound(roundId)) {
+			invigilatorWorkspace = invigilatorData;
+			invigilatorLoadError = '';
+		}
 		return invigilatorData;
 	}
 
@@ -820,13 +878,24 @@
 	async function handleExportExamSchedule() {
 		if (!workspace || exportingExamSchedule) return;
 
+		const exportWorkspace = workspace;
+		const roundId = exportWorkspace.round.id;
 		exportingExamSchedule = true;
 		try {
-			const invigilatorData = await ensureInvigilatorWorkspaceForExport(workspace.round.id);
+			const invigilatorData = await ensureInvigilatorWorkspaceForExport(roundId);
+			if (!isCurrentRound(roundId)) return;
+			const exportHomerooms = optionsRequested
+				? homerooms
+				: await lookupHomerooms({
+						academicYearId: exportWorkspace.round.academicYearId,
+						limit: 500
+					});
+			if (!isCurrentRound(roundId)) return;
 			const ExcelJSModule = await import('exceljs');
+			if (!isCurrentRound(roundId)) return;
 			const ExcelJS = ExcelJSModule.default;
-			const exportWorkbook = buildExamScheduleExportWorkbook(workspace, invigilatorData, {
-				homerooms
+			const exportWorkbook = buildExamScheduleExportWorkbook(exportWorkspace, invigilatorData, {
+				homerooms: exportHomerooms
 			});
 			const workbook = new ExcelJS.Workbook();
 			workbook.creator = 'SchoolOrbit';
@@ -842,7 +911,8 @@
 			appendObjectSheet(workbook, 'ความพร้อม', exportWorkbook.readiness);
 
 			const buffer = await workbook.xlsx.writeBuffer();
-			saveWorkbookBuffer(buffer, examScheduleExportFileName(workspace.round.name));
+			if (!isCurrentRound(roundId)) return;
+			saveWorkbookBuffer(buffer, examScheduleExportFileName(exportWorkspace.round.name));
 			toast.success('ส่งออกตารางสอบแล้ว');
 		} catch (exportError) {
 			toast.error(exportError instanceof Error ? exportError.message : 'ส่งออกตารางสอบไม่สำเร็จ');
@@ -865,13 +935,15 @@
 	async function handleSyncSources() {
 		if (!workspace || selectedSourceIds.length === 0) return;
 
+		const roundId = workspace.round.id;
 		syncingSources = true;
 		try {
-			const result = await syncExamSources(workspace.round.id, {
+			const result = await syncExamSources(roundId, {
 				roundRowVersion: workspace.sourcePreview.roundRowVersion,
 				previewToken: workspace.sourcePreview.previewToken,
 				sourceIds: selectedSourceIds
 			});
+			if (!isCurrentRound(roundId)) return;
 			sourceSyncResults = result.results;
 			const conflictCount = result.results.filter((item) => item.status === 'conflict').length;
 			const appliedCount = result.insertedCount + result.updatedDurationCount + result.removedCount;
@@ -916,9 +988,11 @@
 	async function saveExamKind(value: ExamRoundKind) {
 		if (!workspace) return;
 
+		const roundId = workspace.round.id;
 		savingRoundKind = true;
 		try {
-			const round = await updateExamRound(workspace.round.id, { examKind: value });
+			const round = await updateExamRound(roundId, { examKind: value });
+			if (!isCurrentRound(roundId)) return;
 			workspace = { ...workspace, round };
 			toast.success(`เปลี่ยนชนิดรอบสอบเป็น${examRoundKindLabel(round.examKind)}แล้ว`);
 			await refreshWorkspace(true);
@@ -945,12 +1019,13 @@
 	async function handlePublish() {
 		if (!workspace) return;
 
+		const roundId = workspace.round.id;
 		publishing = true;
 		try {
-			const round = await publishExamRound(workspace.round.id);
+			const round = await publishExamRound(roundId);
+			if (!isCurrentRound(roundId)) return;
 			workspace = { ...workspace, round };
 			toast.success('เผยแพร่ตารางสอบแล้ว');
-			await refreshWorkspace(true);
 		} catch (publishError) {
 			toast.error(
 				publishError instanceof Error ? publishError.message : 'เผยแพร่ตารางสอบไม่สำเร็จ'
@@ -971,11 +1046,11 @@
 		try {
 			if (examDayId) {
 				await updateExamDay(examDayId, input);
-				toast.success('แก้ไขวันสอบแล้ว');
 			} else {
 				await upsertExamDay(roundId, input);
-				toast.success('เพิ่มวันสอบแล้ว');
 			}
+			if (!isCurrentRound(roundId)) return false;
+			toast.success(examDayId ? 'แก้ไขวันสอบแล้ว' : 'เพิ่มวันสอบแล้ว');
 			await refreshWorkspace(true);
 			return true;
 		} catch (saveError) {
@@ -987,11 +1062,13 @@
 	}
 
 	async function handleDeleteDay(examDayId: string) {
-		if (!window.confirm('ลบวันสอบนี้?')) return;
+		const roundId = workspace?.round.id;
+		if (!roundId || !window.confirm('ลบวันสอบนี้?')) return;
 
 		deletingDayId = examDayId;
 		try {
 			await deleteExamDay(examDayId);
+			if (!isCurrentRound(roundId)) return;
 			toast.success('ลบวันสอบแล้ว');
 			await refreshWorkspace(true);
 		} catch (deleteError) {
@@ -1005,9 +1082,12 @@
 		examDayId: string,
 		input: UpsertDayRoomAssignmentInput
 	): Promise<boolean> {
+		const roundId = workspace?.round.id;
+		if (!roundId) return false;
 		savingAssignment = true;
 		try {
 			await upsertDayRoomAssignment(examDayId, input);
+			if (!isCurrentRound(roundId)) return false;
 			toast.success('บันทึกห้องสอบแล้ว');
 			await refreshWorkspace(true);
 			return true;
@@ -1023,10 +1103,13 @@
 		assignmentId: string,
 		staffId: string
 	): Promise<ExamInvigilatorWorkspace> {
+		const roundId = workspace?.round.id;
 		try {
 			const updatedWorkspace = await assignExamAssignmentInvigilator(assignmentId, staffId);
-			invigilatorWorkspace = updatedWorkspace;
-			toast.success('บันทึกกรรมการคุมสอบแล้ว');
+			if (roundId && isCurrentRound(roundId)) {
+				invigilatorWorkspace = updatedWorkspace;
+				toast.success('บันทึกกรรมการคุมสอบแล้ว');
+			}
 			return updatedWorkspace;
 		} catch (saveError) {
 			toast.error(saveError instanceof Error ? saveError.message : 'บันทึกกรรมการคุมสอบไม่สำเร็จ');
@@ -1038,10 +1121,13 @@
 		assignmentId: string,
 		staffId: string
 	): Promise<ExamInvigilatorWorkspace> {
+		const roundId = workspace?.round.id;
 		try {
 			const updatedWorkspace = await removeExamAssignmentInvigilator(assignmentId, staffId);
-			invigilatorWorkspace = updatedWorkspace;
-			toast.success('ลบกรรมการคุมสอบแล้ว');
+			if (roundId && isCurrentRound(roundId)) {
+				invigilatorWorkspace = updatedWorkspace;
+				toast.success('ลบกรรมการคุมสอบแล้ว');
+			}
 			return updatedWorkspace;
 		} catch (saveError) {
 			toast.error(saveError instanceof Error ? saveError.message : 'ลบกรรมการคุมสอบไม่สำเร็จ');
@@ -1050,9 +1136,12 @@
 	}
 
 	async function handleGenerateSeats(assignmentId: string) {
+		const roundId = workspace?.round.id;
+		if (!roundId) return;
 		generatingAssignmentId = assignmentId;
 		try {
 			const seats = await generateSeatsForAssignment(assignmentId, { regenerate: true });
+			if (!isCurrentRound(roundId)) return;
 			toast.success(`สร้างเลขที่นั่ง ${seats.length} รายการ`);
 			await refreshWorkspace(true);
 		} catch (seatError) {
@@ -1063,6 +1152,8 @@
 	}
 
 	async function handlePlaceExamSession(input: PlaceExamSessionInput): Promise<boolean> {
+		const roundId = workspace?.round.id;
+		if (!roundId) return false;
 		if (!addPlacingItemId(input.examScheduleItemId)) return false;
 
 		const rollback = applyPendingExamSession(input);
@@ -1078,16 +1169,19 @@
 				examDayId: input.examDayId,
 				startsAt: input.startsAt
 			});
+			if (!isCurrentRound(roundId)) return false;
 			applyPlacedExamSession(session);
 			void refreshOrInvalidateInvigilators(session.examRoundId);
 			toast.success('บันทึกเวลาสอบแล้ว');
 			return true;
 		} catch (placeError) {
-			rollbackPendingExamSession(rollback);
-			toast.error(placeError instanceof Error ? placeError.message : 'บันทึกเวลาสอบไม่สำเร็จ');
+			if (isCurrentRound(roundId)) {
+				rollbackPendingExamSession(rollback);
+				toast.error(placeError instanceof Error ? placeError.message : 'บันทึกเวลาสอบไม่สำเร็จ');
+			}
 			return false;
 		} finally {
-			removePlacingItemId(input.examScheduleItemId);
+			if (isCurrentRound(roundId)) removePlacingItemId(input.examScheduleItemId);
 		}
 	}
 
@@ -1102,22 +1196,26 @@
 			return false;
 		}
 		if (!addUnschedulingSessionId(sessionId)) return false;
+		const roundId = workspace.round.id;
 
 		applyPendingRemovedExamSession(session);
 		try {
 			await deleteExamSession(sessionId);
+			if (!isCurrentRound(roundId)) return false;
 			applyRemovedExamSession(session);
 			void refreshOrInvalidateInvigilators(session.examRoundId);
 			toast.success('เอารายการสอบออกจากตารางแล้ว');
 			return true;
 		} catch (deleteError) {
-			rollbackPendingRemovedExamSession(session);
-			toast.error(
-				deleteError instanceof Error ? deleteError.message : 'เอารายการสอบออกจากตารางไม่สำเร็จ'
-			);
+			if (isCurrentRound(roundId)) {
+				rollbackPendingRemovedExamSession(session);
+				toast.error(
+					deleteError instanceof Error ? deleteError.message : 'เอารายการสอบออกจากตารางไม่สำเร็จ'
+				);
+			}
 			return false;
 		} finally {
-			removeUnschedulingSessionId(sessionId);
+			if (isCurrentRound(roundId)) removeUnschedulingSessionId(sessionId);
 		}
 	}
 
@@ -1133,13 +1231,21 @@
 		return kind === 'final' ? 'ปลายภาค' : 'กลางภาค';
 	}
 
-	$effect(() => {
-		if (canManageExamSchedules && workspace && !optionsRequested && !optionsLoading) {
+	$effect.pre(() => {
+		if (
+			activeTab === 'rooms' &&
+			canManageExamSchedules &&
+			workspace &&
+			workspace.round.status !== 'published' &&
+			!optionsRequested &&
+			!optionsLoading &&
+			!optionsError
+		) {
 			loadManagementOptions();
 		}
 	});
 
-	$effect(() => {
+	$effect.pre(() => {
 		const roundId = workspace?.round.id ?? loadedRoundId;
 		if (
 			activeTab === 'invigilators' &&
@@ -1152,25 +1258,68 @@
 		}
 	});
 
-	$effect(() => {
+	$effect.pre(() => {
 		if (
 			activeTab === 'invigilators' &&
 			canManageExamSchedules &&
 			workspace?.round.status !== 'published' &&
 			!staffRequested &&
-			!staffLoading
+			!staffLoading &&
+			!staffLoadError
 		) {
 			loadInvigilatorStaffOptions();
 		}
 	});
 
-	$effect(() => {
+	$effect.pre(() => {
 		const roundId = data.roundId;
-		if (!roundId || roundId === requestedRoundId) return;
-
-		requestedRoundId = roundId;
-		resetWorkspaceForRound(roundId);
-		loadWorkspace(roundId, true);
+		const routeWorkspace = data.workspace;
+		const routeGradeLevels = data.gradeLevels;
+		const sameRound = roundId === activeRouteRoundId;
+		let current = true;
+		untrack(() => {
+			if (!sameRound) {
+				activeRouteRoundId = roundId;
+				resetWorkspaceForRound(roundId);
+			} else {
+				loading = workspace === null;
+				refreshing = workspace !== null;
+				error = '';
+			}
+		});
+		const workspaceToken = ++workspaceRequestToken;
+		const gradesToken = ++gradeLevelsRequestToken;
+		untrack(() => {
+			gradeLevelsLoading = !!routeGradeLevels;
+			gradeLevelsError = '';
+		});
+		void routeWorkspace.then((result) => {
+			if (!current || workspaceToken !== workspaceRequestToken) return;
+			untrack(() => {
+				if (result.ok) {
+					const previewChanged =
+						workspace?.sourcePreview.previewToken !== result.data.sourcePreview.previewToken;
+					workspace = result.data;
+					if (previewChanged) selectedSourceIds = recommendedSourceIds(result.data);
+					loadedRoundId = roundId;
+				} else error = result.error;
+				loading = false;
+				refreshing = false;
+			});
+		});
+		void routeGradeLevels.then((result) => {
+			if (!current || gradesToken !== gradeLevelsRequestToken) return;
+			untrack(() => {
+				if (result?.ok) {
+					gradeLevels = result.data;
+					gradeLevelsLoaded = true;
+				} else if (result) gradeLevelsError = result.error;
+				gradeLevelsLoading = false;
+			});
+		});
+		return () => {
+			current = false;
+		};
 	});
 </script>
 
@@ -1179,7 +1328,8 @@
 <PageShell
 	title={pageTitle}
 	description={workspace?.round.description ?? termLabel ?? 'จัดตารางสอบประจำภาคเรียน'}
-	backHref="/staff/academic/exam-schedules"
+	{backHref}
+	backPreload="off"
 	class="flex h-full min-h-0 flex-col"
 	contentClass="flex min-h-0 flex-1 flex-col"
 >
@@ -1262,7 +1412,7 @@
 
 	{#if loading}
 		<PageSkeleton variant="detail" />
-	{:else if error}
+	{:else if error && !workspace}
 		<PageState
 			variant="error"
 			title="โหลดพื้นที่จัดตารางสอบไม่สำเร็จ"
@@ -1273,7 +1423,23 @@
 	{:else if !workspace}
 		<PageState title="ไม่พบรอบตารางสอบ" description="รายการที่เปิดอาจถูกลบหรือไม่มีสิทธิ์เข้าถึง" />
 	{:else}
-		<div class="flex min-h-0 flex-1 flex-col">
+		<div
+			class="relative flex min-h-0 flex-1 flex-col"
+			aria-busy={refreshing}
+			data-testid="exam-detail-ready"
+		>
+			{#if refreshing}<RegionUpdatingState label="กำลังอัปเดตรอบตารางสอบ..." />{/if}
+			{#if error}
+				<div
+					role="alert"
+					class="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					<span>{error}</span>
+					<LoadingButton variant="outline" size="sm" onclick={() => loadWorkspace(data.roundId)}
+						>ลองใหม่</LoadingButton
+					>
+				</div>
+			{/if}
 			<div class="mb-4">
 				<ExamSourceSyncPanel
 					preview={workspace.sourcePreview}
@@ -1301,28 +1467,69 @@
 				</Tabs.List>
 
 				<Tabs.Content value="setup" class="min-h-0 flex-1">
-					<ExamDaySetupPanel
-						days={workspace.days}
-						{gradeLevels}
-						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-						saving={savingDay}
-						{deletingDayId}
-						onSaveDay={handleSaveDay}
-						onDeleteDay={handleDeleteDay}
-					/>
+					{#if gradeLevelsLoading && !gradeLevelsLoaded}
+						<PageSkeleton variant="detail" />
+					{:else if gradeLevelsError && !gradeLevelsLoaded}
+						<PageState
+							variant="error"
+							title="โหลดระดับชั้นไม่สำเร็จ"
+							description={gradeLevelsError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadGradeLevels}
+						/>
+					{:else}
+						<div
+							class="relative"
+							aria-busy={gradeLevelsLoading}
+							data-testid="exam-grade-levels-ready"
+						>
+							{#if gradeLevelsLoading}<RegionUpdatingState label="กำลังอัปเดตระดับชั้น..." />{/if}
+							{#if gradeLevelsError}<div
+									role="alert"
+									class="mb-3 flex items-center gap-3 text-sm text-destructive"
+								>
+									<span>{gradeLevelsError}</span><LoadingButton
+										variant="outline"
+										size="sm"
+										onclick={loadGradeLevels}>ลองใหม่</LoadingButton
+									>
+								</div>{/if}
+							<ExamDaySetupPanel
+								days={workspace.days}
+								{gradeLevels}
+								readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+								saving={savingDay}
+								{deletingDayId}
+								onSaveDay={handleSaveDay}
+								onDeleteDay={handleDeleteDay}
+							/>
+						</div>
+					{/if}
 				</Tabs.Content>
 
 				<Tabs.Content value="rooms" class="min-h-0 flex-1">
-					<ExamRoomAssignmentPanel
-						days={workspace.days}
-						{homerooms}
-						{rooms}
-						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-						saving={savingAssignment}
-						{generatingAssignmentId}
-						onSaveAssignment={handleSaveAssignment}
-						onGenerateSeats={handleGenerateSeats}
-					/>
+					{#if optionsLoading && !optionsRequested}
+						<PageSkeleton variant="table" rows={4} columns={4} />
+					{:else if optionsError && !optionsRequested}
+						<PageState
+							variant="error"
+							title="โหลดตัวเลือกห้องสอบไม่สำเร็จ"
+							description={optionsError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadManagementOptions}
+						/>
+					{:else}
+						<ExamRoomAssignmentPanel
+							days={workspace.days}
+							{homerooms}
+							{rooms}
+							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+							saving={savingAssignment}
+							{generatingAssignmentId}
+							onSaveAssignment={handleSaveAssignment}
+							onGenerateSeats={handleGenerateSeats}
+						/>
+					{/if}
 				</Tabs.Content>
 
 				<Tabs.Content value="schedule" class="min-h-0 flex-1">
@@ -1337,17 +1544,33 @@
 				</Tabs.Content>
 
 				<Tabs.Content value="invigilators" class="min-h-0 flex-1">
-					<ExamInvigilatorPanel
-						days={workspace.days}
-						workspace={invigilatorWorkspace}
-						{staff}
-						loading={loadingInvigilators}
-						loadError={invigilatorLoadError}
-						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-						onAssignInvigilator={handleAssignInvigilator}
-						onRemoveInvigilator={handleRemoveInvigilator}
-						onRetry={() => loadInvigilators()}
-					/>
+					<div class="relative" aria-busy={staffLoading}>
+						{#if staffLoading}<RegionUpdatingState label="กำลังโหลดรายชื่อครู..." />{/if}
+						{#if staffLoadError}
+							<div
+								role="alert"
+								class="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+							>
+								<span>{staffLoadError}</span>
+								<LoadingButton variant="outline" size="sm" onclick={loadInvigilatorStaffOptions}
+									>ลองโหลดครูอีกครั้ง</LoadingButton
+								>
+							</div>
+						{/if}
+						<ExamInvigilatorPanel
+							days={workspace.days}
+							workspace={invigilatorWorkspace}
+							{staff}
+							{staffLoading}
+							{staffLoadError}
+							loading={loadingInvigilators}
+							loadError={invigilatorLoadError}
+							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+							onAssignInvigilator={handleAssignInvigilator}
+							onRemoveInvigilator={handleRemoveInvigilator}
+							onRetry={() => loadInvigilators()}
+						/>
+					</div>
 				</Tabs.Content>
 			</Tabs.Root>
 
