@@ -31,6 +31,7 @@ test('legacy page-mount API reads only shrink during route migration', async () 
 	const inventory = JSON.parse(await readFile(inventoryPath, 'utf8'));
 	const records = new Map(inventory.routes.map((record) => [record.route, record]));
 	const browserOnlyMountRoutes = new Set([
+		'staff/academic/assessments',
 		'staff/academic/timetable',
 		'staff/academic/timetable/templates'
 	]);

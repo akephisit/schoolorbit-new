@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import type { PageProps } from './$types';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
@@ -21,7 +23,7 @@
 		type SaveAssessmentPhaseRequest
 	} from '$lib/api/academicAssessments';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -48,6 +50,7 @@
 		CloudAlert,
 		CloudCheck,
 		Loader2,
+		RefreshCw,
 		Search,
 		ShieldCheck,
 		Sparkles,
@@ -60,22 +63,29 @@
 	type ExamFilter = 'all' | AssessmentExamArrangement;
 	type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
+	let { data }: PageProps = $props();
 	const phaseCodes: AssessmentPhaseCode[] = ['before_midterm', 'midterm', 'after_midterm', 'final'];
 	const academicContext = getAcademicContextStore();
-	const academicYearId = $derived($academicContext.selected.academicYearId);
-	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const academicYearId = $derived(data.academicYearId);
+	const academicTermId = $derived(data.academicTermId);
 	const currentUserId = $derived($authStore.user?.id ?? '');
 
 	let plans = $state.raw<AssessmentPlanSummary[]>([]);
 	let phaseControls = $state.raw<AssessmentPhaseControl[]>([]);
 	let detail = $state.raw<AssessmentPlanDetail | null>(null);
+	let selectedPlan = $state.raw<AssessmentPlanSummary | null>(null);
 	let draftPhases = $state<SaveAssessmentPhaseRequest[]>([]);
 	let draftCoordinatorId = $state('');
 	let searchQuery = $state('');
 	let readyFilter = $state<ReadyFilter>('all');
 	let examFilter = $state<ExamFilter>('all');
 	let sheetOpen = $state(false);
-	let loading = $state(false);
+	let plansLoading = $state(true);
+	let plansLoaded = $state(false);
+	let plansError = $state('');
+	let controlsLoading = $state(true);
+	let controlsLoaded = $state(false);
+	let controlsError = $state('');
 	let detailLoading = $state(false);
 	let saveState = $state<SaveState>('idle');
 	let dirty = $state(false);
@@ -84,9 +94,18 @@
 	let errorMessage = $state('');
 	let lastSavedAt = $state<Date | null>(null);
 	let closeRequested = false;
-	let revision = 0;
+	let activeContextKey = '';
+	let plansRevision = 0;
+	let controlsRevision = 0;
+	let detailRevision = 0;
 	let draftRevision = 0;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	const plansRequest = new LatestRequest();
+	const controlsRequest = new LatestRequest();
+	onDestroy(() => {
+		plansRequest.abort();
+		controlsRequest.abort();
+	});
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -265,35 +284,68 @@
 		void persistDraft();
 	}
 
-	async function loadWorkspace(termId: string): Promise<void> {
-		const current = ++revision;
-		loading = true;
-		errorMessage = '';
+	async function loadPlans(): Promise<void> {
+		const termId = academicTermId;
+		if (!termId) return;
+		const { revision, signal } = plansRequest.begin();
+		plansRevision += 1;
+		plansLoading = true;
+		plansError = '';
 		try {
-			const rows = await listAssessmentPlans({ academicTermId: termId });
-			if (current !== revision) return;
-			const controls = await listAssessmentPhaseControls(termId);
-			if (current !== revision) return;
-			plans = rows;
-			phaseControls = controls;
-			detail = null;
-			draftPhases = [];
-			draftCoordinatorId = '';
-			dirty = false;
-			saveState = 'idle';
-			closeRequested = false;
-		} catch (error) {
-			if (current === revision) {
-				errorMessage = error instanceof Error ? error.message : 'โหลดโครงสร้างคะแนนไม่สำเร็จ';
+			const rows = await listAssessmentPlans({ academicTermId: termId }, { signal });
+			if (plansRequest.isCurrent(revision) && academicTermId === termId) {
+				plans = rows;
+				plansLoaded = true;
 			}
+		} catch (error) {
+			if (!isAbortError(error) && plansRequest.isCurrent(revision))
+				plansError = error instanceof Error ? error.message : 'โหลดโครงสร้างคะแนนไม่สำเร็จ';
 		} finally {
-			if (current === revision) loading = false;
+			if (plansRequest.isCurrent(revision)) plansLoading = false;
 		}
 	}
 
-	async function refreshPlans(): Promise<void> {
-		if (!academicTermId) return;
-		plans = await listAssessmentPlans({ academicTermId });
+	async function loadControls(): Promise<void> {
+		const termId = academicTermId;
+		if (!termId) return;
+		const { revision, signal } = controlsRequest.begin();
+		controlsRevision += 1;
+		controlsLoading = true;
+		controlsError = '';
+		try {
+			const rows = await listAssessmentPhaseControls(termId, { signal });
+			if (controlsRequest.isCurrent(revision) && academicTermId === termId) {
+				phaseControls = rows;
+				controlsLoaded = true;
+			}
+		} catch (error) {
+			if (!isAbortError(error) && controlsRequest.isCurrent(revision))
+				controlsError = error instanceof Error ? error.message : 'โหลดช่วงการทำงานของครูไม่สำเร็จ';
+		} finally {
+			if (controlsRequest.isCurrent(revision)) controlsLoading = false;
+		}
+	}
+
+	function patchPlanSummary(saved: AssessmentPlanDetail): void {
+		plansRequest.abort();
+		plansRevision += 1;
+		plansLoading = false;
+		plansError = '';
+		plans = plans.map((plan) =>
+			plan.offeringId === saved.offeringId
+				? {
+						...plan,
+						planId: saved.id ?? null,
+						rowVersion: saved.rowVersion,
+						assessmentCoordinatorId: saved.assessmentCoordinatorId,
+						assessmentCoordinatorName: saved.assessmentCoordinatorName,
+						suggestedCoordinatorId: saved.suggestedCoordinatorId,
+						suggestedCoordinatorName: saved.suggestedCoordinatorName,
+						phases: saved.phases,
+						readiness: saved.readiness
+					}
+				: plan
+		);
 	}
 
 	async function openPlan(plan: AssessmentPlanSummary): Promise<void> {
@@ -311,9 +363,14 @@
 		closeRequested = false;
 		sheetOpen = true;
 		detailLoading = true;
+		selectedPlan = plan;
+		const requestRevision = ++detailRevision;
+		const termId = academicTermId;
+		detail = null;
 		errorMessage = '';
 		try {
 			const loaded = await getAssessmentPlan(plan.offeringId);
+			if (requestRevision !== detailRevision || academicTermId !== termId || !sheetOpen) return;
 			detail = loaded;
 			draftPhases = clonePhases(loaded);
 			draftCoordinatorId =
@@ -327,10 +384,11 @@
 			saveState = 'idle';
 			lastSavedAt = null;
 		} catch (error) {
-			errorMessage =
-				error instanceof Error ? error.message : 'โหลดรายละเอียดโครงสร้างคะแนนไม่สำเร็จ';
+			if (requestRevision === detailRevision)
+				errorMessage =
+					error instanceof Error ? error.message : 'โหลดรายละเอียดโครงสร้างคะแนนไม่สำเร็จ';
 		} finally {
-			detailLoading = false;
+			if (requestRevision === detailRevision) detailLoading = false;
 		}
 	}
 
@@ -346,6 +404,8 @@
 		}
 
 		const offeringId = detail.offeringId;
+		const termId = academicTermId;
+		const requestRevision = detailRevision;
 		const revisionAtStart = draftRevision;
 		const payloadPhases = draftPhases.map((phase) => ({
 			...phase,
@@ -361,8 +421,14 @@
 				assessmentCoordinatorId: draftCoordinatorId || null,
 				phases: payloadPhases
 			});
-			if (detail?.offeringId !== offeringId) return;
+			if (
+				detail?.offeringId !== offeringId ||
+				academicTermId !== termId ||
+				requestRevision !== detailRevision
+			)
+				return;
 			detail = saved;
+			patchPlanSummary(saved);
 			lastSavedAt = new Date();
 			if (draftRevision === revisionAtStart) {
 				draftPhases = clonePhases(saved);
@@ -372,22 +438,22 @@
 			} else {
 				saveState = 'pending';
 			}
-			try {
-				await refreshPlans();
-			} catch {
-				toast.warning('บันทึกแล้ว แต่ยังรีเฟรชตารางภาพรวมไม่ได้');
-			}
 		} catch (error) {
+			if (requestRevision !== detailRevision || academicTermId !== termId) return;
 			closeRequested = false;
 			errorMessage = error instanceof Error ? error.message : 'บันทึกโครงสร้างคะแนนไม่สำเร็จ';
 			saveState = 'error';
 			toast.error(errorMessage);
 		} finally {
 			saving = false;
-			if (dirty && draftRevision !== revisionAtStart && saveState !== 'error') markDirty();
-			if (closeRequested && !dirty && saveState !== 'error') {
-				closeRequested = false;
-				sheetOpen = false;
+			if (requestRevision === detailRevision && academicTermId === termId) {
+				if (dirty && draftRevision !== revisionAtStart && saveState !== 'error') markDirty();
+				if (closeRequested && !dirty && saveState !== 'error') {
+					closeRequested = false;
+					sheetOpen = false;
+					selectedPlan = null;
+					detailRevision += 1;
+				}
 			}
 		}
 	}
@@ -422,6 +488,8 @@
 		}
 		closeRequested = false;
 		sheetOpen = false;
+		selectedPlan = null;
+		detailRevision += 1;
 	}
 
 	function handleSheetOpenChange(nextOpen: boolean): void {
@@ -435,11 +503,17 @@
 	async function togglePhaseControl(control: AssessmentPhaseControl): Promise<void> {
 		if (!canManageSchool || controlBusyId) return;
 		controlBusyId = control.id;
+		const termId = academicTermId;
 		try {
 			const saved = await updateAssessmentPhaseControl(control.id, {
 				rowVersion: control.rowVersion,
 				planEditingEnabled: !control.planEditingEnabled
 			});
+			if (termId !== academicTermId) return;
+			controlsRequest.abort();
+			controlsRevision += 1;
+			controlsLoading = false;
+			controlsError = '';
 			phaseControls = phaseControls.map((item) => (item.id === saved.id ? saved : item));
 			toast.success(`บันทึกสิทธิ์ช่วง${phaseLabel(saved.phaseCode)}แล้ว`);
 		} catch (error) {
@@ -450,22 +524,74 @@
 	}
 
 	onMount(() => {
-		let loadedTermId: string | null = null;
 		const unregisterDirty = registerAcademicContextDirtySource(
 			'academic-assessment-plan',
 			() => dirty || saving
 		);
-		const unsubscribe = academicContext.subscribe((state) => {
-			const termId = state.selected.academicTermId;
-			if (termId && termId !== loadedTermId) {
-				loadedTermId = termId;
-				void loadWorkspace(termId);
-			}
-		});
 		return () => {
 			if (saveTimer) clearTimeout(saveTimer);
-			unsubscribe();
 			unregisterDirty();
+		};
+	});
+
+	$effect.pre(() => {
+		const contextKey = `${data.academicYearId}:${data.academicTermId}`;
+		const routePlans = data.plans;
+		const routeControls = data.phaseControls;
+		const initialPlansRevision = plansRevision;
+		const initialControlsRevision = controlsRevision;
+		let current = true;
+		untrack(() => {
+			if (activeContextKey !== contextKey) {
+				activeContextKey = contextKey;
+				plansRequest.abort();
+				controlsRequest.abort();
+				plans = [];
+				phaseControls = [];
+				plansLoaded = false;
+				controlsLoaded = false;
+				detailRevision += 1;
+				detail = null;
+				selectedPlan = null;
+				draftPhases = [];
+				draftCoordinatorId = '';
+				sheetOpen = false;
+				dirty = false;
+				saveState = 'idle';
+				closeRequested = false;
+				if (saveTimer) clearTimeout(saveTimer);
+			}
+			plansLoading = Boolean(routePlans);
+			controlsLoading = Boolean(routeControls);
+			plansError = '';
+			controlsError = '';
+		});
+		if (routePlans)
+			void routePlans.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (plansRevision !== initialPlansRevision) return;
+					if (result.ok) {
+						plans = result.data;
+						plansLoaded = true;
+					} else plansError = result.error;
+					plansLoading = false;
+				});
+			});
+		if (routeControls)
+			void routeControls.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (controlsRevision !== initialControlsRevision) return;
+					if (result.ok) {
+						phaseControls = result.data;
+						controlsLoaded = true;
+					} else controlsError = result.error;
+					controlsLoading = false;
+				});
+			});
+		return () => {
+			current = false;
 		};
 	});
 </script>
@@ -489,193 +615,267 @@
 			description="ติดต่อผู้ดูแลเพื่อขอสิทธิ์อ่านโครงสร้างคะแนนหรือรายการเปิดสอน"
 		/>
 	{:else if !academicTermId}
-		<PageState
-			variant="empty"
-			title="เลือกภาคเรียนก่อน"
-			description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
-		/>
-	{:else if loading}
-		<PageSkeleton variant="table" rows={8} />
-	{:else if errorMessage && plans.length === 0}
-		<PageState
-			variant="error"
-			title="โหลดโครงสร้างคะแนนไม่สำเร็จ"
-			description={errorMessage}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadWorkspace(academicTermId)}
-		/>
+		{#if $academicContext.status === 'loading'}
+			<PageSkeleton variant="table" rows={8} />
+		{:else}
+			<PageState
+				variant="empty"
+				title="เลือกภาคเรียนก่อน"
+				description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
+			/>
+		{/if}
 	{:else}
 		<div class="space-y-5">
 			{#if canManageSchool}
-				<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
-					<div class="flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4">
-						<div>
-							<div class="flex items-center gap-2">
-								<CalendarClock class="size-5 text-primary" />
-								<h2 class="font-semibold">ช่วงการทำงานของครู</h2>
-							</div>
-							<p class="mt-1 text-sm text-muted-foreground">
-								เปิดการแก้โครงสร้างสำหรับผู้รับผิดชอบรายวิชาแยกตามช่วง
-								ส่วนการเปิดกรอกคะแนนจัดการจากหน้ากรอกคะแนน
-							</p>
-						</div>
+				{#if controlsLoading && !controlsLoaded}
+					<div data-testid="assessment-controls-loading">
+						<PageSkeleton variant="cards" rows={4} />
 					</div>
-					<div class="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-						{#each phaseControls as control (control.id)}
-							<div class="space-y-3 px-5 py-4">
-								<div class="flex items-center justify-between gap-3">
-									<p class="font-medium">{phaseLabel(control.phaseCode)}</p>
-									<span class="font-mono text-xs text-muted-foreground"
-										>0{phaseCodes.indexOf(control.phaseCode) + 1}</span
-									>
-								</div>
-								<div class="flex items-center justify-between gap-3 text-sm">
-									<Label for={`plan-control-${control.id}`}>แก้โครงสร้างคะแนนรายวิชา</Label>
-									<Switch
-										id={`plan-control-${control.id}`}
-										checked={control.planEditingEnabled}
-										disabled={Boolean(controlBusyId)}
-										onclick={() => togglePhaseControl(control)}
-									/>
-								</div>
-							</div>
-						{/each}
-					</div>
-				</section>
-			{/if}
-
-			{#if plans.length === 0}
-				<AcademicPrerequisiteNotice prerequisite={noCourseOfferingPrerequisite} />
-			{:else}
-				<Card.Root class="gap-0 py-0">
-					<Card.Header class="border-b py-5">
-						<div class="flex flex-wrap items-start justify-between gap-4">
-							<div>
-								<Card.Title>ภาพรวมรายวิชา</Card.Title>
-								<Card.Description class="mt-1">
-									{plans.length} รายวิชา · พร้อมใช้ {readyCount} · ต้องตรวจ {attentionCount}
-								</Card.Description>
-							</div>
-							<div class="flex flex-wrap items-center gap-2">
-								<div class="relative min-w-64 flex-1">
-									<Search
-										class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-									/>
-									<Label class="sr-only" for="assessment-search">ค้นหารายวิชา</Label>
-									<Input
-										id="assessment-search"
-										class="pl-9"
-										placeholder="ค้นหารหัส วิชา หรือผู้รับผิดชอบ"
-										bind:value={searchQuery}
-									/>
-								</div>
-								<Select.Root type="single" bind:value={readyFilter}>
-									<Select.Trigger class="w-40"
-										>{readyOptions.find((option) => option.value === readyFilter)
-											?.label}</Select.Trigger
-									>
-									<Select.Content>
-										{#each readyOptions as option (option.value)}<Select.Item value={option.value}
-												>{option.label}</Select.Item
-											>{/each}
-									</Select.Content>
-								</Select.Root>
-								<Select.Root type="single" bind:value={examFilter}>
-									<Select.Trigger class="w-44"
-										>{examOptions.find((option) => option.value === examFilter)
-											?.label}</Select.Trigger
-									>
-									<Select.Content>
-										{#each examOptions as option (option.value)}<Select.Item value={option.value}
-												>{option.label}</Select.Item
-											>{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-0">
-						<div class="overflow-x-auto">
-							<Table.Root class="min-w-[1060px]">
-								<Table.Header>
-									<Table.Row class="bg-muted/40 hover:bg-muted/40">
-										<Table.Head class="min-w-64 pl-5">รายวิชา</Table.Head>
-										<Table.Head class="min-w-44">ผู้รับผิดชอบ</Table.Head>
-										{#each phaseCodes as code (code)}<Table.Head class="min-w-32 text-center"
-												>{phaseLabel(code)}</Table.Head
-											>{/each}
-										<Table.Head class="w-36 text-center">ความพร้อม</Table.Head>
-										<Table.Head class="w-12"><span class="sr-only">เปิด</span></Table.Head>
-									</Table.Row>
-								</Table.Header>
-								<Table.Body>
-									{#each filteredPlans as plan (plan.offeringId)}
-										<Table.Row class="group cursor-pointer" onclick={() => openPlan(plan)}>
-											<Table.Cell class="pl-5">
-												<div class="font-medium">{plan.offeringCode} · {plan.offeringName}</div>
-												<div class="mt-1 text-xs text-muted-foreground">
-													{plan.subjectVersionDisplayLabel} · {plan.learningGroupCount} กลุ่มเรียน
-												</div>
-											</Table.Cell>
-											<Table.Cell>
-												{#if plan.assessmentCoordinatorName}
-													<div class="flex items-center gap-2 text-sm">
-														<UserRoundCheck class="size-4 text-primary" /><span
-															>{plan.assessmentCoordinatorName}</span
-														>
-													</div>
-												{:else}<span class="text-sm text-amber-700 dark:text-amber-300"
-														>ยังไม่กำหนด</span
-													>{/if}
-											</Table.Cell>
-											{#each phaseCodes as code (code)}
-												{@const phase = phaseFor(plan, code)}
-												<Table.Cell class="text-center">
-													{#if phase}
-														<div class="font-semibold tabular-nums">{phase.maxScore}</div>
-														{#if code === 'midterm' || code === 'final'}
-															<div class="mt-1 text-[11px] text-muted-foreground">
-																{arrangementLabel(
-																	phase.examArrangement
-																)}{#if phase.examDurationMinutes}
-																	· {phase.examDurationMinutes} นาที{/if}
-															</div>
-														{/if}
-													{:else}<span class="text-muted-foreground">—</span>{/if}
-												</Table.Cell>
-											{/each}
-											<Table.Cell class="text-center">
-												{#if plan.readiness.ready}
-													<Badge class="gap-1 bg-emerald-600 text-white hover:bg-emerald-600"
-														><Check class="size-3" /> พร้อมใช้</Badge
-													>
-												{:else}
-													<Badge
-														variant="outline"
-														class="gap-1 border-amber-300 text-amber-800 dark:text-amber-300"
-														><CircleAlert class="size-3" />
-														{plan.readiness.findings.length} จุด</Badge
-													>
-												{/if}
-												<div class="mt-1 text-xs tabular-nums text-muted-foreground">
-													{plan.readiness.totalScore}/{plan.readiness.expectedTotalScore}
-												</div>
-											</Table.Cell>
-											<Table.Cell><ChevronRight class="size-4 text-muted-foreground" /></Table.Cell>
-										</Table.Row>
-									{/each}
-								</Table.Body>
-							</Table.Root>
-						</div>
-						{#if filteredPlans.length === 0}
-							<div class="p-10 text-center">
-								<BookOpenCheck class="mx-auto mb-3 size-8 text-muted-foreground" />
-								<p class="font-medium">ไม่พบรายวิชาตามตัวกรอง</p>
-								<p class="mt-1 text-sm text-muted-foreground">ลองเปลี่ยนคำค้นหรือสถานะที่เลือก</p>
+				{:else if controlsError && !controlsLoaded}
+					<PageState
+						variant="error"
+						title="โหลดช่วงการทำงานของครูไม่สำเร็จ"
+						description={controlsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={loadControls}
+					/>
+				{:else}
+					<section
+						class="relative overflow-hidden rounded-xl border bg-card shadow-sm"
+						aria-busy={controlsLoading}
+					>
+						{#if controlsError}
+							<div
+								role="alert"
+								class="flex items-center gap-3 border-b p-3 text-sm text-destructive"
+							>
+								<span>{controlsError}</span><Button
+									variant="outline"
+									size="sm"
+									onclick={loadControls}>ลองใหม่</Button
+								>
 							</div>
 						{/if}
-					</Card.Content>
-				</Card.Root>
+						<div class="flex flex-wrap items-center justify-between gap-4 border-b px-5 py-4">
+							<div>
+								<div class="flex items-center gap-2">
+									<CalendarClock class="size-5 text-primary" />
+									<h2 class="font-semibold">ช่วงการทำงานของครู</h2>
+								</div>
+								<p class="mt-1 text-sm text-muted-foreground">
+									เปิดการแก้โครงสร้างสำหรับผู้รับผิดชอบรายวิชาแยกตามช่วง
+									ส่วนการเปิดกรอกคะแนนจัดการจากหน้ากรอกคะแนน
+								</p>
+							</div>
+							<div class="flex flex-wrap items-center gap-2">
+								{#if controlsLoading}<RegionUpdatingState
+										class="static"
+										label="กำลังอัปเดตช่วงการทำงานของครู..."
+									/>{/if}
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={loadControls}
+									disabled={controlsLoading || Boolean(controlBusyId)}
+								>
+									<RefreshCw class="size-4" /> รีเฟรชช่วงการทำงาน
+								</Button>
+							</div>
+						</div>
+						<div class="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+							{#each phaseControls as control (control.id)}
+								<div class="space-y-3 px-5 py-4">
+									<div class="flex items-center justify-between gap-3">
+										<p class="font-medium">{phaseLabel(control.phaseCode)}</p>
+										<span class="font-mono text-xs text-muted-foreground"
+											>0{phaseCodes.indexOf(control.phaseCode) + 1}</span
+										>
+									</div>
+									<div class="flex items-center justify-between gap-3 text-sm">
+										<Label for={`plan-control-${control.id}`}>แก้โครงสร้างคะแนนรายวิชา</Label>
+										<Switch
+											id={`plan-control-${control.id}`}
+											checked={control.planEditingEnabled}
+											disabled={Boolean(controlBusyId)}
+											onclick={() => togglePhaseControl(control)}
+										/>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/if}
+			{/if}
+
+			{#if plansLoading && !plansLoaded}
+				<div data-testid="assessment-plans-loading"><PageSkeleton variant="table" rows={8} /></div>
+			{:else if plansError && !plansLoaded}
+				<PageState
+					variant="error"
+					title="โหลดโครงสร้างคะแนนไม่สำเร็จ"
+					description={plansError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadPlans}
+				/>
+			{:else}
+				<div class="relative" aria-busy={plansLoading}>
+					<div class="mb-3 flex flex-wrap items-center justify-end gap-2">
+						{#if plansLoading}<RegionUpdatingState
+								class="static"
+								label="กำลังอัปเดตโครงสร้างคะแนน..."
+							/>{/if}
+						<Button variant="outline" size="sm" onclick={loadPlans} disabled={plansLoading}>
+							<RefreshCw class="size-4" /> รีเฟรชรายวิชา
+						</Button>
+					</div>
+					{#if plansError}
+						<div
+							role="alert"
+							class="mb-3 flex items-center gap-3 rounded-lg border border-destructive/30 p-3 text-sm text-destructive"
+						>
+							<span>{plansError}</span><Button variant="outline" size="sm" onclick={loadPlans}
+								>ลองใหม่</Button
+							>
+						</div>
+					{/if}
+					{#if plans.length === 0}
+						<AcademicPrerequisiteNotice prerequisite={noCourseOfferingPrerequisite} />
+					{:else}
+						<Card.Root class="gap-0 py-0">
+							<Card.Header class="border-b py-5">
+								<div class="flex flex-wrap items-start justify-between gap-4">
+									<div>
+										<Card.Title>ภาพรวมรายวิชา</Card.Title>
+										<Card.Description class="mt-1">
+											{plans.length} รายวิชา · พร้อมใช้ {readyCount} · ต้องตรวจ {attentionCount}
+										</Card.Description>
+									</div>
+									<div class="flex flex-wrap items-center gap-2">
+										<div class="relative min-w-64 flex-1">
+											<Search
+												class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+											/>
+											<Label class="sr-only" for="assessment-search">ค้นหารายวิชา</Label>
+											<Input
+												id="assessment-search"
+												class="pl-9"
+												placeholder="ค้นหารหัส วิชา หรือผู้รับผิดชอบ"
+												bind:value={searchQuery}
+											/>
+										</div>
+										<Select.Root type="single" bind:value={readyFilter}>
+											<Select.Trigger class="w-40"
+												>{readyOptions.find((option) => option.value === readyFilter)
+													?.label}</Select.Trigger
+											>
+											<Select.Content>
+												{#each readyOptions as option (option.value)}<Select.Item
+														value={option.value}>{option.label}</Select.Item
+													>{/each}
+											</Select.Content>
+										</Select.Root>
+										<Select.Root type="single" bind:value={examFilter}>
+											<Select.Trigger class="w-44"
+												>{examOptions.find((option) => option.value === examFilter)
+													?.label}</Select.Trigger
+											>
+											<Select.Content>
+												{#each examOptions as option (option.value)}<Select.Item
+														value={option.value}>{option.label}</Select.Item
+													>{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+								</div>
+							</Card.Header>
+							<Card.Content class="p-0">
+								<div class="overflow-x-auto">
+									<Table.Root class="min-w-[1060px]">
+										<Table.Header>
+											<Table.Row class="bg-muted/40 hover:bg-muted/40">
+												<Table.Head class="min-w-64 pl-5">รายวิชา</Table.Head>
+												<Table.Head class="min-w-44">ผู้รับผิดชอบ</Table.Head>
+												{#each phaseCodes as code (code)}<Table.Head class="min-w-32 text-center"
+														>{phaseLabel(code)}</Table.Head
+													>{/each}
+												<Table.Head class="w-36 text-center">ความพร้อม</Table.Head>
+												<Table.Head class="w-12"><span class="sr-only">เปิด</span></Table.Head>
+											</Table.Row>
+										</Table.Header>
+										<Table.Body>
+											{#each filteredPlans as plan (plan.offeringId)}
+												<Table.Row class="group cursor-pointer" onclick={() => openPlan(plan)}>
+													<Table.Cell class="pl-5">
+														<div class="font-medium">{plan.offeringCode} · {plan.offeringName}</div>
+														<div class="mt-1 text-xs text-muted-foreground">
+															{plan.subjectVersionDisplayLabel} · {plan.learningGroupCount} กลุ่มเรียน
+														</div>
+													</Table.Cell>
+													<Table.Cell>
+														{#if plan.assessmentCoordinatorName}
+															<div class="flex items-center gap-2 text-sm">
+																<UserRoundCheck class="size-4 text-primary" /><span
+																	>{plan.assessmentCoordinatorName}</span
+																>
+															</div>
+														{:else}<span class="text-sm text-amber-700 dark:text-amber-300"
+																>ยังไม่กำหนด</span
+															>{/if}
+													</Table.Cell>
+													{#each phaseCodes as code (code)}
+														{@const phase = phaseFor(plan, code)}
+														<Table.Cell class="text-center">
+															{#if phase}
+																<div class="font-semibold tabular-nums">{phase.maxScore}</div>
+																{#if code === 'midterm' || code === 'final'}
+																	<div class="mt-1 text-[11px] text-muted-foreground">
+																		{arrangementLabel(
+																			phase.examArrangement
+																		)}{#if phase.examDurationMinutes}
+																			· {phase.examDurationMinutes} นาที{/if}
+																	</div>
+																{/if}
+															{:else}<span class="text-muted-foreground">—</span>{/if}
+														</Table.Cell>
+													{/each}
+													<Table.Cell class="text-center">
+														{#if plan.readiness.ready}
+															<Badge class="gap-1 bg-emerald-600 text-white hover:bg-emerald-600"
+																><Check class="size-3" /> พร้อมใช้</Badge
+															>
+														{:else}
+															<Badge
+																variant="outline"
+																class="gap-1 border-amber-300 text-amber-800 dark:text-amber-300"
+																><CircleAlert class="size-3" />
+																{plan.readiness.findings.length} จุด</Badge
+															>
+														{/if}
+														<div class="mt-1 text-xs tabular-nums text-muted-foreground">
+															{plan.readiness.totalScore}/{plan.readiness.expectedTotalScore}
+														</div>
+													</Table.Cell>
+													<Table.Cell
+														><ChevronRight class="size-4 text-muted-foreground" /></Table.Cell
+													>
+												</Table.Row>
+											{/each}
+										</Table.Body>
+									</Table.Root>
+								</div>
+								{#if filteredPlans.length === 0}
+									<div class="p-10 text-center">
+										<BookOpenCheck class="mx-auto mb-3 size-8 text-muted-foreground" />
+										<p class="font-medium">ไม่พบรายวิชาตามตัวกรอง</p>
+										<p class="mt-1 text-sm text-muted-foreground">
+											ลองเปลี่ยนคำค้นหรือสถานะที่เลือก
+										</p>
+									</div>
+								{/if}
+							</Card.Content>
+						</Card.Root>
+					{/if}
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -737,9 +937,7 @@
 		</Sheet.Header>
 
 		{#if detailLoading}
-			<div class="flex min-h-72 items-center justify-center">
-				<Loader2 class="size-7 animate-spin text-primary" />
-			</div>
+			<div class="px-4 py-6 sm:px-6"><PageSkeleton variant="detail" /></div>
 		{:else if detail}
 			<div
 				class="space-y-5 px-4 py-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-6"
@@ -830,6 +1028,20 @@
 							คะแนนย่อยของแต่ละห้องจะจัดการในหน้ากรอกคะแนนภายหลัง
 						</p>
 					</div>
+					{#if !canManageSchool && canManageAssigned && controlsLoading && !controlsLoaded}
+						<div role="status" class="rounded-lg border p-3 text-sm text-muted-foreground">
+							กำลังตรวจสิทธิ์แก้ไขแต่ละช่วง…
+						</div>
+					{:else if !canManageSchool && canManageAssigned && controlsError && !controlsLoaded}
+						<div
+							role="alert"
+							class="flex items-center gap-3 rounded-lg border border-destructive/30 p-3 text-sm text-destructive"
+						>
+							<span>{controlsError}</span><Button variant="outline" size="sm" onclick={loadControls}
+								>ลองใหม่</Button
+							>
+						</div>
+					{/if}
 					{#each draftPhases as phase, index (phase.phaseCode)}
 						{@const phaseEditable = canEditPlanPhase(phase.phaseCode)}
 						<section class="rounded-xl border bg-card">
@@ -914,6 +1126,11 @@
 				>
 					{errorMessage || 'โหลดรายละเอียดโครงสร้างคะแนนไม่สำเร็จ'}
 				</div>
+				{#if selectedPlan}<Button
+						variant="outline"
+						class="mt-3"
+						onclick={() => selectedPlan && openPlan(selectedPlan)}>ลองโหลดอีกครั้ง</Button
+					>{/if}
 			</div>
 		{/if}
 	</Sheet.Content>

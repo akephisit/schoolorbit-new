@@ -1,4 +1,10 @@
-import { ApiClientError, apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import {
+	ApiClientError,
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions,
+	type ApiResponse
+} from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -44,9 +50,13 @@ function assessmentPlanQuery(filters: AssessmentPlanFilters): AssessmentPlanFilt
 	return { ...filters, academicTermId } satisfies AssessmentPlanFilters;
 }
 
-export const listAssessmentPlans = (filters: AssessmentPlanFilters) =>
+export const listAssessmentPlans = (
+	filters: AssessmentPlanFilters,
+	options: ApiRequestOptions = {}
+) =>
 	assessmentData(
 		apiClient.get<AssessmentPlanSummary[]>('/api/academic/assessments/plans', {
+			...options,
 			query: assessmentPlanQuery(filters)
 		}),
 		'ไม่สามารถโหลดภาพรวมโครงสร้างคะแนนได้'
@@ -62,11 +72,17 @@ export const getAssessmentPlan = (offeringId: string) => {
 	);
 };
 
-export const listAssessmentPhaseControls = (academicTermId: string) => {
+export const listAssessmentPhaseControls = (
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+) => {
 	const query = { academicTermId: academicTermId.trim() } satisfies AssessmentControlQuery;
 	if (!query.academicTermId) throw new Error('กรุณาเลือกภาคเรียนก่อน');
 	return assessmentData(
-		apiClient.get<AssessmentPhaseControl[]>('/api/academic/assessments/phase-controls', { query }),
+		apiClient.get<AssessmentPhaseControl[]>('/api/academic/assessments/phase-controls', {
+			...options,
+			query
+		}),
 		'ไม่สามารถโหลดช่วงเวลาเปิดแก้โครงสร้างคะแนนได้'
 	);
 };

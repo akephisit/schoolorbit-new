@@ -230,13 +230,12 @@
 		{
 			"route": "staff/academic/assessments",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-assessment",
-			"notes": "Component API reads include getAssessmentPlan, listAssessmentPhaseControls, listAssessmentPlans; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Loader starts term-scoped plan summaries and phase controls concurrently; each region renders and retries independently. Offering detail is lazy in the editor; save patches its summary. Tap preload avoids false-positive traffic for the bounded 500-offering plan read."
 		},
 		{
 			"route": "staff/academic/catalog/activities",

@@ -77,9 +77,31 @@ function fulfill(route: Route, data: unknown) {
 	});
 }
 
-async function mockAssessmentApis(page: Page) {
+function deferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
+async function mockAssessmentApis(
+	page: Page,
+	options: {
+		plansWait?: Promise<void>;
+		plansRefreshWait?: Promise<void>;
+		controlsWait?: Promise<void>;
+		onPlansRead?: () => void;
+		failPlansOnce?: boolean;
+		failPlansOnRead?: number;
+		failControlsOnce?: boolean;
+	} = {}
+) {
 	let mathematics = assessmentPlan(offeringIds.mathematics, 'ค21101', 'คณิตศาสตร์พื้นฐาน');
 	const science = assessmentPlan(offeringIds.science, 'ว21101', 'วิทยาศาสตร์พื้นฐาน');
+	let plansFailed = false;
+	let controlsFailed = false;
+	let planReads = 0;
 
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
@@ -135,10 +157,32 @@ async function mockAssessmentApis(page: Page) {
 				return;
 			}
 			if (url.pathname === '/api/academic/assessments/plans') {
+				planReads += 1;
+				options.onPlansRead?.();
+				await (planReads === 1 ? options.plansWait : options.plansRefreshWait);
+				if ((options.failPlansOnce && !plansFailed) || options.failPlansOnRead === planReads) {
+					plansFailed = true;
+					await route.fulfill({
+						status: 500,
+						contentType: 'application/json',
+						body: '{"success":false,"error":"plans failed"}'
+					});
+					return;
+				}
 				await fulfill(route, [mathematics, science]);
 				return;
 			}
 			if (url.pathname === '/api/academic/assessments/phase-controls') {
+				await options.controlsWait;
+				if (options.failControlsOnce && !controlsFailed) {
+					controlsFailed = true;
+					await route.fulfill({
+						status: 500,
+						contentType: 'application/json',
+						body: '{"success":false,"error":"controls failed"}'
+					});
+					return;
+				}
 				await fulfill(
 					route,
 					phaseCodes.map((phaseCode, index) => ({
@@ -197,8 +241,90 @@ async function mockAssessmentApis(page: Page) {
 	);
 }
 
+test('phase controls render while the plan list is still pending', async ({ page }) => {
+	const plans = deferred();
+	await mockAssessmentApis(page, { plansWait: plans.promise });
+	try {
+		await page.goto(
+			`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+		);
+		await expect(page.getByRole('heading', { name: 'ช่วงการทำงานของครู' })).toBeVisible();
+		await expect(page.getByLabel('แก้โครงสร้างคะแนนรายวิชา').first()).toBeVisible();
+		await expect(page.getByTestId('assessment-plans-loading')).toBeVisible();
+	} finally {
+		plans.resolve();
+	}
+	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+});
+
+test('plan list renders while phase controls are still pending', async ({ page }) => {
+	const controls = deferred();
+	await mockAssessmentApis(page, { controlsWait: controls.promise });
+	try {
+		await page.goto(
+			`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+		);
+		await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('assessment-controls-loading')).toBeVisible();
+	} finally {
+		controls.resolve();
+	}
+	await expect(page.getByLabel('แก้โครงสร้างคะแนนรายวิชา').first()).toBeVisible();
+});
+
+test('a failed plan list retries without hiding ready phase controls', async ({ page }) => {
+	await mockAssessmentApis(page, { failPlansOnce: true });
+	await page.goto(
+		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+	);
+	await expect(page.getByLabel('แก้โครงสร้างคะแนนรายวิชา').first()).toBeVisible();
+	await expect(page.getByText('plans failed')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+});
+
+test('failed phase controls retry without hiding the plan list', async ({ page }) => {
+	await mockAssessmentApis(page, { failControlsOnce: true });
+	await page.goto(
+		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+	);
+	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+	await expect(page.getByText('controls failed')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await expect(page.getByLabel('แก้โครงสร้างคะแนนรายวิชา').first()).toBeVisible();
+});
+
+test('manual plan refresh retains the list during a delayed failure and retries only that region', async ({
+	page
+}) => {
+	const refresh = deferred();
+	let plansReadCount = 0;
+	await mockAssessmentApis(page, {
+		plansRefreshWait: refresh.promise,
+		failPlansOnRead: 2,
+		onPlansRead: () => (plansReadCount += 1)
+	});
+	await page.goto(
+		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+	);
+	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'รีเฟรชรายวิชา' }).click();
+	try {
+		await expect(page.getByRole('status', { name: 'กำลังอัปเดตโครงสร้างคะแนน...' })).toBeVisible();
+		await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+	} finally {
+		refresh.resolve();
+	}
+	await expect(page.getByText('plans failed')).toBeVisible();
+	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('plans failed')).toBeHidden();
+	await expect.poll(() => plansReadCount).toBe(3);
+});
+
 test('closes after an in-flight autosave and opens the next subject editor', async ({ page }) => {
-	await mockAssessmentApis(page);
+	let plansReadCount = 0;
+	await mockAssessmentApis(page, { onPlansRead: () => (plansReadCount += 1) });
 	await page.goto(
 		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
 	);
@@ -209,6 +335,10 @@ test('closes after an in-flight autosave and opens the next subject editor', asy
 	await page.getByLabel('คะแนนเต็ม').first().fill('21');
 	await page.getByRole('button', { name: 'ปิดหน้ากรอกคะแนน' }).click();
 	await expect(page.getByRole('heading', { name: 'ค21101 · คณิตศาสตร์พื้นฐาน' })).toBeHidden();
+	await expect.poll(() => plansReadCount).toBe(1);
+	await expect(
+		page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true }).locator('..').locator('..')
+	).toContainText('21');
 
 	await page.getByText('ว21101 · วิทยาศาสตร์พื้นฐาน', { exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'ว21101 · วิทยาศาสตร์พื้นฐาน' })).toBeVisible();
