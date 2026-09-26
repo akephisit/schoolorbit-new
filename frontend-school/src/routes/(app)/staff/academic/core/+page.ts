@@ -1,3 +1,7 @@
+import type { PageLoad } from './$types';
+import { getAcademicSetupWorkspace } from '$lib/api/academic-core';
+import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '$lib/academic-core/foundation-route';
+import { captureRouteLoad } from '$lib/navigation/route-load';
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
@@ -13,4 +17,13 @@ export const _meta = {
 	}
 };
 
-export const load = () => ({ title: _meta.menu.title });
+export const load: PageLoad = ({ depends, fetch }) => {
+	depends(ACADEMIC_SETUP_WORKSPACE_DEPENDENCY);
+	return {
+		title: _meta.menu.title,
+		workspace: captureRouteLoad(
+			getAcademicSetupWorkspace({ requestFetch: fetch }),
+			'โหลดโครงสร้างปีการศึกษาไม่สำเร็จ'
+		)
+	};
+};

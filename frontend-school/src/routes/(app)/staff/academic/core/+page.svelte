@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { invalidate } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import {
 		createAcademicTerm,
 		createAcademicYear,
 		createBellSchedule,
-		getAcademicSetupWorkspace,
 		listBellSchedulePeriods,
 		listBellSchedules,
 		replaceBellSchedulePeriods,
@@ -16,20 +16,24 @@
 		updateAcademicYear,
 		updateBellSchedule
 	} from '$lib/api/academic-core';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '$lib/academic-core/foundation-route';
 	import AcademicYearTermEditor from '$lib/components/academic-core/AcademicYearTermEditor.svelte';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
+	import { Button } from '$lib/components/ui/button';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import type { PageProps } from './$types';
 
+	let { data }: PageProps = $props();
 	let years = $state<AcademicYear[]>([]);
 	const termsByYear = new SvelteMap<string, AcademicTerm[]>();
 	let bellSchedules = $state<BellSchedule[]>([]);
 	let loading = $state(true);
+	let workspaceReady = $state(false);
 	let busy = $state(false);
 	let errorMessage = $state('');
-	const request = new LatestRequest();
+	let mutationRevision = 0;
 	const canRead = $derived(
 		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
 	);
@@ -37,34 +41,50 @@
 		$can.hasAll(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
 	);
 
-	async function loadWorkspace() {
-		const { revision, signal } = request.begin();
-		loading = true;
-		errorMessage = '';
-		try {
-			const workspace = await getAcademicSetupWorkspace({ signal });
-			if (!request.isCurrent(revision)) return;
-			const nextYears = workspace.years.toSorted((a, b) => b.year - a.year);
-			const nextTerms = new SvelteMap(nextYears.map((year) => [year.id, [] as AcademicTerm[]]));
-			for (const term of workspace.terms) nextTerms.get(term.academicYearId)?.push(term);
-			for (const terms of nextTerms.values()) terms.sort((a, b) => a.sequence - b.sequence);
-			years = nextYears;
-			termsByYear.clear();
-			for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
-			bellSchedules = workspace.bellSchedules;
-		} catch (error) {
-			if (isAbortError(error)) return;
-			if (request.isCurrent(revision))
-				errorMessage = error instanceof Error ? error.message : 'โหลดโครงสร้างปีการศึกษาไม่สำเร็จ';
-		} finally {
-			if (request.isCurrent(revision)) loading = false;
-		}
+	function loadWorkspace() {
+		return invalidate(ACADEMIC_SETUP_WORKSPACE_DEPENDENCY);
 	}
+
+	$effect.pre(() => {
+		const routeResult = data.workspace;
+		const initialMutationRevision = mutationRevision;
+		let current = true;
+		untrack(() => {
+			loading = Boolean(routeResult);
+			errorMessage = '';
+		});
+		if (routeResult) {
+			void routeResult.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (result.ok && mutationRevision === initialMutationRevision) {
+						const workspace = result.data;
+						const nextYears = workspace.years.toSorted((a, b) => b.year - a.year);
+						const nextTerms = new SvelteMap(
+							nextYears.map((year) => [year.id, [] as AcademicTerm[]])
+						);
+						for (const term of workspace.terms) nextTerms.get(term.academicYearId)?.push(term);
+						for (const terms of nextTerms.values()) terms.sort((a, b) => a.sequence - b.sequence);
+						years = nextYears;
+						termsByYear.clear();
+						for (const [yearId, terms] of nextTerms) termsByYear.set(yearId, terms);
+						bellSchedules = workspace.bellSchedules;
+						workspaceReady = true;
+					} else if (!result.ok) errorMessage = result.error;
+					loading = false;
+				});
+			});
+		}
+		return () => {
+			current = false;
+		};
+	});
 
 	async function addYear(draft: Parameters<typeof createAcademicYear>[0]) {
 		busy = true;
 		try {
 			const created = await createAcademicYear(draft);
+			mutationRevision += 1;
 			years = [created, ...years].sort((a, b) => b.year - a.year);
 			termsByYear.set(created.id, []);
 			return created;
@@ -77,6 +97,7 @@
 		busy = true;
 		try {
 			const created = await createAcademicTerm(draft);
+			mutationRevision += 1;
 			termsByYear.set(
 				created.academicYearId,
 				[...(termsByYear.get(created.academicYearId) ?? []), created].sort(
@@ -93,6 +114,7 @@
 		busy = true;
 		try {
 			const updated = await updateAcademicYear(id, draft);
+			mutationRevision += 1;
 			years = years
 				.map((year) => (year.id === updated.id ? updated : year))
 				.sort((a, b) => b.year - a.year);
@@ -106,6 +128,7 @@
 		busy = true;
 		try {
 			const updated = await updateAcademicTerm(id, draft);
+			mutationRevision += 1;
 			termsByYear.set(
 				updated.academicYearId,
 				(termsByYear.get(updated.academicYearId) ?? [])
@@ -122,6 +145,7 @@
 		busy = true;
 		try {
 			const created = await createBellSchedule(draft);
+			mutationRevision += 1;
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
@@ -133,6 +157,7 @@
 		busy = true;
 		try {
 			const updated = await updateBellSchedule(id, draft);
+			mutationRevision += 1;
 			const refreshed = await listBellSchedules(updated.academicYearId);
 			bellSchedules = [
 				...bellSchedules.filter((item) => item.academicYearId !== updated.academicYearId),
@@ -151,6 +176,7 @@
 		busy = true;
 		try {
 			const periods = await replaceBellSchedulePeriods(id, draft);
+			mutationRevision += 1;
 			const schedule = bellSchedules.find((item) => item.id === id);
 			if (schedule) {
 				const refreshed = await listBellSchedules(schedule.academicYearId);
@@ -164,11 +190,6 @@
 			busy = false;
 		}
 	}
-
-	onMount(() => {
-		void loadWorkspace();
-		return () => request.abort();
-	});
 </script>
 
 <PageShell
@@ -181,9 +202,9 @@
 			title="ไม่มีสิทธิ์ดูปีการศึกษา"
 			description="ต้องมีสิทธิ์อ่านหรือจัดการปีการศึกษาระดับโรงเรียน"
 		/>
-	{:else if loading}
+	{:else if loading && !workspaceReady}
 		<PageSkeleton variant="cards" rows={4} />
-	{:else if errorMessage}
+	{:else if errorMessage && !workspaceReady}
 		<PageState
 			variant="error"
 			title="โหลดโครงสร้างไม่สำเร็จ"
@@ -192,20 +213,35 @@
 			onaction={loadWorkspace}
 		/>
 	{:else}
-		<AcademicYearTermEditor
-			{years}
-			{termsByYear}
-			{bellSchedules}
-			{canManage}
-			{busy}
-			onCreateYear={addYear}
-			onUpdateYear={editYear}
-			onCreateBellSchedule={addBellSchedule}
-			onUpdateBellSchedule={editBellSchedule}
-			onLoadBellSchedulePeriods={listBellSchedulePeriods}
-			onReplaceBellSchedulePeriods={saveBellSchedulePeriods}
-			onCreateTerm={addTerm}
-			onUpdateTerm={editTerm}
-		/>
+		<section
+			class="relative"
+			aria-label="ตั้งค่าปีและภาคเรียน"
+			aria-busy={loading}
+			data-testid="academic-setup-ready"
+		>
+			{#if loading}<RegionUpdatingState label="กำลังอัปเดตโครงสร้างปีการศึกษา" />{/if}
+			<AcademicYearTermEditor
+				{years}
+				{termsByYear}
+				{bellSchedules}
+				{canManage}
+				{busy}
+				onCreateYear={addYear}
+				onUpdateYear={editYear}
+				onCreateBellSchedule={addBellSchedule}
+				onUpdateBellSchedule={editBellSchedule}
+				onLoadBellSchedulePeriods={listBellSchedulePeriods}
+				onReplaceBellSchedulePeriods={saveBellSchedulePeriods}
+				onCreateTerm={addTerm}
+				onUpdateTerm={editTerm}
+			/>
+			{#if errorMessage}<div
+					role="alert"
+					class="flex flex-wrap items-center gap-2 text-sm text-destructive"
+				>
+					<p>{errorMessage}</p>
+					<Button size="sm" variant="outline" onclick={loadWorkspace}>ลองอีกครั้ง</Button>
+				</div>{/if}
+		</section>
 	{/if}
 </PageShell>

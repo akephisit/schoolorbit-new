@@ -288,8 +288,12 @@ test('creates a future planning year and configurable regular, summer, and custo
 		.filter({ hasText: /^1$/ })
 		.click();
 	await page.getByRole('button', { name: 'เลือกวันสิ้นสุดปีการศึกษา' }).click();
+	const endCalendarId = await page
+		.getByRole('button', { name: 'เลือกวันสิ้นสุดปีการศึกษา' })
+		.getAttribute('aria-controls');
+	if (!endCalendarId) throw new Error('ไม่พบปฏิทินวันสิ้นสุดปีการศึกษา');
 	await page
-		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.locator(`[id="${endCalendarId}"] [data-calendar-day]:not([data-outside-month])`)
 		.filter({ hasText: /^20$/ })
 		.click();
 	await page.getByRole('button', { name: 'สร้างปีสำหรับวางแผน' }).click();

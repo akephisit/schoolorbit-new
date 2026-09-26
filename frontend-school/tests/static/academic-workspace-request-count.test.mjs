@@ -47,8 +47,13 @@ test('curriculum workspace loads the complete structure once per version', async
 
 test('academic core setup uses the bounded setup workspace', async () => {
 	const page = await readPage('core');
-	assertCancellable(page, 'academic core');
-	assert.match(page, /getAcademicSetupWorkspace/);
+	const loader = await readFile(path.join(projectRoot, academicRoutes, 'core', '+page.ts'), 'utf8');
+	assert.match(loader, /getAcademicSetupWorkspace/);
+	assert.match(loader, /captureRouteLoad/);
+	assert.match(loader, /requestFetch:\s*fetch/);
+	assert.match(page, /data\.workspace/);
+	assert.match(page, /current = false/);
+	assert.doesNotMatch(page, /getAcademicSetupWorkspace\(/);
 	assert.doesNotMatch(page, /listAcademicTerms\(year\.id\)/);
 	assert.doesNotMatch(page, /listBellSchedules\(year\.id\)/);
 });

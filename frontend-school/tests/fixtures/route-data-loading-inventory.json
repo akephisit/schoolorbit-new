@@ -271,24 +271,22 @@
 		{
 			"route": "staff/academic/core",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Component API reads include getAcademicSetupWorkspace, listBellSchedules; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route loads one bounded setup workspace for years, terms, and bell schedules; period details remain lazy and mutations patch or refresh only affected year schedules."
 		},
 		{
 			"route": "staff/academic/curricula",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Component API reads include getCurriculumOverview; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route loads cohesive curriculum overview; create options remain lazy on dialog open and returned item patches overview locally."
 		},
 		{
 			"route": "staff/academic/curricula/[id]",
