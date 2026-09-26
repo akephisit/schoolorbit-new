@@ -351,9 +351,9 @@ export const getDailyTeachingOverview = (
 	);
 };
 
-export const listTimetableTemplates = () =>
+export const listTimetableTemplates = (options: ApiRequestOptions = {}) =>
 	timetableData(
-		apiClient.get<TimetableTemplate[]>('/api/academic/timetable-templates'),
+		apiClient.get<TimetableTemplate[]>('/api/academic/timetable-templates', options),
 		'ไม่สามารถโหลดแม่แบบตารางสอนได้'
 	);
 export const getTimetableTemplate = (id: string) =>

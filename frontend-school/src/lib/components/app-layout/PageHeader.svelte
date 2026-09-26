@@ -8,6 +8,7 @@
 		title,
 		description,
 		backHref,
+		backPreload,
 		backLabel = 'ย้อนกลับ',
 		icon,
 		meta,
@@ -17,6 +18,7 @@
 		title: string;
 		description?: string;
 		backHref?: string;
+		backPreload?: 'hover' | 'tap' | 'off';
 		backLabel?: string;
 		icon?: Component;
 		meta?: Snippet;
@@ -30,6 +32,7 @@
 		{#if backHref}
 			<Button
 				href={backHref}
+				data-sveltekit-preload-data={backPreload}
 				variant="ghost"
 				size="icon"
 				aria-label={backLabel}

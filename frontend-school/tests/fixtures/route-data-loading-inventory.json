@@ -563,24 +563,22 @@
 		{
 			"route": "staff/academic/timetable",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-timetable",
-			"notes": "Component API reads include getAcademicTermChangeSet, getTimetableBlockWorkspace, listTimetableVersions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned version list and selected board workspace; change-set detail follows workspace only when present. Heavy board uses tap preload; mutation resources and export stay action-lazy."
 		},
 		{
 			"route": "staff/academic/timetable/templates",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-timetable",
-			"notes": "Component API reads include listTimetableTemplates, listTimetableVersions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned independent template and version lists with focused retry; no data preload until the global template list is bounded. Selected template detail and mutations remain interaction-lazy."
 		},
 		{
 			"route": "staff/academic/timetable/today",

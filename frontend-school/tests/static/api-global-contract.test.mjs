@@ -1204,7 +1204,8 @@ test('daily teaching overview page is table based and read only', async () => {
 	assert.doesNotMatch(page, /organizationUnitNames/);
 	assert.match(page, /overflow-(?:x-)?auto/);
 	assert.match(page, /Dialog\.Root/);
-	assert.match(page, /href="\/staff\/academic\/timetable"/);
+	assert.match(page, /href=\{academicContextualMenuPath\(/);
+	assert.match(page, /academicYearId: data\.academicYearId, academicTermId/);
 	assert.match(page, /from '\$lib\/components\/ui\/date-picker'/);
 	assert.match(
 		page,

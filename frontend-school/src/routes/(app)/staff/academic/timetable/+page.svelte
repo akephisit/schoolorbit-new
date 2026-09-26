@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { selectPreferredBoardVersion } from '$lib/academic/timetable/version-selection';
 	import {
 		blockBelongsToRow,
 		blockHomeroomIds,
@@ -65,7 +68,7 @@
 	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
 	import TimetableWorkspaceHeader from '$lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
@@ -100,6 +103,7 @@
 		RefreshCw,
 		Trash2
 	} from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
 	type RemovalMode = 'target' | 'block' | 'series';
 	type OptimisticPlacementOperation = {
@@ -180,15 +184,28 @@
 		{ id: 'FRI', label: 'ศุกร์' }
 	];
 	const noRoomValue = '__none__';
+	let { data }: PageProps = $props();
 	const academicContext = getAcademicContextStore();
-	const academicTermId = $derived($academicContext.selected.academicTermId);
-	const academicYearId = $derived($academicContext.selected.academicYearId);
+	const academicTermId = $derived(data.academicTermId);
+	const academicYearId = $derived(data.academicYearId);
 	const request = new LatestRequest();
+	const versionsRequest = new LatestRequest();
+	const changeSetRequest = new LatestRequest();
 
 	let versions = $state<TimetableVersion[]>([]);
 	let controller = $state.raw<TimetableWorkspaceController | null>(null);
 	let selectedChangeSet = $state.raw<AcademicTermChangeSet | null>(null);
-	let loading = $state(false);
+	let loading = $state(true);
+	let versionsLoading = $state(true);
+	let versionsError = $state('');
+	let changeSetLoading = $state(false);
+	let changeSetError = $state('');
+	let activeContextKey = '';
+	let activeRouteVersionId: string | null = null;
+	let versionsRevision = 0;
+	let workspaceRevision = 0;
+	let changeSetRevision = 0;
+	let boardRetryVersionId = '';
 	let busy = $state(false);
 	let previewing = $state(false);
 	let pendingBlockIds = $state.raw<Set<string>>(new Set());
@@ -206,6 +223,7 @@
 	} | null = null;
 	let exportingTeacherLoad = $state(false);
 	let errorMessage = $state('');
+	let refreshError = $state('');
 	let draftRevision = $state(0);
 	let activeView = $state<TimetablePageView>('homeroom');
 	let previewCellKey = $state('');
@@ -221,6 +239,11 @@
 	let structuralOpen = $state(false);
 	let structuralForm = $state<StructuralForm>(newStructuralForm());
 	let overviewDay = $state('MON');
+	onDestroy(() => {
+		request.abort();
+		versionsRequest.abort();
+		changeSetRequest.abort();
+	});
 
 	const canRead = $derived(
 		$can.hasAny(
@@ -308,17 +331,6 @@
 			: 'homeroom';
 	}
 
-	function selectPreferredVersion(items: TimetableVersion[]): TimetableVersion | null {
-		const requested = page.url.searchParams.get('timetableVersionId');
-		return (
-			items.find((version) => version.id === requested) ??
-			items.find((version) => version.status === 'draft') ??
-			items.find((version) => version.displayState === 'current') ??
-			items[0] ??
-			null
-		);
-	}
-
 	function versionLabel(version: TimetableVersion): string {
 		const state =
 			version.status === 'draft'
@@ -338,15 +350,6 @@
 		controller = next;
 	}
 
-	function loadChangeSet(
-		version: TimetableVersion,
-		signal?: AbortSignal
-	): Promise<AcademicTermChangeSet | null> {
-		return version.changeSetId
-			? getAcademicTermChangeSet(version.changeSetId, { signal })
-			: Promise.resolve(null);
-	}
-
 	function syncUrl(): void {
 		if (!controller) return;
 		const next = new URL(page.url);
@@ -357,19 +360,48 @@
 		} else {
 			next.searchParams.delete('ownerId');
 		}
-		window.history.replaceState(window.history.state, '', next);
+		replaceState(resolve(`/staff/academic/timetable?${next.searchParams.toString()}`), page.state);
+	}
+
+	async function refreshChangeSet(version: TimetableVersion, retainCurrent = false): Promise<void> {
+		const changeSetId = version.changeSetId;
+		changeSetRevision += 1;
+		changeSetRequest.abort();
+		changeSetError = '';
+		if (!retainCurrent) selectedChangeSet = null;
+		changeSetLoading = Boolean(changeSetId);
+		if (!changeSetId) return;
+		const { revision, signal } = changeSetRequest.begin();
+		try {
+			const loaded = await getAcademicTermChangeSet(changeSetId, { signal });
+			if (changeSetRequest.isCurrent(revision) && controller?.workspace.version.id === version.id)
+				selectedChangeSet = loaded;
+		} catch (error) {
+			if (!isAbortError(error) && changeSetRequest.isCurrent(revision))
+				changeSetError = error instanceof Error ? error.message : 'โหลดชุดการเปลี่ยนแปลงไม่สำเร็จ';
+		} finally {
+			if (changeSetRequest.isCurrent(revision)) changeSetLoading = false;
+		}
 	}
 
 	async function loadContext(termId: string, yearId: string): Promise<void> {
 		const { revision, signal } = request.begin();
+		workspaceRevision += 1;
+		versionsRevision += 1;
 		loading = true;
+		versionsLoading = true;
 		errorMessage = '';
+		versionsError = '';
 		try {
 			const loadedVersions = await listTimetableVersions(termId, { signal });
-			const selected = selectPreferredVersion(loadedVersions);
+			if (!request.isCurrent(revision)) return;
+			versions = loadedVersions;
+			versionsLoading = false;
+			const selected = selectPreferredBoardVersion(
+				loadedVersions,
+				page.url.searchParams.get('timetableVersionId')
+			);
 			if (!selected) {
-				if (!request.isCurrent(revision)) return;
-				versions = loadedVersions;
 				controller = null;
 				selectedChangeSet = null;
 				return;
@@ -378,19 +410,47 @@
 				{ academicYearId: yearId, academicTermId: termId, timetableVersionId: selected.id },
 				{ signal }
 			);
-			const changeSet = await loadChangeSet(workspace.version, signal);
 			if (!request.isCurrent(revision)) return;
-			versions = loadedVersions;
 			initializeController(workspace);
-			selectedChangeSet = changeSet;
+			boardRetryVersionId = workspace.version.id;
 			draftRevision += 1;
 			syncUrl();
+			void refreshChangeSet(workspace.version);
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
 			}
 		} finally {
-			if (request.isCurrent(revision)) loading = false;
+			if (request.isCurrent(revision)) {
+				loading = false;
+				versionsLoading = false;
+			}
+		}
+	}
+
+	async function refreshVersions(): Promise<void> {
+		if (!academicTermId) return;
+		const termId = academicTermId;
+		const { revision, signal } = versionsRequest.begin();
+		versionsRevision += 1;
+		versionsLoading = true;
+		versionsError = '';
+		try {
+			const loaded = await listTimetableVersions(termId, { signal });
+			if (!versionsRequest.isCurrent(revision) || academicTermId !== termId) return;
+			versions = loaded;
+			if (!controller) {
+				const preferred = selectPreferredBoardVersion(
+					loaded,
+					boardRetryVersionId || page.url.searchParams.get('timetableVersionId')
+				);
+				if (preferred) void loadVersion(preferred.id, true);
+			}
+		} catch (error) {
+			if (!isAbortError(error) && versionsRequest.isCurrent(revision))
+				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
+		} finally {
+			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
 		}
 	}
 
@@ -402,21 +462,32 @@
 		)
 			return;
 		const { revision, signal } = request.begin();
+		workspaceRevision += 1;
+		const retainCurrent = controller?.workspace.version.id === versionId;
+		if (!retainCurrent) {
+			controller = null;
+			selectedChangeSet = null;
+			changeSetRequest.abort();
+			changeSetLoading = false;
+			changeSetError = '';
+		}
+		boardRetryVersionId = versionId;
 		loading = true;
+		errorMessage = '';
 		try {
 			const workspace = await getTimetableBlockWorkspace(
 				{ academicYearId, academicTermId, timetableVersionId: versionId },
 				{ signal }
 			);
-			const changeSet = await loadChangeSet(workspace.version, signal);
 			if (!request.isCurrent(revision)) return;
 			initializeController(workspace);
-			selectedChangeSet = changeSet;
 			draftRevision += 1;
 			syncUrl();
+			void refreshChangeSet(workspace.version, retainCurrent);
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
-				toast.error(error instanceof Error ? error.message : 'เปลี่ยนรุ่นตารางสอนไม่สำเร็จ');
+				errorMessage = error instanceof Error ? error.message : 'เปลี่ยนรุ่นตารางสอนไม่สำเร็จ';
+				toast.error(errorMessage);
 			}
 		} finally {
 			if (request.isCurrent(revision)) loading = false;
@@ -425,29 +496,35 @@
 
 	async function reload(message?: string): Promise<void> {
 		if (!controller || !academicTermId || !academicYearId) return;
+		const targetController = controller;
 		if (pendingOperationCount > 0) {
 			reconcileAfterPending = true;
 			if (message) toast.success(message);
 			return;
 		}
-		controller.setRefreshing(true);
+		targetController.setRefreshing(true);
+		refreshError = '';
 		try {
 			const workspace = await getTimetableBlockWorkspace({
 				academicYearId,
 				academicTermId,
-				timetableVersionId: controller.workspace.version.id
+				timetableVersionId: targetController.workspace.version.id
 			});
+			if (controller !== targetController) return;
 			if (pendingOperationCount > 0) {
 				reconcileAfterPending = true;
 				return;
 			}
-			controller.setWorkspace(workspace);
+			targetController.setWorkspace(workspace);
 			draftRevision += 1;
 			if (message) toast.success(message);
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ');
+			if (controller === targetController) {
+				refreshError = error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ';
+				toast.error(refreshError);
+			}
 		} finally {
-			controller?.setRefreshing(false);
+			targetController.setRefreshing(false);
 		}
 	}
 
@@ -455,6 +532,9 @@
 		blockIds: readonly string[],
 		cellKeys: readonly string[] = []
 	): void {
+		workspaceRevision += 1;
+		request.abort();
+		loading = false;
 		pendingOperationCount += 1;
 		pendingBlockIds = new Set([...pendingBlockIds, ...blockIds]);
 		pendingRemovalCellKeys = new Set([...pendingRemovalCellKeys, ...cellKeys]);
@@ -956,16 +1036,22 @@
 
 	async function handleRevisionCreated(created: AcademicTermChangeSet): Promise<void> {
 		if (!academicTermId) return;
+		changeSetRevision += 1;
+		changeSetRequest.abort();
+		changeSetLoading = false;
 		selectedChangeSet = created;
-		versions = await listTimetableVersions(academicTermId);
+		await refreshVersions();
 		await loadVersion(created.targetTimetableVersionId, true);
 		toast.success('สร้างรุ่นตารางสอนแบบร่างแล้ว');
 	}
 
 	async function handleChangeSetChanged(updated: AcademicTermChangeSet): Promise<void> {
+		changeSetRevision += 1;
+		changeSetRequest.abort();
+		changeSetLoading = false;
 		selectedChangeSet = updated;
 		if (!academicTermId) return;
-		versions = await listTimetableVersions(academicTermId);
+		await refreshVersions();
 		await loadVersion(updated.targetTimetableVersionId, true);
 		if (updated.status === 'published') toast.success('เผยแพร่รุ่นตารางสอนใหม่แล้ว');
 		if (updated.status === 'cancelled') toast.success('ยกเลิกรุ่นตารางสอนแบบร่างแล้ว');
@@ -1300,6 +1386,9 @@
 				return { dayOfWeek, bellSchedulePeriodId };
 			})
 		};
+		workspaceRevision += 1;
+		request.abort();
+		loading = false;
 		busy = true;
 		try {
 			await createStructuralTimetableBlocks(body);
@@ -1320,23 +1409,103 @@
 		if (event.key === 'Escape') cancelPlacement();
 	}
 
+	$effect.pre(() => {
+		const yearId = data.academicYearId;
+		const termId = data.academicTermId;
+		const requestedVersionId = data.requestedVersionId;
+		const routeVersions = data.versions;
+		const routeWorkspace = data.workspace;
+		const routeChangeSet = data.changeSet;
+		const contextKey = `${yearId}:${termId}`;
+		const versionSelectionChanged = activeRouteVersionId !== requestedVersionId;
+		const initialVersionsRevision = versionsRevision;
+		const initialWorkspaceRevision = workspaceRevision;
+		const initialChangeSetRevision = changeSetRevision;
+		let current = true;
+		untrack(() => {
+			if (activeContextKey !== contextKey) {
+				activeContextKey = contextKey;
+				versions = [];
+				controller = null;
+				selectedChangeSet = null;
+				boardRetryVersionId = requestedVersionId ?? '';
+				selectedBlockId = null;
+				editOpen = false;
+				removeOpen = false;
+				structuralOpen = false;
+				refreshError = '';
+			} else if (
+				versionSelectionChanged &&
+				(!requestedVersionId || controller?.workspace.version.id !== requestedVersionId)
+			) {
+				controller = null;
+				selectedChangeSet = null;
+				boardRetryVersionId = requestedVersionId ?? '';
+			}
+			activeRouteVersionId = requestedVersionId;
+			request.abort();
+			versionsRequest.abort();
+			changeSetRequest.abort();
+			versionsLoading = Boolean(routeVersions);
+			loading = Boolean(routeWorkspace);
+			changeSetLoading = Boolean(routeChangeSet);
+			versionsError = '';
+			errorMessage = '';
+			changeSetError = '';
+		});
+		if (routeVersions) {
+			void routeVersions.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (versionsRevision === initialVersionsRevision) {
+						if (result.ok) {
+							versions = result.data;
+							boardRetryVersionId ||=
+								selectPreferredBoardVersion(result.data, requestedVersionId)?.id ?? '';
+						} else versionsError = result.error;
+						versionsLoading = false;
+					}
+				});
+			});
+		}
+		if (routeWorkspace) {
+			void routeWorkspace.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (workspaceRevision === initialWorkspaceRevision) {
+						if (result.ok && result.data) {
+							initializeController(result.data);
+							boardRetryVersionId = result.data.version.id;
+							draftRevision += 1;
+							syncUrl();
+						} else if (!result.ok) errorMessage = result.error;
+						loading = false;
+					}
+				});
+			});
+		}
+		if (routeChangeSet) {
+			void routeChangeSet.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (changeSetRevision === initialChangeSetRevision) {
+						if (result.ok) selectedChangeSet = result.data;
+						else changeSetError = result.error;
+						changeSetLoading = false;
+					}
+				});
+			});
+		}
+		return () => {
+			current = false;
+		};
+	});
+
 	onMount(() => {
 		let currentTermId = '';
-		let currentYearId = '';
 		let userId = '';
 		let socketKey = '';
-		let loadedContextKey = '';
 		const synchronize = () => {
-			const key = `${currentYearId}:${currentTermId}`;
-			if (currentYearId && currentTermId && key !== loadedContextKey) {
-				loadedContextKey = key;
-				void loadContext(currentTermId, currentYearId);
-			} else if (!currentYearId || !currentTermId) {
-				loadedContextKey = '';
-				controller = null;
-				versions = [];
-				selectedChangeSet = null;
-			}
 			const nextSocketKey = `${currentTermId}:${userId}`;
 			if (currentTermId && userId && nextSocketKey !== socketKey) {
 				disconnectTimetableSocket();
@@ -1346,10 +1515,8 @@
 		};
 		const unsubscribeContext = academicContext.subscribe((state) => {
 			const nextTerm = state.selected.academicTermId ?? '';
-			const nextYear = state.selected.academicYearId ?? '';
-			if (nextTerm === currentTermId && nextYear === currentYearId) return;
+			if (nextTerm === currentTermId) return;
 			currentTermId = nextTerm;
-			currentYearId = nextYear;
 			synchronize();
 		});
 		const unsubscribeAuth = authStore.subscribe((state) => {
@@ -1360,7 +1527,6 @@
 			if (value > 0 && controller) requestReconcile();
 		});
 		return () => {
-			request.abort();
 			unsubscribeContext();
 			unsubscribeAuth();
 			unsubscribeRefresh();
@@ -1434,16 +1600,36 @@
 			title="โหลดตารางสอนไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadContext(academicTermId, academicYearId)}
+			onaction={() =>
+				boardRetryVersionId
+					? loadVersion(boardRetryVersionId, true)
+					: loadContext(academicTermId, academicYearId)}
 		/>
-	{:else if versions.length === 0 || !controller}
+	{:else if versionsError && !controller}
+		<PageState
+			variant="error"
+			title="โหลดรุ่นตารางสอนไม่สำเร็จ"
+			description={versionsError}
+			actionLabel="ลองอีกครั้ง"
+			onaction={refreshVersions}
+		/>
+	{:else if !controller && versions.length === 0}
 		<PageState
 			variant="empty"
 			title="ยังไม่มีรุ่นตารางสอน"
 			description="สร้างรุ่นตารางสอนของภาคเรียนนี้จากหน้าจัดการเรียนก่อน"
 		/>
+	{:else if !controller}
+		<PageSkeleton variant="table" rows={7} />
 	{:else}
-		<div class="space-y-4">
+		<div
+			class="relative space-y-4"
+			aria-busy={loading || controller.isRefreshing}
+			data-testid="timetable-board-ready"
+		>
+			{#if loading || controller.isRefreshing}<RegionUpdatingState
+					label="กำลังอัปเดตตารางสอน..."
+				/>{/if}
 			<TimetableWorkspaceHeader
 				version={controller.workspace.version}
 				view={activeView}
@@ -1452,15 +1638,18 @@
 				onViewChange={changeView}
 			/>
 
-			<Card.Root class="gap-0 py-0">
+			<Card.Root class="gap-0 py-0" aria-busy={versionsLoading}>
 				<Card.Content class="grid gap-3 p-3 sm:p-4 lg:grid-cols-2">
 					<div class="space-y-1.5">
 						<Label class="text-xs text-muted-foreground">รุ่นตารางสอน</Label>
+						{#if versionsLoading}<span role="status" class="text-xs text-muted-foreground"
+								>กำลังโหลดรุ่น...</span
+							>{/if}
 						<Select.Root
 							type="single"
 							bind:value={versionSelectValue}
 							onValueChange={loadVersion}
-							disabled={loading || busy}
+							disabled={loading || versionsLoading || busy}
 						>
 							<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
 								{versionLabel(controller.workspace.version)}
@@ -1515,37 +1704,84 @@
 				</Card.Content>
 			</Card.Root>
 
+			{#if versionsError}
+				<div
+					role="alert"
+					class="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					<span>{versionsError}</span>
+					<Button variant="outline" size="sm" onclick={refreshVersions}>ลองใหม่</Button>
+				</div>
+			{/if}
 			{#if errorMessage}
 				<div
-					class="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+					role="alert"
+					class="flex flex-wrap items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
 				>
 					<AlertTriangle class="mt-0.5 size-4 shrink-0" />
-					{errorMessage}
+					<span>{errorMessage}</span>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => {
+							if (controller) void loadVersion(controller.workspace.version.id, true);
+						}}>ลองใหม่</Button
+					>
+				</div>
+			{/if}
+			{#if refreshError}
+				<div
+					role="alert"
+					class="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					<span>{refreshError}</span>
+					<Button variant="outline" size="sm" onclick={() => reload()}>ลองใหม่</Button>
+				</div>
+			{/if}
+			{#if changeSetLoading && controller.workspace.version.changeSetId && !selectedChangeSet}
+				<PageSkeleton variant="cards" rows={1} />
+			{/if}
+			{#if changeSetError}
+				<div
+					role="alert"
+					class="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					<span>{changeSetError}</span>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => {
+							if (controller) void refreshChangeSet(controller.workspace.version, true);
+						}}>ลองใหม่</Button
+					>
 				</div>
 			{/if}
 			{#if selectedChangeSet}
-				<Card.Root class="gap-0 overflow-hidden border-amber-500/25 py-0">
-					<Card.Header class="border-b border-amber-500/20 bg-amber-500/5 py-4">
-						<div class="flex flex-wrap items-start justify-between gap-3">
-							<div>
-								<Card.Title class="text-base">ขั้นตอนของรุ่นตารางสอนนี้</Card.Title>
-								<Card.Description class="mt-1">{selectedChangeSet.reason}</Card.Description>
+				<div class="relative" aria-busy={changeSetLoading} data-testid="timetable-change-set-ready">
+					{#if changeSetLoading}<RegionUpdatingState label="กำลังอัปเดตขั้นตอนการเผยแพร่..." />{/if}
+					<Card.Root class="gap-0 overflow-hidden border-amber-500/25 py-0">
+						<Card.Header class="border-b border-amber-500/20 bg-amber-500/5 py-4">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<Card.Title class="text-base">ขั้นตอนของรุ่นตารางสอนนี้</Card.Title>
+									<Card.Description class="mt-1">{selectedChangeSet.reason}</Card.Description>
+								</div>
+								<Badge variant="outline" class="bg-background">
+									เริ่มใช้ {selectedChangeSet.effectiveFrom}
+								</Badge>
 							</div>
-							<Badge variant="outline" class="bg-background">
-								เริ่มใช้ {selectedChangeSet.effectiveFrom}
-							</Badge>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4 sm:p-5">
-						{#key `${selectedChangeSet.id}:${draftRevision}`}
-							<AcademicChangeReadiness
-								changeSet={selectedChangeSet}
-								{canManage}
-								onChanged={handleChangeSetChanged}
-							/>
-						{/key}
-					</Card.Content>
-				</Card.Root>
+						</Card.Header>
+						<Card.Content class="p-4 sm:p-5">
+							{#key `${selectedChangeSet.id}:${draftRevision}`}
+								<AcademicChangeReadiness
+									changeSet={selectedChangeSet}
+									{canManage}
+									onChanged={handleChangeSetChanged}
+								/>
+							{/key}
+						</Card.Content>
+					</Card.Root>
+				</div>
 			{/if}
 			{#if controller.workspace.learningGroups.length === 0}
 				<AcademicPrerequisiteNotice prerequisite={missingGroupsPrerequisite} />

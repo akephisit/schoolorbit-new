@@ -15,7 +15,8 @@
 		description:
 			'รอบนิเทศและแบบประเมินยังดูได้ตามสิทธิ์ แต่การจองคาบต้องทราบภาคเรียนเพื่อค้นหากลุ่ม ครู และตารางสอน',
 		actionLabel: 'ตรวจพื้นที่จัดตารางสอน',
-		href: '/staff/academic/timetable'
+		href: '/staff/academic/timetable',
+		preload: 'tap'
 	};
 </script>
 

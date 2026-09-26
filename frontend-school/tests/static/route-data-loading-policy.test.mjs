@@ -30,15 +30,25 @@ async function sourceFiles(directory) {
 test('legacy page-mount API reads only shrink during route migration', async () => {
 	const inventory = JSON.parse(await readFile(inventoryPath, 'utf8'));
 	const records = new Map(inventory.routes.map((record) => [record.route, record]));
+	const browserOnlyMountRoutes = new Set([
+		'staff/academic/timetable',
+		'staff/academic/timetable/templates'
+	]);
 	const candidates = [];
 	for (const file of await pageFiles(appRoutes)) {
 		const source = await readFile(file, 'utf8');
 		if (/\bonMount\b/.test(source) && /\$lib\/api\//.test(source)) {
 			const route = path.relative(appRoutes, path.dirname(file)).split(path.sep).join('/');
 			const record = records.get(route);
+			// These routes mount only socket/dirty-source subscriptions; their focused tests
+			// assert the mount body never starts a primary API read.
+			if (browserOnlyMountRoutes.has(route)) {
+				assert.equal(record?.status, 'complete', `${route}: mount exception needs route review`);
+				continue;
+			}
 			assert.equal(record?.legacyMountApiCandidate, true, `${route}: new page-mount API read`);
-			assert.equal(record?.dataOwner, 'component-primary', `${route}: completed route regressed`);
-			assert.equal(record?.status, 'planned', `${route}: completed route regressed`);
+			assert.equal(record?.dataOwner, 'component-primary', `${route}: unreviewed route owner`);
+			assert.equal(record?.status, 'planned', `${route}: unreviewed route status`);
 			candidates.push(route);
 		}
 	}

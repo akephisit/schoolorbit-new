@@ -47,6 +47,7 @@ export interface TimetableMockOptions {
 	failDelete?: boolean;
 	failUpdate?: boolean;
 	preferredRoomIds?: string[];
+	requestedWorkspaceVersion?: boolean;
 }
 
 function fulfill(route: Route, data: unknown, status = 200) {
@@ -320,7 +321,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let lastCreateBody: Record<string, unknown> | null = null;
 	let lastUpdateBody: Record<string, unknown> | null = null;
 
-	const workspace = () => {
+	const workspace = (version = selectedVersion) => {
 		const scheduledPeriods = blocks.filter((block) =>
 			block.groups.some((group) => group.learningGroupId === timetableIds.groupA)
 		).length;
@@ -328,7 +329,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			(block) => block.learningOfferingId === timetableIds.offeringSync
 		).length;
 		return {
-			version: selectedVersion,
+			version,
 			bellPeriods: periods(options.periodCount),
 			blocks,
 			learningGroups: [
@@ -475,7 +476,11 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/workspace') {
 				workspaceRequests += 1;
-				await fulfill(route, workspace());
+				const requestedVersionId = url.searchParams.get('timetableVersionId');
+				const version = options.requestedWorkspaceVersion
+					? (versions.find((item) => item.id === requestedVersionId) ?? selectedVersion)
+					: selectedVersion;
+				await fulfill(route, workspace(version));
 				return;
 			}
 			if (url.pathname === `/api/academic/term-change-sets/${timetableIds.changeSet}`) {

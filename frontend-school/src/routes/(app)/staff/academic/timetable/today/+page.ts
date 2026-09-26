@@ -17,10 +17,12 @@ export const _meta = {
 };
 
 export const load: PageLoad = ({ fetch, url }) => {
+	const academicYearId = url.searchParams.get('academicYearId')?.trim() || null;
 	const academicTermId = url.searchParams.get('academicTermId')?.trim() || null;
 	const initialDate = currentLocalDate();
 	return {
 		title: _meta.menu.title,
+		academicYearId,
 		academicTermId,
 		initialDate,
 		overview: academicTermId

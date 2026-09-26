@@ -33,7 +33,12 @@
 		{#if prerequisite.actionLabel && prerequisite.href}
 			<div class="flex flex-wrap items-center gap-2 pt-1">
 				<span class="text-xs font-medium text-foreground">ทางไปต่อ</span>
-				<Button href={prerequisite.href} size="sm" variant="outline">
+				<Button
+					href={prerequisite.href}
+					data-sveltekit-preload-data={prerequisite.preload}
+					size="sm"
+					variant="outline"
+				>
 					{prerequisite.actionLabel}
 				</Button>
 			</div>

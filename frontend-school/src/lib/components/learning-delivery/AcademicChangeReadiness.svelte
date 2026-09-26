@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
 	import type { LearningDeliveryRefreshScope } from '$lib/academic/learning-delivery-page';
 	import {
 		cancelAcademicTermChangeSet,
@@ -45,6 +46,16 @@
 	let cancelling = $state(false);
 	let acknowledgedWarnings = $state<AcademicChangeFindingCode[]>([]);
 	let errorMessage = $state('');
+	let boardHref = $derived(
+		academicContextualMenuPath(
+			`/staff/academic/timetable?timetableVersionId=${encodeURIComponent(changeSet.targetTimetableVersionId)}`,
+			{
+				academicYearId: changeSet.academicYearId,
+				academicTermId: changeSet.academicTermId
+			},
+			null
+		)
+	);
 
 	let blockingFindings = $derived(
 		preview?.findings.filter((finding) => finding.severity === 'blocking') ?? []
@@ -364,7 +375,8 @@
 					จัดตารางในรุ่นแบบร่างนี้เท่านั้น รุ่นเดิมยังไม่ถูกแก้ไข
 				</p>
 				<Button
-					href={`/staff/academic/timetable?timetableVersionId=${changeSet.targetTimetableVersionId}`}
+					href={boardHref}
+					data-sveltekit-preload-data="tap"
 					variant="outline"
 					class="mt-3 w-full"
 				>
@@ -380,7 +392,8 @@
 						: ''}
 				</p>
 				<Button
-					href={`/staff/academic/timetable?timetableVersionId=${changeSet.targetTimetableVersionId}`}
+					href={boardHref}
+					data-sveltekit-preload-data="tap"
 					variant="outline"
 					class="mt-3 w-full"
 				>

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import {
-		getAcademicContextStore,
-		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
+	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
+	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
+	import { selectPreferredTemplateVersion } from '$lib/academic/timetable/version-selection';
 	import {
 		applyTimetableTemplate,
 		clearTimetable,
@@ -16,8 +17,14 @@
 		type TimetableTemplate,
 		type TimetableVersion
 	} from '$lib/api/timetable';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		LoadingButton,
+		PageSkeleton,
+		PageState,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -27,14 +34,23 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Eraser, Play, Plus, Trash2 } from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
-	const academicContext = getAcademicContextStore();
-	const academicTermId = $derived($academicContext.selected.academicTermId);
+	let { data }: PageProps = $props();
+	const academicTermId = $derived(data.academicTermId);
 	let templates = $state<TimetableTemplate[]>([]);
 	let versions = $state<TimetableVersion[]>([]);
 	let selectedVersion = $state.raw<TimetableVersion | null>(null);
 	let versionSelectValue = $state('');
-	let loading = $state(true);
+	let templatesLoading = $state(true);
+	let versionsLoading = $state(true);
+	let templatesError = $state('');
+	let versionsError = $state('');
+	const templatesRequest = new LatestRequest();
+	const versionsRequest = new LatestRequest();
+	let activeTermId: string | null = null;
+	let templatesRevision = 0;
+	let versionsRevision = 0;
 	let creating = $state(false);
 	let applying = $state(false);
 	let clearing = $state(false);
@@ -46,35 +62,17 @@
 	let createName = $state('');
 	let createDescription = $state('');
 	let clearMode = $state<'all_except_course' | 'course_only' | 'all'>('all_except_course');
-	let errorMessage = $state('');
+	onDestroy(() => {
+		templatesRequest.abort();
+		versionsRequest.abort();
+	});
 
-	const canRead = $derived(
-		$can.hasAny(
-			PERMISSIONS.LEARNING_OFFERING_READ_SCHOOL,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL
-		)
-	);
-	const canManage = $derived($can.has(PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL));
+	const canRead = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL));
+	const canManage = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL));
 	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
 	const hasDirtyDraft = $derived(
 		showCreateDialog && Boolean(createName.trim() || createDescription.trim())
 	);
-
-	function selectPreferredVersion(loadedVersions: TimetableVersion[]): TimetableVersion | null {
-		const requestedId = page.url.searchParams.get('timetableVersionId');
-		const explicit = loadedVersions.find((version) => version.id === requestedId);
-		if (explicit) return explicit;
-		return (
-			loadedVersions.find(
-				(version) => version.status === 'published' && version.displayState === 'current'
-			) ??
-			loadedVersions.find(
-				(version) => version.status === 'published' && version.displayState === 'upcoming'
-			) ??
-			loadedVersions.find((version) => version.status === 'draft') ??
-			null
-		);
-	}
 
 	function versionLabel(version: TimetableVersion): string {
 		const status =
@@ -90,7 +88,10 @@
 		if (page.url.searchParams.get('timetableVersionId') === versionId) return;
 		const nextUrl = new URL(page.url);
 		nextUrl.searchParams.set('timetableVersionId', versionId);
-		window.history.replaceState(window.history.state, '', nextUrl);
+		replaceState(
+			resolve(`/staff/academic/timetable/templates?${nextUrl.searchParams.toString()}`),
+			page.state
+		);
 	}
 
 	function changeVersion(versionId: string): void {
@@ -101,22 +102,49 @@
 		syncVersionUrl(version.id);
 	}
 
-	async function loadTemplates(termId: string): Promise<void> {
-		loading = true;
-		errorMessage = '';
+	function applyVersions(loaded: TimetableVersion[]): void {
+		versions = loaded;
+		selectedVersion = selectPreferredTemplateVersion(
+			loaded,
+			versionSelectValue || data.requestedVersionId
+		);
+		versionSelectValue = selectedVersion?.id ?? '';
+		if (selectedVersion) syncVersionUrl(selectedVersion.id);
+	}
+
+	async function loadTemplates(): Promise<void> {
+		if (!academicTermId) return;
+		const termId = academicTermId;
+		const { revision, signal } = templatesRequest.begin();
+		templatesRevision += 1;
+		templatesLoading = true;
+		templatesError = '';
 		try {
-			const loadedTemplates = await listTimetableTemplates();
-			const loadedVersions = await listTimetableVersions(termId);
-			const preferredVersion = selectPreferredVersion(loadedVersions);
-			templates = loadedTemplates;
-			versions = loadedVersions;
-			selectedVersion = preferredVersion;
-			versionSelectValue = preferredVersion?.id ?? '';
-			if (preferredVersion) syncVersionUrl(preferredVersion.id);
+			const loaded = await listTimetableTemplates({ signal });
+			if (templatesRequest.isCurrent(revision) && academicTermId === termId) templates = loaded;
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดแม่แบบตารางสอนไม่สำเร็จ';
+			if (!isAbortError(error) && templatesRequest.isCurrent(revision))
+				templatesError = error instanceof Error ? error.message : 'โหลดแม่แบบตารางสอนไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (templatesRequest.isCurrent(revision)) templatesLoading = false;
+		}
+	}
+
+	async function loadVersions(): Promise<void> {
+		if (!academicTermId) return;
+		const termId = academicTermId;
+		const { revision, signal } = versionsRequest.begin();
+		versionsRevision += 1;
+		versionsLoading = true;
+		versionsError = '';
+		try {
+			const loaded = await listTimetableVersions(termId, { signal });
+			if (versionsRequest.isCurrent(revision) && academicTermId === termId) applyVersions(loaded);
+		} catch (error) {
+			if (!isAbortError(error) && versionsRequest.isCurrent(revision))
+				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
+		} finally {
+			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
 		}
 	}
 
@@ -131,6 +159,8 @@
 				description: createDescription.trim() || null,
 				entryTypes: null
 			});
+			templatesRevision += 1;
+			templatesLoading = false;
 			templates = [created, ...templates.filter((template) => template.id !== created.id)];
 			showCreateDialog = false;
 			createName = '';
@@ -147,6 +177,8 @@
 		deletingTemplateId = template.id;
 		try {
 			await deleteTimetableTemplate(template.id);
+			templatesRevision += 1;
+			templatesLoading = false;
 			templates = templates.filter((item) => item.id !== template.id);
 			toast.success('ลบแม่แบบแล้ว');
 		} catch (error) {
@@ -207,29 +239,75 @@
 		return new Date(value).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
 	}
 
-	onMount(() => {
-		const unregisterDirty = registerAcademicContextDirtySource(
-			'timetable-template-draft',
-			() => hasDirtyDraft
-		);
-		let loadedTermId = '';
-		const unsubscribeContext = academicContext.subscribe((state) => {
-			const termId = state.selected.academicTermId ?? '';
-			if (!termId || termId === loadedTermId) return;
-			loadedTermId = termId;
-			void loadTemplates(termId);
+	$effect.pre(() => {
+		const termId = data.academicTermId;
+		const routeTemplates = data.templates;
+		const routeVersions = data.versions;
+		const initialTemplatesRevision = templatesRevision;
+		const initialVersionsRevision = versionsRevision;
+		let current = true;
+		untrack(() => {
+			if (activeTermId !== termId) {
+				activeTermId = termId;
+				templates = [];
+				versions = [];
+				selectedVersion = null;
+				versionSelectValue = '';
+				showCreateDialog = false;
+				showApplyDialog = false;
+				showClearDialog = false;
+				applyTarget = null;
+			}
+			templatesRequest.abort();
+			versionsRequest.abort();
+			templatesLoading = Boolean(routeTemplates);
+			versionsLoading = Boolean(routeVersions);
+			templatesError = '';
+			versionsError = '';
 		});
+		if (routeTemplates) {
+			void routeTemplates.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (templatesRevision === initialTemplatesRevision) {
+						if (result.ok) templates = result.data;
+						else templatesError = result.error;
+						templatesLoading = false;
+					}
+				});
+			});
+		}
+		if (routeVersions) {
+			void routeVersions.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (versionsRevision === initialVersionsRevision) {
+						if (result.ok) applyVersions(result.data);
+						else versionsError = result.error;
+						versionsLoading = false;
+					}
+				});
+			});
+		}
 		return () => {
-			unsubscribeContext();
-			unregisterDirty();
+			current = false;
 		};
 	});
+
+	onMount(() =>
+		registerAcademicContextDirtySource('timetable-template-draft', () => hasDirtyDraft)
+	);
 </script>
 
 <PageShell
 	title="แม่แบบตารางสอน"
 	description="เก็บรูปแบบตารางไว้ใช้ซ้ำ แล้วนำไปใช้กับภาคเรียนที่เลือกบนแถบด้านบน"
-	backHref="/staff/academic/timetable"
+	backHref={academicContextualMenuPath(
+		'/staff/academic/timetable',
+		{ academicYearId: data.academicYearId, academicTermId },
+		null
+	)}
+	backPreload="tap"
 >
 	{#snippet actions()}
 		{#if canManage && academicTermId && selectedVersion}
@@ -256,86 +334,132 @@
 			title="เลือกภาคเรียนก่อน"
 			description="แม่แบบไม่ผูกกับภาค แต่การสร้าง นำไปใช้ และล้างตารางต้องมีภาคเรียนเป้าหมายที่ชัดเจน"
 		/>
-	{:else if loading}
-		<PageSkeleton variant="cards" rows={3} />
-	{:else if errorMessage}
-		<PageState
-			variant="error"
-			title="โหลดแม่แบบไม่สำเร็จ"
-			description={errorMessage}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => academicTermId && loadTemplates(academicTermId)}
-		/>
-	{:else if versions.length === 0}
-		<PageState
-			variant="empty"
-			title="ยังไม่มีรุ่นตารางสอน"
-			description="สร้างรุ่นตารางสอนของภาคเรียนนี้ก่อนใช้แม่แบบ"
-		/>
-	{:else if templates.length === 0}
-		<PageState
-			title="ยังไม่มีแม่แบบ"
-			description="สร้างแม่แบบจากตารางของภาคเรียนที่เลือกเพื่อใช้เป็นจุดเริ่มต้นในภาคถัดไป"
-			actionLabel={canManage ? 'สร้างจากภาคนี้' : undefined}
-			onaction={canManage ? () => (showCreateDialog = true) : undefined}
-		/>
 	{:else}
 		<div class="space-y-4">
-			<Card.Root class="gap-0 py-0">
-				<Card.Content class="grid gap-3 p-4 sm:grid-cols-[1fr_20rem] sm:items-center">
-					<div>
-						<p class="font-medium">รุ่นตารางเป้าหมาย</p>
-						<p class="mt-1 text-xs text-muted-foreground">
-							{selectedVersion?.status === 'draft'
-								? 'แบบร่างนี้รับการนำแม่แบบไปใช้และล้างตารางได้'
-								: 'รุ่นที่เผยแพร่แล้วใช้สร้างแม่แบบได้ แต่แก้ไขตารางไม่ได้'}
-						</p>
-					</div>
-					<Select.Root type="single" bind:value={versionSelectValue} onValueChange={changeVersion}>
-						<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางเป้าหมาย">
-							{selectedVersion ? versionLabel(selectedVersion) : 'เลือกรุ่นตาราง'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each versions as version (version.id)}
-								<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</Card.Content>
-			</Card.Root>
-			<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-				{#each templates as template (template.id)}
-					<Card.Root>
-						<Card.Header>
-							<Card.Title>{template.name}</Card.Title>
-							<Card.Description>{template.description ?? 'ไม่มีคำอธิบาย'}</Card.Description>
-						</Card.Header>
-						<Card.Content>
-							<p class="text-muted-foreground text-xs">
-								สร้างเมื่อ {formatDate(template.createdAt)}
-							</p>
+			{#if versionsLoading && versions.length === 0}
+				<PageSkeleton variant="cards" rows={1} />
+			{:else if versionsError && versions.length === 0}
+				<PageState
+					variant="error"
+					title="โหลดรุ่นตารางสอนไม่สำเร็จ"
+					description={versionsError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadVersions}
+				/>
+			{:else if versions.length === 0}
+				<PageState
+					variant="empty"
+					title="ยังไม่มีรุ่นตารางสอน"
+					description="สร้างรุ่นตารางสอนของภาคเรียนนี้ก่อนใช้แม่แบบ"
+				/>
+			{:else}
+				<div
+					class="relative"
+					aria-busy={versionsLoading}
+					data-testid="timetable-template-versions-ready"
+				>
+					{#if versionsLoading}<RegionUpdatingState />{/if}
+					{#if versionsError}
+						<div
+							role="alert"
+							class="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 p-3 text-sm"
+						>
+							<span>{versionsError}</span>
+							<Button variant="outline" size="sm" onclick={loadVersions}>ลองอีกครั้ง</Button>
+						</div>
+					{/if}
+					<Card.Root class="gap-0 py-0">
+						<Card.Content class="grid gap-3 p-4 sm:grid-cols-[1fr_20rem] sm:items-center">
+							<div>
+								<p class="font-medium">รุ่นตารางเป้าหมาย</p>
+								<p class="mt-1 text-xs text-muted-foreground">
+									{selectedVersion?.status === 'draft'
+										? 'แบบร่างนี้รับการนำแม่แบบไปใช้และล้างตารางได้'
+										: 'รุ่นที่เผยแพร่แล้วใช้สร้างแม่แบบได้ แต่แก้ไขตารางไม่ได้'}
+								</p>
+							</div>
+							<Select.Root
+								type="single"
+								bind:value={versionSelectValue}
+								onValueChange={changeVersion}
+							>
+								<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางเป้าหมาย">
+									{selectedVersion ? versionLabel(selectedVersion) : 'เลือกรุ่นตาราง'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each versions as version (version.id)}
+										<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</Card.Content>
-						{#if canManage}
-							<Card.Footer class="gap-2">
-								<Button
-									class="flex-1"
-									disabled={!canEditSelected}
-									onclick={() => openApply(template)}><Play /> ใช้กับภาคนี้</Button
-								>
-								<LoadingButton
-									variant="ghost"
-									size="icon"
-									loading={deletingTemplateId === template.id}
-									loadingLabel=""
-									aria-label={`ลบ ${template.name}`}
-									onclick={() => handleDelete(template)}
-									><Trash2 class="text-destructive" /></LoadingButton
-								>
-							</Card.Footer>
-						{/if}
 					</Card.Root>
-				{/each}
-			</div>
+				</div>
+			{/if}
+			{#if templatesLoading && templates.length === 0}
+				<PageSkeleton variant="cards" rows={3} />
+			{:else if templatesError && templates.length === 0}
+				<PageState
+					variant="error"
+					title="โหลดแม่แบบไม่สำเร็จ"
+					description={templatesError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadTemplates}
+				/>
+			{:else if templates.length === 0}
+				<PageState
+					title="ยังไม่มีแม่แบบ"
+					description="สร้างแม่แบบจากตารางของภาคเรียนที่เลือกเพื่อใช้เป็นจุดเริ่มต้นในภาคถัดไป"
+					actionLabel={canManage && selectedVersion ? 'สร้างจากภาคนี้' : undefined}
+					onaction={canManage && selectedVersion ? () => (showCreateDialog = true) : undefined}
+				/>
+			{:else}
+				<div class="relative" aria-busy={templatesLoading} data-testid="timetable-templates-ready">
+					{#if templatesLoading}<RegionUpdatingState />{/if}
+					{#if templatesError}
+						<div
+							role="alert"
+							class="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 p-3 text-sm"
+						>
+							<span>{templatesError}</span>
+							<Button variant="outline" size="sm" onclick={loadTemplates}>ลองอีกครั้ง</Button>
+						</div>
+					{/if}
+					<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+						{#each templates as template (template.id)}
+							<Card.Root>
+								<Card.Header>
+									<Card.Title>{template.name}</Card.Title>
+									<Card.Description>{template.description ?? 'ไม่มีคำอธิบาย'}</Card.Description>
+								</Card.Header>
+								<Card.Content>
+									<p class="text-muted-foreground text-xs">
+										สร้างเมื่อ {formatDate(template.createdAt)}
+									</p>
+								</Card.Content>
+								{#if canManage}
+									<Card.Footer class="gap-2">
+										<Button
+											class="flex-1"
+											disabled={!canEditSelected}
+											onclick={() => openApply(template)}><Play /> ใช้กับภาคนี้</Button
+										>
+										<LoadingButton
+											variant="ghost"
+											size="icon"
+											loading={deletingTemplateId === template.id}
+											loadingLabel=""
+											aria-label={`ลบ ${template.name}`}
+											onclick={() => handleDelete(template)}
+											><Trash2 class="text-destructive" /></LoadingButton
+										>
+									</Card.Footer>
+								{/if}
+							</Card.Root>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </PageShell>

@@ -19,6 +19,7 @@
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
 	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
 	import { currentLocalDate, getMyTimetable, type TimetableBlock } from '$lib/api/timetable';
 	import {
@@ -1981,7 +1982,16 @@
 												ตรวจว่ากลุ่มเรียนมีครูผู้สอนและมีคาบในตาราง หรือใช้คาบกำหนดเองเมื่อจำเป็น
 											</p>
 											<div class="mt-3 flex flex-wrap gap-2">
-												<Button href="/staff/academic/timetable" size="sm" variant="outline">
+												<Button
+													href={academicContextualMenuPath(
+														'/staff/academic/timetable',
+														$academicContext.selected,
+														academicContextOptions
+													)}
+													data-sveltekit-preload-data="tap"
+													size="sm"
+													variant="outline"
+												>
 													ตรวจตารางสอน
 												</Button>
 												<Button href="/staff/academic/delivery" size="sm" variant="outline">

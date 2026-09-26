@@ -7,6 +7,7 @@
 		title,
 		description,
 		backHref,
+		backPreload,
 		backLabel = 'ย้อนกลับ',
 		icon,
 		meta,
@@ -18,6 +19,7 @@
 		title: string;
 		description?: string;
 		backHref?: string;
+		backPreload?: 'hover' | 'tap' | 'off';
 		backLabel?: string;
 		icon?: Component;
 		meta?: Snippet;
@@ -33,7 +35,7 @@
 </svelte:head>
 
 <div class={cn('w-full min-w-0 space-y-6 px-4 py-4 lg:px-6 lg:py-6', className)}>
-	<PageHeader {title} {description} {backHref} {backLabel} {icon} {meta} {actions} />
+	<PageHeader {title} {description} {backHref} {backPreload} {backLabel} {icon} {meta} {actions} />
 	<div class={cn('w-full min-w-0 space-y-6', contentClass)}>
 		{@render children?.()}
 	</div>

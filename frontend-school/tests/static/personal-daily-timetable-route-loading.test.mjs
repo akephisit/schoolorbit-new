@@ -38,7 +38,7 @@ test('daily overview wrapper accepts the route fetch and personal PDF stays acti
 
 test('the volatile school-wide daily overview preloads on tap in both sidebar modes', async () => {
 	const sidebar = await source('src/lib/components/layout/Sidebar.svelte');
-	assert.match(sidebar, /\/staff\/academic\/timetable\/today' \? 'tap' : 'hover'/);
+	assert.match(sidebar, /path === '\/staff\/academic\/timetable\/today'/);
 	assert.match(sidebar, /onpointerdown=\{\(\) => preloadMenuItem\(item, 'tap'\)\}/);
 	assert.match(sidebar, /data-sveltekit-preload-data=\{menuPreloadPolicy\(item\)\}/);
 });

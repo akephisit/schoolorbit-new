@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
 	import {
 		getDailyTeachingOverview,
 		type DailyTeachingEntry,
@@ -336,8 +337,14 @@
 			<Button variant="outline" disabled={loading || !academicTermId} onclick={() => loadOverview()}
 				><RefreshCw class={loading ? 'animate-spin' : ''} /> รีเฟรช</Button
 			>
-			{#if canOpenPlanner}<Button variant="outline" href="/staff/academic/timetable"
-					><ExternalLink /> จัดตาราง</Button
+			{#if canOpenPlanner}<Button
+					variant="outline"
+					href={academicContextualMenuPath(
+						'/staff/academic/timetable',
+						{ academicYearId: data.academicYearId, academicTermId },
+						null
+					)}
+					data-sveltekit-preload-data="tap"><ExternalLink /> จัดตาราง</Button
 				>{/if}
 			<Button variant="outline" disabled={!overview} onclick={() => window.print()}
 				><Printer /> พิมพ์</Button

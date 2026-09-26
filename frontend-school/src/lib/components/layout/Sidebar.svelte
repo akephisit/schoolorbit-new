@@ -148,7 +148,10 @@
 	}
 
 	function menuPreloadPolicy(item: SidebarMenuItem): 'hover' | 'tap' {
-		return item.path.split('?')[0] === '/staff/academic/timetable/today' ? 'tap' : 'hover';
+		const path = item.path.split('?')[0];
+		return path === '/staff/academic/timetable' || path === '/staff/academic/timetable/today'
+			? 'tap'
+			: 'hover';
 	}
 
 	function preloadMenuItem(item: SidebarMenuItem, trigger: 'hover' | 'tap') {
