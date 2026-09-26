@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { ApiClientError } from '$lib/api/client';
 	import {
 		addDatedRosterMembership,
@@ -10,27 +10,32 @@
 		type LearningGroup,
 		type RosterPreview
 	} from '$lib/api/learning-delivery';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { LoadingButton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import { Label } from '$lib/components/ui/label';
 	import { CalendarMinus, CalendarPlus, History, Plus, X } from '@lucide/svelte';
+	import type { RouteLoadResult } from '$lib/navigation/route-load';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	let {
 		group,
 		canManage,
-		onGroupChanged
+		onGroupChanged,
+		initialMemberships = null
 	}: {
 		group: LearningGroup;
 		canManage: boolean;
 		onGroupChanged: () => void | Promise<void>;
+		initialMemberships?: Promise<RouteLoadResult<DatedRosterMembership[] | null>> | null;
 	} = $props();
 
 	let memberships = $state.raw<DatedRosterMembership[]>([]);
 	let rosterPreview = $state.raw<RosterPreview | null>(null);
 	let loading = $state(true);
+	let hasHistory = $state(false);
 	let loadingCandidates = $state(false);
 	let saving = $state(false);
 	let addFormOpen = $state(false);
@@ -40,6 +45,7 @@
 	let leftAt = $state('');
 	let errorMessage = $state('');
 	let candidateError = $state('');
+	const historyRequest = new LatestRequest();
 
 	let activeStudentYearIds = $derived(
 		new Set(
@@ -95,14 +101,23 @@
 	}
 
 	async function loadHistory() {
+		const groupId = group.id;
+		const { revision, signal } = historyRequest.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			memberships = await listDatedRosterMemberships(group.id);
+			const loaded = await listDatedRosterMemberships(groupId, { signal });
+			if (historyRequest.isCurrent(revision) && group.id === groupId) {
+				memberships = loaded;
+				hasHistory = true;
+			}
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดประวัติรายชื่อนักเรียนไม่สำเร็จ';
+			if (isAbortError(error)) return;
+			if (historyRequest.isCurrent(revision))
+				errorMessage =
+					error instanceof Error ? error.message : 'โหลดประวัติรายชื่อนักเรียนไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (historyRequest.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -196,8 +211,31 @@
 		}
 	}
 
-	onMount(() => {
-		void loadHistory();
+	$effect.pre(() => {
+		const initial = untrack(() => initialMemberships);
+		let current = true;
+		untrack(() => {
+			memberships = [];
+			hasHistory = false;
+			loading = true;
+			errorMessage = '';
+		});
+		if (initial) {
+			void initial.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (result.ok) {
+						memberships = result.data ?? [];
+						hasHistory = true;
+					} else errorMessage = result.error;
+					loading = false;
+				});
+			});
+		} else untrack(() => void loadHistory());
+		return () => {
+			current = false;
+			historyRequest.abort();
+		};
 	});
 </script>
 
@@ -269,7 +307,14 @@
 		</form>
 	{/if}
 
-	<div class="p-4">
+	<div
+		class="relative p-4"
+		aria-busy={loading}
+		data-testid={hasHistory ? 'delivery-memberships-ready' : undefined}
+	>
+		{#if loading && hasHistory}<RegionUpdatingState
+				label="กำลังอัปเดตประวัติสมาชิกกลุ่มเรียน"
+			/>{/if}
 		<p
 			class="mb-3 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs leading-relaxed text-blue-800"
 		>
@@ -277,12 +322,12 @@
 			15 ก.ย. แต่ไม่รวมวันที่ 16 ก.ย.
 		</p>
 
-		{#if loading}
+		{#if loading && !hasHistory}
 			<div class="space-y-2" aria-label="กำลังโหลดประวัติสมาชิก">
 				<div class="h-16 animate-pulse rounded-xl bg-muted"></div>
 				<div class="h-16 animate-pulse rounded-xl bg-muted"></div>
 			</div>
-		{:else if errorMessage && memberships.length === 0}
+		{:else if errorMessage && !hasHistory}
 			<PageState
 				variant="error"
 				title="โหลดประวัติสมาชิกไม่สำเร็จ"
@@ -366,11 +411,13 @@
 				{/each}
 			</div>
 		{/if}
-		{#if errorMessage && memberships.length > 0}<p
+		{#if errorMessage && hasHistory}<div
 				role="alert"
-				class="mt-3 text-sm text-destructive"
+				class="mt-3 flex items-center gap-2 text-sm text-destructive"
 			>
-				{errorMessage}
-			</p>{/if}
+				<span>{errorMessage}</span><Button size="sm" variant="outline" onclick={loadHistory}
+					>ลองอีกครั้ง</Button
+				>
+			</div>{/if}
 	</div>
 </section>

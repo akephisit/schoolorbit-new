@@ -311,13 +311,12 @@
 		{
 			"route": "staff/academic/delivery/[offeringId]",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-delivery",
-			"notes": "Component API reads include getLearningDeliveryManagementOptions, getLearningGroup, getLearningOffering, listLearningGroups, listTimetableVersions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Independent offering/groups and direct selected-group route reads; versions depend only on offering term and published membership history on selected group. Heavy detail links preload on tap; management and roster actions stay lazy."
 		},
 		{
 			"route": "staff/academic/exam-schedules",

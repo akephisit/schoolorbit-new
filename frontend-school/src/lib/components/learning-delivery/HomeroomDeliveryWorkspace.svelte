@@ -377,6 +377,7 @@
 																{/if}
 																<Button
 																	href={`/staff/academic/delivery/${item.offeringId}`}
+																	data-sveltekit-preload-data="tap"
 																	size="icon"
 																	variant="ghost"
 																	aria-label={`จัดการ ${item.name}`}
@@ -440,6 +441,7 @@
 													</div>
 													<Button
 														href={`/staff/academic/delivery/${item.offeringId}`}
+														data-sveltekit-preload-data="tap"
 														size="icon"
 														variant="ghost"
 														aria-label={`จัดการ ${item.name}`}

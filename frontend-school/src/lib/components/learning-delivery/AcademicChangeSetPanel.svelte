@@ -426,6 +426,7 @@
 								{#if item.actionKind === 'add_offering'}
 									<Button
 										href={`/staff/academic/delivery/${item.learningOfferingId}?timetableVersionId=${changeSet.targetTimetableVersionId}`}
+										data-sveltekit-preload-data="tap"
 										size="sm"
 										variant="ghost"
 									>

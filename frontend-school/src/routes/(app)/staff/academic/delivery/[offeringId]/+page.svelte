@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { afterNavigate, goto } from '$app/navigation';
+	import { pushState, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { ApiClientError } from '$lib/api/client';
 	import {
 		applyLearningGroupRoster,
@@ -33,7 +33,7 @@
 	} from '$lib/api/timetable';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import LearningGroupEditor from '$lib/components/learning-delivery/LearningGroupEditor.svelte';
 	import LearningGroupList from '$lib/components/learning-delivery/LearningGroupList.svelte';
 	import DatedRosterMemberships from '$lib/components/learning-delivery/DatedRosterMemberships.svelte';
@@ -52,10 +52,16 @@
 		Send,
 		UsersRound
 	} from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
-	const detailRequest = new LatestRequest();
+	let { data }: PageProps = $props();
+	const offeringRequest = new LatestRequest();
+	const groupsRequest = new LatestRequest();
+	const versionsRequest = new LatestRequest();
 	const groupRequest = new LatestRequest();
-	const offeringId = $derived(page.params.offeringId ?? '');
+	const optionsRequest = new LatestRequest();
+	onDestroy(() => optionsRequest.abort());
+	const offeringId = $derived(data.offeringId);
 
 	let offering = $state.raw<LearningOffering | null>(null);
 	let groups = $state.raw<LearningGroup[]>([]);
@@ -65,17 +71,27 @@
 	let timetableVersionSelectValue = $state('');
 	let managementOptions = $state.raw<DeliveryManagementOptions | null>(null);
 	let rosterPreview = $state.raw<RosterPreview | null>(null);
-	let loading = $state(true);
-	let groupLoading = $state(false);
+	let offeringLoading = $state(true);
+	let groupsLoading = $state(true);
+	let versionsLoading = $state(true);
+	let groupLoading = $state(true);
+	let hasGroups = $state(false);
+	let hasVersions = $state(false);
 	let optionsLoading = $state(false);
 	let rosterLoading = $state(false);
 	let publishing = $state(false);
-	let initialized = $state(false);
 	let editorVisible = $state(false);
 	let rosterVisible = $state(false);
 	let rosterStale = $state(false);
-	let errorMessage = $state('');
+	let offeringError = $state('');
+	let groupsError = $state('');
+	let versionsError = $state('');
+	let groupError = $state('');
 	let actionError = $state('');
+	let activeOfferingId = '';
+	let routeSelectedGroupId = $state('');
+	let mutationRevision = 0;
+	let selectionRevision = 0;
 
 	let canManage = $derived(
 		$can.hasAny(
@@ -121,6 +137,10 @@
 		return `${status} · เริ่ม ${version.effectiveFrom}`;
 	}
 
+	function deliveryDetailUrl(url: URL): `/staff/academic/delivery/${string}?${string}` {
+		return `/staff/academic/delivery/${encodeURIComponent(offeringId)}?${url.searchParams.toString()}`;
+	}
+
 	function selectTimetableVersion(versionId: string): void {
 		const version = timetableVersions.find((item) => item.id === versionId);
 		if (!version) return;
@@ -128,7 +148,7 @@
 		timetableVersionSelectValue = version.id;
 		const nextUrl = new URL(page.url);
 		nextUrl.searchParams.set('timetableVersionId', version.id);
-		window.history.replaceState(window.history.state, '', nextUrl);
+		replaceState(resolve(deliveryDetailUrl(nextUrl)), page.state);
 	}
 
 	function offeringKindLabel(kind: LearningOffering['kind']) {
@@ -149,8 +169,9 @@
 	}
 
 	function updateGroupState(updated: LearningGroup) {
+		if (updated.learningOfferingId !== offeringId) return;
 		groups = groups.map((group) => (group.id === updated.id ? updated : group));
-		selectedGroup = updated;
+		if (selectedGroup?.id === updated.id) selectedGroup = updated;
 	}
 
 	function resetSelectedWorkspace() {
@@ -161,71 +182,100 @@
 		actionError = '';
 	}
 
-	async function navigateToGroup(group: LearningGroup, replaceState = false) {
+	function navigateToGroup(group: LearningGroup, replace = false) {
+		selectionRevision += 1;
+		groupRequest.abort();
+		routeSelectedGroupId = '';
 		selectedGroup = group;
+		groupLoading = false;
+		groupError = '';
 		resetSelectedWorkspace();
-		const versionQuery = selectedTimetableVersion
-			? `&timetableVersionId=${encodeURIComponent(selectedTimetableVersion.id)}`
-			: '';
-		await goto(
-			resolve(
-				`/staff/academic/delivery/${offeringId}?groupId=${encodeURIComponent(group.id)}${versionQuery}`
-			),
-			{ replaceState, keepFocus: true, noScroll: true }
-		);
+		const nextUrl = new URL(page.url);
+		nextUrl.searchParams.set('groupId', group.id);
+		const destination = resolve(deliveryDetailUrl(nextUrl));
+		if (replace) replaceState(destination, page.state);
+		else pushState(destination, page.state);
 	}
 
-	async function loadDetail() {
-		const { revision, signal } = detailRequest.begin();
-		loading = true;
-		errorMessage = '';
+	async function retryOffering() {
+		const id = offeringId;
+		const { revision, signal } = offeringRequest.begin();
+		offeringLoading = true;
+		offeringError = '';
 		try {
-			const loadedOffering = await getLearningOffering(offeringId, { signal });
-			const loadedTimetableVersions = await listTimetableVersions(loadedOffering.academicTermId, {
-				signal
-			});
-			const loadedGroups = await listLearningGroups(offeringId, { signal });
-			const requestedGroupId = page.url.searchParams.get('groupId');
-			const targetGroup =
-				loadedGroups.find((group) => group.id === requestedGroupId) ?? loadedGroups[0] ?? null;
-			const loadedGroup = targetGroup ? await getLearningGroup(targetGroup.id, { signal }) : null;
-			if (!detailRequest.isCurrent(revision)) return;
-			offering = loadedOffering;
-			timetableVersions = loadedTimetableVersions;
-			selectedTimetableVersion = preferredTimetableVersion(loadedTimetableVersions);
-			timetableVersionSelectValue = selectedTimetableVersion?.id ?? '';
-			groups = loadedGroups.map((group) => (group.id === loadedGroup?.id ? loadedGroup : group));
-			selectedGroup = loadedGroup;
-			initialized = true;
-			if (loadedGroup && requestedGroupId !== loadedGroup.id) {
-				await navigateToGroup(loadedGroup, true);
-			}
+			const loaded = await getLearningOffering(id, { signal });
+			if (!offeringRequest.isCurrent(revision) || offeringId !== id) return;
+			const priorTermId = offering?.academicTermId;
+			offering = loaded;
+			if (!hasVersions || priorTermId !== loaded.academicTermId) void retryVersions();
 		} catch (error) {
 			if (isAbortError(error)) return;
-			if (detailRequest.isCurrent(revision)) {
-				errorMessage =
+			if (offeringRequest.isCurrent(revision)) {
+				offeringError =
 					error instanceof Error ? error.message : 'โหลดรายละเอียดรายการเปิดสอนไม่สำเร็จ';
 			}
 		} finally {
-			if (detailRequest.isCurrent(revision)) loading = false;
+			if (offeringRequest.isCurrent(revision)) offeringLoading = false;
+		}
+	}
+
+	async function retryGroups() {
+		const id = offeringId;
+		const { revision, signal } = groupsRequest.begin();
+		groupsLoading = true;
+		groupsError = '';
+		try {
+			const loaded = await listLearningGroups(id, { signal });
+			if (!groupsRequest.isCurrent(revision) || offeringId !== id) return;
+			groups = loaded;
+			hasGroups = true;
+			const requested = page.url.searchParams.get('groupId');
+			if (!requested && loaded[0]) navigateToGroup(loaded[0], true);
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (groupsRequest.isCurrent(revision))
+				groupsError = error instanceof Error ? error.message : 'โหลดรายการกลุ่มเรียนไม่สำเร็จ';
+		} finally {
+			if (groupsRequest.isCurrent(revision)) groupsLoading = false;
+		}
+	}
+
+	async function retryVersions() {
+		if (!offering) return;
+		const termId = offering.academicTermId;
+		const { revision, signal } = versionsRequest.begin();
+		versionsLoading = true;
+		versionsError = '';
+		try {
+			const loaded = await listTimetableVersions(termId, { signal });
+			if (!versionsRequest.isCurrent(revision) || offering?.academicTermId !== termId) return;
+			timetableVersions = loaded;
+			hasVersions = true;
+			selectedTimetableVersion = preferredTimetableVersion(loaded);
+			timetableVersionSelectValue = selectedTimetableVersion?.id ?? '';
+		} catch (error) {
+			if (isAbortError(error)) return;
+			if (versionsRequest.isCurrent(revision))
+				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
+		} finally {
+			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
 		}
 	}
 
 	async function loadSelectedGroup(groupId: string) {
-		const known = groups.some((group) => group.id === groupId);
-		if (!known) return;
 		const { revision, signal } = groupRequest.begin();
 		groupLoading = true;
-		actionError = '';
+		groupError = '';
 		try {
 			const loaded = await getLearningGroup(groupId, { signal });
 			if (!groupRequest.isCurrent(revision) || loaded.learningOfferingId !== offeringId) return;
 			updateGroupState(loaded);
+			selectedGroup = loaded;
 			resetSelectedWorkspace();
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (groupRequest.isCurrent(revision)) {
-				actionError = error instanceof Error ? error.message : 'โหลดกลุ่มเรียนไม่สำเร็จ';
+				groupError = error instanceof Error ? error.message : 'โหลดกลุ่มเรียนไม่สำเร็จ';
 			}
 		} finally {
 			if (groupRequest.isCurrent(revision)) groupLoading = false;
@@ -236,33 +286,43 @@
 		if (!canMutateOffering || !offering) return null;
 		if (managementOptions) return managementOptions;
 		if (optionsLoading) return null;
+		const ownerId = offering.id;
+		const { revision, signal } = optionsRequest.begin();
 		optionsLoading = true;
 		actionError = '';
 		try {
-			managementOptions = await getLearningDeliveryManagementOptions(offering.academicTermId);
+			const loaded = await getLearningDeliveryManagementOptions(offering.academicTermId, {
+				signal
+			});
+			if (!optionsRequest.isCurrent(revision) || offering?.id !== ownerId) return null;
+			managementOptions = loaded;
 			return managementOptions;
 		} catch (error) {
-			actionError =
-				error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับจัดการกลุ่มไม่สำเร็จ';
+			if (isAbortError(error)) return null;
+			if (optionsRequest.isCurrent(revision))
+				actionError =
+					error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับจัดการกลุ่มไม่สำเร็จ';
 			throw error;
 		} finally {
-			optionsLoading = false;
+			if (optionsRequest.isCurrent(revision)) optionsLoading = false;
 		}
 	}
 
 	async function showEditor() {
+		const groupId = selectedGroup?.id;
 		try {
 			const options = await requestManagementOptions();
-			if (options) editorVisible = true;
+			if (options && selectedGroup?.id === groupId) editorVisible = true;
 		} catch {
 			// The actionable error remains next to the selected group.
 		}
 	}
 
 	async function showRoster() {
+		const groupId = selectedGroup?.id;
 		try {
 			const options = await requestManagementOptions();
-			if (!options) return;
+			if (!options || selectedGroup?.id !== groupId) return;
 			rosterVisible = true;
 			if (!rosterPreview) await refreshRoster();
 		} catch {
@@ -272,16 +332,20 @@
 
 	async function createGroup(request: CreateLearningGroupRequest) {
 		if (!canMutateOffering) return;
-		const created = await createLearningGroup(offeringId, request);
+		const ownerId = offeringId;
+		const created = await createLearningGroup(ownerId, request);
+		if (offeringId !== ownerId) return;
+		mutationRevision += 1;
 		groups = [...groups, created].sort((left, right) =>
 			left.code.localeCompare(right.code, 'th-TH', { numeric: true })
 		);
-		await navigateToGroup(created);
+		navigateToGroup(created);
 	}
 
 	async function saveGroup(request: UpdateLearningGroupRequest) {
 		if (!canMutateOffering || !selectedGroup) return;
 		const updated = await updateLearningGroup(selectedGroup.id, request);
+		mutationRevision += 1;
 		updateGroupState(updated);
 	}
 
@@ -292,12 +356,14 @@
 			return;
 		}
 		const updated = await replaceLearningGroupTeachers(selectedGroup.id, request);
+		mutationRevision += 1;
 		updateGroupState(updated);
 	}
 
 	async function replaceHomerooms(request: ReplaceLearningGroupHomeroomsRequest) {
 		if (!canMutateOffering || !selectedGroup) return;
 		const updated = await replaceLearningGroupHomerooms(selectedGroup.id, request);
+		mutationRevision += 1;
 		updateGroupState(updated);
 		rosterStale = rosterPreview !== null;
 	}
@@ -310,6 +376,7 @@
 			const refreshedGroup = await getLearningGroup(groupId);
 			const refreshedPreview = await previewLearningGroupRoster(groupId);
 			if (selectedGroup?.id !== groupId) return;
+			mutationRevision += 1;
 			updateGroupState(refreshedGroup);
 			rosterPreview = refreshedPreview;
 			rosterStale = false;
@@ -327,6 +394,7 @@
 				overrides: [],
 				rowVersion: selectedGroup.rowVersion
 			});
+			mutationRevision += 1;
 			updateGroupState(updated);
 		} catch (error) {
 			if (error instanceof ApiClientError && error.status === 409) rosterStale = true;
@@ -344,6 +412,7 @@
 				rowVersion: selectedGroup.rowVersion,
 				idempotencyKey: crypto.randomUUID()
 			});
+			mutationRevision += 1;
 			updateGroupState(updated);
 		} catch (error) {
 			if (error instanceof ApiClientError && error.status === 409) rosterStale = true;
@@ -355,40 +424,159 @@
 
 	async function refreshSelectedGroupAfterMembership() {
 		if (!selectedGroup) return;
-		const refreshed = await getLearningGroup(selectedGroup.id);
+		const groupId = selectedGroup.id;
+		const refreshed = await getLearningGroup(groupId);
+		if (offeringId !== refreshed.learningOfferingId) return;
+		mutationRevision += 1;
 		updateGroupState(refreshed);
 	}
 
 	async function publishOfferingNow() {
 		if (!canMutateOffering || !offering || offering.status !== 'draft') return;
+		const ownerId = offering.id;
 		publishing = true;
 		actionError = '';
 		try {
-			offering = await publishLearningOffering(offering.id, {
+			const updated = await publishLearningOffering(ownerId, {
 				rowVersion: offering.rowVersion,
 				idempotencyKey: crypto.randomUUID()
 			});
+			if (offeringId !== ownerId) return;
+			offering = updated;
+			mutationRevision += 1;
 		} catch (error) {
-			actionError = error instanceof Error ? error.message : 'เผยแพร่รายการเปิดสอนไม่สำเร็จ';
+			if (offeringId === ownerId)
+				actionError = error instanceof Error ? error.message : 'เผยแพร่รายการเปิดสอนไม่สำเร็จ';
 		} finally {
-			publishing = false;
+			if (offeringId === ownerId) publishing = false;
 		}
 	}
 
-	afterNavigate(({ to }) => {
-		if (!initialized) return;
-		const requestedGroupId = to?.url.searchParams.get('groupId') ?? '';
-		if (requestedGroupId && requestedGroupId !== selectedGroup?.id) {
-			void loadSelectedGroup(requestedGroupId);
-		}
-	});
-
-	onMount(() => {
-		void loadDetail();
+	$effect.pre(() => {
+		const id = data.offeringId;
+		const routeOffering = data.offering;
+		const routeGroups = data.groups;
+		const routeVersions = data.versions;
+		const routeSelectedGroup = data.selectedGroup;
+		const requestedGroupId = data.requestedGroupId;
+		const initialMutationRevision = mutationRevision;
+		const initialSelectionRevision = selectionRevision;
+		let current = true;
+		untrack(() => {
+			if (activeOfferingId !== id) {
+				activeOfferingId = id;
+				offering = null;
+				groups = [];
+				hasGroups = false;
+				selectedGroup = null;
+				routeSelectedGroupId = '';
+				timetableVersions = [];
+				hasVersions = false;
+				selectedTimetableVersion = null;
+				timetableVersionSelectValue = '';
+				managementOptions = null;
+				optionsRequest.abort();
+				optionsLoading = false;
+				publishing = false;
+				resetSelectedWorkspace();
+				offeringRequest.abort();
+				groupsRequest.abort();
+				versionsRequest.abort();
+				groupRequest.abort();
+			}
+			offeringLoading = true;
+			groupsLoading = true;
+			versionsLoading = true;
+			groupLoading = true;
+			offeringError = '';
+			groupsError = '';
+			versionsError = '';
+			groupError = '';
+		});
+		void routeOffering.then((result) => {
+			if (!current) return;
+			untrack(() => {
+				if (result.ok && mutationRevision === initialMutationRevision) offering = result.data;
+				else if (!result.ok) offeringError = result.error;
+				offeringLoading = false;
+			});
+		});
+		void routeGroups.then((result) => {
+			if (!current) return;
+			untrack(() => {
+				if (result.ok) {
+					if (mutationRevision === initialMutationRevision)
+						groups = result.data.map((group) =>
+							group.id === selectedGroup?.id ? selectedGroup : group
+						);
+					hasGroups = true;
+				} else groupsError = result.error;
+				groupsLoading = false;
+			});
+		});
+		void routeVersions.then((result) => {
+			if (!current) return;
+			untrack(() => {
+				if (result.ok) {
+					timetableVersions = result.data;
+					hasVersions = Boolean(offering);
+					selectedTimetableVersion = preferredTimetableVersion(result.data);
+					timetableVersionSelectValue = selectedTimetableVersion?.id ?? '';
+				} else versionsError = result.error;
+				versionsLoading = false;
+			});
+		});
+		void routeSelectedGroup.then((result) => {
+			if (!current) return;
+			untrack(() => {
+				if (selectionRevision === initialSelectionRevision) {
+					if (result.ok && result.data && mutationRevision === initialMutationRevision) {
+						updateGroupState(result.data);
+						selectedGroup = result.data;
+						routeSelectedGroupId = result.data.id;
+						if (!requestedGroupId) {
+							const nextUrl = new URL(page.url);
+							nextUrl.searchParams.set('groupId', result.data.id);
+							replaceState(resolve(deliveryDetailUrl(nextUrl)), page.state);
+						}
+					} else if (!result.ok) groupError = result.error;
+				}
+				groupLoading = false;
+			});
+		});
 		return () => {
-			detailRequest.abort();
+			current = false;
+			offeringRequest.abort();
+			groupsRequest.abort();
+			versionsRequest.abort();
 			groupRequest.abort();
 		};
+	});
+
+	$effect.pre(() => {
+		const requestedGroupId = page.url.searchParams.get('groupId');
+		if (!requestedGroupId) return;
+		const selectedId = untrack(() => selectedGroup?.id);
+		const initialRouteGroupId = data.requestedGroupId;
+		const waitingForInitialGroup = untrack(() => groupLoading && !selectedGroup);
+		if (
+			requestedGroupId === selectedId ||
+			(requestedGroupId === initialRouteGroupId && waitingForInitialGroup)
+		)
+			return;
+		selectionRevision += 1;
+		groupRequest.abort();
+		routeSelectedGroupId = '';
+		resetSelectedWorkspace();
+		const known = untrack(() => groups.find((group) => group.id === requestedGroupId));
+		if (known) {
+			selectedGroup = known;
+			groupLoading = false;
+			groupError = '';
+		} else {
+			selectedGroup = null;
+			void loadSelectedGroup(requestedGroupId);
+		}
 	});
 </script>
 
@@ -410,19 +598,33 @@
 		</div>
 	{/snippet}
 
-	{#if loading}
-		<PageSkeleton variant="cards" rows={5} />
-	{:else if errorMessage || !offering}
-		<PageState
-			variant="error"
-			title="โหลดรายละเอียดรายการเปิดสอนไม่สำเร็จ"
-			description={errorMessage || 'ไม่พบรายการเปิดสอน'}
-			actionLabel="ลองอีกครั้ง"
-			onaction={loadDetail}
-		/>
-	{:else}
-		<div class="space-y-5">
-			<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
+	<div class="space-y-5">
+		{#if offeringLoading && !offering}
+			<PageSkeleton variant="cards" rows={2} />
+		{:else if offeringError && !offering}
+			<PageState
+				variant="error"
+				title="โหลดรายละเอียดรายการเปิดสอนไม่สำเร็จ"
+				description={offeringError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={retryOffering}
+			/>
+		{/if}
+		{#if offering}
+			<section
+				class="relative overflow-hidden rounded-2xl border bg-card shadow-sm"
+				aria-busy={offeringLoading}
+				data-testid="delivery-offering-ready"
+			>
+				{#if offeringLoading}<RegionUpdatingState label="กำลังอัปเดตรายการเปิดสอน" />{/if}
+				{#if offeringError}<div
+						role="alert"
+						class="mx-5 mt-4 flex items-center gap-2 text-sm text-destructive"
+					>
+						<span>{offeringError}</span><Button size="sm" variant="outline" onclick={retryOffering}
+							>ลองอีกครั้ง</Button
+						>
+					</div>{/if}
 				<div class="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
 					<div class="flex min-w-0 items-start gap-4">
 						<div class="rounded-2xl bg-primary/10 p-3 text-primary">
@@ -441,18 +643,22 @@
 					</div>
 					<div class="grid grid-cols-3 gap-2 text-center">
 						<div class="rounded-xl bg-muted/60 px-4 py-3">
-							<p class="text-lg font-semibold">{groups.length}</p>
+							<p class="text-lg font-semibold">{hasGroups ? groups.length : '…'}</p>
 							<p class="text-xs text-muted-foreground">กลุ่มเรียน</p>
 						</div>
 						<div class="rounded-xl bg-muted/60 px-4 py-3">
 							<p class="text-lg font-semibold">
-								{groups.reduce((sum, group) => sum + group.teacherAssignments.length, 0)}
+								{hasGroups
+									? groups.reduce((sum, group) => sum + group.teacherAssignments.length, 0)
+									: '…'}
 							</p>
 							<p class="text-xs text-muted-foreground">ครูที่มอบหมาย</p>
 						</div>
 						<div class="rounded-xl bg-muted/60 px-4 py-3">
 							<p class="text-lg font-semibold">
-								{groups.filter((group) => group.rosterStatus === 'published').length}
+								{hasGroups
+									? groups.filter((group) => group.rosterStatus === 'published').length
+									: '…'}
 							</p>
 							<p class="text-xs text-muted-foreground">รายชื่อพร้อมใช้</p>
 						</div>
@@ -479,36 +685,65 @@
 						<div class="hidden text-primary sm:block" aria-hidden="true">
 							<ArrowRight class="size-5" />
 						</div>
-						<div class="rounded-xl border border-primary/25 bg-background px-4 py-3 shadow-sm">
+						<div
+							class="relative rounded-xl border border-primary/25 bg-background px-4 py-3 shadow-sm"
+							aria-busy={versionsLoading}
+							data-testid={hasVersions ? 'delivery-versions-ready' : undefined}
+						>
 							<p class="text-xs font-medium text-muted-foreground">จัดจริงภาคเรียนนี้</p>
-							{#if timetableVersions.length > 0}
-								<Select.Root
-									type="single"
-									bind:value={timetableVersionSelectValue}
-									onValueChange={selectTimetableVersion}
-								>
-									<Select.Trigger class="mt-1.5 w-full" aria-label="เลือกรุ่นตารางสอน">
-										{selectedTimetableVersion
-											? timetableVersionLabel(selectedTimetableVersion)
-											: 'เลือกรุ่นตารางสอน'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each timetableVersions as version (version.id)}
-											<Select.Item value={version.id}>{timetableVersionLabel(version)}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
+							{#if versionsLoading && !hasVersions}
+								<PageSkeleton variant="cards" rows={1} />
+							{:else if versionsError && !hasVersions}
+								<PageState
+									variant="error"
+									title="โหลดรุ่นตารางสอนไม่สำเร็จ"
+									description={versionsError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={retryVersions}
+								/>
+							{:else}
+								{#if versionsLoading}<RegionUpdatingState label="กำลังอัปเดตรุ่นตารางสอน" />{/if}
+								{#if timetableVersions.length > 0}
+									<Select.Root
+										type="single"
+										bind:value={timetableVersionSelectValue}
+										onValueChange={selectTimetableVersion}
+									>
+										<Select.Trigger class="mt-1.5 w-full" aria-label="เลือกรุ่นตารางสอน">
+											{selectedTimetableVersion
+												? timetableVersionLabel(selectedTimetableVersion)
+												: 'เลือกรุ่นตารางสอน'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each timetableVersions as version (version.id)}
+												<Select.Item value={version.id}
+													>{timetableVersionLabel(version)}</Select.Item
+												>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								{/if}
+								<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">
+									{selectedTimetableTarget
+										? `${selectedTimetableTarget.weeklyPeriodTarget} คาบ/สัปดาห์`
+										: 'ยังไม่กำหนด'}
+								</p>
+								<p class="mt-0.5 text-xs text-muted-foreground">
+									{selectedTimetableVersion
+										? `รุ่นตารางเริ่มใช้ ${selectedTimetableVersion.effectiveFrom} · ${selectedTimetableVersion.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'}`
+										: 'ยังไม่มีรุ่นตารางสอนที่ใช้อ้างอิง'}
+								</p>
+								{#if versionsError}<div
+										role="alert"
+										class="mt-2 flex items-center gap-2 text-xs text-destructive"
+									>
+										<span>{versionsError}</span><Button
+											size="sm"
+											variant="outline"
+											onclick={retryVersions}>ลองอีกครั้ง</Button
+										>
+									</div>{/if}
 							{/if}
-							<p class="mt-1 font-mono text-lg font-semibold tabular-nums text-primary">
-								{selectedTimetableTarget
-									? `${selectedTimetableTarget.weeklyPeriodTarget} คาบ/สัปดาห์`
-									: 'ยังไม่กำหนด'}
-							</p>
-							<p class="mt-0.5 text-xs text-muted-foreground">
-								{selectedTimetableVersion
-									? `รุ่นตารางเริ่มใช้ ${selectedTimetableVersion.effectiveFrom} · ${selectedTimetableVersion.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว'}`
-									: 'ยังไม่มีรุ่นตารางสอนที่ใช้อ้างอิง'}
-							</p>
 						</div>
 					</div>
 				</div>
@@ -526,19 +761,65 @@
 					</p>
 				</section>
 			{/if}
+		{/if}
 
-			<LearningGroupList
-				{groups}
-				selectedGroupId={selectedGroup?.id}
-				canManage={canMutateOffering}
-				onSelect={navigateToGroup}
-				onRequestManagementOptions={requestManagementOptions}
-				onCreate={createGroup}
+		{#if groupsLoading && !hasGroups}
+			<PageSkeleton variant="cards" rows={3} />
+		{:else if groupsError && !hasGroups}
+			<PageState
+				variant="error"
+				title="โหลดรายการกลุ่มเรียนไม่สำเร็จ"
+				description={groupsError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={retryGroups}
 			/>
+		{:else if hasGroups}
+			<div class="relative" aria-busy={groupsLoading} data-testid="delivery-groups-ready">
+				{#if groupsLoading}<RegionUpdatingState label="กำลังอัปเดตรายการกลุ่มเรียน" />{/if}
+				<LearningGroupList
+					{groups}
+					selectedGroupId={selectedGroup?.id}
+					canManage={canMutateOffering}
+					onSelect={navigateToGroup}
+					onRequestManagementOptions={requestManagementOptions}
+					onCreate={createGroup}
+				/>
+				{#if groupsError}<div
+						role="alert"
+						class="mt-2 flex items-center gap-2 text-sm text-destructive"
+					>
+						<span>{groupsError}</span><Button size="sm" variant="outline" onclick={retryGroups}
+							>ลองอีกครั้ง</Button
+						>
+					</div>{/if}
+			</div>
+		{/if}
 
-			{#if groupLoading}
-				<PageSkeleton variant="cards" rows={3} />
-			{:else if selectedGroup}
+		{#if groupLoading && !selectedGroup}
+			<PageSkeleton variant="cards" rows={3} />
+		{:else if groupError && !selectedGroup}
+			<PageState
+				variant="error"
+				title="โหลดกลุ่มเรียนไม่สำเร็จ"
+				description={groupError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() =>
+					loadSelectedGroup(page.url.searchParams.get('groupId') ?? groups[0]?.id ?? '')}
+			/>
+		{:else if selectedGroup}
+			<div
+				class="relative space-y-4"
+				aria-busy={groupLoading}
+				data-testid="delivery-selected-group-ready"
+			>
+				{#if groupLoading}<RegionUpdatingState label="กำลังอัปเดตกลุ่มเรียน" />{/if}
+				{#if groupError}<div role="alert" class="flex items-center gap-2 text-sm text-destructive">
+						<span>{groupError}</span><Button
+							size="sm"
+							variant="outline"
+							onclick={() => loadSelectedGroup(selectedGroup!.id)}>ลองอีกครั้ง</Button
+						>
+					</div>{/if}
 				<section class="rounded-2xl border bg-card p-4 shadow-sm">
 					<div class="flex flex-wrap items-center justify-between gap-4">
 						<div class="flex min-w-0 items-center gap-3">
@@ -600,11 +881,14 @@
 				{/if}
 
 				{#if selectedGroup.rosterStatus === 'published'}
-					{#key `${selectedGroup.id}:${selectedGroup.rowVersion}`}
+					{#key selectedGroup.id}
 						<DatedRosterMemberships
 							group={selectedGroup}
 							canManage={canMutateOffering}
 							onGroupChanged={refreshSelectedGroupAfterMembership}
+							initialMemberships={routeSelectedGroupId === selectedGroup.id
+								? data.memberships
+								: null}
 						/>
 					{/key}
 				{:else if rosterVisible}
@@ -619,22 +903,22 @@
 						onPublish={publishRoster}
 					/>
 				{/if}
-			{:else}
-				<section
-					class="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground"
-				>
-					เพิ่มหรือเลือกกลุ่มเรียนเพื่อจัดครู ห้อง และรายชื่อนักเรียน
-				</section>
-			{/if}
+			</div>
+		{:else if hasGroups}
+			<section
+				class="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground"
+			>
+				เพิ่มหรือเลือกกลุ่มเรียนเพื่อจัดครู ห้อง และรายชื่อนักเรียน
+			</section>
+		{/if}
 
-			{#if actionError}
-				<p
-					role="alert"
-					class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-				>
-					{actionError}
-				</p>
-			{/if}
-		</div>
-	{/if}
+		{#if actionError}
+			<p
+				role="alert"
+				class="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+			>
+				{actionError}
+			</p>
+		{/if}
+	</div>
 </PageShell>

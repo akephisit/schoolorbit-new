@@ -261,6 +261,7 @@
 						<Table.Cell>
 							<Button
 								href={`/staff/academic/delivery/${item.offering.id}`}
+								data-sveltekit-preload-data="tap"
 								size="icon"
 								variant="ghost"
 								aria-label={`เปิด ${item.offering.nameSnapshot}`}
@@ -278,6 +279,7 @@
 		{#each filteredItems as item (item.offering.id)}
 			<Button
 				href={`/staff/academic/delivery/${item.offering.id}`}
+				data-sveltekit-preload-data="tap"
 				variant="outline"
 				class="h-auto w-full justify-start rounded-xl border-s-4 border-s-primary bg-background p-4 text-start font-normal"
 			>
