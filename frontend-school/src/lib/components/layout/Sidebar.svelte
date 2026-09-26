@@ -147,8 +147,9 @@
 		);
 	}
 
-	function menuPreloadPolicy(item: SidebarMenuItem): 'hover' | 'tap' {
+	function menuPreloadPolicy(item: SidebarMenuItem): 'hover' | 'tap' | 'off' {
 		const path = item.path.split('?')[0];
+		if (path === '/staff/academic/exam-schedules' || path === '/staff/exams') return 'off';
 		return path === '/staff/academic/timetable' || path === '/staff/academic/timetable/today'
 			? 'tap'
 			: 'hover';

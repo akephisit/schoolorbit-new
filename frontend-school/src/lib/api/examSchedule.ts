@@ -1,4 +1,9 @@
-import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import {
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions,
+	type ApiResponse
+} from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -83,10 +88,14 @@ function examInvigilatorStaffOptionsQuery(filters: ExamInvigilatorStaffOptionsFi
 	return query ? `?${query}` : '';
 }
 
-export async function listExamRounds(academicTermId: string): Promise<ExamRound[]> {
+export async function listExamRounds(
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+): Promise<ExamRound[]> {
 	return apiData(
 		await apiClient.get<ExamRound[]>(
-			`/api/academic/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`
+			`/api/academic/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`,
+			options
 		),
 		'ไม่สามารถโหลดรอบตารางสอบได้'
 	);
@@ -319,11 +328,13 @@ export async function listMyExamSchedules(
 }
 
 export async function listStaffExamSchedules(
-	academicTermId: string
+	academicTermId: string,
+	options: ApiRequestOptions = {}
 ): Promise<StaffPublishedExamScheduleRound[]> {
 	return apiData(
 		await apiClient.get<StaffPublishedExamScheduleRound[]>(
-			`/api/staff/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`
+			`/api/staff/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`,
+			options
 		),
 		'ไม่สามารถโหลดตารางสอบสำหรับครูได้'
 	);

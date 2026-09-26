@@ -10,8 +10,22 @@ export const _meta = {
 	}
 };
 
-export const load = async () => {
+export const load: PageLoad = ({ fetch, url }) => {
+	const academicYearId = url.searchParams.get('academicYearId')?.trim() || null;
+	const academicTermId = url.searchParams.get('academicTermId')?.trim() || null;
 	return {
-		title: _meta.menu.title
+		title: _meta.menu.title,
+		academicYearId,
+		academicTermId,
+		rounds:
+			academicYearId && academicTermId
+				? captureRouteLoad(
+						listStaffExamSchedules(academicTermId, { requestFetch: fetch }),
+						'โหลดตารางสอบสำหรับครูไม่สำเร็จ'
+					)
+				: null
 	};
 };
+import type { PageLoad } from './$types';
+import { listStaffExamSchedules } from '$lib/api/examSchedule';
+import { captureRouteLoad } from '$lib/navigation/route-load';

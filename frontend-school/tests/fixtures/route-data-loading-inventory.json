@@ -321,13 +321,12 @@
 		{
 			"route": "staff/academic/exam-schedules",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school exam-schedule",
-			"notes": "Component API reads include listExamRounds; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned term round list with stable skeleton, focused retry, and local create/delete patch; unbounded term list does not data-preload."
 		},
 		{
 			"route": "staff/academic/exam-schedules/[id]",
@@ -748,13 +747,12 @@
 		{
 			"route": "staff/exams",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school exam-schedule",
-			"notes": "Component API reads include listStaffExamSchedules; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned published staff schedule with term supersession, retained refresh, and focused retry; large school-wide result does not data-preload."
 		},
 		{
 			"route": "staff/facility/buildings",
