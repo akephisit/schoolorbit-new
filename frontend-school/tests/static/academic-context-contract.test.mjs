@@ -397,9 +397,10 @@ test('sidebar preloads and navigates to the same context-bearing destination', a
 	assert.match(sidebar, /href=\{menuHref\(item\)\}/);
 	assert.match(sidebar, /preloadData\(resolve\(href/);
 	assert.match(sidebar, /goto\(resolve\(href/);
-	assert.match(sidebar, /onpointerenter=\{\(\) => preloadMenuItem\(item\)\}/);
-	assert.match(sidebar, /onfocus=\{\(\) => preloadMenuItem\(item\)\}/);
-	assert.match(sidebar, /ontouchstart=\{\(\) => preloadMenuItem\(item\)\}/);
+	assert.match(sidebar, /onpointerenter=\{\(\) => preloadMenuItem\(item, 'hover'\)\}/);
+	assert.match(sidebar, /onfocus=\{\(\) => preloadMenuItem\(item, 'hover'\)\}/);
+	assert.match(sidebar, /onpointerdown=\{\(\) => preloadMenuItem\(item, 'tap'\)\}/);
+	assert.match(sidebar, /data-sveltekit-preload-data=\{menuPreloadPolicy\(item\)\}/);
 });
 
 test('application route metadata uses only supported academic context requirements', async () => {

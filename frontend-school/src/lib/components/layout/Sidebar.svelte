@@ -147,7 +147,12 @@
 		);
 	}
 
-	function preloadMenuItem(item: SidebarMenuItem) {
+	function menuPreloadPolicy(item: SidebarMenuItem): 'hover' | 'tap' {
+		return item.path.split('?')[0] === '/staff/academic/timetable/today' ? 'tap' : 'hover';
+	}
+
+	function preloadMenuItem(item: SidebarMenuItem, trigger: 'hover' | 'tap') {
+		if (menuPreloadPolicy(item) !== trigger) return;
 		const href = menuHref(item);
 		void preloadData(resolve(href as any)).catch(() => undefined);
 	}
@@ -348,9 +353,9 @@
 											{@const Icon = getIconComponent(item.icon)}
 											<DropdownMenu.Item
 												onclick={() => navigateToMenuItem(item)}
-												onpointerenter={() => preloadMenuItem(item)}
-												onfocus={() => preloadMenuItem(item)}
-												ontouchstart={() => preloadMenuItem(item)}
+												onpointerenter={() => preloadMenuItem(item, 'hover')}
+												onfocus={() => preloadMenuItem(item, 'hover')}
+												onpointerdown={() => preloadMenuItem(item, 'tap')}
 												class={cn(
 													'cursor-pointer gap-2',
 													isActive(item.path) && 'bg-accent text-accent-foreground font-medium'
@@ -399,6 +404,7 @@
 										{@const Icon = getIconComponent(item.icon)}
 										<Button
 											href={menuHref(item)}
+											data-sveltekit-preload-data={menuPreloadPolicy(item)}
 											variant="ghost"
 											onclick={handleNavClick}
 											class={navItemClass(item, true)}

@@ -194,6 +194,7 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-founda
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-delivery-alignment.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-year-collections-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/delivery-offering-route-loading.spec.ts --project=chromium
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personal-daily-timetable-region-loading.spec.ts tests/e2e/timetable-daily-overview-layout.spec.ts tests/e2e/staff-own-timetable-grid.spec.ts tests/e2e/staff-own-timetable-pdf.spec.ts --project=chromium
 ```
 
 The Delivery spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.

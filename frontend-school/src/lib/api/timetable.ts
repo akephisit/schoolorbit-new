@@ -333,7 +333,10 @@ export const previewTimetableBlockPlacement = (
 		),
 		'ตรวจสอบตำแหน่งวางคาบไม่สำเร็จ'
 	);
-export const getDailyTeachingOverview = (filters: DailyTeachingFilters) => {
+export const getDailyTeachingOverview = (
+	filters: DailyTeachingFilters,
+	options: ApiRequestOptions = {}
+) => {
 	const params = new URLSearchParams({ academicTermId: requiredTerm(filters.academicTermId) });
 	if (filters.date) params.set('date', filters.date);
 	if (filters.includeEmptyTeachers !== undefined) {
@@ -341,7 +344,8 @@ export const getDailyTeachingOverview = (filters: DailyTeachingFilters) => {
 	}
 	return timetableData(
 		apiClient.get<DailyTeachingOverview>(
-			`/api/academic/timetable/daily-teaching?${params.toString()}`
+			`/api/academic/timetable/daily-teaching?${params.toString()}`,
+			options
 		),
 		'ไม่สามารถโหลดภาพรวมการสอนประจำวันได้'
 	);

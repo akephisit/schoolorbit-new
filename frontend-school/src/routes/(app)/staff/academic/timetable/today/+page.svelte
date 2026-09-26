@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		getDailyTeachingOverview,
 		type DailyTeachingEntry,
@@ -9,8 +8,9 @@
 		type DailyTeachingPeriod,
 		type DailyTeachingTeacher
 	} from '$lib/api/timetable';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { DatePicker } from '$lib/components/ui/date-picker';
@@ -41,6 +41,7 @@
 		RefreshCw,
 		Search
 	} from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
 	type SelectedCell = {
 		teacher: DailyTeachingTeacher;
@@ -48,17 +49,21 @@
 		entries: DailyTeachingEntry[];
 	};
 
-	const academicContext = getAcademicContextStore();
-	const academicTermId = $derived($academicContext.selected.academicTermId);
+	let { data }: PageProps = $props();
+	const academicTermId = $derived(data.academicTermId);
 	let overview = $state<DailyTeachingOverview | null>(null);
-	let selectedDate = $state(toDateInputValue(new Date()));
+	let selectedDate = $state('');
 	let includeEmptyTeachers = $state(false);
 	let teacherSearch = $state('');
-	let loading = $state(false);
+	let loading = $state(true);
 	let errorMessage = $state('');
 	let selectedCell = $state<SelectedCell | null>(null);
 	let cellDialogOpen = $state(false);
-	let requestRevision = 0;
+	const request = new LatestRequest();
+	let activeTermId: string | null = null;
+	let activeOverviewKey = '';
+	let interactionRevision = 0;
+	onDestroy(() => request.abort());
 
 	const canReadDailyTeaching = $derived(
 		$can.hasAny(
@@ -106,23 +111,33 @@
 
 	async function loadOverview(termId = academicTermId): Promise<void> {
 		if (!termId || !canReadDailyTeaching) return;
-		const current = ++requestRevision;
+		const key = `${termId}:${selectedDate}:${includeEmptyTeachers}`;
+		const { revision, signal } = request.begin();
+		interactionRevision += 1;
+		if (activeOverviewKey !== key) {
+			activeOverviewKey = key;
+			overview = null;
+		}
 		loading = true;
 		errorMessage = '';
 		try {
-			const loaded = await getDailyTeachingOverview({
-				academicTermId: termId,
-				date: selectedDate,
-				includeEmptyTeachers
-			});
-			if (current === requestRevision) overview = loaded;
+			const loaded = await getDailyTeachingOverview(
+				{
+					academicTermId: termId,
+					date: selectedDate,
+					includeEmptyTeachers
+				},
+				{ signal }
+			);
+			if (request.isCurrent(revision) && academicTermId === termId) overview = loaded;
 		} catch (error) {
-			if (current === requestRevision) {
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนรายวันไม่สำเร็จ';
 				toast.error(errorMessage);
 			}
 		} finally {
-			if (current === requestRevision) loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -233,15 +248,44 @@
 		return `${year}-${month}-${day}`;
 	}
 
-	onMount(() => {
-		let loadedTermId: string | null = null;
-		return academicContext.subscribe((state) => {
-			const termId = state.selected.academicTermId;
-			if (termId && termId !== loadedTermId) {
-				loadedTermId = termId;
-				void loadOverview(termId);
+	$effect.pre(() => {
+		const termId = data.academicTermId;
+		const initialDate = data.initialDate;
+		const routeOverview = data.overview;
+		const routeKey = `${termId}:${initialDate}:false`;
+		const initialInteractionRevision = interactionRevision;
+		let current = true;
+		untrack(() => {
+			if (activeTermId !== termId) {
+				activeTermId = termId;
+				selectedDate = initialDate;
+				includeEmptyTeachers = false;
+				overview = null;
+				activeOverviewKey = routeKey;
+				selectedCell = null;
+				cellDialogOpen = false;
+			}
+			if (activeOverviewKey === routeKey) {
+				request.abort();
+				loading = Boolean(routeOverview);
+				errorMessage = '';
 			}
 		});
+		if (routeOverview && activeOverviewKey === routeKey) {
+			void routeOverview.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (interactionRevision === initialInteractionRevision) {
+						if (result.ok) overview = result.data;
+						else errorMessage = result.error;
+						loading = false;
+					}
+				});
+			});
+		}
+		return () => {
+			current = false;
+		};
 	});
 </script>
 
@@ -315,7 +359,7 @@
 		/>
 	{:else if loading && !overview}
 		<PageSkeleton variant="table" rows={8} columns={6} />
-	{:else if errorMessage}
+	{:else if errorMessage && !overview}
 		<PageState
 			variant="error"
 			title="โหลดตารางสอนไม่สำเร็จ"
@@ -329,115 +373,127 @@
 			description="ภาคเรียนหรือวันที่นี้ยังไม่มีคาบที่แสดงได้"
 		/>
 	{:else}
-		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-			{#each [['ครูทั้งหมด', overview.summary.totalTeacherCount], ['ครูที่แสดง', filteredTeachers.length], ['ครูที่มีคาบ', overview.summary.teachersTeachingCount], ['จำนวนคาบสอน', overview.summary.lessonCount], ['ไม่มีคาบวันนี้', overview.summary.emptyTeacherCount]] as item (item[0])}
-				<div class="rounded-md border bg-background p-3">
-					<p class="text-muted-foreground text-xs">{item[0]}</p>
-					<p class="text-2xl font-semibold">{item[1]}</p>
-				</div>
-			{/each}
-		</div>
-
-		<section class="overflow-hidden rounded-md border bg-background">
-			<div class="flex items-center justify-between gap-3 border-b p-4">
-				<div>
-					<h2 class="flex items-center gap-2 text-lg font-semibold">
-						<CalendarClock class="size-5" />
-						{formatDate(overview.date)}
-					</h2>
-					<p class="text-muted-foreground text-sm">
-						{overview.periods.length} คาบ · {overview.summary.displayedTeacherCount} ครู
-					</p>
-				</div>
-				{#if loading}<Badge variant="secondary">กำลังอัปเดต</Badge>{/if}
-			</div>
-			{#if filteredTeachers.length === 0}
-				<PageState
-					title="ไม่พบครูตามคำค้น"
-					description="ลองเปลี่ยนคำค้นหาหรือเปิดรวมครูที่ไม่มีคาบ"
-					class="m-4"
-				/>
-			{:else}
-				<div class="daily-teaching-scroll max-h-[70vh] overflow-auto">
-					<Table.Root
-						class="daily-teaching-table border-0"
-						style={`--teacher-column-width: ${DAILY_TEACHING_TEACHER_COLUMN_WIDTH}px; --minimum-period-column-width: ${DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH}px; min-width: ${tableMinWidth}px;`}
-					>
-						<colgroup>
-							<col class="daily-teaching-teacher-column" />
-							{#each overview.periods as period (period.id)}<col />{/each}
-						</colgroup>
-						<Table.Header class="sticky top-0 z-40"
-							><Table.Row class="bg-muted/80 hover:bg-muted/80"
-								><Table.Head
-									class="daily-teaching-teacher-column sticky left-0 z-50 h-9 overflow-hidden bg-muted px-1.5 text-[10px]"
-									>ครู</Table.Head
-								>{#each overview.periods as period (period.id)}<Table.Head
-										class="daily-teaching-period-column h-9 overflow-hidden bg-muted px-1 text-center text-[10px]"
-										><p class="truncate">{period.name ?? `คาบ ${period.orderIndex}`}</p>
-										<p class="text-muted-foreground truncate text-[9px] font-normal">
-											{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
-										</p></Table.Head
-									>{/each}</Table.Row
-							></Table.Header
-						>
-						<Table.Body>
-							{#each filteredTeachers as teacher (teacher.id)}
-								<Table.Row>
-									<Table.Cell
-										class="daily-teaching-teacher-column sticky left-0 z-20 overflow-hidden bg-background px-1.5 py-1 text-[10px] font-medium"
-										><p class="truncate" title={teacher.displayName}>
-											{teacher.displayName}
-										</p></Table.Cell
-									>
-									{#each overview.periods as period (period.id)}
-										{@const cell = cellForPeriod(teacher, period.id)}
-										<Table.Cell
-											class="daily-teaching-period-column overflow-hidden p-0.5 align-top"
-										>
-											<button
-												type="button"
-												class="hover:bg-muted/30 min-h-12 w-full min-w-0 overflow-hidden rounded-md p-0.5 text-left"
-												aria-label={cellAriaLabel(teacher, period, cell.entries)}
-												onclick={() => openCell(teacher, period, cell.entries)}
-											>
-												<div class="space-y-0.5">
-													{#each groupDailyTeachingEntries(cell.entries) as group (group.key)}
-														{@const entry = group.entries[0]}
-														{@const presentation = dailyTeachingEntryCardPresentation(entry)}
-														{@const compactMeta = dailyTeachingCompactGroupMeta(group)}
-														<div
-															class="min-w-0 overflow-hidden rounded-md border px-1.5 py-1 {presentation.tone ===
-															'course'
-																? 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
-																: presentation.tone === 'activity'
-																	? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
-																	: 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40'}"
-														>
-															<p
-																class="truncate text-[10px] leading-[14px] font-semibold"
-																title={dailyTeachingCompactTitle(entry)}
-															>
-																{dailyTeachingCompactTitle(entry)}
-															</p>
-															{#if compactMeta}<p
-																	class="text-muted-foreground truncate text-[9px] leading-[14px]"
-																>
-																	{compactMeta}
-																</p>{/if}
-														</div>
-													{/each}
-												</div>
-											</button>
-										</Table.Cell>
-									{/each}
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
+		<div class="relative space-y-4" aria-busy={loading} data-testid="daily-teaching-ready">
+			{#if loading}<RegionUpdatingState />{/if}
+			{#if errorMessage}
+				<div
+					role="alert"
+					class="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 p-3 text-sm"
+				>
+					<span>{errorMessage}</span>
+					<Button variant="outline" size="sm" onclick={() => loadOverview()}>ลองใหม่</Button>
 				</div>
 			{/if}
-		</section>
+			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+				{#each [['ครูทั้งหมด', overview.summary.totalTeacherCount], ['ครูที่แสดง', filteredTeachers.length], ['ครูที่มีคาบ', overview.summary.teachersTeachingCount], ['จำนวนคาบสอน', overview.summary.lessonCount], ['ไม่มีคาบวันนี้', overview.summary.emptyTeacherCount]] as item (item[0])}
+					<div class="rounded-md border bg-background p-3">
+						<p class="text-muted-foreground text-xs">{item[0]}</p>
+						<p class="text-2xl font-semibold">{item[1]}</p>
+					</div>
+				{/each}
+			</div>
+
+			<section class="overflow-hidden rounded-md border bg-background">
+				<div class="flex items-center justify-between gap-3 border-b p-4">
+					<div>
+						<h2 class="flex items-center gap-2 text-lg font-semibold">
+							<CalendarClock class="size-5" />
+							{formatDate(overview.date)}
+						</h2>
+						<p class="text-muted-foreground text-sm">
+							{overview.periods.length} คาบ · {overview.summary.displayedTeacherCount} ครู
+						</p>
+					</div>
+					{#if loading}<Badge variant="secondary">กำลังอัปเดต</Badge>{/if}
+				</div>
+				{#if filteredTeachers.length === 0}
+					<PageState
+						title="ไม่พบครูตามคำค้น"
+						description="ลองเปลี่ยนคำค้นหาหรือเปิดรวมครูที่ไม่มีคาบ"
+						class="m-4"
+					/>
+				{:else}
+					<div class="daily-teaching-scroll max-h-[70vh] overflow-auto">
+						<Table.Root
+							class="daily-teaching-table border-0"
+							style={`--teacher-column-width: ${DAILY_TEACHING_TEACHER_COLUMN_WIDTH}px; --minimum-period-column-width: ${DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH}px; min-width: ${tableMinWidth}px;`}
+						>
+							<colgroup>
+								<col class="daily-teaching-teacher-column" />
+								{#each overview.periods as period (period.id)}<col />{/each}
+							</colgroup>
+							<Table.Header class="sticky top-0 z-40"
+								><Table.Row class="bg-muted/80 hover:bg-muted/80"
+									><Table.Head
+										class="daily-teaching-teacher-column sticky left-0 z-50 h-9 overflow-hidden bg-muted px-1.5 text-[10px]"
+										>ครู</Table.Head
+									>{#each overview.periods as period (period.id)}<Table.Head
+											class="daily-teaching-period-column h-9 overflow-hidden bg-muted px-1 text-center text-[10px]"
+											><p class="truncate">{period.name ?? `คาบ ${period.orderIndex}`}</p>
+											<p class="text-muted-foreground truncate text-[9px] font-normal">
+												{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+											</p></Table.Head
+										>{/each}</Table.Row
+								></Table.Header
+							>
+							<Table.Body>
+								{#each filteredTeachers as teacher (teacher.id)}
+									<Table.Row>
+										<Table.Cell
+											class="daily-teaching-teacher-column sticky left-0 z-20 overflow-hidden bg-background px-1.5 py-1 text-[10px] font-medium"
+											><p class="truncate" title={teacher.displayName}>
+												{teacher.displayName}
+											</p></Table.Cell
+										>
+										{#each overview.periods as period (period.id)}
+											{@const cell = cellForPeriod(teacher, period.id)}
+											<Table.Cell
+												class="daily-teaching-period-column overflow-hidden p-0.5 align-top"
+											>
+												<button
+													type="button"
+													class="hover:bg-muted/30 min-h-12 w-full min-w-0 overflow-hidden rounded-md p-0.5 text-left"
+													aria-label={cellAriaLabel(teacher, period, cell.entries)}
+													onclick={() => openCell(teacher, period, cell.entries)}
+												>
+													<div class="space-y-0.5">
+														{#each groupDailyTeachingEntries(cell.entries) as group (group.key)}
+															{@const entry = group.entries[0]}
+															{@const presentation = dailyTeachingEntryCardPresentation(entry)}
+															{@const compactMeta = dailyTeachingCompactGroupMeta(group)}
+															<div
+																class="min-w-0 overflow-hidden rounded-md border px-1.5 py-1 {presentation.tone ===
+																'course'
+																	? 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
+																	: presentation.tone === 'activity'
+																		? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40'
+																		: 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40'}"
+															>
+																<p
+																	class="truncate text-[10px] leading-[14px] font-semibold"
+																	title={dailyTeachingCompactTitle(entry)}
+																>
+																	{dailyTeachingCompactTitle(entry)}
+																</p>
+																{#if compactMeta}<p
+																		class="text-muted-foreground truncate text-[9px] leading-[14px]"
+																	>
+																		{compactMeta}
+																	</p>{/if}
+															</div>
+														{/each}
+													</div>
+												</button>
+											</Table.Cell>
+										{/each}
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				{/if}
+			</section>
+		</div>
 	{/if}
 </PageShell>
 

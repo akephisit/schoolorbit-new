@@ -585,13 +585,12 @@
 		{
 			"route": "staff/academic/timetable/today",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-timetable",
-			"notes": "Component API reads include getDailyTeachingOverview; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned daily overview; date and empty-teacher filters are focused superseding reads; volatile school-wide data preloads on tap."
 		},
 		{
 			"route": "staff/academic/year-lifecycle",
@@ -976,13 +975,12 @@
 		{
 			"route": "staff/timetable",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-timetable",
-			"notes": "Component API reads include getMyTimetable; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned personal timetable; PDF code loads only after the download action."
 		},
 		{
 			"route": "staff/view/[id]",

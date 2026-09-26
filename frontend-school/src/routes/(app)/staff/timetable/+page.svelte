@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { buildTimetableBlockDisplay } from '$lib/academic/timetable/block-display';
@@ -11,10 +11,10 @@
 		type TimetablePeriodSummary
 	} from '$lib/api/timetable';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { authStore } from '$lib/stores/auth';
-	import { generateTimetablePDF } from '$lib/utils/pdf';
 	import {
 		buildStaffOwnTimetablePdfDownload,
 		canDownloadStaffOwnTimetablePdf,
@@ -22,6 +22,7 @@
 		staffOwnTimetableSelectionKey
 	} from '$lib/utils/staff-own-timetable-pdf';
 	import { Download, Loader2, MapPin, School } from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
 	const dayOptions = [
 		{ value: 'MON', label: 'จันทร์' },
@@ -33,9 +34,10 @@
 		{ value: 'SUN', label: 'อาทิตย์' }
 	];
 
+	let { data }: PageProps = $props();
 	const academicContext = getAcademicContextStore();
-	const academicYearId = $derived($academicContext.selected.academicYearId ?? '');
-	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const academicYearId = $derived(data.academicYearId ?? '');
+	const academicTermId = $derived(data.academicTermId);
 	const selectedYear = $derived(
 		$academicContext.options?.years.find((year) => year.id === academicYearId) ?? null
 	);
@@ -49,11 +51,14 @@
 	);
 	let blocks = $state<TimetableBlock[]>([]);
 	let periods = $state<TimetablePeriodSummary[]>([]);
-	let loading = $state(false);
+	let loading = $state(true);
 	let isExportingPdf = $state(false);
 	let loadedSelectionKey = $state('');
 	let errorMessage = $state('');
-	let revision = 0;
+	const request = new LatestRequest();
+	let activeSelectionKey = '';
+	let interactionRevision = 0;
+	onDestroy(() => request.abort());
 
 	const schoolDays = $derived.by(() => {
 		const configured = new Set(blocks.map((block) => block.dayOfWeek));
@@ -75,27 +80,36 @@
 		})
 	);
 
-	async function loadTimetable(termId: string): Promise<void> {
-		const current = ++revision;
+	function applyBlocks(loaded: TimetableBlock[], yearId: string, termId: string): void {
+		periods = periodsFromTimetableBlocks(loaded);
+		blocks = loaded;
+		loadedSelectionKey = staffOwnTimetableSelectionKey(yearId, termId);
+	}
+
+	async function loadTimetable(termId = academicTermId): Promise<void> {
+		if (!termId) return;
+		const yearId = academicYearId;
+		const { revision, signal } = request.begin();
+		interactionRevision += 1;
 		loading = true;
-		loadedSelectionKey = '';
 		errorMessage = '';
 		try {
-			const loaded = await getMyTimetable({
-				academicTermId: termId,
-				date: currentLocalDate()
-			});
-			if (current === revision) {
-				periods = periodsFromTimetableBlocks(loaded);
-				blocks = loaded;
-				loadedSelectionKey = staffOwnTimetableSelectionKey(academicYearId, termId);
-			}
+			const loaded = await getMyTimetable(
+				{
+					academicTermId: termId,
+					date: currentLocalDate()
+				},
+				{ signal }
+			);
+			if (request.isCurrent(revision) && academicYearId === yearId && academicTermId === termId)
+				applyBlocks(loaded, yearId, termId);
 		} catch (error) {
-			if (current === revision) {
+			if (isAbortError(error)) return;
+			if (request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
 			}
 		} finally {
-			if (current === revision) loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -111,15 +125,24 @@
 			periods
 		});
 
-		await runStaffOwnTimetablePdfDownload(download, {
-			generatePdf: generateTimetablePDF,
-			setExporting: (value) => (isExportingPdf = value),
-			onSuccess: () => toast.success('ดาวน์โหลดตารางสอนแล้ว'),
-			onError: (error) => {
-				console.error('Failed to download timetable PDF', error);
-				toast.error('ดาวน์โหลดตารางสอนไม่สำเร็จ');
-			}
-		});
+		isExportingPdf = true;
+		try {
+			const { generateTimetablePDF } = await import('$lib/utils/pdf');
+			await runStaffOwnTimetablePdfDownload(download, {
+				generatePdf: generateTimetablePDF,
+				setExporting: (value) => (isExportingPdf = value),
+				onSuccess: () => toast.success('ดาวน์โหลดตารางสอนแล้ว'),
+				onError: (error) => {
+					console.error('Failed to download timetable PDF', error);
+					toast.error('ดาวน์โหลดตารางสอนไม่สำเร็จ');
+				}
+			});
+		} catch (error) {
+			console.error('Failed to load timetable PDF module', error);
+			toast.error('ดาวน์โหลดตารางสอนไม่สำเร็จ');
+		} finally {
+			isExportingPdf = false;
+		}
 	}
 
 	function blocksForCell(day: string, periodId: string): TimetableBlock[] {
@@ -145,15 +168,39 @@
 		return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
 	}
 
-	onMount(() => {
-		let loadedTermId: string | null = null;
-		return academicContext.subscribe((state) => {
-			const termId = state.selected.academicTermId;
-			if (termId && termId !== loadedTermId) {
-				loadedTermId = termId;
-				void loadTimetable(termId);
+	$effect.pre(() => {
+		const yearId = data.academicYearId ?? '';
+		const termId = data.academicTermId;
+		const routeBlocks = data.blocks;
+		const selectionKey = staffOwnTimetableSelectionKey(yearId, termId ?? '');
+		const initialInteractionRevision = interactionRevision;
+		let current = true;
+		untrack(() => {
+			if (activeSelectionKey !== selectionKey) {
+				activeSelectionKey = selectionKey;
+				blocks = [];
+				periods = [];
+				loadedSelectionKey = '';
 			}
+			request.abort();
+			loading = Boolean(routeBlocks);
+			errorMessage = '';
 		});
+		if (routeBlocks && termId) {
+			void routeBlocks.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (interactionRevision === initialInteractionRevision) {
+						if (result.ok) applyBlocks(result.data, yearId, termId);
+						else errorMessage = result.error;
+						loading = false;
+					}
+				});
+			});
+		}
+		return () => {
+			current = false;
+		};
 	});
 </script>
 
@@ -171,75 +218,89 @@
 			title="เลือกภาคเรียนก่อน"
 			description="ใช้ตัวเลือกปีการศึกษาและภาคเรียนบนแถบด้านบน"
 		/>
-	{:else if loading}
+	{:else if loading && blocks.length === 0}
 		<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
-	{:else if errorMessage}
+	{:else if errorMessage && blocks.length === 0}
 		<PageState
 			variant="error"
 			title="โหลดตารางสอนไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadTimetable(academicTermId)}
+			onaction={() => loadTimetable()}
 		/>
 	{:else if blocks.length === 0}
 		<PageState title="ยังไม่มีตารางสอน" description="ยังไม่มีคาบสอนของคุณในภาคเรียนนี้" />
 	{:else}
-		<div class="overflow-x-auto rounded-lg border">
-			<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
-				<thead
-					><tr
-						><th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th
-						>{#each periods as period, index (period.id)}<th
-								class="bg-muted/70 border p-2 text-center text-xs"
-								><p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
-								<p class="text-muted-foreground font-normal">
-									{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
-								</p></th
-							>{/each}</tr
-					></thead
+		<div class="relative" aria-busy={loading} data-testid="personal-timetable-ready">
+			{#if loading}<RegionUpdatingState />{/if}
+			{#if errorMessage}
+				<div
+					role="alert"
+					class="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 p-3 text-sm"
 				>
-				<tbody>
-					{#each schoolDays as day (day.value)}
-						<tr
-							><th class="bg-muted/30 border p-2 text-xs">{day.label}</th>
-							{#each periods as period (period.id)}
-								{@const cellBlocks = blocksForCell(day.value, period.id)}
-								<td class="h-24 border p-1 align-top">
-									{#each cellBlocks as block (block.id)}
-										{@const display = buildTimetableBlockDisplay(block, 'personal')}
-										{@const code = blockCode(block)}
-										<div
-											class={`flex h-full min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
-										>
-											{#if code}<p class="truncate font-semibold">{code}</p>{/if}
-											<p
-												class={[
-													code && 'mt-1',
-													block.blockKind === 'course'
-														? 'line-clamp-2 opacity-80'
-														: 'line-clamp-3 whitespace-pre-line font-semibold'
-												]}
+					<span>{errorMessage}</span>
+					<Button variant="outline" size="sm" onclick={() => loadTimetable()}>ลองอีกครั้ง</Button>
+				</div>
+			{/if}
+			<div class="overflow-x-auto rounded-lg border">
+				<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
+					<thead
+						><tr
+							><th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th
+							>{#each periods as period, index (period.id)}<th
+									class="bg-muted/70 border p-2 text-center text-xs"
+									><p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
+									<p class="text-muted-foreground font-normal">
+										{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+									</p></th
+								>{/each}</tr
+						></thead
+					>
+					<tbody>
+						{#each schoolDays as day (day.value)}
+							<tr
+								><th class="bg-muted/30 border p-2 text-xs">{day.label}</th>
+								{#each periods as period (period.id)}
+									{@const cellBlocks = blocksForCell(day.value, period.id)}
+									<td class="h-24 border p-1 align-top">
+										{#each cellBlocks as block (block.id)}
+											{@const display = buildTimetableBlockDisplay(block, 'personal')}
+											{@const code = blockCode(block)}
+											<div
+												class={`flex h-full min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
 											>
-												{blockTitle(block)}
-											</p>
-											{#if display.groupLabel}<p
-													class="mt-auto flex items-center gap-1 truncate opacity-70"
+												{#if code}<p class="truncate font-semibold">{code}</p>{/if}
+												<p
+													class={[
+														code && 'mt-1',
+														block.blockKind === 'course'
+															? 'line-clamp-2 opacity-80'
+															: 'line-clamp-3 whitespace-pre-line font-semibold'
+													]}
 												>
-													<School class="size-3" />
-													{display.groupLabel}
-												</p>{/if}
-											{#if display.roomLabel}<p class="flex items-center gap-1 truncate opacity-70">
-													<MapPin class="size-3" />
-													{display.roomLabel}
-												</p>{/if}
-										</div>
-									{/each}
-								</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+													{blockTitle(block)}
+												</p>
+												{#if display.groupLabel}<p
+														class="mt-auto flex items-center gap-1 truncate opacity-70"
+													>
+														<School class="size-3" />
+														{display.groupLabel}
+													</p>{/if}
+												{#if display.roomLabel}<p
+														class="flex items-center gap-1 truncate opacity-70"
+													>
+														<MapPin class="size-3" />
+														{display.roomLabel}
+													</p>{/if}
+											</div>
+										{/each}
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</div>
 	{/if}
 </PageShell>
