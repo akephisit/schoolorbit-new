@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { invalidate } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import {
 		createActivityVersion,
 		createCatalogActivity,
-		getCatalogActivityOverview,
 		listActivityVersions,
 		publishActivityVersion,
 		type ActivityVersion,
@@ -12,6 +12,7 @@
 		type CatalogActivityOverviewItem,
 		type CatalogDisplayState
 	} from '$lib/api/academic-core';
+	import { CATALOG_ACTIVITY_OVERVIEW_DEPENDENCY } from '$lib/academic-core/catalog-route';
 	import {
 		ACTIVITY_TYPE_OPTIONS,
 		CATALOG_DISPLAY_STATE_OPTIONS,
@@ -25,7 +26,7 @@
 	} from '$lib/academic-core/catalog-presentation';
 	import CatalogVersionHistory from '$lib/components/academic-core/CatalogVersionHistory.svelte';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -36,6 +37,7 @@
 	import { PERMISSION_MODULES } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { ArrowUpRight, Plus, Search, SlidersHorizontal, Sparkles } from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
 	type VersionDraft = {
 		name: string;
@@ -53,6 +55,7 @@
 	const collator = new Intl.Collator('th-TH', { numeric: true, sensitivity: 'base' });
 	const activityHistoryCache = new SvelteMap<string, ActivityVersion[]>();
 
+	let { data }: PageProps = $props();
 	let overview = $state.raw<CatalogActivityOverview | null>(null);
 	let selected = $state<CatalogActivityOverviewItem | null>(null);
 	let versions = $state.raw<ActivityVersion[]>([]);
@@ -71,6 +74,7 @@
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
 	let historyRevision = 0;
+	let pendingOpenActivityId = '';
 
 	let activityItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
@@ -104,21 +108,44 @@
 			})
 	);
 
-	async function loadOverview(showLoading = true) {
-		if (showLoading) loading = true;
-		errorMessage = '';
-		try {
-			const selectedId = selected?.activity.id;
-			overview = await getCatalogActivityOverview();
-			if (selectedId) {
-				selected = overview.items.find((item) => item.activity.id === selectedId) ?? null;
-			}
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดทะเบียนกิจกรรมไม่สำเร็จ';
-		} finally {
-			if (showLoading) loading = false;
-		}
+	function loadOverview() {
+		return invalidate(CATALOG_ACTIVITY_OVERVIEW_DEPENDENCY);
 	}
+
+	$effect.pre(() => {
+		const routeResult = data.overview;
+		let current = true;
+		untrack(() => {
+			loading = Boolean(routeResult);
+			errorMessage = '';
+		});
+		if (routeResult) {
+			void routeResult.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (result.ok) {
+						const latest = result.data;
+						const selectedId = selected?.activity.id;
+						overview = latest;
+						if (selectedId) {
+							selected = latest.items.find((item) => item.activity.id === selectedId) ?? null;
+						}
+						if (pendingOpenActivityId) {
+							const item = latest.items.find((row) => row.activity.id === pendingOpenActivityId);
+							if (item) {
+								pendingOpenActivityId = '';
+								void openActivity(item);
+							}
+						}
+					} else errorMessage = result.error;
+					loading = false;
+				});
+			});
+		}
+		return () => {
+			current = false;
+		};
+	});
 
 	async function openActivity(item: CatalogActivityOverviewItem) {
 		const currentHistoryRevision = ++historyRevision;
@@ -160,7 +187,7 @@
 			activityHistoryCache.set(activityId, loaded);
 			if (currentHistoryRevision !== historyRevision) return;
 			versions = loaded;
-			await loadOverview(false);
+			await loadOverview();
 		} catch (error) {
 			if (currentHistoryRevision === historyRevision) {
 				historyError = error instanceof Error ? error.message : 'โหลดประวัติกิจกรรมไม่สำเร็จ';
@@ -180,9 +207,8 @@
 				activityType
 			});
 			code = '';
-			await loadOverview(false);
-			const item = overview?.items.find((candidate) => candidate.activity.id === created.id);
-			if (item) await openActivity(item);
+			pendingOpenActivityId = created.id;
+			await loadOverview();
 		} catch (error) {
 			mutationError = error instanceof Error ? error.message : 'เพิ่มรหัสกิจกรรมไม่สำเร็จ';
 		} finally {
@@ -214,8 +240,6 @@
 	function gradeLevelsFor(version: ActivityVersion) {
 		return gradeLevelOptions.filter((level) => version.gradeLevelIds.includes(level.id));
 	}
-
-	onMount(() => loadOverview());
 </script>
 
 <PageShell
@@ -230,9 +254,9 @@
 		{/if}
 	{/snippet}
 
-	{#if loading}
+	{#if loading && !overview}
 		<PageSkeleton variant="table" rows={7} />
-	{:else if errorMessage && activityItems.length === 0}
+	{:else if errorMessage && !overview}
 		<PageState
 			variant="error"
 			title="โหลดทะเบียนไม่สำเร็จ"
@@ -241,7 +265,13 @@
 			onaction={() => loadOverview()}
 		/>
 	{:else}
-		<div class="space-y-5">
+		<div
+			class="relative space-y-5"
+			aria-label="ทะเบียนกิจกรรม"
+			aria-busy={loading}
+			data-testid="catalog-activities-ready"
+		>
+			{#if loading}<RegionUpdatingState label="กำลังอัปเดตทะเบียนกิจกรรม" />{/if}
 			<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
 				<div class="space-y-4 border-b bg-muted/25 p-4">
 					<div class="flex items-center gap-2 text-sm font-medium">
@@ -510,7 +540,13 @@
 				แสดง {filteredActivities.length} จาก {activityItems.length} กิจกรรม · ทะเบียนนี้เป็นข้อมูลกลาง
 				ไม่ผูกกับภาคเรียนบนแถบด้านบน · สังกัดงานกิจกรรมพัฒนาผู้เรียนอัตโนมัติ
 			</p>
-			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+			{#if errorMessage}<div
+					role="alert"
+					class="flex flex-wrap items-center gap-2 text-sm text-destructive"
+				>
+					<p>{errorMessage}</p>
+					<Button size="sm" variant="outline" onclick={loadOverview}>ลองอีกครั้ง</Button>
+				</div>{/if}
 		</div>
 	{/if}
 </PageShell>

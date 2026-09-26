@@ -198,9 +198,9 @@ export const replaceBellSchedulePeriods = (id: string, body: ReplaceBellSchedule
 		'บันทึกคาบเรียนไม่สำเร็จ'
 	);
 
-export const listSubjectGroups = () =>
+export const listSubjectGroups = (options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<SubjectGroup[]>('/api/academic/catalog/subject-groups'),
+		apiClient.get<SubjectGroup[]>('/api/academic/catalog/subject-groups', options),
 		'ไม่สามารถโหลดกลุ่มสาระได้'
 	);
 export const createSubjectGroup = (body: CreateSubjectGroupRequest) =>

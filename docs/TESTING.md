@@ -189,9 +189,11 @@ For the Academic Delivery region-loading browser gate, build and preview the fro
 PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run build
 PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run preview -- --host 127.0.0.1 --port 4173
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/route-region-loading.spec.ts --project=chromium
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-catalog-route-loading.spec.ts --project=chromium
 ```
 
 The spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.
+The catalog spec checks the three route-owned list regions, focused retry, local group patching, and lazy history after create.
 
 For coordinated school release behavior, run:
 

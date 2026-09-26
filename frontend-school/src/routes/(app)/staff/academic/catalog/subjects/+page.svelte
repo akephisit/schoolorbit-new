@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { invalidate } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import {
 		createCatalogSubject,
 		createSubjectVersion,
-		getCatalogSubjectOverview,
 		listSubjectVersions,
 		publishSubjectVersion,
 		updateCatalogSubject,
@@ -13,6 +13,7 @@
 		type CatalogSubjectOverviewItem,
 		type SubjectVersion
 	} from '$lib/api/academic-core';
+	import { CATALOG_SUBJECT_OVERVIEW_DEPENDENCY } from '$lib/academic-core/catalog-route';
 	import {
 		CATALOG_DISPLAY_STATE_OPTIONS,
 		SUBJECT_TYPE_OPTIONS,
@@ -25,7 +26,7 @@
 	} from '$lib/academic-core/catalog-presentation';
 	import CatalogVersionHistory from '$lib/components/academic-core/CatalogVersionHistory.svelte';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -34,6 +35,7 @@
 	import * as Sheet from '$lib/components/ui/sheet';
 	import * as Table from '$lib/components/ui/table';
 	import { ArrowUpRight, BookOpen, Plus, Save, Search, SlidersHorizontal } from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
 	type VersionDraft = {
 		name: string;
@@ -51,6 +53,7 @@
 	const collator = new Intl.Collator('th-TH', { numeric: true, sensitivity: 'base' });
 	const subjectHistoryCache = new SvelteMap<string, SubjectVersion[]>();
 
+	let { data }: PageProps = $props();
 	let overview = $state.raw<CatalogSubjectOverview | null>(null);
 	let selected = $state<CatalogSubjectOverviewItem | null>(null);
 	let versions = $state.raw<SubjectVersion[]>([]);
@@ -72,6 +75,7 @@
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
 	let historyRevision = 0;
+	let pendingOpenSubjectId = '';
 
 	let subjectItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
@@ -115,29 +119,52 @@
 			})
 	);
 
-	async function loadOverview(showLoading = true) {
-		if (showLoading) loading = true;
-		errorMessage = '';
-		try {
-			const selectedId = selected?.subject.id;
-			overview = await getCatalogSubjectOverview();
-			if (
-				!overview.subjectGroupOptions.some(
-					(option) => option.canManage && option.subjectGroupId === subjectGroupValue
-				)
-			) {
-				subjectGroupValue =
-					overview.subjectGroupOptions.find((option) => option.canManage)?.subjectGroupId ?? '';
-			}
-			if (selectedId) {
-				selected = overview.items.find((item) => item.subject.id === selectedId) ?? null;
-			}
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'โหลดทะเบียนรายวิชาไม่สำเร็จ';
-		} finally {
-			if (showLoading) loading = false;
-		}
+	function loadOverview() {
+		return invalidate(CATALOG_SUBJECT_OVERVIEW_DEPENDENCY);
 	}
+
+	$effect.pre(() => {
+		const routeResult = data.overview;
+		let current = true;
+		untrack(() => {
+			loading = Boolean(routeResult);
+			errorMessage = '';
+		});
+		if (routeResult) {
+			void routeResult.then((result) => {
+				if (!current) return;
+				untrack(() => {
+					if (result.ok) {
+						const latest = result.data;
+						const selectedId = selected?.subject.id;
+						overview = latest;
+						if (
+							!latest.subjectGroupOptions.some(
+								(option) => option.canManage && option.subjectGroupId === subjectGroupValue
+							)
+						) {
+							subjectGroupValue =
+								latest.subjectGroupOptions.find((option) => option.canManage)?.subjectGroupId ?? '';
+						}
+						if (selectedId) {
+							selected = latest.items.find((item) => item.subject.id === selectedId) ?? null;
+						}
+						if (pendingOpenSubjectId) {
+							const item = latest.items.find((row) => row.subject.id === pendingOpenSubjectId);
+							if (item) {
+								pendingOpenSubjectId = '';
+								void openSubject(item);
+							}
+						}
+					} else errorMessage = result.error;
+					loading = false;
+				});
+			});
+		}
+		return () => {
+			current = false;
+		};
+	});
 
 	async function openSubject(item: CatalogSubjectOverviewItem) {
 		const currentHistoryRevision = ++historyRevision;
@@ -181,7 +208,7 @@
 			subjectHistoryCache.set(subjectId, loaded);
 			if (currentHistoryRevision !== historyRevision) return;
 			versions = loaded;
-			await loadOverview(false);
+			await loadOverview();
 		} catch (error) {
 			if (currentHistoryRevision === historyRevision) {
 				historyError = error instanceof Error ? error.message : 'โหลดประวัติรายวิชาไม่สำเร็จ';
@@ -205,9 +232,8 @@
 				subjectGroupId: selectedSubjectGroup.subjectGroupId
 			});
 			code = '';
-			await loadOverview(false);
-			const item = overview?.items.find((candidate) => candidate.subject.id === created.id);
-			if (item) await openSubject(item);
+			pendingOpenSubjectId = created.id;
+			await loadOverview();
 		} catch (error) {
 			mutationError = error instanceof Error ? error.message : 'เพิ่มรหัสรายวิชาไม่สำเร็จ';
 		} finally {
@@ -244,8 +270,7 @@
 				archived: selected.subject.archivedAt !== null,
 				rowVersion: selected.subject.rowVersion
 			});
-			await loadOverview(false);
-			if (selected) editingSubjectGroupValue = selected.subject.subjectGroupId;
+			await loadOverview();
 		} catch (error) {
 			subjectMetadataError = error instanceof Error ? error.message : 'เปลี่ยนกลุ่มสาระไม่สำเร็จ';
 		} finally {
@@ -261,17 +286,15 @@
 	function gradeLevelsFor(version: SubjectVersion) {
 		return gradeLevelOptions.filter((level) => version.gradeLevelIds.includes(level.id));
 	}
-
-	onMount(() => loadOverview());
 </script>
 
 <PageShell
 	title="ทะเบียนรายวิชา"
 	description="ดูรหัส ชื่อ ประเภท ระดับชั้น หน่วยกิต และรุ่นที่ใช้อยู่ได้ในหน้าเดียว"
 >
-	{#if loading}
+	{#if loading && !overview}
 		<PageSkeleton variant="table" rows={7} />
-	{:else if errorMessage && subjectItems.length === 0}
+	{:else if errorMessage && !overview}
 		<PageState
 			variant="error"
 			title="โหลดทะเบียนไม่สำเร็จ"
@@ -280,7 +303,13 @@
 			onaction={() => loadOverview()}
 		/>
 	{:else}
-		<div class="space-y-5">
+		<div
+			class="relative space-y-5"
+			aria-label="ทะเบียนรายวิชา"
+			aria-busy={loading}
+			data-testid="catalog-subjects-ready"
+		>
+			{#if loading}<RegionUpdatingState label="กำลังอัปเดตทะเบียนรายวิชา" />{/if}
 			<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
 				<div class="flex flex-col gap-4 border-b bg-muted/25 p-4 lg:flex-row lg:items-end">
 					<div class="min-w-0 flex-1">
@@ -578,7 +607,13 @@
 			<p class="text-xs text-muted-foreground">
 				แสดง {filteredSubjects.length} จาก {subjectItems.length} รายวิชา · ทะเบียนนี้เป็นข้อมูลกลาง ไม่ผูกกับภาคเรียนบนแถบด้านบน
 			</p>
-			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+			{#if errorMessage}<div
+					role="alert"
+					class="flex flex-wrap items-center gap-2 text-sm text-destructive"
+				>
+					<p>{errorMessage}</p>
+					<Button size="sm" variant="outline" onclick={loadOverview}>ลองอีกครั้ง</Button>
+				</div>{/if}
 		</div>
 	{/if}
 </PageShell>

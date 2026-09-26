@@ -45,9 +45,10 @@ test('subject catalog uses the responsive overview information architecture', as
 	const subjects = await readSource(
 		'src/routes/(app)/staff/academic/catalog/subjects/+page.svelte'
 	);
+	const loader = await readSource('src/routes/(app)/staff/academic/catalog/subjects/+page.ts');
 	const history = await readSource('src/lib/components/academic-core/CatalogVersionHistory.svelte');
 
-	assert.match(subjects, /getCatalogSubjectOverview/);
+	assert.match(loader, /getCatalogSubjectOverview/);
 	assert.match(subjects, /\* as Table/);
 	assert.match(subjects, /\* as Sheet/);
 	assert.match(subjects, /\* as Select/);
@@ -81,8 +82,9 @@ test('activity catalog uses the responsive overview information architecture', a
 	const activities = await readSource(
 		'src/routes/(app)/staff/academic/catalog/activities/+page.svelte'
 	);
+	const loader = await readSource('src/routes/(app)/staff/academic/catalog/activities/+page.ts');
 
-	assert.match(activities, /getCatalogActivityOverview/);
+	assert.match(loader, /getCatalogActivityOverview/);
 	assert.match(activities, /\* as Table/);
 	assert.match(activities, /\* as Sheet/);
 	assert.match(activities, /\* as Select/);

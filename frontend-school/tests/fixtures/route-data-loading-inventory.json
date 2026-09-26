@@ -241,35 +241,32 @@
 		{
 			"route": "staff/academic/catalog/activities",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Component API reads include getCatalogActivityOverview, listActivityVersions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route loader owns the cohesive activity overview; version history stays lazy in the sheet and partial mutations invalidate only the overview dependency."
 		},
 		{
 			"route": "staff/academic/catalog/subject-groups",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Component API reads include listSubjectGroups; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route loader owns the subject-group cards; typed create, update, and delete mutations patch only the local collection."
 		},
 		{
 			"route": "staff/academic/catalog/subjects",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Component API reads include getCatalogSubjectOverview, listSubjectVersions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route loader owns the cohesive subject overview; version history stays lazy in the sheet and partial mutations invalidate only the overview dependency."
 		},
 		{
 			"route": "staff/academic/core",
