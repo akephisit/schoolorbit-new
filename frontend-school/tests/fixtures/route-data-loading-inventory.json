@@ -354,13 +354,12 @@
 		{
 			"route": "staff/academic/homerooms",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Component API reads include getHomeroom; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "One bounded route-owned homeroom/advisor/grade/program workspace; staff lookup stays lazy on advisor action."
 		},
 		{
 			"route": "staff/academic/promotion",
@@ -463,13 +462,12 @@
 		{
 			"route": "staff/academic/student-years",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "Component API reads include listStudentAcademicYears, listStudentYearCandidates; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "One route-owned student-year/placement/homeroom workspace; candidates and grade/program options load only in the manage-only create dialog."
 		},
 		{
 			"route": "staff/academic/supervision",

@@ -1,11 +1,10 @@
 <script lang="ts">
+	import { invalidate } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import {
 		createHomeroomPlacement,
 		createStudentAcademicYear,
 		listGradeLevelOptions,
-		listHomerooms,
-		listPlacementsForAcademicYear,
-		listStudentAcademicYears,
 		listStudentYearCandidates,
 		listStudyProgramOptionsForAcademicYear,
 		transferHomeroomPlacement,
@@ -16,13 +15,12 @@
 		type StudentYearCandidate,
 		type StudyProgramOption
 	} from '$lib/api/academic-core';
-	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { STUDENT_YEARS_WORKSPACE_DEPENDENCY } from '$lib/academic-core/foundation-route';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import StudentYearPlacementEditor from '$lib/components/academic-core/StudentYearPlacementEditor.svelte';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -32,20 +30,23 @@
 	import * as Table from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
-	import { loadStudentYearCollections } from '$lib/workspaces/academic-batch';
 	import { Plus, Search, UserRoundSearch } from '@lucide/svelte';
+	import type { PageProps } from './$types';
 
-	const academicContext = getAcademicContextStore();
-	const academicYearId = $derived($academicContext.selected.academicYearId);
+	let { data }: PageProps = $props();
+	const academicYearId = $derived(data.academicYearId);
 	let studentYears = $state<StudentAcademicYear[]>([]);
 	const placementsByStudentYear = new SvelteMap<string, HomeroomPlacement[]>();
 	let homerooms = $state<Homeroom[]>([]);
 	let gradeLevelOptions = $state<GradeLevelOption[]>([]);
 	let programOptions = $state<StudyProgramOption[]>([]);
-	let loading = $state(false);
+	let loading = $state(true);
+	let hasWorkspace = $state(false);
 	let errorMessage = $state('');
-	const request = new LatestRequest();
 	const candidateRequest = new LatestRequest();
+	const createOptionsRequest = new LatestRequest();
+	let loadedYearId: string | null = null;
+	let mutationRevision = 0;
 	const canManage = $derived($can.has(PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL));
 
 	let createDialogOpen = $state(false);
@@ -54,45 +55,80 @@
 	let candidateSearch = $state('');
 	let candidates = $state<StudentYearCandidate[]>([]);
 	let candidatesLoading = $state(false);
+	let createOptionsLoading = $state(false);
 	let createDraft = $state({ studentId: '', gradeLevelId: '', studyProgramId: '' });
 
 	let detailDialogOpen = $state(false);
 	let selectedStudentYear = $state<StudentAcademicYear | null>(null);
 
-	async function loadWorkspace(yearId: string) {
-		const { revision, signal } = request.begin();
-		loading = true;
-		errorMessage = '';
-		try {
-			const workspace = await loadStudentYearCollections(
-				{
-					listStudentAcademicYears: (selectedYearId, options) =>
-						listStudentAcademicYears(selectedYearId, {}, options),
-					listPlacementsForAcademicYear,
-					listHomerooms,
-					listGradeLevelOptions,
-					listStudyProgramOptionsForAcademicYear
-				},
-				yearId,
-				signal
-			);
-			if (!request.isCurrent(revision)) return;
-			studentYears = workspace.studentYears;
-			placementsByStudentYear.clear();
-			for (const [recordId, placements] of workspace.placementsByStudentYearId) {
-				placementsByStudentYear.set(recordId, placements);
+	function retryWorkspace() {
+		return invalidate(STUDENT_YEARS_WORKSPACE_DEPENDENCY);
+	}
+
+	$effect.pre(() => {
+		const result = data.workspace;
+		const yearId = data.academicYearId;
+		const initialMutationRevision = mutationRevision;
+		let current = true;
+		untrack(() => {
+			if (loadedYearId !== yearId) {
+				loadedYearId = yearId;
+				studentYears = [];
+				placementsByStudentYear.clear();
+				homerooms = [];
+				gradeLevelOptions = [];
+				programOptions = [];
+				candidates = [];
+				createDialogOpen = false;
+				detailDialogOpen = false;
+				selectedStudentYear = null;
+				hasWorkspace = false;
+				candidateRequest.abort();
+				createOptionsRequest.abort();
 			}
-			homerooms = workspace.homerooms;
-			gradeLevelOptions = workspace.gradeLevels;
-			programOptions = workspace.programs;
+			loading = Boolean(result);
+			errorMessage = '';
+		});
+		if (result) {
+			void result.then((outcome) => {
+				if (!current) return;
+				untrack(() => {
+					if (outcome.ok && mutationRevision === initialMutationRevision) {
+						studentYears = outcome.data.studentYears;
+						placementsByStudentYear.clear();
+						for (const [recordId, placements] of outcome.data.placementsByStudentYearId)
+							placementsByStudentYear.set(recordId, placements);
+						homerooms = outcome.data.homerooms;
+						hasWorkspace = true;
+					} else if (!outcome.ok) errorMessage = outcome.error;
+					loading = false;
+				});
+			});
+		}
+		return () => {
+			current = false;
+		};
+	});
+
+	async function loadCreateOptions() {
+		if (!academicYearId || !canManage) return;
+		const { revision, signal } = createOptionsRequest.begin();
+		createOptionsLoading = true;
+		try {
+			const [grades, programs] = await Promise.all([
+				listGradeLevelOptions(academicYearId, { signal }),
+				listStudyProgramOptionsForAcademicYear(academicYearId, { signal })
+			]);
+			if (!createOptionsRequest.isCurrent(revision)) return;
+			gradeLevelOptions = grades;
+			programOptions = programs;
 		} catch (error) {
 			if (isAbortError(error)) return;
-			if (request.isCurrent(revision)) {
-				errorMessage =
-					error instanceof Error ? error.message : 'โหลดข้อมูลนักเรียนประจำปีไม่สำเร็จ';
-			}
+			if (createOptionsRequest.isCurrent(revision))
+				createError =
+					error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับเพิ่มนักเรียนไม่สำเร็จ';
 		} finally {
-			if (request.isCurrent(revision)) loading = false;
+			if (createOptionsRequest.isCurrent(revision)) createOptionsLoading = false;
 		}
 	}
 
@@ -115,12 +151,14 @@
 	}
 
 	function openCreateDialog() {
+		if (!canManage) return;
 		createDraft = { studentId: '', gradeLevelId: '', studyProgramId: '' };
 		candidateSearch = '';
 		candidates = [];
 		createError = '';
 		createDialogOpen = true;
 		void loadCandidates();
+		void loadCreateOptions();
 	}
 
 	async function searchCandidates(event: SubmitEvent) {
@@ -143,6 +181,7 @@
 		createError = '';
 		try {
 			const created = await createStudentAcademicYear({ academicYearId, ...createDraft });
+			mutationRevision += 1;
 			studentYears = [...studentYears, created].sort((a, b) =>
 				a.studentName.localeCompare(b.studentName, 'th')
 			);
@@ -187,6 +226,7 @@
 			status: record.status === 'planned' ? 'planned' : 'current',
 			rowVersion: record.rowVersion
 		});
+		mutationRevision += 1;
 		placementsByStudentYear.set(record.id, [
 			...(placementsByStudentYear.get(record.id) ?? []),
 			created
@@ -217,6 +257,7 @@
 			rowVersion: placement.rowVersion,
 			idempotencyKey: crypto.randomUUID()
 		});
+		mutationRevision += 1;
 		const placements = placementsByStudentYear.get(placement.studentAcademicYearId) ?? [];
 		placementsByStudentYear.set(placement.studentAcademicYearId, [
 			...placements.map((item) =>
@@ -236,27 +277,6 @@
 			withdrawn: 'พ้นสภาพ'
 		}[status];
 	}
-
-	onMount(() => {
-		let loadedYearId: string | null = null;
-		const unsubscribe = academicContext.subscribe((state) => {
-			const yearId = state.selected.academicYearId;
-			if (!yearId) {
-				loadedYearId = null;
-				request.abort();
-				return;
-			}
-			if (yearId !== loadedYearId) {
-				loadedYearId = yearId;
-				void loadWorkspace(yearId);
-			}
-		});
-		return () => {
-			unsubscribe();
-			request.abort();
-			candidateRequest.abort();
-		};
-	});
 </script>
 
 <PageShell
@@ -269,18 +289,19 @@
 			title="เลือกปีการศึกษาก่อน"
 			description="ใช้ตัวเลือกปีการศึกษาบนแถบด้านบน"
 		/>
-	{:else if loading}
+	{:else if loading && !hasWorkspace}
 		<PageSkeleton variant="table" rows={8} />
-	{:else if errorMessage}
+	{:else if errorMessage && !hasWorkspace}
 		<PageState
 			variant="error"
 			title="โหลดข้อมูลไม่สำเร็จ"
 			description={errorMessage}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadWorkspace(academicYearId)}
+			onaction={retryWorkspace}
 		/>
 	{:else}
-		<div class="space-y-4">
+		<div class="relative space-y-4" aria-busy={loading} data-testid="student-years-ready">
+			{#if loading}<RegionUpdatingState label="กำลังอัปเดตนักเรียนประจำปี" />{/if}
 			<div
 				class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4"
 			>
@@ -349,6 +370,12 @@
 					</Table.Body>
 				</Table.Root>
 			</div>
+			{#if errorMessage && hasWorkspace}
+				<div role="alert" class="flex items-center gap-2 text-sm text-destructive">
+					<span>{errorMessage}</span>
+					<Button size="sm" variant="outline" onclick={retryWorkspace}>ลองอีกครั้ง</Button>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </PageShell>
@@ -401,7 +428,7 @@
 						bind:value={createDraft.gradeLevelId}
 						><Select.Trigger id="student-year-grade" class="w-full"
 							>{gradeLevelOptions.find((option) => option.id === createDraft.gradeLevelId)?.name ??
-								'เลือกระดับชั้น'}</Select.Trigger
+								(createOptionsLoading ? 'กำลังโหลดระดับชั้น…' : 'เลือกระดับชั้น')}</Select.Trigger
 						><Select.Content
 							>{#each gradeLevelOptions as option (option.id)}<Select.Item value={option.id}
 									>{option.name}</Select.Item
@@ -418,7 +445,9 @@
 								(option) => option.id === createDraft.studyProgramId
 							)}{program
 								? `${program.curriculumName} · ${program.name}`
-								: 'เลือกแผนการเรียน'}</Select.Trigger
+								: createOptionsLoading
+									? 'กำลังโหลดแผนการเรียน…'
+									: 'เลือกแผนการเรียน'}</Select.Trigger
 						><Select.Content
 							>{#each programOptions as option (option.id)}<Select.Item value={option.id}
 									>{option.curriculumName} · {option.name}</Select.Item
@@ -429,7 +458,7 @@
 			</div>
 			{#if createError}<p role="alert" class="text-sm text-destructive">{createError}</p>{/if}
 			<Dialog.Footer
-				><Button type="submit" disabled={createBusy || candidatesLoading}
+				><Button type="submit" disabled={createBusy || candidatesLoading || createOptionsLoading}
 					><Plus class="size-4" /> เพิ่มนักเรียนในปีนี้</Button
 				></Dialog.Footer
 			>

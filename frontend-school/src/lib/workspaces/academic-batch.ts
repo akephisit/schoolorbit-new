@@ -1,5 +1,6 @@
 interface RequestOptions {
 	signal?: AbortSignal;
+	requestFetch?: typeof globalThis.fetch;
 }
 
 function indexChildren<Parent extends { id: string }, Child>(
@@ -49,9 +50,7 @@ export async function loadTimetableCollections<
 export async function loadStudentYearCollections<
 	StudentYear extends { id: string },
 	Placement extends { studentAcademicYearId: string },
-	Homeroom,
-	GradeLevel,
-	StudyProgram
+	Homeroom
 >(
 	deps: {
 		listStudentAcademicYears: (yearId: string, options?: RequestOptions) => Promise<StudentYear[]>;
@@ -60,30 +59,20 @@ export async function loadStudentYearCollections<
 			options?: RequestOptions
 		) => Promise<Placement[]>;
 		listHomerooms: (yearId: string, options?: RequestOptions) => Promise<Homeroom[]>;
-		listGradeLevelOptions: (yearId: string, options?: RequestOptions) => Promise<GradeLevel[]>;
-		listStudyProgramOptionsForAcademicYear: (
-			yearId: string,
-			options?: RequestOptions
-		) => Promise<StudyProgram[]>;
 	},
 	yearId: string,
-	signal: AbortSignal
+	options: RequestOptions = {}
 ) {
-	const options = { signal };
-	const [studentYears, placements, homerooms, gradeLevels, programs] = await Promise.all([
+	const [studentYears, placements, homerooms] = await Promise.all([
 		deps.listStudentAcademicYears(yearId, options),
 		deps.listPlacementsForAcademicYear(yearId, options),
-		deps.listHomerooms(yearId, options),
-		deps.listGradeLevelOptions(yearId, options),
-		deps.listStudyProgramOptionsForAcademicYear(yearId, options)
+		deps.listHomerooms(yearId, options)
 	]);
 
 	return {
 		studentYears,
 		placements,
 		homerooms,
-		gradeLevels,
-		programs,
 		placementsByStudentYearId: indexChildren(
 			studentYears,
 			placements,
@@ -111,9 +100,8 @@ export async function loadHomeroomCollections<
 		) => Promise<StudyProgram[]>;
 	},
 	yearId: string,
-	signal: AbortSignal
+	options: RequestOptions = {}
 ) {
-	const options = { signal };
 	const [homerooms, advisors, gradeLevels, programs] = await Promise.all([
 		deps.listHomerooms(yearId, options),
 		deps.listHomeroomAdvisorsForAcademicYear(yearId, options),

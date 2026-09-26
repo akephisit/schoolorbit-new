@@ -45,7 +45,7 @@ test('timetable collection calls stay fixed for 300 offerings and share one sign
 	assert.ok(calls.every((call) => call.signal === controller.signal));
 });
 
-test('student-year collection batches placements and options once for every parent count', async () => {
+test('student-year collection loads only visible relationships for every parent count', async () => {
 	const calls: RecordedCall[] = [];
 	const controller = new AbortController();
 	const studentYears = Array.from({ length: 300 }, (_, index) => ({ id: `student-year-${index}` }));
@@ -67,27 +67,18 @@ test('student-year collection batches placements and options once for every pare
 		async listHomerooms(yearId: string, options?: { signal?: AbortSignal }) {
 			record('homerooms', yearId, options?.signal);
 			return [];
-		},
-		async listGradeLevelOptions(yearId: string, options?: { signal?: AbortSignal }) {
-			record('gradeLevels', yearId, options?.signal);
-			return [];
-		},
-		async listStudyProgramOptionsForAcademicYear(
-			yearId: string,
-			options?: { signal?: AbortSignal }
-		) {
-			record('programs', yearId, options?.signal);
-			return [];
 		}
 	};
 
-	const result = await loadStudentYearCollections(deps, 'year-1', controller.signal);
+	const result = await loadStudentYearCollections(deps, 'year-1', { signal: controller.signal });
 
 	assert.equal(result.studentYears.length, 300);
 	assert.equal(result.placementsByStudentYearId.size, 300);
 	assert.equal(result.placementsByStudentYearId.get('student-year-299')?.length, 1);
-	for (const name of ['studentYears', 'placements', 'homerooms', 'gradeLevels', 'programs'])
+	for (const name of ['studentYears', 'placements', 'homerooms'])
 		assert.equal(countCalls(calls, name), 1, name);
+	assert.equal(countCalls(calls, 'gradeLevels'), 0);
+	assert.equal(countCalls(calls, 'programs'), 0);
 	assert.equal(
 		countCalls(calls, 'students'),
 		0,
@@ -134,7 +125,7 @@ test('homeroom collection batches advisor assignments once and indexes them by h
 		}
 	};
 
-	const result = await loadHomeroomCollections(deps, 'year-1', controller.signal);
+	const result = await loadHomeroomCollections(deps, 'year-1', { signal: controller.signal });
 
 	assert.equal(result.homerooms.length, 300);
 	assert.equal(result.advisorsByHomeroomId.size, 300);

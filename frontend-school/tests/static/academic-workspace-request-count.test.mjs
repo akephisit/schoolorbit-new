@@ -20,20 +20,34 @@ function assertCancellable(page, label) {
 
 test('student-year workspace uses one year relationship collection', async () => {
 	const page = await readPage('student-years');
-	assertCancellable(page, 'student-years');
-	assert.match(page, /loadStudentYearCollections/);
-	assert.match(page, /listPlacementsForAcademicYear/);
+	const loader = await readFile(
+		path.join(projectRoot, academicRoutes, 'student-years', '+page.ts'),
+		'utf8'
+	);
+	assert.match(loader, /loadStudentYearCollections/);
+	assert.match(loader, /listPlacementsForAcademicYear/);
+	assert.match(loader, /requestFetch:\s*fetch/);
+	assert.match(page, /data\.workspace/);
 	assert.match(page, /listStudyProgramOptionsForAcademicYear/);
+	assert.doesNotMatch(loader, /listStudyProgramOptionsForAcademicYear/);
+	assert.doesNotMatch(loader, /listGradeLevelOptions/);
+	assert.doesNotMatch(page, /\bonMount\s*\(/);
 	assert.doesNotMatch(page, /listHomeroomPlacements\(record\.id\)/);
 	assert.doesNotMatch(page, /listStudyProgramOptionsForYear/);
 });
 
 test('homeroom workspace uses one advisor relationship collection', async () => {
 	const page = await readPage('homerooms');
-	assertCancellable(page, 'homerooms');
-	assert.match(page, /loadHomeroomCollections/);
-	assert.match(page, /listHomeroomAdvisorsForAcademicYear/);
-	assert.match(page, /listStudyProgramOptionsForAcademicYear/);
+	const loader = await readFile(
+		path.join(projectRoot, academicRoutes, 'homerooms', '+page.ts'),
+		'utf8'
+	);
+	assert.match(loader, /loadHomeroomCollections/);
+	assert.match(loader, /listHomeroomAdvisorsForAcademicYear/);
+	assert.match(loader, /listStudyProgramOptionsForAcademicYear/);
+	assert.match(loader, /requestFetch:\s*fetch/);
+	assert.match(page, /data\.workspace/);
+	assert.doesNotMatch(page, /\bonMount\s*\(/);
 	assert.doesNotMatch(page, /listHomeroomAdvisors\(room\.id\)/);
 	assert.doesNotMatch(page, /listStudyProgramOptionsForYear/);
 });
