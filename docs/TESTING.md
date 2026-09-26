@@ -191,11 +191,13 @@ PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run preview -
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/route-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-catalog-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-foundation-route-loading.spec.ts --project=chromium
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-delivery-alignment.spec.ts --project=chromium
 ```
 
 The Delivery spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.
 The catalog spec checks the three route-owned list regions, focused retry, local group patching, and lazy history after create.
 The foundation spec checks route-first setup/curriculum regions, focused retry, lazy period/create-option reads, and a create mutation surviving a stale overview response.
+The curriculum detail spec checks concurrent explicit-version reads, default-version dependency, regional skeleton/retry, lazy management options, and clone behavior without per-row requests.
 
 For coordinated school release behavior, run:
 

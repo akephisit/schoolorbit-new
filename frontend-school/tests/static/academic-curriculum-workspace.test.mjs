@@ -107,3 +107,43 @@ test('curriculum detail is deep-linked and uses labeled management options', asy
 	assert.match(createDialog, /owningOrganizationUnitId:\s*selectedOwner\.organizationUnitId/);
 	assert.doesNotMatch(createDialog, /owningOrganizationUnitId:\s*null/);
 });
+
+test('curriculum detail starts independent visible regions in its route loader', async () => {
+	const loader = await readProjectFile('src/routes/(app)/staff/academic/curricula/[id]/+page.ts');
+	const page = await readProjectFile('src/routes/(app)/staff/academic/curricula/[id]/+page.svelte');
+
+	for (const name of [
+		'getCurriculum',
+		'listCurriculumVersions',
+		'getCurriculumStructureWorkspace',
+		'getHomeroomDeliveryWorkspace'
+	]) {
+		assert.match(loader, new RegExp(`\\b${name}\\b`));
+	}
+	assert.match(loader, /captureRouteLoad/);
+	assert.match(loader, /requestFetch:\s*fetch/);
+	assert.match(page, /data\.curriculum/);
+	assert.match(page, /data\.versions/);
+	assert.match(page, /data\.structure/);
+	assert.match(page, /data\.alignment/);
+	assert.doesNotMatch(page, /\bonMount\s*\(/);
+	assert.doesNotMatch(page, /\binvalidateAll\s*\(/);
+});
+
+test('curriculum detail keeps retained-region refresh errors actionable', async () => {
+	const page = await readProjectFile('src/routes/(app)/staff/academic/curricula/[id]/+page.svelte');
+	for (const [error, retained] of [
+		['curriculumError', 'curriculum'],
+		['versionsError', 'versions.length'],
+		['alignmentError', 'alignmentWorkspace'],
+		['workspaceError', 'workspace']
+	]) {
+		assert.match(
+			page,
+			new RegExp(
+				`\\{#if ${error} && ${retained.replace('.', '\\.')}\\}[\\s\\S]{0,450}role="alert"`
+			),
+			`${error} must remain visible with retained data and offer retry`
+		);
+	}
+});

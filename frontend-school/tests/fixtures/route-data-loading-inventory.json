@@ -291,13 +291,12 @@
 		{
 			"route": "staff/academic/curricula/[id]",
 			"wave": "academic-foundation",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-core + school-academic-delivery",
-			"notes": "Component API reads include getCurriculum, getCurriculumCreateOptions, getCurriculumManagementOptions, getCurriculumStructureWorkspace, listCurriculumVersions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route starts curriculum and version list together, explicit structure and optional alignment independently; absent version waits only for list selection. Create/management options remain permission-gated and action-lazy, with focused regional retry and shallow version URL updates."
 		},
 		{
 			"route": "staff/academic/delivery",
