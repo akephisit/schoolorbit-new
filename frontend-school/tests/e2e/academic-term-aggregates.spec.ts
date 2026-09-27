@@ -96,7 +96,8 @@ async function mock(page: Page, manager = false, conflict = false) {
 	await page.route(
 		(request) => request.pathname.startsWith('/api/'),
 		async (route) => {
-			const path = new URL(route.request().url()).pathname;
+			const requestUrl = new URL(route.request().url());
+			const path = requestUrl.pathname;
 			if (path === '/api/auth/me')
 				return respond(route, {
 					id: actor,
@@ -150,6 +151,8 @@ async function mock(page: Page, manager = false, conflict = false) {
 			if (path === '/api/academic/results/aggregate-policies') return respond(route, [policy]);
 			if (path.endsWith('/aggregate-preview')) {
 				studentReads++;
+				if (requestUrl.searchParams.get('policyId') !== policyId)
+					return respond(route, 'ไม่พบนโยบายที่เลือก', 404);
 				return respond(route, preview);
 			}
 			if (path.endsWith('/aggregate-revisions')) {
@@ -221,6 +224,40 @@ test('aggregate reader sees missing learners, loads only the selected learner an
 	await expect(page.getByRole('button', { name: 'ล็อกผลสรุป', exact: true })).toHaveCount(0);
 	expect(observed.writes).toHaveLength(0);
 	expect(observed.studentReads()).toBe(1);
+});
+
+test('explicit selected learner preview is usable before the independent policy list resolves', async ({
+	page
+}) => {
+	const observed = await mock(page);
+	let releasePolicies = () => {};
+	const policyGate = new Promise<void>((resolve) => {
+		releasePolicies = resolve;
+	});
+	await page.route('**/api/academic/results/aggregate-policies', async (route) => {
+		await policyGate;
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ success: true, data: [policy] })
+		});
+	});
+	await page.goto(`${url}&studentAcademicYearId=${student}&policyId=${policyId}`);
+	await expect(page.getByText('ค่าเฉลี่ยเฉพาะผลตัวเลข')).toBeVisible();
+	expect(observed.studentReads()).toBe(1);
+	releasePolicies();
+});
+
+test('stale policy deep link falls back to a current policy without losing the selected learner', async ({
+	page
+}) => {
+	const observed = await mock(page);
+	await page.goto(
+		`${url}&studentAcademicYearId=${student}&policyId=deadbeef-0000-4000-8000-000000000001`
+	);
+	await expect(page.getByText('ค่าเฉลี่ยเฉพาะผลตัวเลข')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'นโยบายที่ใช้คำนวณ' })).toContainText(policy.name);
+	expect(observed.studentReads()).toBe(2);
 });
 
 test('aggregate lock is explicit, sends pinned versions and preserves numeric zero as official GPA', async ({

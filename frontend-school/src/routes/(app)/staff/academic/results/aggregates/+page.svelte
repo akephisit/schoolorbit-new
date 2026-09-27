@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
 	import { RefreshCw, Settings2 } from '@lucide/svelte';
-	import {
-		getAcademicContextStore,
-		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
+	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
 	import { aggregateCapabilities } from '$lib/academic/results/aggregate-access';
 	import {
 		aggregateStatus,
@@ -31,7 +31,12 @@
 	import { ApiClientError } from '$lib/api/client';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';
+	import {
+		PageState,
+		PageSkeleton,
+		LoadingButton,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -42,9 +47,11 @@
 	import * as Table from '$lib/components/ui/table';
 	import { can } from '$lib/stores/permissions';
 
-	const context = getAcademicContextStore();
-	const listRequest = new LatestRequest();
-	const detailRequest = new LatestRequest();
+	let { data }: PageProps = $props();
+	const rosterRequest = new LatestRequest();
+	const policyRequest = new LatestRequest();
+	const previewRequest = new LatestRequest();
+	const historyRequest = new LatestRequest();
 	let students = $state.raw<AggregateStudent[]>([]);
 	let policies = $state.raw<AggregatePolicyVersion[]>([]);
 	let preview = $state.raw<TermAggregatePreview | null>(null);
@@ -53,10 +60,18 @@
 	let policyId = $state('');
 	let search = $state('');
 	let visibleCount = $state(50);
-	let loading = $state(false);
-	let detailLoading = $state(false);
+	let loading = $state(true);
+	let rosterLoaded = $state(false);
+	let policiesLoading = $state(true);
+	let policiesLoaded = $state(false);
+	let previewLoading = $state(false);
+	let previewLoaded = $state(false);
+	let historyLoading = $state(false);
+	let historyLoaded = $state(false);
 	let error = $state('');
-	let detailError = $state('');
+	let policyLoadError = $state('');
+	let previewError = $state('');
+	let historyError = $state('');
 	let lockOpen = $state(false);
 	let policyOpen = $state(false);
 	let locking = $state(false);
@@ -70,11 +85,11 @@
 	let allowHolds = $state(false);
 	let reviewedPolicy = $state(false);
 	let policyError = $state('');
-	let loadedContext = '';
 	let pending: { key: string; body: AggregateLockInput } | null = null;
 	const capabilities = $derived(aggregateCapabilities($can));
-	const year = $derived($context.selected.academicYearId);
-	const term = $derived($context.selected.academicTermId);
+	const year = $derived(data.context?.academicYearId ?? null);
+	const term = $derived(data.context?.academicTermId ?? null);
+	const detailLoading = $derived(previewLoading || historyLoading);
 	const student = $derived(students.find((row) => row.studentAcademicYearId === selected));
 	const filtered = $derived(
 		students.filter((row) =>
@@ -96,48 +111,133 @@
 			: '/staff/academic/results'
 	);
 
+	function syncSelection(): void {
+		const url = new URL(page.url);
+		if (selected) url.searchParams.set('studentAcademicYearId', selected);
+		else url.searchParams.delete('studentAcademicYearId');
+		if (policyId) url.searchParams.set('policyId', policyId);
+		else url.searchParams.delete('policyId');
+		replaceState(
+			resolve(`/staff/academic/results/aggregates?${url.searchParams.toString()}`),
+			page.state
+		);
+	}
+
 	async function loadRoster() {
 		if (!contextQuery || !capabilities.read) return;
-		const { revision, signal } = listRequest.begin();
+		const query = contextQuery;
+		const { revision, signal } = rosterRequest.begin();
 		loading = true;
 		error = '';
 		try {
-			const rows = await listAggregateStudents(contextQuery, { signal });
-			const versions = await listAggregatePolicies({ signal });
-			if (!listRequest.isCurrent(revision)) return;
+			const rows = await listAggregateStudents(query, { signal });
+			if (
+				!rosterRequest.isCurrent(revision) ||
+				year !== query.academicYearId ||
+				term !== query.academicTermId
+			)
+				return;
 			students = rows;
-			policies = versions;
-			if (!versions.some((version) => version.id === policyId)) policyId = versions[0]?.id ?? '';
+			rosterLoaded = true;
+			if (selected && !rows.some((row) => row.studentAcademicYearId === selected)) {
+				previewRequest.abort();
+				historyRequest.abort();
+				selected = '';
+				preview = null;
+				history = [];
+				syncSelection();
+			}
 		} catch (cause) {
-			if (!isAbortError(cause) && listRequest.isCurrent(revision))
+			if (!isAbortError(cause) && rosterRequest.isCurrent(revision))
 				error = cause instanceof Error ? cause.message : 'โหลดข้อมูลไม่สำเร็จ';
 		} finally {
-			if (listRequest.isCurrent(revision)) loading = false;
+			if (rosterRequest.isCurrent(revision)) loading = false;
+		}
+	}
+	async function loadPolicies(): Promise<void> {
+		if (!capabilities.read) return;
+		const { revision, signal } = policyRequest.begin();
+		policiesLoading = true;
+		policyLoadError = '';
+		try {
+			const versions = await listAggregatePolicies({ signal });
+			if (!policyRequest.isCurrent(revision)) return;
+			policies = versions;
+			policiesLoaded = true;
+			if (!versions.some((version) => version.id === policyId)) {
+				policyId = versions[0]?.id ?? '';
+				syncSelection();
+				if (selected && policyId) void loadPreview(selected, policyId);
+			}
+		} catch (cause) {
+			if (!isAbortError(cause) && policyRequest.isCurrent(revision))
+				policyLoadError = cause instanceof Error ? cause.message : 'โหลดนโยบายไม่สำเร็จ';
+		} finally {
+			if (policyRequest.isCurrent(revision)) policiesLoading = false;
+		}
+	}
+	async function loadHistory(id: string): Promise<void> {
+		const query = contextQuery;
+		if (!query || !capabilities.read) return;
+		const { revision, signal } = historyRequest.begin();
+		historyLoading = true;
+		historyError = '';
+		try {
+			const revisions = await listTermAggregateRevisions(id, query, { signal });
+			if (
+				!historyRequest.isCurrent(revision) ||
+				selected !== id ||
+				year !== query.academicYearId ||
+				term !== query.academicTermId
+			)
+				return;
+			history = revisions;
+			historyLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && historyRequest.isCurrent(revision))
+				historyError = cause instanceof Error ? cause.message : 'โหลดประวัติผลสรุปไม่สำเร็จ';
+		} finally {
+			if (historyRequest.isCurrent(revision)) historyLoading = false;
+		}
+	}
+	async function loadPreview(id: string, chosenPolicyId = policyId): Promise<void> {
+		const query = contextQuery;
+		if (!query || !capabilities.read || !chosenPolicyId) return;
+		const { revision, signal } = previewRequest.begin();
+		previewLoading = true;
+		previewError = '';
+		try {
+			const calculated = await previewTermAggregate(id, query, chosenPolicyId, { signal });
+			if (
+				!previewRequest.isCurrent(revision) ||
+				selected !== id ||
+				policyId !== chosenPolicyId ||
+				year !== query.academicYearId ||
+				term !== query.academicTermId
+			)
+				return;
+			preview = calculated;
+			previewLoaded = true;
+			stale = false;
+		} catch (cause) {
+			if (!isAbortError(cause) && previewRequest.isCurrent(revision))
+				previewError = cause instanceof Error ? cause.message : 'ตรวจผลไม่สำเร็จ';
+		} finally {
+			if (previewRequest.isCurrent(revision)) previewLoading = false;
 		}
 	}
 	async function inspect(id = selected) {
 		if (!contextQuery || !capabilities.read || !id) return;
+		const changed = selected !== id;
 		selected = id;
-		preview = null;
-		history = [];
-		detailError = '';
-		const { revision, signal } = detailRequest.begin();
-		detailLoading = true;
-		try {
-			const revisions = await listTermAggregateRevisions(id, contextQuery, { signal });
-			const calculated = policyId
-				? await previewTermAggregate(id, contextQuery, policyId, { signal })
-				: null;
-			if (!detailRequest.isCurrent(revision)) return;
-			history = revisions;
-			preview = calculated;
-			stale = false;
-		} catch (cause) {
-			if (!isAbortError(cause) && detailRequest.isCurrent(revision))
-				detailError = cause instanceof Error ? cause.message : 'ตรวจผลไม่สำเร็จ';
-		} finally {
-			if (detailRequest.isCurrent(revision)) detailLoading = false;
+		syncSelection();
+		if (changed) {
+			preview = null;
+			history = [];
+			previewLoaded = false;
+			historyLoaded = false;
 		}
+		await Promise.all([loadHistory(id), policyId ? loadPreview(id) : Promise.resolve()]);
 	}
 	function openLock() {
 		if (!preview || !capabilities.lock || !preview.canLock || detailLoading) return;
@@ -163,6 +263,11 @@
 		try {
 			const locked = await lockTermAggregate(chosen, query, pending.body);
 			if (selected === chosen && year === query.academicYearId && term === query.academicTermId) {
+				rosterRequest.abort();
+				historyRequest.abort();
+				loading = false;
+				historyLoading = false;
+				historyLoaded = true;
 				history = [
 					locked,
 					...history
@@ -188,6 +293,7 @@
 				);
 				lockOpen = false;
 				toast.success('ล็อกผลสรุปแล้ว');
+				if (!rosterLoaded) void loadRoster();
 			}
 			pending = null;
 		} catch (cause) {
@@ -210,57 +316,117 @@
 			});
 			policies = [created, ...policies];
 			policyId = created.id;
+			syncSelection();
 			policyOpen = false;
 			reviewedPolicy = false;
 			toast.success('บันทึกนโยบายที่ตรวจแล้ว');
-			if (selected) await inspect();
+			if (selected) await loadPreview(selected, created.id);
 		} catch (cause) {
 			policyError = cause instanceof Error ? cause.message : 'บันทึกนโยบายไม่สำเร็จ';
 		} finally {
 			savingPolicy = false;
 		}
 	}
-	onMount(() => {
-		const unregister = registerAcademicContextDirtySource(
+	onMount(() =>
+		registerAcademicContextDirtySource(
 			'term-aggregate',
 			() => lockOpen || policyOpen || locking || savingPolicy
-		);
-		const unsubscribe = context.subscribe((state) => {
-			const key =
-				state.status === 'ready' && state.selected.academicYearId && state.selected.academicTermId
-					? `${state.selected.academicYearId}:${state.selected.academicTermId}`
-					: '';
-			if (key && key !== loadedContext) {
-				loadedContext = key;
-				detailRequest.abort();
-				students = [];
-				preview = null;
-				history = [];
-				selected = '';
-				policyId = '';
-				lockOpen = false;
-				policyOpen = false;
-				void loadRoster().then(() => {
-					const id = page.url.searchParams.get('studentAcademicYearId');
-					if (id && students.some((row) => row.studentAcademicYearId === id)) void inspect(id);
-				});
-			} else if (!key && state.status !== 'loading') {
-				loadedContext = '';
-				listRequest.abort();
-				detailRequest.abort();
-				students = [];
-				preview = null;
-				history = [];
-				selected = '';
-				lockOpen = false;
-				policyOpen = false;
-			}
+		)
+	);
+	$effect.pre(() => {
+		const routeStudents = data.students;
+		const routePolicies = data.policies;
+		const routePreview = data.preview;
+		const routeHistory = data.history;
+		const routeSelectedId = data.selectedId;
+		const requestedPolicyId = data.requestedPolicyId;
+		const rosterRevision = rosterRequest.begin().revision;
+		const policyRevision = policyRequest.begin().revision;
+		const previewRevision = previewRequest.begin().revision;
+		const historyRevision = historyRequest.begin().revision;
+		untrack(() => {
+			students = [];
+			policies = [];
+			preview = null;
+			history = [];
+			selected = routeSelectedId ?? '';
+			policyId = requestedPolicyId ?? '';
+			rosterLoaded = false;
+			policiesLoaded = false;
+			previewLoaded = false;
+			historyLoaded = false;
+			loading = Boolean(routeStudents);
+			policiesLoading = Boolean(routePolicies);
+			previewLoading = Boolean(routePreview);
+			historyLoading = Boolean(routeHistory);
+			error = '';
+			policyLoadError = '';
+			previewError = '';
+			historyError = '';
+			lockOpen = false;
+			policyOpen = false;
 		});
+		if (routeStudents)
+			void routeStudents.then((result) => {
+				if (!rosterRequest.isCurrent(rosterRevision)) return;
+				untrack(() => {
+					if (result.ok) {
+						students = result.data;
+						rosterLoaded = true;
+					} else error = result.error;
+					loading = false;
+				});
+			});
+		if (routePolicies)
+			void routePolicies.then((result) => {
+				if (!policyRequest.isCurrent(policyRevision)) return;
+				untrack(() => {
+					if (result.ok) {
+						policies = result.data;
+						policiesLoaded = true;
+						if (!result.data.some((version) => version.id === policyId)) {
+							policyId = result.data[0]?.id ?? '';
+							syncSelection();
+							if (requestedPolicyId) {
+								previewRequest.abort();
+								preview = null;
+								previewLoaded = false;
+								previewLoading = false;
+								if (selected && policyId) void loadPreview(selected, policyId);
+							}
+						}
+					} else policyLoadError = result.error;
+					policiesLoading = false;
+				});
+			});
+		if (routePreview)
+			void routePreview.then((result) => {
+				if (!previewRequest.isCurrent(previewRevision)) return;
+				untrack(() => {
+					if (result.policyId) policyId = result.policyId;
+					if (result.result?.ok) {
+						preview = result.result.data;
+						previewLoaded = true;
+					} else if (result.result && !result.result.ok) previewError = result.result.error;
+					previewLoading = false;
+				});
+			});
+		if (routeHistory)
+			void routeHistory.then((result) => {
+				if (!historyRequest.isCurrent(historyRevision)) return;
+				untrack(() => {
+					if (result.ok) {
+						history = result.data;
+						historyLoaded = true;
+					} else historyError = result.error;
+					historyLoading = false;
+				});
+			});
 		return () => {
-			unregister();
-			unsubscribe();
-			listRequest.abort();
-			detailRequest.abort();
+			rosterRequest.abort();
+			policyRequest.abort();
+			previewRequest.abort();
+			historyRequest.abort();
 		};
 	});
 </script>
@@ -291,14 +457,6 @@
 			title="ต้องมีสิทธิ์ดูผลการเรียนและผลประเมินระดับโรงเรียนทั้งสองส่วน"
 		/>
 	{:else if !contextQuery}<PageState title="เลือกปีการศึกษาและภาคเรียนก่อน" />
-	{:else if loading && students.length === 0}<PageSkeleton variant="table" rows={5} columns={4} />
-	{:else if error}<PageState
-			variant="error"
-			title="โหลดผลสรุปไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => void loadRoster()}
-		/>
 	{:else}
 		<div class="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3 sm:p-4">
 			<div class="min-w-56 flex-1 space-y-2">
@@ -314,9 +472,12 @@
 					value={policyId}
 					onValueChange={(value) => {
 						policyId = value;
-						if (selected) void inspect();
+						syncSelection();
+						preview = null;
+						previewLoaded = false;
+						if (selected) void loadPreview(selected, value);
 					}}
-					disabled={locking || detailLoading}
+					disabled={locking || policiesLoading}
 					><Select.Trigger id="aggregate-policy" class="w-full"
 						>{activePolicy?.name ?? 'ยังไม่มีนโยบายที่ตรวจแล้ว'}</Select.Trigger
 					><Select.Content
@@ -325,82 +486,135 @@
 							>{/each}</Select.Content
 					></Select.Root
 				>
+				{#if policiesLoading && !policiesLoaded}<PageSkeleton variant="form" rows={1} />{/if}
+				{#if policyLoadError}<div
+						role="alert"
+						class="flex items-center gap-2 text-sm text-destructive"
+					>
+						<span>{policyLoadError}</span><Button
+							size="sm"
+							variant="outline"
+							onclick={() => void loadPolicies()}>ลองใหม่</Button
+						>
+					</div>{/if}
 			</div>
 		</div>
-		{#if policies.length === 0}<PageState
+		{#if policiesLoaded && policies.length === 0}<PageState
 				title="ยังไม่มีนโยบายผลสรุปที่ตรวจแล้ว"
 				description="ฝ่ายวิชาการต้องตรวจเกณฑ์ผ่าน ผลประเมินขั้นต่ำ และการยอมรับผลค้างก่อน จึงจะคำนวณและล็อกผลสรุปได้"
 			/>{/if}
 		<div class="grid items-start gap-5 xl:grid-cols-[minmax(22rem,0.9fr)_minmax(0,1.1fr)]">
-			<section class="overflow-hidden rounded-xl border bg-card" aria-label="รายชื่อนักเรียน">
-				<div class="border-b p-4 text-sm">
-					{filtered.length} คน · ผลสรุปล่าสุด {students.filter((row) => row.closure.isCurrent)
-						.length} / {students.length} คน
-				</div>
-				<Table.Root
-					><Table.Header
-						><Table.Row
-							><Table.Head>นักเรียน</Table.Head><Table.Head>สถานะผลสรุป</Table.Head></Table.Row
-						></Table.Header
-					><Table.Body>
-						{#each filtered.slice(0, visibleCount) as row (row.studentAcademicYearId)}
-							<Table.Row class={selected === row.studentAcademicYearId ? 'bg-primary/5' : ''}
-								><Table.Cell
-									><Button
-										variant="link"
-										class="h-auto p-0 text-start"
-										disabled={locking}
-										aria-label={`ตรวจผล ${row.studentName}`}
-										onclick={() => void inspect(row.studentAcademicYearId)}
-										>{row.studentName}</Button
-									>
-									<p class="mt-1 text-xs text-muted-foreground">
-										{row.studentCode ?? 'ยังไม่มีเลขประจำตัว'} · {row.gradeLevelName}
-									</p>
-									<p class="text-xs text-muted-foreground">{row.studyProgramName}</p></Table.Cell
-								><Table.Cell
-									><span class={row.closure.isCurrent ? 'text-emerald-700' : 'text-amber-800'}
-										>{aggregateStatusLabels[aggregateStatus(row.closure)]}</span
-									></Table.Cell
-								></Table.Row
-							>
-						{/each}
-					</Table.Body></Table.Root
+			{#if loading && !rosterLoaded}<PageSkeleton variant="table" rows={7} columns={2} />
+			{:else if error && !rosterLoaded}<PageState
+					variant="error"
+					title="โหลดผลสรุปไม่สำเร็จ"
+					description={error}
+					actionLabel="ลองอีกครั้ง"
+					onaction={() => void loadRoster()}
+				/>
+			{:else}<section
+					class="overflow-hidden rounded-xl border bg-card"
+					aria-label="รายชื่อนักเรียน"
+					aria-busy={loading}
 				>
-				{#if filtered.length === 0}<p class="p-5 text-sm text-muted-foreground">
-						ไม่พบนักเรียนในรายการที่เลือก
-					</p>{/if}
-				{#if filtered.length > visibleCount}<div class="border-t p-3">
-						<Button variant="ghost" onclick={() => (visibleCount += 50)}>แสดงเพิ่ม 50 คน</Button>
-					</div>{/if}
-			</section>
+					<div class="border-b p-4 text-sm">
+						{#if loading}<RegionUpdatingState
+								class="static mb-2"
+								label="กำลังอัปเดตรายชื่อนักเรียน..."
+							/>{/if}
+						{#if error}<div role="alert" class="mb-2 flex items-center gap-2 text-destructive">
+								<span>{error}</span><Button
+									size="sm"
+									variant="outline"
+									onclick={() => void loadRoster()}>ลองใหม่</Button
+								>
+							</div>{/if}
+						{filtered.length} คน · ผลสรุปล่าสุด {students.filter((row) => row.closure.isCurrent)
+							.length} / {students.length} คน
+					</div>
+					<Table.Root
+						><Table.Header
+							><Table.Row
+								><Table.Head>นักเรียน</Table.Head><Table.Head>สถานะผลสรุป</Table.Head></Table.Row
+							></Table.Header
+						><Table.Body>
+							{#each filtered.slice(0, visibleCount) as row (row.studentAcademicYearId)}
+								<Table.Row class={selected === row.studentAcademicYearId ? 'bg-primary/5' : ''}
+									><Table.Cell
+										><Button
+											variant="link"
+											class="h-auto p-0 text-start"
+											disabled={locking}
+											aria-label={`ตรวจผล ${row.studentName}`}
+											onclick={() => void inspect(row.studentAcademicYearId)}
+											>{row.studentName}</Button
+										>
+										<p class="mt-1 text-xs text-muted-foreground">
+											{row.studentCode ?? 'ยังไม่มีเลขประจำตัว'} · {row.gradeLevelName}
+										</p>
+										<p class="text-xs text-muted-foreground">{row.studyProgramName}</p></Table.Cell
+									><Table.Cell
+										><span class={row.closure.isCurrent ? 'text-emerald-700' : 'text-amber-800'}
+											>{aggregateStatusLabels[aggregateStatus(row.closure)]}</span
+										></Table.Cell
+									></Table.Row
+								>
+							{/each}
+						</Table.Body></Table.Root
+					>
+					{#if filtered.length === 0}<p class="p-5 text-sm text-muted-foreground">
+							ไม่พบนักเรียนในรายการที่เลือก
+						</p>{/if}
+					{#if filtered.length > visibleCount}<div class="border-t p-3">
+							<Button variant="ghost" onclick={() => (visibleCount += 50)}>แสดงเพิ่ม 50 คน</Button>
+						</div>{/if}
+				</section>{/if}
 			<section class="space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-label="รายละเอียดผลสรุป">
-				{#if !student}<PageState
+				{#if !selected}<PageState
 						title="เลือกนักเรียนเพื่อตรวจผล"
 						description="รายการนี้รวมคนที่ยังไม่มีผลสรุปด้วย การเปิดดูยังไม่ล็อกผล"
 					/>
 				{:else}
 					<div class="flex items-start justify-between gap-3">
 						<div>
-							<h2 class="font-semibold">{student.studentName}</h2>
+							<h2 class="font-semibold">{student?.studentName ?? 'ผลสรุปของนักเรียนที่เลือก'}</h2>
 							<p class="mt-1 text-sm text-muted-foreground">
-								{student.gradeLevelName} · {student.studyProgramName}
+								{student
+									? `${student.gradeLevelName} · ${student.studyProgramName}`
+									: 'กำลังโหลดข้อมูลนักเรียน'}
 							</p>
 						</div>
-						<Button
-							size="sm"
-							variant="outline"
-							disabled={detailLoading || locking}
-							onclick={() => void inspect()}>คำนวณใหม่</Button
+						<Button size="sm" variant="outline" disabled={locking} onclick={() => void inspect()}
+							>คำนวณใหม่</Button
 						>
 					</div>
-					{#if detailLoading}<PageSkeleton variant="table" rows={3} columns={2} />
-					{:else if detailError}<PageState
+					{#if previewLoading && !previewLoaded}<PageSkeleton
+							variant="table"
+							rows={3}
+							columns={2}
+						/>
+					{:else if previewError && !previewLoaded}<PageState
 							variant="error"
 							title="ตรวจผลไม่สำเร็จ"
-							description={detailError}
+							description={previewError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={() => void loadPreview(selected)}
 						/>
 					{:else if preview}
+						{#if previewLoading}<RegionUpdatingState
+								class="static"
+								label="กำลังคำนวณผลสรุปล่าสุด..."
+							/>{/if}
+						{#if previewError}<div
+								role="alert"
+								class="flex items-center gap-2 text-sm text-destructive"
+							>
+								<span>{previewError}</span><Button
+									size="sm"
+									variant="outline"
+									onclick={() => void loadPreview(selected)}>ลองใหม่</Button
+								>
+							</div>{/if}
 						<div class="rounded-lg border bg-muted/30 p-3 text-sm">
 							<p>นโยบาย: {preview.policy.name}</p>
 							<p class="mt-1 text-muted-foreground">
@@ -459,8 +673,37 @@
 								>{/if}
 						</div>
 					{/if}
-					{#if !detailLoading && history.length}<div class="space-y-3 border-t pt-4">
+					{#if historyLoading && !historyLoaded}<PageSkeleton
+							variant="table"
+							rows={3}
+							columns={2}
+						/>
+					{:else if historyError && !historyLoaded}<PageState
+							variant="error"
+							title="โหลดประวัติผลสรุปไม่สำเร็จ"
+							description={historyError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={() => void loadHistory(selected)}
+						/>
+					{:else if historyLoaded}<div class="space-y-3 border-t pt-4" aria-busy={historyLoading}>
 							<h3 class="text-sm font-semibold">ประวัติผลสรุปที่ล็อกแล้ว</h3>
+							{#if historyLoading}<RegionUpdatingState
+									class="static"
+									label="กำลังอัปเดตประวัติผลสรุป..."
+								/>{/if}
+							{#if historyError}<div
+									role="alert"
+									class="flex items-center gap-2 text-sm text-destructive"
+								>
+									<span>{historyError}</span><Button
+										size="sm"
+										variant="outline"
+										onclick={() => void loadHistory(selected)}>ลองใหม่</Button
+									>
+								</div>{/if}
+							{#if history.length === 0}<p class="text-sm text-muted-foreground">
+									ยังไม่มีประวัติผลสรุปที่ล็อกแล้ว
+								</p>{/if}
 							{#each history as revision (revision.id)}<div class="rounded-lg border p-3 text-sm">
 									<div class="flex flex-wrap justify-between gap-2">
 										<span

@@ -432,24 +432,22 @@
 		{
 			"route": "staff/academic/results/aggregates",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-results",
-			"notes": "Component API reads include listAggregateStudents, listAggregatePolicies, listTermAggregateRevisions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Term roster and policy reads start independently after layout-owned current-user permissions settle. Explicit selected revision history starts separately; preview starts immediately for an explicit policy or after the policy list for a default policy. URL selection, per-region skeleton/error/retry, stale-policy fallback, and focused lock/policy mutation patches are verified. Unbounded year/term roster uses tap preload."
 		},
 		{
 			"route": "staff/academic/results/annual",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-results",
-			"notes": "Component API reads include listAnnualResultStudents, listAnnualResultRevisions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Year roster starts after layout-owned current-user permissions settle; explicit selected annual preview and history start independently without waiting for roster. URL selection, per-region skeleton/error/retry, retained refresh, and typed lock patch are verified. Unbounded year roster uses tap preload."
 		},
 		{
 			"route": "staff/academic/student-years",

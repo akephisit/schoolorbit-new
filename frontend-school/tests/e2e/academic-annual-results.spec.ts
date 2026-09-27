@@ -3,6 +3,7 @@ import type { components } from '../../src/lib/api/generated/school-api';
 type Schemas = components['schemas'];
 test.use({ serviceWorkers: 'block' });
 const year = '10000000-0000-4000-8000-000000000001';
+const nextYear = '10000000-0000-4000-8000-000000000002';
 const term = '20000000-0000-4000-8000-000000000001';
 const student = '30000000-0000-4000-8000-000000000001';
 const actor = '40000000-0000-4000-8000-000000000001';
@@ -304,6 +305,155 @@ test('annual reader sees missing sources without loading every student or showin
 	await expect(page.getByRole('button', { name: 'ยืนยันผลรายปี', exact: true })).toHaveCount(0);
 	expect(requests.details).toBe(1);
 	expect(requests.writes).toHaveLength(0);
+});
+
+test('direct annual learner preview renders before the independent roster resolves', async ({
+	page
+}) => {
+	const requests = await mock(page);
+	let releaseRoster = () => {};
+	const rosterGate = new Promise<void>((resolve) => {
+		releaseRoster = resolve;
+	});
+	await page.route('**/api/academic/results/annual-students', async (route) => {
+		await rosterGate;
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ success: true, data: [] })
+		});
+	});
+	await page.goto(`${url}&studentAcademicYearId=${student}`);
+	await expect(page.getByText('ผลรายภาคที่นับรวมในปีนี้')).toBeVisible();
+	expect(requests.details).toBe(1);
+	releaseRoster();
+});
+
+test('switching years ignores a late roster from the previous year', async ({ page }) => {
+	await mock(page);
+	let releaseOldRoster = () => {};
+	const oldRosterGate = new Promise<void>((resolve) => {
+		releaseOldRoster = resolve;
+	});
+	const respond = (route: Route, data: unknown) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ success: true, data })
+		});
+	await page.route('**/api/academic/context/options', (route) =>
+		respond(route, {
+			activeAcademicYearId: year,
+			activeAcademicTermId: term,
+			years: [
+				{
+					id: year,
+					year: 2569,
+					name: 'ปีการศึกษา 2569',
+					status: 'active',
+					startDate: '2026-05-01',
+					endDate: '2027-04-30'
+				},
+				{
+					id: nextYear,
+					year: 2570,
+					name: 'ปีการศึกษา 2570',
+					status: 'planning',
+					startDate: '2027-05-01',
+					endDate: '2028-04-30'
+				}
+			],
+			terms: []
+		} satisfies Schemas['AcademicContextOptions'])
+	);
+	let oldRequestStarted = () => {};
+	const oldRequest = new Promise<void>((resolve) => {
+		oldRequestStarted = resolve;
+	});
+	await page.route('**/api/academic/results/annual-students*', async (route) => {
+		const requestedYear = new URL(route.request().url()).searchParams.get('academicYearId');
+		if (requestedYear === year) {
+			oldRequestStarted();
+			await oldRosterGate;
+			return respond(route, [
+				{
+					studentAcademicYearId: student,
+					studentCode: 'OLD001',
+					studentName: 'นักเรียนปีเดิม',
+					gradeLevelName: 'มัธยมศึกษาปีที่ 1',
+					studyProgramName: 'ทั่วไป',
+					closure: {
+						studentAcademicYearId: student,
+						revisionId: null,
+						revision: null,
+						isCurrent: false,
+						holdReason: null
+					}
+				}
+			]);
+		}
+		expect(requestedYear).toBe(nextYear);
+		return respond(route, [
+			{
+				studentAcademicYearId: '30000000-0000-4000-8000-000000000002',
+				studentCode: 'NEW001',
+				studentName: 'นักเรียนปีใหม่',
+				gradeLevelName: 'มัธยมศึกษาปีที่ 2',
+				studyProgramName: 'ทั่วไป',
+				closure: {
+					studentAcademicYearId: '30000000-0000-4000-8000-000000000002',
+					revisionId: null,
+					revision: null,
+					isCurrent: false,
+					holdReason: null
+				}
+			}
+		]);
+	});
+	try {
+		await page.goto(url);
+		await oldRequest;
+		await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
+		await page.getByRole('option', { name: /ปีการศึกษา 2570/ }).click();
+		await expect(page).toHaveURL(new RegExp(`academicYearId=${nextYear}`));
+		await expect(page.getByRole('button', { name: 'นักเรียนปีใหม่' })).toBeVisible();
+	} finally {
+		releaseOldRoster();
+	}
+	await expect(page.getByRole('button', { name: 'นักเรียนปีเดิม' })).toHaveCount(0);
+});
+
+test('annual roster refresh retains visible data and recovers through a local retry', async ({
+	page
+}) => {
+	await mock(page);
+	await page.goto(url);
+	await expect(page.getByRole('button', { name: 'นักเรียน ทดสอบ' })).toBeVisible();
+	let attempts = 0;
+	let releaseRefresh = () => {};
+	const refreshGate = new Promise<void>((resolve) => {
+		releaseRefresh = resolve;
+	});
+	await page.route('**/api/academic/results/annual-students*', async (route) => {
+		attempts++;
+		if (attempts === 1) {
+			await refreshGate;
+			return route.fulfill({
+				status: 503,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: false, error: 'อ่านรายชื่อชั่วคราวไม่สำเร็จ' })
+			});
+		}
+		return route.fallback();
+	});
+	await page.getByRole('button', { name: 'ตรวจข้อมูลล่าสุด' }).click();
+	await expect(page.getByText('กำลังอัปเดตรายชื่อนักเรียน...')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'นักเรียน ทดสอบ' })).toBeVisible();
+	releaseRefresh();
+	await expect(page.getByText('อ่านรายชื่อชั่วคราวไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByRole('button', { name: 'นักเรียน ทดสอบ' })).toBeVisible();
+	expect(attempts).toBe(2);
 });
 
 test('annual manager explicitly confirms exact sources and preserves official zero', async ({
