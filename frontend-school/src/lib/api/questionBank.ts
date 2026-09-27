@@ -44,22 +44,33 @@ function questionBankQueryString(query: QuestionBankListQuery = {}) {
 }
 
 export async function listQuestionBankQuestions(
-	query: QuestionBankListQuery = {}
+	query: QuestionBankListQuery = {},
+	options: ApiRequestOptions = {}
 ): Promise<QuestionBankPage> {
 	const response = await apiClient.get<QuestionBankPage>(
-		`/api/academic/question-bank/questions${questionBankQueryString(query)}`
+		`/api/academic/question-bank/questions${questionBankQueryString(query)}`,
+		options
 	);
 	return requireApiData(response, 'โหลดคลังข้อสอบไม่สำเร็จ');
 }
 
-export async function getQuestionBankOptions(): Promise<QuestionBankOptions> {
-	const response = await apiClient.get<QuestionBankOptions>('/api/academic/question-bank/options');
+export async function getQuestionBankOptions(
+	options: ApiRequestOptions = {}
+): Promise<QuestionBankOptions> {
+	const response = await apiClient.get<QuestionBankOptions>(
+		'/api/academic/question-bank/options',
+		options
+	);
 	return requireApiData(response, 'โหลดตัวเลือกรายวิชาไม่สำเร็จ');
 }
 
-export async function getQuestionBankQuestion(id: QuestionId): Promise<QuestionDetail> {
+export async function getQuestionBankQuestion(
+	id: QuestionId,
+	options: ApiRequestOptions = {}
+): Promise<QuestionDetail> {
 	const response = await apiClient.get<QuestionDetail>(
-		`/api/academic/question-bank/questions/${encodeURIComponent(id)}`
+		`/api/academic/question-bank/questions/${encodeURIComponent(id)}`,
+		options
 	);
 	return requireApiData(response, 'โหลดข้อสอบไม่สำเร็จ');
 }

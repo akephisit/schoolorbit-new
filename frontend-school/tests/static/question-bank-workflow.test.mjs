@@ -17,6 +17,7 @@ test('question bank uses its own subject options and exact subject contract', as
 	const api = await readProjectFile('src/lib/api/questionBank.ts');
 	const generated = await readProjectFile('src/lib/api/generated/school-api.ts');
 	const page = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.svelte');
+	const loader = await readProjectFile('src/routes/(app)/staff/academic/question-bank/+page.ts');
 
 	assert.match(api, /export async function getQuestionBankOptions/);
 	assert.match(api, /\/api\/academic\/question-bank\/options/);
@@ -25,7 +26,7 @@ test('question bank uses its own subject options and exact subject contract', as
 	assert.match(api, /operations\['listQuestionBankQuestions'\]/);
 	assert.match(generated, /QuestionBankListQuery:[\s\S]*subjectId\?: string \| null/);
 	assert.doesNotMatch(api, /gradeLevelId/);
-	assert.match(page, /getQuestionBankOptions\(\)/);
+	assert.match(loader, /getQuestionBankOptions\(\{ requestFetch: fetch \}\)/);
 	assert.doesNotMatch(page, /getAcademicStructure|listSubjects|gradeLevelId|ปีการศึกษา/);
 	assert.match(page, /ข้อสอบจะผูกกับรายวิชาที่เลือกโดยตรง/);
 	assert.match(page, /return \['ก', 'ข', 'ค', 'ง'\]\.map/);
@@ -182,7 +183,7 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(api, /apiClient\.post<QuestionDetail\[\]>/);
 	const exportWorkflow = page.slice(
 		page.indexOf('function openWordExportDialog'),
-		page.indexOf('async function loadInitialData')
+		page.indexOf('$effect.pre(')
 	);
 	assert.doesNotMatch(exportWorkflow, /getQuestionBankQuestion/);
 	assert.doesNotMatch(exportWorkflow, /Promise\.all\(Array\.from/);

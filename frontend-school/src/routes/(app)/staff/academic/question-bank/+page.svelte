@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import type { PageProps } from './$types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import { browser } from '$app/environment';
@@ -24,9 +25,14 @@
 	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
 	import { deleteFile, uploadFile } from '$lib/api/files';
 	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		LoadingButton,
+		PageSkeleton,
+		PageState,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import QuestionContent from '$lib/components/question-bank/QuestionContent.svelte';
-	import QuestionContentEditor from '$lib/components/question-bank/QuestionContentEditor.svelte';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -66,7 +72,7 @@
 		Trash2
 	} from '@lucide/svelte';
 
-	let { data } = $props();
+	let { data }: PageProps = $props();
 
 	type QuestionTypeFilter = QuestionType | 'all';
 	type DifficultyFilter = QuestionDifficulty | 'all';
@@ -141,10 +147,22 @@
 	);
 
 	let choiceKey = 0;
-	let loading = $state(true);
-	let loadError = $state('');
-	let loadingQuestions = $state(false);
+	let optionsLoading = $state(true);
+	let optionsLoaded = $state(false);
+	let optionsError = $state('');
+	let loadingQuestions = $state(true);
+	let questionsLoaded = $state(false);
+	let questionsError = $state('');
 	let loadingDetail = $state(false);
+	let editorLoadError = $state('');
+	let QuestionContentEditor = $state<
+		typeof import('$lib/components/question-bank/QuestionContentEditor.svelte').default | null
+	>(null);
+	let editorImport: Promise<void> | null = null;
+	let optionsRevision = 0;
+	let questionsRevision = 0;
+	let appliedQueryKey = '';
+	let requestedPage = 1;
 	let saving = $state(false);
 	let deleting = $state(false);
 	let exportingWord = $state(false);
@@ -176,6 +194,9 @@
 	const selectedQuestionIds = new SvelteSet<string>();
 	const selectedQuestionSummaries = new SvelteMap<string, QuestionSummary>();
 	const wordExportRequest = new LatestRequest();
+	const optionsRequest = new LatestRequest();
+	const questionsRequest = new LatestRequest();
+	const detailRequest = new LatestRequest();
 
 	const creatableSubjects = $derived(subjects.filter((subject) => subject.canCreate));
 	const canCreateQuestion = $derived(hasManagePermission && creatableSubjects.length > 0);
@@ -194,11 +215,10 @@
 		questions.some((question) => selectedQuestionIds.has(question.id))
 	);
 
-	onMount(() => {
-		void loadInitialData();
-	});
-
 	onDestroy(() => {
+		optionsRequest.abort();
+		questionsRequest.abort();
+		detailRequest.abort();
 		wordExportRequest.abort();
 		hideMathVirtualKeyboard(false);
 		cleanupDraftObjectUrls(draft);
@@ -442,26 +462,55 @@
 		}
 	}
 
-	async function loadInitialData() {
-		if (!canReadQuestionBank) {
-			loading = false;
-			return;
-		}
-		loading = true;
-		loadError = '';
-		try {
-			const [optionsResponse, pageResponse] = await Promise.all([
-				getQuestionBankOptions(),
-				listQuestionBankQuestions({ page: 1, pageSize })
-			]);
-			subjects = optionsResponse.subjects;
-			applyPage(pageResponse);
-		} catch (error) {
-			loadError = error instanceof Error ? error.message : 'โหลดคลังข้อสอบไม่สำเร็จ';
-		} finally {
-			loading = false;
-		}
-	}
+	$effect.pre(() => {
+		const routeOptions = data.options;
+		const routePage = data.questionPage;
+		const initialOptionsRevision = optionsRevision;
+		const initialQuestionsRevision = questionsRevision;
+		let current = true;
+		untrack(() => {
+			optionsRequest.abort();
+			questionsRequest.abort();
+			detailRequest.abort();
+			subjects = [];
+			questions = [];
+			summary = { ...emptySummary };
+			optionsLoaded = false;
+			questionsLoaded = false;
+			optionsLoading = true;
+			loadingQuestions = true;
+			optionsError = '';
+			questionsError = '';
+			appliedQueryKey = '';
+			requestedPage = 1;
+		});
+		void routeOptions.then((result) => {
+			if (!current) return;
+			untrack(() => {
+				if (optionsRevision !== initialOptionsRevision) return;
+				if (result.ok) {
+					subjects = result.data.subjects;
+					optionsLoaded = true;
+				} else optionsError = result.error;
+				optionsLoading = false;
+			});
+		});
+		void routePage.then((result) => {
+			if (!current) return;
+			untrack(() => {
+				if (questionsRevision !== initialQuestionsRevision) return;
+				if (result.ok) {
+					applyPage(result.data);
+					questionsLoaded = true;
+					appliedQueryKey = queryKey(1);
+				} else questionsError = result.error;
+				loadingQuestions = false;
+			});
+		});
+		return () => {
+			current = false;
+		};
+	});
 
 	function applyPage(pageResponse: Awaited<ReturnType<typeof listQuestionBankQuestions>>) {
 		questions = pageResponse.items;
@@ -476,27 +525,86 @@
 		totalQuestions = pageResponse.total;
 	}
 
-	async function loadQuestions(page = 1) {
-		loadingQuestions = true;
-		loadError = '';
+	function questionQuery(page: number) {
+		return {
+			subjectId: selectedSubjectId,
+			questionType: selectedQuestionType,
+			difficulty: selectedDifficulty,
+			status: selectedStatus,
+			search,
+			tag,
+			page,
+			pageSize
+		};
+	}
+
+	function queryKey(page: number) {
+		return JSON.stringify(questionQuery(page));
+	}
+
+	async function loadOptions() {
+		const { revision, signal } = optionsRequest.begin();
+		optionsRevision += 1;
+		optionsLoading = true;
+		optionsError = '';
 		try {
-			const pageResponse = await listQuestionBankQuestions({
-				subjectId: selectedSubjectId,
-				questionType: selectedQuestionType,
-				difficulty: selectedDifficulty,
-				status: selectedStatus,
-				search,
-				tag,
-				page,
-				pageSize
-			});
-			applyPage(pageResponse);
+			const response = await getQuestionBankOptions({ signal });
+			if (optionsRequest.isCurrent(revision)) {
+				subjects = response.subjects;
+				optionsLoaded = true;
+			}
 		} catch (error) {
-			loadError = error instanceof Error ? error.message : 'โหลดคลังข้อสอบไม่สำเร็จ';
-			toast.error(loadError);
+			if (!isAbortError(error) && optionsRequest.isCurrent(revision))
+				optionsError = error instanceof Error ? error.message : 'โหลดตัวเลือกรายวิชาไม่สำเร็จ';
 		} finally {
-			loadingQuestions = false;
+			if (optionsRequest.isCurrent(revision)) optionsLoading = false;
 		}
+	}
+
+	async function loadQuestions(page = 1) {
+		const query = questionQuery(page);
+		const nextQueryKey = JSON.stringify(query);
+		const { revision, signal } = questionsRequest.begin();
+		questionsRevision += 1;
+		requestedPage = page;
+		loadingQuestions = true;
+		questionsError = '';
+		if (nextQueryKey !== appliedQueryKey) {
+			questionsLoaded = false;
+			questions = [];
+			summary = { ...emptySummary };
+		}
+		try {
+			const pageResponse = await listQuestionBankQuestions(query, { signal });
+			if (questionsRequest.isCurrent(revision)) {
+				applyPage(pageResponse);
+				questionsLoaded = true;
+				appliedQueryKey = nextQueryKey;
+			}
+		} catch (error) {
+			if (!isAbortError(error) && questionsRequest.isCurrent(revision))
+				questionsError = error instanceof Error ? error.message : 'โหลดคลังข้อสอบไม่สำเร็จ';
+		} finally {
+			if (questionsRequest.isCurrent(revision)) loadingQuestions = false;
+		}
+	}
+
+	async function ensureEditor() {
+		if (QuestionContentEditor) return;
+		if (editorImport) return editorImport;
+		editorLoadError = '';
+		editorImport = import('$lib/components/question-bank/QuestionContentEditor.svelte')
+			.then((module) => {
+				QuestionContentEditor = module.default;
+			})
+			.catch((error) => {
+				editorLoadError =
+					error instanceof Error ? error.message : 'โหลดเครื่องมือแก้ไขข้อสอบไม่สำเร็จ';
+			})
+			.finally(() => {
+				editorImport = null;
+			});
+		return editorImport;
 	}
 
 	function startCreate() {
@@ -507,34 +615,50 @@
 			return;
 		}
 		cleanupDraftObjectUrls(draft);
+		detailRequest.abort();
 		detail = null;
 		draft = newDraft(subject.id);
 		editorMode = 'create';
 		editorOpen = true;
+		void ensureEditor();
 	}
 
 	async function openQuestion(question: QuestionSummary, mode: 'view' | 'edit') {
 		if (mode === 'edit' && !question.canManage) return;
+		if (mode === 'edit') void ensureEditor();
+		if (mode === 'edit' && detail?.id === question.id) {
+			cleanupDraftObjectUrls(draft);
+			draft = draftFromDetail(detail);
+			editorMode = 'edit';
+			return;
+		}
+		const { revision, signal } = detailRequest.begin();
 		cleanupDraftObjectUrls(draft);
 		editorMode = mode;
 		detail = null;
 		editorOpen = true;
 		loadingDetail = true;
 		try {
-			const response = await getQuestionBankQuestion(question.id);
-			detail = response;
-			if (mode === 'edit') draft = draftFromDetail(response);
+			const response = await getQuestionBankQuestion(question.id, { signal });
+			if (detailRequest.isCurrent(revision)) {
+				detail = response;
+				if (mode === 'edit') draft = draftFromDetail(response);
+			}
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'โหลดข้อสอบไม่สำเร็จ');
-			editorOpen = false;
+			if (!isAbortError(error) && detailRequest.isCurrent(revision)) {
+				toast.error(error instanceof Error ? error.message : 'โหลดข้อสอบไม่สำเร็จ');
+				editorOpen = false;
+			}
 		} finally {
-			loadingDetail = false;
+			if (detailRequest.isCurrent(revision)) loadingDetail = false;
 		}
 	}
 
 	function handleDialogOpenChange(open: boolean) {
 		editorOpen = open;
 		if (!open) {
+			detailRequest.abort();
+			loadingDetail = false;
 			hideMathVirtualKeyboard();
 			cleanupDraftObjectUrls(draft);
 			detail = null;
@@ -735,11 +859,11 @@
 			}
 			const payload = buildPayload(uploadedFileIds);
 			saveRequestStarted = true;
-			if (draft.id) {
-				await updateQuestionBankQuestion(draft.id, payload);
-			} else {
-				await createQuestionBankQuestion(payload);
-			}
+			const saved = draft.id
+				? await updateQuestionBankQuestion(draft.id, payload)
+				: await createQuestionBankQuestion(payload);
+			if (selectedQuestionIds.has(saved.id)) selectedQuestionSummaries.set(saved.id, saved);
+			questions = questions.map((question) => (question.id === saved.id ? saved : question));
 
 			cleanupDraftObjectUrls(draft);
 			editorOpen = false;
@@ -771,14 +895,24 @@
 		if (!deleteTarget?.canManage) return;
 		deleting = true;
 		try {
+			const deletedWasOnlyRow = questions.length === 1;
 			await deleteQuestionBankQuestion(deleteTarget.id);
+			const deleted = deleteTarget;
+			if (questions.some((question) => question.id === deleted.id)) {
+				questions = questions.filter((question) => question.id !== deleted.id);
+				totalQuestions = Math.max(0, totalQuestions - 1);
+				summary = {
+					total: Math.max(0, summary.total - 1),
+					choice: Math.max(0, summary.choice - (deleted.questionType.includes('choice') ? 1 : 0)),
+					written: Math.max(0, summary.written - (deleted.questionType.includes('choice') ? 0 : 1)),
+					ready: Math.max(0, summary.ready - (deleted.status === 'ready' ? 1 : 0))
+				};
+			}
 			selectedQuestionIds.delete(deleteTarget.id);
 			selectedQuestionSummaries.delete(deleteTarget.id);
 			deleteDialogOpen = false;
 			deleteTarget = null;
-			await loadQuestions(
-				questions.length === 1 && currentPage > 1 ? currentPage - 1 : currentPage
-			);
+			await loadQuestions(deletedWasOnlyRow && currentPage > 1 ? currentPage - 1 : currentPage);
 			toast.success('ลบข้อสอบแล้ว');
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ลบข้อสอบไม่สำเร็จ');
@@ -824,31 +958,36 @@
 		</div>
 	{/snippet}
 
-	{#if loading}
-		<PageSkeleton />
-	{:else if !canReadQuestionBank}
+	{#if !canReadQuestionBank}
 		<PageState
 			variant="permission"
 			title="ไม่มีสิทธิ์เข้าคลังข้อสอบ"
 			description="ติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์คลังข้อสอบ"
 		/>
-	{:else if loadError && questions.length === 0}
-		<PageState
-			variant="error"
-			title="โหลดคลังข้อสอบไม่สำเร็จ"
-			description={loadError}
-			actionLabel="ลองอีกครั้ง"
-			onaction={loadInitialData}
-		/>
 	{:else}
-		<section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-			{#each [['ทั้งหมด', summary.total], ['ตัวเลือก', summary.choice], ['เขียนตอบ', summary.written], ['พร้อมใช้', summary.ready]] as item (item[0])}
-				<div class="rounded-lg border bg-card p-4">
-					<p class="text-sm text-muted-foreground">{item[0]}</p>
-					<p class="mt-1 text-2xl font-semibold">{item[1]}</p>
-				</div>
-			{/each}
-		</section>
+		{#if loadingQuestions && !questionsLoaded}
+			<div
+				data-testid="question-bank-summary-loading"
+				class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+				role="status"
+				aria-label="กำลังโหลดสรุปคลังข้อสอบ"
+			>
+				{#each Array.from({ length: 4 }) as _, index (index)}
+					<div class="space-y-3 rounded-lg border bg-card p-4">
+						<Skeleton class="h-4 w-20" /><Skeleton class="h-8 w-16" />
+					</div>
+				{/each}
+			</div>
+		{:else if questionsLoaded}
+			<section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+				{#each [['ทั้งหมด', summary.total], ['ตัวเลือก', summary.choice], ['เขียนตอบ', summary.written], ['พร้อมใช้', summary.ready]] as item (item[0])}
+					<div class="rounded-lg border bg-card p-4">
+						<p class="text-sm text-muted-foreground">{item[0]}</p>
+						<p class="mt-1 text-2xl font-semibold">{item[1]}</p>
+					</div>
+				{/each}
+			</section>
+		{/if}
 
 		<section class="space-y-4">
 			<div class="rounded-xl border bg-card p-3 sm:p-4">
@@ -868,21 +1007,45 @@
 					</div>
 					<div>
 						<Label>รายวิชา</Label>
-						<Select.Root type="single" bind:value={selectedSubjectId}>
-							<Select.Trigger class="mt-1 w-full">
-								{subjects.find((subject) => subject.id === selectedSubjectId)
-									? subjectOptionLabel(
-											subjects.find((subject) => subject.id === selectedSubjectId)!
-										)
-									: 'ทุกวิชา'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="">ทุกวิชา</Select.Item>
-								{#each subjects as subject (subject.id)}
-									<Select.Item value={subject.id}>{subjectOptionLabel(subject)}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+						{#if optionsLoading && !optionsLoaded}
+							<div
+								data-testid="question-bank-options-loading"
+								role="status"
+								aria-label="กำลังโหลดรายวิชา"
+							>
+								<Skeleton class="mt-1 h-10 w-full" />
+							</div>
+						{:else if optionsError && !optionsLoaded}
+							<div class="mt-1 space-y-1 text-sm text-destructive" role="alert">
+								<p>{optionsError}</p>
+								<Button variant="outline" size="sm" onclick={loadOptions}
+									>ลองโหลดรายวิชาอีกครั้ง</Button
+								>
+							</div>
+						{:else}
+							<div class="relative" aria-busy={optionsLoading}>
+								{#if optionsLoading}<RegionUpdatingState label="กำลังอัปเดตรายวิชา" />{/if}
+								<Select.Root type="single" bind:value={selectedSubjectId}>
+									<Select.Trigger class="mt-1 w-full">
+										{subjects.find((subject) => subject.id === selectedSubjectId)
+											? subjectOptionLabel(
+													subjects.find((subject) => subject.id === selectedSubjectId)!
+												)
+											: 'ทุกวิชา'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="">ทุกวิชา</Select.Item>
+										{#each subjects as subject (subject.id)}
+											<Select.Item value={subject.id}>{subjectOptionLabel(subject)}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							{#if optionsError}<p class="mt-1 text-xs text-destructive" role="alert">
+									{optionsError}
+									<Button variant="link" size="sm" onclick={loadOptions}>ลองอีกครั้ง</Button>
+								</p>{/if}
+						{/if}
 					</div>
 					<div>
 						<Label>ประเภท</Label>
@@ -948,128 +1111,157 @@
 				</div>
 			</div>
 
-			{#if loadError}
+			{#if loadingQuestions && !questionsLoaded}
+				<div
+					data-testid="question-bank-list-loading"
+					role="status"
+					aria-label="กำลังโหลดรายการข้อสอบ"
+				>
+					<PageSkeleton />
+				</div>
+			{:else if questionsError && !questionsLoaded}
 				<PageState
 					variant="error"
-					title="โหลดรายการล่าสุดไม่สำเร็จ"
-					description={loadError}
+					title="โหลดรายการข้อสอบไม่สำเร็จ"
+					description={questionsError}
 					actionLabel="ลองอีกครั้ง"
-					onaction={() => loadQuestions(currentPage)}
-				/>
-			{/if}
-
-			{#if questions.length === 0}
-				<PageState
-					title="ยังไม่พบข้อสอบ"
-					description="เพิ่มข้อสอบใหม่ หรือเปลี่ยนตัวกรองเพื่อค้นหา"
-					actionLabel={canCreateQuestion ? 'เพิ่มข้อสอบ' : undefined}
-					onaction={canCreateQuestion ? startCreate : undefined}
+					onaction={() => loadQuestions(requestedPage)}
 				/>
 			{:else}
-				<div class="overflow-hidden rounded-lg border bg-card">
-					<div
-						class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3"
-					>
-						<label class="flex cursor-pointer items-center gap-2 text-sm">
-							<Checkbox
-								checked={allVisibleQuestionsSelected}
-								indeterminate={someVisibleQuestionsSelected && !allVisibleQuestionsSelected}
-								onCheckedChange={(checked) => toggleVisibleQuestionSelection(checked === true)}
-							/>
-							<span>เลือกทั้งหมดในหน้านี้</span>
-						</label>
-						{#if selectedQuestionCount}
-							<div class="flex items-center gap-2 text-sm">
-								<span class="text-muted-foreground">เลือกแล้ว {selectedQuestionCount} ข้อ</span>
-								<Button variant="ghost" size="sm" onclick={clearQuestionSelection}
-									>ล้างที่เลือก</Button
+				<div class="relative" aria-busy={loadingQuestions}>
+					{#if loadingQuestions}<RegionUpdatingState label="กำลังอัปเดตรายการข้อสอบ" />{/if}
+					{#if questionsError}
+						<div
+							class="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 p-3 text-sm text-destructive"
+							role="alert"
+						>
+							<span>{questionsError}</span><Button
+								variant="outline"
+								size="sm"
+								onclick={() => loadQuestions(requestedPage)}>ลองอีกครั้ง</Button
+							>
+						</div>
+					{/if}
+					{#if questions.length === 0}
+						<PageState
+							title="ยังไม่พบข้อสอบ"
+							description="เพิ่มข้อสอบใหม่ หรือเปลี่ยนตัวกรองเพื่อค้นหา"
+							actionLabel={canCreateQuestion ? 'เพิ่มข้อสอบ' : undefined}
+							onaction={canCreateQuestion ? startCreate : undefined}
+						/>
+					{:else}
+						<div class="overflow-hidden rounded-lg border bg-card">
+							<div
+								class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-3"
+							>
+								<label class="flex cursor-pointer items-center gap-2 text-sm">
+									<Checkbox
+										checked={allVisibleQuestionsSelected}
+										indeterminate={someVisibleQuestionsSelected && !allVisibleQuestionsSelected}
+										onCheckedChange={(checked) => toggleVisibleQuestionSelection(checked === true)}
+									/>
+									<span>เลือกทั้งหมดในหน้านี้</span>
+								</label>
+								{#if selectedQuestionCount}
+									<div class="flex items-center gap-2 text-sm">
+										<span class="text-muted-foreground">เลือกแล้ว {selectedQuestionCount} ข้อ</span>
+										<Button variant="ghost" size="sm" onclick={clearQuestionSelection}
+											>ล้างที่เลือก</Button
+										>
+									</div>
+								{/if}
+							</div>
+							{#each questions as question, questionIndex (question.id)}
+								<article class="border-b p-4 last:border-b-0">
+									<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+										<div class="flex min-w-0 gap-3">
+											<Checkbox
+												class="mt-1"
+												aria-label={`เลือกข้อสอบลำดับ ${questionIndex + 1}`}
+												checked={selectedQuestionIds.has(question.id)}
+												onCheckedChange={(checked) =>
+													toggleQuestionSelection(question, checked === true)}
+											/>
+											<div class="min-w-0 space-y-2">
+												<div class="flex flex-wrap items-center gap-2">
+													<Badge variant={statusVariant(question.status)}
+														>{statusLabel(question.status)}</Badge
+													>
+													<Badge variant="outline">{typeLabel(question.questionType)}</Badge>
+													<Badge variant="secondary">{difficultyLabel(question.difficulty)}</Badge>
+													{#if contentHasImage(question.stemContent)}
+														<Badge variant="outline"><ImageIcon class="h-3 w-3" /> รูป</Badge>
+													{/if}
+													{#if contentHasMath(question.stemContent)}
+														<Badge variant="outline"><Sigma class="h-3 w-3" /> สูตร</Badge>
+													{/if}
+												</div>
+												<div class="text-base font-medium">
+													<QuestionContent content={question.stemContent} compact />
+												</div>
+												<div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+													<span>{subjectLabel(question)}</span>
+													<span>{question.points} คะแนน</span>
+													{#if question.choiceCount}<span>{question.choiceCount} ตัวเลือก</span
+														>{/if}
+												</div>
+												{#if question.tags.length}
+													<div class="flex flex-wrap gap-1">
+														{#each question.tags as item (item)}<Badge variant="outline"
+																>{item}</Badge
+															>{/each}
+													</div>
+												{/if}
+											</div>
+										</div>
+										<div class="flex shrink-0 gap-2">
+											<Button
+												variant="outline"
+												size="sm"
+												onclick={() => openQuestion(question, 'view')}
+											>
+												<Eye class="h-4 w-4" /> ดู
+											</Button>
+											{#if question.canManage}
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => openQuestion(question, 'edit')}
+												>
+													<Edit3 class="h-4 w-4" /> แก้ไข
+												</Button>
+												<Button
+													variant="destructive"
+													size="sm"
+													onclick={() => requestDelete(question)}
+												>
+													<Trash2 class="h-4 w-4" /> ลบ
+												</Button>
+											{/if}
+										</div>
+									</div>
+								</article>
+							{/each}
+						</div>
+
+						<div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
+							<p class="text-sm text-muted-foreground">
+								ทั้งหมด {totalQuestions} ข้อ · หน้า {currentPage} จาก {totalPages}
+							</p>
+							<div class="flex gap-2">
+								<Button
+									variant="outline"
+									disabled={currentPage <= 1 || loadingQuestions}
+									onclick={() => loadQuestions(currentPage - 1)}>ก่อนหน้า</Button
+								>
+								<Button
+									variant="outline"
+									disabled={currentPage >= totalPages || loadingQuestions}
+									onclick={() => loadQuestions(currentPage + 1)}>ถัดไป</Button
 								>
 							</div>
-						{/if}
-					</div>
-					{#each questions as question, questionIndex (question.id)}
-						<article class="border-b p-4 last:border-b-0">
-							<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-								<div class="flex min-w-0 gap-3">
-									<Checkbox
-										class="mt-1"
-										aria-label={`เลือกข้อสอบลำดับ ${questionIndex + 1}`}
-										checked={selectedQuestionIds.has(question.id)}
-										onCheckedChange={(checked) =>
-											toggleQuestionSelection(question, checked === true)}
-									/>
-									<div class="min-w-0 space-y-2">
-										<div class="flex flex-wrap items-center gap-2">
-											<Badge variant={statusVariant(question.status)}
-												>{statusLabel(question.status)}</Badge
-											>
-											<Badge variant="outline">{typeLabel(question.questionType)}</Badge>
-											<Badge variant="secondary">{difficultyLabel(question.difficulty)}</Badge>
-											{#if contentHasImage(question.stemContent)}
-												<Badge variant="outline"><ImageIcon class="h-3 w-3" /> รูป</Badge>
-											{/if}
-											{#if contentHasMath(question.stemContent)}
-												<Badge variant="outline"><Sigma class="h-3 w-3" /> สูตร</Badge>
-											{/if}
-										</div>
-										<div class="text-base font-medium">
-											<QuestionContent content={question.stemContent} compact />
-										</div>
-										<div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-											<span>{subjectLabel(question)}</span>
-											<span>{question.points} คะแนน</span>
-											{#if question.choiceCount}<span>{question.choiceCount} ตัวเลือก</span>{/if}
-										</div>
-										{#if question.tags.length}
-											<div class="flex flex-wrap gap-1">
-												{#each question.tags as item (item)}<Badge variant="outline">{item}</Badge
-													>{/each}
-											</div>
-										{/if}
-									</div>
-								</div>
-								<div class="flex shrink-0 gap-2">
-									<Button
-										variant="outline"
-										size="sm"
-										onclick={() => openQuestion(question, 'view')}
-									>
-										<Eye class="h-4 w-4" /> ดู
-									</Button>
-									{#if question.canManage}
-										<Button
-											variant="outline"
-											size="sm"
-											onclick={() => openQuestion(question, 'edit')}
-										>
-											<Edit3 class="h-4 w-4" /> แก้ไข
-										</Button>
-										<Button variant="destructive" size="sm" onclick={() => requestDelete(question)}>
-											<Trash2 class="h-4 w-4" /> ลบ
-										</Button>
-									{/if}
-								</div>
-							</div>
-						</article>
-					{/each}
-				</div>
-
-				<div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
-					<p class="text-sm text-muted-foreground">
-						ทั้งหมด {totalQuestions} ข้อ · หน้า {currentPage} จาก {totalPages}
-					</p>
-					<div class="flex gap-2">
-						<Button
-							variant="outline"
-							disabled={currentPage <= 1 || loadingQuestions}
-							onclick={() => loadQuestions(currentPage - 1)}>ก่อนหน้า</Button
-						>
-						<Button
-							variant="outline"
-							disabled={currentPage >= totalPages || loadingQuestions}
-							onclick={() => loadQuestions(currentPage + 1)}>ถัดไป</Button
-						>
-					</div>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</section>
@@ -1166,7 +1358,26 @@
 					</Dialog.Footer>
 				{/if}
 			</div>
-		{:else if editorMode !== 'view'}
+		{:else if editorMode !== 'view' && !QuestionContentEditor}
+			{#if editorLoadError}
+				<PageState
+					variant="error"
+					title="โหลดเครื่องมือแก้ไขข้อสอบไม่สำเร็จ"
+					description={editorLoadError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={ensureEditor}
+				/>
+			{:else}
+				<div
+					data-testid="question-bank-editor-loading"
+					role="status"
+					aria-label="กำลังโหลดเครื่องมือแก้ไขข้อสอบ"
+					class="min-h-64 flex-1 overflow-y-auto"
+				>
+					<PageSkeleton variant="form" rows={4} />
+				</div>
+			{/if}
+		{:else if editorMode !== 'view' && QuestionContentEditor}
 			<div class="min-h-0 flex-1 space-y-5 overflow-y-auto">
 				<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
 					<div class="md:col-span-2 lg:col-span-3">

@@ -393,13 +393,12 @@
 		{
 			"route": "staff/academic/question-bank",
 			"wave": "teaching",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-question-bank",
-			"notes": "Component API reads include getQuestionBankOptions, getQuestionBankQuestion, listQuestionBankQuestions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route streams independent bounded 20-question list/summary and subject options. Subject and list failures retry independently; list search/page uses latest-request cancellation, detail and editor are action-lazy, and export remains action-lazy. Tap preload avoids expensive incidental hover reads."
 		},
 		{
 			"route": "staff/academic/result-corrections",

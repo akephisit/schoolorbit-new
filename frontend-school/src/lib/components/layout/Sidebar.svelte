@@ -152,7 +152,8 @@
 		if (path === '/staff/academic/exam-schedules' || path === '/staff/exams') return 'off';
 		return path === '/staff/academic/timetable' ||
 			path === '/staff/academic/timetable/today' ||
-			path === '/staff/academic/assessments'
+			path === '/staff/academic/assessments' ||
+			path === '/staff/academic/question-bank'
 			? 'tap'
 			: 'hover';
 	}

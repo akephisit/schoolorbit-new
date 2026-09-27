@@ -1,3 +1,6 @@
+import type { PageLoad } from './$types';
+import { getQuestionBankOptions, listQuestionBankQuestions } from '$lib/api/questionBank';
+import { captureRouteLoad } from '$lib/navigation/route-load';
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
@@ -13,8 +16,16 @@ export const _meta = {
 	}
 };
 
-export const load = async () => {
+export const load: PageLoad = ({ fetch }) => {
 	return {
-		title: _meta.menu.title
+		title: _meta.menu.title,
+		options: captureRouteLoad(
+			getQuestionBankOptions({ requestFetch: fetch }),
+			'โหลดตัวเลือกรายวิชาไม่สำเร็จ'
+		),
+		questionPage: captureRouteLoad(
+			listQuestionBankQuestions({ page: 1, pageSize: 20 }, { requestFetch: fetch }),
+			'โหลดคลังข้อสอบไม่สำเร็จ'
+		)
 	};
 };
