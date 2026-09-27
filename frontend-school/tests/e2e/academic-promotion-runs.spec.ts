@@ -544,6 +544,61 @@ test('promotion reader sees source and destination ledger without mutation contr
 	});
 });
 
+test('promotion workspace is usable before display references finish and retries them locally', async ({
+	page
+}) => {
+	await mock(page, 'reader');
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route('**/api/academic/lifecycle/promotion-policies/options', async (route) => {
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return reply(route, 'ข้อมูลชื่อชั้นชั่วคราวไม่พร้อม', 503);
+		}
+		return route.fallback();
+	});
+	await page.goto(pageUrl);
+	await expect(page.getByText('นักเรียน ทดสอบ', { exact: true })).toBeVisible();
+	await expect(page.getByText('กำลังโหลดชื่อชั้นและแผน...')).toBeVisible();
+	release();
+	await expect(page.getByText('ข้อมูลชื่อชั้นชั่วคราวไม่พร้อม')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('ม.1')).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
+test('promotion detail shows a first skeleton and retries only its failed workspace', async ({
+	page
+}) => {
+	await mock(page, 'reader');
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route(`**${root}/${id(3)}`, async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return reply(route, 'ข้อมูลรอบชั่วคราวไม่พร้อม', 503);
+		}
+		return route.fallback();
+	});
+	await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
+	await expect(page.getByRole('heading', { name: 'ตรวจรอบเลื่อนชั้น', exact: true })).toBeVisible();
+	await expect(page.getByText('นักเรียน ทดสอบ', { exact: true })).toHaveCount(0);
+	release();
+	await expect(page.getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('นักเรียน ทดสอบ', { exact: true })).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
 test('manager reviews a recommendation explicitly without approving or executing', async ({
 	page
 }) => {

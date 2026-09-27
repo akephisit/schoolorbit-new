@@ -1,11 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import { resolve } from '$app/paths';
 	import { RefreshCw, ArrowRight } from '@lucide/svelte';
 	import { PageShell } from '$lib/components/app-layout';
 	import PromotionImpactsDialog from './PromotionImpactsDialog.svelte';
-	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';
+	import {
+		PageState,
+		PageSkeleton,
+		LoadingButton,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -18,6 +23,7 @@
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
+	import type { RouteLoadResult } from '$lib/navigation/route-load';
 	import {
 		getPromotionRun,
 		getPromotionPolicyOptions,
@@ -45,12 +51,23 @@
 		type DecisionDraft
 	} from '$lib/academic/lifecycle/promotion-presentation';
 
-	let { runId }: { runId: string } = $props();
+	let {
+		runId,
+		workspaceLoad,
+		optionsLoad
+	}: {
+		runId: string;
+		workspaceLoad: Promise<RouteLoadResult<PromotionRunWorkspace | null>>;
+		optionsLoad: Promise<RouteLoadResult<PromotionPolicyOptions | null>>;
+	} = $props();
 	const requests = new LatestRequest();
+	const referenceRequest = new LatestRequest();
 	let workspace = $state.raw<PromotionRunWorkspace | null>(null);
 	let options = $state.raw<PromotionPolicyOptions | null>(null);
 	let rooms = $state.raw<HomeroomLookupItem[]>([]);
 	let loading = $state(false);
+	let optionsLoading = $state(false);
+	let optionsError = $state('');
 	let error = $state('');
 	let busy = $state<'calculate' | 'approve' | 'execute' | null>(null);
 	let confirmation = $state<'calculate' | 'approve' | 'execute' | null>(null);
@@ -73,7 +90,6 @@
 	let stopRequested = $state(false);
 	let progress = $state('');
 	let alive = true;
-	let loaded = false;
 	let calculateInput: PromotionRunCalculateInput | null = null;
 	let approveInput: PromotionRunApproveInput | null = null;
 	let executeInput: PromotionRunExecuteInput | null = null;
@@ -100,6 +116,7 @@
 		!!selected &&
 			manage &&
 			!!workspace &&
+			!!options &&
 			!['draft', 'executing', 'completed'].includes(workspace.run.status) &&
 			selected.item.status !== 'executed' &&
 			!selected.needsRecalculation &&
@@ -130,14 +147,25 @@
 			const result = await getPromotionRun(runId, { signal });
 			if (!alive || !requests.isCurrent(revision)) return;
 			workspace = result;
-			if (!options) {
-				const references = await getPromotionPolicyOptions({ signal });
-				if (alive && requests.isCurrent(revision)) options = references;
-			}
 		} catch (cause) {
 			if (alive && requests.isCurrent(revision) && !isAbortError(cause)) error = message(cause);
 		} finally {
 			if (alive && requests.isCurrent(revision)) loading = false;
+		}
+	}
+	async function loadOptions() {
+		if (!read) return;
+		const { revision, signal } = referenceRequest.begin();
+		optionsLoading = true;
+		optionsError = '';
+		try {
+			const references = await getPromotionPolicyOptions({ signal });
+			if (alive && referenceRequest.isCurrent(revision)) options = references;
+		} catch (cause) {
+			if (alive && referenceRequest.isCurrent(revision) && !isAbortError(cause))
+				optionsError = message(cause);
+		} finally {
+			if (alive && referenceRequest.isCurrent(revision)) optionsLoading = false;
 		}
 	}
 	async function loadRooms() {
@@ -296,12 +324,6 @@
 		}
 	}
 	onMount(() => {
-		const unsubscribe = can.subscribe((value) => {
-			if (!loaded && value.has(PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL)) {
-				loaded = true;
-				void refresh();
-			}
-		});
 		const unregister = registerAcademicContextDirtySource(
 			`promotion-${runId}`,
 			() => !!selected || !!busy || saving
@@ -310,8 +332,44 @@
 			alive = false;
 			roomRevision++;
 			requests.abort();
-			unsubscribe();
+			referenceRequest.abort();
 			unregister();
+		};
+	});
+	$effect.pre(() => {
+		const routeWorkspace = workspaceLoad;
+		const routeOptions = optionsLoad;
+		const workspaceRevision = requests.begin().revision;
+		const optionsRevision = referenceRequest.begin().revision;
+		untrack(() => {
+			workspace = null;
+			options = null;
+			loading = true;
+			optionsLoading = true;
+			error = '';
+			optionsError = '';
+			selected = null;
+			confirmation = null;
+		});
+		void routeWorkspace.then((result) => {
+			if (!requests.isCurrent(workspaceRevision)) return;
+			untrack(() => {
+				if (result.ok) workspace = result.data;
+				else error = result.error;
+				loading = false;
+			});
+		});
+		void routeOptions.then((result) => {
+			if (!referenceRequest.isCurrent(optionsRevision)) return;
+			untrack(() => {
+				if (result.ok) options = result.data;
+				else optionsError = result.error;
+				optionsLoading = false;
+			});
+		});
+		return () => {
+			requests.abort();
+			referenceRequest.abort();
 		};
 	});
 </script>
@@ -331,13 +389,33 @@
 	{/snippet}
 	{#if !read}<PageState variant="permission" title="ไม่มีสิทธิ์ดูรอบเลื่อนชั้น" />
 	{:else}
-		{#if error}<div
+		{#if optionsLoading && !options}<p role="status" class="text-sm text-muted-foreground">
+				กำลังโหลดชื่อชั้นและแผน...
+			</p>
+			<PageSkeleton variant="form" rows={1} />{/if}
+		{#if optionsError}<div role="alert" class="flex items-center gap-2 text-sm text-destructive">
+				<span>{optionsError}</span><Button size="sm" variant="outline" onclick={loadOptions}
+					>ลองใหม่</Button
+				>
+			</div>{/if}
+		{#if loading && workspace}<RegionUpdatingState
+				class="static"
+				label="กำลังอัปเดตข้อมูลรอบ..."
+			/>{/if}
+		{#if error && workspace}<div
 				role="alert"
 				class="whitespace-pre-line rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
 			>
 				{error}
 			</div>{/if}
 		{#if loading && !workspace}<PageSkeleton variant="table" rows={5} columns={5} />
+		{:else if error && !workspace}<PageState
+				variant="error"
+				title="โหลดข้อมูลรอบไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองใหม่"
+				onaction={refresh}
+			/>
 		{:else if workspace}
 			<div
 				class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4"

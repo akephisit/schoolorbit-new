@@ -269,7 +269,7 @@
 										size="sm"
 										variant="ghost"
 										href={resolve(`/staff/academic/promotion/${run.id}`)}
-										>เปิดรอบ<ArrowRight class="size-4" /></Button
+										data-sveltekit-preload-data="tap">เปิดรอบ<ArrowRight class="size-4" /></Button
 									></Table.Cell
 								>
 							</Table.Row>{/each}</Table.Body

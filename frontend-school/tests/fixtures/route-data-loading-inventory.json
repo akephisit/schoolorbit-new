@@ -370,12 +370,12 @@
 		{
 			"route": "staff/academic/promotion/[id]",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Visible reads start in PromotionRunDetail; move primary data to the owning route loader."
+			"notes": "Selected run workspace and display references start independently after layout permission resolution. Workspace skeleton/error/retry, delayed sibling, retained refresh, and exact mutation/idempotency flows are browser verified. Homeroom search, correction impacts, and command reads remain action-lazy; large workspace link uses tap preload."
 		},
 		{
 			"route": "staff/academic/promotion/policies",
