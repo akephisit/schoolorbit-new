@@ -98,3 +98,30 @@ test('correction UI keeps initial and current values visible and appends a new c
 	assert.match(dialog, /correctEffectiveAcademicResult|oncorrect/);
 	assert.doesNotMatch(dialog, /แก้ไขประวัติ|ลบประวัติ/);
 });
+
+test('result preparation route owns independent visible regions and keeps inactive sections lazy', async () => {
+	const [route, page] = await Promise.all([
+		read('src/routes/(app)/staff/academic/results/+page.ts'),
+		read('src/routes/(app)/staff/academic/results/+page.svelte')
+	]);
+	assert.match(route, /captureRouteLoad/);
+	assert.match(route, /requestFetch: fetch/);
+	assert.match(route, /getAcademicResultReadiness/);
+	assert.match(route, /listAcademicGradingPolicies/);
+	assert.match(route, /listLearnerEvaluationSubjects/);
+	assert.match(page, /data\.overview/);
+	assert.match(page, /data\.policy/);
+	assert.doesNotMatch(page, /onMount\(/);
+});
+
+test('confirmation retains the selected workspace and retries readiness alone', async () => {
+	const page = await read('src/routes/(app)/staff/academic/results/+page.svelte');
+	const confirmation = page.slice(
+		page.indexOf('async function confirmCourse'),
+		page.indexOf('async function changeStudent')
+	);
+	assert.match(confirmation, /refreshReadiness\(/);
+	assert.doesNotMatch(confirmation, /loadOverview\(/);
+	assert.match(page, /readinessError/);
+	assert.match(page, /aria-busy=\{readinessUpdating\}/);
+});

@@ -140,6 +140,7 @@ async function mockGradebook(
 	closedTerm = false
 ) {
 	const controlRequests: string[] = [];
+	const subjectRequests: string[] = [];
 	const scoreBodies: unknown[] = [];
 	const scorePaths: string[] = [];
 	const workspacePaths: string[] = [];
@@ -187,10 +188,12 @@ async function mockGradebook(
 				return;
 			}
 			if (url.pathname === '/api/academic/gradebook/subjects') {
+				subjectRequests.push(url.pathname);
 				await fulfill(route, [subject()]);
 				return;
 			}
 			if (url.pathname === '/api/academic/learner-evaluations/subjects') {
+				subjectRequests.push(url.pathname);
 				await fulfill(route, []);
 				return;
 			}
@@ -290,7 +293,7 @@ async function mockGradebook(
 			await fulfill(route, {});
 		}
 	);
-	return { controlRequests, scoreBodies, scorePaths, workspacePaths, itemPaths };
+	return { controlRequests, subjectRequests, scoreBodies, scorePaths, workspacePaths, itemPaths };
 }
 
 function gradebookUrl() {
@@ -452,6 +455,54 @@ test('read-only teacher never requests manager controls', async ({ page }) => {
 	expect(observed.controlRequests).toEqual([]);
 });
 
+test('initial score route loads only the visible tab and manager controls stay lazy', async ({
+	page
+}) => {
+	const observed = await mockGradebook(page, true);
+	await page.goto(gradebookUrl());
+	await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
+	expect(observed.subjectRequests).toEqual(['/api/academic/gradebook/subjects']);
+	expect(observed.controlRequests).toEqual([]);
+	await page.getByRole('button', { name: 'ตั้งค่าการกรอก' }).click();
+	await expect.poll(() => observed.controlRequests.length).toBe(1);
+});
+
+test('pending initial subjects show a skeleton rather than a false prerequisite', async ({
+	page
+}) => {
+	await mockGradebook(page, true);
+	let releaseSubjects!: () => void;
+	const subjectsGate = new Promise<void>((resolve) => (releaseSubjects = resolve));
+	await page.route(
+		(url) => url.pathname === '/api/academic/gradebook/subjects',
+		async (route) => {
+			await subjectsGate;
+			await route.fallback();
+		}
+	);
+	try {
+		await page.goto(gradebookUrl());
+		await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
+		await expect(page.getByText('ยังไม่มีรายวิชาสำหรับกรอกคะแนน')).toHaveCount(0);
+	} finally {
+		releaseSubjects();
+	}
+	await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
+});
+
+test('a score-only reader recovers from an evaluation deep link without a permission dead end', async ({
+	page
+}) => {
+	await mockGradebook(page, false);
+	await page.route(
+		(url) => url.pathname === '/api/academic/learner-evaluations/subjects',
+		async (route) => fulfill(route, 'forbidden', 403)
+	);
+	await page.goto(`${gradebookUrl()}&tab=desirable_characteristic`);
+	await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
+	await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('scores');
+});
+
 test('closed term keeps scores readable without a school-manager editing bypass', async ({
 	page
 }) => {
@@ -582,7 +633,7 @@ test('a full phase disables additions but still allows editing without increasin
 test('entry settings open and close in a dialog instead of taking ledger space', async ({
 	page
 }) => {
-	await mockGradebook(page, true);
+	const observed = await mockGradebook(page, true);
 	await page.goto(gradebookUrl());
 	await expect(page.getByRole('switch')).toHaveCount(0);
 	await page.getByRole('button', { name: 'ตั้งค่าการกรอก', exact: true }).click();
@@ -590,4 +641,7 @@ test('entry settings open and close in a dialog instead of taking ledger space',
 	await expect(dialog.getByRole('switch')).toHaveCount(4);
 	await dialog.getByRole('button', { name: 'ปิด', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
+	await page.getByRole('button', { name: 'ตั้งค่าการกรอก', exact: true }).click();
+	await expect(dialog.getByRole('switch')).toHaveCount(4);
+	expect(observed.controlRequests).toEqual(['/api/academic/gradebook/controls']);
 });

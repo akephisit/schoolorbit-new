@@ -153,6 +153,8 @@
 		return path === '/staff/academic/timetable' ||
 			path === '/staff/academic/timetable/today' ||
 			path === '/staff/academic/assessments' ||
+			path === '/staff/academic/gradebook' ||
+			path === '/staff/academic/results' ||
 			path === '/staff/academic/question-bank'
 			? 'tap'
 			: 'hover';

@@ -35,8 +35,7 @@ test('gradebook workspace keeps URL-backed subject, group, tab, and phase state'
 	for (const key of ['subjectId', 'learningGroupId', 'tab', 'phase']) {
 		assert.match(page, new RegExp(`searchParams\\.(?:get|set)\\('${key}'`));
 	}
-	assert.match(page, /goto\(/);
-	assert.match(page, /replaceState:\s*true/);
+	assert.match(page, /replaceState\(/);
 	assert.match(page, /LatestRequest/);
 	assert.match(page, /\$state\.raw<GradebookSubject\[\]>/);
 	assert.match(page, /\$state\.raw<LearnerEvaluationSubject\[\]>/);
@@ -136,4 +135,22 @@ test('assessment page links to gradebook status without mutating gradebook contr
 	assert.match(page, /\/staff\/academic\/gradebook/);
 	assert.match(page, /ไปหน้ากรอกคะแนน/);
 	assert.doesNotMatch(page, /updateGradebookControl|listGradebookControls/);
+});
+
+test('gradebook route owns the visible list and keeps manager controls interaction-only', async () => {
+	const [route, page, controls] = await Promise.all([
+		read('src/routes/(app)/staff/academic/gradebook/+page.ts'),
+		read(pagePath),
+		read('src/lib/components/academic/gradebook/GradebookEntryControls.svelte')
+	]);
+	assert.match(route, /captureRouteLoad/);
+	assert.match(route, /requestFetch: fetch/);
+	assert.match(route, /listGradebookSubjects/);
+	assert.match(route, /listLearnerEvaluationSubjects/);
+	assert.match(page, /data\.subjects/);
+	assert.doesNotMatch(
+		page.slice(page.indexOf('onMount(() =>'), page.indexOf('</script>')),
+		/loadSubjects|loadManagerControls/
+	);
+	assert.match(controls, /onopen/);
 });

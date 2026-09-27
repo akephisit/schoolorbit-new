@@ -9,26 +9,43 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { ClipboardCheck, ShieldCheck } from '@lucide/svelte';
 
 	let {
 		gradebookControls,
 		evaluationControls,
+		contextKey,
 		canManageGradebook,
 		canManageEvaluation,
 		busyKey = '',
+		loading = false,
+		error = '',
+		onopen,
+		onretry,
 		ontoggleGradebook,
 		ontoggleEvaluation
 	}: {
 		gradebookControls: GradebookControl[];
 		evaluationControls: LearnerEvaluationControl[];
+		contextKey: string;
 		canManageGradebook: boolean;
 		canManageEvaluation: boolean;
 		busyKey?: string;
+		loading?: boolean;
+		error?: string;
+		onopen: () => void;
+		onretry: () => void;
 		ontoggleGradebook: (control: GradebookControl) => void;
 		ontoggleEvaluation: (control: LearnerEvaluationControl) => void;
 	} = $props();
 	let open = $state(false);
+	let previousContextKey = '';
+	$effect.pre(() => {
+		const nextContextKey = contextKey;
+		if (previousContextKey && previousContextKey !== nextContextKey) open = false;
+		previousContextKey = nextContextKey;
+	});
 
 	const phaseLabels: Record<GradebookPhaseCode, string> = {
 		before_midterm: 'ก่อนกลางภาค',
@@ -42,7 +59,14 @@
 	};
 </script>
 
-<Button variant="outline" size="sm" onclick={() => (open = true)}>
+<Button
+	variant="outline"
+	size="sm"
+	onclick={() => {
+		open = true;
+		onopen();
+	}}
+>
 	<ShieldCheck class="size-4" /> ตั้งค่าการกรอก
 </Button>
 <Dialog.Root bind:open>
@@ -58,59 +82,73 @@
 				<Badge variant="outline">ตั้งค่าทั้งภาคเรียน</Badge>
 			</div>
 		</Dialog.Header>
-		<div
-			class={[
-				'grid overflow-hidden rounded-lg border',
-				canManageGradebook && canManageEvaluation && 'sm:grid-cols-2'
-			]}
-		>
-			{#if canManageGradebook}
-				<div class={canManageEvaluation ? 'border-b sm:border-r sm:border-b-0' : ''}>
-					<div class="flex items-center gap-2 border-b bg-muted/30 px-4 py-2.5 text-sm font-medium">
-						<ClipboardCheck class="size-4" /> คะแนนรายวิชา
+		{#if loading}
+			<PageSkeleton variant="form" rows={2} />
+		{:else if error}
+			<PageState
+				variant="error"
+				title="โหลดช่วงเวลาการกรอกไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={onretry}
+			/>
+		{:else}<div
+				class={[
+					'grid overflow-hidden rounded-lg border',
+					canManageGradebook && canManageEvaluation && 'sm:grid-cols-2'
+				]}
+			>
+				{#if canManageGradebook}
+					<div class={canManageEvaluation ? 'border-b sm:border-r sm:border-b-0' : ''}>
+						<div
+							class="flex items-center gap-2 border-b bg-muted/30 px-4 py-2.5 text-sm font-medium"
+						>
+							<ClipboardCheck class="size-4" /> คะแนนรายวิชา
+						</div>
+						<div class="divide-y">
+							{#each gradebookControls as control (control.id)}
+								<div class="flex items-center justify-between gap-3 px-4 py-3">
+									<Label for={`gradebook-control-${control.id}`}
+										>{phaseLabels[control.phaseCode as GradebookPhaseCode] ??
+											control.phaseCode}</Label
+									>
+									<Switch
+										id={`gradebook-control-${control.id}`}
+										checked={control.scoreEntryEnabled}
+										disabled={Boolean(busyKey)}
+										onclick={() => ontoggleGradebook(control)}
+									/>
+								</div>
+							{/each}
+						</div>
 					</div>
-					<div class="divide-y">
-						{#each gradebookControls as control (control.id)}
-							<div class="flex items-center justify-between gap-3 px-4 py-3">
-								<Label for={`gradebook-control-${control.id}`}
-									>{phaseLabels[control.phaseCode as GradebookPhaseCode] ??
-										control.phaseCode}</Label
-								>
-								<Switch
-									id={`gradebook-control-${control.id}`}
-									checked={control.scoreEntryEnabled}
-									disabled={Boolean(busyKey)}
-									onclick={() => ontoggleGradebook(control)}
-								/>
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
+				{/if}
 
-			{#if canManageEvaluation}
-				<div>
-					<div class="flex items-center gap-2 border-b bg-muted/30 px-4 py-2.5 text-sm font-medium">
-						<ClipboardCheck class="size-4" /> การประเมินผู้เรียน
+				{#if canManageEvaluation}
+					<div>
+						<div
+							class="flex items-center gap-2 border-b bg-muted/30 px-4 py-2.5 text-sm font-medium"
+						>
+							<ClipboardCheck class="size-4" /> การประเมินผู้เรียน
+						</div>
+						<div class="divide-y">
+							{#each evaluationControls as control (control.id)}
+								<div class="flex items-center justify-between gap-3 px-4 py-3">
+									<Label for={`evaluation-control-${control.id}`}
+										>{domainLabels[control.domain]}</Label
+									>
+									<Switch
+										id={`evaluation-control-${control.id}`}
+										checked={control.entryEnabled}
+										disabled={Boolean(busyKey)}
+										onclick={() => ontoggleEvaluation(control)}
+									/>
+								</div>
+							{/each}
+						</div>
 					</div>
-					<div class="divide-y">
-						{#each evaluationControls as control (control.id)}
-							<div class="flex items-center justify-between gap-3 px-4 py-3">
-								<Label for={`evaluation-control-${control.id}`}
-									>{domainLabels[control.domain]}</Label
-								>
-								<Switch
-									id={`evaluation-control-${control.id}`}
-									checked={control.entryEnabled}
-									disabled={Boolean(busyKey)}
-									onclick={() => ontoggleEvaluation(control)}
-								/>
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
-		</div>
+				{/if}
+			</div>{/if}
 		<Dialog.Footer
 			><Button variant="outline" onclick={() => (open = false)}>ปิด</Button></Dialog.Footer
 		>

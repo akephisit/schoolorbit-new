@@ -340,13 +340,12 @@
 		{
 			"route": "staff/academic/gradebook",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-assessment",
-			"notes": "Component API reads include getGradebookGroupPhaseWorkspace, listGradebookControls, listGradebookSubjects, getLearnerEvaluationConfiguration, getLearnerEvaluationWorkspace; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned visible-tab subjects and selected-group workspace are dependent streamed regions. Inactive tabs, criterion configuration, and permission-gated manager controls load only on interaction; URL selection uses shallow replaceState to avoid duplicate route reads. Score/evaluation save queues and focused phase refresh remain local."
 		},
 		{
 			"route": "staff/academic/homerooms",
@@ -425,13 +424,12 @@
 		{
 			"route": "staff/academic/results",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-results",
-			"notes": "Component API reads include getAcademicResultReadiness, getActivityResultPreparation, getCourseResultPreparation, listAcademicGradingPolicies, getLearnerEvaluationWorkspace; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route-owned active-section overview and grading policy start independently. An explicit selected group starts its workspace in parallel with overview; default group selection depends on overview. Selected learner summary depends on the learner workspace. Inactive sections load on interaction; confirmation patches workspace and refreshes only readiness. URL selection uses shallow replaceState."
 		},
 		{
 			"route": "staff/academic/results/aggregates",

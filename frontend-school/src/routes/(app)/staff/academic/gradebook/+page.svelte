@@ -1,13 +1,11 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import {
-		getAcademicContextStore,
-		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
+	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
 	import {
 		formatGradebookScore,
 		selectNewGradebookItem,
@@ -96,10 +94,11 @@
 		| { mode: 'score'; itemId: string; studentId: string }
 		| { mode: 'evaluation'; criterionId: string; studentId: string };
 
-	const academicContext = getAcademicContextStore();
+	let { data }: PageProps = $props();
 	const subjectsRequest = new LatestRequest();
 	const workspaceRequest = new LatestRequest();
 	const criteriaRequest = new LatestRequest();
+	const controlsRequest = new LatestRequest();
 	const phaseCodes: GradebookPhaseCode[] = ['before_midterm', 'midterm', 'after_midterm', 'final'];
 	const phaseLabels: Record<GradebookPhaseCode, string> = {
 		before_midterm: 'ก่อนกลางภาค',
@@ -145,11 +144,14 @@
 	let selectedGroupId = $state(page.url.searchParams.get('learningGroupId')?.trim() ?? '');
 	let activeTab = $state<WorkspaceTab>(tabFromUrl());
 	let activePhase = $state<GradebookPhaseCode>(phaseFromUrl());
-	let loading = $state(false);
-	let workspaceLoading = $state(false);
+	let loading = $state(true);
+	let workspaceLoading = $state(true);
 	let errorMessage = $state('');
 	let workspaceError = $state('');
 	let controlBusyKey = $state('');
+	let controlsLoading = $state(false);
+	let controlsError = $state('');
+	let controlsLoaded = $state(false);
 	let itemBusy = $state(false);
 	let criteriaBusy = $state(false);
 	let confirming = $state(false);
@@ -162,8 +164,8 @@
 	let scoreSaveStatus = $state.raw<GradebookSaveQueueSnapshot>(savedSnapshot);
 	let evaluationSaveStatus = $state.raw<GradebookSaveQueueSnapshot>(savedSnapshot);
 
-	const academicYearId = $derived($academicContext.selected.academicYearId);
-	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const academicYearId = $derived(data.context?.academicYearId ?? null);
+	const academicTermId = $derived(data.context?.academicTermId ?? null);
 	const canReadScores = $derived(
 		$can.hasAny(
 			PERMISSIONS.ACADEMIC_GRADEBOOK_READ_ASSIGNED,
@@ -310,11 +312,7 @@
 		else url.searchParams.delete('learningGroupId');
 		url.searchParams.set('tab', activeTab);
 		url.searchParams.set('phase', activePhase);
-		void goto(resolve(`/staff/academic/gradebook?${url.searchParams.toString()}`), {
-			replaceState: true,
-			noScroll: true,
-			keepFocus: true
-		});
+		replaceState(resolve(`/staff/academic/gradebook?${url.searchParams.toString()}`), page.state);
 	}
 
 	function hydrateScoreWorkspaces(workspaces: GroupPhaseWorkspace[]): void {
@@ -491,13 +489,25 @@
 		academicTermId: string;
 	}): Promise<void> {
 		if (!canManageGradebookSchool && !canManageEvaluationSchool) return;
+		const { revision, signal } = controlsRequest.begin();
+		controlsLoading = true;
+		controlsError = '';
 		try {
-			if (canManageGradebookSchool) gradebookControls = await listGradebookControls(context);
-			if (canManageEvaluationSchool) {
-				evaluationControls = await listLearnerEvaluationControls(context);
-			}
+			const [scores, evaluations] = await Promise.all([
+				canManageGradebookSchool ? listGradebookControls(context, { signal }) : Promise.resolve([]),
+				canManageEvaluationSchool
+					? listLearnerEvaluationControls(context, { signal })
+					: Promise.resolve([])
+			]);
+			if (!controlsRequest.isCurrent(revision) || context.academicTermId !== academicTermId) return;
+			gradebookControls = scores;
+			evaluationControls = evaluations;
+			controlsLoaded = true;
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'โหลดช่วงเวลาการกรอกไม่สำเร็จ');
+			if (!isAbortError(error) && controlsRequest.isCurrent(revision))
+				controlsError = error instanceof Error ? error.message : 'โหลดช่วงเวลาการกรอกไม่สำเร็จ';
+		} finally {
+			if (controlsRequest.isCurrent(revision)) controlsLoading = false;
 		}
 	}
 
@@ -506,22 +516,17 @@
 		academicTermId: string;
 	}): Promise<void> {
 		const { revision, signal } = subjectsRequest.begin();
+		const tab = activeTab;
 		loading = true;
 		errorMessage = '';
 		try {
-			const [scores, evaluations] = await Promise.all([
-				canReadScores ? listGradebookSubjects(context, { signal }) : Promise.resolve([]),
-				canReadEvaluations
-					? listLearnerEvaluationSubjects(context, { signal })
-					: Promise.resolve([])
-			]);
+			const rows =
+				tab === 'scores'
+					? await listGradebookSubjects(context, { signal })
+					: await listLearnerEvaluationSubjects(context, { signal });
 			if (!subjectsRequest.isCurrent(revision)) return;
-			scoreSubjects = scores;
-			evaluationSubjects = evaluations;
-			if (!canReadScores && canReadEvaluations && activeTab === 'scores') {
-				activeTab = 'desirable_characteristic';
-			}
-			if (!canReadEvaluations && activeTab !== 'scores') activeTab = 'scores';
+			if (tab === 'scores') scoreSubjects = rows as GradebookSubject[];
+			else evaluationSubjects = rows as LearnerEvaluationSubject[];
 			await ensureSelection();
 		} catch (error) {
 			if (isAbortError(error)) return;
@@ -553,10 +558,15 @@
 		scoreWorkspaces = [];
 		evaluationWorkspace = null;
 		evaluationConfiguration = null;
-		if (!selectedGroupId) return;
+		if (!selectedGroupId) {
+			workspaceLoading = false;
+			return;
+		}
 		const context = contextValue();
-		if (!context) return;
-		if (activeTab === 'scores' && !selectedPhaseAvailable) return;
+		if (!context || (activeTab === 'scores' && !selectedPhaseAvailable)) {
+			workspaceLoading = false;
+			return;
+		}
 		const { revision, signal } = workspaceRequest.begin();
 		workspaceLoading = true;
 		try {
@@ -637,9 +647,17 @@
 		if (!(await flushPendingWork())) return;
 		mobileCell = null;
 		activeTab = next;
+		selectedSubjectId = '';
+		selectedGroupId = '';
 		selectedItemIds = [];
 		selectedCriterionIds = [];
-		await ensureSelection();
+		workspaceRequest.abort();
+		workspaceLoading = true;
+		syncUrl();
+		if ((next === 'scores' ? scoreSubjects : evaluationSubjects).length === 0) {
+			const context = contextValue();
+			if (context) await loadSubjects(context);
+		} else await ensureSelection();
 	}
 
 	function applyScoreMutations(mutations: ScorePasteMutation[]): boolean {
@@ -988,7 +1006,6 @@
 	}
 
 	onMount(() => {
-		let loadedContextKey = '';
 		const unsubscribeScore = scoreQueue.subscribe((snapshot) => (scoreSaveStatus = snapshot));
 		const unsubscribeEvaluation = evaluationQueue.subscribe(
 			(snapshot) => (evaluationSaveStatus = snapshot)
@@ -996,46 +1013,110 @@
 		const unregisterDirty = registerAcademicContextDirtySource('academic-gradebook-entry', () =>
 			[scoreQueue.status(), evaluationQueue.status()].some((snapshot) => snapshot.state !== 'saved')
 		);
-		const unsubscribeContext = academicContext.subscribe((state) => {
-			const yearId = state.selected.academicYearId;
-			const termId = state.selected.academicTermId;
-			const contextKey = yearId && termId ? `${yearId}:${termId}` : '';
-			if (yearId && termId && contextKey !== loadedContextKey) {
-				loadedContextKey = contextKey;
-				scoreQueue.discard();
-				evaluationQueue.discard();
-				workspaceRequest.abort();
-				criteriaRequest.abort();
-				scoreWorkspaces = [];
-				evaluationWorkspace = null;
-				evaluationConfiguration = null;
-				gradebookControls = [];
-				evaluationControls = [];
-				const context = { academicYearId: yearId, academicTermId: termId };
-				void loadManagerControls(context);
-				void loadSubjects(context);
-			} else if (!contextKey) {
-				loadedContextKey = '';
-				subjectsRequest.abort();
-				workspaceRequest.abort();
-				criteriaRequest.abort();
-				scoreSubjects = [];
-				evaluationSubjects = [];
-				scoreWorkspaces = [];
-				evaluationWorkspace = null;
-				loading = false;
-			}
-		});
-
 		return () => {
 			subjectsRequest.abort();
 			workspaceRequest.abort();
 			criteriaRequest.abort();
+			controlsRequest.abort();
 			unsubscribeScore();
 			unsubscribeEvaluation();
-			unsubscribeContext();
 			unregisterDirty();
 		};
+	});
+
+	$effect.pre(() => {
+		const routeSubjects = data.subjects;
+		const routeTab = data.tab;
+		const { revision } = subjectsRequest.begin();
+		untrack(() => {
+			scoreQueue.discard();
+			evaluationQueue.discard();
+			criteriaRequest.abort();
+			controlsRequest.abort();
+			activeTab = routeTab;
+			scoreSubjects = [];
+			evaluationSubjects = [];
+			gradebookControls = [];
+			evaluationControls = [];
+			controlsError = '';
+			controlsLoaded = false;
+			loading = Boolean(routeSubjects);
+			errorMessage = '';
+		});
+		if (routeSubjects) {
+			void routeSubjects.then((result) => {
+				if (!subjectsRequest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) {
+						if (result.data.tab === 'scores') scoreSubjects = result.data.rows;
+						else evaluationSubjects = result.data.rows;
+						const rows = workspaceSubjects(result.data.rows);
+						const selected =
+							rows.find(
+								(row) =>
+									row.subjectId === selectedSubjectId && row.learningGroupId === selectedGroupId
+							) ??
+							rows.find((row) => row.subjectId === selectedSubjectId) ??
+							rows[0];
+						selectedSubjectId = selected?.subjectId ?? '';
+						selectedGroupId = selected?.learningGroupId ?? '';
+						syncUrl();
+					} else errorMessage = result.error;
+					loading = false;
+				});
+			});
+		}
+		return () => {
+			if (subjectsRequest.isCurrent(revision)) subjectsRequest.abort();
+		};
+	});
+
+	$effect.pre(() => {
+		const routeWorkspace = data.workspace;
+		const { revision } = workspaceRequest.begin();
+		untrack(() => {
+			scoreWorkspaces = [];
+			evaluationWorkspace = null;
+			evaluationConfiguration = null;
+			workspaceLoading = Boolean(routeWorkspace);
+			workspaceError = '';
+			if (!routeWorkspace) {
+				selectedSubjectId = '';
+				selectedGroupId = '';
+			}
+		});
+		if (routeWorkspace) {
+			void routeWorkspace.then((result) => {
+				if (!workspaceRequest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok && result.data) {
+						selectedSubjectId = result.data.subjectId;
+						selectedGroupId = result.data.groupId;
+						if (result.data.tab === 'scores') {
+							scoreWorkspaces = result.data.rows;
+							hydrateScoreWorkspaces(result.data.rows);
+						} else {
+							evaluationWorkspace = result.data.workspace;
+							hydrateEvaluationWorkspace(result.data.workspace);
+						}
+						syncUrl();
+					} else if (!result.ok) workspaceError = result.error;
+					workspaceLoading = false;
+				});
+			});
+		}
+		return () => {
+			if (workspaceRequest.isCurrent(revision)) workspaceRequest.abort();
+		};
+	});
+
+	$effect(() => {
+		if (!academicTermId) return;
+		if (!canReadScores && canReadEvaluations && activeTab === 'scores') {
+			void changeTab('desirable_characteristic');
+		} else if (canReadScores && !canReadEvaluations && activeTab !== 'scores') {
+			void changeTab('scores');
+		}
 	});
 </script>
 
@@ -1060,7 +1141,7 @@
 			<PageSkeleton variant="form" rows={2} />
 			<PageSkeleton variant="table" rows={8} columns={6} />
 		</div>
-	{:else if errorMessage && scoreSubjects.length === 0 && evaluationSubjects.length === 0}
+	{:else if errorMessage && activeSubjects.length === 0}
 		<PageState
 			variant="error"
 			title="โหลดสมุดบันทึกไม่สำเร็จ"
@@ -1134,9 +1215,20 @@
 							<GradebookEntryControls
 								{gradebookControls}
 								{evaluationControls}
+								contextKey={`${academicYearId}:${academicTermId}`}
+								loading={controlsLoading}
+								error={controlsError}
 								canManageGradebook={canManageGradebookSchool}
 								canManageEvaluation={canManageEvaluationSchool}
 								busyKey={controlBusyKey}
+								onopen={() => {
+									const context = contextValue();
+									if (context && !controlsLoaded) void loadManagerControls(context);
+								}}
+								onretry={() => {
+									const context = contextValue();
+									if (context) void loadManagerControls(context);
+								}}
 								ontoggleGradebook={(control) => void toggleGradebookControl(control)}
 								ontoggleEvaluation={(control) => void toggleEvaluationControl(control)}
 							/>
