@@ -34,6 +34,8 @@ test('legacy page-mount API reads only shrink during route migration', async () 
 		'staff/academic/assessments',
 		'staff/academic/gradebook',
 		'staff/academic/promotion',
+		'staff/academic/term-lifecycle',
+		'staff/academic/year-lifecycle',
 		'staff/academic/results/aggregates',
 		'staff/academic/results/annual',
 		'staff/academic/timetable',

@@ -324,6 +324,109 @@ test('reader sees readiness without transition controls or mutation requests', a
 	expect(observed.writes).toHaveLength(0);
 });
 
+test('term readiness starts with a skeleton and retries only its workspace', async ({ page }) => {
+	await mock(page, true);
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route(`**/api/academic/lifecycle/terms/${term}*`, async (route) => {
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return fulfill(route, 'ความพร้อมภาคเรียนชั่วคราวไม่พร้อม', 503);
+		}
+		return route.fallback();
+	});
+	await page.goto(url, { waitUntil: 'domcontentloaded' });
+	await expect(
+		page.getByRole('heading', { name: 'ปิดและเปลี่ยนภาคเรียน', exact: true })
+	).toBeVisible();
+	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toHaveCount(0);
+	release();
+	await expect(page.getByRole('button', { name: 'ลองอีกครั้ง' })).toBeVisible();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
+test('term readiness remains visible during refresh failure and local retry', async ({ page }) => {
+	await mock(page, true);
+	await page.goto(url);
+	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toBeVisible();
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route(`**/api/academic/lifecycle/terms/${term}*`, async (route) => {
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return fulfill(route, 'อ่านความพร้อมภาคเรียนไม่สำเร็จ', 503);
+		}
+		return route.fallback();
+	});
+	await page.getByRole('button', { name: 'ตรวจข้อมูลล่าสุด' }).click();
+	await expect(page.getByText('กำลังอัปเดตความพร้อมภาคเรียน...')).toBeVisible();
+	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toBeVisible();
+	release();
+	await expect(page.getByText('อ่านความพร้อมภาคเรียนไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
+test('late old-term readiness never replaces a newly selected academic year', async ({ page }) => {
+	await mock(page, true);
+	let releaseOld = () => {};
+	const oldGate = new Promise<void>((resolve) => {
+		releaseOld = resolve;
+	});
+	let oldStarted = () => {};
+	const oldRequest = new Promise<void>((resolve) => {
+		oldStarted = resolve;
+	});
+	await page.route('**/api/academic/lifecycle/terms/*', async (route) => {
+		const path = new URL(route.request().url()).pathname;
+		if (path.endsWith(`/${term}`)) {
+			oldStarted();
+			await oldGate;
+			return fulfill(route, workspace(true));
+		}
+		expect(path).toContain(nextTerm);
+		return fulfill(route, {
+			...workspace(true),
+			context: {
+				...workspace(true).context,
+				academicYearId: nextYear,
+				academicTermId: nextTerm,
+				yearName: 'ปีการศึกษา 2570',
+				termName: 'ภาคเรียนใหม่',
+				yearStatus: 'planning',
+				termStatus: 'planning'
+			},
+			findings: [],
+			availableActions: []
+		} satisfies Workspace);
+	});
+	try {
+		await page.goto(url, { waitUntil: 'domcontentloaded' });
+		await oldRequest;
+		await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
+		await page.getByRole('option', { name: /ปีการศึกษา 2570/ }).click();
+		await expect(page).toHaveURL(new RegExp(`academicYearId=${nextYear}`));
+		await page.getByRole('button', { name: 'เลือกภาคเรียน' }).click();
+		await page.getByRole('option', { name: /ภาคเรียนที่ 1/ }).click();
+		await expect(page).toHaveURL(new RegExp(`academicTermId=${nextTerm}`));
+		await expect(page.getByText('ภาคเรียนใหม่')).toBeVisible();
+	} finally {
+		releaseOld();
+	}
+	await expect(page.getByText('ผลสรุปนักเรียนยังไม่ครบ 2 คน')).toHaveCount(0);
+});
+
 test('manager edits optional opening gates in a lazy versioned dialog', async ({ page }) => {
 	const observed = await mock(page);
 	await page.goto(url);

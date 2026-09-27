@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import { RefreshCw, ArrowUpRight } from '@lucide/svelte';
@@ -20,7 +20,12 @@
 	import YearReopeningDialog from '$lib/components/academic/lifecycle/YearReopeningDialog.svelte';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';
+	import {
+		PageState,
+		PageSkeleton,
+		LoadingButton,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
@@ -28,7 +33,9 @@
 	import * as Table from '$lib/components/ui/table';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import type { PageProps } from './$types';
 
+	let { data }: PageProps = $props();
 	const academicContext = getAcademicContextStore();
 	const latest = new LatestRequest();
 	const labels: Record<YearTransitionAction, string> = {
@@ -65,8 +72,7 @@
 	let acknowledged = $state<string[]>([]);
 	let needsRefresh = $state(false);
 	let pending: { key: string; request: YearTransitionRequest } | null = null;
-	let loadedYear = '';
-	const yearId = $derived($academicContext.selected.academicYearId);
+	const yearId = $derived(data.academicYearId);
 	const canRead = $derived($can.has(PERMISSIONS.ACADEMIC_LIFECYCLE_READ_SCHOOL));
 	const canReadAnnual = $derived(
 		$can.hasAll(
@@ -168,27 +174,34 @@
 			'year-lifecycle',
 			() => dialogOpen || busy
 		);
-		const unsubscribe = academicContext.subscribe((state) => {
-			const key = state.status === 'ready' ? (state.selected.academicYearId ?? '') : '';
-			if (key && key !== loadedYear) {
-				loadedYear = key;
-				workspace = null;
-				dialogOpen = false;
-				pending = null;
-				void loadWorkspace();
-			} else if (!key && state.status !== 'loading') {
-				loadedYear = '';
-				latest.abort();
-				workspace = null;
-				dialogOpen = false;
-				pending = null;
-			}
-		});
 		return () => {
-			unsubscribe();
 			unregister();
 			latest.abort();
 		};
+	});
+	$effect.pre(() => {
+		const routeWorkspace = data.workspace;
+		const { revision } = latest.begin();
+		untrack(() => {
+			workspace = null;
+			loading = Boolean(routeWorkspace);
+			loadError = '';
+			dialogOpen = false;
+			pending = null;
+			needsRefresh = false;
+		});
+		if (routeWorkspace)
+			void routeWorkspace.then((result) => {
+				if (!latest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) {
+						workspace = result.data;
+						acknowledged = [];
+					} else loadError = result.error;
+					loading = false;
+				});
+			});
+		return () => latest.abort();
 	});
 </script>
 
@@ -222,6 +235,10 @@
 			onaction={() => void loadWorkspace()}
 		/>
 	{:else if workspace}
+		{#if loading}<RegionUpdatingState
+				class="static"
+				label="กำลังอัปเดตความพร้อมปีการศึกษา..."
+			/>{/if}
 		<section class="rounded-xl border bg-card p-4" aria-label="สถานะปีการศึกษา">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div>
@@ -235,7 +252,10 @@
 				>
 			</div>
 		</section>
-		{#if loadError}<p role="alert" class="text-sm text-destructive">{loadError}</p>{/if}
+		{#if loadError}<p role="alert" class="text-sm text-destructive">
+				{loadError}
+				<Button size="sm" variant="outline" onclick={() => void loadWorkspace()}>ลองใหม่</Button>
+			</p>{/if}
 		<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
 			<div class="min-w-0 space-y-4">
 				<section
@@ -270,7 +290,9 @@
 											size="sm"
 											href={resolve(
 												`/staff/academic/term-lifecycle?academicYearId=${yearId}&academicTermId=${term.academicTermId}`
-											)}>ตรวจภาคเรียน<ArrowUpRight class="size-4" /></Button
+											)}
+											data-sveltekit-preload-data="tap"
+											>ตรวจภาคเรียน<ArrowUpRight class="size-4" /></Button
 										></Table.Cell
 									></Table.Row
 								>{/each}</Table.Body

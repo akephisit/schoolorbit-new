@@ -541,13 +541,12 @@
 		{
 			"route": "staff/academic/term-lifecycle",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Component API reads include getTermLifecycleWorkspace; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "URL year/term owns one cohesive readiness workspace. First skeleton, retained refresh/error/retry, old-context supersession, and transition/reopen/activation workflows are verified. Opening policy and term preparation dialogs remain action-lazy; volatile cross-domain readiness uses tap preload."
 		},
 		{
 			"route": "staff/academic/timetable",
@@ -582,13 +581,12 @@
 		{
 			"route": "staff/academic/year-lifecycle",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Component API reads include getYearLifecycleWorkspace; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "URL year owns one cohesive year readiness workspace. First skeleton, retained refresh/error/retry, and close/reopening safety are verified. Reopening preview remains action-lazy; volatile annual coverage uses tap preload."
 		},
 		{
 			"route": "staff/achievements",

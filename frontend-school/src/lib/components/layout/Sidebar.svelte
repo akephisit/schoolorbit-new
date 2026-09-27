@@ -156,6 +156,8 @@
 			path === '/staff/academic/gradebook' ||
 			path === '/staff/academic/promotion' ||
 			path === '/staff/academic/promotion/policies' ||
+			path === '/staff/academic/term-lifecycle' ||
+			path === '/staff/academic/year-lifecycle' ||
 			path === '/staff/academic/results' ||
 			path === '/staff/academic/results/aggregates' ||
 			path === '/staff/academic/results/annual' ||

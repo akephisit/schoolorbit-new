@@ -361,6 +361,58 @@ test('year reader sees annual blockers without mutation controls', async ({ page
 	expect(observed.writes).toHaveLength(0);
 });
 
+test('year readiness starts with a skeleton and retries only its workspace', async ({ page }) => {
+	await mock(page, { reader: true, ready: false });
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route(`**/api/academic/lifecycle/years/${year}`, async (route) => {
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return fulfill(route, 'ความพร้อมปีชั่วคราวไม่พร้อม', 503);
+		}
+		return route.fallback();
+	});
+	await page.goto(url, { waitUntil: 'domcontentloaded' });
+	await expect(page.getByRole('heading', { name: 'ปิดปีการศึกษา', exact: true })).toBeVisible();
+	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toHaveCount(0);
+	release();
+	await expect(page.getByRole('button', { name: 'ลองอีกครั้ง' })).toBeVisible();
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
+test('year readiness remains visible during refresh failure and local retry', async ({ page }) => {
+	await mock(page, { reader: true, ready: false });
+	await page.goto(url);
+	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toBeVisible();
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route(`**/api/academic/lifecycle/years/${year}`, async (route) => {
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return fulfill(route, 'อ่านความพร้อมปีไม่สำเร็จ', 503);
+		}
+		return route.fallback();
+	});
+	await page.getByRole('button', { name: 'ตรวจข้อมูลล่าสุด' }).click();
+	await expect(page.getByText('กำลังอัปเดตความพร้อมปีการศึกษา...')).toBeVisible();
+	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toBeVisible();
+	release();
+	await expect(page.getByText('อ่านความพร้อมปีไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('ผลรายปียังไม่ยืนยัน')).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
 test('incomplete annual coverage disables close even for administrator', async ({ page }) => {
 	await mock(page, { ready: false });
 	await page.goto(url);

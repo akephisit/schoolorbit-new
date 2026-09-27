@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { ArrowUpRight, RefreshCw, ShieldCheck } from '@lucide/svelte';
 	import {
@@ -21,7 +21,12 @@
 	import { ApiClientError } from '$lib/api/client';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		LoadingButton,
+		PageSkeleton,
+		PageState,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import OpeningPolicyDialog from '$lib/components/academic/lifecycle/OpeningPolicyDialog.svelte';
 	import TermActivationDialog from '$lib/components/academic/lifecycle/TermActivationDialog.svelte';
 	import TermPreparationDialog from '$lib/components/academic/lifecycle/TermPreparationDialog.svelte';
@@ -33,7 +38,9 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
+	import type { PageProps } from './$types';
 
+	let { data }: PageProps = $props();
 	const academicContext = getAcademicContextStore();
 	const latest = new LatestRequest();
 	const permissions: Record<TermTransitionAction, string> = {
@@ -69,10 +76,9 @@
 	let mutationError = $state('');
 	let needsRefresh = $state(false);
 	let pending: { key: string; request: TermTransitionRequest } | null = null;
-	let loadedContextKey = '';
 	const canRead = $derived($can.has(PERMISSIONS.ACADEMIC_LIFECYCLE_READ_SCHOOL));
-	const yearId = $derived($academicContext.selected.academicYearId);
-	const termId = $derived($academicContext.selected.academicTermId);
+	const yearId = $derived(data.context?.academicYearId ?? null);
+	const termId = $derived(data.context?.academicTermId ?? null);
 	const availableActions = $derived(
 		workspace?.availableActions.filter(
 			(candidate) => candidate !== 'activate' && $can.has(permissions[candidate])
@@ -168,28 +174,34 @@
 			'term-lifecycle',
 			() => dialogOpen || busy
 		);
-		const unsubscribe = academicContext.subscribe((state) => {
-			const key =
-				state.status === 'ready' && state.selected.academicYearId && state.selected.academicTermId
-					? `${state.selected.academicYearId}:${state.selected.academicTermId}`
-					: '';
-			if (key && key !== loadedContextKey) {
-				loadedContextKey = key;
-				dialogOpen = false;
-				workspace = null;
-				void loadWorkspace();
-			} else if (!key && state.status !== 'loading') {
-				loadedContextKey = '';
-				latest.abort();
-				workspace = null;
-				dialogOpen = false;
-			}
-		});
 		return () => {
-			unsubscribe();
 			unregister();
 			latest.abort();
 		};
+	});
+	$effect.pre(() => {
+		const routeWorkspace = data.workspace;
+		const { revision } = latest.begin();
+		untrack(() => {
+			workspace = null;
+			loading = Boolean(routeWorkspace);
+			loadError = '';
+			dialogOpen = false;
+			pending = null;
+			needsRefresh = false;
+		});
+		if (routeWorkspace)
+			void routeWorkspace.then((result) => {
+				if (!latest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) {
+						workspace = result.data;
+						acknowledged = [];
+					} else loadError = result.error;
+					loading = false;
+				});
+			});
+		return () => latest.abort();
 	});
 </script>
 
@@ -229,6 +241,7 @@
 			onaction={() => void loadWorkspace()}
 		/>
 	{:else if workspace}
+		{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตความพร้อมภาคเรียน..." />{/if}
 		<section class="rounded-xl border bg-card p-4 sm:p-5" aria-label="สถานะภาคเรียน">
 			<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 				<div>
@@ -253,7 +266,10 @@
 					</li>{/each}
 			</ol>
 		</section>
-		{#if loadError}<p role="alert" class="text-sm text-destructive">{loadError}</p>{/if}
+		{#if loadError}<p role="alert" class="text-sm text-destructive">
+				{loadError}
+				<Button size="sm" variant="outline" onclick={() => void loadWorkspace()}>ลองใหม่</Button>
+			</p>{/if}
 		<div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
 			<section class="overflow-hidden rounded-xl border bg-card" aria-labelledby="readiness-title">
 				<div class="border-b p-4">
