@@ -125,3 +125,68 @@ test('confirmation retains the selected workspace and retries readiness alone', 
 	assert.match(page, /readinessError/);
 	assert.match(page, /aria-busy=\{readinessUpdating\}/);
 });
+
+test('result lock and correction routes own their initial reads', async () => {
+	const [lockRoute, lockPage, correctionRoute, correctionPage] = await Promise.all([
+		read('src/routes/(app)/staff/academic/result-locks/+page.ts'),
+		read('src/routes/(app)/staff/academic/result-locks/+page.svelte'),
+		read('src/routes/(app)/staff/academic/result-corrections/+page.ts'),
+		read('src/routes/(app)/staff/academic/result-corrections/+page.svelte')
+	]);
+	assert.match(lockRoute, /captureRouteLoad/);
+	assert.match(lockRoute, /requestFetch: fetch/);
+	assert.match(lockPage, /data\.queue/);
+	assert.match(correctionRoute, /searchEffectiveAcademicResults/);
+	assert.match(correctionRoute, /requestFetch: fetch/);
+	assert.match(correctionPage, /data\.results/);
+	assert.doesNotMatch(lockPage, /onMount\(/);
+	assert.doesNotMatch(correctionPage, /onMount\(/);
+});
+
+test('result lock mutations patch their owning queue without refetching every tab', async () => {
+	const page = await read('src/routes/(app)/staff/academic/result-locks/+page.svelte');
+	const mutations = page.slice(
+		page.indexOf('async function lockCourse'),
+		page.indexOf('</script>')
+	);
+	assert.doesNotMatch(mutations, /loadQueue\(/);
+	assert.match(mutations, /outcome\.groups/);
+	assert.match(mutations, /outcome\.locked/);
+	assert.match(mutations, /outcome\.skipped/);
+});
+
+test('late correction responses cannot patch a different academic context', async () => {
+	const page = await read('src/routes/(app)/staff/academic/result-corrections/+page.svelte');
+	const mutation = page.slice(
+		page.indexOf('async function correctResult'),
+		page.indexOf('async function refreshSelected')
+	);
+	assert.match(mutation, /context\.academicTermId\s*!==\s*academicTermId/);
+	assert.match(mutation, /context\.academicYearId\s*!==\s*academicYearId/);
+});
+
+test('late lock responses cannot patch a different academic year with a reused term id', async () => {
+	const page = await read('src/routes/(app)/staff/academic/result-locks/+page.svelte');
+	for (const mutation of ['lockCourse', 'lockActivity', 'lockAllActivities', 'lockEvaluation']) {
+		const body = page.slice(
+			page.indexOf(`async function ${mutation}`),
+			page.indexOf('async function', page.indexOf(`async function ${mutation}`) + 1)
+		);
+		assert.match(body, /context\.academicYearId\s*!==\s*academicYearId/, mutation);
+	}
+});
+
+test('large result workflow reads require tap rather than incidental hover preload', async () => {
+	const sidebar = await read('src/lib/components/layout/Sidebar.svelte');
+	assert.match(sidebar, /path === '\/staff\/academic\/result-locks'/);
+	assert.match(sidebar, /path === '\/staff\/academic\/result-corrections'/);
+});
+
+test('correction empty-state handoff keeps the selected year and term', async () => {
+	const page = await read('src/routes/(app)/staff/academic/result-corrections/+page.svelte');
+	assert.match(
+		page,
+		/href: `\/staff\/academic\/result-locks\?academicYearId=\$\{academicYearId\}&academicTermId=\$\{academicTermId\}`/
+	);
+	assert.match(page, /preload: 'tap'/);
+});

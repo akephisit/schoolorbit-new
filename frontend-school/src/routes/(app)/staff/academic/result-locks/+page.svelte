@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		getAcademicResultReadiness,
 		lockActivityGroupResults,
@@ -16,25 +19,28 @@
 		type LearnerEvaluationSubjectLockReadiness
 	} from '$lib/api/academicLearnerEvaluations';
 	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
 	import ResultLockQueue from '$lib/components/academic/results/ResultLockQueue.svelte';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 
-	const academicContext = getAcademicContextStore();
+	let { data }: PageProps = $props();
 	const request = new LatestRequest();
 	const emptyReadiness: AcademicResultReadiness = { courses: [], activities: [] };
 
 	let readiness = $state.raw<AcademicResultReadiness>(emptyReadiness);
 	let learnerRows = $state.raw<LearnerEvaluationSubjectLockReadiness[]>([]);
-	let loading = $state(false);
+	let activeTab = $state<'course' | 'activity' | 'learner'>('course');
+	let readinessLoaded = $state(false);
+	let learnerLoaded = $state(false);
+	let loading = $state(true);
+	let loadingDomain = $state<'result' | 'learner' | null>(null);
 	let errorMessage = $state('');
 	let busyKey = $state('');
 
-	const academicYearId = $derived($academicContext.selected.academicYearId);
-	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const academicYearId = $derived(data.context?.academicYearId ?? null);
+	const academicTermId = $derived(data.context?.academicTermId ?? null);
 	const canLockCourseResults = $derived($can.has(PERMISSIONS.ACADEMIC_RESULT_LOCK_SCHOOL));
 	const canLockLearnerEvaluations = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_LEARNER_EVALUATION_LOCK_SCHOOL)
@@ -43,31 +49,58 @@
 		return academicYearId && academicTermId ? { academicYearId, academicTermId } : null;
 	}
 
+	function syncUrl(): void {
+		const url = new URL(page.url);
+		url.searchParams.set('tab', activeTab);
+		replaceState(
+			resolve(`/staff/academic/result-locks?${url.searchParams.toString()}`),
+			page.state
+		);
+	}
+
+	function changeTab(value: 'course' | 'activity' | 'learner'): void {
+		if (value === activeTab) return;
+		if (value === 'learner' ? !canLockLearnerEvaluations : !canLockCourseResults) return;
+		activeTab = value;
+		syncUrl();
+		if (value === 'learner' ? learnerLoaded : readinessLoaded) {
+			request.abort();
+			loading = false;
+			loadingDomain = null;
+			errorMessage = '';
+		} else if (loadingDomain !== (value === 'learner' ? 'learner' : 'result')) void loadQueue();
+	}
+
 	async function loadQueue(): Promise<void> {
 		const context = contextValue();
 		if (!context) return;
 		const { revision, signal } = request.begin();
 		loading = true;
+		loadingDomain = activeTab === 'learner' ? 'learner' : 'result';
 		errorMessage = '';
 		try {
-			const [nextReadiness, nextLearnerRows] = await Promise.all([
-				canLockCourseResults
-					? getAcademicResultReadiness(context, { signal })
-					: Promise.resolve(emptyReadiness),
-				canLockLearnerEvaluations
-					? getLearnerEvaluationLockReadiness(context, { signal })
-					: Promise.resolve([])
-			]);
+			const next =
+				activeTab === 'learner'
+					? await getLearnerEvaluationLockReadiness(context, { signal })
+					: await getAcademicResultReadiness(context, { signal });
 			if (!request.isCurrent(revision)) return;
-			readiness = nextReadiness;
-			learnerRows = nextLearnerRows;
+			if (activeTab === 'learner') {
+				learnerRows = next as LearnerEvaluationSubjectLockReadiness[];
+				learnerLoaded = true;
+			} else {
+				readiness = next as AcademicResultReadiness;
+				readinessLoaded = true;
+			}
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดคิวล็อกผลไม่สำเร็จ';
 			}
 		} finally {
-			if (request.isCurrent(revision)) loading = false;
+			if (request.isCurrent(revision)) {
+				loading = false;
+				loadingDomain = null;
+			}
 		}
 	}
 
@@ -78,19 +111,26 @@
 		busyKey = `course:${subjectId}`;
 		try {
 			const outcome = await lockCourseSubjectResults(subjectId, context);
+			if (context.academicTermId !== academicTermId || context.academicYearId !== academicYearId)
+				return;
+			readiness = {
+				...readiness,
+				courses: readiness.courses.map((subject) =>
+					subject.subjectId === subjectId
+						? {
+								...subject,
+								ready: outcome.groups.every((group) => group.ready),
+								groups: outcome.lock
+									? outcome.groups.map((group) => ({ ...group, locked: true }))
+									: outcome.groups
+							}
+						: subject
+				)
+			};
 			if (outcome.lock) {
 				toast.success('ล็อกผลรายวิชาแล้ว');
-				await loadQueue();
 			} else {
 				toast.error('ข้อมูลบางห้องเปลี่ยนแล้ว กรุณาตรวจเหตุผลในคิว');
-				readiness = {
-					...readiness,
-					courses: readiness.courses.map((subject) =>
-						subject.subjectId === subjectId
-							? { ...subject, ready: false, groups: outcome.groups }
-							: subject
-					)
-				};
 			}
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ล็อกผลรายวิชาไม่สำเร็จ');
@@ -106,11 +146,28 @@
 		busyKey = `activity:${groupId}`;
 		try {
 			const outcome = await lockActivityGroupResults(groupId, context);
+			if (context.academicTermId !== academicTermId || context.academicYearId !== academicYearId)
+				return;
 			if (outcome.lock) {
 				toast.success('ล็อกผลกิจกรรมแล้ว');
-				await loadQueue();
+				readiness = {
+					...readiness,
+					activities: readiness.activities.map((group) =>
+						group.learningGroupId === groupId
+							? { ...group, locked: true, ready: true, blockers: [] }
+							: group
+					)
+				};
 			} else {
 				toast.error(outcome.blockers.map((blocker) => blocker.code).join(', '));
+				readiness = {
+					...readiness,
+					activities: readiness.activities.map((group) =>
+						group.learningGroupId === groupId
+							? { ...group, ready: false, blockers: outcome.blockers }
+							: group
+					)
+				};
 			}
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ล็อกผลกิจกรรมไม่สำเร็จ');
@@ -126,10 +183,21 @@
 		busyKey = 'activity:all';
 		try {
 			const outcome = await lockAllReadyActivityResults(context);
+			if (context.academicTermId !== academicTermId || context.academicYearId !== academicYearId)
+				return;
 			toast.success(
 				`ล็อกแล้ว ${outcome.locked.length} กลุ่ม · ข้าม ${outcome.skipped.length} กลุ่ม`
 			);
-			await loadQueue();
+			const locked = new Set(outcome.locked.map((lock) => lock.learningGroupId));
+			const skipped = new Map(outcome.skipped.map((group) => [group.learningGroupId, group]));
+			readiness = {
+				...readiness,
+				activities: readiness.activities.map((group) =>
+					locked.has(group.learningGroupId)
+						? { ...group, locked: true, ready: true, blockers: [] }
+						: (skipped.get(group.learningGroupId) ?? group)
+				)
+			};
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ล็อกผลกิจกรรมไม่สำเร็จ');
 		} finally {
@@ -145,6 +213,8 @@
 		busyKey = `learner:${key}`;
 		try {
 			const outcome = await lockLearnerEvaluationSubject(subjectId, domain, context);
+			if (context.academicTermId !== academicTermId || context.academicYearId !== academicYearId)
+				return;
 			if (outcome.lock) {
 				learnerRows = learnerRows.map((row) => {
 					if (row.subjectId !== subjectId || row.domain !== domain) return row;
@@ -157,7 +227,14 @@
 				});
 				toast.success('ล็อกผลประเมินด้านนี้แล้ว');
 			} else {
-				await loadQueue();
+				const refreshed = await getLearnerEvaluationLockReadiness(context);
+				if (
+					context.academicTermId === academicTermId &&
+					context.academicYearId === academicYearId
+				) {
+					learnerRows = refreshed;
+					learnerLoaded = true;
+				}
 				toast.error('ข้อมูลบางห้องเปลี่ยนแล้ว กรุณาตรวจเหตุผลในคิว');
 			}
 		} catch (error) {
@@ -167,27 +244,50 @@
 		}
 	}
 
-	onMount(() => {
-		let loadedContextKey = '';
-		const unsubscribe = academicContext.subscribe((state) => {
-			const contextKey =
-				state.selected.academicYearId && state.selected.academicTermId
-					? `${state.selected.academicYearId}:${state.selected.academicTermId}`
-					: '';
-			if (contextKey && contextKey !== loadedContextKey) {
-				loadedContextKey = contextKey;
-				void loadQueue();
-			} else if (!contextKey) {
-				loadedContextKey = '';
-				request.abort();
-				readiness = emptyReadiness;
-				learnerRows = [];
-			}
+	onDestroy(() => request.abort());
+	$effect.pre(() => {
+		const routeQueue = data.queue;
+		const routeTab = data.tab;
+		const { revision } = request.begin();
+		untrack(() => {
+			activeTab = routeTab;
+			readiness = emptyReadiness;
+			learnerRows = [];
+			readinessLoaded = false;
+			learnerLoaded = false;
+			loading = Boolean(routeQueue);
+			loadingDomain = routeQueue ? (routeTab === 'learner' ? 'learner' : 'result') : null;
+			errorMessage = '';
 		});
+		if (routeQueue) {
+			void routeQueue.then((result) => {
+				if (!request.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) {
+						if (result.data.tab === 'learner') {
+							learnerRows = result.data.rows;
+							learnerLoaded = true;
+						} else {
+							readiness = result.data.readiness;
+							readinessLoaded = true;
+						}
+					} else errorMessage = result.error;
+					loading = false;
+					loadingDomain = null;
+				});
+			});
+		}
 		return () => {
-			unsubscribe();
-			request.abort();
+			if (request.isCurrent(revision)) request.abort();
 		};
+	});
+
+	$effect(() => {
+		if (!academicTermId) return;
+		if (!canLockCourseResults && canLockLearnerEvaluations && activeTab !== 'learner')
+			changeTab('learner');
+		else if (canLockCourseResults && !canLockLearnerEvaluations && activeTab === 'learner')
+			changeTab('course');
 	});
 </script>
 
@@ -207,33 +307,14 @@
 			title="เลือกปีการศึกษาและภาคเรียนก่อน"
 			description="ใช้ตัวเลือกบนแถบด้านบนเพื่อเปิดคิวของภาคเรียนที่ต้องการ"
 		/>
-	{:else if loading}
-		<div class="space-y-4">
-			<PageSkeleton variant="form" rows={1} /><PageSkeleton variant="table" rows={8} columns={4} />
-		</div>
-	{:else if errorMessage}
-		<PageState
-			variant="error"
-			title="โหลดคิวล็อกผลไม่สำเร็จ"
-			description={errorMessage}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => void loadQueue()}
-		/>
-	{:else if readiness.courses.length === 0 && readiness.activities.length === 0 && learnerRows.length === 0}
-		<AcademicPrerequisiteNotice
-			prerequisite={{
-				key: 'result-lock-queue',
-				status: 'missing',
-				title: 'ยังไม่มีผลที่พร้อมเข้าคิวล็อก',
-				description: 'เตรียมและยืนยันผลรายวิชา กิจกรรม หรือผลประเมินผู้เรียนให้ครบก่อน',
-				actionLabel: 'ไปเตรียมผลการเรียน',
-				href: '/staff/academic/results'
-			}}
-		/>
 	{:else}
 		<ResultLockQueue
 			{readiness}
 			{learnerRows}
+			resultsHref={`/staff/academic/results?academicYearId=${academicYearId}&academicTermId=${academicTermId}`}
+			{activeTab}
+			{loading}
+			error={errorMessage}
 			{busyKey}
 			{canLockCourseResults}
 			{canLockLearnerEvaluations}
@@ -241,6 +322,8 @@
 			onlockactivity={(groupId) => void lockActivity(groupId)}
 			onlockallactivities={() => void lockAllActivities()}
 			onlockevaluation={(subjectId, domain) => void lockEvaluation(subjectId, domain)}
+			ontabchange={changeTab}
+			onretry={() => void loadQueue()}
 		/>
 	{/if}
 </PageShell>

@@ -21,8 +21,16 @@ function fulfill(route: Route, data: unknown, status = 200) {
 	});
 }
 
-async function mockLockQueue(page: Page) {
+async function mockLockQueue(
+	page: Page,
+	options: { courseReady?: boolean; holdResultRead?: boolean } = {}
+) {
 	const learnerLockRequests: string[] = [];
+	const reads = { results: 0, learner: 0 };
+	let releaseResultRead = () => {};
+	const resultReadGate = new Promise<void>((resolve) => {
+		releaseResultRead = resolve;
+	});
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -78,11 +86,13 @@ async function mockLockQueue(page: Page) {
 				return;
 			}
 			if (url.pathname === '/api/academic/results/readiness') {
+				reads.results += 1;
+				if (options.holdResultRead) await resultReadGate;
 				await fulfill(route, {
 					courses: [
 						{
 							subjectId: ids.subject,
-							ready: false,
+							ready: Boolean(options.courseReady),
 							groups: [
 								{
 									learningGroupId: ids.group,
@@ -91,9 +101,9 @@ async function mockLockQueue(page: Page) {
 									groupName: 'ม.1/1',
 									offeringName: 'คณิตศาสตร์พื้นฐาน',
 									assigned: false,
-									ready: false,
+									ready: Boolean(options.courseReady),
 									locked: false,
-									blockers: [{ code: 'missing_group_confirmation' }]
+									blockers: options.courseReady ? [] : [{ code: 'missing_group_confirmation' }]
 								}
 							]
 						}
@@ -103,6 +113,7 @@ async function mockLockQueue(page: Page) {
 				return;
 			}
 			if (url.pathname === '/api/academic/learner-evaluations/lock-readiness') {
+				reads.learner += 1;
 				await fulfill(route, [
 					{
 						subjectId: ids.subject,
@@ -137,6 +148,28 @@ async function mockLockQueue(page: Page) {
 						]
 					}
 				]);
+				return;
+			}
+			if (
+				request.method() === 'POST' &&
+				url.pathname === `/api/academic/results/subjects/${ids.subject}/lock`
+			) {
+				await fulfill(route, {
+					lock: { id: '70000000-0000-4000-8000-000000000001', subjectId: ids.subject },
+					groups: [
+						{
+							learningGroupId: ids.group,
+							learningOfferingId: ids.offering,
+							subjectId: ids.subject,
+							groupName: 'ม.1/1',
+							offeringName: 'คณิตศาสตร์พื้นฐาน',
+							assigned: false,
+							ready: true,
+							locked: false,
+							blockers: []
+						}
+					]
+				});
 				return;
 			}
 			if (
@@ -193,24 +226,61 @@ async function mockLockQueue(page: Page) {
 			await fulfill(route, {});
 		}
 	);
-	return learnerLockRequests;
+	return { learnerLockRequests, reads, releaseResultRead };
 }
 
 test('learner-evaluation domains lock independently and course blockers are visible', async ({
 	page
 }) => {
-	const requests = await mockLockQueue(page);
+	const { learnerLockRequests, reads } = await mockLockQueue(page);
 	await page.goto(
 		`/staff/academic/result-locks?academicYearId=${ids.year}&academicTermId=${ids.term}`
 	);
 
 	await expect(page.getByText('ครูหลักยังไม่ยืนยันผล')).toBeVisible();
+	expect(reads).toEqual({ results: 1, learner: 0 });
 	await page.getByRole('tab', { name: 'ผลประเมินผู้เรียน' }).click();
 	await expect(page.getByRole('button', { name: 'ล็อกด้านนี้' })).toHaveCount(2);
+	expect(reads).toEqual({ results: 1, learner: 1 });
 	await page.getByRole('button', { name: 'ล็อกด้านนี้' }).first().click();
 	await expect(page.getByText('ล็อกแล้ว')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'ล็อกด้านนี้' })).toHaveCount(1);
-	expect(requests).toEqual([
+	expect(learnerLockRequests).toEqual([
 		`/api/academic/learner-evaluations/subjects/${ids.subject}/domains/desirable_characteristic/lock`
 	]);
+	expect(reads).toEqual({ results: 1, learner: 1 });
+});
+
+test('successful course lock marks returned groups locked without a queue refetch', async ({
+	page
+}) => {
+	const { reads } = await mockLockQueue(page, { courseReady: true });
+	await page.goto(
+		`/staff/academic/result-locks?academicYearId=${ids.year}&academicTermId=${ids.term}`
+	);
+	await expect(page.getByRole('button', { name: 'ล็อกผลรายวิชา' })).toBeVisible();
+	await page.getByRole('button', { name: 'ล็อกผลรายวิชา' }).click();
+	await expect(page.getByText('ล็อกแล้ว')).toHaveCount(2);
+	expect(reads).toEqual({ results: 1, learner: 0 });
+});
+
+test('lock route paints a focused skeleton while its active queue is pending', async ({ page }) => {
+	const observed = await mockLockQueue(page, { holdResultRead: true });
+	await page.goto(
+		`/staff/academic/result-locks?academicYearId=${ids.year}&academicTermId=${ids.term}`
+	);
+	await expect(page.getByRole('tab', { name: 'รายวิชา' })).toBeVisible();
+	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
+	observed.releaseResultRead();
+	await expect(page.getByText('ครูหลักยังไม่ยืนยันผล')).toBeVisible();
+	expect(observed.reads).toEqual({ results: 1, learner: 0 });
+});
+
+test('direct learner-tab link does not read course readiness', async ({ page }) => {
+	const observed = await mockLockQueue(page);
+	await page.goto(
+		`/staff/academic/result-locks?academicYearId=${ids.year}&academicTermId=${ids.term}&tab=learner`
+	);
+	await expect(page.getByRole('button', { name: 'ล็อกด้านนี้' })).toHaveCount(2);
+	expect(observed.reads).toEqual({ results: 0, learner: 1 });
 });

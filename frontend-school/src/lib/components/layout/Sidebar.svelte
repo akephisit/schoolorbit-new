@@ -155,6 +155,8 @@
 			path === '/staff/academic/assessments' ||
 			path === '/staff/academic/gradebook' ||
 			path === '/staff/academic/results' ||
+			path === '/staff/academic/result-locks' ||
+			path === '/staff/academic/result-corrections' ||
 			path === '/staff/academic/question-bank'
 			? 'tap'
 			: 'hover';

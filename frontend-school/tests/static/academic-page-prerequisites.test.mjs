@@ -74,6 +74,9 @@ test('dependent academic pages provide local next actions without a global readi
 	const resultLocksPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/result-locks/+page.svelte'
 	);
+	const resultLocksQueue = await readProjectFile(
+		'src/lib/components/academic/results/ResultLockQueue.svelte'
+	);
 	const resultCorrectionsPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/result-corrections/+page.svelte'
 	);
@@ -105,7 +108,7 @@ test('dependent academic pages provide local next actions without a global readi
 	assert.match(gradebookPage, /\/staff\/academic\/assessments/);
 	assert.match(resultsPage, /AcademicPrerequisiteNotice/);
 	assert.match(resultsPage, /\/staff\/academic\/gradebook/);
-	assert.match(resultLocksPage, /AcademicPrerequisiteNotice/);
+	assert.match(resultLocksQueue, /AcademicPrerequisiteNotice/);
 	assert.match(resultLocksPage, /\/staff\/academic\/results/);
 	assert.match(resultCorrectionsPage, /AcademicPrerequisiteNotice/);
 	assert.match(resultCorrectionsPage, /\/staff\/academic\/result-locks/);

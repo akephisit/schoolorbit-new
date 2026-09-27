@@ -402,24 +402,22 @@
 		{
 			"route": "staff/academic/result-corrections",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-results",
-			"notes": "Component API reads include searchEffectiveAcademicResults; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route streams the bounded 100-row effective-result search for URL-owned term and filters. First skeleton, retained same-query refresh, localized retry, supersession and typed correction patch are verified; correction dialog remains action-only. Tap preload avoids incidental search traffic."
 		},
 		{
 			"route": "staff/academic/result-locks",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-results",
-			"notes": "Component API reads include getAcademicResultReadiness, getLearnerEvaluationLockReadiness; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route streams only the active lock tab readiness; course/activity share one result read and learner readiness loads on its tab. Each queue has focused skeleton/error/retry, URL-owned tab, supersession, and typed lock patches without broad refetch. Tap preload avoids expensive incidental readiness reads."
 		},
 		{
 			"route": "staff/academic/results",

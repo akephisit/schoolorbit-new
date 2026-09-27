@@ -200,6 +200,7 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/exam-schedule-l
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/exam-schedule-detail-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/question-bank-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/gradebook-workflow.spec.ts tests/e2e/result-preparation-region-loading.spec.ts --project=chromium
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-result-locking.spec.ts tests/e2e/result-corrections-region-loading.spec.ts --project=chromium
 ```
 
 The Delivery spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.
