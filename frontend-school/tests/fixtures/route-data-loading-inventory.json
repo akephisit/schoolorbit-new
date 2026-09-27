@@ -360,13 +360,12 @@
 		{
 			"route": "staff/academic/promotion",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Component API reads include listPromotionRuns, listPromotionPolicies; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Year-scoped 50-row cursor list starts in the route after layout permissions settle. First skeleton, retained refresh/error/retry, year supersession, and typed create patch are verified. Create-dialog policy options remain lazy behind manage permission."
 		},
 		{
 			"route": "staff/academic/promotion/[id]",
@@ -381,13 +380,12 @@
 		{
 			"route": "staff/academic/promotion/policies",
 			"wave": "results-lifecycle",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Component API reads include listPromotionPolicies, getPromotionPolicyOptions; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Bounded policy-version list starts in the route after layout permissions settle. First skeleton and focused retry are verified; existing rows remain during refresh. Grade/program/progression references stay lazy on the exact read/manage dialog and typed policy creation patches the list."
 		},
 		{
 			"route": "staff/academic/question-bank",

@@ -1,3 +1,7 @@
+import type { PageLoad } from './$types';
+import { waitForPromotionReadAccess } from '$lib/academic/lifecycle/promotion-access';
+import { listPromotionPolicies } from '$lib/api/academic-promotion';
+import { captureRouteLoad } from '$lib/navigation/route-load';
 import { PERMISSIONS } from '$lib/permissions/registry';
 
 export const _meta = {
@@ -12,4 +16,12 @@ export const _meta = {
 		permission: PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL
 	}
 };
-export const load = () => ({ title: _meta.menu.title });
+export const load: PageLoad = ({ fetch }) => ({
+	title: _meta.menu.title,
+	policies: captureRouteLoad(
+		waitForPromotionReadAccess().then((allowed) =>
+			allowed ? listPromotionPolicies({ requestFetch: fetch }) : []
+		),
+		'โหลดเกณฑ์เลื่อนชั้นไม่สำเร็จ'
+	)
+});

@@ -171,6 +171,64 @@ test('policy readers inspect named rules without management-only requests', asyn
 	expect(observed.writes).toHaveLength(0);
 });
 
+test('policy list first load has a skeleton and a focused retry after failure', async ({
+	page
+}) => {
+	await mock(page, 'reader');
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route('**/api/academic/lifecycle/promotion-policies', async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return reply(route, 'เกณฑ์ชั่วคราวไม่พร้อม', 503);
+		}
+		return route.fallback();
+	});
+	await page.goto(url);
+	await expect(
+		page.getByRole('heading', { name: 'เกณฑ์การเลื่อนชั้น', exact: true })
+	).toBeVisible();
+	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toHaveCount(0);
+	release();
+	await expect(page.getByRole('button', { name: 'ลองใหม่' })).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
+test('policy refresh retains the current list and retries only that region', async ({ page }) => {
+	await mock(page, 'reader');
+	await page.goto(url);
+	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route('**/api/academic/lifecycle/promotion-policies', async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return reply(route, 'อ่านเกณฑ์ชั่วคราวไม่สำเร็จ', 503);
+		}
+		return route.fallback();
+	});
+	await page.getByRole('button', { name: 'รีเฟรช' }).click();
+	await expect(page.getByText('กำลังอัปเดตเกณฑ์...')).toBeVisible();
+	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
+	release();
+	await expect(page.getByText('อ่านเกณฑ์ชั่วคราวไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('เกณฑ์ที่ยืนยันแล้ว', { exact: true })).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
 test('policy management alone cannot approve a version', async ({ page }) => {
 	await mock(page, 'manager');
 	await page.goto(url);

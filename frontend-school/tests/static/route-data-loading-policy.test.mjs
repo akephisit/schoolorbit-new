@@ -33,6 +33,7 @@ test('legacy page-mount API reads only shrink during route migration', async () 
 	const browserOnlyMountRoutes = new Set([
 		'staff/academic/assessments',
 		'staff/academic/gradebook',
+		'staff/academic/promotion',
 		'staff/academic/results/aggregates',
 		'staff/academic/results/annual',
 		'staff/academic/timetable',

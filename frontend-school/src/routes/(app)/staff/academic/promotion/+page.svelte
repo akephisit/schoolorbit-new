@@ -1,12 +1,17 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { Plus, RefreshCw, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';
+	import {
+		PageState,
+		PageSkeleton,
+		LoadingButton,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
@@ -29,12 +34,15 @@
 		type PromotionRunCreateInput
 	} from '$lib/api/academic-promotion';
 	import { runStatusLabels } from '$lib/academic/lifecycle/promotion-presentation';
+	import type { PageProps } from './$types';
 
+	let { data }: PageProps = $props();
 	const context = getAcademicContextStore();
 	const requests = new LatestRequest();
 	let runs = $state.raw<PromotionRun[]>([]);
 	let policies = $state.raw<PromotionPolicy[]>([]);
 	let loading = $state(false);
+	let loaded = $state(false);
 	let loadingPolicies = $state(false);
 	let error = $state('');
 	let formError = $state('');
@@ -43,10 +51,9 @@
 	let saving = $state(false);
 	let targetYear = $state('');
 	let policyId = $state('');
-	let loadedYear = '';
 	let alive = true;
 	let pending: { key: string; input: PromotionRunCreateInput } | null = null;
-	const year = $derived($context.selected.academicYearId);
+	const year = $derived(data.academicYearId);
 	const years = $derived($context.options?.years ?? []);
 	const source = $derived(years.find((row) => row.id === year));
 	const targets = $derived(
@@ -79,7 +86,7 @@
 		return years.find((row) => row.id === id)?.name ?? 'ไม่พบชื่อปีการศึกษา';
 	}
 	async function loadRuns(more = false) {
-		const selected = get(context).selected.academicYearId;
+		const selected = year;
 		if (!selected || !get(can).has(PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL)) return;
 		const { revision, signal } = requests.begin();
 		loading = true;
@@ -94,6 +101,7 @@
 				? [...runs, ...data.runs.filter((row) => !runs.some((existing) => existing.id === row.id))]
 				: data.runs;
 			cursor = data.nextCursor ?? null;
+			loaded = true;
 		} catch (cause) {
 			if (!isAbortError(cause) && requests.isCurrent(revision))
 				error = cause instanceof Error ? cause.message : 'โหลดรอบไม่สำเร็จ';
@@ -132,7 +140,10 @@
 		try {
 			const created = await createPromotionRun(pending.input);
 			if (!alive) return;
+			requests.abort();
 			runs = [created, ...runs.filter((row) => row.id !== created.id)];
+			loaded = true;
+			loading = false;
 			createOpen = false;
 			pending = null;
 			toast.success('สร้างรอบเลื่อนชั้นแล้ว');
@@ -144,21 +155,6 @@
 		}
 	}
 	onMount(() => {
-		const refresh = () => {
-			const selected = get(context).selected.academicYearId;
-			if (
-				selected &&
-				get(can).has(PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL) &&
-				loadedYear !== selected
-			) {
-				loadedYear = selected;
-				runs = [];
-				cursor = null;
-				void loadRuns();
-			}
-		};
-		const unsubscribeContext = context.subscribe(refresh);
-		const unsubscribePermissions = can.subscribe(refresh);
 		const unregister = registerAcademicContextDirtySource(
 			'promotion-create',
 			() => createOpen || saving
@@ -166,10 +162,33 @@
 		return () => {
 			alive = false;
 			requests.abort();
-			unsubscribeContext();
-			unsubscribePermissions();
 			unregister();
 		};
+	});
+	$effect.pre(() => {
+		const routeRuns = data.runs;
+		const { revision } = requests.begin();
+		untrack(() => {
+			runs = [];
+			cursor = null;
+			loaded = false;
+			loading = Boolean(routeRuns);
+			error = '';
+			createOpen = false;
+		});
+		if (routeRuns)
+			void routeRuns.then((result) => {
+				if (!requests.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) {
+						runs = result.data.runs;
+						cursor = result.data.nextCursor ?? null;
+						loaded = true;
+					} else error = result.error;
+					loading = false;
+				});
+			});
+		return () => requests.abort();
 	});
 </script>
 
@@ -194,6 +213,11 @@
 	{#if !canRead}<PageState variant="permission" title="ไม่มีสิทธิ์ดูรอบเลื่อนชั้น" />
 	{:else if !year}<PageState variant="empty" title="เลือกปีการศึกษาต้นทางที่แถบด้านบน" />
 	{:else}
+		{#if loading && loaded}<RegionUpdatingState class="static" label="กำลังอัปเดตรอบ..." />{/if}
+		{#if error && loaded}<p role="alert" class="text-sm text-destructive">
+				{error}
+				<Button variant="outline" size="sm" onclick={() => void loadRuns()}>ลองใหม่</Button>
+			</p>{/if}
 		<div class="rounded-xl border bg-card p-3 text-sm sm:p-4">
 			<span class="font-semibold">ต้นทาง: {source?.name ?? 'ปีที่เลือก'}</span>
 			<p class="mt-1 text-muted-foreground">
@@ -203,8 +227,14 @@
 					เลือกปีต้นทางที่เปิดเรียน กำลังปิด หรือปิดแล้ว เพื่อสร้างรอบ
 				</p>{/if}
 		</div>
-		{#if error}<PageState variant="error" title="โหลดรอบไม่สำเร็จ" description={error} />{/if}
-		{#if loading && !runs.length}<PageSkeleton variant="table" rows={4} columns={4} />
+		{#if loading && !loaded}<PageSkeleton variant="table" rows={4} columns={4} />
+		{:else if error && !loaded}<PageState
+				variant="error"
+				title="โหลดรอบไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองใหม่"
+				onaction={() => void loadRuns()}
+			/>
 		{:else if !runs.length}<PageState
 				variant="empty"
 				title="ยังไม่มีรอบเลื่อนชั้นของปีนี้"

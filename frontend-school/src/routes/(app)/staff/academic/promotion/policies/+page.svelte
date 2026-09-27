@@ -1,9 +1,14 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { Plus, RefreshCw, Trash2, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageState, PageSkeleton, LoadingButton } from '$lib/components/app-state';
+	import {
+		PageState,
+		PageSkeleton,
+		LoadingButton,
+		RegionUpdatingState
+	} from '$lib/components/app-state';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -24,7 +29,9 @@
 		type PromotionPolicyOptions,
 		type PromotionPolicyInput
 	} from '$lib/api/academic-promotion';
+	import type { PageProps } from './$types';
 
+	let { data }: PageProps = $props();
 	type Choice = { value: string; label: string };
 	type FormRow = { key: string; input: PromotionRule };
 	const listRequest = new LatestRequest();
@@ -32,7 +39,7 @@
 	let policies = $state.raw<PromotionPolicy[]>([]);
 	let references = $state.raw<PromotionPolicyOptions | null>(null);
 	let loading = $state(false);
-	let loaded = false;
+	let loaded = $state(false);
 	let loadError = $state('');
 	let referenceLoading = $state(false);
 	let detailError = $state('');
@@ -206,7 +213,10 @@
 		detailError = '';
 		try {
 			const policy = await createPromotionPolicy(reviewedInput);
+			listRequest.abort();
 			policies = [policy, ...policies.filter((row) => row.id !== policy.id)];
+			loaded = true;
+			loading = false;
 			dialogOpen = false;
 			toast.success('ยืนยันเกณฑ์รุ่นใหม่แล้ว');
 		} catch (error) {
@@ -215,16 +225,27 @@
 			saving = false;
 		}
 	}
-	onMount(() => {
-		const unsubscribe = can.subscribe((permission) => {
-			if (permission.has(PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL) && !loaded && !loading)
-				void loadPolicies();
+	onDestroy(() => referenceRequest.abort());
+	$effect.pre(() => {
+		const routePolicies = data.policies;
+		const { revision } = listRequest.begin();
+		untrack(() => {
+			policies = [];
+			loaded = false;
+			loading = true;
+			loadError = '';
 		});
-		return () => {
-			unsubscribe();
-			listRequest.abort();
-			referenceRequest.abort();
-		};
+		void routePolicies.then((result) => {
+			if (!listRequest.isCurrent(revision)) return;
+			untrack(() => {
+				if (result.ok) {
+					policies = result.data;
+					loaded = true;
+				} else loadError = result.error;
+				loading = false;
+			});
+		});
+		return () => listRequest.abort();
 	});
 </script>
 
@@ -304,15 +325,23 @@
 				><Plus class="size-4" />สร้างเกณฑ์รุ่นใหม่</Button
 			>{/if}
 	{/snippet}
+	{#if canRead && loaded && loading}<RegionUpdatingState
+			class="static"
+			label="กำลังอัปเดตเกณฑ์..."
+		/>{/if}
+	{#if canRead && loaded && loadError}<p role="alert" class="text-sm text-destructive">
+			{loadError}
+			<Button variant="outline" size="sm" onclick={loadPolicies}>ลองใหม่</Button>
+		</p>{/if}
 	{#if !canRead}<PageState variant="permission" title="ไม่มีสิทธิ์ดูเกณฑ์การเลื่อนชั้น" />
-	{:else if loadError}<PageState
+	{:else if loadError && !loaded}<PageState
 			variant="error"
 			title="โหลดเกณฑ์ไม่สำเร็จ"
 			description={loadError}
 			actionLabel="ลองใหม่"
 			onaction={loadPolicies}
 		/>
-	{:else if loading && !policies.length}<PageSkeleton variant="table" rows={3} columns={4} />
+	{:else if loading && !loaded}<PageSkeleton variant="table" rows={3} columns={4} />
 	{:else if !policies.length}<PageState
 			title="ยังไม่มีเกณฑ์ที่ยืนยัน"
 			description="ผู้มีสิทธิ์จัดเตรียมและอนุมัติสามารถสร้างเกณฑ์รุ่นแรกได้ ระบบจะไม่กำหนดให้ทุกคนผ่านโดยอัตโนมัติ"

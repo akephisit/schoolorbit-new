@@ -1,3 +1,7 @@
+import type { PageLoad } from './$types';
+import { waitForPromotionReadAccess } from '$lib/academic/lifecycle/promotion-access';
+import { listPromotionRuns } from '$lib/api/academic-promotion';
+import { captureRouteLoad } from '$lib/navigation/route-load';
 import { PERMISSIONS } from '$lib/permissions/registry';
 export const _meta = {
 	academicContext: 'year_required' as const,
@@ -11,4 +15,17 @@ export const _meta = {
 		permission: PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL
 	}
 };
-export const load = () => ({ title: _meta.menu.title });
+export const load: PageLoad = ({ fetch, url }) => {
+	const academicYearId = url.searchParams.get('academicYearId')?.trim() || null;
+	const runs = academicYearId
+		? captureRouteLoad(
+				waitForPromotionReadAccess().then((allowed) =>
+					allowed
+						? listPromotionRuns({ sourceYearId: academicYearId }, { requestFetch: fetch })
+						: { runs: [], nextCursor: null }
+				),
+				'โหลดรอบเลื่อนชั้นไม่สำเร็จ'
+			)
+		: null;
+	return { title: _meta.menu.title, academicYearId, runs };
+};

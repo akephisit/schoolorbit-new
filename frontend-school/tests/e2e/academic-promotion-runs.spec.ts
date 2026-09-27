@@ -668,6 +668,69 @@ test('list creates a run only for the chosen source and future planning year', a
 	});
 });
 
+test('promotion run list keeps prior rows visible during a failed refresh', async ({ page }) => {
+	await mock(page, 'reader');
+	await page.goto(`/staff/academic/promotion?academicYearId=${id(1)}`);
+	await expect(page.getByText('เปิดรอบ')).toBeVisible();
+	let release = () => {};
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route('**/api/academic/lifecycle/promotion-runs*', async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		attempts++;
+		if (attempts === 1) {
+			await gate;
+			return reply(route, 'อ่านรอบชั่วคราวไม่สำเร็จ', 503);
+		}
+		return route.fallback();
+	});
+	await page.getByRole('button', { name: 'โหลดรอบใหม่' }).click();
+	await expect(page.getByText('เปิดรอบ')).toBeVisible();
+	release();
+	await expect(page.getByText('อ่านรอบชั่วคราวไม่สำเร็จ')).toBeVisible();
+	await page.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(page.getByText('เปิดรอบ')).toBeVisible();
+	expect(attempts).toBe(2);
+});
+
+test('promotion run list ignores the old year after switching academic context', async ({
+	page
+}) => {
+	await mock(page, 'reader');
+	let releaseOld = () => {};
+	const oldGate = new Promise<void>((resolve) => {
+		releaseOld = resolve;
+	});
+	let oldStarted = () => {};
+	const oldRequest = new Promise<void>((resolve) => {
+		oldStarted = resolve;
+	});
+	await page.route('**/api/academic/lifecycle/promotion-runs*', async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		const sourceYear = new URL(route.request().url()).searchParams.get('sourceYearId');
+		if (sourceYear === id(1)) {
+			oldStarted();
+			await oldGate;
+			return reply(route, { runs: [fixture().run], nextCursor: null });
+		}
+		expect(sourceYear).toBe(id(2));
+		return reply(route, { runs: [], nextCursor: null });
+	});
+	try {
+		await page.goto(`/staff/academic/promotion?academicYearId=${id(1)}`);
+		await oldRequest;
+		await page.getByLabel('เลือกปีการศึกษา', { exact: true }).click();
+		await page.getByRole('option', { name: /ปีการศึกษา 2570/ }).click();
+		await expect(page).toHaveURL(new RegExp(`academicYearId=${id(2)}`));
+		await expect(page.getByText('ยังไม่มีรอบเลื่อนชั้นของปีนี้')).toBeVisible();
+	} finally {
+		releaseOld();
+	}
+	await expect(page.getByText('เปิดรอบ')).toHaveCount(0);
+});
+
 test('manual refresh lets a manager recalculate with a new version after conflict', async ({
 	page
 }) => {

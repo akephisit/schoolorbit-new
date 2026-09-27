@@ -154,6 +154,8 @@
 			path === '/staff/academic/timetable/today' ||
 			path === '/staff/academic/assessments' ||
 			path === '/staff/academic/gradebook' ||
+			path === '/staff/academic/promotion' ||
+			path === '/staff/academic/promotion/policies' ||
 			path === '/staff/academic/results' ||
 			path === '/staff/academic/results/aggregates' ||
 			path === '/staff/academic/results/annual' ||
