@@ -8151,3 +8151,31 @@ fn admission_single_application_scores_are_subject_scoped_and_atomic() {
     assert!(update.contains("tx.commit()"));
     assert!(!update.contains(".await.ok()"));
 }
+
+#[test]
+fn admission_enrollment_and_room_sort_fail_closed_on_sql_errors() {
+    let source = read_source(
+        manifest_dir().join("crates/school-admission/src/services/application_service.rs"),
+    );
+    for (start, end) in [
+        (
+            "pub async fn list_enrollment_pending",
+            "pub struct EnrollmentResult",
+        ),
+        (
+            "pub async fn sort_room_students",
+            "pub async fn auto_assign_student_ids",
+        ),
+    ] {
+        let segment = source
+            .split(start)
+            .nth(1)
+            .unwrap_or_else(|| panic!("missing {start}"))
+            .split(end)
+            .next()
+            .unwrap_or_else(|| panic!("missing end after {start}"));
+        assert!(!segment.contains(".unwrap_or_default()"));
+        assert!(!segment.contains(".unwrap_or(0)"));
+        assert!(segment.contains(".map_err("));
+    }
+}

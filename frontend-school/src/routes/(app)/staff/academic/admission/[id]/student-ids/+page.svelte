@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import {
 		getRound,
@@ -13,6 +13,8 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { RegionUpdatingState } from '$lib/components/app-state';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -32,14 +34,23 @@
 	} from '@lucide/svelte';
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 
-	let { params }: PageProps = $props();
-	let id = $derived(params.id);
+	let { data }: PageProps = $props();
+	let id = $derived(data.id);
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
+	const roundRequest = new LatestRequest();
+	const entriesRequest = new LatestRequest();
+	let renderedId = '';
 
 	let roundName = $state('');
 	let assignmentMode = $state<'per_track' | 'global' | undefined>(undefined);
+	let roundLoaded = $state(false);
+	let roundLoading = $state(true);
+	let roundError = $state('');
 	let entries: StudentIdEntry[] = $state([]);
-	let loading = $state(true);
+	let entriesLoaded = $state(false);
+	let entriesLoading = $state(true);
+	let entriesError = $state('');
+	let loading = $derived(!entriesLoaded);
 	let saving = $state(false);
 
 	// Local edits: applicationId -> studentId string
@@ -58,27 +69,109 @@
 	let pendingMatches = $state<PendingMatch[]>([]);
 	let importStats = $state<{ filled: number; ambiguous: number; notFound: number } | null>(null);
 
-	onMount(async () => {
-		if (!canManageAdmission) {
-			loading = false;
-			return;
+	function applyEntries(rows: StudentIdEntry[]) {
+		const oldAssignments = new Map(
+			entries.map((row) => [row.applicationId, row.assignedStudentId ?? ''])
+		);
+		const nextEdits: Record<string, string> = {};
+		for (const row of rows) {
+			const previous = oldAssignments.get(row.applicationId);
+			const edited = edits[row.applicationId];
+			nextEdits[row.applicationId] =
+				previous !== undefined && edited !== previous ? edited : (row.assignedStudentId ?? '');
 		}
+		entries = rows;
+		edits = nextEdits;
+	}
+
+	async function loadRound() {
+		if (!id || !canManageAdmission) return;
+		const sourceId = id;
+		const { revision, signal } = roundRequest.begin();
+		roundLoading = true;
+		roundError = '';
 		try {
-			const [roundRes, listRes] = await Promise.all([getRound(id), listStudentIds(id)]);
-			roundName = roundRes.name ?? '';
-			assignmentMode = roundRes.selectionSettings?.assignmentMode;
-			entries = listRes.data;
-			// Seed edits with existing assigned values
-			const init: Record<string, string> = {};
-			for (const e of listRes.data) {
-				init[e.applicationId] = e.assignedStudentId ?? '';
-			}
-			edits = init;
-		} catch {
-			toast.error('โหลดข้อมูลไม่สำเร็จ');
+			const value = await getRound(sourceId, { signal });
+			if (!roundRequest.isCurrent(revision) || sourceId !== id) return;
+			roundName = value.name ?? '';
+			assignmentMode = value.selectionSettings?.assignmentMode;
+			roundLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && roundRequest.isCurrent(revision))
+				roundError = cause instanceof Error ? cause.message : 'โหลดรอบรับสมัครไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (roundRequest.isCurrent(revision)) roundLoading = false;
 		}
+	}
+
+	async function loadEntries() {
+		if (!id || !canManageAdmission) return;
+		const sourceId = id;
+		const { revision, signal } = entriesRequest.begin();
+		entriesLoading = true;
+		entriesError = '';
+		try {
+			const result = await listStudentIds(sourceId, { signal });
+			if (!entriesRequest.isCurrent(revision) || sourceId !== id) return;
+			applyEntries(result.data);
+			entriesLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && entriesRequest.isCurrent(revision))
+				entriesError = cause instanceof Error ? cause.message : 'โหลดรายชื่อไม่สำเร็จ';
+		} finally {
+			if (entriesRequest.isCurrent(revision)) entriesLoading = false;
+		}
+	}
+
+	$effect.pre(() => {
+		const routeId = data.id;
+		const routeRound = data.round;
+		const routeEntries = data.entries;
+		const { revision: roundRevision } = roundRequest.begin();
+		const { revision: entriesRevision } = entriesRequest.begin();
+		untrack(() => {
+			if (renderedId !== routeId) {
+				renderedId = routeId;
+				roundName = '';
+				assignmentMode = undefined;
+				roundLoaded = false;
+				entries = [];
+				entriesLoaded = false;
+				edits = {};
+				schoolFilter = '';
+				pendingMatches = [];
+				importStats = null;
+				importDialogOpen = false;
+				saving = false;
+				sorting = false;
+				importing = false;
+			}
+			roundLoading = true;
+			entriesLoading = true;
+			roundError = '';
+			entriesError = '';
+		});
+		void routeRound.then((result) => {
+			if (!roundRequest.isCurrent(roundRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data) {
+					roundName = result.data.name ?? '';
+					assignmentMode = result.data.selectionSettings?.assignmentMode;
+					roundLoaded = true;
+				} else if (!result.ok) roundError = result.error;
+				roundLoading = false;
+			});
+		});
+		void routeEntries.then((result) => {
+			if (!entriesRequest.isCurrent(entriesRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data) {
+					applyEntries(result.data.data);
+					entriesLoaded = true;
+				} else if (!result.ok) entriesError = result.error;
+				entriesLoading = false;
+			});
+		});
 	});
 
 	// Filtered entries based on school search
@@ -127,22 +220,17 @@
 
 	async function handleSortRooms() {
 		if (!canManageAdmission) return;
+		const sourceId = id;
 		sorting = true;
 		try {
-			const res = await sortRoomStudents(id);
+			const res = await sortRoomStudents(sourceId);
+			if (sourceId !== id) return;
 			toast.success(`จัดเรียงสำเร็จ ${res.updated} คน`);
-			// reload list เพื่อให้ rankInRoom อัปเดต
-			const listRes = await listStudentIds(id);
-			entries = listRes.data;
-			const newEdits: Record<string, string> = {};
-			for (const e of listRes.data) {
-				newEdits[e.applicationId] = edits[e.applicationId] ?? e.assignedStudentId ?? '';
-			}
-			edits = newEdits;
+			await loadEntries();
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'จัดเรียงไม่สำเร็จ');
+			if (sourceId === id) toast.error(e instanceof Error ? e.message : 'จัดเรียงไม่สำเร็จ');
 		} finally {
-			sorting = false;
+			if (sourceId === id) sorting = false;
 		}
 	}
 
@@ -181,22 +269,40 @@
 
 	async function saveAll() {
 		if (!canManageAdmission) return;
+		const sourceId = id;
 		if (hasDuplicates) {
 			toast.error('มีเลขประจำตัวซ้ำกัน กรุณาแก้ไขก่อนบันทึก');
 			return;
 		}
+		const updates = entries.flatMap((entry) => {
+			const studentId = edits[entry.applicationId]?.trim() || null;
+			return studentId === (entry.assignedStudentId ?? null)
+				? []
+				: [{ applicationId: entry.applicationId, studentId }];
+		});
+		if (updates.length === 0) {
+			toast.info('ไม่มีเลขประจำตัวที่เปลี่ยน');
+			return;
+		}
 		saving = true;
 		try {
-			const updates = entries.map((e) => ({
-				applicationId: e.applicationId,
-				studentId: edits[e.applicationId]?.trim() || null
-			}));
-			const res = await batchUpdateStudentIds(id, updates);
+			const res = await batchUpdateStudentIds(sourceId, updates);
+			if (sourceId !== id) return;
+			if (res.updated !== updates.length)
+				throw new Error('ข้อมูลบางรายการไม่ถูกบันทึก กรุณาโหลดรายชื่อใหม่');
+			entriesRequest.abort();
+			entriesLoading = false;
+			const saved = new Map(updates.map((row) => [row.applicationId, row.studentId]));
+			entries = entries.map((row) =>
+				saved.has(row.applicationId)
+					? { ...row, assignedStudentId: saved.get(row.applicationId) ?? undefined }
+					: row
+			);
 			toast.success(`บันทึกสำเร็จ ${res.updated} รายการ`);
-		} catch {
-			toast.error('บันทึกไม่สำเร็จ');
+		} catch (cause) {
+			if (sourceId === id) toast.error(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ');
 		} finally {
-			saving = false;
+			if (sourceId === id) saving = false;
 		}
 	}
 
@@ -374,7 +480,7 @@
 <PageShell
 	title="กำหนดเลขประจำตัวนักเรียน"
 	description={roundName || 'เรียงรายชื่อ นำเข้าไฟล์ และบันทึกเลขประจำตัว'}
-	backHref="/staff/academic/admission/{id}"
+	backHref={`/staff/academic/admission/${id}`}
 >
 	{#if !canManageAdmission}
 		<PageState
@@ -383,6 +489,28 @@
 			description="หน้านี้ต้องใช้สิทธิ์จัดการงานรับสมัครเพื่อเรียงรายชื่อ นำเข้าไฟล์ และบันทึกเลขประจำตัว"
 		/>
 	{:else}
+		{#if roundLoading && !roundLoaded}
+			<PageSkeleton variant="detail" />
+		{:else if roundError}
+			<PageState
+				variant="error"
+				title="โหลดชื่อรอบรับสมัครไม่สำเร็จ"
+				description={roundError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadRound}
+			/>
+		{:else if roundLoading}
+			<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />
+		{/if}
+		{#if entriesLoading && entriesLoaded}
+			<RegionUpdatingState class="static" label="กำลังอัปเดตรายชื่อ..." />
+		{/if}
+		{#if entriesError && entriesLoaded}
+			<p role="alert" class="text-sm text-destructive">
+				{entriesError}
+				<Button size="sm" variant="outline" onclick={loadEntries}>ลองใหม่</Button>
+			</p>
+		{/if}
 		<!-- Controls -->
 		<Card.Root class="gap-0 py-0">
 			<Card.Content class="flex flex-nowrap items-center gap-2 overflow-x-auto p-3 sm:p-4">
@@ -543,7 +671,7 @@
 		</Card.Root>
 
 		<!-- Table -->
-		<Card.Root>
+		<Card.Root aria-busy={entriesLoading}>
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
@@ -562,7 +690,19 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#if loading}
+					{#if entriesError && !entriesLoaded}
+						<Table.Row>
+							<Table.Cell colspan={10} class="p-6">
+								<PageState
+									variant="error"
+									title="โหลดรายชื่อไม่สำเร็จ"
+									description={entriesError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={loadEntries}
+								/>
+							</Table.Cell>
+						</Table.Row>
+					{:else if loading}
 						<Table.Row>
 							<Table.Cell colspan={10} class="p-0">
 								<PageSkeleton variant="table" rows={6} columns={6} />

@@ -801,7 +801,10 @@ pub async fn list_enrollment_pending(
     .bind(round_id)
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    .map_err(|error| {
+        tracing::error!("list_enrollment_pending query failed: {}", error);
+        AppError::InternalServerError("ไม่สามารถโหลดรายชื่อมอบตัวได้".to_string())
+    })?;
 
     for row in &mut list {
         decrypt_national_id(&mut row.national_id)?;
@@ -1600,7 +1603,10 @@ pub async fn sort_room_students(pool: &PgPool, round_id: Uuid) -> Result<i64, Ap
     .bind(round_id)
     .fetch_one(pool)
     .await
-    .unwrap_or(0);
+    .map_err(|error| {
+        tracing::error!("sort_room_students query failed: {}", error);
+        AppError::InternalServerError("ไม่สามารถจัดเรียงรายชื่อในห้องได้".to_string())
+    })?;
     Ok(updated)
 }
 

@@ -149,13 +149,12 @@
 		{
 			"route": "staff/academic/admission/[id]/enrollment",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getRound, listEnrollmentPending; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Round and enrollment list start independently; completion patches the selected row without rereading the page."
 		},
 		{
 			"route": "staff/academic/admission/[id]/exam-rooms",
@@ -170,13 +169,12 @@
 		{
 			"route": "staff/academic/admission/[id]/report",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getRound, listApplications; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Round report configuration and application collection start independently; filtering stays local after the list resolves."
 		},
 		{
 			"route": "staff/academic/admission/[id]/scores",
@@ -201,13 +199,12 @@
 		{
 			"route": "staff/academic/admission/[id]/student-ids",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getRound, listStudentIds; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Round and student-ID list start independently; sorting refreshes only the list, changed IDs save as one batch, and XLSX stays interaction-lazy."
 		},
 		{
 			"route": "staff/academic/admission/new",

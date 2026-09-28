@@ -740,9 +740,10 @@ export async function updateSelectionSettings(
 // Enrollment API
 // ==========================================
 
-export async function listEnrollmentPending(roundId: string) {
+export async function listEnrollmentPending(roundId: string, options: ApiRequestOptions = {}) {
 	const res = await apiClient.get<EnrollmentPending[]>(
-		`/api/admission/rounds/${roundId}/enrollment`
+		`/api/admission/rounds/${roundId}/enrollment`,
+		options
 	);
 	if (!res.success) throw new Error(res.error);
 	return res.data;
@@ -1280,8 +1281,14 @@ export interface StudentIdEntry {
 	examId?: string;
 }
 
-export async function listStudentIds(roundId: string): Promise<{ data: StudentIdEntry[] }> {
-	const res = await apiClient.get<StudentIdEntry[]>(`/api/admission/rounds/${roundId}/student-ids`);
+export async function listStudentIds(
+	roundId: string,
+	options: ApiRequestOptions = {}
+): Promise<{ data: StudentIdEntry[] }> {
+	const res = await apiClient.get<StudentIdEntry[]>(
+		`/api/admission/rounds/${roundId}/student-ids`,
+		options
+	);
 	if (!res.success) throw new Error(res.error);
 	return { data: res.data ?? [] };
 }

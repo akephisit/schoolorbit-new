@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import {
 		getRound,
@@ -16,6 +16,8 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { RegionUpdatingState } from '$lib/components/app-state';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -41,14 +43,21 @@
 
 	type EnrollRow = EnrollmentPending;
 
-	let { params }: PageProps = $props();
-	let id = $derived(params.id);
+	let { data }: PageProps = $props();
+	let id = $derived(data.id);
 	const canEnrollAdmission = $derived($can.has(PERMISSIONS.ADMISSION_ENROLL_ALL));
+	const roundRequest = new LatestRequest();
+	const pendingRequest = new LatestRequest();
+	let renderedId = '';
 
 	let round: Awaited<ReturnType<typeof getRound>> | null = $state(null);
+	let roundLoaded = $state(false);
+	let roundLoading = $state(true);
+	let roundError = $state('');
 	let list: EnrollRow[] = $state([]);
-	let loading = $state(true);
-	let error = $state('');
+	let pendingLoaded = $state(false);
+	let pendingLoading = $state(true);
+	let pendingError = $state('');
 
 	let showEnrollDialog = $state(false);
 	let enrollingApp = $state<EnrollRow | null>(null);
@@ -162,51 +171,120 @@
 		);
 	});
 
-	async function load() {
-		if (!id) return;
-		if (!canEnrollAdmission) {
-			loading = false;
-			return;
-		}
-		loading = true;
-		error = '';
+	async function loadRound() {
+		if (!id || !canEnrollAdmission) return;
+		const sourceId = id;
+		const { revision, signal } = roundRequest.begin();
+		roundLoading = true;
+		roundError = '';
 		try {
-			const [r, l] = await Promise.all([getRound(id), listEnrollmentPending(id)]);
-			round = r;
-			list = l ?? [];
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
-			toast.error(error);
+			const value = await getRound(sourceId, { signal });
+			if (!roundRequest.isCurrent(revision) || sourceId !== id) return;
+			round = value;
+			roundLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && roundRequest.isCurrent(revision))
+				roundError = cause instanceof Error ? cause.message : 'โหลดรอบรับสมัครไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (roundRequest.isCurrent(revision)) roundLoading = false;
+		}
+	}
+
+	async function loadPending() {
+		if (!id || !canEnrollAdmission) return;
+		const sourceId = id;
+		const { revision, signal } = pendingRequest.begin();
+		pendingLoading = true;
+		pendingError = '';
+		try {
+			const value = await listEnrollmentPending(sourceId, { signal });
+			if (!pendingRequest.isCurrent(revision) || sourceId !== id) return;
+			list = value ?? [];
+			pendingLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && pendingRequest.isCurrent(revision))
+				pendingError = cause instanceof Error ? cause.message : 'โหลดรายชื่อมอบตัวไม่สำเร็จ';
+		} finally {
+			if (pendingRequest.isCurrent(revision)) pendingLoading = false;
 		}
 	}
 
 	async function handleEnroll() {
 		if (!enrollingApp || !canEnrollAdmission) return;
+		const sourceId = id;
+		const applicationId = enrollingApp.id;
 		enrolling = true;
 		try {
 			const fd = needsForm ? enrollFormData : undefined;
 
 			const res = await completeEnrollment(enrollingApp.id, studentCode || undefined, fd);
+			if (sourceId !== id) return;
+			pendingRequest.abort();
+			pendingLoading = false;
 			toast.success(`มอบตัวสำเร็จ! Username: ${res?.username}`);
 			showEnrollDialog = false;
 			resetDialog();
-			await load();
+			list = list.map((row) =>
+				row.id === applicationId
+					? { ...row, status: 'enrolled', assignedStudentId: res.studentCode }
+					: row
+			);
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'มอบตัวไม่สำเร็จ');
+			if (sourceId === id) toast.error(e instanceof Error ? e.message : 'มอบตัวไม่สำเร็จ');
 		} finally {
-			enrolling = false;
+			if (sourceId === id) enrolling = false;
 		}
 	}
 
-	onMount(load);
+	$effect.pre(() => {
+		const routeId = data.id;
+		const routeRound = data.round;
+		const routePending = data.pending;
+		const { revision: roundRevision } = roundRequest.begin();
+		const { revision: pendingRevision } = pendingRequest.begin();
+		untrack(() => {
+			if (renderedId !== routeId) {
+				renderedId = routeId;
+				round = null;
+				roundLoaded = false;
+				list = [];
+				pendingLoaded = false;
+				showEnrollDialog = false;
+				resetDialog();
+				enrolling = false;
+			}
+			roundLoading = true;
+			pendingLoading = true;
+			roundError = '';
+			pendingError = '';
+		});
+		void routeRound.then((result) => {
+			if (!roundRequest.isCurrent(roundRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data) {
+					round = result.data;
+					roundLoaded = true;
+				} else if (!result.ok) roundError = result.error;
+				roundLoading = false;
+			});
+		});
+		void routePending.then((result) => {
+			if (!pendingRequest.isCurrent(pendingRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data) {
+					list = result.data;
+					pendingLoaded = true;
+				} else if (!result.ok) pendingError = result.error;
+				pendingLoading = false;
+			});
+		});
+	});
 </script>
 
 <PageShell
 	title="รับมอบตัว"
 	description={round?.name ?? 'ตรวจสอบผู้ผ่านคัดเลือกและสร้างข้อมูลนักเรียน'}
-	backHref="/staff/academic/admission/{id}"
+	backHref={`/staff/academic/admission/${id}`}
 >
 	{#if !canEnrollAdmission}
 		<PageState
@@ -215,115 +293,146 @@
 			description="หน้านี้ต้องใช้สิทธิ์รับมอบตัวของงานรับสมัครก่อนจึงจะแสดงรายชื่อและสร้างบัญชีนักเรียนได้"
 		/>
 	{:else}
-		<!-- Stats -->
-		<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-			<Card.Root class="gap-0 py-0">
-				<Card.Content class="pt-5 pb-5 text-center">
-					<p class="text-3xl font-bold">{list.length}</p>
-					<p class="text-xs text-muted-foreground mt-1">ได้รับคัดเลือกทั้งหมด</p>
-				</Card.Content>
-			</Card.Root>
-			<Card.Root class="gap-0 border-green-200 bg-green-50 py-0 dark:bg-green-950/20">
-				<Card.Content class="pt-5 pb-5 text-center">
-					<p class="text-3xl font-bold text-green-700">
-						{list.filter((a) => a.studentConfirmed).length}
-					</p>
-					<p class="text-xs text-green-600 mt-1">ยืนยันแล้ว</p>
-				</Card.Content>
-			</Card.Root>
-			<Card.Root class="gap-0 border-blue-200 bg-blue-50 py-0 dark:bg-blue-950/20">
-				<Card.Content class="pt-5 pb-5 text-center">
-					<p class="text-3xl font-bold text-blue-700">
-						{list.filter((a) => a.preSubmitted).length}
-					</p>
-					<p class="text-xs text-blue-600 mt-1">กรอกฟอร์มล่วงหน้า</p>
-				</Card.Content>
-			</Card.Root>
-			<Card.Root class="gap-0 border-purple-200 bg-purple-50 py-0 dark:bg-purple-950/20">
-				<Card.Content class="pt-5 pb-5 text-center">
-					<p class="text-3xl font-bold text-purple-700">
-						{list.filter((a) => a.status === 'enrolled').length}
-					</p>
-					<p class="text-xs text-purple-600 mt-1">มอบตัวแล้ว</p>
-				</Card.Content>
-			</Card.Root>
-		</div>
-
-		{#if loading}
-			<PageSkeleton variant="table" rows={5} columns={7} />
-		{:else if error}
+		{#if roundLoading && !roundLoaded}
+			<PageSkeleton variant="detail" />
+		{:else if roundError}
 			<PageState
 				variant="error"
-				title="โหลดรายชื่อมอบตัวไม่สำเร็จ"
-				description={error}
+				title="โหลดชื่อรอบรับสมัครไม่สำเร็จ"
+				description={roundError}
 				actionLabel="ลองอีกครั้ง"
-				onaction={load}
+				onaction={loadRound}
 			/>
-		{:else if list.length === 0}
-			<PageState title="ยังไม่มีรายชื่อที่รอมอบตัว" description="ต้องผ่านขั้นตอนจัดห้องก่อน" />
-		{:else}
-			<Card.Root>
-				<div class="overflow-x-auto">
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head class="w-24">เลขที่</Table.Head>
-								<Table.Head>ชื่อ</Table.Head>
-								<Table.Head>สาย</Table.Head>
-								<Table.Head>ห้อง</Table.Head>
-								<Table.Head>สถานะ</Table.Head>
-								<Table.Head class="text-right">จัดการ</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each list as app (app.id)}
-								<Table.Row class={app.status === 'enrolled' ? 'opacity-60' : ''}>
-									<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-									<Table.Cell>
-										<p class="font-medium text-sm">{app.fullName}</p>
-										<p class="text-xs text-muted-foreground">{app.nationalId}</p>
-									</Table.Cell>
-									<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
-									<Table.Cell class="text-sm">{app.roomName ?? '-'}</Table.Cell>
-									<Table.Cell>
-										<div class="flex flex-col gap-1">
-											{#if app.status === 'enrolled'}
-												<Badge variant="default" class="bg-purple-600 w-fit">มอบตัวแล้ว</Badge>
-											{:else}
-												<Badge
-													variant={app.studentConfirmed ? 'default' : 'secondary'}
-													class="w-fit"
-												>
-													{app.studentConfirmed ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}
-												</Badge>
-												{#if app.preSubmitted}
-													<Badge variant="outline" class="w-fit text-xs">กรอกฟอร์มแล้ว</Badge>
-												{/if}
-											{/if}
-										</div>
-									</Table.Cell>
-									<Table.Cell class="text-right">
-										{#if app.status !== 'enrolled'}
-											<Button
-												size="sm"
-												onclick={() => openEnrollDialog(app)}
-												class="gap-1 h-7 text-xs"
-											>
-												<Check class="w-3 h-3" /> รับมอบตัว
-											</Button>
-										{:else}
-											<span class="text-xs text-green-600 flex items-center justify-end gap-1">
-												<Check class="w-3 h-3" /> เสร็จสิ้น
-											</span>
-										{/if}
-									</Table.Cell>
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				</div>
-			</Card.Root>
+		{:else if roundLoading}
+			<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />
 		{/if}
+		<!-- Stats -->
+		{#if pendingLoaded}
+			<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+				<Card.Root class="gap-0 py-0">
+					<Card.Content class="pt-5 pb-5 text-center">
+						<p class="text-3xl font-bold">{list.length}</p>
+						<p class="text-xs text-muted-foreground mt-1">ได้รับคัดเลือกทั้งหมด</p>
+					</Card.Content>
+				</Card.Root>
+				<Card.Root class="gap-0 border-green-200 bg-green-50 py-0 dark:bg-green-950/20">
+					<Card.Content class="pt-5 pb-5 text-center">
+						<p class="text-3xl font-bold text-green-700">
+							{list.filter((a) => a.studentConfirmed).length}
+						</p>
+						<p class="text-xs text-green-600 mt-1">ยืนยันแล้ว</p>
+					</Card.Content>
+				</Card.Root>
+				<Card.Root class="gap-0 border-blue-200 bg-blue-50 py-0 dark:bg-blue-950/20">
+					<Card.Content class="pt-5 pb-5 text-center">
+						<p class="text-3xl font-bold text-blue-700">
+							{list.filter((a) => a.preSubmitted).length}
+						</p>
+						<p class="text-xs text-blue-600 mt-1">กรอกฟอร์มล่วงหน้า</p>
+					</Card.Content>
+				</Card.Root>
+				<Card.Root class="gap-0 border-purple-200 bg-purple-50 py-0 dark:bg-purple-950/20">
+					<Card.Content class="pt-5 pb-5 text-center">
+						<p class="text-3xl font-bold text-purple-700">
+							{list.filter((a) => a.status === 'enrolled').length}
+						</p>
+						<p class="text-xs text-purple-600 mt-1">มอบตัวแล้ว</p>
+					</Card.Content>
+				</Card.Root>
+			</div>
+		{/if}
+
+		<div aria-busy={pendingLoading}>
+			{#if pendingLoading && !pendingLoaded}
+				<PageSkeleton variant="table" rows={5} columns={7} />
+			{:else if pendingError && !pendingLoaded}
+				<PageState
+					variant="error"
+					title="โหลดรายชื่อมอบตัวไม่สำเร็จ"
+					description={pendingError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadPending}
+				/>
+			{:else if pendingLoaded}
+				{#if pendingLoading}<RegionUpdatingState
+						class="static"
+						label="กำลังอัปเดตรายชื่อมอบตัว..."
+					/>{/if}
+				{#if pendingError}
+					<p role="alert" class="text-sm text-destructive">
+						{pendingError}
+						<Button size="sm" variant="outline" onclick={loadPending}>ลองใหม่</Button>
+					</p>
+				{/if}
+				{#if list.length === 0}
+					<PageState title="ยังไม่มีรายชื่อที่รอมอบตัว" description="ต้องผ่านขั้นตอนจัดห้องก่อน" />
+				{:else}
+					<Card.Root>
+						<div class="overflow-x-auto">
+							<Table.Root>
+								<Table.Header>
+									<Table.Row>
+										<Table.Head class="w-24">เลขที่</Table.Head>
+										<Table.Head>ชื่อ</Table.Head>
+										<Table.Head>สาย</Table.Head>
+										<Table.Head>ห้อง</Table.Head>
+										<Table.Head>สถานะ</Table.Head>
+										<Table.Head class="text-right">จัดการ</Table.Head>
+									</Table.Row>
+								</Table.Header>
+								<Table.Body>
+									{#each list as app (app.id)}
+										<Table.Row class={app.status === 'enrolled' ? 'opacity-60' : ''}>
+											<Table.Cell class="font-mono text-xs"
+												>{app.applicationNumber ?? '-'}</Table.Cell
+											>
+											<Table.Cell>
+												<p class="font-medium text-sm">{app.fullName}</p>
+												<p class="text-xs text-muted-foreground">{app.nationalId}</p>
+											</Table.Cell>
+											<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
+											<Table.Cell class="text-sm">{app.roomName ?? '-'}</Table.Cell>
+											<Table.Cell>
+												<div class="flex flex-col gap-1">
+													{#if app.status === 'enrolled'}
+														<Badge variant="default" class="bg-purple-600 w-fit">มอบตัวแล้ว</Badge>
+													{:else}
+														<Badge
+															variant={app.studentConfirmed ? 'default' : 'secondary'}
+															class="w-fit"
+														>
+															{app.studentConfirmed ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน'}
+														</Badge>
+														{#if app.preSubmitted}
+															<Badge variant="outline" class="w-fit text-xs">กรอกฟอร์มแล้ว</Badge>
+														{/if}
+													{/if}
+												</div>
+											</Table.Cell>
+											<Table.Cell class="text-right">
+												{#if app.status !== 'enrolled'}
+													<Button
+														size="sm"
+														onclick={() => openEnrollDialog(app)}
+														class="gap-1 h-7 text-xs"
+													>
+														<Check class="w-3 h-3" /> รับมอบตัว
+													</Button>
+												{:else}
+													<span class="text-xs text-green-600 flex items-center justify-end gap-1">
+														<Check class="w-3 h-3" /> เสร็จสิ้น
+													</span>
+												{/if}
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								</Table.Body>
+							</Table.Root>
+						</div>
+					</Card.Root>
+				{/if}
+			{/if}
+		</div>
 	{/if}
 </PageShell>
 

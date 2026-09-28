@@ -1,6 +1,11 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
+test.beforeEach(async ({ page }) => {
+	await page.route('https://fonts.googleapis.com/**', (route) =>
+		route.fulfill({ status: 200, contentType: 'text/css', body: '' })
+	);
+});
 test.describe.configure({ mode: 'default' });
 
 const id = (n: number) => `31000000-0000-4000-8000-${String(n).padStart(12, '0')}`;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import {
 		getRound,
 		listApplications,
@@ -10,23 +10,31 @@
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { RegionUpdatingState } from '$lib/components/app-state';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Settings, ChevronDown } from '@lucide/svelte';
-	import { toast } from 'svelte-sonner';
 	import { SvelteMap } from 'svelte/reactivity';
 
 	import type { PageProps } from './$types';
-	let { params }: PageProps = $props();
+	let { data }: PageProps = $props();
 
-	let id = $derived(params.id);
+	let id = $derived(data.id);
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
+	const roundRequest = new LatestRequest();
+	const applicationsRequest = new LatestRequest();
+	let renderedId = '';
 	let round = $state<AdmissionRound | null>(null);
+	let roundLoaded = $state(false);
+	let roundLoading = $state(true);
+	let roundError = $state('');
 	let applications: ApplicationListItem[] = $state([]);
-	let loading = $state(true);
-	let error = $state('');
+	let applicationsLoaded = $state(false);
+	let applicationsLoading = $state(true);
+	let applicationsError = $state('');
 	let statusFilter = $state('all');
 
 	// ---- Types ----
@@ -121,23 +129,41 @@
 	}
 
 	// ---- Data loading ----
-	async function load() {
-		if (!id) return;
-		if (!canReadAdmission) {
-			loading = false;
-			return;
-		}
-		loading = true;
-		error = '';
+	async function loadRound() {
+		if (!id || !canReadAdmission) return;
+		const sourceId = id;
+		const { revision, signal } = roundRequest.begin();
+		roundLoading = true;
+		roundError = '';
 		try {
-			const [r, apps] = await Promise.all([getRound(id), listApplications(id, {})]);
-			round = r;
-			applications = apps;
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ';
-			toast.error(error);
+			const value = await getRound(sourceId, { signal });
+			if (!roundRequest.isCurrent(revision) || sourceId !== id) return;
+			round = value;
+			roundLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && roundRequest.isCurrent(revision))
+				roundError = cause instanceof Error ? cause.message : 'โหลดรอบรับสมัครไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (roundRequest.isCurrent(revision)) roundLoading = false;
+		}
+	}
+
+	async function loadApplications() {
+		if (!id || !canReadAdmission) return;
+		const sourceId = id;
+		const { revision, signal } = applicationsRequest.begin();
+		applicationsLoading = true;
+		applicationsError = '';
+		try {
+			const value = await listApplications(sourceId, {}, { signal });
+			if (!applicationsRequest.isCurrent(revision) || sourceId !== id) return;
+			applications = value;
+			applicationsLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && applicationsRequest.isCurrent(revision))
+				applicationsError = cause instanceof Error ? cause.message : 'โหลดข้อมูลรายงานไม่สำเร็จ';
+		} finally {
+			if (applicationsRequest.isCurrent(revision)) applicationsLoading = false;
 		}
 	}
 
@@ -175,7 +201,48 @@
 		'withdrawn'
 	];
 
-	onMount(load);
+	$effect.pre(() => {
+		const routeId = data.id;
+		const routeRound = data.round;
+		const routeApplications = data.applications;
+		const { revision: roundRevision } = roundRequest.begin();
+		const { revision: applicationsRevision } = applicationsRequest.begin();
+		untrack(() => {
+			if (renderedId !== routeId) {
+				renderedId = routeId;
+				round = null;
+				roundLoaded = false;
+				applications = [];
+				applicationsLoaded = false;
+				statusFilter = 'all';
+				expanded = new SvelteMap();
+			}
+			roundLoading = true;
+			applicationsLoading = true;
+			roundError = '';
+			applicationsError = '';
+		});
+		void routeRound.then((result) => {
+			if (!roundRequest.isCurrent(roundRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data) {
+					round = result.data;
+					roundLoaded = true;
+				} else if (!result.ok) roundError = result.error;
+				roundLoading = false;
+			});
+		});
+		void routeApplications.then((result) => {
+			if (!applicationsRequest.isCurrent(applicationsRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data) {
+					applications = result.data;
+					applicationsLoaded = true;
+				} else if (!result.ok) applicationsError = result.error;
+				applicationsLoading = false;
+			});
+		});
+	});
 </script>
 
 {#snippet statsBlock(scopeKey: string, apps: ApplicationListItem[])}
@@ -485,7 +552,7 @@
 <PageShell
 	title="รายงานการรับสมัคร"
 	description={round?.name ?? 'สรุปข้อมูลใบสมัครและสถานะของรอบนี้'}
-	backHref="/staff/academic/admission/{id}"
+	backHref={`/staff/academic/admission/${id}`}
 >
 	{#if !canReadAdmission}
 		<PageState
@@ -493,24 +560,34 @@
 			title="ไม่มีสิทธิ์ดูรายงานรับสมัคร"
 			description="หน้านี้ต้องใช้สิทธิ์อ่านข้อมูลงานรับสมัครก่อนจึงจะแสดงรายงานได้"
 		/>
-	{:else if loading}
+	{:else if roundLoading && !roundLoaded}
 		<PageSkeleton variant="detail" />
-	{:else if error}
+	{:else if roundError && !roundLoaded}
 		<PageState
 			variant="error"
-			title="โหลดรายงานรับสมัครไม่สำเร็จ"
-			description={error}
+			title="โหลดรอบรับสมัครไม่สำเร็จ"
+			description={roundError}
 			actionLabel="ลองอีกครั้ง"
-			onaction={load}
+			onaction={loadRound}
 		/>
 	{:else if round}
 		<div class="space-y-6">
+			{#if roundLoading}<RegionUpdatingState
+					class="static"
+					label="กำลังอัปเดตรอบรับสมัคร..."
+				/>{/if}
+			{#if roundError}
+				<p role="alert" class="text-sm text-destructive">
+					{roundError}
+					<Button size="sm" variant="outline" onclick={loadRound}>ลองใหม่</Button>
+				</p>
+			{/if}
 			{#if !reportConfig || reportConfig.reportMode === null}
 				<Card.Root class="gap-0 py-0">
 					<Card.Content class="py-12 text-center space-y-3">
 						<p class="text-muted-foreground">ยังไม่ได้ตั้งค่าการรายงานสำหรับรอบนี้</p>
 						<Button
-							href="/staff/academic/admission/{id}"
+							href={`/staff/academic/admission/${id}`}
 							variant="outline"
 							size="sm"
 							class="gap-1.5"
@@ -520,7 +597,7 @@
 					</Card.Content>
 				</Card.Root>
 			{:else}
-				<!-- Summary cards -->
+				<!-- Configuration is usable before the application list resolves. -->
 				<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-4">
@@ -531,78 +608,106 @@
 					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-4">
 							<p class="text-xs text-muted-foreground">ผู้สมัครทั้งหมด</p>
-							<p class="font-semibold mt-0.5">{applications.length} คน</p>
+							<p class="font-semibold mt-0.5">
+								{applicationsLoaded ? `${applications.length} คน` : 'กำลังโหลด...'}
+							</p>
 						</Card.Content>
 					</Card.Root>
 					<Card.Root class="gap-0 py-0">
 						<Card.Content class="p-4">
 							<p class="text-xs text-muted-foreground">แสดง (ตามตัวกรอง)</p>
-							<p class="font-semibold mt-0.5">{filteredApps.length} คน</p>
+							<p class="font-semibold mt-0.5">
+								{applicationsLoaded ? `${filteredApps.length} คน` : 'กำลังโหลด...'}
+							</p>
 						</Card.Content>
 					</Card.Root>
 				</div>
+				<div aria-busy={applicationsLoading} class="space-y-6">
+					{#if applicationsLoading && !applicationsLoaded}
+						<PageSkeleton variant="detail" />
+					{:else if applicationsError && !applicationsLoaded}
+						<PageState
+							variant="error"
+							title="โหลดข้อมูลรายงานไม่สำเร็จ"
+							description={applicationsError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadApplications}
+						/>
+					{:else if applicationsLoaded}
+						{#if applicationsLoading}<RegionUpdatingState
+								class="static"
+								label="กำลังอัปเดตข้อมูลรายงาน..."
+							/>{/if}
+						{#if applicationsError}
+							<p role="alert" class="text-sm text-destructive">
+								{applicationsError}
+								<Button size="sm" variant="outline" onclick={loadApplications}>ลองใหม่</Button>
+							</p>
+						{/if}
 
-				<!-- Status filter -->
-				<div
-					class="flex flex-col items-start gap-2 rounded-xl border bg-card p-3 sm:flex-row sm:items-center sm:p-4"
-				>
-					<span class="text-sm font-medium">กรอง:</span>
-					<Select.Root type="single" bind:value={statusFilter}>
-						<Select.Trigger class="w-full sm:w-48">
-							{statusFilter === 'all'
-								? 'สถานะทั้งหมด'
-								: (applicationStatusLabel[statusFilter] ?? statusFilter)}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="all">สถานะทั้งหมด</Select.Item>
-							{#each allStatuses as s (s)}
-								<Select.Item value={s}>{applicationStatusLabel[s] ?? s}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
+						<!-- Status filter -->
+						<div
+							class="flex flex-col items-start gap-2 rounded-xl border bg-card p-3 sm:flex-row sm:items-center sm:p-4"
+						>
+							<span class="text-sm font-medium">กรอง:</span>
+							<Select.Root type="single" bind:value={statusFilter}>
+								<Select.Trigger class="w-full sm:w-48">
+									{statusFilter === 'all'
+										? 'สถานะทั้งหมด'
+										: (applicationStatusLabel[statusFilter] ?? statusFilter)}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="all">สถานะทั้งหมด</Select.Item>
+									{#each allStatuses as s (s)}
+										<Select.Item value={s}>{applicationStatusLabel[s] ?? s}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
 
-				<!-- รายงานรวม -->
-				<div class="space-y-3">
-					<h2 class="text-base font-semibold border-b pb-2">รายงานรวม</h2>
-					{@render statsBlock('overall', filteredApps)}
-				</div>
+						<!-- รายงานรวม -->
+						<div class="space-y-3">
+							<h2 class="text-base font-semibold border-b pb-2">รายงานรวม</h2>
+							{@render statsBlock('overall', filteredApps)}
+						</div>
 
-				<!-- แยกตามวัน -->
-				<div class="space-y-3">
-					<h2 class="text-base font-semibold border-b pb-2">แยกตามวัน</h2>
-					{#if dayGroups().length === 0}
-						<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
-					{:else}
-						<div class="space-y-2">
-							{#each dayGroups() as group (group.date)}
-								<Card.Root>
-									<button
-										type="button"
-										class="w-full text-left px-5 py-3.5 flex items-center justify-between hover:bg-muted/40 transition-colors rounded-xl"
-										onclick={() => toggleExpand(`day-${group.date}`)}
-									>
-										<span class="font-medium text-sm">
-											{formatThaiDate(group.date)}
-											<span class="text-muted-foreground font-normal ml-1.5"
-												>({group.apps.length} คน)</span
+						<!-- แยกตามวัน -->
+						<div class="space-y-3">
+							<h2 class="text-base font-semibold border-b pb-2">แยกตามวัน</h2>
+							{#if dayGroups().length === 0}
+								<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
+							{:else}
+								<div class="space-y-2">
+									{#each dayGroups() as group (group.date)}
+										<Card.Root>
+											<button
+												type="button"
+												class="w-full text-left px-5 py-3.5 flex items-center justify-between hover:bg-muted/40 transition-colors rounded-xl"
+												onclick={() => toggleExpand(`day-${group.date}`)}
 											>
-										</span>
-										<ChevronDown
-											class="w-4 h-4 text-muted-foreground transition-transform duration-200 shrink-0 {isExpanded(
-												`day-${group.date}`
-											)
-												? 'rotate-180'
-												: ''}"
-										/>
-									</button>
-									{#if isExpanded(`day-${group.date}`)}
-										<div class="px-5 pb-4 space-y-4 border-t border-border pt-4">
-											{@render statsBlock(group.date, group.apps)}
-										</div>
-									{/if}
-								</Card.Root>
-							{/each}
+												<span class="font-medium text-sm">
+													{formatThaiDate(group.date)}
+													<span class="text-muted-foreground font-normal ml-1.5"
+														>({group.apps.length} คน)</span
+													>
+												</span>
+												<ChevronDown
+													class="w-4 h-4 text-muted-foreground transition-transform duration-200 shrink-0 {isExpanded(
+														`day-${group.date}`
+													)
+														? 'rotate-180'
+														: ''}"
+												/>
+											</button>
+											{#if isExpanded(`day-${group.date}`)}
+												<div class="px-5 pb-4 space-y-4 border-t border-border pt-4">
+													{@render statsBlock(group.date, group.apps)}
+												</div>
+											{/if}
+										</Card.Root>
+									{/each}
+								</div>
+							{/if}
 						</div>
 					{/if}
 				</div>

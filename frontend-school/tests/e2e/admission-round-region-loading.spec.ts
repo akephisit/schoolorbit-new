@@ -1,6 +1,11 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
+test.beforeEach(async ({ page }) => {
+	await page.route('https://fonts.googleapis.com/**', (route) =>
+		route.fulfill({ status: 200, contentType: 'text/css', body: '' })
+	);
+});
 // Wrangler's local Cloudflare runtime shares a SQLite database across requests.
 test.describe.configure({ mode: 'default' });
 
@@ -601,16 +606,24 @@ test('saved zone settings do not load the large school directory until its picke
 test('an opened school picker shows loading while its directory is in flight', async ({ page }) => {
 	let releaseSchool = () => {};
 	const waitSchool = new Promise<void>((resolve) => (releaseSchool = resolve));
-	await page.route(/thai-schools/, async (route) => {
-		await waitSchool;
-		await route.continue();
-	});
 	await mock(page, true, 'zone');
 	await page.goto(`/staff/academic/admission/${roundId}`, { waitUntil: 'domcontentloaded' });
 	const picker = page.getByRole('combobox').filter({ hasText: 'ค้นหาชื่อโรงเรียน...' });
 	await expect(picker).toBeVisible();
+	await page.waitForLoadState('networkidle');
+	let heldSchoolAsset = false;
+	await page.route(/\/_app\/immutable\/chunks\/.*\.js$/, async (route) => {
+		const response = await route.fetch();
+		const body = await response.body();
+		if (body.byteLength > 2_000_000) {
+			heldSchoolAsset = true;
+			await waitSchool;
+		}
+		await route.fulfill({ response });
+	});
 	await picker.click();
 	await page.getByPlaceholder('พิมพ์ชื่อโรงเรียน...').fill('กรุงเทพ');
+	await expect.poll(() => heldSchoolAsset).toBe(true);
 	await expect(page.getByText('กำลังโหลดรายชื่อโรงเรียน...')).toBeVisible();
 	releaseSchool();
 	await expect(page.getByText('กำลังโหลดรายชื่อโรงเรียน...')).toHaveCount(0);
