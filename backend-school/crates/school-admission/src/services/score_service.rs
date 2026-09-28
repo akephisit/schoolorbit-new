@@ -2,6 +2,7 @@ use crate::models::applications::*;
 use school_errors::AppError;
 use sqlx::PgPool;
 use std::collections::HashMap;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(sqlx::FromRow, serde::Serialize)]
@@ -17,6 +18,89 @@ pub struct ScoreRow {
     pub subject_code: Option<String>,
     pub max_score: f64,
     pub score: Option<f64>,
+}
+
+#[derive(sqlx::FromRow)]
+struct ScoreRoomSeatRow {
+    exam_room_id: Uuid,
+    room_name: String,
+    building_name: Option<String>,
+    seat_number: i32,
+    exam_id: Option<String>,
+    application_id: Uuid,
+    application_number: Option<String>,
+    full_name: String,
+}
+
+#[derive(serde::Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreRoomSeat {
+    pub seat_number: i32,
+    pub exam_id: Option<String>,
+    pub application_id: Uuid,
+    pub application_number: Option<String>,
+    pub full_name: String,
+}
+
+#[derive(serde::Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreRoomGroup {
+    pub exam_room_id: Uuid,
+    pub room_name: String,
+    pub building_name: Option<String>,
+    pub seats: Vec<ScoreRoomSeat>,
+}
+
+pub async fn get_score_room_roster(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<Vec<ScoreRoomGroup>, AppError> {
+    let rows = sqlx::query_as::<_, ScoreRoomSeatRow>(
+        r#"SELECT er.id AS exam_room_id,
+                  COALESCE(er.custom_name, r.name_th, r.name_en, 'ห้องสอบ') AS room_name,
+                  b.name_th AS building_name,
+                  sa.seat_number, sa.exam_id,
+                  aa.id AS application_id, aa.application_number,
+                  CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name
+           FROM admission_exam_seat_assignments sa
+           JOIN admission_exam_rooms er ON er.id = sa.exam_room_id
+           JOIN admission_applications aa ON aa.id = sa.application_id
+           LEFT JOIN rooms r ON r.id = er.room_id
+           LEFT JOIN buildings b ON b.id = r.building_id
+           WHERE er.admission_round_id = $1 AND aa.admission_round_id = $1
+           ORDER BY er.display_order ASC, er.created_at ASC, er.id ASC, sa.seat_number ASC"#,
+    )
+    .bind(round_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to fetch score room roster: {}", error);
+        AppError::InternalServerError("ไม่สามารถดึงรายชื่อห้องสอบสำหรับกรอกคะแนนได้".to_string())
+    })?;
+
+    let mut groups: Vec<ScoreRoomGroup> = Vec::new();
+    for row in rows {
+        let seat = ScoreRoomSeat {
+            seat_number: row.seat_number,
+            exam_id: row.exam_id,
+            application_id: row.application_id,
+            application_number: row.application_number,
+            full_name: row.full_name,
+        };
+        if let Some(last) = groups.last_mut() {
+            if last.exam_room_id == row.exam_room_id {
+                last.seats.push(seat);
+                continue;
+            }
+        }
+        groups.push(ScoreRoomGroup {
+            exam_room_id: row.exam_room_id,
+            room_name: row.room_name,
+            building_name: row.building_name,
+            seats: vec![seat],
+        });
+    }
+    Ok(groups)
 }
 
 fn should_mark_application_scored(total_subjects: i64, scored_subjects: i64) -> bool {

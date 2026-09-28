@@ -3386,6 +3386,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/admission/rounds/{round_id}/score-room-roster': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAdmissionScoreRoomRoster'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/login': {
 		parameters: {
 			query?: never;
@@ -11071,6 +11087,17 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_ScoreRoomGroup: {
+			data: {
+				buildingName?: string | null;
+				/** Format: uuid */
+				examRoomId: string;
+				roomName: string;
+				seats: components['schemas']['ScoreRoomSeat'][];
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_SeatAssignmentView: {
 			data: {
 				/** Format: uuid */
@@ -16723,6 +16750,22 @@ export interface components {
 			itemId: string;
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		ScoreRoomGroup: {
+			buildingName?: string | null;
+			/** Format: uuid */
+			examRoomId: string;
+			roomName: string;
+			seats: components['schemas']['ScoreRoomSeat'][];
+		};
+		ScoreRoomSeat: {
+			/** Format: uuid */
+			applicationId: string;
+			applicationNumber?: string | null;
+			examId?: string | null;
+			fullName: string;
+			/** Format: int32 */
+			seatNumber: number;
 		};
 		SearchApplicationByIdentifierRequest: {
 			identifier: string;
@@ -35052,6 +35095,47 @@ export interface operations {
 				};
 			};
 			/** @description Admission read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAdmissionScoreRoomRoster: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Admission round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Score-entry room roster without national IDs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ScoreRoomGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission score permission required */
 			403: {
 				headers: {
 					[name: string]: unknown;

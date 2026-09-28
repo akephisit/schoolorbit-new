@@ -142,6 +142,10 @@ pub fn admission_staff_routes() -> Router<AppState> {
         // === Scores ===
         .route("/rounds/{id}/scores", get(handlers::scores::get_all_scores))
         .route(
+            "/rounds/{id}/score-room-roster",
+            get(handlers::scores::get_score_room_roster),
+        )
+        .route(
             "/applications/{id}/scores",
             get(handlers::scores::get_application_scores).put(handlers::scores::update_scores),
         )

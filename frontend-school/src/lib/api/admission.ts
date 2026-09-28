@@ -4,6 +4,7 @@ import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 type PortalCredentials = Schemas['PortalCredentials'];
+export type ScoreRoomGroup = Schemas['ScoreRoomGroup'];
 
 // ==========================================
 // Types
@@ -584,10 +585,24 @@ export async function unverifyApplication(id: string) {
 // Scores API
 // ==========================================
 
-export async function getAllScores(roundId: string): Promise<RawScore[]> {
-	const res = await apiClient.get<RawScore[]>(`/api/admission/rounds/${roundId}/scores`);
+export async function getAllScores(
+	roundId: string,
+	options: ApiRequestOptions = {}
+): Promise<RawScore[]> {
+	const res = await apiClient.get<RawScore[]>(`/api/admission/rounds/${roundId}/scores`, options);
 	if (!res.success) throw new Error(res.error);
 	return res.data ?? [];
+}
+
+export async function getScoreRoomRoster(
+	roundId: string,
+	options: ApiRequestOptions = {}
+): Promise<ScoreRoomGroup[]> {
+	const res = await apiClient.get<ScoreRoomGroup[]>(
+		`/api/admission/rounds/${roundId}/score-room-roster`,
+		options
+	);
+	return requireApiData(res, 'ไม่สามารถโหลดรายชื่อห้องสอบสำหรับกรอกคะแนนได้');
 }
 
 export async function getApplicationScores(id: string) {

@@ -60,8 +60,8 @@ pub mod rounds {
 
 pub mod scores {
     pub use crate::services::score_service::{
-        bulk_update_scores, get_all_scores, get_application_scores, update_application_scores,
-        ScoreRow,
+        bulk_update_scores, get_all_scores, get_application_scores, get_score_room_roster,
+        update_application_scores, ScoreRoomGroup, ScoreRoomSeat, ScoreRow,
     };
 }
 

@@ -19734,6 +19734,53 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_ScoreRoomGroup": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "buildingName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "examRoomId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "roomName": {
+                  "type": "string"
+                },
+                "seats": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScoreRoomSeat"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "examRoomId",
+                "roomName",
+                "seats"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_SeatAssignmentView": {
         "properties": {
           "data": {
@@ -40308,6 +40355,68 @@
           "disposition",
           "itemId",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "ScoreRoomGroup": {
+        "properties": {
+          "buildingName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "examRoomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "roomName": {
+            "type": "string"
+          },
+          "seats": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreRoomSeat"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "examRoomId",
+          "roomName",
+          "seats"
+        ],
+        "type": "object"
+      },
+      "ScoreRoomSeat": {
+        "properties": {
+          "applicationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "applicationNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "examId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "seatNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seatNumber",
+          "applicationId",
+          "fullName"
         ],
         "type": "object"
       },
@@ -70251,6 +70360,58 @@
               }
             },
             "description": "Admission read permission required"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/rounds/{round_id}/score-room-roster": {
+      "get": {
+        "operationId": "getAdmissionScoreRoomRoster",
+        "parameters": [
+          {
+            "description": "Admission round ID",
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ScoreRoomGroup"
+                }
+              }
+            },
+            "description": "Score-entry room roster without national IDs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission score permission required"
           }
         },
         "tags": [

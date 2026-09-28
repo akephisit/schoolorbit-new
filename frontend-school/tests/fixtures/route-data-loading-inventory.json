@@ -181,13 +181,12 @@
 		{
 			"route": "staff/academic/admission/[id]/scores",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getRound, listTracks, listSubjects, listApplications, getExamSeats; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Independent route-owned round, tracks, subjects, score matrix, and PII-minimal room roster; selected-track applications remain view-lazy."
 		},
 		{
 			"route": "staff/academic/admission/[id]/selections",

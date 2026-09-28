@@ -178,6 +178,7 @@ use utoipa::OpenApi;
         crate::modules::admission::handlers::applications::search_applications_by_identifier,
         crate::modules::admission::handlers::applications::staff_delete_document,
         crate::modules::admission::handlers::applications::complete_enrollment,
+        crate::modules::admission::handlers::scores::get_score_room_roster,
         crate::modules::admission::handlers::portal::portal_upload_document,
         crate::modules::admission::handlers::portal::portal_delete_document,
         crate::modules::admission::handlers::portal::portal_download_document,
@@ -1794,6 +1795,26 @@ mod tests {
         let row = &schemas["AppListRow"];
         assert!(row["properties"].get("nationalId").is_none());
         assert!(row["properties"].get("nationalIdHash").is_none());
+    }
+
+    #[test]
+    fn admission_score_room_roster_has_no_national_id_contract() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[(
+                "/api/admission/rounds/{round_id}/score-room-roster",
+                "get",
+                "getAdmissionScoreRoomRoster",
+            )],
+        );
+        let schemas = &document["components"]["schemas"];
+        let room = &schemas["ScoreRoomGroup"];
+        let seat = &schemas["ScoreRoomSeat"];
+        assert!(required(room).contains(&"seats"));
+        assert!(required(seat).contains(&"applicationId"));
+        assert!(seat["properties"].get("nationalId").is_none());
+        assert!(seat["properties"].get("nationalIdHash").is_none());
     }
 
     fn query_contract(document: &Value, path: &str, method: &str) -> BTreeSet<(String, bool)> {

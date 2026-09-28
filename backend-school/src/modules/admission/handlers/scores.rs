@@ -11,8 +11,8 @@ use crate::AppState;
 use school_admission::applications::*;
 use school_admission::scores as score_service;
 use school_auth::session_service::AuthenticatedSession;
-use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
@@ -31,6 +31,30 @@ pub async fn get_all_scores(
     actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
     let scores = score_service::get_all_scores(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(scores)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/admission/rounds/{round_id}/score-room-roster",
+    operation_id = "getAdmissionScoreRoomRoster",
+    tag = "admission",
+    params(("round_id" = Uuid, Path, description = "Admission round ID")),
+    responses(
+        (status = 200, description = "Score-entry room roster without national IDs", body = ApiResponse<Vec<score_service::ScoreRoomGroup>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_score_room_roster(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(round_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let actor = context.actor;
+    actor.require_permission(codes::ADMISSION_SCORES_ALL)?;
+    let groups = score_service::get_score_room_roster(&context.tenant.pool, round_id).await?;
+    Ok(Json(ApiResponse::ok(groups)).into_response())
 }
 
 pub async fn get_application_scores(
