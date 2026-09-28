@@ -175,6 +175,7 @@ use utoipa::OpenApi;
         crate::modules::school_fonts::handlers::attach_school_font_batch,
         crate::modules::school_fonts::handlers::delete_school_font,
         crate::modules::admission::handlers::applications::staff_upload_document,
+        crate::modules::admission::handlers::applications::search_applications_by_identifier,
         crate::modules::admission::handlers::applications::staff_delete_document,
         crate::modules::admission::handlers::applications::complete_enrollment,
         crate::modules::admission::handlers::portal::portal_upload_document,
@@ -1772,6 +1773,27 @@ mod tests {
                 "missing or incorrect {method} {path}"
             );
         }
+    }
+
+    #[test]
+    fn admission_identifier_search_uses_post_and_minimal_list_rows() {
+        let document = school_api_value().expect("document should serialize");
+        let path = "/api/admission/rounds/{round_id}/applications/search-by-identifier";
+        assert_operations(
+            &document,
+            &[(path, "post", "searchAdmissionApplicationsByIdentifier")],
+        );
+        assert!(document["paths"][path]["get"].is_null());
+
+        let schemas = &document["components"]["schemas"];
+        let request = &schemas["SearchApplicationByIdentifierRequest"];
+        assert!(required(request).contains(&"identifier"));
+        assert!(request["properties"]["identifier"].get("example").is_none());
+        assert!(request["properties"]["identifier"].get("default").is_none());
+
+        let row = &schemas["AppListRow"];
+        assert!(row["properties"].get("nationalId").is_none());
+        assert!(row["properties"].get("nationalIdHash").is_none());
     }
 
     fn query_contract(document: &Value, path: &str, method: &str) -> BTreeSet<(String, bool)> {

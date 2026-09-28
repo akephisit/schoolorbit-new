@@ -1,8 +1,17 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import { afterNavigate, goto, invalidate, pushState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { PageProps } from './$types';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import {
+		containsProtectedIdentifier,
+		protectedIdentifierSearchCandidate
+	} from '$lib/admission/protected-identifier-search';
 	import {
 		listApplications,
+		searchApplicationsByIdentifier,
 		verifyApplication,
 		rejectApplication,
 		deleteApplication,
@@ -15,30 +24,53 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { toast } from 'svelte-sonner';
-	import { Search, Check, X, Eye, Filter, LoaderCircle, Trash2, RotateCcw } from '@lucide/svelte';
+	import {
+		Search,
+		Check,
+		X,
+		Eye,
+		Filter,
+		LoaderCircle,
+		Trash2,
+		RotateCcw,
+		RefreshCw
+	} from '@lucide/svelte';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
-	let { params }: PageProps = $props();
+	let { data }: PageProps = $props();
 
-	let id = $derived(params.id);
+	let id = $derived(data.roundId);
+	let statusFilter = $derived(data.status);
+	let dateFilter = $state(page.url.searchParams.get('date') ?? '');
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 	const canVerifyAdmission = $derived($can.has(PERMISSIONS.ADMISSION_VERIFY_ALL));
+	const request = new LatestRequest();
+	let renderedKey = '';
 	let applications: ApplicationListItem[] = $state([]);
-	let loading = $state(true);
+	let loading = $state(false);
+	let loaded = $state(false);
 	let error = $state('');
-	let search = $state('');
-	let statusFilter = $state('');
-	let dateFilter = $state('');
+	let searchDraft = $state('');
+	let idSearchActive = $state(false);
+	let identifierSearch: string | null = null;
+	let viewRevision = 0;
+	const currentRouteKey = () => `${id}|${statusFilter}|${data.search}`;
+	const locationDataKey = (url: URL) =>
+		JSON.stringify([
+			url.pathname,
+			url.searchParams.get('status') ?? '',
+			url.searchParams.get('search') ?? ''
+		]);
 
 	const displayedApps = $derived(
 		dateFilter ? applications.filter((a) => a.createdAt?.slice(0, 10) === dateFilter) : applications
@@ -74,19 +106,150 @@
 			return;
 		}
 		if (!id) return;
+		if (identifierSearch !== null) {
+			viewRevision += 1;
+			applications = [];
+			loaded = false;
+		}
+		identifierSearch = null;
+		idSearchActive = false;
+		const sourceKey = currentRouteKey();
+		const { revision, signal } = request.begin();
 		loading = true;
 		error = '';
 		try {
-			applications = await listApplications(id, {
-				status: statusFilter || undefined,
-				search: search || undefined
-			});
+			const rows = await listApplications(
+				id,
+				{
+					status: statusFilter || undefined,
+					search: data.search || undefined
+				},
+				{ signal }
+			);
+			if (!request.isCurrent(revision) || sourceKey !== currentRouteKey()) return;
+			applications = rows;
+			loaded = true;
+			idSearchActive = false;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
-			toast.error(error);
+			if (!isAbortError(e) && request.isCurrent(revision))
+				error = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (request.isCurrent(revision)) loading = false;
 		}
+	}
+
+	async function searchIdentifier(identifier: string) {
+		if (!canReadAdmission || !id) return;
+		const sourceKey = currentRouteKey();
+		if (identifierSearch !== identifier) {
+			viewRevision += 1;
+			applications = [];
+			loaded = false;
+			idSearchActive = false;
+		}
+		identifierSearch = identifier;
+		const { revision, signal } = request.begin();
+		searchDraft = '';
+		loading = true;
+		error = '';
+		try {
+			const rows = await searchApplicationsByIdentifier(id, identifier, { signal });
+			if (!request.isCurrent(revision) || sourceKey !== currentRouteKey()) return;
+			applications = statusFilter ? rows.filter((row) => row.status === statusFilter) : rows;
+			loaded = true;
+			idSearchActive = true;
+		} catch (e) {
+			if (!isAbortError(e) && request.isCurrent(revision))
+				error = e instanceof Error ? e.message : 'ค้นหาใบสมัครไม่สำเร็จ';
+		} finally {
+			if (request.isCurrent(revision)) loading = false;
+		}
+	}
+
+	function refreshVisibleApps() {
+		if (renderedKey !== currentRouteKey()) {
+			void loadApps();
+			return;
+		}
+		if (identifierSearch !== null) void searchIdentifier(identifierSearch);
+		else void loadApps();
+	}
+
+	function mutationNeedsReconciliation(
+		sourceLocationKey: string,
+		sourceRoundId: string,
+		sourceKey: string,
+		sourceViewRevision: number
+	): boolean {
+		if (sourceLocationKey !== locationDataKey(page.url)) {
+			const listPath = resolve(`/staff/academic/admission/${sourceRoundId}/applications`);
+			if (page.url.pathname === listPath) void invalidate('schoolorbit:admission-applications');
+			return true;
+		}
+		if (sourceKey !== currentRouteKey() || sourceViewRevision !== viewRevision) {
+			refreshVisibleApps();
+			return true;
+		}
+		return false;
+	}
+
+	function commitSearch() {
+		const query = searchDraft.trim();
+		const identifier = protectedIdentifierSearchCandidate(query);
+		if (identifier) {
+			void searchIdentifier(identifier);
+			return;
+		}
+		if (containsProtectedIdentifier(query)) {
+			toast.error('กรุณากรอกเลข 13 หลักให้ชัดเจน');
+			return;
+		}
+		if (identifierSearch !== null && query === data.search) {
+			void loadApps();
+			return;
+		}
+		setFilter('search', query);
+	}
+
+	function setFilter(name: 'status' | 'search' | 'date', value: string) {
+		const next = new URL(window.location.href);
+		if (value) next.searchParams.set(name, value);
+		else next.searchParams.delete(name);
+		if (next.href !== window.location.href) {
+			if (name === 'date') {
+				dateFilter = value;
+				pushState(
+					resolve(`/staff/academic/admission/${id}/applications${next.search}`),
+					page.state
+				);
+				return;
+			}
+			if (name === 'status' && identifierSearch !== null)
+				toast.info('เปลี่ยนสถานะแล้ว การค้นหาเลขเดิมถูกยกเลิก');
+			void goto(resolve(`/staff/academic/admission/${id}/applications${next.search}`), {
+				keepFocus: true,
+				noScroll: true
+			});
+		}
+	}
+
+	function syncDateFilterFromUrl() {
+		dateFilter = new URL(window.location.href).searchParams.get('date') ?? '';
+	}
+
+	afterNavigate(syncDateFilterFromUrl);
+
+	function supersedeListRead() {
+		request.abort();
+		loading = false;
+		error = '';
+	}
+
+	function patchStatus(appId: string, status: string) {
+		supersedeListRead();
+		applications = applications
+			.map((app) => (app.id === appId ? { ...app, status } : app))
+			.filter((app) => !statusFilter || app.status === statusFilter);
 	}
 
 	async function handleVerify(app: ApplicationListItem) {
@@ -94,10 +257,23 @@
 			toast.error('ไม่มีสิทธิ์ตรวจใบสมัคร');
 			return;
 		}
+		const sourceRoundId = id;
+		const sourceLocationKey = locationDataKey(page.url);
+		const sourceKey = currentRouteKey();
+		const sourceViewRevision = viewRevision;
 		try {
 			await verifyApplication(app.id);
+			if (sourceRoundId !== id) return;
 			toast.success(`ยืนยัน ${app.fullName} แล้ว`);
-			applications = applications.map((a) => (a.id === app.id ? { ...a, status: 'verified' } : a));
+			if (
+				!mutationNeedsReconciliation(
+					sourceLocationKey,
+					sourceRoundId,
+					sourceKey,
+					sourceViewRevision
+				)
+			)
+				patchStatus(app.id, 'verified');
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ');
 		}
@@ -109,13 +285,26 @@
 			return;
 		}
 		if (!rejectingApp || !rejectReason.trim()) return;
+		const target = rejectingApp;
+		const reason = rejectReason;
+		const sourceRoundId = id;
+		const sourceLocationKey = locationDataKey(page.url);
+		const sourceKey = currentRouteKey();
+		const sourceViewRevision = viewRevision;
 		rejecting = true;
 		try {
-			await rejectApplication(rejectingApp.id, rejectReason);
+			await rejectApplication(target.id, reason);
+			if (sourceRoundId !== id) return;
 			toast.success('ปฏิเสธใบสมัครแล้ว');
-			applications = applications.map((a) =>
-				a.id === rejectingApp!.id ? { ...a, status: 'rejected' } : a
-			);
+			if (
+				!mutationNeedsReconciliation(
+					sourceLocationKey,
+					sourceRoundId,
+					sourceKey,
+					sourceViewRevision
+				)
+			)
+				patchStatus(target.id, 'rejected');
 			showRejectDialog = false;
 			rejectingApp = null;
 			rejectReason = '';
@@ -132,11 +321,27 @@
 			return;
 		}
 		if (!deletingApp) return;
+		const target = deletingApp;
+		const sourceRoundId = id;
+		const sourceLocationKey = locationDataKey(page.url);
+		const sourceKey = currentRouteKey();
+		const sourceViewRevision = viewRevision;
 		deleting = true;
 		try {
-			await deleteApplication(deletingApp.id);
-			toast.success(`ลบใบสมัครของ ${deletingApp.fullName} แล้ว`);
-			applications = applications.filter((a) => a.id !== deletingApp!.id);
+			await deleteApplication(target.id);
+			if (sourceRoundId !== id) return;
+			toast.success(`ลบใบสมัครของ ${target.fullName} แล้ว`);
+			if (
+				!mutationNeedsReconciliation(
+					sourceLocationKey,
+					sourceRoundId,
+					sourceKey,
+					sourceViewRevision
+				)
+			) {
+				supersedeListRead();
+				applications = applications.filter((a) => a.id !== target.id);
+			}
 			showDeleteDialog = false;
 			deletingApp = null;
 		} catch (e) {
@@ -152,13 +357,25 @@
 			return;
 		}
 		if (!unverifyingApp) return;
+		const target = unverifyingApp;
+		const sourceRoundId = id;
+		const sourceLocationKey = locationDataKey(page.url);
+		const sourceKey = currentRouteKey();
+		const sourceViewRevision = viewRevision;
 		unverifying = true;
 		try {
-			await unverifyApplication(unverifyingApp.id);
-			toast.success(`ยกเลิกการอนุมัติ ${unverifyingApp.fullName} แล้ว`);
-			applications = applications.map((a) =>
-				a.id === unverifyingApp!.id ? { ...a, status: 'submitted' } : a
-			);
+			await unverifyApplication(target.id);
+			if (sourceRoundId !== id) return;
+			toast.success(`ยกเลิกการอนุมัติ ${target.fullName} แล้ว`);
+			if (
+				!mutationNeedsReconciliation(
+					sourceLocationKey,
+					sourceRoundId,
+					sourceKey,
+					sourceViewRevision
+				)
+			)
+				patchStatus(target.id, 'submitted');
 			showUnverifyDialog = false;
 			unverifyingApp = null;
 		} catch (e) {
@@ -169,17 +386,61 @@
 	}
 
 	function saveNavContext(apps: ApplicationListItem[]) {
-		sessionStorage.setItem('appNavIds', JSON.stringify(apps.map((a) => a.id)));
+		sessionStorage.setItem(
+			'admissionAppNav',
+			JSON.stringify({ roundId: id, ids: apps.map((app) => app.id) })
+		);
 	}
 
-	onMount(loadApps);
+	$effect.pre(() => {
+		const routeApplications = data.applications;
+		const key = `${data.roundId}|${data.status}|${data.search}`;
+		const { revision } = request.begin();
+		untrack(() => {
+			viewRevision += 1;
+			identifierSearch = null;
+			idSearchActive = false;
+			if (renderedKey !== key) {
+				applications = [];
+				loaded = false;
+				renderedKey = key;
+			}
+			searchDraft = data.search;
+			loading = true;
+			error = '';
+		});
+		void routeApplications.then((result) => {
+			if (!request.isCurrent(revision)) return;
+			untrack(() => {
+				if (result.ok) {
+					applications = result.data;
+					loaded = true;
+				} else error = result.error;
+				loading = false;
+			});
+		});
+		return () => request.abort();
+	});
 </script>
+
+<svelte:window onpopstate={syncDateFilterFromUrl} />
 
 <PageShell
 	title="ใบสมัคร"
 	description="ค้นหา ตรวจสอบ และจัดการสถานะใบสมัครของรอบนี้"
 	backHref="/staff/academic/admission/{id}"
 >
+	{#snippet actions()}
+		<Button
+			variant="outline"
+			size="icon"
+			onclick={refreshVisibleApps}
+			disabled={loading || !canReadAdmission}
+			aria-label="โหลดใบสมัครใหม่"
+		>
+			<RefreshCw class="size-4" />
+		</Button>
+	{/snippet}
 	{#if !canReadAdmission}
 		<PageState
 			variant="permission"
@@ -196,14 +457,18 @@
 							class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
 						/>
 						<Input
-							bind:value={search}
+							bind:value={searchDraft}
 							placeholder="ค้นหาชื่อ, เลขบัตร, เลขที่ใบสมัคร..."
 							class="pl-9"
-							onkeypress={(e: KeyboardEvent) => e.key === 'Enter' && loadApps()}
+							onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && commitSearch()}
 						/>
 					</div>
 					<div class="w-full sm:w-44">
-						<Select.Root type="single" bind:value={statusFilter} onValueChange={loadApps}>
+						<Select.Root
+							type="single"
+							value={statusFilter}
+							onValueChange={(value) => setFilter('status', value ?? '')}
+						>
 							<Select.Trigger>
 								{statusFilter ? applicationStatusLabel[statusFilter] : 'สถานะทั้งหมด'}
 							</Select.Trigger>
@@ -220,146 +485,166 @@
 						</Select.Root>
 					</div>
 					<div class="flex items-center gap-1.5 flex-1 sm:flex-none sm:w-48">
-						<DatePicker bind:value={dateFilter} placeholder="กรองตามวันที่" class="w-full" />
+						<DatePicker
+							value={dateFilter}
+							onValueChange={(value) => setFilter('date', value ?? '')}
+							placeholder="กรองตามวันที่"
+							class="w-full"
+						/>
 						{#if dateFilter}
 							<Button
 								variant="ghost"
 								size="icon"
 								class="h-9 w-9 shrink-0"
-								onclick={() => (dateFilter = '')}
+								onclick={() => setFilter('date', '')}
 								title="ล้างวันที่"
 							>
 								<X class="w-3.5 h-3.5" />
 							</Button>
 						{/if}
 					</div>
-					<Button onclick={loadApps} variant="outline" class="w-full gap-1.5 sm:w-auto">
+					<Button onclick={commitSearch} variant="outline" class="w-full gap-1.5 sm:w-auto">
 						<Filter class="w-4 h-4" /> ค้นหา
 					</Button>
 				</div>
 			</Card.Content>
 		</Card.Root>
+		{#if idSearchActive}
+			<p role="status" class="text-sm text-muted-foreground">
+				ผลค้นหาเลขบัตรหรือเลขที่ใบสมัคร (ไม่บันทึกเลขที่ค้นหาใน URL;
+				เปลี่ยนสถานะแล้วจะออกจากผลค้นหานี้)
+				<Button variant="outline" size="sm" onclick={loadApps}>กลับรายการทั้งหมด</Button>
+			</p>
+		{/if}
 
 		<!-- Table -->
-		{#if loading}
-			<PageSkeleton variant="table" rows={6} columns={8} />
-		{:else if error}
+		{#if loading && !loaded}
+			<PageSkeleton variant="table" rows={6} columns={5} />
+		{:else if error && !loaded}
 			<PageState
 				variant="error"
 				title="โหลดใบสมัครไม่สำเร็จ"
 				description={error}
 				actionLabel="ลองอีกครั้ง"
-				onaction={loadApps}
+				onaction={refreshVisibleApps}
 			/>
-		{:else if applications.length === 0}
-			<PageState title="ไม่พบใบสมัคร" description="ยังไม่มีใบสมัครที่ตรงกับเงื่อนไขการค้นหา" />
 		{:else}
-			<Card.Root>
-				<div class="overflow-x-auto">
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head class="w-24">เลขที่</Table.Head>
-								<Table.Head>ชื่อ-สกุล</Table.Head>
-								<Table.Head>เลขบัตร</Table.Head>
-								<Table.Head>สาย</Table.Head>
-								<Table.Head>สถานะ</Table.Head>
-								<Table.Head class="text-right">จัดการ</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each displayedApps as app (app.id)}
-								<Table.Row>
-									<Table.Cell class="font-mono text-xs">{app.applicationNumber ?? '-'}</Table.Cell>
-									<Table.Cell>
-										<p class="font-medium">{app.fullName}</p>
-										<p class="text-xs text-muted-foreground">{app.phone ?? ''}</p>
-									</Table.Cell>
-									<Table.Cell class="font-mono text-xs text-muted-foreground"
-										>{app.nationalId}</Table.Cell
-									>
-									<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
-									<Table.Cell>
-										<Badge variant={statusVariant[app.status] ?? 'outline'}>
-											{applicationStatusLabel[app.status] ?? app.status}
-										</Badge>
-									</Table.Cell>
-									<Table.Cell class="text-right">
-										<div class="flex justify-end gap-1">
-											<Button
-												href="/staff/academic/admission/{id}/applications/{app.id}"
-												variant="ghost"
-												size="icon"
-												class="h-8 w-8"
-												onclick={() => saveNavContext(displayedApps)}
+			<div aria-busy={loading}>
+				{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตใบสมัคร..." />{/if}
+				{#if error}<p role="alert" class="text-sm text-destructive">
+						{error}
+						<Button variant="outline" size="sm" onclick={refreshVisibleApps}>ลองใหม่</Button>
+					</p>{/if}
+				{#if applications.length === 0}
+					<PageState title="ไม่พบใบสมัคร" description="ยังไม่มีใบสมัครที่ตรงกับเงื่อนไขการค้นหา" />
+				{:else}
+					<Card.Root>
+						<div class="overflow-x-auto">
+							<Table.Root>
+								<Table.Header>
+									<Table.Row>
+										<Table.Head class="w-24">เลขที่</Table.Head>
+										<Table.Head>ชื่อ-สกุล</Table.Head>
+										<Table.Head>สาย</Table.Head>
+										<Table.Head>สถานะ</Table.Head>
+										<Table.Head class="text-right">จัดการ</Table.Head>
+									</Table.Row>
+								</Table.Header>
+								<Table.Body>
+									{#each displayedApps as app (app.id)}
+										<Table.Row>
+											<Table.Cell class="font-mono text-xs"
+												>{app.applicationNumber ?? '-'}</Table.Cell
 											>
-												<Eye class="w-3.5 h-3.5" />
-											</Button>
-											{#if canVerifyAdmission && app.status === 'submitted'}
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-8 w-8 text-green-600 hover:text-green-700"
-													onclick={() => handleVerify(app)}
-													title="อนุมัติ"
-												>
-													<Check class="w-3.5 h-3.5" />
-												</Button>
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-8 w-8 text-destructive hover:text-destructive"
-													onclick={() => {
-														rejectingApp = app;
-														showRejectDialog = true;
-													}}
-													title="ไม่อนุมัติ"
-												>
-													<X class="w-3.5 h-3.5" />
-												</Button>
-											{/if}
-											{#if canVerifyAdmission && app.status === 'verified'}
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-8 w-8 text-muted-foreground hover:text-destructive"
-													onclick={() => {
-														unverifyingApp = app;
-														showUnverifyDialog = true;
-													}}
-													title="ยกเลิกการอนุมัติ"
-												>
-													<RotateCcw class="w-3.5 h-3.5" />
-												</Button>
-											{/if}
-											{#if canManageAdmission}
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-8 w-8 text-muted-foreground hover:text-destructive"
-													onclick={() => {
-														deletingApp = app;
-														showDeleteDialog = true;
-													}}
-													title="ลบใบสมัคร"
-												>
-													<Trash2 class="w-3.5 h-3.5" />
-												</Button>
-											{/if}
-										</div>
-									</Table.Cell>
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				</div>
+											<Table.Cell>
+												<p class="font-medium">{app.fullName}</p>
+												<p class="text-xs text-muted-foreground">{app.phone ?? ''}</p>
+											</Table.Cell>
+											<Table.Cell class="text-sm">{app.trackName ?? '-'}</Table.Cell>
+											<Table.Cell>
+												<Badge variant={statusVariant[app.status] ?? 'outline'}>
+													{applicationStatusLabel[app.status] ?? app.status}
+												</Badge>
+											</Table.Cell>
+											<Table.Cell class="text-right">
+												<div class="flex justify-end gap-1">
+													<Button
+														href="/staff/academic/admission/{id}/applications/{app.id}"
+														data-sveltekit-preload-data="tap"
+														variant="ghost"
+														size="icon"
+														class="h-8 w-8"
+														onclick={() => saveNavContext(displayedApps)}
+													>
+														<Eye class="w-3.5 h-3.5" />
+													</Button>
+													{#if canVerifyAdmission && app.status === 'submitted'}
+														<Button
+															variant="ghost"
+															size="icon"
+															class="h-8 w-8 text-green-600 hover:text-green-700"
+															onclick={() => handleVerify(app)}
+															title="อนุมัติ"
+														>
+															<Check class="w-3.5 h-3.5" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon"
+															class="h-8 w-8 text-destructive hover:text-destructive"
+															onclick={() => {
+																rejectingApp = app;
+																showRejectDialog = true;
+															}}
+															title="ไม่อนุมัติ"
+														>
+															<X class="w-3.5 h-3.5" />
+														</Button>
+													{/if}
+													{#if canVerifyAdmission && app.status === 'verified'}
+														<Button
+															variant="ghost"
+															size="icon"
+															class="h-8 w-8 text-muted-foreground hover:text-destructive"
+															onclick={() => {
+																unverifyingApp = app;
+																showUnverifyDialog = true;
+															}}
+															title="ยกเลิกการอนุมัติ"
+														>
+															<RotateCcw class="w-3.5 h-3.5" />
+														</Button>
+													{/if}
+													{#if canManageAdmission}
+														<Button
+															variant="ghost"
+															size="icon"
+															class="h-8 w-8 text-muted-foreground hover:text-destructive"
+															onclick={() => {
+																deletingApp = app;
+																showDeleteDialog = true;
+															}}
+															title="ลบใบสมัคร"
+														>
+															<Trash2 class="w-3.5 h-3.5" />
+														</Button>
+													{/if}
+												</div>
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								</Table.Body>
+							</Table.Root>
+						</div>
 
-				<div class="px-4 py-3 border-t border-border">
-					<p class="text-xs text-muted-foreground">
-						แสดง {displayedApps.length} จาก {applications.length} รายการ
-					</p>
-				</div>
-			</Card.Root>
+						<div class="px-4 py-3 border-t border-border">
+							<p class="text-xs text-muted-foreground">
+								แสดง {displayedApps.length} จาก {applications.length} รายการ
+							</p>
+						</div>
+					</Card.Root>
+				{/if}
+			</div>
 		{/if}
 	{/if}
 </PageShell>

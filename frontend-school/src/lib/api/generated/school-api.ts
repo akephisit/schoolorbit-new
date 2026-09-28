@@ -3370,6 +3370,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/admission/rounds/{round_id}/applications/search-by-identifier': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['searchAdmissionApplicationsByIdentifier'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/login': {
 		parameters: {
 			query?: never;
@@ -9825,6 +9841,24 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_AppListRow: {
+			data: {
+				applicationNumber?: string | null;
+				/** Format: date-time */
+				createdAt: string;
+				fullName: string;
+				/** Format: uuid */
+				id: string;
+				phone?: string | null;
+				/** Format: double */
+				previousGpa?: number | null;
+				previousSchool?: string | null;
+				status: string;
+				trackName?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_AssessmentPhaseControl: {
 			data: {
 				/** Format: uuid */
@@ -11427,6 +11461,20 @@ export interface components {
 			};
 			message?: string;
 			success: boolean;
+		};
+		AppListRow: {
+			applicationNumber?: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			fullName: string;
+			/** Format: uuid */
+			id: string;
+			phone?: string | null;
+			/** Format: double */
+			previousGpa?: number | null;
+			previousSchool?: string | null;
+			status: string;
+			trackName?: string | null;
 		};
 		ApplyAcademicMenuTemplateRequest: {
 			revision: string;
@@ -16675,6 +16723,9 @@ export interface components {
 			itemId: string;
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		SearchApplicationByIdentifierRequest: {
+			identifier: string;
 		};
 		SeatAssignmentView: {
 			/** Format: uuid */
@@ -34948,6 +34999,60 @@ export interface operations {
 			};
 			/** @description Scanner or storage unavailable */
 			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	searchAdmissionApplicationsByIdentifier: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Admission round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SearchApplicationByIdentifierRequest'];
+			};
+		};
+		responses: {
+			/** @description Minimal application rows matching one national ID or application number */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AppListRow'];
+				};
+			};
+			/** @description Invalid identifier */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission read permission required */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

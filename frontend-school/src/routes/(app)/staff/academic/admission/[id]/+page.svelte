@@ -877,6 +877,7 @@
 					<div class="flex flex-wrap gap-2">
 						<Button
 							href="/staff/academic/admission/{id}/applications"
+							data-sveltekit-preload-data="tap"
 							variant="outline"
 							size="sm"
 							class="gap-1.5"

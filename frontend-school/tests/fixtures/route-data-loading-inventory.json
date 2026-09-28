@@ -129,24 +129,22 @@
 		{
 			"route": "staff/academic/admission/[id]/applications",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include listApplications; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Round-scoped application collection loads in the route; status and search are URL-owned, date filters locally, and detail links preload only on tap because the list contains applicant names."
 		},
 		{
 			"route": "staff/academic/admission/[id]/applications/[appId]",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "round-id + application-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getApplication, listTracks; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Selected application and documents load in the route; authorized track options load only when editing, and sensitive applicant detail preloads on tap."
 		},
 		{
 			"route": "staff/academic/admission/[id]/enrollment",

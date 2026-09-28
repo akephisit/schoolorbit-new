@@ -17,9 +17,10 @@ pub mod applications {
         document_upload_response, fetch_application_files_then_delete,
         get_application_with_documents, list_applications, list_enrollment_pending,
         list_student_ids, mark_absent, move_application_room, reject_application,
-        sort_room_students, submit_application, unverify_application, update_admission_track,
-        update_application, verify_application, AppListRow, DocumentUploadResponse,
-        DocumentUploadResult, EnrollmentPendingRow, EnrollmentResult, VALID_DOC_TYPES,
+        search_applications_by_identifier, sort_room_students, submit_application,
+        unverify_application, update_admission_track, update_application, verify_application,
+        AppListRow, DocumentUploadResponse, DocumentUploadResult, EnrollmentPendingRow,
+        EnrollmentResult, VALID_DOC_TYPES,
     };
 }
 

@@ -15150,6 +15150,80 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_AppListRow": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "applicationNumber": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "fullName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "phone": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "previousGpa": {
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "previousSchool": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "trackName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "fullName",
+                "status",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_AssessmentPhaseControl": {
         "properties": {
           "data": {
@@ -21097,6 +21171,62 @@
         "required": [
           "success",
           "data"
+        ],
+        "type": "object"
+      },
+      "AppListRow": {
+        "properties": {
+          "applicationNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previousGpa": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "previousSchool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "trackName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "status",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -40178,6 +40308,17 @@
           "disposition",
           "itemId",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "SearchApplicationByIdentifierRequest": {
+        "properties": {
+          "identifier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "identifier"
         ],
         "type": "object"
       },
@@ -70038,6 +70179,78 @@
               }
             },
             "description": "Scanner or storage unavailable"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/rounds/{round_id}/applications/search-by-identifier": {
+      "post": {
+        "operationId": "searchAdmissionApplicationsByIdentifier",
+        "parameters": [
+          {
+            "description": "Admission round ID",
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchApplicationByIdentifierRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AppListRow"
+                }
+              }
+            },
+            "description": "Minimal application rows matching one national ID or application number"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid identifier"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission read permission required"
           }
         },
         "tags": [

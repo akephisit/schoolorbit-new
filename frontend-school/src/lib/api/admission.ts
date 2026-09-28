@@ -205,18 +205,7 @@ export const DOC_TYPE_LABELS: Record<string, { label: string; required: boolean 
 	}
 };
 
-export interface ApplicationListItem {
-	id: string;
-	applicationNumber?: string;
-	nationalId: string;
-	fullName: string;
-	trackName?: string;
-	status: string;
-	phone?: string;
-	previousSchool?: string;
-	previousGpa?: number;
-	createdAt: string;
-}
+export type ApplicationListItem = Schemas['AppListRow'];
 
 export interface ApplicationDetailResponse {
 	application: AdmissionApplication;
@@ -514,21 +503,45 @@ export async function deleteSubject(id: string) {
 
 export async function listApplications(
 	roundId: string,
-	filter?: { status?: string; trackId?: string; search?: string }
+	filter?: { status?: string; trackId?: string; search?: string },
+	options: ApiRequestOptions = {}
 ) {
-	let url = `/api/admission/rounds/${roundId}/applications?`;
-	if (filter?.status) url += `status=${filter.status}&`;
-	if (filter?.trackId) url += `track_id=${filter.trackId}&`;
-	if (filter?.search) url += `search=${encodeURIComponent(filter.search)}&`;
-	const res = await apiClient.get<ApplicationListItem[]>(url);
+	const query = new URLSearchParams();
+	if (filter?.status) query.set('status', filter.status);
+	if (filter?.trackId) query.set('track_id', filter.trackId);
+	if (filter?.search) query.set('search', filter.search);
+	const suffix = query.size ? `?${query}` : '';
+	const res = await apiClient.get<ApplicationListItem[]>(
+		`/api/admission/rounds/${roundId}/applications${suffix}`,
+		options
+	);
+	if (!res.success) throw new Error(res.error);
+	return res.data ?? [];
+}
+
+export async function searchApplicationsByIdentifier(
+	roundId: string,
+	identifier: string,
+	options: ApiRequestOptions = {}
+): Promise<ApplicationListItem[]> {
+	const body: Schemas['SearchApplicationByIdentifierRequest'] = { identifier };
+	const res = await apiClient.post<ApplicationListItem[]>(
+		`/api/admission/rounds/${roundId}/applications/search-by-identifier`,
+		body,
+		options
+	);
 	if (!res.success) throw new Error(res.error);
 	return res.data ?? [];
 }
 
 export async function getApplication(
-	id: string
+	id: string,
+	options: ApiRequestOptions = {}
 ): Promise<{ application: AdmissionApplication; documents: ApplicationDocument[] }> {
-	const res = await apiClient.get<ApplicationDetailResponse>(`/api/admission/applications/${id}`);
+	const res = await apiClient.get<ApplicationDetailResponse>(
+		`/api/admission/applications/${id}`,
+		options
+	);
 	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;
 }

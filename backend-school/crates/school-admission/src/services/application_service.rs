@@ -364,12 +364,11 @@ pub async fn submit_application(
 // Staff: List & Get
 // ==========================================
 
-#[derive(sqlx::FromRow, serde::Serialize)]
+#[derive(sqlx::FromRow, serde::Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppListRow {
     pub id: Uuid,
     pub application_number: Option<String>,
-    pub national_id: String,
     pub full_name: String,
     pub track_name: Option<String>,
     pub status: String,
@@ -384,12 +383,41 @@ pub async fn list_applications(
     round_id: Uuid,
     filter: ApplicationFilter,
 ) -> Result<Vec<AppListRow>, AppError> {
+    list_applications_inner(pool, round_id, filter, None).await
+}
+
+pub async fn search_applications_by_identifier(
+    pool: &PgPool,
+    round_id: Uuid,
+    identifier: &str,
+) -> Result<Vec<AppListRow>, AppError> {
+    if identifier.len() != 13 || !identifier.bytes().all(|digit| digit.is_ascii_digit()) {
+        return Err(AppError::ValidationError(
+            "เลขบัตรประชาชนหรือเลขที่ใบสมัครต้องเป็นตัวเลข 13 หลัก".to_string(),
+        ));
+    }
+    let national_id_hash = pii::hash_required(identifier)
+        .map_err(|error| pii_error("hash application identifier search", error))?;
+    list_applications_inner(
+        pool,
+        round_id,
+        ApplicationFilter::default(),
+        Some((national_id_hash, identifier.to_string())),
+    )
+    .await
+}
+
+async fn list_applications_inner(
+    pool: &PgPool,
+    round_id: Uuid,
+    filter: ApplicationFilter,
+    exact_identifier: Option<(String, String)>,
+) -> Result<Vec<AppListRow>, AppError> {
     let mut query = sqlx::QueryBuilder::new(
         r#"
         SELECT
             aa.id,
             aa.application_number,
-            aa.national_id,
             CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
             at2.name AS track_name,
             aa.status,
@@ -411,15 +439,17 @@ pub async fn list_applications(
         query.push(" AND aa.admission_track_id = ");
         query.push_bind(tid);
     }
+    if let Some((hash, application_number)) = exact_identifier {
+        query.push(" AND (aa.national_id_hash = ");
+        query.push_bind(hash);
+        query.push(" OR aa.application_number = ");
+        query.push_bind(application_number);
+        query.push(")");
+    }
     if let Some(ref search) = filter.search {
         if !search.is_empty() {
             let like_term = format!("%{}%", search);
-            let national_id_hash = pii::hash_required(search)
-                .map_err(|error| pii_error("hash application list search national_id", error))?;
             query.push(" AND (");
-            query.push("aa.national_id_hash = ");
-            query.push_bind(national_id_hash);
-            query.push(" OR ");
             query.push("aa.first_name ILIKE ");
             query.push_bind(like_term.clone());
             query.push(" OR aa.last_name ILIKE ");
@@ -431,7 +461,7 @@ pub async fn list_applications(
     }
     query.push(" ORDER BY aa.created_at ASC");
 
-    let mut rows = query
+    let rows = query
         .build_query_as::<AppListRow>()
         .fetch_all(pool)
         .await
@@ -439,10 +469,6 @@ pub async fn list_applications(
             tracing::error!("Failed to list applications: {}", e);
             AppError::InternalServerError("Failed to fetch applications".to_string())
         })?;
-
-    for row in &mut rows {
-        decrypt_national_id(&mut row.national_id)?;
-    }
 
     Ok(rows)
 }
@@ -1809,6 +1835,25 @@ pub async fn batch_update_student_ids(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn application_list_rows_exclude_national_id() {
+        let row = AppListRow {
+            id: Uuid::nil(),
+            application_number: Some("APP-001".to_string()),
+            full_name: "Example Applicant".to_string(),
+            track_name: None,
+            status: "submitted".to_string(),
+            phone: None,
+            previous_school: None,
+            previous_gpa: None,
+            created_at: chrono::Utc::now(),
+        };
+
+        let value = serde_json::to_value(row).expect("list row serializes");
+        assert!(value.get("nationalId").is_none());
+        assert!(value.get("national_id").is_none());
+    }
 
     #[test]
     fn application_number_prefix_uses_buddhist_year_date_and_round_number() {

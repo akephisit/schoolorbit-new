@@ -102,6 +102,10 @@ pub fn admission_staff_routes() -> Router<AppState> {
             get(handlers::applications::list_applications),
         )
         .route(
+            "/rounds/{id}/applications/search-by-identifier",
+            post(handlers::applications::search_applications_by_identifier),
+        )
+        .route(
             "/applications/{id}",
             get(handlers::applications::get_application)
                 .put(handlers::applications::update_application)

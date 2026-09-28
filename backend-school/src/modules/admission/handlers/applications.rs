@@ -4,7 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -33,6 +33,12 @@ struct SubmitApplicationData {
 struct ApplicationWithDocumentsData {
     application: AdmissionApplication,
     documents: Vec<ApplicationDocument>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchApplicationByIdentifierRequest {
+    pub identifier: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -117,6 +123,38 @@ pub async fn list_applications(
     actor.require_permission(codes::ADMISSION_READ_ALL)?;
     let applications = application_service::list_applications(&pool, round_id, filter).await?;
     Ok(Json(ApiResponse::ok(applications)).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admission/rounds/{round_id}/applications/search-by-identifier",
+    operation_id = "searchAdmissionApplicationsByIdentifier",
+    tag = "admission",
+    params(("round_id" = Uuid, Path, description = "Admission round ID")),
+    request_body = SearchApplicationByIdentifierRequest,
+    responses(
+        (status = 200, description = "Minimal application rows matching one national ID or application number", body = ApiResponse<Vec<application_service::AppListRow>>),
+        (status = 400, description = "Invalid identifier", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission read permission required", body = ApiErrorResponse)
+    )
+)]
+pub async fn search_applications_by_identifier(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(round_id): Path<Uuid>,
+    Json(payload): Json<SearchApplicationByIdentifierRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let actor = context.actor;
+    actor.require_permission(codes::ADMISSION_READ_ALL)?;
+    let rows = application_service::search_applications_by_identifier(
+        &context.tenant.pool,
+        round_id,
+        &payload.identifier,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(rows)).into_response())
 }
 
 pub async fn get_application(

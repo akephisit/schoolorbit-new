@@ -509,7 +509,7 @@ pub struct UpdateApplicationRequest {
 // Application Filter
 // ==========================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct ApplicationFilter {
     pub status: Option<String>,
     pub track_id: Option<Uuid>,

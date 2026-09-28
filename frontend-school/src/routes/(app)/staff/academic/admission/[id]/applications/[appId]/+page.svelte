@@ -1,7 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import { untrack } from 'svelte';
 	import {
 		getApplication,
 		listTracks,
@@ -18,13 +16,15 @@
 		type ApplicationDocument,
 		applicationStatusLabel
 	} from '$lib/api/admission';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Label } from '$lib/components/ui/label';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import * as Select from '$lib/components/ui/select';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -49,27 +49,27 @@
 		Pencil,
 		RotateCcw,
 		Save,
-		Copy
+		Copy,
+		RefreshCw
 	} from '@lucide/svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
 	import type { PageProps } from './$types';
-	let { params }: PageProps = $props();
+	let { data }: PageProps = $props();
 
-	let roundId = $derived(params.id);
-	let appId = $derived(params.appId);
+	let roundId = $derived(data.roundId);
+	let appId = $derived(data.appId);
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
 	const canVerifyAdmission = $derived($can.has(PERMISSIONS.ADMISSION_VERIFY_ALL));
-
-	function goToApp(rId: string, aId: string) {
-		goto(resolve(`/staff/academic/admission/${rId}/applications/${aId}`));
-	}
+	const applicationRequest = new LatestRequest();
+	const tracksRequest = new LatestRequest();
 
 	let application: AdmissionApplication | null = $state(null);
+	let renderedAppKey = '';
 	let documents: ApplicationDocument[] = $state([]);
-	let loading = $state(true);
+	let loading = $state(false);
 	let error = $state('');
 
 	// Reject
@@ -122,6 +122,10 @@
 
 	// Track change
 	let tracks: AdmissionTrack[] = $state([]);
+	let renderedRoundId = '';
+	let tracksRoundId = '';
+	let loadingTracks = $state(false);
+	let trackError = $state('');
 	let editingTrack = $state(false);
 	let selectedNewTrackId = $state('');
 	let savingTrack = $state(false);
@@ -155,22 +159,54 @@
 			return;
 		}
 		if (!appId) return;
+		const sourceAppId = appId;
+		const { revision, signal } = applicationRequest.begin();
 		loading = true;
 		error = '';
 		try {
-			const [res, trackList] = await Promise.all([
-				getApplication(appId),
-				tracks.length === 0 ? listTracks(roundId) : Promise.resolve(tracks)
-			]);
+			const res = await getApplication(sourceAppId, { signal });
+			if (!applicationRequest.isCurrent(revision) || appId !== sourceAppId) return;
 			application = res.application;
 			documents = res.documents;
-			tracks = trackList;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลผู้สมัครได้';
-			toast.error(error);
+			if (!isAbortError(e) && applicationRequest.isCurrent(revision))
+				error = e instanceof Error ? e.message : 'ไม่สามารถโหลดข้อมูลผู้สมัครได้';
 		} finally {
-			loading = false;
+			if (applicationRequest.isCurrent(revision)) loading = false;
 		}
+	}
+
+	async function loadTrackOptions() {
+		if (!canVerifyAdmission || !roundId) return;
+		if (tracksRoundId === roundId && tracks.length > 0) return;
+		const sourceRoundId = roundId;
+		const { revision, signal } = tracksRequest.begin();
+		loadingTracks = true;
+		trackError = '';
+		try {
+			const rows = await listTracks(sourceRoundId, { signal });
+			if (!tracksRequest.isCurrent(revision) || roundId !== sourceRoundId) return;
+			tracks = rows;
+			tracksRoundId = sourceRoundId;
+		} catch (e) {
+			if (!isAbortError(e) && tracksRequest.isCurrent(revision))
+				trackError = e instanceof Error ? e.message : 'โหลดสายการเรียนไม่สำเร็จ';
+		} finally {
+			if (tracksRequest.isCurrent(revision)) loadingTracks = false;
+		}
+	}
+
+	function beginTrackEdit() {
+		if (!canVerifyAdmission || !application) return;
+		editingTrack = true;
+		selectedNewTrackId = application.admissionTrackId ?? '';
+		void loadTrackOptions();
+	}
+
+	function supersedeApplicationRead() {
+		applicationRequest.abort();
+		loading = false;
+		error = '';
 	}
 
 	async function handleSaveTrack() {
@@ -179,13 +215,21 @@
 			return;
 		}
 		if (!selectedNewTrackId || !appId) return;
+		const sourceAppId = appId;
+		const nextTrackId = selectedNewTrackId;
 		savingTrack = true;
 		try {
-			await updateAdmissionTrack(appId, selectedNewTrackId);
+			await updateAdmissionTrack(sourceAppId, nextTrackId);
+			if (appId !== sourceAppId || !application) return;
+			supersedeApplicationRead();
+			application = {
+				...application,
+				admissionTrackId: nextTrackId,
+				trackName: tracks.find((track) => track.id === nextTrackId)?.name
+			};
 			toast.success('แก้ไขสายการเรียนสำเร็จ');
 			editingTrack = false;
 			selectedNewTrackId = '';
-			await loadApp();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'แก้ไขสายการเรียนไม่สำเร็จ');
 		} finally {
@@ -199,8 +243,11 @@
 			return;
 		}
 		if (!application) return;
+		const sourceAppId = application.id;
 		try {
-			await verifyApplication(application.id);
+			await verifyApplication(sourceAppId);
+			if (appId !== sourceAppId || !application) return;
+			supersedeApplicationRead();
 			toast.success('ยืนยันข้อมูลแล้ว');
 			application = { ...application, status: 'verified' };
 		} catch (e) {
@@ -214,11 +261,15 @@
 			return;
 		}
 		if (!application || !rejectReason.trim()) return;
+		const sourceAppId = application.id;
+		const reason = rejectReason;
 		rejecting = true;
 		try {
-			await rejectApplication(application.id, rejectReason);
+			await rejectApplication(sourceAppId, reason);
+			if (appId !== sourceAppId || !application) return;
+			supersedeApplicationRead();
 			toast.success('ปฏิเสธใบสมัครแล้ว');
-			application = { ...application, status: 'rejected', rejectionReason: rejectReason };
+			application = { ...application, status: 'rejected', rejectionReason: reason };
 			showRejectDialog = false;
 			rejectReason = '';
 		} catch (e) {
@@ -234,9 +285,12 @@
 			return;
 		}
 		if (!application) return;
+		const sourceAppId = application.id;
 		unverifying = true;
 		try {
-			await unverifyApplication(application.id);
+			await unverifyApplication(sourceAppId);
+			if (appId !== sourceAppId || !application) return;
+			supersedeApplicationRead();
 			toast.success('ยกเลิกการอนุมัติแล้ว');
 			application = { ...application, status: 'submitted' };
 			showUnverifyDialog = false;
@@ -266,44 +320,56 @@
 			return;
 		}
 		if (!application) return;
+		const sourceAppId = application.id;
+		const payload = { ...editData };
+		const pendingSlots = Object.entries(docSlots);
 		saving = true;
 		try {
 			// 1. Save form data
-			await updateApplicationByStaff(application.id, editData);
-			application = { ...application, ...editData };
+			await updateApplicationByStaff(sourceAppId, payload);
+			if (appId === sourceAppId && application) {
+				supersedeApplicationRead();
+				application = { ...application, ...payload };
+			}
 
 			// 2. Upload pending blobs
-			for (const [docType, slot] of Object.entries(docSlots)) {
+			for (const [docType, slot] of pendingSlots) {
 				if (!slot.blob || slot.pendingDelete) continue;
-				docSlots[docType] = { ...slot, uploading: true };
-				const result = await staffUploadDocument(application.id, docType, slot.blob);
-				documents = [
-					...documents.filter((d) => d.docType !== docType),
-					{
-						id: result.id,
-						applicationId: application.id,
-						fileId: result.fileId,
-						docType: result.docType,
-						fileSize: result.fileSize,
-						createdAt: new Date().toISOString()
-					}
-				];
-				docSlots[docType] = { ...slot, blob: undefined, uploading: false };
+				if (appId === sourceAppId) docSlots[docType] = { ...slot, uploading: true };
+				const result = await staffUploadDocument(sourceAppId, docType, slot.blob);
+				if (appId === sourceAppId) {
+					documents = [
+						...documents.filter((d) => d.docType !== docType),
+						{
+							id: result.id,
+							applicationId: sourceAppId,
+							fileId: result.fileId,
+							docType: result.docType,
+							fileSize: result.fileSize,
+							createdAt: new Date().toISOString()
+						}
+					];
+					docSlots[docType] = { ...slot, blob: undefined, uploading: false };
+				}
 			}
 
 			// 3. Delete pending deletes
-			for (const [docType, slot] of Object.entries(docSlots)) {
+			for (const [docType, slot] of pendingSlots) {
 				if (!slot.pendingDelete) continue;
-				await staffDeleteDocument(application.id, docType);
-				documents = documents.filter((d) => d.docType !== docType);
-				const rest = { ...docSlots };
-				delete rest[docType];
-				docSlots = rest;
+				await staffDeleteDocument(sourceAppId, docType);
+				if (appId === sourceAppId) {
+					documents = documents.filter((d) => d.docType !== docType);
+					const rest = { ...docSlots };
+					delete rest[docType];
+					docSlots = rest;
+				}
 			}
 
-			toast.success('บันทึกข้อมูลแล้ว');
-			editMode = false;
-			editData = {};
+			if (appId === sourceAppId) {
+				toast.success('บันทึกข้อมูลแล้ว');
+				editMode = false;
+				editData = {};
+			}
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
@@ -530,22 +596,68 @@
 		}
 	}
 
-	onMount(() => {
+	$effect(() => {
+		const selectedRoundId = roundId;
+		let nextIds: string[] = [];
 		try {
-			const stored = sessionStorage.getItem('appNavIds');
-			if (stored) navIds = JSON.parse(stored);
+			const stored = sessionStorage.getItem('admissionAppNav');
+			if (stored) {
+				const context: { roundId: string; ids: string[] } = JSON.parse(stored);
+				if (context.roundId === selectedRoundId && Array.isArray(context.ids))
+					nextIds = context.ids;
+			}
 		} catch {
-			navIds = [];
+			// Ignore stale or malformed browser-only navigation context.
 		}
+		navIds = nextIds;
 	});
 
-	$effect(() => {
-		// Run on mount and whenever appId changes (goto() navigation)
-		void appId;
-		loadApp();
-		editMode = false;
-		editData = {};
-		docSlots = {};
+	$effect.pre(() => {
+		const routeApplication = data.applicationResult;
+		const selectedRoundId = data.roundId;
+		const selectedAppId = data.appId;
+		const selectedKey = `${selectedRoundId}|${selectedAppId}`;
+		const { revision } = applicationRequest.begin();
+		untrack(() => {
+			if (renderedAppKey !== selectedKey) {
+				renderedAppKey = selectedKey;
+				application = null;
+				documents = [];
+				editMode = false;
+				editData = {};
+				docSlots = {};
+				editingTrack = false;
+				selectedNewTrackId = '';
+			}
+			loading = true;
+			error = '';
+			if (renderedRoundId !== selectedRoundId) {
+				renderedRoundId = selectedRoundId;
+				tracksRequest.abort();
+				tracks = [];
+				tracksRoundId = '';
+				loadingTracks = false;
+				trackError = '';
+				navIds = [];
+			}
+		});
+		void routeApplication.then((result) => {
+			if (!applicationRequest.isCurrent(revision)) return;
+			untrack(() => {
+				if (
+					result.ok &&
+					result.data &&
+					result.data.application.admissionRoundId === selectedRoundId
+				) {
+					application = result.data.application;
+					documents = result.data.documents;
+				} else if (result.ok && result.data) {
+					error = 'ใบสมัครนี้ไม่อยู่ในรอบที่เลือก';
+				} else if (!result.ok) error = result.error;
+				loading = false;
+			});
+		});
+		return () => applicationRequest.abort();
 	});
 </script>
 
@@ -565,8 +677,9 @@
 					variant="outline"
 					size="icon"
 					class="h-8 w-8"
+					href={prevId ? `/staff/academic/admission/${roundId}/applications/${prevId}` : undefined}
+					data-sveltekit-preload-data="tap"
 					disabled={!prevId}
-					onclick={() => prevId && goToApp(String(roundId), String(prevId))}
 					title="ผู้สมัครก่อนหน้า"
 				>
 					<ChevronLeft class="w-4 h-4" />
@@ -578,8 +691,9 @@
 					variant="outline"
 					size="icon"
 					class="h-8 w-8"
+					href={nextId ? `/staff/academic/admission/${roundId}/applications/${nextId}` : undefined}
+					data-sveltekit-preload-data="tap"
 					disabled={!nextId}
-					onclick={() => nextId && goToApp(String(roundId), String(nextId))}
 					title="ผู้สมัครคนถัดไป"
 				>
 					<ChevronRight class="w-4 h-4" />
@@ -605,6 +719,15 @@
 				</Button>
 			{/if}
 		{/if}
+		<Button
+			variant="outline"
+			size="icon"
+			onclick={loadApp}
+			disabled={loading || !canReadAdmission}
+			aria-label="โหลดรายละเอียดใบสมัครใหม่"
+		>
+			<RefreshCw class="size-4" />
+		</Button>
 	{/snippet}
 
 	{#if !canReadAdmission}
@@ -613,9 +736,9 @@
 			title="ไม่มีสิทธิ์ดูใบสมัคร"
 			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดใบสมัคร"
 		/>
-	{:else if loading}
+	{:else if loading && !application}
 		<PageSkeleton variant="detail" />
-	{:else if error}
+	{:else if error && !application}
 		<PageState
 			variant="error"
 			title="โหลดรายละเอียดใบสมัครไม่สำเร็จ"
@@ -624,849 +747,882 @@
 			onaction={loadApp}
 		/>
 	{:else if application}
-		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-			<!-- ข้อมูลหลัก (ซ้าย) -->
-			<div class="lg:col-span-2 space-y-6">
-				<!-- ข้อมูลส่วนตัว -->
-				<Card.Root>
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2">
-							<User class="w-5 h-5 text-muted-foreground" /> ข้อมูลผู้สมัคร
-						</Card.Title>
-					</Card.Header>
-					<Separator />
-					<Card.Content class="pt-6">
-						<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-							<div>
-								<p class="text-xs text-muted-foreground">เลขที่ใบสมัคร</p>
-								<p class="font-mono font-medium">{application.applicationNumber ?? '-'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground">เลขประจำตัวประชาชน</p>
-								<p class="font-mono font-medium">{application.nationalId}</p>
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">คำนำหน้า</p>
-								{#if editMode}
-									<Select.Root type="single" bind:value={editData.title}>
-										<Select.Trigger class="h-8 text-sm"
-											>{editData.title || '-- เลือก --'}</Select.Trigger
-										>
-										<Select.Content>
-											{#each STUDENT_TITLES as t (t)}
-												<Select.Item value={t}>{t}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								{:else}
-									<p class="font-medium">{application.title || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">เพศ</p>
-								{#if editMode}
-									<Select.Root type="single" bind:value={editData.gender}>
-										<Select.Trigger class="h-8 text-sm"
-											>{editData.gender === 'Male'
+		<div aria-busy={loading}>
+			{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตใบสมัคร..." />{/if}
+			{#if error}<p role="alert" class="text-sm text-destructive">
+					{error}
+					<Button variant="outline" size="sm" onclick={loadApp}>ลองใหม่</Button>
+				</p>{/if}
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+				<!-- ข้อมูลหลัก (ซ้าย) -->
+				<div class="lg:col-span-2 space-y-6">
+					<!-- ข้อมูลส่วนตัว -->
+					<Card.Root>
+						<Card.Header>
+							<Card.Title class="flex items-center gap-2">
+								<User class="w-5 h-5 text-muted-foreground" /> ข้อมูลผู้สมัคร
+							</Card.Title>
+						</Card.Header>
+						<Separator />
+						<Card.Content class="pt-6">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+								<div>
+									<p class="text-xs text-muted-foreground">เลขที่ใบสมัคร</p>
+									<p class="font-mono font-medium">{application.applicationNumber ?? '-'}</p>
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground">เลขประจำตัวประชาชน</p>
+									<p class="font-mono font-medium">{application.nationalId}</p>
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">คำนำหน้า</p>
+									{#if editMode}
+										<Select.Root type="single" bind:value={editData.title}>
+											<Select.Trigger class="h-8 text-sm"
+												>{editData.title || '-- เลือก --'}</Select.Trigger
+											>
+											<Select.Content>
+												{#each STUDENT_TITLES as t (t)}
+													<Select.Item value={t}>{t}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									{:else}
+										<p class="font-medium">{application.title || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">เพศ</p>
+									{#if editMode}
+										<Select.Root type="single" bind:value={editData.gender}>
+											<Select.Trigger class="h-8 text-sm"
+												>{editData.gender === 'Male'
+													? 'ชาย'
+													: editData.gender === 'Female'
+														? 'หญิง'
+														: '-- เลือก --'}</Select.Trigger
+											>
+											<Select.Content>
+												<Select.Item value="Male">ชาย</Select.Item>
+												<Select.Item value="Female">หญิง</Select.Item>
+											</Select.Content>
+										</Select.Root>
+									{:else}
+										<p class="font-medium">
+											{application.gender === 'Male'
 												? 'ชาย'
-												: editData.gender === 'Female'
+												: application.gender === 'Female'
 													? 'หญิง'
-													: '-- เลือก --'}</Select.Trigger
-										>
-										<Select.Content>
-											<Select.Item value="Male">ชาย</Select.Item>
-											<Select.Item value="Female">หญิง</Select.Item>
-										</Select.Content>
-									</Select.Root>
-								{:else}
-									<p class="font-medium">
-										{application.gender === 'Male'
-											? 'ชาย'
-											: application.gender === 'Female'
-												? 'หญิง'
-												: '-'}
-									</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">ชื่อ</p>
-								{#if editMode}
-									<Input bind:value={editData.firstName} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.firstName}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">นามสกุล</p>
-								{#if editMode}
-									<Input bind:value={editData.lastName} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.lastName}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">วันเกิด</p>
-								{#if editMode}
-									<DatePicker bind:value={editData.dateOfBirth} />
-								{:else}
-									<p class="font-medium">
-										{application.dateOfBirth ? formatThaiDateFull(application.dateOfBirth) : '-'}
-									</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
-								{#if editMode}
-									<Input bind:value={editData.phone} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.phone || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">อีเมล</p>
-								{#if editMode}
-									<Input bind:value={editData.email} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.email || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">ศาสนา</p>
-								{#if editMode}
-									<Input bind:value={editData.religion} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.religion || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">เชื้อชาติ</p>
-								{#if editMode}
-									<Input bind:value={editData.ethnicity} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.ethnicity || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">สัญชาติ</p>
-								{#if editMode}
-									<Input bind:value={editData.nationality} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.nationality || '-'}</p>
-								{/if}
-							</div>
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<!-- ที่อยู่ -->
-				<Card.Root>
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2">
-							<MapPin class="w-5 h-5 text-muted-foreground" /> ข้อมูลที่อยู่
-						</Card.Title>
-					</Card.Header>
-					<Separator />
-					<Card.Content class="pt-6 space-y-5">
-						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-								ที่อยู่ตามทะเบียนบ้าน
-							</p>
-							{#if editMode}
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div>
-										<Label class="text-xs">บ้านเลขที่</Label><Input
-											bind:value={editData.homeHouseNo}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">หมู่</Label><Input
-											bind:value={editData.homeMoo}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">ซอย</Label><Input
-											bind:value={editData.homeSoi}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">ถนน</Label><Input
-											bind:value={editData.homeRoad}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">ตำบล/แขวง</Label><Input
-											bind:value={editData.subDistrict}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">อำเภอ/เขต</Label><Input
-											bind:value={editData.district}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">จังหวัด</Label><Input
-											bind:value={editData.province}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">รหัสไปรษณีย์</Label><Input
-											bind:value={editData.postalCode}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div class="col-span-full">
-										<Label class="text-xs">โทรศัพท์บ้าน</Label><Input
-											bind:value={editData.homePhone}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
+													: '-'}
+										</p>
+									{/if}
 								</div>
-							{:else}
-								<p class="font-medium leading-relaxed">{formatHomeAddress(application)}</p>
-								{#if application.homePhone}
-									<p class="text-sm text-muted-foreground mt-1">โทร. {application.homePhone}</p>
-								{/if}
-							{/if}
-						</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">ชื่อ</p>
+									{#if editMode}
+										<Input bind:value={editData.firstName} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.firstName}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">นามสกุล</p>
+									{#if editMode}
+										<Input bind:value={editData.lastName} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.lastName}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">วันเกิด</p>
+									{#if editMode}
+										<DatePicker bind:value={editData.dateOfBirth} />
+									{:else}
+										<p class="font-medium">
+											{application.dateOfBirth ? formatThaiDateFull(application.dateOfBirth) : '-'}
+										</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+									{#if editMode}
+										<Input bind:value={editData.phone} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.phone || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">อีเมล</p>
+									{#if editMode}
+										<Input bind:value={editData.email} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.email || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">ศาสนา</p>
+									{#if editMode}
+										<Input bind:value={editData.religion} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.religion || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">เชื้อชาติ</p>
+									{#if editMode}
+										<Input bind:value={editData.ethnicity} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.ethnicity || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">สัญชาติ</p>
+									{#if editMode}
+										<Input bind:value={editData.nationality} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.nationality || '-'}</p>
+									{/if}
+								</div>
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<!-- ที่อยู่ -->
+					<Card.Root>
+						<Card.Header>
+							<Card.Title class="flex items-center gap-2">
+								<MapPin class="w-5 h-5 text-muted-foreground" /> ข้อมูลที่อยู่
+							</Card.Title>
+						</Card.Header>
 						<Separator />
-						<div>
-							<div class="flex items-center justify-between mb-2">
-								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									ที่อยู่ปัจจุบัน
+						<Card.Content class="pt-6 space-y-5">
+							<div>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+									ที่อยู่ตามทะเบียนบ้าน
 								</p>
 								{#if editMode}
-									<Button
-										size="sm"
-										variant="ghost"
-										class="h-7 text-xs"
-										onclick={copyHomeAddressToCurrent}
-									>
-										<Copy class="w-3 h-3 mr-1" /> คัดลอกจากทะเบียนบ้าน
-									</Button>
-								{/if}
-							</div>
-							{#if editMode}
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<div>
-										<Label class="text-xs">บ้านเลขที่</Label><Input
-											bind:value={editData.currentHouseNo}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">หมู่</Label><Input
-											bind:value={editData.currentMoo}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">ซอย</Label><Input
-											bind:value={editData.currentSoi}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">ถนน</Label><Input
-											bind:value={editData.currentRoad}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">ตำบล/แขวง</Label><Input
-											bind:value={editData.currentSubDistrict}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">อำเภอ/เขต</Label><Input
-											bind:value={editData.currentDistrict}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">จังหวัด</Label><Input
-											bind:value={editData.currentProvince}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div>
-										<Label class="text-xs">รหัสไปรษณีย์</Label><Input
-											bind:value={editData.currentPostalCode}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-									<div class="col-span-full">
-										<Label class="text-xs">โทรศัพท์</Label><Input
-											bind:value={editData.currentPhone}
-											class="h-8 text-sm mt-0.5"
-										/>
-									</div>
-								</div>
-							{:else if application.currentHouseNo || application.currentSubDistrict || application.currentProvince}
-								<p class="font-medium leading-relaxed">{formatCurrentAddress(application)}</p>
-								{#if application.currentPhone}
-									<p class="text-sm text-muted-foreground mt-1">โทร. {application.currentPhone}</p>
-								{/if}
-							{:else}
-								<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
-							{/if}
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<!-- โรงเรียนเดิม -->
-				<Card.Root>
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2">
-							<School class="w-5 h-5 text-muted-foreground" /> ข้อมูลโรงเรียนเดิม
-						</Card.Title>
-					</Card.Header>
-					<Separator />
-					<Card.Content class="pt-6">
-						<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-							<div class="col-span-2">
-								<p class="text-xs text-muted-foreground mb-1">ชื่อโรงเรียน</p>
-								{#if editMode}
-									<Input bind:value={editData.previousSchool} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.previousSchool || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">จังหวัด</p>
-								{#if editMode}
-									<Input bind:value={editData.previousSchoolProvince} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.previousSchoolProvince || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">ระดับชั้น</p>
-								{#if editMode}
-									<Select.Root type="single" bind:value={editData.previousGrade}>
-										<Select.Trigger class="h-8 text-sm"
-											>{editData.previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger
-										>
-										<Select.Content>
-											{#each PREVIOUS_GRADE_OPTIONS as g (g)}
-												<Select.Item value={g}>{g}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								{:else}
-									<p class="font-medium">{application.previousGrade || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">ปีการศึกษา</p>
-								{#if editMode}
-									<Input bind:value={editData.previousStudyYear} class="h-8 text-sm" />
-								{:else}
-									<p class="font-medium">{application.previousStudyYear || '-'}</p>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">เกรดเฉลี่ยสะสม (GPA)</p>
-								{#if editMode}
-									<Input
-										type="number"
-										step="0.01"
-										min="0"
-										max="4"
-										bind:value={editData.previousGpa}
-										class="h-8 text-sm"
-									/>
-								{:else}
-									<p class="font-medium">
-										{application.previousGpa ? application.previousGpa.toFixed(2) : '-'}
-									</p>
-								{/if}
-							</div>
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<!-- ครอบครัว -->
-				<Card.Root>
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2">
-							<Users class="w-5 h-5 text-muted-foreground" /> ข้อมูลครอบครัว
-						</Card.Title>
-					</Card.Header>
-					<Separator />
-					<Card.Content class="pt-6 space-y-6">
-						{#if editMode}
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
-								<div class="flex flex-wrap gap-2">
-									{#each PARENT_STATUS_OPTIONS as opt (opt)}
-										<button
-											type="button"
-											onclick={() => toggleEditParentStatus(opt)}
-											class="px-3 py-1.5 rounded-full text-sm border transition-all {(
-												(editData.parentStatus as string[]) ?? []
-											).includes(opt)
-												? 'bg-primary text-primary-foreground border-primary'
-												: 'bg-background border-border hover:border-primary/50'}"
-										>
-											{opt}
-										</button>
-									{/each}
-								</div>
-								{#if ((editData.parentStatus as string[]) ?? []).includes('อื่นๆ')}
-									<Input
-										bind:value={editData.parentStatusOther}
-										placeholder="ระบุ..."
-										class="max-w-xs mt-2"
-									/>
-								{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">ผู้ปกครองเป็น</p>
-								<div class="flex flex-wrap gap-2">
-									{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label] (val)}
-										<button
-											type="button"
-											onclick={() => (editData.guardianIs = val as typeof editData.guardianIs)}
-											class="px-3 py-1.5 rounded-full text-sm border transition-all {editData.guardianIs ===
-											val
-												? 'bg-primary text-primary-foreground border-primary'
-												: 'bg-background border-border hover:border-primary/50'}"
-										>
-											{label}
-										</button>
-									{/each}
-								</div>
-							</div>
-							<Separator />
-						{:else if application.parentStatus && application.parentStatus.length > 0}
-							<div>
-								<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
-								<p class="font-medium">
-									{application.parentStatus.join(', ')}
-									{#if application.parentStatusOther}
-										— {application.parentStatusOther}{/if}
-								</p>
-							</div>
-							<Separator />
-						{/if}
-
-						<!-- บิดา -->
-						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-								บิดา
-							</p>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
-									{#if editMode}
-										<Input bind:value={editData.fatherName} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.fatherName || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
-									{#if editMode}
-										<Input bind:value={editData.fatherPhone} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.fatherPhone || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
-									{#if editMode}
-										<Input bind:value={editData.fatherNationalId} class="h-8 text-sm font-mono" />
-									{:else}
-										<p class="font-mono font-medium">{application.fatherNationalId || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
-									{#if editMode}
-										<Input bind:value={editData.fatherOccupation} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.fatherOccupation || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
-									{#if editMode}
-										<Input type="number" bind:value={editData.fatherIncome} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{formatCurrency(application.fatherIncome)}</p>
-									{/if}
-								</div>
-							</div>
-						</div>
-
-						<Separator />
-
-						<!-- มารดา -->
-						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-								มารดา
-							</p>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
-									{#if editMode}
-										<Input bind:value={editData.motherName} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.motherName || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
-									{#if editMode}
-										<Input bind:value={editData.motherPhone} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.motherPhone || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
-									{#if editMode}
-										<Input bind:value={editData.motherNationalId} class="h-8 text-sm font-mono" />
-									{:else}
-										<p class="font-mono font-medium">{application.motherNationalId || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
-									{#if editMode}
-										<Input bind:value={editData.motherOccupation} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.motherOccupation || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
-									{#if editMode}
-										<Input type="number" bind:value={editData.motherIncome} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{formatCurrency(application.motherIncome)}</p>
-									{/if}
-								</div>
-							</div>
-						</div>
-
-						<Separator />
-
-						<!-- ผู้ปกครอง -->
-						<div>
-							<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-								ผู้ปกครอง
-								{#if application.guardianIs === 'father'}(บิดา){:else if application.guardianIs === 'mother'}(มารดา){:else if application.guardianIs === 'other'}(บุคคลอื่น){/if}
-							</p>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
-									{#if editMode}
-										<Input bind:value={editData.guardianName} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.guardianName || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
-									{#if editMode}
-										<Input bind:value={editData.guardianPhone} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.guardianPhone || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">ความสัมพันธ์</p>
-									{#if editMode}
-										<Input bind:value={editData.guardianRelation} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.guardianRelation || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
-									{#if editMode}
-										<Input bind:value={editData.guardianNationalId} class="h-8 text-sm font-mono" />
-									{:else}
-										<p class="font-mono font-medium">{application.guardianNationalId || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
-									{#if editMode}
-										<Input bind:value={editData.guardianOccupation} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{application.guardianOccupation || '-'}</p>
-									{/if}
-								</div>
-								<div>
-									<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
-									{#if editMode}
-										<Input type="number" bind:value={editData.guardianIncome} class="h-8 text-sm" />
-									{:else}
-										<p class="font-medium">{formatCurrency(application.guardianIncome)}</p>
-									{/if}
-								</div>
-							</div>
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<!-- เอกสารแนบ -->
-				<Card.Root>
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2">
-							<ImageIcon class="w-5 h-5 text-muted-foreground" /> เอกสารแนบ
-						</Card.Title>
-					</Card.Header>
-					<Separator />
-					<Card.Content class="pt-6">
-						<div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-							{#each Object.entries(DOC_TYPE_LABELS) as [docType, info] (docType)}
-								{@const existingDoc = documents.find((d) => d.docType === docType)}
-								{@const slot = docSlots[docType]}
-								{@const previewUrl = slot?.pendingDelete ? undefined : slot?.preview}
-								{@const existingFileId = slot?.pendingDelete ? undefined : existingDoc?.fileId}
-								<div class="flex flex-col gap-2">
-									<!-- Thumbnail -->
-									<button
-										type="button"
-										class="group focus:outline-none"
-										onclick={() => {
-											if (previewUrl) openLightboxPreview(previewUrl, docType);
-											else if (existingFileId) openLightboxDocument(existingFileId, docType);
-										}}
-										disabled={!previewUrl && !existingFileId}
-									>
-										<div
-											class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative {previewUrl ||
-											existingFileId
-												? 'group-hover:ring-2 group-hover:ring-primary transition-all'
-												: ''}"
-										>
-											{#if slot?.uploading}
-												<div class="w-full h-full flex items-center justify-center">
-													<LoaderCircle class="w-6 h-6 animate-spin text-primary" />
-												</div>
-											{:else if previewUrl}
-												<img src={previewUrl} alt={info.label} class="w-full h-full object-cover" />
-											{:else if existingFileId}
-												<PrivateFileImage
-													fileId={existingFileId}
-													resourceId={appId}
-													alt={info.label}
-													class="w-full h-full object-cover"
-												/>
-												<div
-													class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center"
-												>
-													<ZoomIn
-														class="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg"
-													/>
-												</div>
-											{:else}
-												<div class="w-full h-full flex items-center justify-center">
-													<FileText class="w-7 h-7 text-muted-foreground/40" />
-												</div>
-											{/if}
-										</div>
-									</button>
-
-									<!-- Label -->
-									<p class="text-xs font-medium leading-tight line-clamp-2">
-										{info.label}
-										{#if info.required}<span class="text-destructive">*</span>{/if}
-									</p>
-
-									<!-- Action buttons (edit mode only) -->
-									{#if editMode}
-										<div class="flex gap-1">
-											{#if previewUrl || existingFileId}
-												<Button
-													size="sm"
-													variant="outline"
-													class="h-7 text-xs flex-1"
-													disabled={slot?.uploading}
-													onclick={() => fileInputRefs[docType]?.click()}
-												>
-													เปลี่ยน
-												</Button>
-												<Button
-													size="icon"
-													variant="ghost"
-													class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-													disabled={slot?.uploading}
-													onclick={() => handleDeleteDoc(docType)}
-												>
-													<X class="w-3.5 h-3.5" />
-												</Button>
-											{:else if !slot?.pendingDelete}
-												<Button
-													size="sm"
-													variant="outline"
-													class="h-7 text-xs w-full"
-													onclick={() => fileInputRefs[docType]?.click()}
-												>
-													เลือกไฟล์
-												</Button>
-											{/if}
-											<input
-												type="file"
-												accept="image/*"
-												class="hidden"
-												{@attach captureFileInput(docType)}
-												onchange={(e) => handleDocFileSelected(docType, e)}
+									<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+										<div>
+											<Label class="text-xs">บ้านเลขที่</Label><Input
+												bind:value={editData.homeHouseNo}
+												class="h-8 text-sm mt-0.5"
 											/>
 										</div>
+										<div>
+											<Label class="text-xs">หมู่</Label><Input
+												bind:value={editData.homeMoo}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">ซอย</Label><Input
+												bind:value={editData.homeSoi}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">ถนน</Label><Input
+												bind:value={editData.homeRoad}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">ตำบล/แขวง</Label><Input
+												bind:value={editData.subDistrict}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">อำเภอ/เขต</Label><Input
+												bind:value={editData.district}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">จังหวัด</Label><Input
+												bind:value={editData.province}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">รหัสไปรษณีย์</Label><Input
+												bind:value={editData.postalCode}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div class="col-span-full">
+											<Label class="text-xs">โทรศัพท์บ้าน</Label><Input
+												bind:value={editData.homePhone}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+									</div>
+								{:else}
+									<p class="font-medium leading-relaxed">{formatHomeAddress(application)}</p>
+									{#if application.homePhone}
+										<p class="text-sm text-muted-foreground mt-1">โทร. {application.homePhone}</p>
 									{/if}
-								</div>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			</div>
-
-			<!-- Sidebar (ขวา) -->
-			<div class="space-y-6">
-				<Card.Root>
-					<Card.Header class="bg-muted/30">
-						<Card.Title>สายการเรียน / รอบ</Card.Title>
-					</Card.Header>
-					<Card.Content class="pt-6 space-y-4">
-						<div>
-							<p class="text-sm text-muted-foreground">รอบรับสมัคร</p>
-							<p class="font-medium">{application.roundName || '-'}</p>
-						</div>
-						<div>
-							<p class="text-sm text-muted-foreground mb-1">สายการเรียน</p>
-							{#if !editingTrack}
-								<div class="flex items-center gap-2">
-									<span class="font-medium">{application.trackName || '-'}</span>
-									{#if canVerifyAdmission && tracks.length > 1}
-										<button
-											class="text-muted-foreground hover:text-foreground"
-											onclick={() => {
-												editingTrack = true;
-												selectedNewTrackId = application?.admissionTrackId ?? '';
-											}}
-										>
-											<Pencil class="w-3.5 h-3.5" />
-										</button>
-									{/if}
-								</div>
-							{:else}
-								<div class="space-y-2">
-									<Select.Root type="single" bind:value={selectedNewTrackId}>
-										<Select.Trigger class="h-8 text-sm">
-											{tracks.find((t) => t.id === selectedNewTrackId)?.name ?? 'เลือกสาย'}
-										</Select.Trigger>
-										<Select.Content>
-											{#each tracks as track (track.id)}
-												<Select.Item value={track.id}>{track.name}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-									<div class="flex gap-1.5">
-										<Button
-											size="sm"
-											class="h-7 text-xs"
-											disabled={savingTrack || selectedNewTrackId === application.admissionTrackId}
-											onclick={handleSaveTrack}
-										>
-											{#if savingTrack}<LoaderCircle class="w-3 h-3 animate-spin mr-1" />{/if}
-											บันทึก
-										</Button>
+								{/if}
+							</div>
+							<Separator />
+							<div>
+								<div class="flex items-center justify-between mb-2">
+									<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+										ที่อยู่ปัจจุบัน
+									</p>
+									{#if editMode}
 										<Button
 											size="sm"
 											variant="ghost"
 											class="h-7 text-xs"
-											onclick={() => {
-												editingTrack = false;
-												selectedNewTrackId = '';
-											}}
+											onclick={copyHomeAddressToCurrent}
 										>
-											ยกเลิก
+											<Copy class="w-3 h-3 mr-1" /> คัดลอกจากทะเบียนบ้าน
 										</Button>
+									{/if}
+								</div>
+								{#if editMode}
+									<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+										<div>
+											<Label class="text-xs">บ้านเลขที่</Label><Input
+												bind:value={editData.currentHouseNo}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">หมู่</Label><Input
+												bind:value={editData.currentMoo}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">ซอย</Label><Input
+												bind:value={editData.currentSoi}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">ถนน</Label><Input
+												bind:value={editData.currentRoad}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">ตำบล/แขวง</Label><Input
+												bind:value={editData.currentSubDistrict}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">อำเภอ/เขต</Label><Input
+												bind:value={editData.currentDistrict}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">จังหวัด</Label><Input
+												bind:value={editData.currentProvince}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div>
+											<Label class="text-xs">รหัสไปรษณีย์</Label><Input
+												bind:value={editData.currentPostalCode}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+										<div class="col-span-full">
+											<Label class="text-xs">โทรศัพท์</Label><Input
+												bind:value={editData.currentPhone}
+												class="h-8 text-sm mt-0.5"
+											/>
+										</div>
+									</div>
+								{:else if application.currentHouseNo || application.currentSubDistrict || application.currentProvince}
+									<p class="font-medium leading-relaxed">{formatCurrentAddress(application)}</p>
+									{#if application.currentPhone}
+										<p class="text-sm text-muted-foreground mt-1">
+											โทร. {application.currentPhone}
+										</p>
+									{/if}
+								{:else}
+									<p class="text-sm text-muted-foreground">ไม่มีข้อมูล</p>
+								{/if}
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<!-- โรงเรียนเดิม -->
+					<Card.Root>
+						<Card.Header>
+							<Card.Title class="flex items-center gap-2">
+								<School class="w-5 h-5 text-muted-foreground" /> ข้อมูลโรงเรียนเดิม
+							</Card.Title>
+						</Card.Header>
+						<Separator />
+						<Card.Content class="pt-6">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+								<div class="col-span-2">
+									<p class="text-xs text-muted-foreground mb-1">ชื่อโรงเรียน</p>
+									{#if editMode}
+										<Input bind:value={editData.previousSchool} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.previousSchool || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">จังหวัด</p>
+									{#if editMode}
+										<Input bind:value={editData.previousSchoolProvince} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.previousSchoolProvince || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">ระดับชั้น</p>
+									{#if editMode}
+										<Select.Root type="single" bind:value={editData.previousGrade}>
+											<Select.Trigger class="h-8 text-sm"
+												>{editData.previousGrade || '-- เลือกระดับชั้น --'}</Select.Trigger
+											>
+											<Select.Content>
+												{#each PREVIOUS_GRADE_OPTIONS as g (g)}
+													<Select.Item value={g}>{g}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									{:else}
+										<p class="font-medium">{application.previousGrade || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">ปีการศึกษา</p>
+									{#if editMode}
+										<Input bind:value={editData.previousStudyYear} class="h-8 text-sm" />
+									{:else}
+										<p class="font-medium">{application.previousStudyYear || '-'}</p>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">เกรดเฉลี่ยสะสม (GPA)</p>
+									{#if editMode}
+										<Input
+											type="number"
+											step="0.01"
+											min="0"
+											max="4"
+											bind:value={editData.previousGpa}
+											class="h-8 text-sm"
+										/>
+									{:else}
+										<p class="font-medium">
+											{application.previousGpa ? application.previousGpa.toFixed(2) : '-'}
+										</p>
+									{/if}
+								</div>
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<!-- ครอบครัว -->
+					<Card.Root>
+						<Card.Header>
+							<Card.Title class="flex items-center gap-2">
+								<Users class="w-5 h-5 text-muted-foreground" /> ข้อมูลครอบครัว
+							</Card.Title>
+						</Card.Header>
+						<Separator />
+						<Card.Content class="pt-6 space-y-6">
+							{#if editMode}
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
+									<div class="flex flex-wrap gap-2">
+										{#each PARENT_STATUS_OPTIONS as opt (opt)}
+											<button
+												type="button"
+												onclick={() => toggleEditParentStatus(opt)}
+												class="px-3 py-1.5 rounded-full text-sm border transition-all {(
+													(editData.parentStatus as string[]) ?? []
+												).includes(opt)
+													? 'bg-primary text-primary-foreground border-primary'
+													: 'bg-background border-border hover:border-primary/50'}"
+											>
+												{opt}
+											</button>
+										{/each}
+									</div>
+									{#if ((editData.parentStatus as string[]) ?? []).includes('อื่นๆ')}
+										<Input
+											bind:value={editData.parentStatusOther}
+											placeholder="ระบุ..."
+											class="max-w-xs mt-2"
+										/>
+									{/if}
+								</div>
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">ผู้ปกครองเป็น</p>
+									<div class="flex flex-wrap gap-2">
+										{#each [['father', 'บิดา'], ['mother', 'มารดา'], ['other', 'บุคคลอื่น']] as [val, label] (val)}
+											<button
+												type="button"
+												onclick={() => (editData.guardianIs = val as typeof editData.guardianIs)}
+												class="px-3 py-1.5 rounded-full text-sm border transition-all {editData.guardianIs ===
+												val
+													? 'bg-primary text-primary-foreground border-primary'
+													: 'bg-background border-border hover:border-primary/50'}"
+											>
+												{label}
+											</button>
+										{/each}
 									</div>
 								</div>
+								<Separator />
+							{:else if application.parentStatus && application.parentStatus.length > 0}
+								<div>
+									<p class="text-xs text-muted-foreground mb-1">สถานภาพครอบครัว</p>
+									<p class="font-medium">
+										{application.parentStatus.join(', ')}
+										{#if application.parentStatusOther}
+											— {application.parentStatusOther}{/if}
+									</p>
+								</div>
+								<Separator />
 							{/if}
-						</div>
-					</Card.Content>
-				</Card.Root>
 
-				<Card.Root>
-					<Card.Header class="bg-muted/30">
-						<Card.Title>สถานะใบสมัคร</Card.Title>
-					</Card.Header>
-					<Card.Content class="pt-6 space-y-6">
-						<div>
-							<Badge
-								variant={statusVariant[application.status] ?? 'outline'}
-								class="text-sm px-3 py-1"
-							>
-								{applicationStatusLabel[application.status] ?? application.status}
-							</Badge>
-						</div>
-
-						<div>
-							<p class="text-sm text-muted-foreground">วันที่สมัคร</p>
-							<p class="font-medium text-sm">{formatDate(application.createdAt)}</p>
-						</div>
-
-						<div>
-							<p class="text-sm text-muted-foreground">เอกสารแนบ</p>
-							<p class="font-medium text-sm">{documents.length} ไฟล์</p>
-						</div>
-
-						{#if application.status === 'rejected' && application.rejectionReason}
-							<div
-								class="bg-destructive/10 text-destructive p-4 rounded-md text-sm border border-destructive/20"
-							>
-								<p class="font-semibold mb-1">เหตุผลที่ปฏิเสธ:</p>
-								<p>{application.rejectionReason}</p>
+							<!-- บิดา -->
+							<div>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+									บิดา
+								</p>
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
+										{#if editMode}
+											<Input bind:value={editData.fatherName} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.fatherName || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+										{#if editMode}
+											<Input bind:value={editData.fatherPhone} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.fatherPhone || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
+										{#if editMode}
+											<Input bind:value={editData.fatherNationalId} class="h-8 text-sm font-mono" />
+										{:else}
+											<p class="font-mono font-medium">{application.fatherNationalId || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
+										{#if editMode}
+											<Input bind:value={editData.fatherOccupation} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.fatherOccupation || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
+										{#if editMode}
+											<Input type="number" bind:value={editData.fatherIncome} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{formatCurrency(application.fatherIncome)}</p>
+										{/if}
+									</div>
+								</div>
 							</div>
-						{/if}
 
-						{#if canVerifyAdmission && application.status === 'submitted'}
 							<Separator />
-							<div class="grid grid-cols-2 gap-2">
+
+							<!-- มารดา -->
+							<div>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+									มารดา
+								</p>
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
+										{#if editMode}
+											<Input bind:value={editData.motherName} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.motherName || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+										{#if editMode}
+											<Input bind:value={editData.motherPhone} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.motherPhone || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
+										{#if editMode}
+											<Input bind:value={editData.motherNationalId} class="h-8 text-sm font-mono" />
+										{:else}
+											<p class="font-mono font-medium">{application.motherNationalId || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
+										{#if editMode}
+											<Input bind:value={editData.motherOccupation} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.motherOccupation || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
+										{#if editMode}
+											<Input type="number" bind:value={editData.motherIncome} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{formatCurrency(application.motherIncome)}</p>
+										{/if}
+									</div>
+								</div>
+							</div>
+
+							<Separator />
+
+							<!-- ผู้ปกครอง -->
+							<div>
+								<p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+									ผู้ปกครอง
+									{#if application.guardianIs === 'father'}(บิดา){:else if application.guardianIs === 'mother'}(มารดา){:else if application.guardianIs === 'other'}(บุคคลอื่น){/if}
+								</p>
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">ชื่อ-นามสกุล</p>
+										{#if editMode}
+											<Input bind:value={editData.guardianName} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.guardianName || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">เบอร์โทรศัพท์</p>
+										{#if editMode}
+											<Input bind:value={editData.guardianPhone} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.guardianPhone || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">ความสัมพันธ์</p>
+										{#if editMode}
+											<Input bind:value={editData.guardianRelation} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.guardianRelation || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">เลขประชาชน</p>
+										{#if editMode}
+											<Input
+												bind:value={editData.guardianNationalId}
+												class="h-8 text-sm font-mono"
+											/>
+										{:else}
+											<p class="font-mono font-medium">{application.guardianNationalId || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">อาชีพ</p>
+										{#if editMode}
+											<Input bind:value={editData.guardianOccupation} class="h-8 text-sm" />
+										{:else}
+											<p class="font-medium">{application.guardianOccupation || '-'}</p>
+										{/if}
+									</div>
+									<div>
+										<p class="text-xs text-muted-foreground mb-1">รายได้ (บาท/เดือน)</p>
+										{#if editMode}
+											<Input
+												type="number"
+												bind:value={editData.guardianIncome}
+												class="h-8 text-sm"
+											/>
+										{:else}
+											<p class="font-medium">{formatCurrency(application.guardianIncome)}</p>
+										{/if}
+									</div>
+								</div>
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<!-- เอกสารแนบ -->
+					<Card.Root>
+						<Card.Header>
+							<Card.Title class="flex items-center gap-2">
+								<ImageIcon class="w-5 h-5 text-muted-foreground" /> เอกสารแนบ
+							</Card.Title>
+						</Card.Header>
+						<Separator />
+						<Card.Content class="pt-6">
+							<div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+								{#each Object.entries(DOC_TYPE_LABELS) as [docType, info] (docType)}
+									{@const existingDoc = documents.find((d) => d.docType === docType)}
+									{@const slot = docSlots[docType]}
+									{@const previewUrl = slot?.pendingDelete ? undefined : slot?.preview}
+									{@const existingFileId = slot?.pendingDelete ? undefined : existingDoc?.fileId}
+									<div class="flex flex-col gap-2">
+										<!-- Thumbnail -->
+										<button
+											type="button"
+											class="group focus:outline-none"
+											onclick={() => {
+												if (previewUrl) openLightboxPreview(previewUrl, docType);
+												else if (existingFileId) openLightboxDocument(existingFileId, docType);
+											}}
+											disabled={!previewUrl && !existingFileId}
+										>
+											<div
+												class="aspect-[3/4] rounded-lg overflow-hidden border bg-muted relative {previewUrl ||
+												existingFileId
+													? 'group-hover:ring-2 group-hover:ring-primary transition-all'
+													: ''}"
+											>
+												{#if slot?.uploading}
+													<div class="w-full h-full flex items-center justify-center">
+														<LoaderCircle class="w-6 h-6 animate-spin text-primary" />
+													</div>
+												{:else if previewUrl}
+													<img
+														src={previewUrl}
+														alt={info.label}
+														class="w-full h-full object-cover"
+													/>
+												{:else if existingFileId}
+													<PrivateFileImage
+														fileId={existingFileId}
+														resourceId={appId}
+														alt={info.label}
+														class="w-full h-full object-cover"
+													/>
+													<div
+														class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center"
+													>
+														<ZoomIn
+															class="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg"
+														/>
+													</div>
+												{:else}
+													<div class="w-full h-full flex items-center justify-center">
+														<FileText class="w-7 h-7 text-muted-foreground/40" />
+													</div>
+												{/if}
+											</div>
+										</button>
+
+										<!-- Label -->
+										<p class="text-xs font-medium leading-tight line-clamp-2">
+											{info.label}
+											{#if info.required}<span class="text-destructive">*</span>{/if}
+										</p>
+
+										<!-- Action buttons (edit mode only) -->
+										{#if editMode}
+											<div class="flex gap-1">
+												{#if previewUrl || existingFileId}
+													<Button
+														size="sm"
+														variant="outline"
+														class="h-7 text-xs flex-1"
+														disabled={slot?.uploading}
+														onclick={() => fileInputRefs[docType]?.click()}
+													>
+														เปลี่ยน
+													</Button>
+													<Button
+														size="icon"
+														variant="ghost"
+														class="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+														disabled={slot?.uploading}
+														onclick={() => handleDeleteDoc(docType)}
+													>
+														<X class="w-3.5 h-3.5" />
+													</Button>
+												{:else if !slot?.pendingDelete}
+													<Button
+														size="sm"
+														variant="outline"
+														class="h-7 text-xs w-full"
+														onclick={() => fileInputRefs[docType]?.click()}
+													>
+														เลือกไฟล์
+													</Button>
+												{/if}
+												<input
+													type="file"
+													accept="image/*"
+													class="hidden"
+													{@attach captureFileInput(docType)}
+													onchange={(e) => handleDocFileSelected(docType, e)}
+												/>
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</Card.Content>
+					</Card.Root>
+				</div>
+
+				<!-- Sidebar (ขวา) -->
+				<div class="space-y-6">
+					<Card.Root>
+						<Card.Header class="bg-muted/30">
+							<Card.Title>สายการเรียน / รอบ</Card.Title>
+						</Card.Header>
+						<Card.Content class="pt-6 space-y-4">
+							<div>
+								<p class="text-sm text-muted-foreground">รอบรับสมัคร</p>
+								<p class="font-medium">{application.roundName || '-'}</p>
+							</div>
+							<div>
+								<p class="text-sm text-muted-foreground mb-1">สายการเรียน</p>
+								{#if !editingTrack}
+									<div class="flex items-center gap-2">
+										<span class="font-medium">{application.trackName || '-'}</span>
+										{#if canVerifyAdmission}
+											<button
+												class="text-muted-foreground hover:text-foreground"
+												onclick={beginTrackEdit}
+												aria-label="แก้ไขสายการเรียน"
+											>
+												<Pencil class="w-3.5 h-3.5" />
+											</button>
+										{/if}
+									</div>
+								{:else}
+									<div class="space-y-2">
+										{#if loadingTracks}
+											<Skeleton class="h-8 w-full" aria-label="กำลังโหลดสายการเรียน" />
+										{:else if trackError}
+											<p role="alert" class="text-sm text-destructive">
+												{trackError}
+												<Button variant="outline" size="sm" onclick={loadTrackOptions}
+													>ลองใหม่</Button
+												>
+											</p>
+										{:else}
+											<Select.Root type="single" bind:value={selectedNewTrackId}>
+												<Select.Trigger class="h-8 text-sm">
+													{tracks.find((t) => t.id === selectedNewTrackId)?.name ?? 'เลือกสาย'}
+												</Select.Trigger>
+												<Select.Content>
+													{#each tracks as track (track.id)}
+														<Select.Item value={track.id}>{track.name}</Select.Item>
+													{/each}
+												</Select.Content>
+											</Select.Root>
+										{/if}
+										<div class="flex gap-1.5">
+											{#if !loadingTracks && !trackError}
+												<Button
+													size="sm"
+													class="h-7 text-xs"
+													disabled={savingTrack ||
+														!tracks.some((track) => track.id === selectedNewTrackId) ||
+														selectedNewTrackId === application.admissionTrackId}
+													onclick={handleSaveTrack}
+												>
+													{#if savingTrack}<LoaderCircle class="w-3 h-3 animate-spin mr-1" />{/if}
+													บันทึก
+												</Button>
+											{/if}
+											<Button
+												size="sm"
+												variant="ghost"
+												class="h-7 text-xs"
+												onclick={() => {
+													editingTrack = false;
+													selectedNewTrackId = '';
+												}}
+											>
+												ยกเลิก
+											</Button>
+										</div>
+									</div>
+								{/if}
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<Card.Root>
+						<Card.Header class="bg-muted/30">
+							<Card.Title>สถานะใบสมัคร</Card.Title>
+						</Card.Header>
+						<Card.Content class="pt-6 space-y-6">
+							<div>
+								<Badge
+									variant={statusVariant[application.status] ?? 'outline'}
+									class="text-sm px-3 py-1"
+								>
+									{applicationStatusLabel[application.status] ?? application.status}
+								</Badge>
+							</div>
+
+							<div>
+								<p class="text-sm text-muted-foreground">วันที่สมัคร</p>
+								<p class="font-medium text-sm">{formatDate(application.createdAt)}</p>
+							</div>
+
+							<div>
+								<p class="text-sm text-muted-foreground">เอกสารแนบ</p>
+								<p class="font-medium text-sm">{documents.length} ไฟล์</p>
+							</div>
+
+							{#if application.status === 'rejected' && application.rejectionReason}
+								<div
+									class="bg-destructive/10 text-destructive p-4 rounded-md text-sm border border-destructive/20"
+								>
+									<p class="font-semibold mb-1">เหตุผลที่ปฏิเสธ:</p>
+									<p>{application.rejectionReason}</p>
+								</div>
+							{/if}
+
+							{#if canVerifyAdmission && application.status === 'submitted'}
+								<Separator />
+								<div class="grid grid-cols-2 gap-2">
+									<Button
+										variant="outline"
+										class="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
+										onclick={() => {
+											showRejectDialog = true;
+										}}
+									>
+										<X class="w-4 h-4 mr-1" /> ไม่อนุมัติ
+									</Button>
+									<Button class="w-full bg-green-600 hover:bg-green-700" onclick={handleVerify}>
+										<Check class="w-4 h-4 mr-1" /> อนุมัติ
+									</Button>
+								</div>
+							{/if}
+
+							{#if canVerifyAdmission && application.status === 'verified'}
+								<Separator />
 								<Button
 									variant="outline"
 									class="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
 									onclick={() => {
-										showRejectDialog = true;
+										showUnverifyDialog = true;
 									}}
 								>
-									<X class="w-4 h-4 mr-1" /> ไม่อนุมัติ
+									<RotateCcw class="w-4 h-4 mr-1" /> ยกเลิกการอนุมัติ
 								</Button>
-								<Button class="w-full bg-green-600 hover:bg-green-700" onclick={handleVerify}>
-									<Check class="w-4 h-4 mr-1" /> อนุมัติ
-								</Button>
-							</div>
-						{/if}
-
-						{#if canVerifyAdmission && application.status === 'verified'}
-							<Separator />
-							<Button
-								variant="outline"
-								class="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
-								onclick={() => {
-									showUnverifyDialog = true;
-								}}
-							>
-								<RotateCcw class="w-4 h-4 mr-1" /> ยกเลิกการอนุมัติ
-							</Button>
-						{/if}
-					</Card.Content>
-				</Card.Root>
+							{/if}
+						</Card.Content>
+					</Card.Root>
+				</div>
 			</div>
 		</div>
 
