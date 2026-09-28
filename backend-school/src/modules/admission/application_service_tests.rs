@@ -4,7 +4,10 @@ mod tests {
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
         CutoverFixture,
     };
-    use school_admission::applications::{complete_enrollment, CompleteEnrollmentRequest};
+    use school_admission::applications::{
+        complete_enrollment, BulkScoreEntry, CompleteEnrollmentRequest, UpdateScoreEntry,
+    };
+    use school_admission::scores::{bulk_update_scores, update_application_scores};
     use school_errors::AppError;
     use school_test_db::{create_named_test_pool_with_max_connections, create_test_user};
     use sqlx::PgPool;
@@ -143,6 +146,182 @@ mod tests {
             student_code: Some("970001".to_string()),
             form_data: None,
         }
+    }
+
+    #[tokio::test]
+    async fn bulk_scores_reject_cross_round_rows_and_roll_back_valid_rows() {
+        let fixture = enrollment_fixture("admission_bulk_scores_round_scope", 1).await;
+        let (round_id, grade_level_id, study_program_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+            "SELECT aa.admission_round_id, ar.grade_level_id, at.study_program_id
+             FROM admission_applications aa
+             JOIN admission_rounds ar ON ar.id = aa.admission_round_id
+             JOIN admission_tracks at ON at.id = aa.admission_track_id
+             WHERE aa.id = $1",
+        )
+        .bind(fixture.application_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE admission_applications SET status = 'verified' WHERE id = $1")
+            .bind(fixture.application_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let other_round_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_rounds (
+                 academic_year_id, grade_level_id, name, apply_start_date, apply_end_date
+             ) VALUES ($1, $2, 'รอบทดสอบอื่น', '2026-08-01', '2027-03-31') RETURNING id",
+        )
+        .bind(fixture.academic_year_id)
+        .bind(grade_level_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        let other_track_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_tracks (
+                 admission_round_id, academic_year_id, study_program_id, name
+             ) VALUES ($1, $2, $3, 'แผนทดสอบอื่น') RETURNING id",
+        )
+        .bind(other_round_id)
+        .bind(fixture.academic_year_id)
+        .bind(study_program_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        let other_application_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_applications (
+                 admission_round_id, admission_track_id, national_id, national_id_hash,
+                 first_name, last_name, status
+             ) VALUES ($1, $2, 'encrypted-score-test-fixture', repeat('e', 64),
+                       'นักเรียน', 'รอบอื่น', 'verified') RETURNING id",
+        )
+        .bind(other_round_id)
+        .bind(other_track_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        let subject_a: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_exam_subjects (admission_round_id, name)
+             VALUES ($1, 'วิชาหนึ่ง') RETURNING id",
+        )
+        .bind(round_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        let subject_b: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_exam_subjects (admission_round_id, name)
+             VALUES ($1, 'วิชาสอง') RETURNING id",
+        )
+        .bind(round_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        let other_subject: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_exam_subjects (admission_round_id, name)
+             VALUES ($1, 'วิชาอีกรอบ') RETURNING id",
+        )
+        .bind(other_round_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        let entry = |application_id, exam_subject_id, score| BulkScoreEntry {
+            application_id,
+            scores: vec![UpdateScoreEntry {
+                exam_subject_id,
+                score: Some(score),
+            }],
+        };
+
+        assert_eq!(
+            bulk_update_scores(
+                &fixture.pool,
+                round_id,
+                fixture.enroller_id,
+                &[entry(fixture.application_id, subject_a, 10.0)],
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        for invalid in [
+            entry(other_application_id, subject_a, 17.0),
+            entry(fixture.application_id, other_subject, 17.0),
+        ] {
+            let result = bulk_update_scores(
+                &fixture.pool,
+                round_id,
+                fixture.enroller_id,
+                &[entry(fixture.application_id, subject_b, 15.0), invalid],
+            )
+            .await;
+            assert!(matches!(result, Err(AppError::BadRequest(_))));
+            let rolled_back: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM admission_exam_scores WHERE exam_subject_id = $1",
+            )
+            .bind(subject_b)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+            assert_eq!(rolled_back, 0);
+        }
+        let single_result = update_application_scores(
+            &fixture.pool,
+            fixture.application_id,
+            fixture.enroller_id,
+            &[
+                UpdateScoreEntry {
+                    exam_subject_id: subject_b,
+                    score: Some(15.0),
+                },
+                UpdateScoreEntry {
+                    exam_subject_id: other_subject,
+                    score: Some(17.0),
+                },
+            ],
+        )
+        .await;
+        assert!(matches!(single_result, Err(AppError::BadRequest(_))));
+        let rolled_back: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM admission_exam_scores WHERE exam_subject_id IN ($1, $2)",
+        )
+        .bind(subject_b)
+        .bind(other_subject)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(rolled_back, 0);
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM admission_applications WHERE id = $1")
+                .bind(fixture.application_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "verified");
+        assert_eq!(
+            bulk_update_scores(
+                &fixture.pool,
+                round_id,
+                fixture.enroller_id,
+                &[entry(fixture.application_id, subject_b, 20.0)],
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        let state: (String, String, i64) = sqlx::query_as(
+            "SELECT own.status, other.status,
+                    (SELECT COUNT(*) FROM admission_exam_scores score
+                     WHERE score.application_id = other.id)
+             FROM admission_applications own
+             CROSS JOIN admission_applications other
+             WHERE own.id = $1 AND other.id = $2",
+        )
+        .bind(fixture.application_id)
+        .bind(other_application_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        assert_eq!(state, ("scored".into(), "verified".into(), 0));
     }
 
     #[tokio::test]

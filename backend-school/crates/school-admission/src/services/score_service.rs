@@ -103,10 +103,6 @@ pub async fn get_score_room_roster(
     Ok(groups)
 }
 
-fn should_mark_application_scored(total_subjects: i64, scored_subjects: i64) -> bool {
-    total_subjects > 0 && scored_subjects >= total_subjects
-}
-
 fn bulk_score_entry_count(entries: &[BulkScoreEntry]) -> usize {
     entries.iter().map(|entry| entry.scores.len()).sum()
 }
@@ -184,10 +180,13 @@ async fn upsert_application_scores(
     let sub_ids: Vec<Uuid> = rows.iter().map(|row| row.exam_subject_id).collect();
     let score_vals: Vec<Option<f64>> = rows.iter().map(|row| row.score).collect();
 
-    sqlx::query(
+    let upsert = sqlx::query(
         r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
-           SELECT application_id, exam_subject_id, score, $4, NOW(), NOW()
+           SELECT t.application_id, t.exam_subject_id, t.score, $4, NOW(), NOW()
            FROM UNNEST($1::uuid[], $2::uuid[], $3::float8[]) AS t(application_id, exam_subject_id, score)
+           JOIN admission_applications aa ON aa.id = t.application_id
+           JOIN admission_exam_subjects aes
+             ON aes.id = t.exam_subject_id AND aes.admission_round_id = aa.admission_round_id
            ON CONFLICT (application_id, exam_subject_id)
            DO UPDATE SET score = EXCLUDED.score, entered_by = EXCLUDED.entered_by, updated_at = NOW()"#,
     )
@@ -201,6 +200,11 @@ async fn upsert_application_scores(
         tracing::error!("Failed to upsert scores: {}", e);
         AppError::InternalServerError("Failed to update score".to_string())
     })?;
+    if upsert.rows_affected() != rows.len() as u64 {
+        return Err(AppError::BadRequest(
+            "ข้อมูลคะแนนบางรายการไม่อยู่ในรอบรับสมัครของใบสมัครนี้".to_string(),
+        ));
+    }
 
     Ok(())
 }
@@ -262,22 +266,29 @@ pub async fn update_application_scores(
     let score_rows = score_entries_to_bulk_rows(application_id, scores);
     upsert_application_scores(&mut tx, user_id, &score_rows).await?;
 
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = (SELECT admission_round_id FROM admission_applications WHERE id = $1)"
+    sqlx::query(
+        r#"UPDATE admission_applications aa
+           SET status = 'scored', updated_at = NOW()
+           WHERE aa.id = $1 AND aa.status = 'verified'
+             AND EXISTS (
+                 SELECT 1 FROM admission_exam_subjects aes
+                 WHERE aes.admission_round_id = aa.admission_round_id
+             )
+             AND NOT EXISTS (
+                 SELECT 1 FROM admission_exam_subjects aes
+                 LEFT JOIN admission_exam_scores esc
+                   ON esc.exam_subject_id = aes.id AND esc.application_id = aa.id
+                 WHERE aes.admission_round_id = aa.admission_round_id
+                   AND esc.score IS NULL
+             )"#,
     )
-    .bind(application_id).fetch_one(&mut *tx).await.unwrap_or(0);
-
-    let scored: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM admission_exam_scores WHERE application_id = $1 AND score IS NOT NULL"
-    )
-    .bind(application_id).fetch_one(&mut *tx).await.unwrap_or(0);
-
-    if should_mark_application_scored(total, scored) {
-        sqlx::query(
-            "UPDATE admission_applications SET status = 'scored', updated_at = NOW() WHERE id = $1 AND status = 'verified'"
-        )
-        .bind(application_id).execute(&mut *tx).await.ok();
-    }
+    .bind(application_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Failed to update scored application status: {}", error);
+        AppError::InternalServerError("Failed to update score".to_string())
+    })?;
 
     tx.commit()
         .await
@@ -291,61 +302,85 @@ pub async fn bulk_update_scores(
     user_id: Uuid,
     entries: &[BulkScoreEntry],
 ) -> Result<usize, AppError> {
-    let updated = bulk_score_entry_count(entries);
     let rows = bulk_score_entries_to_rows(entries);
-
-    if !rows.is_empty() {
-        let app_ids: Vec<Uuid> = rows.iter().map(|row| row.application_id).collect();
-        let sub_ids: Vec<Uuid> = rows.iter().map(|row| row.exam_subject_id).collect();
-        let score_vals: Vec<Option<f64>> = rows.iter().map(|row| row.score).collect();
-
-        sqlx::query(
-            r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
-               SELECT a, s, sc, $4, NOW(), NOW()
-               FROM UNNEST($1::uuid[], $2::uuid[], $3::float8[]) AS t(a, s, sc)
-               ON CONFLICT (application_id, exam_subject_id)
-               DO UPDATE SET score = EXCLUDED.score, entered_by = EXCLUDED.entered_by, updated_at = NOW()"#
-        )
-        .bind(&app_ids).bind(&sub_ids).bind(&score_vals).bind(user_id)
-        .execute(pool).await
-        .map_err(|e| {
-            tracing::error!("Bulk score error: {}", e);
-            AppError::InternalServerError("Failed to bulk update scores".to_string())
-        })?;
+    if rows.is_empty() {
+        return Ok(0);
     }
 
-    let app_id_set: Vec<Uuid> = entries.iter().map(|e| e.application_id).collect();
+    let app_ids: Vec<Uuid> = rows.iter().map(|row| row.application_id).collect();
+    let sub_ids: Vec<Uuid> = rows.iter().map(|row| row.exam_subject_id).collect();
+    let score_vals: Vec<Option<f64>> = rows.iter().map(|row| row.score).collect();
+    let mut tx = pool.begin().await.map_err(|error| {
+        tracing::error!("Failed to start bulk score transaction: {}", error);
+        AppError::InternalServerError("Failed to update scores".to_string())
+    })?;
+    let upsert = sqlx::query(
+        r#"INSERT INTO admission_exam_scores (application_id, exam_subject_id, score, entered_by, entered_at, updated_at)
+           SELECT t.a, t.s, t.sc, $4, NOW(), NOW()
+           FROM UNNEST($1::uuid[], $2::uuid[], $3::float8[]) AS t(a, s, sc)
+           JOIN admission_applications aa ON aa.id = t.a AND aa.admission_round_id = $5
+           JOIN admission_exam_subjects aes ON aes.id = t.s AND aes.admission_round_id = $5
+           ON CONFLICT (application_id, exam_subject_id)
+           DO UPDATE SET score = EXCLUDED.score, entered_by = EXCLUDED.entered_by, updated_at = NOW()"#,
+    )
+    .bind(&app_ids)
+    .bind(&sub_ids)
+    .bind(&score_vals)
+    .bind(user_id)
+    .bind(round_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| {
+        tracing::error!("Bulk score error: {}", error);
+        AppError::InternalServerError("Failed to update scores".to_string())
+    })?;
+    if upsert.rows_affected() != rows.len() as u64 {
+        return Err(AppError::BadRequest(
+            "ข้อมูลคะแนนบางรายการไม่อยู่ในรอบรับสมัครนี้".to_string(),
+        ));
+    }
+
+    let mut app_id_set = app_ids;
+    app_id_set.sort_unstable();
+    app_id_set.dedup();
     sqlx::query(
-        r#"UPDATE admission_applications aa
+        r#"WITH subject_total AS (
+               SELECT COUNT(*) AS total FROM admission_exam_subjects WHERE admission_round_id = $2
+           ), scored_by_app AS (
+               SELECT esc.application_id, COUNT(*) AS scored
+               FROM admission_exam_scores esc
+               JOIN admission_exam_subjects aes
+                 ON aes.id = esc.exam_subject_id AND aes.admission_round_id = $2
+               WHERE esc.application_id = ANY($1) AND esc.score IS NOT NULL
+               GROUP BY esc.application_id
+           )
+           UPDATE admission_applications aa
            SET status = 'scored', updated_at = NOW()
-           WHERE aa.id = ANY($1) AND aa.status = 'verified'
-             AND (
-                 SELECT COUNT(*) FROM admission_exam_scores esc
-                 WHERE esc.application_id = aa.id AND esc.score IS NOT NULL
-             ) >= (
-                 SELECT COUNT(*) FROM admission_exam_subjects WHERE admission_round_id = $2
-             )"#,
+           FROM subject_total, scored_by_app
+           WHERE aa.id = scored_by_app.application_id
+             AND aa.id = ANY($1) AND aa.admission_round_id = $2 AND aa.status = 'verified'
+             AND subject_total.total > 0 AND scored_by_app.scored >= subject_total.total"#,
     )
     .bind(&app_id_set)
     .bind(round_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
-    .ok();
+    .map_err(|error| {
+        tracing::error!("Failed to update scored application statuses: {}", error);
+        AppError::InternalServerError("Failed to update scores".to_string())
+    })?;
 
-    Ok(updated)
+    tx.commit().await.map_err(|error| {
+        tracing::error!("Failed to commit bulk score transaction: {}", error);
+        AppError::InternalServerError("Failed to update scores".to_string())
+    })?;
+
+    Ok(rows.len())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn should_mark_application_scored_requires_at_least_one_subject_and_all_scores() {
-        assert!(!should_mark_application_scored(0, 0));
-        assert!(!should_mark_application_scored(3, 2));
-        assert!(should_mark_application_scored(3, 3));
-        assert!(should_mark_application_scored(3, 4));
-    }
 
     #[test]
     fn bulk_score_entry_count_counts_nested_scores() {

@@ -8091,3 +8091,63 @@ fn promotion_impact_resolutions_are_forward_only_immutable_receipts() {
     assert!(service.contains("lifecycle_guard::lock_transition"));
     assert!(service.contains("promotion_reconciliation::reconcile_decision"));
 }
+
+#[test]
+fn admission_bulk_scores_are_atomic_and_round_scoped() {
+    let source =
+        read_source(manifest_dir().join("crates/school-admission/src/services/score_service.rs"));
+    let bulk = source
+        .split("pub async fn bulk_update_scores")
+        .nth(1)
+        .expect("bulk score service must exist")
+        .split("#[cfg(test)]")
+        .next()
+        .expect("bulk score service must have an end");
+    for required in [
+        "pool.begin().await",
+        "JOIN admission_applications aa ON aa.id = t.a AND aa.admission_round_id = $5",
+        "JOIN admission_exam_subjects aes ON aes.id = t.s AND aes.admission_round_id = $5",
+        "rows_affected()",
+        "aa.admission_round_id = $2",
+        "tx.commit().await",
+    ] {
+        assert!(
+            bulk.contains(required),
+            "bulk score write is missing `{required}`"
+        );
+    }
+}
+
+#[test]
+fn admission_single_application_scores_are_subject_scoped_and_atomic() {
+    let source =
+        read_source(manifest_dir().join("crates/school-admission/src/services/score_service.rs"));
+    let single = source
+        .split("async fn upsert_application_scores")
+        .nth(1)
+        .expect("single-application score upsert must exist")
+        .split("pub async fn get_all_scores")
+        .next()
+        .expect("single-application score upsert must have an end");
+    for required in [
+        "JOIN admission_applications aa ON aa.id = t.application_id",
+        "aes.admission_round_id = aa.admission_round_id",
+        "rows_affected()",
+        "AppError::BadRequest",
+    ] {
+        assert!(
+            single.contains(required),
+            "single-application score write is missing `{required}`"
+        );
+    }
+    let update = source
+        .split("pub async fn update_application_scores")
+        .nth(1)
+        .expect("single-application score service must exist")
+        .split("pub async fn bulk_update_scores")
+        .next()
+        .expect("single-application score service must have an end");
+    assert!(update.contains("NOT EXISTS"));
+    assert!(update.contains("tx.commit()"));
+    assert!(!update.contains(".await.ok()"));
+}
