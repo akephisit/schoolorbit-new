@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { createRound } from '$lib/api/admission';
+	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
 	import {
 		lookupAcademicYears,
 		lookupGradeLevels,
@@ -23,8 +24,12 @@
 	import { Plus, Loader2 } from '@lucide/svelte';
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
+	import type { PageProps } from './$types';
 
+	let { data }: PageProps = $props();
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
+	const yearsRequest = new LatestRequest();
+	const gradesRequest = new LatestRequest();
 
 	function goToAdmissionRound(id: string) {
 		goto(resolve(`/staff/academic/admission/${id}`));
@@ -32,8 +37,9 @@
 
 	let years: AcademicYearLookupItem[] = $state([]);
 	let gradeLevels: GradeLevelLookupItem[] = $state([]);
-	let loading = $state(true);
+	let loading = $state(false);
 	let loadingGrades = $state(false);
+	let gradeError = $state('');
 	let saving = $state(false);
 	let error = $state('');
 
@@ -52,40 +58,48 @@
 
 	async function loadGradeLevels(yearId: string) {
 		if (!canManageAdmission) return;
+		const { revision, signal } = gradesRequest.begin();
 		if (!yearId) {
 			gradeLevels = [];
+			loadingGrades = false;
 			return;
 		}
 		loadingGrades = true;
+		gradeError = '';
+		gradeLevels = [];
 		try {
-			gradeLevels = await lookupGradeLevels({ academicYearId: yearId });
-		} catch {
-			gradeLevels = [];
-			toast.error('โหลดระดับชั้นไม่สำเร็จ');
+			const rows = await lookupGradeLevels({ academicYearId: yearId }, { signal });
+			if (gradesRequest.isCurrent(revision)) gradeLevels = rows;
+		} catch (cause) {
+			if (!isAbortError(cause) && gradesRequest.isCurrent(revision))
+				gradeError = cause instanceof Error ? cause.message : 'โหลดระดับชั้นไม่สำเร็จ';
 		} finally {
-			loadingGrades = false;
+			if (gradesRequest.isCurrent(revision)) loadingGrades = false;
 		}
 	}
 
 	async function load() {
-		if (!canManageAdmission) {
-			loading = false;
-			return;
-		}
+		if (!canManageAdmission) return;
+		const { revision, signal } = yearsRequest.begin();
 		loading = true;
 		error = '';
 		try {
-			years = await lookupAcademicYears({ activeOnly: false });
-			const activeYear = years.find((year) => year.status === 'active') ?? years[0];
+			const rows = await lookupAcademicYears({ activeOnly: false }, { signal });
+			if (!yearsRequest.isCurrent(revision)) return;
+			years = rows;
+			const activeYear =
+				rows.find((year) => year.id === data.preferredYearId) ??
+				rows.find((year) => year.status === 'active') ??
+				rows[0];
 			if (activeYear) {
 				form.academicYearId = activeYear.id;
 				await loadGradeLevels(activeYear.id);
 			}
 		} catch (loadError) {
-			error = loadError instanceof Error ? loadError.message : 'โหลดข้อมูลปีการศึกษาไม่สำเร็จ';
-			toast.error(error);
+			if (!isAbortError(loadError) && yearsRequest.isCurrent(revision))
+				error = loadError instanceof Error ? loadError.message : 'โหลดข้อมูลปีการศึกษาไม่สำเร็จ';
 		} finally {
-			loading = false;
+			if (yearsRequest.isCurrent(revision)) loading = false;
 		}
 	}
 
@@ -98,6 +112,7 @@
 		if (
 			!form.academicYearId ||
 			!form.gradeLevelId ||
+			!gradeLevels.some((grade) => grade.id === form.gradeLevelId) ||
 			!form.name ||
 			!form.applyStartDate ||
 			!form.applyEndDate
@@ -124,7 +139,48 @@
 		}
 	}
 
-	onMount(load);
+	$effect.pre(() => {
+		const routeYears = data.years;
+		const routeGrades = data.grades;
+		const { revision: yearRevision } = yearsRequest.begin();
+		const { revision: gradeRevision } = gradesRequest.begin();
+		untrack(() => {
+			years = [];
+			gradeLevels = [];
+			loading = true;
+			loadingGrades = true;
+			error = '';
+			gradeError = '';
+		});
+		void routeYears.then((result) => {
+			if (!yearsRequest.isCurrent(yearRevision)) return;
+			untrack(() => {
+				if (result.ok) {
+					years = result.data;
+					const activeYear =
+						result.data.find((year) => year.id === data.preferredYearId) ??
+						result.data.find((year) => year.status === 'active') ??
+						result.data[0];
+					const nextYearId = activeYear?.id ?? '';
+					if (nextYearId !== form.academicYearId) form.gradeLevelId = '';
+					form.academicYearId = nextYearId;
+				} else error = result.error;
+				loading = false;
+			});
+		});
+		void routeGrades.then((result) => {
+			if (!gradesRequest.isCurrent(gradeRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data.yearId === form.academicYearId) gradeLevels = result.data.rows;
+				else if (!result.ok) gradeError = result.error;
+				loadingGrades = false;
+			});
+		});
+		return () => {
+			yearsRequest.abort();
+			gradesRequest.abort();
+		};
+	});
 </script>
 
 <PageShell
@@ -162,10 +218,13 @@
 							<Label for="year-select">ปีการศึกษา <span class="text-destructive">*</span></Label>
 							<Select.Root
 								type="single"
-								bind:value={form.academicYearId}
+								value={form.academicYearId}
 								onValueChange={(v) => {
+									const nextYearId = v ?? '';
+									if (nextYearId === form.academicYearId) return;
+									form.academicYearId = nextYearId;
 									form.gradeLevelId = '';
-									loadGradeLevels(v ?? '');
+									void loadGradeLevels(nextYearId);
 								}}
 							>
 								<Select.Trigger id="year-select" class="w-full">
@@ -182,6 +241,14 @@
 						</div>
 						<div class="space-y-2">
 							<Label for="grade-select">ระดับชั้น <span class="text-destructive">*</span></Label>
+							{#if gradeError}<p role="alert" class="text-sm text-destructive">
+									{gradeError}
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => void loadGradeLevels(form.academicYearId)}>ลองใหม่</Button
+									>
+								</p>{/if}
 							<Select.Root
 								type="single"
 								bind:value={form.gradeLevelId}

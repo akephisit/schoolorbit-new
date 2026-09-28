@@ -106,9 +106,10 @@ export async function lookupOrganizationUnits(
  * Returns: id, code, name, level_order
  */
 export async function lookupGradeLevels(
-	options: AcademicLookupOptions
+	options: AcademicLookupOptions,
+	requestOptions: ApiRequestOptions = {}
 ): Promise<GradeLevelLookupItem[]> {
-	return fetchLookup<GradeLevelLookupItem>('grade-levels', options);
+	return fetchLookup<GradeLevelLookupItem>('grade-levels', options, requestOptions);
 }
 
 /**
@@ -126,9 +127,10 @@ export async function lookupHomerooms(
  * Returns: id, name, year, status
  */
 export async function lookupAcademicYears(
-	options?: LookupOptions
+	options?: LookupOptions,
+	requestOptions: ApiRequestOptions = {}
 ): Promise<AcademicYearLookupItem[]> {
-	return fetchLookup<AcademicYearLookupItem>('academic-years', options);
+	return fetchLookup<AcademicYearLookupItem>('academic-years', options, requestOptions);
 }
 
 /**

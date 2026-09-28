@@ -23,12 +23,25 @@
 	let open = $state(false);
 	let searchInput = $state('');
 	let schools = $state<School[]>([]);
+	let loadingSchools = $state(false);
 	let triggerRef = $state<HTMLElement | null>(null);
 
 	$effect(() => {
-		import('$lib/data/thai-schools.json').then((mod) => {
-			schools = mod.default as School[];
-		});
+		if (!open || schools.length > 0) return;
+		let active = true;
+		loadingSchools = true;
+		void import('$lib/data/thai-schools.json')
+			.then((mod) => {
+				if (!active) return;
+				schools = mod.default as School[];
+				loadingSchools = false;
+			})
+			.catch(() => {
+				if (active) loadingSchools = false;
+			});
+		return () => {
+			active = false;
+		};
 	});
 
 	// กรองเฉพาะเมื่อมีคำค้นหา และจำกัดจำนวนผลลัพธ์
@@ -87,6 +100,10 @@
 			<Command.List class="max-h-60">
 				{#if !searchInput.trim()}
 					<div class="py-6 text-center text-sm text-muted-foreground">พิมพ์เพื่อค้นหาโรงเรียน</div>
+				{:else if loadingSchools}
+					<div class="py-6 text-center text-sm text-muted-foreground">
+						กำลังโหลดรายชื่อโรงเรียน...
+					</div>
 				{:else if filtered().length === 0}
 					<div class="flex flex-col items-center gap-2 py-3">
 						<span class="text-sm text-muted-foreground">ไม่พบชื่อโรงเรียนในรายการ</span>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -38,7 +38,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
@@ -65,9 +65,9 @@
 	import { can } from '$lib/stores/permissions';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 
-	let { params }: PageProps = $props();
+	let { data }: PageProps = $props();
 
-	let id = $derived(params.id);
+	let id = $derived(data.id);
 	const canReadAdmission = $derived($can.has(PERMISSIONS.ADMISSION_READ_ALL));
 	const canManageAdmission = $derived($can.has(PERMISSIONS.ADMISSION_MANAGE_ALL));
 	const canVerifyAdmission = $derived($can.has(PERMISSIONS.ADMISSION_VERIFY_ALL));
@@ -77,9 +77,25 @@
 	let tracks: AdmissionTrack[] = $state([]);
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let studyPrograms = $state<StudyProgramOption[]>([]);
-	let loading = $state(true);
+	let loading = $state(false);
 	let error = $state('');
-	const request = new LatestRequest();
+	let loaded = $state(false);
+	let loadingTracks = $state(false);
+	let tracksLoaded = $state(false);
+	let tracksError = $state('');
+	let loadingSubjects = $state(false);
+	let subjectsLoaded = $state(false);
+	let subjectsError = $state('');
+	let loadingCopyableRounds = $state(false);
+	let copyRoundsError = $state('');
+	let copyRoundsLoaded = $state(false);
+	let loadingPrograms = $state(false);
+	let programsError = $state('');
+	const roundRequest = new LatestRequest();
+	const tracksRequest = new LatestRequest();
+	const subjectsRequest = new LatestRequest();
+	const copyRoundsRequest = new LatestRequest();
+	const programsRequest = new LatestRequest();
 
 	let showDeleteDialog = $state(false);
 	let deletingRound = $state(false);
@@ -195,45 +211,110 @@
 		}
 	}
 
-	async function load() {
-		if (!canReadAdmission) {
-			request.abort();
-			loading = false;
-			return;
-		}
-		if (!id) return;
-		const { revision, signal } = request.begin();
+	function applyRound(next: AdmissionRound) {
+		round = next;
+		reportConfig = {
+			reportMode: next.reportConfig?.reportMode ?? null,
+			zone: { schools: next.reportConfig?.zone?.schools ?? [] },
+			institution: { ownSchool: next.reportConfig?.institution?.ownSchool ?? '' }
+		};
+	}
+	async function loadRound() {
+		if (!canReadAdmission || !id) return;
+		const selectedId = id;
+		const { revision, signal } = roundRequest.begin();
 		loading = true;
 		error = '';
 		try {
-			const r = await getRound(id, { signal });
-			const [t, s, allR, programs] = await Promise.all([
-				listTracks(id, { signal }),
-				listSubjects(id, { signal }),
-				listRounds(r.academicYearId, { signal }),
-				canManageAdmission
-					? listStudyProgramOptionsForAcademicYear(r.academicYearId, { signal })
-					: Promise.resolve([])
-			]);
-			if (!request.isCurrent(revision)) return;
-			round = r;
-			tracks = t;
-			subjects = s;
-			allRounds = allR;
-			studyPrograms = programs;
-			reportConfig = {
-				reportMode: r.reportConfig?.reportMode ?? null,
-				zone: { schools: r.reportConfig?.zone?.schools ?? [] },
-				institution: { ownSchool: r.reportConfig?.institution?.ownSchool ?? '' }
-			};
-		} catch (e) {
-			if (isAbortError(e)) return;
-			if (request.isCurrent(revision)) {
-				error = e instanceof Error ? e.message : 'โหลดข้อมูลไม่สำเร็จ';
-				toast.error(error);
-			}
+			const next = await getRound(selectedId, { signal });
+			if (!roundRequest.isCurrent(revision)) return;
+			applyRound(next);
+			loaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && roundRequest.isCurrent(revision))
+				error = cause instanceof Error ? cause.message : 'โหลดรายละเอียดรอบไม่สำเร็จ';
 		} finally {
-			if (request.isCurrent(revision)) loading = false;
+			if (roundRequest.isCurrent(revision)) loading = false;
+		}
+	}
+	async function loadTracks() {
+		if (!canManageAdmission || !id) return;
+		const selectedId = id;
+		const { revision, signal } = tracksRequest.begin();
+		loadingTracks = true;
+		tracksError = '';
+		try {
+			const next = await listTracks(selectedId, { signal });
+			if (!tracksRequest.isCurrent(revision)) return;
+			tracks = next;
+			tracksLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && tracksRequest.isCurrent(revision))
+				tracksError = cause instanceof Error ? cause.message : 'โหลดสายการเรียนไม่สำเร็จ';
+		} finally {
+			if (tracksRequest.isCurrent(revision)) loadingTracks = false;
+		}
+	}
+	async function loadSubjects() {
+		if (!canManageAdmission || !id) return;
+		const selectedId = id;
+		const { revision, signal } = subjectsRequest.begin();
+		loadingSubjects = true;
+		subjectsError = '';
+		try {
+			const next = await listSubjects(selectedId, { signal });
+			if (!subjectsRequest.isCurrent(revision)) return;
+			subjects = next;
+			subjectsLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && subjectsRequest.isCurrent(revision))
+				subjectsError = cause instanceof Error ? cause.message : 'โหลดวิชาสอบไม่สำเร็จ';
+		} finally {
+			if (subjectsRequest.isCurrent(revision)) loadingSubjects = false;
+		}
+	}
+	function supersedeTracksRead() {
+		tracksRequest.abort();
+		loadingTracks = false;
+		tracksLoaded = true;
+		tracksError = '';
+	}
+	function supersedeSubjectsRead() {
+		subjectsRequest.abort();
+		loadingSubjects = false;
+		subjectsLoaded = true;
+		subjectsError = '';
+	}
+	async function loadCopyableRounds() {
+		if (!canManageAdmission || !round) return;
+		const { revision, signal } = copyRoundsRequest.begin();
+		loadingCopyableRounds = true;
+		copyRoundsError = '';
+		try {
+			const next = await listRounds(round.academicYearId, { signal });
+			if (!copyRoundsRequest.isCurrent(revision)) return;
+			allRounds = next;
+			copyRoundsLoaded = true;
+		} catch (cause) {
+			if (!isAbortError(cause) && copyRoundsRequest.isCurrent(revision))
+				copyRoundsError = cause instanceof Error ? cause.message : 'โหลดรอบสำหรับคัดลอกไม่สำเร็จ';
+		} finally {
+			if (copyRoundsRequest.isCurrent(revision)) loadingCopyableRounds = false;
+		}
+	}
+	async function loadStudyPrograms() {
+		if (!canManageAdmission || !round) return;
+		const { revision, signal } = programsRequest.begin();
+		loadingPrograms = true;
+		programsError = '';
+		try {
+			const next = await listStudyProgramOptionsForAcademicYear(round.academicYearId, { signal });
+			if (programsRequest.isCurrent(revision)) studyPrograms = next;
+		} catch (cause) {
+			if (!isAbortError(cause) && programsRequest.isCurrent(revision))
+				programsError = cause instanceof Error ? cause.message : 'โหลดแผนการเรียนไม่สำเร็จ';
+		} finally {
+			if (programsRequest.isCurrent(revision)) loadingPrograms = false;
 		}
 	}
 
@@ -284,6 +365,7 @@
 			tiebreakMethod: 'applied_at'
 		};
 		showTrackForm = true;
+		if (!studyPrograms.length) void loadStudyPrograms();
 	}
 	function openEditTrack(t: AdmissionTrack) {
 		if (!canManageAdmission) return;
@@ -302,19 +384,32 @@
 			return;
 		}
 		if (!id) return;
+		const sourceId = id;
 		savingTrack = true;
 		try {
 			if (editingTrack) {
-				await updateTrack(editingTrack.id, {
+				const updated = await updateTrack(editingTrack.id, {
 					name: trackForm.name,
 					capacityOverride: trackForm.capacityOverride
 						? parseInt(trackForm.capacityOverride)
 						: undefined,
 					tiebreakMethod: trackForm.tiebreakMethod as 'applied_at' | 'gpa'
 				});
+				if (id !== sourceId) return;
+				supersedeTracksRead();
+				tracks = tracks.map((track) =>
+					track.id === updated.id
+						? {
+								...updated,
+								roomCount: updated.roomCount ?? track.roomCount,
+								computedCapacity:
+									updated.computedCapacity ?? updated.capacityOverride ?? track.computedCapacity
+							}
+						: track
+				);
 				toast.success('อัปเดตสายแล้ว');
 			} else {
-				await createTrack(id, {
+				const created = await createTrack(id, {
 					studyProgramId: trackForm.studyProgramId,
 					name: trackForm.name,
 					capacityOverride: trackForm.capacityOverride
@@ -322,10 +417,14 @@
 						: undefined,
 					tiebreakMethod: trackForm.tiebreakMethod
 				});
+				if (id !== sourceId) return;
+				supersedeTracksRead();
+				tracks = [...tracks, created].sort((a, b) => a.displayOrder - b.displayOrder);
 				toast.success('เพิ่มสายการเรียนแล้ว');
+				// The create response does not include homeroom-derived capacity yet.
+				void loadTracks();
 			}
 			showTrackForm = false;
-			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
@@ -342,11 +441,15 @@
 			return;
 		}
 		if (!deletingTrackTarget) return;
+		const sourceId = id;
+		const targetId = deletingTrackTarget.id;
 		deletingTrack = true;
 		try {
-			await deleteTrack(deletingTrackTarget.id);
+			await deleteTrack(targetId);
+			if (id !== sourceId) return;
+			supersedeTracksRead();
+			tracks = tracks.filter((track) => track.id !== targetId);
 			toast.success('ลบสายแล้ว');
-			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
 		} finally {
@@ -379,27 +482,35 @@
 			return;
 		}
 		if (!id) return;
+		const sourceId = id;
 		savingSubject = true;
 		try {
 			if (editingSubject) {
-				await updateSubject(editingSubject.id, {
+				const updated = await updateSubject(editingSubject.id, {
 					name: subjectForm.name,
 					code: subjectForm.code || undefined,
 					maxScore: parseFloat(subjectForm.maxScore),
 					displayOrder: parseInt(subjectForm.displayOrder)
 				});
+				if (id !== sourceId) return;
+				supersedeSubjectsRead();
+				subjects = subjects
+					.map((subject) => (subject.id === updated.id ? updated : subject))
+					.sort((a, b) => a.displayOrder - b.displayOrder);
 				toast.success('อัปเดตวิชาแล้ว');
 			} else {
-				await createSubject(id, {
+				const created = await createSubject(id, {
 					name: subjectForm.name,
 					code: subjectForm.code || undefined,
 					maxScore: parseFloat(subjectForm.maxScore),
 					displayOrder: parseInt(subjectForm.displayOrder)
 				});
+				if (id !== sourceId) return;
+				supersedeSubjectsRead();
+				subjects = [...subjects, created].sort((a, b) => a.displayOrder - b.displayOrder);
 				toast.success('เพิ่มวิชาแล้ว');
 			}
 			showSubjectForm = false;
-			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
 		} finally {
@@ -416,11 +527,15 @@
 			return;
 		}
 		if (!deletingSubjectTarget) return;
+		const sourceId = id;
+		const targetId = deletingSubjectTarget.id;
 		deletingSubject = true;
 		try {
-			await deleteSubject(deletingSubjectTarget.id);
+			await deleteSubject(targetId);
+			if (id !== sourceId) return;
+			supersedeSubjectsRead();
+			subjects = subjects.filter((subject) => subject.id !== targetId);
 			toast.success('ลบวิชาแล้ว');
-			await load();
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
 		} finally {
@@ -444,7 +559,8 @@
 			if (reportConfig.reportMode === 'institution' || reportConfig.reportMode === 'both') {
 				payload.institution = { ownSchool: reportConfig.institution?.ownSchool ?? '' };
 			}
-			await updateRound(id, { reportConfig: payload });
+			const updated = await updateRound(id, { reportConfig: payload });
+			round = updated;
 			toast.success('บันทึกการตั้งค่ารายงานแล้ว');
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
@@ -490,9 +606,71 @@
 		});
 	}
 
-	onMount(() => {
-		void load();
-		return () => request.abort();
+	$effect.pre(() => {
+		const routeRound = data.round;
+		const routeTracks = data.tracks;
+		const routeSubjects = data.subjects;
+		const { revision: roundRevision } = roundRequest.begin();
+		const { revision: tracksRevision } = tracksRequest.begin();
+		const { revision: subjectsRevision } = subjectsRequest.begin();
+		copyRoundsRequest.abort();
+		programsRequest.abort();
+		untrack(() => {
+			round = null;
+			tracks = [];
+			subjects = [];
+			allRounds = [];
+			studyPrograms = [];
+			loaded = false;
+			tracksLoaded = false;
+			subjectsLoaded = false;
+			copyRoundsLoaded = false;
+			loading = true;
+			loadingTracks = true;
+			loadingSubjects = true;
+			error = '';
+			tracksError = '';
+			subjectsError = '';
+			showTrackForm = false;
+			showSubjectForm = false;
+		});
+		void routeRound.then((result) => {
+			if (!roundRequest.isCurrent(roundRevision)) return;
+			untrack(() => {
+				if (result.ok && result.data) {
+					applyRound(result.data);
+					loaded = true;
+				} else if (!result.ok) error = result.error;
+				loading = false;
+			});
+		});
+		void routeTracks.then((result) => {
+			if (!tracksRequest.isCurrent(tracksRevision)) return;
+			untrack(() => {
+				if (result.ok) {
+					tracks = result.data;
+					tracksLoaded = true;
+				} else tracksError = result.error;
+				loadingTracks = false;
+			});
+		});
+		void routeSubjects.then((result) => {
+			if (!subjectsRequest.isCurrent(subjectsRevision)) return;
+			untrack(() => {
+				if (result.ok) {
+					subjects = result.data;
+					subjectsLoaded = true;
+				} else subjectsError = result.error;
+				loadingSubjects = false;
+			});
+		});
+		return () => {
+			roundRequest.abort();
+			tracksRequest.abort();
+			subjectsRequest.abort();
+			copyRoundsRequest.abort();
+			programsRequest.abort();
+		};
 	});
 </script>
 
@@ -518,7 +696,7 @@
 		{/if}
 	{/snippet}
 
-	{#if loading}
+	{#if loading && !loaded}
 		<PageSkeleton variant="detail" />
 	{:else if !canReadAdmission}
 		<PageState
@@ -526,16 +704,21 @@
 			title="ไม่มีสิทธิ์ดูรอบรับสมัคร"
 			description="บัญชีนี้เข้า module รับสมัครได้ แต่ยังไม่มีสิทธิ์อ่านรายละเอียดรอบรับสมัคร"
 		/>
-	{:else if error}
+	{:else if error && !loaded}
 		<PageState
 			variant="error"
 			title="โหลดรายละเอียดรอบรับสมัครไม่สำเร็จ"
 			description={error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={load}
+			onaction={() => void loadRound()}
 		/>
 	{:else if round}
-		<div class="space-y-6">
+		<div class="space-y-6" aria-busy={loading}>
+			{#if loading}<RegionUpdatingState class="static" label="กำลังอัปเดตรอบรับสมัคร..." />{/if}
+			{#if error}<p role="alert" class="text-sm text-destructive">
+					{error}
+					<Button variant="outline" size="sm" onclick={() => void loadRound()}>ลองใหม่</Button>
+				</p>{/if}
 			<!-- Round Info Card -->
 			<Card.Root class="gap-0 py-0">
 				<Card.Content class="p-5">
@@ -766,7 +949,7 @@
 			{#if canManageAdmission}
 				<div class="grid md:grid-cols-2 gap-6">
 					<!-- Tracks -->
-					<Card.Root>
+					<Card.Root aria-busy={loadingTracks}>
 						<Card.Header class="flex flex-row items-center justify-between pb-3">
 							<Card.Title class="flex items-center gap-2 text-base">
 								<BookOpen class="w-4 h-4" /> สายการเรียน ({tracks.length})
@@ -775,6 +958,16 @@
 								<Plus class="w-3.5 h-3.5" /> เพิ่ม
 							</Button>
 						</Card.Header>
+						{#if loadingTracks && tracksLoaded}<RegionUpdatingState
+								class="static"
+								label="กำลังอัปเดตสายการเรียน..."
+							/>{/if}
+						{#if tracksError && tracksLoaded}<p role="alert" class="px-4 text-sm text-destructive">
+								{tracksError}
+								<Button variant="outline" size="sm" onclick={() => void loadTracks()}
+									>ลองใหม่</Button
+								>
+							</p>{/if}
 
 						{#if showTrackForm}
 							<div class="px-4 pb-4 space-y-3 border-b border-border">
@@ -783,10 +976,22 @@
 										<Label for="track-plan"
 											>แผนการเรียน <span class="text-destructive">*</span></Label
 										>
-										<Select.Root type="single" bind:value={trackForm.studyProgramId}>
+										{#if programsError}<p role="alert" class="text-sm text-destructive">
+												{programsError}
+												<Button variant="outline" size="sm" onclick={() => void loadStudyPrograms()}
+													>ลองใหม่</Button
+												>
+											</p>{/if}
+										<Select.Root
+											type="single"
+											bind:value={trackForm.studyProgramId}
+											disabled={loadingPrograms}
+										>
 											<Select.Trigger id="track-plan" class="w-full">
-												{studyPrograms.find((s) => s.id === trackForm.studyProgramId)?.name ??
-													'-- เลือก --'}
+												{loadingPrograms
+													? 'กำลังโหลด...'
+													: (studyPrograms.find((s) => s.id === trackForm.studyProgramId)?.name ??
+														'-- เลือก --')}
 											</Select.Trigger>
 											<Select.Content>
 												{#each studyPrograms as sp (sp.id)}
@@ -832,7 +1037,14 @@
 									</div>
 								</div>
 								<div class="flex gap-2">
-									<Button size="sm" onclick={saveTrack} disabled={savingTrack} class="h-7 text-xs">
+									<Button
+										size="sm"
+										onclick={saveTrack}
+										disabled={savingTrack ||
+											loadingPrograms ||
+											(!editingTrack && !trackForm.studyProgramId)}
+										class="h-7 text-xs"
+									>
 										{#if savingTrack}<Loader2 class="w-3 h-3 mr-1 animate-spin" />{/if}
 										บันทึก
 									</Button>
@@ -846,47 +1058,55 @@
 							</div>
 						{/if}
 
-						<Card.Content class="p-0">
-							<div class="divide-y divide-border">
-								{#each tracks as t (t.id)}
-									<div class="px-4 py-3 flex items-center justify-between">
-										<div>
-											<p class="font-medium text-sm">{t.name}</p>
-											<p class="text-xs text-muted-foreground">
-												{t.studyProgramName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ??
-													0} ห้อง) • สมัคร {t.applicationCount ?? 0}
-											</p>
+						{#if loadingTracks && !tracksLoaded}<PageSkeleton variant="detail" />
+						{:else if tracksError && !tracksLoaded}<PageState
+								variant="error"
+								title="โหลดสายการเรียนไม่สำเร็จ"
+								description={tracksError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={() => void loadTracks()}
+							/>
+						{:else}<Card.Content class="p-0">
+								<div class="divide-y divide-border">
+									{#each tracks as t (t.id)}
+										<div class="px-4 py-3 flex items-center justify-between">
+											<div>
+												<p class="font-medium text-sm">{t.name}</p>
+												<p class="text-xs text-muted-foreground">
+													{t.studyProgramName ?? '-'} • รับ {t.computedCapacity ?? '-'} คน ({t.roomCount ??
+														0} ห้อง) • สมัคร {t.applicationCount ?? 0}
+												</p>
+											</div>
+											<div class="flex gap-1">
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7"
+													onclick={() => openEditTrack(t)}
+												>
+													<Pencil class="w-3.5 h-3.5" />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7 text-destructive hover:text-destructive"
+													onclick={() => removeTrack(t)}
+												>
+													<Trash2 class="w-3.5 h-3.5" />
+												</Button>
+											</div>
 										</div>
-										<div class="flex gap-1">
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-7 w-7"
-												onclick={() => openEditTrack(t)}
-											>
-												<Pencil class="w-3.5 h-3.5" />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-7 w-7 text-destructive hover:text-destructive"
-												onclick={() => removeTrack(t)}
-											>
-												<Trash2 class="w-3.5 h-3.5" />
-											</Button>
-										</div>
-									</div>
-								{:else}
-									<p class="px-4 py-8 text-center text-sm text-muted-foreground">
-										ยังไม่มีสายการเรียน
-									</p>
-								{/each}
-							</div>
-						</Card.Content>
+									{:else}
+										<p class="px-4 py-8 text-center text-sm text-muted-foreground">
+											ยังไม่มีสายการเรียน
+										</p>
+									{/each}
+								</div>
+							</Card.Content>{/if}
 					</Card.Root>
 
 					<!-- Exam Subjects -->
-					<Card.Root>
+					<Card.Root aria-busy={loadingSubjects}>
 						<Card.Header class="flex flex-row items-center justify-between pb-3">
 							<Card.Title class="flex items-center gap-2 text-base">
 								<Settings class="w-4 h-4" /> วิชาที่สอบ ({subjects.length})
@@ -895,6 +1115,19 @@
 								<Plus class="w-3.5 h-3.5" /> เพิ่ม
 							</Button>
 						</Card.Header>
+						{#if loadingSubjects && subjectsLoaded}<RegionUpdatingState
+								class="static"
+								label="กำลังอัปเดตวิชาสอบ..."
+							/>{/if}
+						{#if subjectsError && subjectsLoaded}<p
+								role="alert"
+								class="px-4 text-sm text-destructive"
+							>
+								{subjectsError}
+								<Button variant="outline" size="sm" onclick={() => void loadSubjects()}
+									>ลองใหม่</Button
+								>
+							</p>{/if}
 
 						{#if showSubjectForm}
 							<div class="px-4 pb-4 space-y-3 border-b border-border">
@@ -958,40 +1191,48 @@
 							</div>
 						{/if}
 
-						<Card.Content class="p-0">
-							<div class="divide-y divide-border">
-								{#each subjects as s (s.id)}
-									<div class="px-4 py-3 flex items-center justify-between">
-										<div>
-											<p class="font-medium text-sm">{s.name}</p>
-											<p class="text-xs text-muted-foreground">
-												{s.code ? `[${s.code}]` : ''} คะแนนเต็ม {s.maxScore}
-											</p>
+						{#if loadingSubjects && !subjectsLoaded}<PageSkeleton variant="detail" />
+						{:else if subjectsError && !subjectsLoaded}<PageState
+								variant="error"
+								title="โหลดวิชาสอบไม่สำเร็จ"
+								description={subjectsError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={() => void loadSubjects()}
+							/>
+						{:else}<Card.Content class="p-0">
+								<div class="divide-y divide-border">
+									{#each subjects as s (s.id)}
+										<div class="px-4 py-3 flex items-center justify-between">
+											<div>
+												<p class="font-medium text-sm">{s.name}</p>
+												<p class="text-xs text-muted-foreground">
+													{s.code ? `[${s.code}]` : ''} คะแนนเต็ม {s.maxScore}
+												</p>
+											</div>
+											<div class="flex gap-1">
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7"
+													onclick={() => openEditSubject(s)}
+												>
+													<Pencil class="w-3.5 h-3.5" />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-7 w-7 text-destructive hover:text-destructive"
+													onclick={() => removeSubject(s)}
+												>
+													<Trash2 class="w-3.5 h-3.5" />
+												</Button>
+											</div>
 										</div>
-										<div class="flex gap-1">
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-7 w-7"
-												onclick={() => openEditSubject(s)}
-											>
-												<Pencil class="w-3.5 h-3.5" />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-7 w-7 text-destructive hover:text-destructive"
-												onclick={() => removeSubject(s)}
-											>
-												<Trash2 class="w-3.5 h-3.5" />
-											</Button>
-										</div>
-									</div>
-								{:else}
-									<p class="px-4 py-8 text-center text-sm text-muted-foreground">ยังไม่มีวิชา</p>
-								{/each}
-							</div>
-						</Card.Content>
+									{:else}
+										<p class="px-4 py-8 text-center text-sm text-muted-foreground">ยังไม่มีวิชา</p>
+									{/each}
+								</div>
+							</Card.Content>{/if}
 					</Card.Root>
 				</div>
 
@@ -1005,7 +1246,15 @@
 								</Card.Title>
 								<Card.Description>ตั้งค่าการแบ่งกลุ่มผู้สมัครสำหรับรายงานสถิติ</Card.Description>
 							</div>
-							{#if copyableRounds.length > 0}
+							{#if !copyRoundsLoaded}
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={loadingCopyableRounds}
+									onclick={() => void loadCopyableRounds()}
+									>{loadingCopyableRounds ? 'กำลังโหลด...' : 'คัดลอกจากรอบอื่น'}</Button
+								>
+							{:else if copyableRounds.length > 0}
 								<Select.Root
 									type="single"
 									onValueChange={(roundId) => {
@@ -1033,6 +1282,12 @@
 							{/if}
 						</div>
 					</Card.Header>
+					{#if copyRoundsError}<p role="alert" class="px-4 text-sm text-destructive">
+							{copyRoundsError}
+							<Button variant="outline" size="sm" onclick={() => void loadCopyableRounds()}
+								>ลองใหม่</Button
+							>
+						</p>{/if}
 					<Card.Content class="space-y-4">
 						<!-- Mode selector -->
 						<div class="space-y-1.5">
@@ -1203,7 +1458,9 @@
 					<Dialog.Header>
 						<Dialog.Title>ยืนยันการลบรอบรับสมัคร</Dialog.Title>
 						<Dialog.Description>
-							ลบ <strong>{round?.name}</strong>? รอบที่มีใบสมัครอยู่จะไม่สามารถลบได้
+							ลบ <strong>{round?.name}</strong> พร้อมใบสมัคร
+							{#if round?.applicationCount != null}{round.applicationCount} รายการ{:else}ทั้งหมด{/if}
+							และเอกสารที่เกี่ยวข้องอย่างถาวร? การดำเนินการนี้ย้อนกลับไม่ได้
 						</Dialog.Description>
 					</Dialog.Header>
 					<Dialog.Footer>
@@ -1216,7 +1473,7 @@
 						</Button>
 						<Button variant="destructive" onclick={confirmDeleteRound} disabled={deletingRound}>
 							{#if deletingRound}<Loader2 class="w-4 h-4 mr-2 animate-spin" />{/if}
-							{deletingRound ? 'กำลังลบ...' : 'ลบรอบ'}
+							{deletingRound ? 'กำลังลบ...' : 'ลบรอบและใบสมัครทั้งหมด'}
 						</Button>
 					</Dialog.Footer>
 				</Dialog.Content>

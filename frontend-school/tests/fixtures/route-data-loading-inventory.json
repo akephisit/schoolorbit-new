@@ -109,24 +109,22 @@
 		{
 			"route": "staff/academic/admission",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include listRounds; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Year-scoped rounds load from the route; list retry is focused and manager mutations patch the list."
 		},
 		{
 			"route": "staff/academic/admission/[id]",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getRound, listTracks, listSubjects, listRounds, listStudyProgramOptionsForAcademicYear; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Round, manager tracks, and manager subjects load independently; copy candidates and study programs remain action-only."
 		},
 		{
 			"route": "staff/academic/admission/[id]/applications",
@@ -219,13 +217,12 @@
 		{
 			"route": "staff/academic/admission/new",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
-			"context": "round-id",
-			"status": "planned",
+			"context": "year choice",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include lookupAcademicYears, lookupGradeLevels; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Year options load from the route; grade options wait only for the selected year, and year changes supersede old grades."
 		},
 		{
 			"route": "staff/academic/assessments",
