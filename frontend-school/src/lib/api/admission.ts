@@ -238,74 +238,14 @@ export interface RoomAssignment {
 	studentConfirmed: boolean;
 }
 
-export interface RankingEntry {
-	applicationId: string;
-	applicationNumber?: string;
-	nationalId: string;
-	fullName: string;
-	selectionScore: number;
-	totalScore: number;
-	selectionRank: number;
-	finalRank?: number;
-	assignedRoom?: string;
-	assignedRoomId?: string;
-	roomSaved?: boolean;
-	isOverflow: boolean;
-	isTrackOverridden?: boolean;
-	originalTrackName?: string;
-	gender?: string;
-}
+export type RankingEntry = Schemas['TrackRankingEntry'];
 
-export interface RoundRankingEntry {
-	rank: number;
-	applicationId: string;
-	applicationNumber?: string;
-	nationalId: string;
-	fullName: string;
-	totalScore: number;
-	selectionScore: number;
-}
+export type RoundRankingEntry = Schemas['RoundRankingEntry'];
+export type RoundRankingResult = Schemas['RoundRankingResult'];
 
-export interface RoundRankingResult {
-	trackId: string;
-	trackName: string;
-	applications: RoundRankingEntry[];
-}
-
-export interface TrackRankingResult {
-	trackId: string;
-	trackName: string;
-	rooms: {
-		roomId: string;
-		roomName: string;
-		capacity: number;
-		studentCount: number;
-		maleCount: number;
-		femaleCount: number;
-	}[];
-	applications: RankingEntry[];
-}
-
-export interface GlobalRankingEntry {
-	applicationId: string;
-	applicationNumber?: string;
-	nationalId: string;
-	fullName: string;
-	totalScore: number;
-	globalRank: number;
-	rankInRoom?: number;
-	assignedRoom?: string;
-	assignedRoomId?: string;
-	roomSaved?: boolean;
-	isOverflow: boolean;
-	originalTrackName?: string;
-	gender?: string;
-}
-
-export interface GlobalRankingResult {
-	rooms: TrackRankingResult['rooms'];
-	applications: GlobalRankingEntry[];
-}
+export type TrackRankingResult = Schemas['TrackRankingResult'];
+export type GlobalRankingEntry = Schemas['GlobalRankingEntry'];
+export type GlobalRankingResult = Schemas['GlobalRankingResult'];
 
 export interface AdmissionEnrollmentParentData {
 	title?: string;
@@ -646,7 +586,8 @@ export async function getRanking(roundId: string) {
 export async function getTrackRanking(
 	trackId: string,
 	selectionSubjectIds?: string[],
-	roomAssignmentMethod?: string
+	roomAssignmentMethod?: string,
+	options: ApiRequestOptions = {}
 ) {
 	const params = new URLSearchParams();
 	if (selectionSubjectIds && selectionSubjectIds.length > 0) {
@@ -657,7 +598,7 @@ export async function getTrackRanking(
 	}
 	const qs = params.toString();
 	const url = `/api/admission/tracks/${trackId}/ranking${qs ? `?${qs}` : ''}`;
-	const res = await apiClient.get<TrackRankingResult>(url);
+	const res = await apiClient.get<TrackRankingResult>(url, options);
 	if (!res.success) throw new Error(res.error);
 	return res.data!;
 }
@@ -726,22 +667,25 @@ export async function resetAllRoomAssignments(roundId: string) {
 	if (!res.success) throw new Error(res.error);
 }
 
-export async function getGlobalRanking(roundId: string): Promise<GlobalRankingResult> {
+export async function getGlobalRanking(
+	roundId: string,
+	options: ApiRequestOptions = {}
+): Promise<GlobalRankingResult> {
 	const res = await apiClient.get<GlobalRankingResult>(
-		`/api/admission/rounds/${roundId}/global-ranking`
+		`/api/admission/rounds/${roundId}/global-ranking`,
+		options
 	);
 	if (!res.success) throw new Error(res.error);
 	return res.data!;
 }
 
-export interface RoomBasic {
-	roomId: string;
-	roomName: string;
-	capacity: number;
-}
+export type RoomBasic = Schemas['RoomBasic'];
 
-export async function getRoomsForRound(roundId: string): Promise<RoomBasic[]> {
-	const res = await apiClient.get<RoomBasic[]>(`/api/admission/rounds/${roundId}/rooms`);
+export async function getRoomsForRound(
+	roundId: string,
+	options: ApiRequestOptions = {}
+): Promise<RoomBasic[]> {
+	const res = await apiClient.get<RoomBasic[]>(`/api/admission/rounds/${roundId}/rooms`, options);
 	if (!res.success) throw new Error(res.error);
 	return res.data!;
 }

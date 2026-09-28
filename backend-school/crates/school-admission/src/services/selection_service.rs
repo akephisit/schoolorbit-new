@@ -1,9 +1,9 @@
 use crate::models::applications::{AssignRoomsGlobalRequest, AssignRoomsRequest};
 use crate::models::rounds::{SelectionSettingsPatch, UpdateSelectionSettingsRequest};
-use crate::services::pii;
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::{types::Json, PgPool};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Compute (room_idx, rank_in_room) for each student given room capacities + method.
@@ -60,31 +60,39 @@ pub fn parse_subject_ids(s: &str) -> Vec<Uuid> {
         .collect()
 }
 
-pub async fn all_subject_ids_for_track(pool: &PgPool, track_id: Uuid) -> Vec<Uuid> {
+pub async fn all_subject_ids_for_track(
+    pool: &PgPool,
+    track_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
     sqlx::query_scalar(
         "SELECT id FROM admission_exam_subjects WHERE admission_round_id = (SELECT admission_round_id FROM admission_tracks WHERE id = $1)",
     )
     .bind(track_id)
     .fetch_all(pool)
     .await
-    .unwrap_or_default()
+    .map_err(|error| {
+        tracing::error!("Failed to load admission selection subjects: {}", error);
+        AppError::InternalServerError("ไม่สามารถโหลดวิชาที่ใช้คัดเลือกได้".to_string())
+    })
 }
 
-pub async fn all_subject_ids_for_round(pool: &PgPool, round_id: Uuid) -> Vec<Uuid> {
+pub async fn all_subject_ids_for_round(
+    pool: &PgPool,
+    round_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
     sqlx::query_scalar("SELECT id FROM admission_exam_subjects WHERE admission_round_id = $1")
         .bind(round_id)
         .fetch_all(pool)
         .await
-        .unwrap_or_default()
+        .map_err(|error| {
+            tracing::error!("Failed to load admission round subjects: {}", error);
+            AppError::InternalServerError("ไม่สามารถโหลดวิชาที่ใช้คัดเลือกได้".to_string())
+        })
 }
 
 #[derive(sqlx::FromRow)]
 pub struct RankRow {
     pub application_id: Uuid,
-    pub application_number: Option<String>,
-    pub national_id: String,
-    pub full_name: String,
-    pub selection_score: Option<f64>,
     pub total_score: Option<f64>,
 }
 
@@ -92,7 +100,6 @@ pub struct RankRow {
 pub struct RankRowDetailed {
     pub application_id: Uuid,
     pub application_number: Option<String>,
-    pub national_id: String,
     pub full_name: String,
     pub selection_score: Option<f64>,
     pub total_score: Option<f64>,
@@ -103,19 +110,18 @@ pub struct RankRowDetailed {
     pub gender: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoundRankingEntry {
     pub rank: usize,
     pub application_id: Uuid,
     pub application_number: Option<String>,
-    pub national_id: String,
     pub full_name: String,
     pub total_score: f64,
     pub selection_score: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoundRankingResult {
     pub track_id: Uuid,
@@ -123,7 +129,7 @@ pub struct RoundRankingResult {
     pub applications: Vec<RoundRankingEntry>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RankingRoomSummary {
     pub room_id: String,
@@ -134,12 +140,11 @@ pub struct RankingRoomSummary {
     pub female_count: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackRankingEntry {
     pub application_id: Uuid,
     pub application_number: Option<String>,
-    pub national_id: String,
     pub full_name: String,
     pub selection_score: f64,
     pub total_score: f64,
@@ -154,7 +159,7 @@ pub struct TrackRankingEntry {
     pub gender: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackRankingResult {
     pub track_id: Uuid,
@@ -163,12 +168,11 @@ pub struct TrackRankingResult {
     pub applications: Vec<TrackRankingEntry>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalRankingEntry {
     pub application_id: Uuid,
     pub application_number: Option<String>,
-    pub national_id: String,
     pub full_name: String,
     pub total_score: f64,
     pub global_rank: i64,
@@ -181,28 +185,11 @@ pub struct GlobalRankingEntry {
     pub gender: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalRankingResult {
     pub rooms: Vec<RankingRoomSummary>,
     pub applications: Vec<GlobalRankingEntry>,
-}
-
-fn pii_error(context: &str, error: String) -> AppError {
-    tracing::error!("Admission selection PII {} failed: {}", context, error);
-    AppError::InternalServerError("ไม่สามารถประมวลผลข้อมูลส่วนบุคคลได้".to_string())
-}
-
-fn decrypt_rank_row(mut row: RankRow) -> Result<RankRow, AppError> {
-    row.national_id = pii::decrypt_required(&row.national_id)
-        .map_err(|error| pii_error("decrypt national_id", error))?;
-    Ok(row)
-}
-
-fn decrypt_rank_row_detailed(mut row: RankRowDetailed) -> Result<RankRowDetailed, AppError> {
-    row.national_id = pii::decrypt_required(&row.national_id)
-        .map_err(|error| pii_error("decrypt national_id", error))?;
-    Ok(row)
 }
 
 /// GET /api/admission/rounds/:id/ranking
@@ -210,78 +197,68 @@ pub async fn get_round_ranking(
     pool: &PgPool,
     round_id: Uuid,
 ) -> Result<Vec<RoundRankingResult>, AppError> {
-    let tracks: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, name, tiebreak_method FROM admission_tracks WHERE admission_round_id = $1 ORDER BY display_order ASC"
+    #[derive(sqlx::FromRow)]
+    struct RoundRankRow {
+        track_id: Uuid,
+        track_name: String,
+        application_id: Option<Uuid>,
+        application_number: Option<String>,
+        full_name: String,
+        total_score: Option<f64>,
+    }
+
+    let rows = sqlx::query_as::<_, RoundRankRow>(
+        r#"SELECT track.id AS track_id, track.name AS track_name,
+                  aa.id AS application_id, aa.application_number,
+                  CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
+                  COALESCE(SUM(esc.score), 0) AS total_score
+           FROM admission_tracks track
+           LEFT JOIN admission_applications aa
+             ON aa.admission_track_id = track.id
+            AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
+           LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
+           WHERE track.admission_round_id = $1
+           GROUP BY track.id, track.name, track.display_order, track.tiebreak_method,
+                    aa.id, aa.application_number, aa.title, aa.first_name, aa.last_name,
+                    aa.previous_gpa, aa.created_at
+           ORDER BY track.display_order ASC, track.id ASC, total_score DESC,
+                    CASE WHEN track.tiebreak_method = 'gpa' THEN aa.previous_gpa END DESC NULLS LAST,
+                    aa.created_at ASC, aa.id ASC"#,
     )
     .bind(round_id)
     .fetch_all(pool)
     .await
-    .map_err(|_| AppError::InternalServerError("Failed to fetch tracks".to_string()))?;
+    .map_err(|error| {
+        tracing::error!("Failed to load admission round ranking: {}", error);
+        AppError::InternalServerError("ไม่สามารถโหลดผลเรียงคะแนนได้".to_string())
+    })?;
 
-    let mut all_rankings: Vec<RoundRankingResult> = Vec::new();
-
-    for (track_id, track_name, tiebreak) in tracks {
-        let tiebreak_order = if tiebreak == "gpa" {
-            "aa.previous_gpa DESC NULLS LAST"
-        } else {
-            "aa.created_at ASC"
-        };
-
-        let all_ids = all_subject_ids_for_round(pool, round_id).await;
-
-        let query = format!(
-            r#"
-            SELECT
-                aa.id AS application_id,
-                aa.application_number,
-                aa.national_id,
-                CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
-                COALESCE(SUM(esc.score), 0) AS selection_score,
-                COALESCE(SUM(esc.score), 0) AS total_score
-            FROM admission_applications aa
-            LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
-            WHERE aa.admission_track_id = $2
-              AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
-            GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
-            ORDER BY total_score DESC, {}
-            "#,
-            tiebreak_order
-        );
-
-        let rows = sqlx::query_as::<_, RankRow>(sqlx::AssertSqlSafe(query))
-            .bind(&all_ids)
-            .bind(track_id)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
-
-        let rows: Vec<RankRow> = rows
-            .into_iter()
-            .map(decrypt_rank_row)
-            .collect::<Result<_, _>>()?;
-
-        let ranked: Vec<RoundRankingEntry> = rows
-            .into_iter()
-            .enumerate()
-            .map(|(i, row)| RoundRankingEntry {
-                rank: i + 1,
-                application_id: row.application_id,
+    let mut rankings: Vec<RoundRankingResult> = Vec::new();
+    for row in rows {
+        if rankings.last().map(|result| result.track_id) != Some(row.track_id) {
+            rankings.push(RoundRankingResult {
+                track_id: row.track_id,
+                track_name: row.track_name,
+                applications: Vec::new(),
+            });
+        }
+        if let Some(application_id) = row.application_id {
+            let current = rankings
+                .last_mut()
+                .expect("the track group was just created");
+            let score = row.total_score.unwrap_or(0.0);
+            current.applications.push(RoundRankingEntry {
+                rank: current.applications.len() + 1,
+                application_id,
                 application_number: row.application_number,
-                national_id: row.national_id,
                 full_name: row.full_name,
-                total_score: row.total_score.unwrap_or(0.0),
-                selection_score: row.selection_score.unwrap_or(0.0),
-            })
-            .collect();
-
-        all_rankings.push(RoundRankingResult {
-            track_id,
-            track_name,
-            applications: ranked,
-        });
+                total_score: score,
+                selection_score: score,
+            });
+        }
     }
 
-    Ok(all_rankings)
+    Ok(rankings)
 }
 
 pub async fn get_track_ranking(
@@ -306,7 +283,7 @@ pub async fn get_track_ranking(
 
     let selection_ids: Vec<Uuid> = match &selection_subject_ids_param {
         Some(s) if !s.is_empty() => parse_subject_ids(s),
-        _ => all_subject_ids_for_track(pool, track_id).await,
+        _ => all_subject_ids_for_track(pool, track_id).await?,
     };
 
     #[derive(sqlx::FromRow)]
@@ -332,14 +309,16 @@ pub async fn get_track_ranking(
     .bind(track_id)
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    .map_err(|error| {
+        tracing::error!("Failed to load selection rooms: {}", error);
+        AppError::InternalServerError("ไม่สามารถโหลดห้องสำหรับจัดผลคัดเลือกได้".to_string())
+    })?;
 
     let query = format!(
         r#"
         SELECT
             aa.id AS application_id,
             aa.application_number,
-            aa.national_id,
             CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
             COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1) THEN esc.score ELSE 0 END), 0) AS selection_score,
             COALESCE(SUM(esc.score), 0) AS total_score,
@@ -355,7 +334,7 @@ pub async fn get_track_ranking(
         LEFT JOIN homerooms cr_saved ON cr_saved.id = ara.homeroom_id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
           AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id, ara.homeroom_id, cr_saved.name, aa.gender
+        GROUP BY aa.id, aa.application_number, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at, at_orig.name, aa.room_assignment_track_id, ara.homeroom_id, cr_saved.name, aa.gender
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
         tiebreak_order
@@ -366,12 +345,10 @@ pub async fn get_track_ranking(
         .bind(track_id)
         .fetch_all(pool)
         .await
-        .unwrap_or_default();
-    let rows: Vec<RankRowDetailed> = rows
-        .into_iter()
-        .map(decrypt_rank_row_detailed)
-        .collect::<Result<_, _>>()?;
-
+        .map_err(|error| {
+            tracing::error!("Failed to load track ranking: {}", error);
+            AppError::InternalServerError("ไม่สามารถโหลดผลเรียงคะแนนได้".to_string())
+        })?;
     let total_capacity: i64 = rooms.iter().map(|r| r.capacity as i64).sum();
     let capacity_usize = if total_capacity > 0 {
         total_capacity as usize
@@ -437,7 +414,6 @@ pub async fn get_track_ranking(
             TrackRankingEntry {
                 application_id: row.application_id,
                 application_number: row.application_number,
-                national_id: row.national_id,
                 full_name: row.full_name,
                 selection_score: row.selection_score.unwrap_or(0.0),
                 total_score: row.total_score.unwrap_or(0.0),
@@ -465,7 +441,6 @@ pub async fn get_track_ranking(
             TrackRankingEntry {
                 application_id: row.application_id,
                 application_number: row.application_number,
-                national_id: row.national_id,
                 full_name: row.full_name,
                 selection_score: row.selection_score.unwrap_or(0.0),
                 total_score: row.total_score.unwrap_or(0.0),
@@ -537,7 +512,7 @@ pub async fn assign_rooms(
 
     let selection_ids: Vec<Uuid> = match &payload.selection_subject_ids {
         Some(ids) if !ids.is_empty() => ids.clone(),
-        _ => all_subject_ids_for_round(pool, round_id).await,
+        _ => all_subject_ids_for_round(pool, round_id).await?,
     };
 
     #[derive(sqlx::FromRow)]
@@ -574,16 +549,13 @@ pub async fn assign_rooms(
         r#"
         SELECT
             aa.id AS application_id,
-            aa.application_number,
-            aa.national_id,
-            CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
             COALESCE(SUM(CASE WHEN esc.exam_subject_id = ANY($1) THEN esc.score ELSE 0 END), 0) AS selection_score,
             COALESCE(SUM(esc.score), 0) AS total_score
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         WHERE COALESCE(aa.room_assignment_track_id, aa.admission_track_id) = $2
           AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.previous_gpa, aa.created_at
+        GROUP BY aa.id, aa.previous_gpa, aa.created_at
         ORDER BY selection_score DESC, total_score DESC, {}
         "#,
         tiebreak_order
@@ -816,18 +788,14 @@ pub async fn assign_rooms_global(
         r#"
         SELECT
             aa.id AS application_id,
-            aa.application_number,
-            aa.national_id,
-            CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
-            COALESCE(SUM(esc.score), 0) AS selection_score,
             COALESCE(SUM(esc.score), 0) AS total_score
         FROM admission_applications aa
         LEFT JOIN admission_exam_scores esc ON esc.application_id = aa.id
         WHERE aa.admission_round_id = $1
           AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.created_at
+        GROUP BY aa.id, aa.created_at
         ORDER BY total_score DESC, aa.created_at ASC
-        "#
+        "#,
     )
     .bind(round_id)
     .fetch_all(pool)
@@ -971,7 +939,6 @@ pub async fn get_global_ranking(
         SELECT
             aa.id AS application_id,
             aa.application_number,
-            aa.national_id,
             CONCAT(COALESCE(aa.title, ''), aa.first_name, ' ', aa.last_name) AS full_name,
             COALESCE(SUM(esc.score), 0) AS selection_score,
             COALESCE(SUM(esc.score), 0) AS total_score,
@@ -987,7 +954,7 @@ pub async fn get_global_ranking(
         LEFT JOIN homerooms cr_saved ON cr_saved.id = ara.homeroom_id
         WHERE aa.admission_round_id = $1
           AND aa.status NOT IN ('rejected', 'withdrawn', 'absent', 'enrolled')
-        GROUP BY aa.id, aa.application_number, aa.national_id, aa.first_name, aa.last_name, aa.title, aa.created_at,
+        GROUP BY aa.id, aa.application_number, aa.first_name, aa.last_name, aa.title, aa.created_at,
                  at_orig.name, aa.room_assignment_track_id, ara.homeroom_id, cr_saved.name, aa.gender
         ORDER BY total_score DESC, aa.created_at ASC
         "#
@@ -996,11 +963,6 @@ pub async fn get_global_ranking(
     .fetch_all(pool)
     .await
     .map_err(|_| AppError::InternalServerError("Failed to fetch global ranking".to_string()))?;
-    let rows: Vec<RankRowDetailed> = rows
-        .into_iter()
-        .map(decrypt_rank_row_detailed)
-        .collect::<Result<_, _>>()?;
-
     #[derive(sqlx::FromRow)]
     struct CapRow {
         room_id: Uuid,
@@ -1020,7 +982,10 @@ pub async fn get_global_ranking(
     .bind(round_id)
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    .map_err(|error| {
+        tracing::error!("Failed to load global selection capacities: {}", error);
+        AppError::InternalServerError("ไม่สามารถโหลดความจุห้องสำหรับจัดผลคัดเลือกได้".to_string())
+    })?;
 
     let cap_map: std::collections::HashMap<String, i32> = cap_rows
         .into_iter()
@@ -1061,7 +1026,6 @@ pub async fn get_global_ranking(
             GlobalRankingEntry {
                 application_id: row.application_id,
                 application_number: row.application_number,
-                national_id: row.national_id,
                 full_name: row.full_name,
                 total_score: row.total_score.unwrap_or(0.0),
                 global_rank: (i + 1) as i64,
@@ -1097,7 +1061,7 @@ pub async fn get_global_ranking(
     })
 }
 
-#[derive(serde::Serialize, sqlx::FromRow)]
+#[derive(serde::Serialize, sqlx::FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomBasic {
     pub room_id: Uuid,

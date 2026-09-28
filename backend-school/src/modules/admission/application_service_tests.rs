@@ -5,9 +5,11 @@ mod tests {
         CutoverFixture,
     };
     use school_admission::applications::{
-        complete_enrollment, BulkScoreEntry, CompleteEnrollmentRequest, UpdateScoreEntry,
+        complete_enrollment, AssignRoomsGlobalRequest, AssignRoomsRequest, BulkScoreEntry,
+        CompleteEnrollmentRequest, UpdateScoreEntry,
     };
     use school_admission::scores::{bulk_update_scores, update_application_scores};
+    use school_admission::selections::{assign_rooms, assign_rooms_global, get_round_ranking};
     use school_errors::AppError;
     use school_test_db::{create_named_test_pool_with_max_connections, create_test_user};
     use sqlx::PgPool;
@@ -146,6 +148,80 @@ mod tests {
             student_code: Some("970001".to_string()),
             form_data: None,
         }
+    }
+
+    #[tokio::test]
+    async fn round_ranking_keeps_empty_tracks_without_reading_national_ids() {
+        let fixture = enrollment_fixture("admission_round_ranking_no_pii", 1).await;
+        let (round_id, track_id, study_program_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
+            "SELECT aa.admission_round_id, aa.admission_track_id, at.study_program_id
+             FROM admission_applications aa
+             JOIN admission_tracks at ON at.id = aa.admission_track_id
+             WHERE aa.id = $1",
+        )
+        .bind(fixture.application_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+        let empty_track_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO admission_tracks (
+                 admission_round_id, academic_year_id, study_program_id, name
+             ) VALUES ($1, $2, $3, 'แผนไม่มีผู้สมัคร') RETURNING id",
+        )
+        .bind(round_id)
+        .bind(fixture.academic_year_id)
+        .bind(study_program_id)
+        .fetch_one(&fixture.pool)
+        .await
+        .unwrap();
+
+        let rankings = get_round_ranking(&fixture.pool, round_id).await.unwrap();
+        assert_eq!(rankings.len(), 2);
+        let populated = rankings
+            .iter()
+            .find(|result| result.track_id == track_id)
+            .unwrap();
+        assert_eq!(populated.applications.len(), 1);
+        assert_eq!(
+            populated.applications[0].application_id,
+            fixture.application_id
+        );
+        assert_eq!(populated.applications[0].rank, 1);
+        assert!(rankings
+            .iter()
+            .find(|result| result.track_id == empty_track_id)
+            .unwrap()
+            .applications
+            .is_empty());
+        let payload = serde_json::to_string(&rankings).unwrap();
+        assert!(!payload.contains("nationalId"));
+        assert!(!payload.contains("encrypted-admission-fixture"));
+
+        let per_track_count = assign_rooms(
+            &fixture.pool,
+            round_id,
+            AssignRoomsRequest {
+                track_id,
+                selection_subject_ids: None,
+                room_assignment_method: None,
+            },
+            fixture.enroller_id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(per_track_count, 1);
+        let global_count = assign_rooms_global(
+            &fixture.pool,
+            round_id,
+            AssignRoomsGlobalRequest {
+                room_assignment_method: None,
+                room_order: None,
+            },
+            fixture.enroller_id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(global_count, 1);
     }
 
     #[tokio::test]

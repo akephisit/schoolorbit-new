@@ -3370,6 +3370,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/admission/rounds/{id}/global-ranking': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAdmissionGlobalRanking'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admission/rounds/{id}/ranking': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAdmissionRoundRanking'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admission/rounds/{id}/rooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAdmissionRoundRooms'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/admission/rounds/{round_id}/applications/search-by-identifier': {
 		parameters: {
 			query?: never;
@@ -3394,6 +3442,22 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['getAdmissionScoreRoomRoster'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/admission/tracks/{id}/ranking': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAdmissionTrackRanking'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -7828,6 +7892,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_GlobalRankingResult: {
+			data: {
+				applications: components['schemas']['GlobalRankingEntry'][];
+				rooms: components['schemas']['RankingRoomSummary'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_GradebookControl: {
 			data: {
 				/** Format: uuid */
@@ -9580,6 +9652,17 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_TrackRankingResult: {
+			data: {
+				applications: components['schemas']['TrackRankingEntry'][];
+				rooms: components['schemas']['RankingRoomSummary'][];
+				/** Format: uuid */
+				trackId: string;
+				trackName: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_UserMenuData: {
 			data: {
 				groups: components['schemas']['MenuGroupResponse'][];
@@ -11083,6 +11166,27 @@ export interface components {
 				status: string;
 				/** Format: date-time */
 				updated_at: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_RoomBasic: {
+			data: {
+				/** Format: int32 */
+				capacity: number;
+				/** Format: uuid */
+				roomId: string;
+				roomName: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_RoundRankingResult: {
+			data: {
+				applications: components['schemas']['RoundRankingEntry'][];
+				/** Format: uuid */
+				trackId: string;
+				trackName: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -14453,6 +14557,29 @@ export interface components {
 		};
 		/** @enum {string} */
 		GeometryAction: 'preserve' | 'scale' | 'reset';
+		GlobalRankingEntry: {
+			/** Format: uuid */
+			applicationId: string;
+			applicationNumber?: string | null;
+			assignedRoom?: string | null;
+			/** Format: uuid */
+			assignedRoomId?: string | null;
+			fullName: string;
+			gender?: string | null;
+			/** Format: int64 */
+			globalRank: number;
+			isOverflow: boolean;
+			originalTrackName?: string | null;
+			/** Format: int64 */
+			rankInRoom?: number | null;
+			roomSaved: boolean;
+			/** Format: double */
+			totalScore: number;
+		};
+		GlobalRankingResult: {
+			applications: components['schemas']['GlobalRankingEntry'][];
+			rooms: components['schemas']['RankingRoomSummary'][];
+		};
 		GradebookContext: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -16240,6 +16367,18 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		RankingRoomSummary: {
+			/** Format: int32 */
+			capacity: number;
+			/** Format: int64 */
+			femaleCount: number;
+			/** Format: int64 */
+			maleCount: number;
+			roomId: string;
+			roomName: string;
+			/** Format: int64 */
+			studentCount: number;
+		};
 		/** @enum {string} */
 		RecipientType: 'student' | 'staff' | 'external';
 		RemoveDatedRosterMembershipRequest: {
@@ -16590,6 +16729,13 @@ export interface components {
 			/** Format: date-time */
 			updated_at: string;
 		};
+		RoomBasic: {
+			/** Format: int32 */
+			capacity: number;
+			/** Format: uuid */
+			roomId: string;
+			roomName: string;
+		};
 		/** @enum {string} */
 		RosterOverrideAction: 'add' | 'remove';
 		RosterOverrideInput: {
@@ -16622,6 +16768,23 @@ export interface components {
 		};
 		/** @enum {string} */
 		RosterStatus: 'draft' | 'published' | 'closed';
+		RoundRankingEntry: {
+			/** Format: uuid */
+			applicationId: string;
+			applicationNumber?: string | null;
+			fullName: string;
+			rank: number;
+			/** Format: double */
+			selectionScore: number;
+			/** Format: double */
+			totalScore: number;
+		};
+		RoundRankingResult: {
+			applications: components['schemas']['RoundRankingEntry'][];
+			/** Format: uuid */
+			trackId: string;
+			trackName: string;
+		};
 		SaveAssessmentPhaseRequest: {
 			examArrangement: components['schemas']['AssessmentExamArrangement'];
 			/** Format: int32 */
@@ -18367,6 +18530,35 @@ export interface components {
 			timetableVersionId: string;
 			/** Format: int32 */
 			weeklyPeriodTarget: number;
+		};
+		TrackRankingEntry: {
+			/** Format: uuid */
+			applicationId: string;
+			applicationNumber?: string | null;
+			assignedRoom?: string | null;
+			/** Format: uuid */
+			assignedRoomId?: string | null;
+			/** Format: int64 */
+			finalRank?: number | null;
+			fullName: string;
+			gender?: string | null;
+			isOverflow: boolean;
+			isTrackOverridden: boolean;
+			originalTrackName?: string | null;
+			roomSaved: boolean;
+			/** Format: int64 */
+			selectionRank: number;
+			/** Format: double */
+			selectionScore: number;
+			/** Format: double */
+			totalScore: number;
+		};
+		TrackRankingResult: {
+			applications: components['schemas']['TrackRankingEntry'][];
+			rooms: components['schemas']['RankingRoomSummary'][];
+			/** Format: uuid */
+			trackId: string;
+			trackName: string;
 		};
 		TransferHomeroomPlacementRequest: {
 			/** Format: int32 */
@@ -35051,6 +35243,129 @@ export interface operations {
 			};
 		};
 	};
+	getAdmissionGlobalRanking: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Admission round ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Global ranking without national IDs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_GlobalRankingResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission score permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAdmissionRoundRanking: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Admission round ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Round ranking without national IDs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_RoundRankingResult'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission score permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAdmissionRoundRooms: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Admission round ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Round rooms for assignment */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_RoomBasic'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission score permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	searchAdmissionApplicationsByIdentifier: {
 		parameters: {
 			query?: never;
@@ -35124,6 +35439,52 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_Vec_ScoreRoomGroup'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission score permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAdmissionTrackRanking: {
+		parameters: {
+			query?: {
+				/** @description Room assignment method */
+				room_assignment_method?: string;
+				/** @description Comma-separated subject IDs */
+				selection_subject_ids?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Admission track ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Track ranking without national IDs */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TrackRankingResult'];
 				};
 			};
 			/** @description Authentication required */

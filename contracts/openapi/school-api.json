@@ -7609,6 +7609,42 @@
         ],
         "type": "object"
       },
+      "ApiResponse_GlobalRankingResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "applications": {
+                "items": {
+                  "$ref": "#/components/schemas/GlobalRankingEntry"
+                },
+                "type": "array"
+              },
+              "rooms": {
+                "items": {
+                  "$ref": "#/components/schemas/RankingRoomSummary"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "rooms",
+              "applications"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_GradebookControl": {
         "properties": {
           "data": {
@@ -14178,6 +14214,51 @@
         ],
         "type": "object"
       },
+      "ApiResponse_TrackRankingResult": {
+        "properties": {
+          "data": {
+            "properties": {
+              "applications": {
+                "items": {
+                  "$ref": "#/components/schemas/TrackRankingEntry"
+                },
+                "type": "array"
+              },
+              "rooms": {
+                "items": {
+                  "$ref": "#/components/schemas/RankingRoomSummary"
+                },
+                "type": "array"
+              },
+              "trackId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "trackName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "trackId",
+              "trackName",
+              "rooms",
+              "applications"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_UserMenuData": {
         "properties": {
           "data": {
@@ -19716,6 +19797,86 @@
                 "created_at",
                 "updated_at",
                 "building_name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_RoomBasic": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "capacity": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "roomId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "roomName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "roomId",
+                "roomName",
+                "capacity"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_RoundRankingResult": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "applications": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoundRankingEntry"
+                  },
+                  "type": "array"
+                },
+                "trackId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "trackName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "trackId",
+                "trackName",
+                "applications"
               ],
               "type": "object"
             },
@@ -32049,6 +32210,99 @@
         ],
         "type": "string"
       },
+      "GlobalRankingEntry": {
+        "properties": {
+          "applicationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "applicationNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignedRoom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignedRoomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "globalRank": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "isOverflow": {
+            "type": "boolean"
+          },
+          "originalTrackName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rankInRoom": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "roomSaved": {
+            "type": "boolean"
+          },
+          "totalScore": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "applicationId",
+          "fullName",
+          "totalScore",
+          "globalRank",
+          "roomSaved",
+          "isOverflow"
+        ],
+        "type": "object"
+      },
+      "GlobalRankingResult": {
+        "properties": {
+          "applications": {
+            "items": {
+              "$ref": "#/components/schemas/GlobalRankingEntry"
+            },
+            "type": "array"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RankingRoomSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rooms",
+          "applications"
+        ],
+        "type": "object"
+      },
       "GradebookContext": {
         "properties": {
           "academicTermId": {
@@ -38539,6 +38793,41 @@
         ],
         "type": "object"
       },
+      "RankingRoomSummary": {
+        "properties": {
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "femaleCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "maleCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "roomId": {
+            "type": "string"
+          },
+          "roomName": {
+            "type": "string"
+          },
+          "studentCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "roomId",
+          "roomName",
+          "capacity",
+          "studentCount",
+          "maleCount",
+          "femaleCount"
+        ],
+        "type": "object"
+      },
       "RecipientType": {
         "enum": [
           "student",
@@ -39800,6 +40089,27 @@
         ],
         "type": "object"
       },
+      "RoomBasic": {
+        "properties": {
+          "capacity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "roomName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomId",
+          "roomName",
+          "capacity"
+        ],
+        "type": "object"
+      },
       "RosterOverrideAction": {
         "enum": [
           "add",
@@ -39925,6 +40235,66 @@
           "closed"
         ],
         "type": "string"
+      },
+      "RoundRankingEntry": {
+        "properties": {
+          "applicationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "applicationNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "rank": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selectionScore": {
+            "format": "double",
+            "type": "number"
+          },
+          "totalScore": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "applicationId",
+          "fullName",
+          "totalScore",
+          "selectionScore"
+        ],
+        "type": "object"
+      },
+      "RoundRankingResult": {
+        "properties": {
+          "applications": {
+            "items": {
+              "$ref": "#/components/schemas/RoundRankingEntry"
+            },
+            "type": "array"
+          },
+          "trackId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "trackName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "trackId",
+          "trackName",
+          "applications"
+        ],
+        "type": "object"
       },
       "SaveAssessmentPhaseRequest": {
         "additionalProperties": false,
@@ -46163,6 +46533,117 @@
           "learningOfferingId",
           "weeklyPeriodTarget",
           "standardPeriodsPerWeek"
+        ],
+        "type": "object"
+      },
+      "TrackRankingEntry": {
+        "properties": {
+          "applicationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "applicationNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignedRoom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assignedRoomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finalRank": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isOverflow": {
+            "type": "boolean"
+          },
+          "isTrackOverridden": {
+            "type": "boolean"
+          },
+          "originalTrackName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomSaved": {
+            "type": "boolean"
+          },
+          "selectionRank": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "selectionScore": {
+            "format": "double",
+            "type": "number"
+          },
+          "totalScore": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "applicationId",
+          "fullName",
+          "selectionScore",
+          "totalScore",
+          "selectionRank",
+          "roomSaved",
+          "isOverflow",
+          "isTrackOverridden"
+        ],
+        "type": "object"
+      },
+      "TrackRankingResult": {
+        "properties": {
+          "applications": {
+            "items": {
+              "$ref": "#/components/schemas/TrackRankingEntry"
+            },
+            "type": "array"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RankingRoomSummary"
+            },
+            "type": "array"
+          },
+          "trackId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "trackName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "trackId",
+          "trackName",
+          "rooms",
+          "applications"
         ],
         "type": "object"
       },
@@ -70295,6 +70776,162 @@
         ]
       }
     },
+    "/api/admission/rounds/{id}/global-ranking": {
+      "get": {
+        "operationId": "getAdmissionGlobalRanking",
+        "parameters": [
+          {
+            "description": "Admission round ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_GlobalRankingResult"
+                }
+              }
+            },
+            "description": "Global ranking without national IDs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission score permission required"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/rounds/{id}/ranking": {
+      "get": {
+        "operationId": "getAdmissionRoundRanking",
+        "parameters": [
+          {
+            "description": "Admission round ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_RoundRankingResult"
+                }
+              }
+            },
+            "description": "Round ranking without national IDs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission score permission required"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/rounds/{id}/rooms": {
+      "get": {
+        "operationId": "getAdmissionRoundRooms",
+        "parameters": [
+          {
+            "description": "Admission round ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_RoomBasic"
+                }
+              }
+            },
+            "description": "Round rooms for assignment"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission score permission required"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
     "/api/admission/rounds/{round_id}/applications/search-by-identifier": {
       "post": {
         "operationId": "searchAdmissionApplicationsByIdentifier",
@@ -70392,6 +71029,76 @@
               }
             },
             "description": "Score-entry room roster without national IDs"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission score permission required"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/tracks/{id}/ranking": {
+      "get": {
+        "operationId": "getAdmissionTrackRanking",
+        "parameters": [
+          {
+            "description": "Admission track ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated subject IDs",
+            "in": "query",
+            "name": "selection_subject_ids",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Room assignment method",
+            "in": "query",
+            "name": "room_assignment_method",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TrackRankingResult"
+                }
+              }
+            },
+            "description": "Track ranking without national IDs"
           },
           "401": {
             "content": {

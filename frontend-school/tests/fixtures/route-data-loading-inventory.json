@@ -191,13 +191,12 @@
 		{
 			"route": "staff/academic/admission/[id]/selections",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getRound, listTracks, listSubjects, getTrackRanking, getGlobalRanking; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Independent route-owned round, tracks, and subjects; initial track ranking depends on settings/choices, while saved global ranking and room order start independently. Other modes load on demand; ranking responses omit national IDs."
 		},
 		{
 			"route": "staff/academic/admission/[id]/student-ids",

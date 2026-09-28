@@ -772,7 +772,7 @@ test('admission application detail contract returns application and documents in
 		/apiClient\.post<ExamSeatDetail \| null>\('\/api\/admission\/portal\/exam-seat'/
 	);
 	assert.match(frontendApi, /apiClient\.get<ExamRoomsResponse>/);
-	assert.match(frontendApi, /interface\s+RoundRankingResult/);
+	assert.match(frontendApi, /export type RoundRankingResult = Schemas\['RoundRankingResult'\]/);
 	assert.match(frontendApi, /apiClient\.get<RoundRankingResult\[\]>/);
 	assert.match(frontendApi, /apiClient\.get<TrackRankingResult>/);
 	assert.match(frontendApi, /apiClient\.get<GlobalRankingResult>/);

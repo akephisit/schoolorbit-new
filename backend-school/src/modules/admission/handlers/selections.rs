@@ -12,8 +12,8 @@ use school_admission::applications::{AssignRoomsGlobalRequest, AssignRoomsReques
 use school_admission::rounds::UpdateSelectionSettingsRequest;
 use school_admission::selections as selection_service;
 use school_auth::session_service::AuthenticatedSession;
-use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
 use school_permissions::registry::codes;
 
 #[derive(serde::Deserialize)]
@@ -32,6 +32,18 @@ struct DeletedData<T> {
     deleted: T,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admission/rounds/{id}/ranking",
+    operation_id = "getAdmissionRoundRanking",
+    tag = "admission",
+    params(("id" = Uuid, Path, description = "Admission round ID")),
+    responses(
+        (status = 200, description = "Round ranking without national IDs", body = ApiResponse<Vec<selection_service::RoundRankingResult>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_ranking(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -45,6 +57,22 @@ pub async fn get_ranking(
     Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admission/tracks/{id}/ranking",
+    operation_id = "getAdmissionTrackRanking",
+    tag = "admission",
+    params(
+        ("id" = Uuid, Path, description = "Admission track ID"),
+        ("selection_subject_ids" = Option<String>, Query, description = "Comma-separated subject IDs"),
+        ("room_assignment_method" = Option<String>, Query, description = "Room assignment method")
+    ),
+    responses(
+        (status = 200, description = "Track ranking without national IDs", body = ApiResponse<selection_service::TrackRankingResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_track_ranking(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -117,6 +145,18 @@ pub async fn assign_rooms_global(
     .into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admission/rounds/{id}/global-ranking",
+    operation_id = "getAdmissionGlobalRanking",
+    tag = "admission",
+    params(("id" = Uuid, Path, description = "Admission round ID")),
+    responses(
+        (status = 200, description = "Global ranking without national IDs", body = ApiResponse<selection_service::GlobalRankingResult>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_global_ranking(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
@@ -130,6 +170,18 @@ pub async fn get_global_ranking(
     Ok(Json(ApiResponse::ok(data)).into_response())
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admission/rounds/{id}/rooms",
+    operation_id = "getAdmissionRoundRooms",
+    tag = "admission",
+    params(("id" = Uuid, Path, description = "Admission round ID")),
+    responses(
+        (status = 200, description = "Round rooms for assignment", body = ApiResponse<Vec<selection_service::RoomBasic>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Admission score permission required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_round_rooms(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
