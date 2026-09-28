@@ -1190,8 +1190,11 @@ export interface AssignExamSeatsResponse {
 // Exam Room API Functions
 // ==========================================
 
-export async function listExamRooms(roundId: string) {
-	const res = await apiClient.get<ExamRoomsResponse>(`/api/admission/rounds/${roundId}/exam-rooms`);
+export async function listExamRooms(roundId: string, options: ApiRequestOptions = {}) {
+	const res = await apiClient.get<ExamRoomsResponse>(
+		`/api/admission/rounds/${roundId}/exam-rooms`,
+		options
+	);
 	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;
 }
@@ -1242,8 +1245,11 @@ export async function copyExamRoomsFromRound(roundId: string, fromRoundId: strin
 	return { ...res.data, message: res.message ?? 'copy ห้องสอบเรียบร้อย' };
 }
 
-export async function getExamConfig(roundId: string) {
-	const res = await apiClient.get<ExamConfig>(`/api/admission/rounds/${roundId}/exam-config`);
+export async function getExamConfig(roundId: string, options: ApiRequestOptions = {}) {
+	const res = await apiClient.get<ExamConfig>(
+		`/api/admission/rounds/${roundId}/exam-config`,
+		options
+	);
 	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;
 }
@@ -1276,8 +1282,11 @@ export async function assignExamSeats(
 	};
 }
 
-export async function getExamSeats(roundId: string) {
-	const res = await apiClient.get<ExamRoomGroup[]>(`/api/admission/rounds/${roundId}/exam-seats`);
+export async function getExamSeats(roundId: string, options: ApiRequestOptions = {}) {
+	const res = await apiClient.get<ExamRoomGroup[]>(
+		`/api/admission/rounds/${roundId}/exam-seats`,
+		options
+	);
 	if (!res.success || !res.data) throw new Error(res.error);
 	return res.data;
 }

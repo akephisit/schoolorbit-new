@@ -160,13 +160,12 @@
 		{
 			"route": "staff/academic/admission/[id]/exam-rooms",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "round-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-admission",
-			"notes": "Component API reads include getRound, listRounds, listExamRooms, getExamConfig, getExamSeats; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Round, exam rooms, and exam config start independently in the route; facility rooms, copy-round choices, and decrypted seat rows remain interaction-lazy."
 		},
 		{
 			"route": "staff/academic/admission/[id]/report",
