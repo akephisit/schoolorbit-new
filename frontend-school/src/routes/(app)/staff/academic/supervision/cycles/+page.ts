@@ -28,6 +28,7 @@ export const load: PageLoad = ({ fetch, url }) => {
 		: null;
 	return {
 		title: 'รอบนิเทศ',
+		observations: null,
 		section: 'cycles' as const,
 		academicYearId,
 		academicTermId,

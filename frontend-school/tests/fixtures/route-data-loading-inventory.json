@@ -449,12 +449,12 @@
 		{
 			"route": "staff/academic/supervision",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_optional",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Visible reads start in SupervisionWorkspace; move primary data to the owning route loader."
+			"notes": "Route starts own observation rows and minimal cycle/template references independently after exact read-scope and route gates. Booking timetable opens on explicit action with regional retry; writes patch typed rows and supersede pending lists/context. No component startup remains; unbounded list preload disabled."
 		},
 		{
 			"route": "staff/academic/supervision/[id]",
@@ -470,12 +470,12 @@
 		{
 			"route": "staff/academic/supervision/approvals",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_optional",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Visible reads start in SupervisionWorkspace; move primary data to the owning route loader."
+			"notes": "Route owns scoped approval queue independently. School-report cycle options require exact school report access, and progress loads only on explicit report action with regional retry/selection supersession. Organization managers avoid school report reads on initial load and refresh. Unbounded list preload disabled."
 		},
 		{
 			"route": "staff/academic/supervision/cycles",
@@ -490,12 +490,12 @@
 		{
 			"route": "staff/academic/supervision/evaluate",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_optional",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Visible reads start in SupervisionWorkspace; move primary data to the owning route loader."
+			"notes": "Route owns assigned list and visible reference summaries after both route and observation-read permission gates; evaluation permission alone does not issue read APIs. Selected rubric is lazy with close-safe retry; submission patches returned observation without list/reference reload. Unbounded preload disabled."
 		},
 		{
 			"route": "staff/academic/supervision/overview",
@@ -510,12 +510,12 @@
 		{
 			"route": "staff/academic/supervision/requests",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_optional",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Visible reads start in SupervisionWorkspace; move primary data to the owning route loader."
+			"notes": "Route owns observations and minimal context/template labels independently. Picker availability loads only on open with keyed close/context supersession and regional retry; approve/return patches only its typed observation, protecting against stale refresh. Exact scoped management gate and unbounded list preload disabled."
 		},
 		{
 			"route": "staff/academic/supervision/templates",

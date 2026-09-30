@@ -24,6 +24,7 @@ export const load: PageLoad = ({ fetch, url }) => {
 	);
 	return {
 		title: 'แบบประเมินนิเทศ',
+		observations: null,
 		section: 'templates' as const,
 		academicYearId,
 		academicTermId,

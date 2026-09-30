@@ -52,6 +52,7 @@ export const load: PageLoad = ({ fetch, url }) => {
 		: null;
 	return {
 		title: 'ภาพรวมนิเทศการสอน',
+		observations: null,
 		section: 'overview' as const,
 		academicYearId,
 		academicTermId,

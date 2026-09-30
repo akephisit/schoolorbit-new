@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { PageProps } from './$types';
+	let { data }: PageProps = $props();
 	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		AcademicPrerequisiteNotice,
@@ -27,4 +29,4 @@
 	/>
 {/if}
 
-<SupervisionWorkspace section="mine" />
+<SupervisionWorkspace section="mine" routeData={data} />

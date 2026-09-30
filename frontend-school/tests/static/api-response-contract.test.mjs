@@ -1016,7 +1016,8 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /function replaceCycle/);
 	assert.match(supervisionWorkspace, /function replaceTemplate/);
 	assert.match(supervisionWorkspace, /function replaceObservation/);
-	assert.match(supervisionWorkspace, /async function refreshTemplates/);
+	assert.match(supervisionWorkspace, /async function retryManagementTemplates/);
+	assert.doesNotMatch(supervisionWorkspace, /listSupervisionTemplates/);
 	assert.match(
 		supervisionWorkspace,
 		/<div class="min-w-0 space-y-2 md:col-span-3">\s*<Label>ชื่อแบบประเมิน<\/Label>/
@@ -1035,10 +1036,14 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /SUPERVISION_READ_SCHOOL/);
 	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_UNIT/);
 	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_TREE/);
+	assert.match(supervisionRoute, /SUPERVISION_OBSERVATION_READ_PERMISSIONS/);
 	assert.match(
-		supervisionWorkspace,
-		/shouldLoadObservations[\s\S]*listSupervisionObservations\([\s\S]*academicYearId:\s*yearId[\s\S]*\.\.\.\(termId \? \{ academicTermId:\s*termId \} : \{\}\)[\s\S]*\{ signal \}[\s\S]*:\s*\[\]/
+		supervisionRoute,
+		/readable[\s\S]*listSupervisionObservations\([\s\S]*academicYearId[\s\S]*academicTermId[\s\S]*requestFetch: fetch/
 	);
+	assert.match(supervisionWorkspace, /async function retryObservations/);
+	assert.doesNotMatch(supervisionWorkspace, /onMount\(/);
+
 	assert.match(supervisionWorkspace, /getSupervisionEvaluatorAvailability/);
 	assert.match(supervisionWorkspace, /requestEvaluatorAvailability/);
 	assert.doesNotMatch(supervisionWorkspace, /lookupStaff/);
@@ -1063,9 +1068,9 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	const createTemplateBody =
 		supervisionWorkspace.match(/async function createTemplate\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
 	const saveEvaluationBody =
-		supervisionWorkspace.match(
-			/async function saveEvaluation\(submit = false\) \{[\s\S]*?\n\t\}/
-		)?.[0] ?? '';
+		supervisionWorkspace.match(/async function saveEvaluation\(\) \{[\s\S]*?\n\t\}/)?.[0] ?? '';
+	assert.match(createTemplateBody, /replaceTemplate\(/);
+	assert.match(saveEvaluationBody, /replaceObservation\(/);
 	assert.doesNotMatch(createTemplateBody, /await refreshAll\(\)/);
 	assert.doesNotMatch(saveEvaluationBody, /await refreshAll\(\)/);
 	assert.doesNotMatch(supervisionWorkspace, /disabled=\{saving\}/);

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { SupervisionManagementRouteData } from '$lib/supervision/management-route-data';
+	import type { SupervisionWorkspaceRouteData } from '$lib/supervision/workspace-route-data';
 	import {
 		BarChart3,
 		BookOpenCheck,
@@ -13,7 +13,6 @@
 		ArrowUp,
 		Eye,
 		FileSignature,
-		Loader2,
 		Plus,
 		RefreshCw,
 		Send,
@@ -39,7 +38,6 @@
 		getSupervisionTeacherStatusOverview,
 		listSupervisionCycles,
 		listSupervisionObservations,
-		listSupervisionTemplates,
 		requestSupervisionObservation,
 		returnSupervisionObservationRequest,
 		submitMySupervisionEvaluation,
@@ -248,8 +246,7 @@
 	let {
 		section,
 		routeData
-	}: { section: SupervisionWorkspaceSection; routeData?: SupervisionManagementRouteData } =
-		$props();
+	}: { section: SupervisionWorkspaceSection; routeData: SupervisionWorkspaceRouteData } = $props();
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived(
 		routeData ? routeData.academicYearId : $academicContext.selected.academicYearId
@@ -279,7 +276,16 @@
 	let templateDetailError = $state('');
 	let templateDetailMode: 'preview' | 'edit' = 'preview';
 
-	let loading = $state(true);
+	let observationsLoaded = $state(false);
+	let observationsLoading = $state(false);
+	let observationsReadable = $state(true);
+	let observationsError = $state('');
+	let bookingOpen = $state(false);
+	let timetableError = $state('');
+	let evaluationTemplateLoading = $state(false);
+	let evaluationTemplateError = $state('');
+	let progressError = $state('');
+	let requestEvaluatorErrors = $state<Record<string, string>>({});
 	let loadingTimetable = $state(false);
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
@@ -323,6 +329,7 @@
 	let previewTemplateDialogOpen = $state(false);
 	let previewTemplateId = $state('');
 	let editingTemplateId = $state('');
+	let templateWorkflowRevision = 0;
 	let loadedTimetableCycleId = $state('');
 	let cycleForm = $state<CycleFormState>({
 		title: '',
@@ -339,15 +346,17 @@
 		endsTime: '16:30'
 	});
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
-	const refreshRequest = new LatestRequest();
 	const timetableRequest = new LatestRequest();
-	const templateRequest = new LatestRequest();
-	const evaluatorAvailabilityRequest = new LatestRequest();
+	const evaluatorAvailabilityRequests: Record<string, LatestRequest> = {};
+	const observationRequest = new LatestRequest();
+	const evaluationTemplateRequest = new LatestRequest();
 	const progressRequest = new LatestRequest();
 	const teacherStatusRequest = new LatestRequest();
 
 	const templateChoices = $derived(routeData ? templateSummaries : templates);
-	const managementLoading = $derived(cyclesLoading || templatesLoading || loadingTeacherStatus);
+	const managementLoading = $derived(
+		cyclesLoading || templatesLoading || observationsLoading || loadingTeacherStatus
+	);
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const sectionConfig = $derived(sectionConfigByKey[section]);
@@ -375,6 +384,13 @@
 		) ||
 			canManageRequests ||
 			canApprove
+	);
+	const canReadSchoolReport = $derived(
+		$can.hasAny(
+			PERMISSIONS.SUPERVISION_READ_SCHOOL,
+			PERMISSIONS.SUPERVISION_MANAGE_SCHOOL,
+			PERMISSIONS.SUPERVISION_APPROVE_SCHOOL
+		)
 	);
 	const canReport = $derived(
 		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) ||
@@ -485,6 +501,24 @@
 				templates = [];
 				templateSummaries = [];
 				teacherStatusRows = [];
+				observations = [];
+				observationsLoaded = false;
+				bookingOpen = false;
+				timetableBlockGroups = [];
+				loadedTimetableCycleId = '';
+				timetableError = '';
+				loadingTimetable = false;
+				savingEvaluation = null;
+				clearEvaluationDraft();
+				requestEvaluatorAvailability = {};
+				requestEvaluatorAvailabilityLoading = {};
+				requestEvaluatorErrors = {};
+				evaluatorPickerOpenByRequest = {};
+				requestEvaluatorIds = {};
+				requestReturnComments = {};
+				progress = null;
+				progressError = '';
+				loadingProgress = false;
 				cyclesLoaded = false;
 				templatesLoaded = false;
 				teacherStatusLoaded = false;
@@ -496,6 +530,8 @@
 				cycleForm.templateId = '';
 				progressCycleId = source.cycleId;
 			}
+			observationsLoading = source.observations !== null;
+			observationsError = '';
 			observedCycleUrl = source.cycleId;
 			cyclesLoading = source.cycles !== null;
 			templatesLoading = source.templates !== null;
@@ -503,6 +539,19 @@
 			cyclesError = '';
 			templatesError = '';
 			teacherStatusError = '';
+			const observationRead = observationRequest.begin();
+			if (source.observations)
+				void source.observations.then((result) => {
+					if (!observationRequest.isCurrent(observationRead.revision)) return;
+					observationsLoading = false;
+					if (!result.ok) {
+						observationsError = result.error;
+						return;
+					}
+					observations = result.data.items;
+					observationsReadable = result.data.readable;
+					observationsLoaded = true;
+				});
 			const cycleRead = managementCyclesRequest.begin();
 			const templateRead = managementTemplatesRequest.begin();
 			const statusRead = teacherStatusRequest.begin();
@@ -516,6 +565,9 @@
 					}
 					cycles = result.data;
 					cyclesLoaded = true;
+					selectedCycleId = cycles.some((item) => item.id === selectedCycleId)
+						? selectedCycleId
+						: (cycles.find((item) => item.status === 'open')?.id ?? cycles[0]?.id ?? '');
 					const selected = cycles.some((item) => item.id === source.cycleId)
 						? source.cycleId
 						: (cycles[0]?.id ?? '');
@@ -555,6 +607,11 @@
 			managementTemplatesRequest.abort();
 			teacherStatusRequest.abort();
 			templateDetailRequest.abort();
+			observationRequest.abort();
+			timetableRequest.abort();
+			evaluationTemplateRequest.abort();
+			for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
+			progressRequest.abort();
 		};
 	});
 
@@ -590,7 +647,12 @@
 	}
 
 	async function retryManagementCycles() {
-		if (!academicYearId) return;
+		if (
+			!academicYearId ||
+			(section === 'approvals' && !canReadSchoolReport) ||
+			(section === 'evaluate' && !canReadObservations)
+		)
+			return;
 		const key = currentManagementContext();
 		const { revision, signal } = managementCyclesRequest.begin();
 		cyclesLoading = true;
@@ -617,7 +679,8 @@
 	}
 
 	async function retryManagementTemplates() {
-		if (!canManageSchool) return;
+		if (['mine', 'requests', 'evaluate'].includes(section) && !canReadObservations) return;
+		if (section !== 'cycles' && section !== 'templates' && !routeData.templates) return;
 		const key = currentManagementContext();
 		const { revision, signal } = managementTemplatesRequest.begin();
 		templatesLoading = true;
@@ -668,7 +731,7 @@
 	}
 
 	$effect(() => {
-		if (section !== 'mine') return;
+		if (section !== 'mine' || !bookingOpen || manualMode) return;
 		if (!selectedCycleId) return;
 		void refreshTimetableForCycle(selectedCycleId);
 	});
@@ -1074,6 +1137,7 @@
 			loadingTimetable = false;
 			return;
 		}
+		timetableError = '';
 		loadingTimetable = true;
 		try {
 			const blocks = await getMyTimetable(
@@ -1088,7 +1152,8 @@
 			loadedTimetableCycleId = contextKey;
 		} catch (error) {
 			if (isAbortError(error)) return;
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดตารางสอนได้');
+			if (timetableRequest.isCurrent(revision))
+				timetableError = error instanceof Error ? error.message : 'ไม่สามารถโหลดตารางสอนได้';
 		} finally {
 			if (timetableRequest.isCurrent(revision)) loadingTimetable = false;
 		}
@@ -1182,85 +1247,38 @@
 		).filter((item) => item.visible)
 	);
 
-	function shouldLoadTemplates(): boolean {
-		return section !== 'overview';
+	function shouldLoadObservations() {
+		return routeData.observations !== null;
 	}
-
-	function shouldLoadObservations(): boolean {
-		return canReadObservations && ['mine', 'evaluate', 'requests', 'approvals'].includes(section);
-	}
-
 	async function refreshAll() {
-		if (routeData) {
-			const tasks: Promise<void>[] = [];
-			if (routeData.cycles) tasks.push(retryManagementCycles());
-			if (routeData.templates) tasks.push(retryManagementTemplates());
-			if (section === 'overview') tasks.push(loadTeacherStatusOverview());
-			await Promise.all(tasks);
-			return;
-		}
-		const yearId = academicYearId;
-		const termId = academicTermId;
-		const { revision, signal } = refreshRequest.begin();
-		timetableRequest.abort();
-		templateRequest.abort();
-		evaluatorAvailabilityRequest.abort();
-		progressRequest.abort();
-		teacherStatusRequest.abort();
-		loadingTimetable = false;
-		loadingProgress = false;
-		loadingTeacherStatus = false;
-		loading = true;
+		const tasks: Promise<void>[] = [];
+		if (routeData.cycles) tasks.push(retryManagementCycles());
+		if (routeData.templates) tasks.push(retryManagementTemplates());
+		if (routeData.observations) tasks.push(retryObservations());
+		if (section === 'overview') tasks.push(loadTeacherStatusOverview());
+		await Promise.all(tasks);
+	}
+	async function retryObservations() {
+		if (!academicYearId || !canReadObservations) return;
+		const { revision, signal } = observationRequest.begin();
+		observationsLoading = true;
+		observationsError = '';
 		try {
-			if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-			const [cycleItems, templateItems, observationItems] = await Promise.all([
-				listSupervisionCycles(yearId, termId, { signal }),
-				shouldLoadTemplates() ? listSupervisionTemplates({ signal }) : [],
-				shouldLoadObservations()
-					? listSupervisionObservations(
-							{
-								academicYearId: yearId,
-								...(termId ? { academicTermId: termId } : {})
-							},
-							{ signal }
-						)
-					: []
-			]);
-			const nextProgressCycleId = cycleItems.some((cycle) => cycle.id === progressCycleId)
-				? progressCycleId
-				: (cycleItems[0]?.id ?? '');
-			let nextProgress = progress;
-			let nextTeacherStatusRows = teacherStatusRows;
-			if (section === 'overview' && canReport && nextProgressCycleId) {
-				[nextProgress, nextTeacherStatusRows] = await Promise.all([
-					getSupervisionCycleProgress(nextProgressCycleId, { signal }),
-					getSupervisionTeacherStatusOverview(nextProgressCycleId, { signal })
-				]);
-			}
-			if (!refreshRequest.isCurrent(revision)) return;
-			cycles = cycleItems;
-			templates = templateItems;
-			observations = observationItems;
-			progress = nextProgress;
-			teacherStatusRows = nextTeacherStatusRows;
-			requestEvaluatorAvailability = {};
-			requestEvaluatorAvailabilityLoading = {};
-			selectedCycleId = cycleItems.some((cycle) => cycle.id === selectedCycleId)
-				? selectedCycleId
-				: (cycleItems.find((cycle) => cycle.status === 'open')?.id ?? cycleItems[0]?.id ?? '');
-			loadedTimetableCycleId = '';
-			progressCycleId = nextProgressCycleId;
-			cycleForm.templateId ||= templates[0]?.id ?? '';
+			const items = await listSupervisionObservations(
+				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
+				{ signal }
+			);
+			if (!observationRequest.isCurrent(revision)) return;
+			observations = items;
+			observationsReadable = true;
+			observationsLoaded = true;
 		} catch (error) {
-			if (isAbortError(error)) return;
-			if (refreshRequest.isCurrent(revision)) {
-				toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลนิเทศได้');
-			}
+			if (!isAbortError(error) && observationRequest.isCurrent(revision))
+				observationsError = error instanceof Error ? error.message : 'โหลดรายการนิเทศไม่สำเร็จ';
 		} finally {
-			if (refreshRequest.isCurrent(revision)) loading = false;
+			if (observationRequest.isCurrent(revision)) observationsLoading = false;
 		}
 	}
-
 	function replaceCycle(cycle: SupervisionCycle) {
 		if (routeData) {
 			managementCyclesRequest.abort();
@@ -1272,23 +1290,6 @@
 			: [cycle, ...cycles];
 		selectedCycleId ||= cycle.id;
 		progressCycleId ||= cycle.id;
-	}
-
-	async function refreshTemplates() {
-		if (routeData) {
-			await retryManagementTemplates();
-			return;
-		}
-		const { revision, signal } = templateRequest.begin();
-		try {
-			const items = await listSupervisionTemplates({ signal });
-			if (!templateRequest.isCurrent(revision)) return;
-			templates = items;
-			cycleForm.templateId ||= templates[0]?.id ?? '';
-		} catch (error) {
-			if (isAbortError(error)) return;
-			throw error;
-		}
 	}
 
 	function replaceTemplate(template: SupervisionTemplate) {
@@ -1316,6 +1317,10 @@
 	}
 
 	function replaceObservation(observation: SupervisionObservation) {
+		observationRequest.abort();
+		observationsLoading = false;
+		observationsError = '';
+		observationsLoaded = true;
 		observations = observations.some((item) => item.id === observation.id)
 			? observations.map((item) => (item.id === observation.id ? observation : item))
 			: [observation, ...observations];
@@ -1365,6 +1370,7 @@
 		}
 
 		savingAction = 'request-booking';
+		const sourceRevision = managementRevision;
 		try {
 			const response = await requestSupervisionObservation({
 				cycleId: currentBookingCycle.id,
@@ -1385,25 +1391,27 @@
 						}
 					: null
 			});
+			if (sourceRevision !== managementRevision) return;
 			const observation = requireMutationData(response, 'ส่งคำขอไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('ส่งคำขอจองนิเทศแล้ว');
 		} catch (error) {
+			if (sourceRevision !== managementRevision) return;
 			toast.error(error instanceof Error ? error.message : 'ส่งคำขอไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceRevision === managementRevision) savingAction = null;
 		}
 	}
 
 	function requestCycleLabel(observation: SupervisionObservation): string {
 		const cycle = cycles.find((item) => item.id === observation.cycleId);
-		return cycle ? cycleLabel(cycle) : 'ไม่พบรอบนิเทศ';
+		return cycle ? cycleLabel(cycle) : cyclesLoaded ? 'ไม่พบรอบนิเทศ' : '—';
 	}
 
 	function requestTemplateTitle(observation: SupervisionObservation): string {
 		return (
-			templates.find((template) => template.id === observation.templateId)?.title ??
-			'ไม่พบแบบประเมิน'
+			templateSummaries.find((template) => template.id === observation.templateId)?.title ??
+			(templatesLoaded ? 'ไม่พบแบบประเมิน' : '—')
 		);
 	}
 
@@ -1445,13 +1453,17 @@
 	async function loadRequestEvaluatorAvailability(observationId: string, force = false) {
 		if (!canManageRequests) return;
 		if (!force && requestEvaluatorAvailability[observationId]) return;
-		const { revision, signal } = evaluatorAvailabilityRequest.begin();
+		const request = evaluatorAvailabilityRequests[observationId] ?? new LatestRequest();
+		evaluatorAvailabilityRequests[observationId] = request;
+		const { revision, signal } = request.begin();
+		requestEvaluatorErrors = { ...requestEvaluatorErrors, [observationId]: '' };
 		requestEvaluatorAvailabilityLoading = {
+			...requestEvaluatorAvailabilityLoading,
 			[observationId]: true
 		};
 		try {
 			const items = await getSupervisionEvaluatorAvailability(observationId, { signal });
-			if (!evaluatorAvailabilityRequest.isCurrent(revision)) return;
+			if (!request.isCurrent(revision)) return;
 			const availableIds = new Set(
 				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
 			);
@@ -1467,9 +1479,14 @@
 			};
 		} catch (error) {
 			if (isAbortError(error)) return;
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้');
+			if (request.isCurrent(revision))
+				requestEvaluatorErrors = {
+					...requestEvaluatorErrors,
+					[observationId]:
+						error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้'
+				};
 		} finally {
-			if (evaluatorAvailabilityRequest.isCurrent(revision)) {
+			if (request.isCurrent(revision)) {
 				requestEvaluatorAvailabilityLoading = {
 					...requestEvaluatorAvailabilityLoading,
 					[observationId]: false
@@ -1482,6 +1499,12 @@
 		setRequestEvaluatorPickerOpen(observationId, open);
 		if (open) {
 			void loadRequestEvaluatorAvailability(observationId);
+		} else {
+			evaluatorAvailabilityRequests[observationId]?.abort();
+			requestEvaluatorAvailabilityLoading = {
+				...requestEvaluatorAvailabilityLoading,
+				[observationId]: false
+			};
 		}
 	}
 
@@ -1515,6 +1538,7 @@
 	}
 
 	function clearRequestApprovalState(observationId: string) {
+		evaluatorAvailabilityRequests[observationId]?.abort();
 		const { [observationId]: _evaluatorIds, ...remainingEvaluatorIds } = requestEvaluatorIds;
 		const { [observationId]: _comment, ...remainingComments } = requestReturnComments;
 		const { [observationId]: _pickerOpen, ...remainingPickerOpen } = evaluatorPickerOpenByRequest;
@@ -1538,6 +1562,7 @@
 		}
 
 		savingAction = `approve-request:${observationId}`;
+		const sourceRevision = managementRevision;
 		try {
 			const response = await approveSupervisionObservationRequest(observationId, {
 				evaluators: evaluatorIds.map((evaluatorId) => ({
@@ -1545,51 +1570,80 @@
 					isRequired: true
 				}))
 			});
+			if (sourceRevision !== managementRevision) return;
 			const observation = requireMutationData(response, 'อนุมัติคำขอไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว');
 			clearRequestApprovalState(observationId);
 		} catch (error) {
+			if (sourceRevision !== managementRevision) return;
 			void loadRequestEvaluatorAvailability(observationId, true);
 			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceRevision === managementRevision) savingAction = null;
 		}
 	}
 
 	async function returnRequest(id: string) {
 		if (!canManageRequests) return;
 		savingAction = `return-request:${id}`;
+		const sourceRevision = managementRevision;
 		try {
 			const response = await returnSupervisionObservationRequest(id, {
 				comment: requestReturnComments[id] || null
 			});
+			if (sourceRevision !== managementRevision) return;
 			const observation = requireMutationData(response, 'ส่งกลับคำขอไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('ส่งกลับคำขอแล้ว');
 			clearRequestApprovalState(id);
 		} catch (error) {
+			if (sourceRevision !== managementRevision) return;
 			toast.error(error instanceof Error ? error.message : 'ส่งกลับคำขอไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceRevision === managementRevision) savingAction = null;
 		}
 	}
 
 	function prepareEvaluationDraft(observation: SupervisionObservation) {
-		if (!canEvaluate) return;
+		if (!canEvaluate || !canReadObservations) return;
 		evaluationObservationId = observation.id;
-		const template = templates.find((item) => item.id === observation.templateId);
-		const nextDrafts: { [itemId: string]: ResponseDraft } = {};
-		for (const section of template?.sections ?? []) {
-			for (const item of section.items) {
-				nextDrafts[item.id] = { ratingScore: '', textResponse: '' };
-			}
-		}
-		responseDrafts = nextDrafts;
+		responseDrafts = {};
 		evaluationDialogOpen = true;
+		void loadEvaluationTemplate();
 	}
-
+	async function loadEvaluationTemplate() {
+		if (!canEvaluate || !evaluationDialogOpen || !selectedEvaluation) return;
+		const observationId = selectedEvaluation.id;
+		const templateId = selectedEvaluation.templateId;
+		const { revision, signal } = evaluationTemplateRequest.begin();
+		evaluationTemplateLoading = true;
+		evaluationTemplateError = '';
+		try {
+			const item = await getSupervisionTemplate(templateId, { signal });
+			if (
+				!evaluationTemplateRequest.isCurrent(revision) ||
+				!evaluationDialogOpen ||
+				evaluationObservationId !== observationId
+			)
+				return;
+			templates = [...templates.filter((value) => value.id !== templateId), item];
+			const drafts: Record<string, ResponseDraft> = {};
+			for (const section of item.sections)
+				for (const field of section.items) drafts[field.id] = { ratingScore: '', textResponse: '' };
+			responseDrafts = drafts;
+		} catch (error) {
+			if (!isAbortError(error) && evaluationTemplateRequest.isCurrent(revision))
+				evaluationTemplateError =
+					error instanceof Error ? error.message : 'โหลดแบบประเมินไม่สำเร็จ';
+		} finally {
+			if (evaluationTemplateRequest.isCurrent(revision)) evaluationTemplateLoading = false;
+		}
+	}
 	function clearEvaluationDraft() {
+		evaluationTemplateRequest.abort();
+		evaluationTemplateLoading = false;
+		evaluationTemplateError = '';
 		evaluationDialogOpen = false;
 		evaluationObservationId = '';
 		responseDrafts = {};
@@ -1660,7 +1714,13 @@
 	}
 
 	async function saveEvaluation() {
-		if (!canEvaluate) return;
+		if (
+			!canEvaluate ||
+			evaluationTemplateLoading ||
+			evaluationTemplateError ||
+			!selectedEvaluationTemplate
+		)
+			return;
 		if (!evaluationObservationId) {
 			toast.error('เลือกรายการประเมินก่อน');
 			return;
@@ -1672,34 +1732,41 @@
 		}
 
 		savingEvaluation = 'submit';
+		const sourceRevision = managementRevision;
+		const observationId = evaluationObservationId;
 		try {
 			const payload = evaluationPayload();
-			const response = await submitMySupervisionEvaluation(evaluationObservationId, payload);
+			const response = await submitMySupervisionEvaluation(observationId, payload);
+			if (sourceRevision !== managementRevision) return;
 			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
 			replaceObservation(observation);
-			clearEvaluationDraft();
+			if (evaluationObservationId === observationId) clearEvaluationDraft();
 			toast.success('ส่งผลประเมินแล้ว');
 		} catch (error) {
+			if (sourceRevision !== managementRevision) return;
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
 		} finally {
-			savingEvaluation = null;
+			if (sourceRevision === managementRevision) savingEvaluation = null;
 		}
 	}
 
 	async function acknowledgeResult(id: string) {
 		savingAction = `acknowledge-result:${id}`;
+		const sourceRevision = managementRevision;
 		try {
 			const response = await acknowledgeSupervisionObservation(id, {
 				comment: acknowledgeComment || null
 			});
+			if (sourceRevision !== managementRevision) return;
 			const observation = requireMutationData(response, 'รับทราบผลไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('รับทราบผลนิเทศแล้ว');
 			acknowledgeComment = '';
 		} catch (error) {
+			if (sourceRevision !== managementRevision) return;
 			toast.error(error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceRevision === managementRevision) savingAction = null;
 		}
 	}
 
@@ -1788,6 +1855,7 @@
 
 	function openCreateTemplateDialog() {
 		if (!canManageSchool) return;
+		templateWorkflowRevision += 1;
 		templateDetailRequest.abort();
 		templateDetailLoading = false;
 		templateDetailLoaded = true;
@@ -1798,6 +1866,7 @@
 
 	function openEditTemplateDialog(template: SupervisionTemplate | SupervisionTemplateSummary) {
 		if (!canManageSchool) return;
+		templateWorkflowRevision += 1;
 		resetTemplateForm();
 		editingTemplateId = template.id;
 		createTemplateDialogOpen = true;
@@ -2033,21 +2102,26 @@
 
 		savingTemplate = true;
 		const sourceRevision = managementRevision;
+		const workflowRevision = templateWorkflowRevision;
+		const submittedTemplateId = editingTemplateId;
 		try {
 			const payload = templatePayload();
-			const response = editingTemplateId
-				? await updateSupervisionTemplate(editingTemplateId, payload)
+			const response = submittedTemplateId
+				? await updateSupervisionTemplate(submittedTemplateId, payload)
 				: await createSupervisionTemplate(payload);
 			if (sourceRevision !== managementRevision) return;
 			if (!response.success) throw new Error(response.error || 'บันทึกแบบประเมินไม่สำเร็จ');
 			if (response.data) {
 				replaceTemplate(response.data);
 			} else {
-				await refreshTemplates();
+				await retryManagementTemplates();
 			}
-			toast.success(editingTemplateId ? 'แก้ไขแบบประเมินนิเทศแล้ว' : 'สร้างแบบประเมินนิเทศแล้ว');
-			resetTemplateForm();
-			createTemplateDialogOpen = false;
+			if (sourceRevision !== managementRevision) return;
+			toast.success(submittedTemplateId ? 'แก้ไขแบบประเมินนิเทศแล้ว' : 'สร้างแบบประเมินนิเทศแล้ว');
+			if (workflowRevision === templateWorkflowRevision) {
+				resetTemplateForm();
+				createTemplateDialogOpen = false;
+			}
 		} catch (error) {
 			if (sourceRevision !== managementRevision) return;
 			toast.error(error instanceof Error ? error.message : 'บันทึกแบบประเมินไม่สำเร็จ');
@@ -2057,21 +2131,24 @@
 	}
 
 	async function loadProgress() {
-		if (!canReport) return;
+		if (!canReadSchoolReport) return;
 		if (!progressCycleId) {
 			toast.error('เลือกรอบนิเทศก่อน');
 			return;
 		}
 
+		const cycleId = progressCycleId;
 		const { revision, signal } = progressRequest.begin();
+		progressError = '';
 		loadingProgress = true;
 		try {
-			const nextProgress = await getSupervisionCycleProgress(progressCycleId, { signal });
+			const nextProgress = await getSupervisionCycleProgress(cycleId, { signal });
 			if (!progressRequest.isCurrent(revision)) return;
 			progress = nextProgress;
 		} catch (error) {
 			if (isAbortError(error)) return;
-			toast.error(error instanceof Error ? error.message : 'โหลดรายงานไม่สำเร็จ');
+			if (progressRequest.isCurrent(revision))
+				progressError = error instanceof Error ? error.message : 'โหลดรายงานไม่สำเร็จ';
 		} finally {
 			if (progressRequest.isCurrent(revision)) loadingProgress = false;
 		}
@@ -2119,28 +2196,6 @@
 			if (teacherStatusRequest.isCurrent(revision)) loadingTeacherStatus = false;
 		}
 	}
-
-	onMount(() => {
-		if (routeData) return;
-		let loadedContext = '';
-		const unsubscribe = academicContext.subscribe((state) => {
-			const yearId = state.selected.academicYearId;
-			const termId = state.selected.academicTermId;
-			const contextKey = `${yearId ?? ''}:${termId ?? ''}`;
-			if (!yearId || contextKey === loadedContext) return;
-			loadedContext = contextKey;
-			void refreshAll();
-		});
-		return () => {
-			unsubscribe();
-			refreshRequest.abort();
-			timetableRequest.abort();
-			templateRequest.abort();
-			evaluatorAvailabilityRequest.abort();
-			progressRequest.abort();
-			teacherStatusRequest.abort();
-		};
-	});
 </script>
 
 {#snippet managementFeedback(loaded: boolean, pending: boolean, error: string, retry: () => void)}
@@ -2167,11 +2222,9 @@
 			variant="outline"
 			size="sm"
 			onclick={refreshAll}
-			disabled={(routeData ? managementLoading : loading) || mutationBusy}
+			disabled={managementLoading || mutationBusy}
 		>
-			<RefreshCw
-				class={cn('mr-2 h-4 w-4', (routeData ? managementLoading : loading) && 'animate-spin')}
-			/>
+			<RefreshCw class={cn('mr-2 h-4 w-4', managementLoading && 'animate-spin')} />
 			รีเฟรช
 		</Button>
 		{#if canManageSchool && section === 'cycles'}
@@ -2192,9 +2245,7 @@
 		{#each sectionLinks as item (item.key)}
 			<Button
 				href={sectionRoute(item.key)}
-				data-sveltekit-preload-data={item.key === 'cycles' || item.key === 'templates'
-					? 'off'
-					: 'tap'}
+				data-sveltekit-preload-data={item.key !== 'overview' ? 'off' : 'tap'}
 				variant={section === item.key ? 'default' : 'outline'}
 				size="sm"
 			>
@@ -2205,39 +2256,55 @@
 
 	<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 		<div class="rounded-md border bg-background px-3 py-2 text-center">
-			<p class="text-lg font-semibold">{routeData && !cyclesLoaded ? '—' : cycles.length}</p>
+			<p class="text-lg font-semibold">
+				{!cyclesLoaded ||
+				(section === 'approvals' && !canReadSchoolReport) ||
+				(section === 'evaluate' && !canReadObservations)
+					? '—'
+					: cycles.length}
+			</p>
 			<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
 		</div>
 		<div class="rounded-md border bg-background px-3 py-2 text-center">
 			<p class="text-lg font-semibold">
-				{shouldLoadObservations() ? requestedObservations.length : '-'}
+				{shouldLoadObservations() && observationsLoaded && observationsReadable
+					? requestedObservations.length
+					: '—'}
 			</p>
 			<p class="text-xs text-muted-foreground">คำขอรออนุมัติ</p>
 		</div>
 		<div class="rounded-md border bg-background px-3 py-2 text-center">
 			<p class="text-lg font-semibold">
-				{shouldLoadObservations() ? activeAssignedObservations.length : '-'}
+				{shouldLoadObservations() && observationsLoaded && observationsReadable
+					? activeAssignedObservations.length
+					: '—'}
 			</p>
 			<p class="text-xs text-muted-foreground">รอประเมิน</p>
 		</div>
 		<div class="rounded-md border bg-background px-3 py-2 text-center">
 			<p class="text-lg font-semibold">
-				{routeData
-					? section === 'templates' && templatesLoaded
-						? templateSummaries.length
-						: '—'
-					: shouldLoadTemplates()
-						? templates.length
-						: '-'}
+				{templatesLoaded && canReadObservations ? templateSummaries.length : '—'}
 			</p>
 			<p class="text-xs text-muted-foreground">แบบประเมิน</p>
 		</div>
 	</div>
 
-	{#if !routeData && loading}
-		<PageSkeleton variant="detail" />
+	{#if ['mine', 'requests', 'evaluate', 'approvals'].includes(section)}
+		<div class="relative space-y-2" data-testid="supervision-references">
+			{#if routeData.cycles}{@render managementFeedback(
+					cyclesLoaded,
+					cyclesLoading,
+					cyclesError,
+					retryManagementCycles
+				)}{/if}
+			{#if routeData.templates}{@render managementFeedback(
+					templatesLoaded,
+					templatesLoading,
+					templatesError,
+					retryManagementTemplates
+				)}{/if}
+		</div>
 	{/if}
-
 	{#if section === 'mine'}
 		<div class="space-y-4">
 			<Card.Root>
@@ -2255,270 +2322,294 @@
 							title="ยังไม่มีสิทธิ์จองคาบนิเทศ"
 							description="ต้องมีสิทธิ์จองคาบนิเทศของตนเองก่อนจึงจะส่งคำขอได้"
 						/>
+					{:else if !bookingOpen}
+						<Button onclick={() => (bookingOpen = true)}>เปิดจองคาบนิเทศ</Button>
 					{:else}
-						<div class="grid gap-4 lg:grid-cols-[1fr_auto]">
-							<div class="rounded-md border bg-muted/20 p-3">
-								<Label>รอบนิเทศปัจจุบัน</Label>
-								{#if currentBookingCycle}
-									<div class="mt-1 flex flex-wrap items-center gap-2">
-										<p class="font-medium">{cycleLabel(currentBookingCycle)}</p>
-										<Badge variant="secondary">{statusLabel(currentBookingCycle.status)}</Badge>
-									</div>
-									<p class="mt-1 text-xs text-muted-foreground">
-										จองได้ {formatDate(currentBookingCycle.bookingOpensAt)} - {formatDate(
-											currentBookingCycle.bookingClosesAt
-										)}
-									</p>
-								{:else}
-									<p class="mt-1 text-sm text-muted-foreground">
-										ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้
-									</p>
-								{/if}
-							</div>
-							<div class="space-y-2">
-								<Label>รูปแบบคาบ</Label>
-								<div class="flex gap-2">
-									<Button
-										type="button"
-										variant={manualMode ? 'outline' : 'default'}
-										size="sm"
-										onclick={() => (manualMode = false)}
-									>
-										จากตารางสอน
-									</Button>
-									<Button
-										type="button"
-										variant={manualMode ? 'default' : 'outline'}
-										size="sm"
-										onclick={() => (manualMode = true)}
-									>
-										กำหนดเอง
-									</Button>
-								</div>
-							</div>
-						</div>
-
-						{#if !manualMode}
-							<div class="space-y-2">
-								<div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-									<div>
-										<Label>คาบจากตารางสอน</Label>
-										{#if currentBookingCycle}
-											<p class="text-xs text-muted-foreground">
-												แสดงคาบสอนจาก {academicTermLabel(
-													currentBookingCycle.academicTermId ?? academicTermId
-												)}
-											</p>
-										{/if}
-									</div>
-									<div class="flex flex-wrap items-center gap-2">
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onclick={goToPreviousBookingWeek}
-											disabled={!canNavigateBookingWeek(-1)}
-										>
-											<ArrowUp class="mr-1 h-4 w-4" />
-											สัปดาห์ก่อน
-										</Button>
-										<Badge variant="outline" class="px-3 py-1">{bookingWeekLabel()}</Badge>
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onclick={resetToCurrentBookingWeek}
-										>
-											สัปดาห์นี้
-										</Button>
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											onclick={goToNextBookingWeek}
-											disabled={!canNavigateBookingWeek(1)}
-										>
-											สัปดาห์ถัดไป
-											<ArrowDown class="ml-1 h-4 w-4" />
-										</Button>
-									</div>
-								</div>
-								{#if loadingTimetable}
-									<Alert.Root>
-										<Loader2 class="h-4 w-4 animate-spin" />
-										<Alert.Title>กำลังโหลดตารางสอน</Alert.Title>
-										<Alert.Description>ระบบกำลังโหลดคาบสอนตามภาคเรียนของรอบนิเทศ</Alert.Description>
-									</Alert.Root>
-								{:else if !currentBookingCycle}
-									<Alert.Root>
-										<Alert.Title>ยังไม่มีรอบที่เปิดให้จอง</Alert.Title>
-										<Alert.Description>
-											เมื่อฝ่ายวิชาการเปิดรอบนิเทศในช่วงเวลาปัจจุบัน ตารางจองจะแสดงอัตโนมัติ
-										</Alert.Description>
-									</Alert.Root>
-								{:else if timetableBlockGroupsForSelectedCycle().length === 0}
-									<Alert.Root>
-										<Alert.Title>ไม่พบคาบสอนในภาคเรียนนี้</Alert.Title>
-										<Alert.Description>
-											<p>
-												ตรวจว่ากลุ่มเรียนมีครูผู้สอนและมีคาบในตาราง หรือใช้คาบกำหนดเองเมื่อจำเป็น
-											</p>
-											<div class="mt-3 flex flex-wrap gap-2">
-												<Button
-													href={academicContextualMenuPath(
-														'/staff/academic/timetable',
-														$academicContext.selected,
-														academicContextOptions
-													)}
-													data-sveltekit-preload-data="tap"
-													size="sm"
-													variant="outline"
-												>
-													ตรวจตารางสอน
-												</Button>
-												<Button href="/staff/academic/delivery" size="sm" variant="outline">
-													ตรวจกลุ่มเรียนและครู
-												</Button>
-											</div>
-										</Alert.Description>
-									</Alert.Root>
-								{:else}
-									<div class="overflow-x-auto rounded-md border">
-										<Table.Root>
-											<Table.Header>
-												<Table.Row>
-													<Table.Head class="sticky left-0 z-10 w-[112px] bg-background"
-														>วัน</Table.Head
-													>
-													{#each timetablePeriodRows() as row (row.key)}
-														<Table.Head class="min-w-[150px] text-center">
-															<div class="font-medium">{row.label}</div>
-															{#if row.timeLabel}
-																<div class="text-xs font-normal text-muted-foreground">
-																	{row.timeLabel}
-																</div>
-															{/if}
-														</Table.Head>
-													{/each}
-												</Table.Row>
-											</Table.Header>
-											<Table.Body>
-												{#each bookingWeekDays as day (day.value)}
-													<Table.Row>
-														<Table.Cell class="sticky left-0 z-10 bg-background align-top">
-															<div class="font-medium">{day.label}</div>
-															<div class="text-xs text-muted-foreground">
-																{formatShortDate(day.date)}
-															</div>
-														</Table.Cell>
-														{#each timetablePeriodRows() as row (row.key)}
-															{@const entry = timetableBlockGroupFor(day.value, row)}
-															{@const cellObservation = entry
-																? observationForTimetableCell(entry, day.date)
-																: null}
-															{@const isOutsideCycle = !bookingDateInCycle(day.date)}
-															<Table.Cell class="min-w-[150px] p-1 align-top">
-																{#if entry}
-																	<button
-																		type="button"
-																		class={cn(
-																			'min-h-20 w-full rounded-md border p-2 text-left transition hover:border-primary hover:bg-primary/5',
-																			selectedTimetableBlockGroupId === entry.id &&
-																				selectedBookingDate === day.date &&
-																				'border-primary bg-primary/10 shadow-sm'
-																		)}
-																		disabled={isOutsideCycle ||
-																			(!!cellObservation && cellObservation.status !== 'returned')}
-																		onclick={() => selectTimetableBlockGroup(entry, day.date)}
-																	>
-																		<div class="flex items-start justify-between gap-2">
-																			<div class="text-sm font-medium leading-snug">
-																				{timetableBlockGroupTitle(entry)}
-																			</div>
-																			{#if cellObservation}
-																				<Badge variant="secondary" class="shrink-0 text-[10px]">
-																					{statusLabel(cellObservation.status)}
-																				</Badge>
-																			{:else if isOutsideCycle}
-																				<Badge variant="outline" class="shrink-0 text-[10px]">
-																					นอกช่วง
-																				</Badge>
-																			{/if}
-																		</div>
-																		<p class="mt-1 text-xs text-muted-foreground">
-																			{entry.periodName ?? row.label}
-																		</p>
-																		<p class="mt-1 text-xs text-muted-foreground">
-																			{entry.homeroomName ?? '-'}
-																		</p>
-																		{#if entry.roomCode}
-																			<p class="text-xs text-muted-foreground">
-																				ห้อง {entry.roomCode}
-																			</p>
-																		{/if}
-																	</button>
-																{:else}
-																	<div
-																		class="min-h-20 rounded-md border border-dashed bg-muted/20"
-																	></div>
-																{/if}
-															</Table.Cell>
-														{/each}
-													</Table.Row>
-												{/each}
-											</Table.Body>
-										</Table.Root>
-									</div>
-								{/if}
-								{#if selectedTimetableBlockGroup}
-									<p class="text-xs text-muted-foreground">
-										เลือกแล้ว: {formatShortDate(selectedBookingDate)} · {timetableLabel(
-											selectedTimetableBlockGroup
-										)}
-									</p>
-								{/if}
-							</div>
-						{:else}
-							<div class="grid gap-3 lg:grid-cols-2">
-								<div class="space-y-2">
-									<Label>รายวิชา</Label>
-									<Input bind:value={manualLesson.subjectName} placeholder="ชื่อรายวิชา" />
-								</div>
-								<div class="space-y-2">
-									<Label>ห้องเรียน</Label>
-									<Input bind:value={manualLesson.classroomLabel} placeholder="เช่น ม.3/1" />
-								</div>
-								<div class="space-y-2">
-									<Label>วันที่นิเทศ</Label>
-									<DatePicker bind:value={manualLessonDate} placeholder="เลือกวันที่" />
-								</div>
-								<div class="space-y-2">
-									<Label>เวลา</Label>
-									<Input type="time" bind:value={manualLessonTime} />
-								</div>
-								<div class="space-y-2">
-									<Label>คาบ/ห้อง</Label>
-									<div class="grid grid-cols-2 gap-2">
-										<Input bind:value={manualLesson.periodLabel} placeholder="คาบที่ 2" />
-										<Input bind:value={manualLesson.roomLabel} placeholder="ห้อง 321" />
-									</div>
-								</div>
-								<div class="space-y-2 lg:col-span-2">
-									<Label>เหตุผลที่ใช้คาบกำหนดเอง</Label>
-									<Textarea bind:value={manualLesson.reason} rows={3} />
-								</div>
-							</div>
-						{/if}
-
-						<LoadingButton
-							onclick={createBookingRequest}
-							loading={savingAction === 'request-booking'}
-							loadingLabel="กำลังส่ง..."
-							disabled={loading || mutationBusy}
+						<Button
+							variant="outline"
+							onclick={() => {
+								bookingOpen = false;
+								timetableRequest.abort();
+								loadingTimetable = false;
+							}}>ปิดการจอง</Button
 						>
-							<Send class="mr-2 h-4 w-4" />
-							ส่งคำขอจอง
-						</LoadingButton>
+						{@render managementFeedback(
+							cyclesLoaded,
+							cyclesLoading,
+							cyclesError,
+							retryManagementCycles
+						)}
+						{#if cyclesLoaded}
+							<div class="grid gap-4 lg:grid-cols-[1fr_auto]">
+								<div class="rounded-md border bg-muted/20 p-3">
+									<Label>รอบนิเทศปัจจุบัน</Label>
+									{#if currentBookingCycle}
+										<div class="mt-1 flex flex-wrap items-center gap-2">
+											<p class="font-medium">{cycleLabel(currentBookingCycle)}</p>
+											<Badge variant="secondary">{statusLabel(currentBookingCycle.status)}</Badge>
+										</div>
+										<p class="mt-1 text-xs text-muted-foreground">
+											จองได้ {formatDate(currentBookingCycle.bookingOpensAt)} - {formatDate(
+												currentBookingCycle.bookingClosesAt
+											)}
+										</p>
+									{:else}
+										<p class="mt-1 text-sm text-muted-foreground">
+											ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้
+										</p>
+									{/if}
+								</div>
+								<div class="space-y-2">
+									<Label>รูปแบบคาบ</Label>
+									<div class="flex gap-2">
+										<Button
+											type="button"
+											variant={manualMode ? 'outline' : 'default'}
+											size="sm"
+											onclick={() => (manualMode = false)}
+										>
+											จากตารางสอน
+										</Button>
+										<Button
+											type="button"
+											variant={manualMode ? 'default' : 'outline'}
+											size="sm"
+											onclick={() => (manualMode = true)}
+										>
+											กำหนดเอง
+										</Button>
+									</div>
+								</div>
+							</div>
+
+							{#if !manualMode}
+								<div class="space-y-2">
+									<div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+										<div>
+											<Label>คาบจากตารางสอน</Label>
+											{#if currentBookingCycle}
+												<p class="text-xs text-muted-foreground">
+													แสดงคาบสอนจาก {academicTermLabel(
+														currentBookingCycle.academicTermId ?? academicTermId
+													)}
+												</p>
+											{/if}
+										</div>
+										<div class="flex flex-wrap items-center gap-2">
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												onclick={goToPreviousBookingWeek}
+												disabled={!canNavigateBookingWeek(-1)}
+											>
+												<ArrowUp class="mr-1 h-4 w-4" />
+												สัปดาห์ก่อน
+											</Button>
+											<Badge variant="outline" class="px-3 py-1">{bookingWeekLabel()}</Badge>
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												onclick={resetToCurrentBookingWeek}
+											>
+												สัปดาห์นี้
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												onclick={goToNextBookingWeek}
+												disabled={!canNavigateBookingWeek(1)}
+											>
+												สัปดาห์ถัดไป
+												<ArrowDown class="ml-1 h-4 w-4" />
+											</Button>
+										</div>
+									</div>
+									{@render managementFeedback(
+										loadedTimetableCycleId !== '',
+										loadingTimetable,
+										timetableError,
+										() => {
+											loadedTimetableCycleId = '';
+											void refreshTimetableForCycle(selectedCycleId);
+										}
+									)}
+									{#if !loadingTimetable && !timetableError}
+										{#if !currentBookingCycle}
+											<Alert.Root>
+												<Alert.Title>ยังไม่มีรอบที่เปิดให้จอง</Alert.Title>
+												<Alert.Description>
+													เมื่อฝ่ายวิชาการเปิดรอบนิเทศในช่วงเวลาปัจจุบัน ตารางจองจะแสดงอัตโนมัติ
+												</Alert.Description>
+											</Alert.Root>
+										{:else if timetableBlockGroupsForSelectedCycle().length === 0}
+											<Alert.Root>
+												<Alert.Title>ไม่พบคาบสอนในภาคเรียนนี้</Alert.Title>
+												<Alert.Description>
+													<p>
+														ตรวจว่ากลุ่มเรียนมีครูผู้สอนและมีคาบในตาราง
+														หรือใช้คาบกำหนดเองเมื่อจำเป็น
+													</p>
+													<div class="mt-3 flex flex-wrap gap-2">
+														<Button
+															href={academicContextualMenuPath(
+																'/staff/academic/timetable',
+																$academicContext.selected,
+																academicContextOptions
+															)}
+															data-sveltekit-preload-data="tap"
+															size="sm"
+															variant="outline"
+														>
+															ตรวจตารางสอน
+														</Button>
+														<Button href="/staff/academic/delivery" size="sm" variant="outline">
+															ตรวจกลุ่มเรียนและครู
+														</Button>
+													</div>
+												</Alert.Description>
+											</Alert.Root>
+										{:else}
+											<div class="overflow-x-auto rounded-md border">
+												<Table.Root>
+													<Table.Header>
+														<Table.Row>
+															<Table.Head class="sticky left-0 z-10 w-[112px] bg-background"
+																>วัน</Table.Head
+															>
+															{#each timetablePeriodRows() as row (row.key)}
+																<Table.Head class="min-w-[150px] text-center">
+																	<div class="font-medium">{row.label}</div>
+																	{#if row.timeLabel}
+																		<div class="text-xs font-normal text-muted-foreground">
+																			{row.timeLabel}
+																		</div>
+																	{/if}
+																</Table.Head>
+															{/each}
+														</Table.Row>
+													</Table.Header>
+													<Table.Body>
+														{#each bookingWeekDays as day (day.value)}
+															<Table.Row>
+																<Table.Cell class="sticky left-0 z-10 bg-background align-top">
+																	<div class="font-medium">{day.label}</div>
+																	<div class="text-xs text-muted-foreground">
+																		{formatShortDate(day.date)}
+																	</div>
+																</Table.Cell>
+																{#each timetablePeriodRows() as row (row.key)}
+																	{@const entry = timetableBlockGroupFor(day.value, row)}
+																	{@const cellObservation = entry
+																		? observationForTimetableCell(entry, day.date)
+																		: null}
+																	{@const isOutsideCycle = !bookingDateInCycle(day.date)}
+																	<Table.Cell class="min-w-[150px] p-1 align-top">
+																		{#if entry}
+																			<button
+																				type="button"
+																				class={cn(
+																					'min-h-20 w-full rounded-md border p-2 text-left transition hover:border-primary hover:bg-primary/5',
+																					selectedTimetableBlockGroupId === entry.id &&
+																						selectedBookingDate === day.date &&
+																						'border-primary bg-primary/10 shadow-sm'
+																				)}
+																				disabled={isOutsideCycle ||
+																					(!!cellObservation &&
+																						cellObservation.status !== 'returned')}
+																				onclick={() => selectTimetableBlockGroup(entry, day.date)}
+																			>
+																				<div class="flex items-start justify-between gap-2">
+																					<div class="text-sm font-medium leading-snug">
+																						{timetableBlockGroupTitle(entry)}
+																					</div>
+																					{#if cellObservation}
+																						<Badge variant="secondary" class="shrink-0 text-[10px]">
+																							{statusLabel(cellObservation.status)}
+																						</Badge>
+																					{:else if isOutsideCycle}
+																						<Badge variant="outline" class="shrink-0 text-[10px]">
+																							นอกช่วง
+																						</Badge>
+																					{/if}
+																				</div>
+																				<p class="mt-1 text-xs text-muted-foreground">
+																					{entry.periodName ?? row.label}
+																				</p>
+																				<p class="mt-1 text-xs text-muted-foreground">
+																					{entry.homeroomName ?? '-'}
+																				</p>
+																				{#if entry.roomCode}
+																					<p class="text-xs text-muted-foreground">
+																						ห้อง {entry.roomCode}
+																					</p>
+																				{/if}
+																			</button>
+																		{:else}
+																			<div
+																				class="min-h-20 rounded-md border border-dashed bg-muted/20"
+																			></div>
+																		{/if}
+																	</Table.Cell>
+																{/each}
+															</Table.Row>
+														{/each}
+													</Table.Body>
+												</Table.Root>
+											</div>
+										{/if}{/if}
+									{#if selectedTimetableBlockGroup}
+										<p class="text-xs text-muted-foreground">
+											เลือกแล้ว: {formatShortDate(selectedBookingDate)} · {timetableLabel(
+												selectedTimetableBlockGroup
+											)}
+										</p>
+									{/if}
+								</div>
+							{:else}
+								<div class="grid gap-3 lg:grid-cols-2">
+									<div class="space-y-2">
+										<Label>รายวิชา</Label>
+										<Input bind:value={manualLesson.subjectName} placeholder="ชื่อรายวิชา" />
+									</div>
+									<div class="space-y-2">
+										<Label>ห้องเรียน</Label>
+										<Input bind:value={manualLesson.classroomLabel} placeholder="เช่น ม.3/1" />
+									</div>
+									<div class="space-y-2">
+										<Label>วันที่นิเทศ</Label>
+										<DatePicker bind:value={manualLessonDate} placeholder="เลือกวันที่" />
+									</div>
+									<div class="space-y-2">
+										<Label>เวลา</Label>
+										<Input type="time" bind:value={manualLessonTime} />
+									</div>
+									<div class="space-y-2">
+										<Label>คาบ/ห้อง</Label>
+										<div class="grid grid-cols-2 gap-2">
+											<Input bind:value={manualLesson.periodLabel} placeholder="คาบที่ 2" />
+											<Input bind:value={manualLesson.roomLabel} placeholder="ห้อง 321" />
+										</div>
+									</div>
+									<div class="space-y-2 lg:col-span-2">
+										<Label>เหตุผลที่ใช้คาบกำหนดเอง</Label>
+										<Textarea bind:value={manualLesson.reason} rows={3} />
+									</div>
+								</div>
+							{/if}
+
+							<LoadingButton
+								onclick={createBookingRequest}
+								loading={savingAction === 'request-booking'}
+								loadingLabel="กำลังส่ง..."
+								disabled={cyclesLoading || mutationBusy || !!timetableError || loadingTimetable}
+							>
+								<Send class="mr-2 h-4 w-4" />
+								ส่งคำขอจอง
+							</LoadingButton>
+						{/if}
 					{/if}
 				</Card.Content>
 			</Card.Root>
@@ -2528,111 +2619,133 @@
 					<Card.Title>รายการของฉัน</Card.Title>
 				</Card.Header>
 				<Card.Content>
-					{#if myObservations.length === 0}
-						<PageState
-							title="ยังไม่มีรายการนิเทศของฉัน"
-							description="เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่"
-						/>
-					{:else}
-						<div class="space-y-3" data-supervision-own-list="cards">
-							{#each myObservations as observation (observation.id)}
-								<div class="rounded-md border bg-background p-4">
-									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-										<div class="min-w-0 space-y-1">
-											<div class="flex flex-wrap items-center gap-2">
-												<h3 class="font-semibold">{observationSubjectLabel(observation)}</h3>
-												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-											</div>
-											<p class="text-sm text-muted-foreground">
-												{observationPeriodLabel(observation)} · {observationClassroomLabel(
-													observation
-												)}
-											</p>
-										</div>
-										<div class="shrink-0 text-sm text-muted-foreground">
-											{formatDate(observation.observedAt)}
-										</div>
-									</div>
-
-									<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
-										{#each observationDetailGrid(observation) as detail (detail.label)}
-											<div>
-												<p class="text-xs text-muted-foreground">{detail.label}</p>
-												<p class="font-medium">{detail.value}</p>
-											</div>
-										{/each}
-									</div>
-
-									<div
-										class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-									>
-										<div class="min-w-0">
-											<p class="text-xs text-muted-foreground">ผู้นิเทศ</p>
-											<div class="mt-1 flex flex-wrap gap-2">
-												{#if observation.evaluators.length === 0}
-													<Badge variant="outline">ยังไม่มอบหมาย</Badge>
-												{:else}
-													{#each observation.evaluators as evaluator (evaluator.id)}
-														<Badge variant="secondary">
-															{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-														</Badge>
-													{/each}
-												{/if}
-											</div>
-										</div>
-										<div class="flex shrink-0 flex-wrap gap-2">
-											<Button
-												size="sm"
-												variant="outline"
-												href={`/staff/academic/supervision/${observation.id}`}
+					<div
+						class="relative"
+						data-testid="supervision-observations"
+						aria-busy={observationsLoading}
+					>
+						{@render managementFeedback(
+							observationsLoaded,
+							observationsLoading,
+							observationsError,
+							retryObservations
+						)}
+						{#if observationsLoaded && !observationsReadable}<PageState
+								variant="permission"
+								title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+								description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+							/>{/if}
+						{#if observationsLoaded && observationsReadable}
+							{#if myObservations.length === 0}
+								<PageState
+									title="ยังไม่มีรายการนิเทศของฉัน"
+									description="เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่"
+								/>
+							{:else}
+								<div class="space-y-3" data-supervision-own-list="cards">
+									{#each myObservations as observation (observation.id)}
+										<div class="rounded-md border bg-background p-4">
+											<div
+												class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
 											>
-												<Eye class="h-4 w-4" />
-												รายละเอียด
-											</Button>
-											{#if observation.status === 'published'}
-												<Dialog.Root>
-													<Dialog.Trigger>
-														{#snippet child({ props })}
-															<Button size="sm" {...props}>
-																<FileSignature class="mr-2 h-4 w-4" />
-																รับทราบผล
-															</Button>
-														{/snippet}
-													</Dialog.Trigger>
-													<Dialog.Content>
-														<Dialog.Header>
-															<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
-															<Dialog.Description>
-																เพิ่มความคิดเห็นได้ถ้าต้องการ แล้วกดยืนยันรับทราบผลนิเทศ
-															</Dialog.Description>
-														</Dialog.Header>
-														<Textarea
-															bind:value={acknowledgeComment}
-															rows={3}
-															placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
-														/>
-														<Dialog.Footer>
-															<LoadingButton
-																onclick={() => acknowledgeResult(observation.id)}
-																loading={savingAction === `acknowledge-result:${observation.id}`}
-																loadingLabel="กำลังบันทึก..."
-																disabled={mutationBusy}
-															>
-																ยืนยันรับทราบ
-															</LoadingButton>
-														</Dialog.Footer>
-													</Dialog.Content>
-												</Dialog.Root>
-											{:else}
-												<span class="text-sm text-muted-foreground">-</span>
-											{/if}
+												<div class="min-w-0 space-y-1">
+													<div class="flex flex-wrap items-center gap-2">
+														<h3 class="font-semibold">{observationSubjectLabel(observation)}</h3>
+														<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+													</div>
+													<p class="text-sm text-muted-foreground">
+														{observationPeriodLabel(observation)} · {observationClassroomLabel(
+															observation
+														)}
+													</p>
+												</div>
+												<div class="shrink-0 text-sm text-muted-foreground">
+													{formatDate(observation.observedAt)}
+												</div>
+											</div>
+
+											<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+												{#each observationDetailGrid(observation) as detail (detail.label)}
+													<div>
+														<p class="text-xs text-muted-foreground">{detail.label}</p>
+														<p class="font-medium">{detail.value}</p>
+													</div>
+												{/each}
+											</div>
+
+											<div
+												class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+											>
+												<div class="min-w-0">
+													<p class="text-xs text-muted-foreground">ผู้นิเทศ</p>
+													<div class="mt-1 flex flex-wrap gap-2">
+														{#if observation.evaluators.length === 0}
+															<Badge variant="outline">ยังไม่มอบหมาย</Badge>
+														{:else}
+															{#each observation.evaluators as evaluator (evaluator.id)}
+																<Badge variant="secondary">
+																	{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+																</Badge>
+															{/each}
+														{/if}
+													</div>
+												</div>
+												<div class="flex shrink-0 flex-wrap gap-2">
+													<Button
+														size="sm"
+														variant="outline"
+														href={`/staff/academic/supervision/${observation.id}`}
+													>
+														<Eye class="h-4 w-4" />
+														รายละเอียด
+													</Button>
+													{#if observation.status === 'published'}
+														<Dialog.Root>
+															<Dialog.Trigger>
+																{#snippet child({ props })}
+																	<Button size="sm" {...props}>
+																		<FileSignature class="mr-2 h-4 w-4" />
+																		รับทราบผล
+																	</Button>
+																{/snippet}
+															</Dialog.Trigger>
+															<Dialog.Content>
+																<Dialog.Header>
+																	<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
+																	<Dialog.Description>
+																		เพิ่มความคิดเห็นได้ถ้าต้องการ แล้วกดยืนยันรับทราบผลนิเทศ
+																	</Dialog.Description>
+																</Dialog.Header>
+																<Textarea
+																	bind:value={acknowledgeComment}
+																	rows={3}
+																	placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
+																/>
+																<Dialog.Footer>
+																	<LoadingButton
+																		onclick={() => acknowledgeResult(observation.id)}
+																		loading={savingAction ===
+																			`acknowledge-result:${observation.id}`}
+																		loadingLabel="กำลังบันทึก..."
+																		disabled={mutationBusy}
+																	>
+																		ยืนยันรับทราบ
+																	</LoadingButton>
+																</Dialog.Footer>
+															</Dialog.Content>
+														</Dialog.Root>
+													{:else}
+														<span class="text-sm text-muted-foreground">-</span>
+													{/if}
+												</div>
+											</div>
 										</div>
-									</div>
+									{/each}
 								</div>
-							{/each}
-						</div>
-					{/if}
-				</Card.Content>
+							{/if}
+						{/if}
+					</div></Card.Content
+				>
 			</Card.Root>
 		</div>
 	{:else if section === 'requests'}
@@ -2648,202 +2761,243 @@
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#if requestedObservations.length === 0}
-						<PageState
-							title="ไม่มีคำขอจองที่รออนุมัติ"
-							description="เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้"
-						/>
-					{:else}
-						<div class="space-y-3">
-							{#each requestedObservations as observation (observation.id)}
-								<div class="rounded-md border bg-background p-4">
-									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-										<div class="min-w-0 space-y-1">
-											<div class="flex flex-wrap items-center gap-2">
-												<h3 class="font-semibold">
-													{observation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}
-												</h3>
-												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-											</div>
-											<p class="text-sm text-muted-foreground">
-												{observationLessonTitle(observation)}
-											</p>
-										</div>
-										<div class="text-sm text-muted-foreground">
-											ส่งคำขอ {formatDate(observation.requestedAt)}
-										</div>
-									</div>
-
-									<div class="mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
-										<div>
-											<p class="text-xs text-muted-foreground">วันที่นิเทศ</p>
-											<p class="font-medium">{formatDate(observation.observedAt)}</p>
-										</div>
-										<div>
-											<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-											<p class="font-medium">{requestCycleLabel(observation)}</p>
-										</div>
-										<div>
-											<p class="text-xs text-muted-foreground">แบบประเมิน</p>
-											<p class="font-medium">{requestTemplateTitle(observation)}</p>
-										</div>
-										<div>
-											<p class="text-xs text-muted-foreground">คาบ/ห้องเรียน</p>
-											<p class="font-medium">{observationLessonTitle(observation)}</p>
-										</div>
-										<div>
-											<p class="text-xs text-muted-foreground">ผู้ขอรับนิเทศ</p>
-											<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-										</div>
-										<div>
-											<p class="text-xs text-muted-foreground">จำนวนผู้ประเมินที่เลือก</p>
-											<p class="font-medium">
-												{selectedRequestEvaluatorIds(observation.id).length} คน
-											</p>
-										</div>
-									</div>
-
-									<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-										<div class="space-y-2">
-											<Label>ผู้ประเมิน</Label>
-											<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2">
-												{#if selectedRequestEvaluators(observation.id).length === 0}
-													<span class="text-sm text-muted-foreground">ยังไม่ได้เลือกผู้ประเมิน</span
-													>
-												{:else}
-													{#each selectedRequestEvaluators(observation.id) as evaluator (evaluator.id)}
-														<Badge variant="secondary" class="gap-1 pr-1">
-															<span>{evaluator.name}</span>
-															<button
-																type="button"
-																class="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
-																aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
-																onclick={() =>
-																	removeRequestEvaluatorForRequest(observation.id, evaluator.id)}
-															>
-																<Trash2 class="h-3 w-3" />
-															</button>
-														</Badge>
-													{/each}
-												{/if}
-											</div>
-											<Popover.Root
-												open={requestEvaluatorPickerOpen(observation.id)}
-												onOpenChange={(open) =>
-													handleRequestEvaluatorPickerOpen(observation.id, open)}
+					<div
+						class="relative"
+						data-testid="supervision-observations"
+						aria-busy={observationsLoading}
+					>
+						{@render managementFeedback(
+							observationsLoaded,
+							observationsLoading,
+							observationsError,
+							retryObservations
+						)}
+						{#if observationsLoaded && !observationsReadable}<PageState
+								variant="permission"
+								title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+								description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+							/>{/if}
+						{#if observationsLoaded && observationsReadable}
+							{#if requestedObservations.length === 0}
+								<PageState
+									title="ไม่มีคำขอจองที่รออนุมัติ"
+									description="เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้"
+								/>
+							{:else}
+								<div class="space-y-3">
+									{#each requestedObservations as observation (observation.id)}
+										<div class="rounded-md border bg-background p-4">
+											<div
+												class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
 											>
-												<Popover.Trigger>
-													{#snippet child({ props })}
-														<Button
-															type="button"
-															variant="outline"
-															role="combobox"
-															aria-expanded={requestEvaluatorPickerOpen(observation.id)}
-															class="w-full justify-between font-normal sm:w-[320px]"
-															disabled={mutationBusy ||
-																requestEvaluatorAvailabilityLoading[observation.id]}
-															{...props}
-														>
-															<span class="truncate">
-																{requestEvaluatorAvailabilityLoading[observation.id]
-																	? 'กำลังตรวจผู้ประเมินที่ว่าง...'
-																	: 'เพิ่ม/เลือกผู้ประเมิน'}
-															</span>
-															<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-														</Button>
-													{/snippet}
-												</Popover.Trigger>
-												<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-													<Command.Root>
-														<Command.Input placeholder="ค้นหาครูผู้ประเมินที่ว่าง..." />
-														<Command.Empty>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty>
-														<Command.List class="max-h-72">
-															<Command.Group>
-																{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
-																	<Command.Item
-																		value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
-																		onSelect={() =>
-																			toggleRequestEvaluatorForRequest(observation.id, evaluator)}
-																	>
-																		<Check
-																			class={cn(
-																				'mr-2 h-4 w-4',
-																				selectedRequestEvaluatorIds(observation.id).includes(
-																					evaluator.id
-																				)
-																					? 'opacity-100'
-																					: 'opacity-0'
+												<div class="min-w-0 space-y-1">
+													<div class="flex flex-wrap items-center gap-2">
+														<h3 class="font-semibold">
+															{observation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}
+														</h3>
+														<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+													</div>
+													<p class="text-sm text-muted-foreground">
+														{observationLessonTitle(observation)}
+													</p>
+												</div>
+												<div class="text-sm text-muted-foreground">
+													ส่งคำขอ {formatDate(observation.requestedAt)}
+												</div>
+											</div>
+
+											<div class="mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
+												<div>
+													<p class="text-xs text-muted-foreground">วันที่นิเทศ</p>
+													<p class="font-medium">{formatDate(observation.observedAt)}</p>
+												</div>
+												<div>
+													<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
+													<p class="font-medium">{requestCycleLabel(observation)}</p>
+												</div>
+												<div>
+													<p class="text-xs text-muted-foreground">แบบประเมิน</p>
+													<p class="font-medium">{requestTemplateTitle(observation)}</p>
+												</div>
+												<div>
+													<p class="text-xs text-muted-foreground">คาบ/ห้องเรียน</p>
+													<p class="font-medium">{observationLessonTitle(observation)}</p>
+												</div>
+												<div>
+													<p class="text-xs text-muted-foreground">ผู้ขอรับนิเทศ</p>
+													<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+												</div>
+												<div>
+													<p class="text-xs text-muted-foreground">จำนวนผู้ประเมินที่เลือก</p>
+													<p class="font-medium">
+														{selectedRequestEvaluatorIds(observation.id).length} คน
+													</p>
+												</div>
+											</div>
+
+											<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+												<div class="space-y-2">
+													<Label>ผู้ประเมิน</Label>
+													<div
+														class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2"
+													>
+														{#if selectedRequestEvaluators(observation.id).length === 0}
+															<span class="text-sm text-muted-foreground"
+																>ยังไม่ได้เลือกผู้ประเมิน</span
+															>
+														{:else}
+															{#each selectedRequestEvaluators(observation.id) as evaluator (evaluator.id)}
+																<Badge variant="secondary" class="gap-1 pr-1">
+																	<span>{evaluator.name}</span>
+																	<button
+																		type="button"
+																		class="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+																		aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
+																		onclick={() =>
+																			removeRequestEvaluatorForRequest(
+																				observation.id,
+																				evaluator.id
 																			)}
-																		/>
-																		<span>{evaluator.name}</span>
-																		{#if evaluator.title}
-																			<span class="ml-1 text-xs text-muted-foreground"
-																				>({evaluator.title})</span
-																			>
-																		{/if}
-																	</Command.Item>
-																{/each}
-															</Command.Group>
-														</Command.List>
-													</Command.Root>
-												</Popover.Content>
-											</Popover.Root>
-											{#if unavailableRequestEvaluatorCount(observation.id) > 0}
-												<p class="text-xs text-muted-foreground">
-													ซ่อนผู้ประเมิน {unavailableRequestEvaluatorCount(observation.id)} คนที่มีงานนิเทศชนช่วงนี้
-												</p>
-											{/if}
-										</div>
+																	>
+																		<Trash2 class="h-3 w-3" />
+																	</button>
+																</Badge>
+															{/each}
+														{/if}
+													</div>
+													<Popover.Root
+														open={requestEvaluatorPickerOpen(observation.id)}
+														onOpenChange={(open) =>
+															handleRequestEvaluatorPickerOpen(observation.id, open)}
+													>
+														<Popover.Trigger>
+															{#snippet child({ props })}
+																<Button
+																	type="button"
+																	variant="outline"
+																	role="combobox"
+																	aria-label="เพิ่ม/เลือกผู้ประเมิน"
+																	aria-expanded={requestEvaluatorPickerOpen(observation.id)}
+																	class="w-full justify-between font-normal sm:w-[320px]"
+																	disabled={mutationBusy ||
+																		requestEvaluatorAvailabilityLoading[observation.id]}
+																	{...props}
+																>
+																	<span class="truncate">
+																		{requestEvaluatorAvailabilityLoading[observation.id]
+																			? 'กำลังตรวจผู้ประเมินที่ว่าง...'
+																			: 'เพิ่ม/เลือกผู้ประเมิน'}
+																	</span>
+																	<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+																</Button>
+															{/snippet}
+														</Popover.Trigger>
+														<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+															{@render managementFeedback(
+																!!requestEvaluatorAvailability[observation.id],
+																!!requestEvaluatorAvailabilityLoading[observation.id],
+																requestEvaluatorErrors[observation.id] ?? '',
+																() => void loadRequestEvaluatorAvailability(observation.id, true)
+															)}
+															<Command.Root>
+																<Command.Input placeholder="ค้นหาครูผู้ประเมินที่ว่าง..." />
+																{#if requestEvaluatorAvailability[observation.id]}<Command.Empty
+																		>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty
+																	>{/if}
+																{#if requestEvaluatorAvailability[observation.id]}<Command.List
+																		class="max-h-72"
+																	>
+																		<Command.Group>
+																			{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
+																				<Command.Item
+																					value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
+																					onSelect={() =>
+																						toggleRequestEvaluatorForRequest(
+																							observation.id,
+																							evaluator
+																						)}
+																				>
+																					<Check
+																						class={cn(
+																							'mr-2 h-4 w-4',
+																							selectedRequestEvaluatorIds(observation.id).includes(
+																								evaluator.id
+																							)
+																								? 'opacity-100'
+																								: 'opacity-0'
+																						)}
+																					/>
+																					<span>{evaluator.name}</span>
+																					{#if evaluator.title}
+																						<span class="ml-1 text-xs text-muted-foreground"
+																							>({evaluator.title})</span
+																						>
+																					{/if}
+																				</Command.Item>
+																			{/each}
+																		</Command.Group>
+																	</Command.List>{/if}
+															</Command.Root>
+														</Popover.Content>
+													</Popover.Root>
+													{#if unavailableRequestEvaluatorCount(observation.id) > 0}
+														<p class="text-xs text-muted-foreground">
+															ซ่อนผู้ประเมิน {unavailableRequestEvaluatorCount(observation.id)} คนที่มีงานนิเทศชนช่วงนี้
+														</p>
+													{/if}
+												</div>
 
-										<div class="space-y-2">
-											<Label>ส่งกลับคำขอ</Label>
-											<Textarea
-												value={requestReturnComments[observation.id] ?? ''}
-												rows={3}
-												placeholder="ระบุเหตุผลส่งกลับ"
-												oninput={(event) =>
-													setRequestReturnCommentForRequest(
-														observation.id,
-														(event.currentTarget as HTMLTextAreaElement).value
-													)}
-											/>
-										</div>
-									</div>
+												<div class="space-y-2">
+													<Label>ส่งกลับคำขอ</Label>
+													<Textarea
+														value={requestReturnComments[observation.id] ?? ''}
+														rows={3}
+														placeholder="ระบุเหตุผลส่งกลับ"
+														oninput={(event) =>
+															setRequestReturnCommentForRequest(
+																observation.id,
+																(event.currentTarget as HTMLTextAreaElement).value
+															)}
+													/>
+												</div>
+											</div>
 
-									<div class="mt-4 flex flex-wrap items-center justify-end gap-2">
-										<Button
-											size="sm"
-											variant="outline"
-											class="h-8"
-											href={`/staff/academic/supervision/${observation.id}`}
-										>
-											<Eye class="h-4 w-4" />
-											รายละเอียด
-										</Button>
-										<LoadingButton
-											variant="outline"
-											loading={savingAction === `return-request:${observation.id}`}
-											loadingLabel="กำลังส่งกลับ..."
-											disabled={mutationBusy}
-											onclick={() => returnRequest(observation.id)}
-										>
-											ส่งกลับคำขอ
-										</LoadingButton>
-										<LoadingButton
-											onclick={() => approveRequest(observation.id)}
-											loading={savingAction === `approve-request:${observation.id}`}
-											loadingLabel="กำลังอนุมัติ..."
-											disabled={mutationBusy ||
-												selectedRequestEvaluatorIds(observation.id).length === 0}
-										>
-											อนุมัติและมอบหมาย
-										</LoadingButton>
-									</div>
+											<div class="mt-4 flex flex-wrap items-center justify-end gap-2">
+												<Button
+													size="sm"
+													variant="outline"
+													class="h-8"
+													href={`/staff/academic/supervision/${observation.id}`}
+												>
+													<Eye class="h-4 w-4" />
+													รายละเอียด
+												</Button>
+												<LoadingButton
+													variant="outline"
+													loading={savingAction === `return-request:${observation.id}`}
+													loadingLabel="กำลังส่งกลับ..."
+													disabled={mutationBusy}
+													onclick={() => returnRequest(observation.id)}
+												>
+													ส่งกลับคำขอ
+												</LoadingButton>
+												<LoadingButton
+													onclick={() => approveRequest(observation.id)}
+													loading={savingAction === `approve-request:${observation.id}`}
+													loadingLabel="กำลังอนุมัติ..."
+													disabled={mutationBusy ||
+														selectedRequestEvaluatorIds(observation.id).length === 0}
+												>
+													อนุมัติและมอบหมาย
+												</LoadingButton>
+											</div>
+										</div>
+									{/each}
 								</div>
-							{/each}
-						</div>
-					{/if}
-				</Card.Content>
+							{/if}
+						{/if}
+					</div></Card.Content
+				>
 			</Card.Root>
 		</div>
 	{:else if section === 'evaluate'}
@@ -2853,175 +3007,200 @@
 					<Card.Title>รายการที่ได้รับมอบหมายให้ประเมิน</Card.Title>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#if activeAssignedObservations.length === 0}
-						<PageState
-							title="ยังไม่มีรายการที่ได้รับมอบหมาย"
-							description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน หรือเมื่อมีงานที่ยังไม่ได้ส่งผล"
-						/>
-					{:else}
-						<div class="space-y-3" data-supervision-assigned-list="cards">
-							{#each activeAssignedObservations as observation (observation.id)}
-								<div
-									class={cn(
-										'rounded-md border bg-background p-4 transition',
-										evaluationObservationId === observation.id && 'border-primary bg-primary/5'
-									)}
-								>
-									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-										<div class="min-w-0 space-y-1">
-											<div class="flex flex-wrap items-center gap-2">
-												<h3 class="font-semibold">
-													{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
-												</h3>
-												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+					<div
+						class="relative"
+						data-testid="supervision-observations"
+						aria-busy={observationsLoading}
+					>
+						{@render managementFeedback(
+							observationsLoaded,
+							observationsLoading,
+							observationsError,
+							retryObservations
+						)}
+						{#if observationsLoaded && !observationsReadable}<PageState
+								variant="permission"
+								title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+								description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+							/>{/if}
+						{#if observationsLoaded && observationsReadable}
+							{#if activeAssignedObservations.length === 0}
+								<PageState
+									title="ยังไม่มีรายการที่ได้รับมอบหมาย"
+									description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน หรือเมื่อมีงานที่ยังไม่ได้ส่งผล"
+								/>
+							{:else}
+								<div class="space-y-3" data-supervision-assigned-list="cards">
+									{#each activeAssignedObservations as observation (observation.id)}
+										<div
+											class={cn(
+												'rounded-md border bg-background p-4 transition',
+												evaluationObservationId === observation.id && 'border-primary bg-primary/5'
+											)}
+										>
+											<div
+												class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+											>
+												<div class="min-w-0 space-y-1">
+													<div class="flex flex-wrap items-center gap-2">
+														<h3 class="font-semibold">
+															{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+														</h3>
+														<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+													</div>
+													<p class="text-sm text-muted-foreground">
+														{observationSubjectLabel(observation)} · {observationPeriodLabel(
+															observation
+														)}
+													</p>
+												</div>
+												<div class="shrink-0 text-sm text-muted-foreground">
+													{formatDate(observation.observedAt)}
+												</div>
 											</div>
-											<p class="text-sm text-muted-foreground">
-												{observationSubjectLabel(observation)} · {observationPeriodLabel(
-													observation
-												)}
-											</p>
+
+											<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+												<div>
+													<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+													<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+												</div>
+												{#each observationDetailGrid(observation) as detail (detail.label)}
+													<div>
+														<p class="text-xs text-muted-foreground">{detail.label}</p>
+														<p class="font-medium">{detail.value}</p>
+													</div>
+												{/each}
+											</div>
+
+											<div
+												class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+											>
+												<div class="min-w-0">
+													<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
+													<div class="mt-1 flex flex-wrap gap-2">
+														{#if observation.evaluators.length === 0}
+															<Badge variant="outline">ยังไม่มอบหมาย</Badge>
+														{:else}
+															{#each observation.evaluators as evaluator (evaluator.id)}
+																<Badge
+																	variant={evaluator.evaluatorUserId === currentUserId
+																		? 'default'
+																		: 'secondary'}
+																>
+																	{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+																</Badge>
+															{/each}
+														{/if}
+													</div>
+												</div>
+												<div class="flex shrink-0 flex-wrap gap-2">
+													<Button
+														size="sm"
+														variant="outline"
+														href={`/staff/academic/supervision/${observation.id}`}
+													>
+														<Eye class="h-4 w-4" />
+														รายละเอียด
+													</Button>
+													<Button
+														type="button"
+														size="sm"
+														variant={evaluationObservationId === observation.id
+															? 'default'
+															: 'outline'}
+														onclick={() => prepareEvaluationDraft(observation)}
+													>
+														เปิดแบบประเมิน
+													</Button>
+												</div>
+											</div>
 										</div>
-										<div class="shrink-0 text-sm text-muted-foreground">
-											{formatDate(observation.observedAt)}
-										</div>
+									{/each}
+								</div>
+							{/if}
+
+							{#if submittedAssignedObservations.length > 0}
+								<div class="space-y-3 border-t pt-4">
+									<div>
+										<h3 class="text-sm font-semibold">ประวัติการประเมินที่ส่งแล้ว</h3>
+										<p class="text-xs text-muted-foreground">
+											รายการที่ส่งผลประเมินแล้วจะเก็บไว้ตรวจสอบย้อนหลัง ไม่แสดงปนกับคิวที่ต้องทำ
+										</p>
 									</div>
 
-									<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
-										<div>
-											<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-											<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-										</div>
-										{#each observationDetailGrid(observation) as detail (detail.label)}
-											<div>
-												<p class="text-xs text-muted-foreground">{detail.label}</p>
-												<p class="font-medium">{detail.value}</p>
+									<div class="space-y-3" data-supervision-submitted-assigned-list="cards">
+										{#each submittedAssignedObservations as observation (observation.id)}
+											{@const submittedEvaluator = currentUserEvaluator(observation)}
+											<div class="rounded-md border bg-muted/20 p-4">
+												<div
+													class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+												>
+													<div class="min-w-0 space-y-1">
+														<div class="flex flex-wrap items-center gap-2">
+															<h3 class="font-semibold">
+																{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+															</h3>
+															<Badge variant="secondary">ส่งผลแล้ว</Badge>
+															<Badge variant="outline">{statusLabel(observation.status)}</Badge>
+														</div>
+														<p class="text-sm text-muted-foreground">
+															{observationSubjectLabel(observation)} · {observationPeriodLabel(
+																observation
+															)}
+														</p>
+													</div>
+													<div class="shrink-0 text-sm text-muted-foreground">
+														ส่งเมื่อ {formatDate(submittedEvaluator?.submittedAt)}
+													</div>
+												</div>
+
+												<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+													<div>
+														<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+														<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+													</div>
+													{#each observationDetailGrid(observation) as detail (detail.label)}
+														<div>
+															<p class="text-xs text-muted-foreground">{detail.label}</p>
+															<p class="font-medium">{detail.value}</p>
+														</div>
+													{/each}
+												</div>
+
+												<div
+													class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
+												>
+													<div class="min-w-0">
+														<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
+														<div class="mt-1 flex flex-wrap gap-2">
+															{#each observation.evaluators as evaluator (evaluator.id)}
+																<Badge
+																	variant={evaluator.evaluatorUserId === currentUserId
+																		? 'default'
+																		: 'secondary'}
+																>
+																	{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+																</Badge>
+															{/each}
+														</div>
+													</div>
+													<Button
+														size="sm"
+														variant="outline"
+														href={`/staff/academic/supervision/${observation.id}`}
+													>
+														<Eye class="h-4 w-4" />
+														รายละเอียด
+													</Button>
+												</div>
 											</div>
 										{/each}
 									</div>
-
-									<div
-										class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-									>
-										<div class="min-w-0">
-											<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
-											<div class="mt-1 flex flex-wrap gap-2">
-												{#if observation.evaluators.length === 0}
-													<Badge variant="outline">ยังไม่มอบหมาย</Badge>
-												{:else}
-													{#each observation.evaluators as evaluator (evaluator.id)}
-														<Badge
-															variant={evaluator.evaluatorUserId === currentUserId
-																? 'default'
-																: 'secondary'}
-														>
-															{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-														</Badge>
-													{/each}
-												{/if}
-											</div>
-										</div>
-										<div class="flex shrink-0 flex-wrap gap-2">
-											<Button
-												size="sm"
-												variant="outline"
-												href={`/staff/academic/supervision/${observation.id}`}
-											>
-												<Eye class="h-4 w-4" />
-												รายละเอียด
-											</Button>
-											<Button
-												type="button"
-												size="sm"
-												variant={evaluationObservationId === observation.id ? 'default' : 'outline'}
-												onclick={() => prepareEvaluationDraft(observation)}
-											>
-												เปิดแบบประเมิน
-											</Button>
-										</div>
-									</div>
 								</div>
-							{/each}
-						</div>
-					{/if}
-
-					{#if submittedAssignedObservations.length > 0}
-						<div class="space-y-3 border-t pt-4">
-							<div>
-								<h3 class="text-sm font-semibold">ประวัติการประเมินที่ส่งแล้ว</h3>
-								<p class="text-xs text-muted-foreground">
-									รายการที่ส่งผลประเมินแล้วจะเก็บไว้ตรวจสอบย้อนหลัง ไม่แสดงปนกับคิวที่ต้องทำ
-								</p>
-							</div>
-
-							<div class="space-y-3" data-supervision-submitted-assigned-list="cards">
-								{#each submittedAssignedObservations as observation (observation.id)}
-									{@const submittedEvaluator = currentUserEvaluator(observation)}
-									<div class="rounded-md border bg-muted/20 p-4">
-										<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-											<div class="min-w-0 space-y-1">
-												<div class="flex flex-wrap items-center gap-2">
-													<h3 class="font-semibold">
-														{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
-													</h3>
-													<Badge variant="secondary">ส่งผลแล้ว</Badge>
-													<Badge variant="outline">{statusLabel(observation.status)}</Badge>
-												</div>
-												<p class="text-sm text-muted-foreground">
-													{observationSubjectLabel(observation)} · {observationPeriodLabel(
-														observation
-													)}
-												</p>
-											</div>
-											<div class="shrink-0 text-sm text-muted-foreground">
-												ส่งเมื่อ {formatDate(submittedEvaluator?.submittedAt)}
-											</div>
-										</div>
-
-										<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
-											<div>
-												<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-												<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-											</div>
-											{#each observationDetailGrid(observation) as detail (detail.label)}
-												<div>
-													<p class="text-xs text-muted-foreground">{detail.label}</p>
-													<p class="font-medium">{detail.value}</p>
-												</div>
-											{/each}
-										</div>
-
-										<div
-											class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-										>
-											<div class="min-w-0">
-												<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
-												<div class="mt-1 flex flex-wrap gap-2">
-													{#each observation.evaluators as evaluator (evaluator.id)}
-														<Badge
-															variant={evaluator.evaluatorUserId === currentUserId
-																? 'default'
-																: 'secondary'}
-														>
-															{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-														</Badge>
-													{/each}
-												</div>
-											</div>
-											<Button
-												size="sm"
-												variant="outline"
-												href={`/staff/academic/supervision/${observation.id}`}
-											>
-												<Eye class="h-4 w-4" />
-												รายละเอียด
-											</Button>
-										</div>
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</Card.Content>
+							{/if}
+						{/if}
+					</div></Card.Content
+				>
 			</Card.Root>
 		</div>
 	{:else if section === 'cycles'}
@@ -3043,7 +3222,7 @@
 				<Card.Content>
 					<div
 						class="relative space-y-3"
-						aria-busy={routeData ? cyclesLoading : loading}
+						aria-busy={cyclesLoading}
 						data-testid="supervision-cycles"
 					>
 						{#if routeData}{@render managementFeedback(
@@ -3151,7 +3330,7 @@
 				<Card.Content>
 					<div
 						class="relative space-y-3"
-						aria-busy={routeData ? templatesLoading : loading}
+						aria-busy={templatesLoading}
 						data-testid="supervision-templates"
 					>
 						{#if routeData}{@render managementFeedback(
@@ -3246,7 +3425,7 @@
 				<Card.Content class="space-y-4">
 					<div
 						class="relative space-y-3"
-						aria-busy={routeData ? cyclesLoading : loading}
+						aria-busy={cyclesLoading}
 						data-testid="supervision-cycle-selector"
 					>
 						{#if routeData}{@render managementFeedback(
@@ -3368,99 +3547,131 @@
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					<div class="flex flex-col gap-2 md:flex-row">
-						<Select.Root type="single" bind:value={progressCycleId}>
-							<Select.Trigger class="w-full md:w-[360px]">
-								{cycles.find((cycle) => cycle.id === progressCycleId)?.title ?? 'เลือกรอบนิเทศ'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each cycles as cycle (cycle.id)}
-									<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						<LoadingButton
-							onclick={loadProgress}
-							loading={loadingProgress}
-							loadingLabel="กำลังโหลด..."
-						>
-							โหลดรายงาน
-						</LoadingButton>
+					<div
+						class="relative space-y-3"
+						data-testid="supervision-progress"
+						aria-busy={loadingProgress}
+					>
+						{#if canReadSchoolReport && cyclesLoaded}<div class="flex flex-col gap-2 md:flex-row">
+								<Select.Root
+									type="single"
+									value={progressCycleId}
+									onValueChange={(id) => {
+										progressCycleId = id;
+										progressRequest.abort();
+										progress = null;
+										progressError = '';
+										loadingProgress = false;
+									}}
+								>
+									<Select.Trigger class="w-full md:w-[360px]">
+										{cycles.find((cycle) => cycle.id === progressCycleId)?.title ?? 'เลือกรอบนิเทศ'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each cycles as cycle (cycle.id)}
+											<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+								<LoadingButton
+									onclick={loadProgress}
+									loading={loadingProgress}
+									loadingLabel="กำลังโหลด..."
+								>
+									โหลดรายงาน
+								</LoadingButton>
+							</div>
+						{/if}
+						{@render managementFeedback(
+							!!progress,
+							loadingProgress,
+							progressError,
+							() => void loadProgress()
+						)}
+						{#if progress}
+							<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+								<div class="rounded-md border px-3 py-2">
+									<p class="text-xl font-semibold">{progress.totalObservations}</p>
+									<p class="text-xs text-muted-foreground">ทั้งหมด</p>
+								</div>
+								<div class="rounded-md border px-3 py-2">
+									<p class="text-xl font-semibold">{progress.completedCount}</p>
+									<p class="text-xs text-muted-foreground">เสร็จสิ้น/รับทราบ</p>
+								</div>
+								<div class="rounded-md border px-3 py-2">
+									<p class="text-xl font-semibold">
+										{progress.underReviewCount + progress.approvedCount}
+									</p>
+									<p class="text-xs text-muted-foreground">รอรับรอง/อนุมัติ</p>
+								</div>
+								<div class="rounded-md border px-3 py-2">
+									<p class="text-xl font-semibold">{progress.averageRating?.toFixed(2) ?? '-'}</p>
+									<p class="text-xs text-muted-foreground">คะแนนเฉลี่ย</p>
+								</div>
+							</div>
+							<div class="space-y-2">
+								<div class="flex items-center justify-between text-sm">
+									<span>ความคืบหน้ารวม</span>
+									<span>{progressPercent}%</span>
+								</div>
+								<Progress value={progressPercent} />
+							</div>
+						{/if}
 					</div>
-
-					{#if progress}
-						<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-							<div class="rounded-md border px-3 py-2">
-								<p class="text-xl font-semibold">{progress.totalObservations}</p>
-								<p class="text-xs text-muted-foreground">ทั้งหมด</p>
-							</div>
-							<div class="rounded-md border px-3 py-2">
-								<p class="text-xl font-semibold">{progress.completedCount}</p>
-								<p class="text-xs text-muted-foreground">เสร็จสิ้น/รับทราบ</p>
-							</div>
-							<div class="rounded-md border px-3 py-2">
-								<p class="text-xl font-semibold">
-									{progress.underReviewCount + progress.approvedCount}
-								</p>
-								<p class="text-xs text-muted-foreground">รอรับรอง/อนุมัติ</p>
-							</div>
-							<div class="rounded-md border px-3 py-2">
-								<p class="text-xl font-semibold">{progress.averageRating?.toFixed(2) ?? '-'}</p>
-								<p class="text-xs text-muted-foreground">คะแนนเฉลี่ย</p>
-							</div>
-						</div>
-						<div class="space-y-2">
-							<div class="flex items-center justify-between text-sm">
-								<span>ความคืบหน้ารวม</span>
-								<span>{progressPercent}%</span>
-							</div>
-							<Progress value={progressPercent} />
-						</div>
-					{/if}
-
-					<div class="space-y-2">
-						<Table.Root>
-							<Table.Header>
-								<Table.Row>
-									<Table.Head>ครูผู้ถูกนิเทศ</Table.Head>
-									<Table.Head>คาบ</Table.Head>
-									<Table.Head>สถานะ</Table.Head>
-									<Table.Head class="text-right">คำสั่ง</Table.Head>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#if approvalWorkflowObservations.length === 0}
+					<div
+						class="relative space-y-2"
+						data-testid="supervision-observations"
+						aria-busy={observationsLoading}
+					>
+						{@render managementFeedback(
+							observationsLoaded,
+							observationsLoading,
+							observationsError,
+							retryObservations
+						)}
+						{#if observationsLoaded && observationsReadable}
+							<Table.Root>
+								<Table.Header>
 									<Table.Row>
-										<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
-											ยังไม่มีรายการที่ต้องรับรองหรืออนุมัติ
-										</Table.Cell>
+										<Table.Head>ครูผู้ถูกนิเทศ</Table.Head>
+										<Table.Head>คาบ</Table.Head>
+										<Table.Head>สถานะ</Table.Head>
+										<Table.Head class="text-right">คำสั่ง</Table.Head>
 									</Table.Row>
-								{:else}
-									{#each approvalWorkflowObservations as observation (observation.id)}
+								</Table.Header>
+								<Table.Body>
+									{#if approvalWorkflowObservations.length === 0}
 										<Table.Row>
-											<Table.Cell>{observation.observedDisplayName ?? 'ครู'}</Table.Cell>
-											<Table.Cell>{observationLessonTitle(observation)}</Table.Cell>
-											<Table.Cell>
-												<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-											</Table.Cell>
-											<Table.Cell>
-												<div class="flex flex-wrap items-center justify-end gap-2">
-													<Button
-														size="sm"
-														variant="outline"
-														class="h-8"
-														href={`/staff/academic/supervision/${observation.id}`}
-													>
-														<Eye class="h-4 w-4" />
-														ตรวจผล
-													</Button>
-												</div>
+											<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
+												ยังไม่มีรายการที่ต้องรับรองหรืออนุมัติ
 											</Table.Cell>
 										</Table.Row>
-									{/each}
-								{/if}
-							</Table.Body>
-						</Table.Root>
+									{:else}
+										{#each approvalWorkflowObservations as observation (observation.id)}
+											<Table.Row>
+												<Table.Cell>{observation.observedDisplayName ?? 'ครู'}</Table.Cell>
+												<Table.Cell>{observationLessonTitle(observation)}</Table.Cell>
+												<Table.Cell>
+													<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+												</Table.Cell>
+												<Table.Cell>
+													<div class="flex flex-wrap items-center justify-end gap-2">
+														<Button
+															size="sm"
+															variant="outline"
+															class="h-8"
+															href={`/staff/academic/supervision/${observation.id}`}
+														>
+															<Eye class="h-4 w-4" />
+															ตรวจผล
+														</Button>
+													</div>
+												</Table.Cell>
+											</Table.Row>
+										{/each}
+									{/if}
+								</Table.Body>
+							</Table.Root>{/if}
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -3482,7 +3693,13 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{#if selectedEvaluation && selectedEvaluationTemplate}
+		{@render managementFeedback(
+			!!selectedEvaluationTemplate,
+			evaluationTemplateLoading,
+			evaluationTemplateError,
+			() => void loadEvaluationTemplate()
+		)}
+		{#if selectedEvaluation && selectedEvaluationTemplate && !evaluationTemplateLoading}
 			<div
 				class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
 			>
