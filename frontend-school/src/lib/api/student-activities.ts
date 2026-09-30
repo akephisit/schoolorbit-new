@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -32,11 +32,12 @@ function registrationPath(academicTermId: string, groupId?: string): string {
 
 export async function listMyActivityRegistrations(
 	filters: StudentActivityRegistrationFilters,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	options: ApiRequestOptions = {}
 ): Promise<StudentActivityOffering[]> {
 	const response = await apiClient.get<StudentActivityOffering[]>(
 		registrationPath(filters.academicTermId),
-		{ signal }
+		{ ...options, signal: signal ?? options.signal }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดกิจกรรมที่เปิดลงทะเบียนได้');
 }

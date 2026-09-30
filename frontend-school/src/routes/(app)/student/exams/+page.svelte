@@ -1,15 +1,21 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
-	import { onMount } from 'svelte';
-	import { toast } from 'svelte-sonner';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { authStore } from '$lib/stores/auth';
+	import { can } from '$lib/stores/permissions';
+	import { resolveScopedAcademicContextUrl } from '$lib/academic-context/scoped-year';
 	import {
 		listMyAcademicContextOptions,
 		type AcademicContextOptionsResponse
 	} from '$lib/api/academic-context';
 	import { listMyExamSchedules, type PersonalExamScheduleRound } from '$lib/api/examSchedule';
+	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import PersonalExamScheduleView from '$lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
@@ -17,108 +23,187 @@
 	import * as Select from '$lib/components/ui/select';
 
 	let { data }: PageProps = $props();
-	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);
-	let selectedYearId = $state('');
-	let selectedTermId = $state('');
-	let loading = $state(true);
-	let error = $state('');
-	let rounds = $state<PersonalExamScheduleRound[]>([]);
+	const identityKey = $derived.by(() => {
+		void $authStore;
+		void $can;
+		return appIdentityKey();
+	});
+	const ownerKey = $derived(`${identityKey}|${data.requestKey}`);
+	const allowed = $derived($authStore.user?.user_type === 'student');
+	let contextOptions = $state.raw<AcademicContextOptionsResponse | null>(null);
+	let selectedYearId = $state(''),
+		selectedTermId = $state('');
+	let rounds = $state.raw<PersonalExamScheduleRound[]>([]);
+	let loading = $state(true),
+		loaded = $state(false),
+		error = $state(''),
+		contextLoading = $state(true),
+		contextError = $state('');
+	let disposed = false,
+		owner = '';
+	const contextRequest = new LatestRequest(),
+		primaryRequest = new LatestRequest();
+	let consumedContext: typeof data.context | null = null,
+		consumedRecords: typeof data.records | null = null;
 
 	const termOptions = $derived(
 		contextOptions?.terms.filter((term) => term.academicYearId === selectedYearId) ?? []
 	);
 
-	function authorizedSelection(options: AcademicContextOptionsResponse): {
-		yearId: string;
-		termId: string;
-	} {
-		const queryYearId = page.url.searchParams.get('academicYearId');
-		const yearId =
-			options.years.find((year) => year.id === queryYearId)?.id ??
-			options.years.find((year) => year.id === options.activeAcademicYearId)?.id ??
-			options.years[0]?.id ??
-			'';
-		const terms = options.terms.filter((term) => term.academicYearId === yearId);
-		const queryTermId = page.url.searchParams.get('academicTermId');
-		const termId =
-			terms.find((term) => term.id === queryTermId)?.id ??
-			terms.find((term) => term.id === options.activeAcademicTermId)?.id ??
+	$effect.pre(() => {
+		const key = ownerKey,
+			a = data.context,
+			b = data.records,
+			canRead = allowed;
+		untrack(() => {
+			if (owner !== key || !canRead) {
+				owner = key;
+
+				contextRequest.abort();
+				primaryRequest.abort();
+				contextOptions = null;
+				selectedYearId = '';
+				selectedTermId = '';
+				rounds = [];
+				loaded = false;
+				loading = canRead;
+				contextLoading = canRead;
+				error = '';
+				contextError = '';
+			}
+			if (!canRead) return;
+
+			if (a !== consumedContext) {
+				consumedContext = a;
+				const t = contextRequest.begin();
+				contextLoading = true;
+				void a.then((v) => applyContext(v, t.revision, key));
+			}
+			if (b !== consumedRecords) {
+				consumedRecords = b;
+				const t = primaryRequest.begin();
+				loading = true;
+				void b.then((v) => applyRecords(v, t.revision, key));
+			}
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+
+		contextRequest.abort();
+		primaryRequest.abort();
+	});
+	function current(key: string) {
+		return !disposed && allowed && key === ownerKey;
+	}
+	function applyContext(v: Awaited<typeof data.context>, revision: number, key: string) {
+		if (!current(key) || !contextRequest.isCurrent(revision)) return;
+		contextLoading = false;
+		if (!v.ok) {
+			contextError = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== key) return;
+		contextError = '';
+		contextOptions = v.data.options;
+		selectedYearId = v.data.academicYearId;
+		selectedTermId = v.data.academicTermId;
+		if (v.data.replaceHref) {
+			const url = new URL(v.data.replaceHref);
+			replaceState(resolve(`${url.pathname}${url.search}` as '/student/exams'), page.state);
+		}
+	}
+	function applyRecords(v: Awaited<typeof data.records>, revision: number, key: string) {
+		if (!current(key) || !primaryRequest.isCurrent(revision)) return;
+		loading = false;
+		if (!v.ok) {
+			error = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== key) return;
+		rounds = v.data.records;
+		loaded = contextOptions !== null;
+		error = '';
+	}
+	async function loadPrimary() {
+		if (!allowed || disposed || !selectedYearId || !selectedTermId) return;
+		const key = ownerKey,
+			t = primaryRequest.begin();
+		loading = true;
+		error = '';
+		const v = await captureRouteLoad(
+			listMyExamSchedules(selectedTermId, { signal: t.signal }).then((records) => ({
+				ownerKey: key,
+				records
+			})),
+			'โหลดตารางสอบไม่สำเร็จ'
+		);
+		applyRecords(v, t.revision, key);
+	}
+	async function retryContext() {
+		if (!allowed || disposed) return;
+		const key = ownerKey,
+			t = contextRequest.begin();
+		contextLoading = true;
+		contextError = '';
+		const v = await captureRouteLoad(
+			listMyAcademicContextOptions(t.signal).then((options) => {
+				const selection = resolveScopedAcademicContextUrl(options, new URL(data.requestHref), true);
+				return {
+					ownerKey: key,
+					options,
+					academicYearId: selection.academicYearId,
+					academicTermId: selection.academicTermId,
+					replaceHref: selection.replaceUrl?.href ?? null
+				};
+			}),
+			'โหลดประวัติปีและภาคเรียนไม่สำเร็จ'
+		);
+		if (!current(key) || !contextRequest.isCurrent(t.revision)) return;
+		applyContext(v, t.revision, key);
+		if (v.ok && selectedYearId && selectedTermId) await loadPrimary();
+	}
+	async function updateUrl(yearId: string, termId: string) {
+		const url = new URL(data.requestHref);
+		url.searchParams.set('academicYearId', yearId);
+		if (termId) url.searchParams.set('academicTermId', termId);
+		else url.searchParams.delete('academicTermId');
+
+		await goto(resolve(`${url.pathname}${url.search}` as '/student/exams'), {
+			noScroll: true,
+			keepFocus: true
+		});
+	}
+	async function changeYear(yearId: string) {
+		if (!contextOptions?.years.some((year) => year.id === yearId) || yearId === selectedYearId)
+			return;
+		const terms = contextOptions.terms.filter((term) => term.academicYearId === yearId);
+		const next =
+			terms.find((term) => term.id === contextOptions?.activeAcademicTermId)?.id ??
 			terms[0]?.id ??
 			'';
-		return { yearId, termId };
+		await updateUrl(yearId, next);
 	}
-
-	async function loadHistory() {
-		loading = true;
-		error = '';
-		try {
-			contextOptions = await listMyAcademicContextOptions();
-			const selection = authorizedSelection(contextOptions);
-			selectedYearId = selection.yearId;
-			selectedTermId = selection.termId;
-			rounds = selectedTermId ? await listMyExamSchedules(selectedTermId) : [];
-		} catch (loadError: unknown) {
-			console.error(loadError);
-			error = loadError instanceof Error ? loadError.message : 'โหลดตารางสอบไม่สำเร็จ';
-			toast.error(error);
-		} finally {
-			loading = false;
-		}
+	async function changeTerm(value: string) {
+		const termId = value;
+		if (termId && !termOptions.some((term) => term.id === termId)) return;
+		if (termId === selectedTermId) return;
+		await updateUrl(selectedYearId, termId);
 	}
-
-	async function updateUrl(yearId: string, termId: string): Promise<void> {
-		await goto(
-			resolve(
-				`/student/exams?academicYearId=${encodeURIComponent(yearId)}&academicTermId=${encodeURIComponent(termId)}`
-			),
-			{ noScroll: true, keepFocus: true }
-		);
-	}
-
-	async function loadSchedules(termId: string): Promise<void> {
-		loading = true;
-		error = '';
-		try {
-			rounds = await listMyExamSchedules(termId);
-		} catch (loadError) {
-			error = loadError instanceof Error ? loadError.message : 'โหลดตารางสอบไม่สำเร็จ';
-			toast.error(error);
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function changeYear(yearId: string): Promise<void> {
-		const availableTerms =
-			contextOptions?.terms.filter((term) => term.academicYearId === yearId) ?? [];
-		const nextTerm =
-			availableTerms.find((term) => term.id === contextOptions?.activeAcademicTermId) ??
-			availableTerms[0];
-		selectedYearId = yearId;
-		selectedTermId = nextTerm?.id ?? '';
-		rounds = [];
-		if (!selectedTermId) return;
-		await updateUrl(selectedYearId, selectedTermId);
-		await loadSchedules(selectedTermId);
-	}
-
-	async function changeTerm(termId: string): Promise<void> {
-		selectedTermId = termId;
-		await updateUrl(selectedYearId, selectedTermId);
-		await loadSchedules(selectedTermId);
-	}
-
-	onMount(loadHistory);
 </script>
 
 <PageShell title={data.title} description="ตารางสอบที่ประกาศแล้วสำหรับฉัน">
+	<Button variant="outline" disabled={loading || contextLoading} onclick={loadPrimary}
+		>โหลดข้อมูลใหม่</Button
+	>
+
 	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
 		<div class="min-w-52 space-y-2">
 			<Label for="student-exam-year">ปีการศึกษา</Label>
 			<Select.Root
 				type="single"
 				value={selectedYearId}
-				disabled={loading}
+				disabled={contextLoading}
 				onValueChange={changeYear}
 			>
 				<Select.Trigger id="student-exam-year" class="w-full">
@@ -137,7 +222,7 @@
 			<Select.Root
 				type="single"
 				value={selectedTermId}
-				disabled={loading || termOptions.length === 0}
+				disabled={contextLoading || termOptions.length === 0}
 				onValueChange={changeTerm}
 			>
 				<Select.Trigger id="student-exam-term" class="w-full">
@@ -152,22 +237,39 @@
 		</div>
 	</div>
 
-	{#if loading}
-		<PageSkeleton variant="table" rows={6} columns={7} />
-	{:else if error}
+	{#if contextError}<PageState
+			variant="error"
+			title="โหลดประวัติปีและภาคเรียนไม่สำเร็จ"
+			description={contextError}
+			actionLabel="ลองบริบทอีกครั้ง"
+			onaction={retryContext}
+		/>{/if}
+	{#if error}
 		<PageState
 			variant="error"
 			title="โหลดตารางสอบไม่สำเร็จ"
 			description={error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadHistory}
+			onaction={loadPrimary}
 		/>
-	{:else if !contextOptions || contextOptions.years.length === 0}
-		<PageState
-			title="ยังไม่มีประวัติปีการศึกษา"
-			description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
-		/>
-	{:else}
-		<PersonalExamScheduleView {rounds} />
 	{/if}
+	<div data-testid="student-exams-region" aria-busy={loading || contextLoading}>
+		{#if loading && loaded}
+			<p role="status" aria-label="กำลังอัปเดตข้อมูล" class="text-muted-foreground text-sm">
+				กำลังอัปเดตข้อมูล…
+			</p>
+		{/if}
+		{#if contextLoading || (loading && !loaded)}
+			<div role="status" aria-label="กำลังโหลดตารางสอบ">
+				<PageSkeleton variant="table" rows={6} columns={7} />
+			</div>
+		{:else if contextOptions && contextOptions.years.length === 0 && !contextError}
+			<PageState
+				title="ยังไม่มีประวัติปีการศึกษา"
+				description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
+			/>
+		{:else if loaded && !contextError}
+			<PersonalExamScheduleView {rounds} />
+		{/if}
+	</div>
 </PageShell>

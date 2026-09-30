@@ -19,6 +19,10 @@ export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | 'of
 		path.startsWith('/staff/certificate-requests') ||
 		path === '/student' ||
 		path === '/student/profile' ||
+		path === '/student/timetable' ||
+		path === '/student/calendar' ||
+		path === '/student/exams' ||
+		path === '/student/activities' ||
 		path === '/student/certificates' ||
 		path === '/staff/facility/buildings' ||
 		path === '/staff/features' ||

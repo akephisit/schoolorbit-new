@@ -85,10 +85,12 @@ export async function listCalendarEvents(
 }
 
 export async function listMyCalendarEvents(
-	filters: MyCalendarQuery
+	filters: MyCalendarQuery,
+	options: ApiRequestOptions = {}
 ): Promise<CalendarViewerEvent[]> {
 	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarViewerEvent[]>('/api/me/calendar/events', {
+		...options,
 		query: { ...filters } satisfies MyCalendarQuery
 	});
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินของฉันได้');

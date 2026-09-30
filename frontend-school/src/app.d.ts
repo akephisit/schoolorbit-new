@@ -19,6 +19,7 @@ declare global {
 		}
 		interface PageState {
 			calendarUrl?: string;
+			learnerCalendarUrl?: string;
 			certificateCandidateUrl?: string;
 		}
 		// interface Platform {}

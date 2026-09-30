@@ -978,24 +978,22 @@
 		{
 			"route": "student/activities",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "own academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-students",
-			"notes": "Component API reads include listMyAcademicContextOptions and listMyActivityRegistrations; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct learner-scoped loader owns one canonical context and selected-term registration list. First/retained focused retry, term history and identity/context/disposal guards. Typed enroll/withdraw patches affected offering/groups only; action owner epoch rejects stale continuations. Tap preload."
 		},
 		{
 			"route": "student/calendar",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "own academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-calendar",
-			"notes": "Component API reads include listMyAcademicContextOptions, listMyCalendarEvents; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct learner-scoped loader owns one canonical context and month-grid events; optional term keeps whole-year view. Shallow month history refreshes events only and Back restores month. First/retained local retry, identity/context/month/disposal supersession; no eager self profile. Tap preload."
 		},
 		{
 			"route": "student/certificates",
@@ -1010,13 +1008,12 @@
 		{
 			"route": "student/exams",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "own academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school exam-schedule",
-			"notes": "Component API reads include listMyAcademicContextOptions, listMyExamSchedules; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct learner-scoped loader owns one canonical context and selected published exam schedule. Required terms stay within authorized year, shallow fallback repair avoids duplicate reads. First/retained focused retry, term history and stale identity/context/disposal rejection; no eager self profile. Tap preload."
 		},
 		{
 			"route": "student/profile",
@@ -1041,13 +1038,12 @@
 		{
 			"route": "student/timetable",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "own academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-students",
-			"notes": "Component API reads include listMyAcademicContextOptions, getMyTimetable; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct learner-scoped loader owns one canonical context and term/date published timetable read. First prerequisite/primary skeletons, focused retained error/retry, URL term navigation and Back, identity/context/disposal supersession; no eager self profile. Tap preload."
 		}
 	]
 }

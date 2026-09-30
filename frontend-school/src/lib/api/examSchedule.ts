@@ -321,11 +321,13 @@ export async function publishExamRound(roundId: string): Promise<ExamRound> {
 }
 
 export async function listMyExamSchedules(
-	academicTermId: string
+	academicTermId: string,
+	options: ApiRequestOptions = {}
 ): Promise<PersonalExamScheduleRound[]> {
 	return apiData(
 		await apiClient.get<PersonalExamScheduleRound[]>(
-			`/api/me/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`
+			`/api/me/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`,
+			options
 		),
 		'ไม่สามารถโหลดตารางสอบได้'
 	);
