@@ -618,22 +618,22 @@
 		{
 			"route": "staff/certificate-requests",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Visible reads start in CertificateIssueQueue; move primary data to the owning route loader."
+			"notes": "Direct exact-scope loader owns the selected identity/filter resource; required captured child props, local retained retry, typed mutation patches and opened workflow disposal guards."
 		},
 		{
 			"route": "staff/certificate-requests/[requestId]",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "request-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Visible reads start in CertificateIssueRequestReview; move primary data to the owning route loader."
+			"notes": "Direct exact-scope loader owns the selected identity/filter resource; required captured child props, local retained retry, typed mutation patches and opened workflow disposal guards."
 		},
 		{
 			"route": "staff/certificates",
@@ -648,12 +648,12 @@
 		{
 			"route": "staff/certificates/[campaignId]/issued",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "campaign-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Visible reads start in CertificateIssuedTable; move primary data to the owning route loader."
+			"notes": "Direct exact-scope loader owns the selected identity/filter resource; required captured child props, local retained retry, typed mutation patches and opened workflow disposal guards."
 		},
 		{
 			"route": "staff/certificates/[campaignId]/overview",
@@ -678,12 +678,12 @@
 		{
 			"route": "staff/certificates/[campaignId]/requests",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "campaign-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Visible reads start in CertificateCampaignRequests; move primary data to the owning route loader."
+			"notes": "Direct exact-scope loader owns the selected identity/filter resource; required captured child props, local retained retry, typed mutation patches and opened workflow disposal guards."
 		},
 		{
 			"route": "staff/certificates/[campaignId]/templates",

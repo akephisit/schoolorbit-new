@@ -179,7 +179,7 @@ function harnessPlugin(): Plugin {
 				};
 
 				mount(CertificateIssuedTable, { target: document.getElementById('app'), props: {
-					campaignId, canRead: true, canDownload: true, canRevoke: true
+					campaignId, canRead: true, canDownload: true, canRevoke: true, identityKey:'fixture', initialCertificates: window.__certificateIssuedApi.list().then(records=>({ok:true,data:{ownerKey:'fixture|'+campaignId,records}}))
 				} });
 			`;
 		},

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
 		listCertificateCampaignIssueRequests,
@@ -21,14 +20,24 @@
 		ShieldCheck,
 		Undo2
 	} from '@lucide/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 	import { toast } from 'svelte-sonner';
 
 	let {
 		campaignId,
+		identityKey,
+		initialRequests,
+		canRead,
 		canSubmit
 	}: {
 		campaignId: string;
+		identityKey: string;
+		initialRequests: Promise<
+			RouteLoadResult<{ ownerKey: string; records: CertificateIssueRequestSummary[] | null }>
+		>;
+		canRead: boolean;
 		canSubmit: boolean;
 	} = $props();
 
@@ -77,8 +86,56 @@
 	let loading = $state(true);
 	let error = $state('');
 	let withdrawingId = $state<string | null>(null);
-	let requestedCampaignId = '';
-	let loadGeneration = 0;
+
+	const context = $derived(`${identityKey}|${campaignId}`),
+		readRequest = new LatestRequest();
+	let owner = $state(''),
+		ownerEpoch = $state(0),
+		disposed = false,
+		loaded = $state(false);
+	let consumed: typeof initialRequests | null = null;
+	$effect.pre(() => {
+		const key = context,
+			source = initialRequests,
+			allowed = canRead;
+		untrack(() => {
+			if (owner !== key) {
+				owner = key;
+				ownerEpoch++;
+				readRequest.abort();
+				requests = [];
+				withdrawingId = null;
+				loaded = false;
+				loading = allowed;
+				error = '';
+			}
+			if (!allowed || consumed === source) return;
+			consumed = source;
+			const t = readRequest.begin();
+			loading = true;
+			error = '';
+			void source.then((r) => applyPrimary(r, t.revision));
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		readRequest.abort();
+	});
+	function currentOwner(epoch: number, key: string) {
+		return !disposed && epoch === ownerEpoch && key === context && canRead;
+	}
+	function applyPrimary(r: Awaited<typeof initialRequests>, revision: number) {
+		if (!readRequest.isCurrent(revision)) return;
+		loading = false;
+		if (!r.ok) {
+			error = r.error;
+			return;
+		}
+		if (r.data.ownerKey !== context) return;
+		requests = r.data.records ?? [];
+		loaded = true;
+	}
 
 	function formatDate(value: string): string {
 		return new Intl.DateTimeFormat('th-TH', {
@@ -89,47 +146,46 @@
 	}
 
 	async function loadRequests(targetCampaignId: string) {
-		const generation = ++loadGeneration;
-		if (!canSubmit) {
-			loading = false;
-			return;
-		}
+		if (disposed || !canRead || targetCampaignId !== campaignId) return;
+		const ownerKey = context,
+			t = readRequest.begin();
 		loading = true;
 		error = '';
-		try {
-			const loaded = await listCertificateCampaignIssueRequests(targetCampaignId);
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			requests = loaded;
-		} catch (loadError) {
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			error = loadError instanceof Error ? loadError.message : 'โหลดประวัติคำขอไม่สำเร็จ';
-		} finally {
-			if (generation === loadGeneration && targetCampaignId === campaignId) loading = false;
-		}
+		applyPrimary(
+			await captureRouteLoad(
+				listCertificateCampaignIssueRequests(targetCampaignId, { signal: t.signal }).then(
+					(records) => ({ ownerKey, records })
+				),
+				'โหลดข้อมูลเกียรติบัตรไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
 
 	async function withdraw(requestId: string) {
-		if (withdrawingId) return;
+		if (
+			withdrawingId ||
+			!canSubmit ||
+			!requests.some((x) => x.id === requestId && x.capabilities.canWithdraw)
+		)
+			return;
+		const epoch = ownerEpoch,
+			key = context;
 		withdrawingId = requestId;
 		try {
 			const updated = await withdrawCertificateIssueRequest(requestId);
+			if (!currentOwner(epoch, key) || !canSubmit) return;
+			readRequest.abort();
+			loading = false;
 			requests = requests.map((request) => (request.id === requestId ? updated : request));
 			toast.success('ถอนคำขอแล้ว');
 		} catch (withdrawError) {
+			if (!currentOwner(epoch, key) || !canSubmit) return;
 			toast.error(withdrawError instanceof Error ? withdrawError.message : 'ถอนคำขอไม่สำเร็จ');
 		} finally {
-			withdrawingId = null;
+			if (currentOwner(epoch, key)) withdrawingId = null;
 		}
 	}
-
-	function ensureLoaded() {
-		if (!campaignId || requestedCampaignId === campaignId) return;
-		requestedCampaignId = campaignId;
-		void loadRequests(campaignId);
-	}
-
-	onMount(ensureLoaded);
-	afterNavigate(ensureLoaded);
 </script>
 
 <PageShell
@@ -145,6 +201,7 @@
 
 	{#snippet actions()}
 		<Button
+			data-sveltekit-preload-data="tap"
 			variant="outline"
 			href={resolve(`/staff/certificates/${campaignId}/recipients` as '/staff/certificates')}
 		>
@@ -152,98 +209,103 @@
 		</Button>
 	{/snippet}
 
-	{#if !canSubmit}
+	{#if !canRead}
 		<PageState
 			variant="permission"
 			title="ไม่มีสิทธิ์ดูคำขอออกเกียรติบัตร"
-			description="หน้านี้ใช้สิทธิ์ส่งคำขอในขอบเขตหน่วยงานหรือทั้งโรงเรียน"
-		/>
-	{:else if loading}
-		<PageSkeleton variant="cards" />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดประวัติคำขอไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadRequests(campaignId)}
-		/>
-	{:else if requests.length === 0}
-		<PageState
-			variant="empty"
-			title="ยังไม่มีคำขอในกิจกรรมนี้"
-			description="เลือกรายชื่อสถานะพร้อมออกจากหน้ารายชื่อผู้รับ แล้วส่งให้ส่วนกลางตรวจ"
+			description="หน้านี้ใช้สิทธิ์อ่านในขอบเขตหน่วยงานหรือทั้งโรงเรียน"
 		/>
 	{:else}
-		<div
-			class="relative space-y-4 before:absolute before:inset-y-5 before:left-[21px] before:w-px before:bg-border"
-		>
-			{#each requests as request (request.id)}
-				{@const meta = statusMeta[request.status]}
-				<article
-					id={`request-${request.id}`}
-					class="relative grid scroll-mt-20 gap-4 pl-12 sm:grid-cols-[1fr_auto]"
-				>
-					<div
-						class="absolute left-3 top-5 z-10 flex size-[19px] items-center justify-center rounded-full border bg-background"
+		{#if loading && loaded}<p role="status">กำลังอัปเดตประวัติคำขอ</p>{/if}
+		{#if error}
+			<PageState
+				variant="error"
+				title="โหลดประวัติคำขอไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => loadRequests(campaignId)}
+			/>
+		{/if}
+		{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดประวัติคำขอ">
+				<PageSkeleton variant="cards" />
+			</div>
+		{:else if loaded && requests.length === 0}
+			<PageState
+				variant="empty"
+				title="ยังไม่มีคำขอในกิจกรรมนี้"
+				description="เลือกรายชื่อสถานะพร้อมออกจากหน้ารายชื่อผู้รับ แล้วส่งให้ส่วนกลางตรวจ"
+			/>
+		{:else if loaded}
+			<div
+				class="relative space-y-4 before:absolute before:inset-y-5 before:left-[21px] before:w-px before:bg-border"
+			>
+				{#each requests as request (request.id)}
+					{@const meta = statusMeta[request.status]}
+					<article
+						id={`request-${request.id}`}
+						class="relative grid scroll-mt-20 gap-4 pl-12 sm:grid-cols-[1fr_auto]"
 					>
-						{#if request.status === 'issued'}
-							<CircleCheckBig class="size-3 text-emerald-600" />
-						{:else if request.status === 'returned'}
-							<RotateCcw class="size-3 text-orange-600" />
-						{:else if request.status === 'withdrawn'}
-							<Undo2 class="size-3 text-slate-500" />
-						{:else if request.status === 'reviewing'}
-							<ShieldCheck class="size-3 text-amber-600" />
-						{:else}
-							<Clock3 class="size-3 text-blue-600" />
-						{/if}
-					</div>
-
-					<div class="rounded-xl border bg-card p-5 shadow-sm">
-						<div class="flex flex-wrap items-start justify-between gap-3">
-							<div>
-								<div class="flex flex-wrap items-center gap-2">
-									<Badge variant="outline" class={meta.className}>{meta.label}</Badge>
-									<span class="text-xs text-muted-foreground">{meta.description}</span>
-								</div>
-								<p class="mt-2 font-medium">ส่งโดย {request.submittedByName}</p>
-								<p class="mt-1 text-xs text-muted-foreground">
-									{formatDate(request.submittedAt)} · {request.itemCount.toLocaleString('th-TH')}
-									รายชื่อ · {request.templateCount.toLocaleString('th-TH')} แบบ
-								</p>
-							</div>
-							{#if request.capabilities.canWithdraw}
-								<LoadingButton
-									variant="outline"
-									size="sm"
-									loading={withdrawingId === request.id}
-									disabled={withdrawingId !== null && withdrawingId !== request.id}
-									onclick={() => withdraw(request.id)}
-								>
-									<Undo2 class="size-4" /> ถอนคำขอ
-								</LoadingButton>
+						<div
+							class="absolute left-3 top-5 z-10 flex size-[19px] items-center justify-center rounded-full border bg-background"
+						>
+							{#if request.status === 'issued'}
+								<CircleCheckBig class="size-3 text-emerald-600" />
+							{:else if request.status === 'returned'}
+								<RotateCcw class="size-3 text-orange-600" />
+							{:else if request.status === 'withdrawn'}
+								<Undo2 class="size-3 text-slate-500" />
+							{:else if request.status === 'reviewing'}
+								<ShieldCheck class="size-3 text-amber-600" />
+							{:else}
+								<Clock3 class="size-3 text-blue-600" />
 							{/if}
 						</div>
 
-						{#if request.status === 'returned'}
-							<div
-								class="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950"
-							>
-								<p class="font-medium">เหตุผลที่ส่งกลับ</p>
-								<div class="mt-2 flex flex-wrap gap-1.5">
-									{#each request.issueCodes as code (code)}
-										<Badge variant="outline" class="border-orange-300 bg-white text-orange-900">
-											{issueLabels[code]}
-										</Badge>
-									{/each}
+						<div class="rounded-xl border bg-card p-5 shadow-sm">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<div class="flex flex-wrap items-center gap-2">
+										<Badge variant="outline" class={meta.className}>{meta.label}</Badge>
+										<span class="text-xs text-muted-foreground">{meta.description}</span>
+									</div>
+									<p class="mt-2 font-medium">ส่งโดย {request.submittedByName}</p>
+									<p class="mt-1 text-xs text-muted-foreground">
+										{formatDate(request.submittedAt)} · {request.itemCount.toLocaleString('th-TH')}
+										รายชื่อ · {request.templateCount.toLocaleString('th-TH')} แบบ
+									</p>
 								</div>
-								{#if request.returnNote}<p class="mt-2">{request.returnNote}</p>{/if}
+								{#if canSubmit && request.capabilities.canWithdraw}
+									<LoadingButton
+										variant="outline"
+										size="sm"
+										loading={withdrawingId === request.id}
+										disabled={withdrawingId !== null && withdrawingId !== request.id}
+										onclick={() => withdraw(request.id)}
+									>
+										<Undo2 class="size-4" /> ถอนคำขอ
+									</LoadingButton>
+								{/if}
 							</div>
-						{/if}
-					</div>
-				</article>
-			{/each}
-		</div>
+
+							{#if request.status === 'returned'}
+								<div
+									class="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950"
+								>
+									<p class="font-medium">เหตุผลที่ส่งกลับ</p>
+									<div class="mt-2 flex flex-wrap gap-1.5">
+										{#each request.issueCodes as code (code)}
+											<Badge variant="outline" class="border-orange-300 bg-white text-orange-900">
+												{issueLabels[code]}
+											</Badge>
+										{/each}
+									</div>
+									{#if request.returnNote}<p class="mt-2">{request.returnNote}</p>{/if}
+								</div>
+							{/if}
+						</div>
+					</article>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </PageShell>

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
 		listIssuedCertificates,
@@ -24,16 +23,24 @@
 		ShieldAlert,
 		UsersRound
 	} from '@lucide/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 	import { SvelteMap } from 'svelte/reactivity';
 
 	let {
 		campaignId,
+		identityKey,
+		initialCertificates,
 		canRead = false,
 		canDownload = false,
 		canRevoke = false
 	}: {
 		campaignId: string;
+		identityKey: string;
+		initialCertificates: Promise<
+			RouteLoadResult<{ ownerKey: string; records: IssuedCertificateSummary[] | null }>
+		>;
 		canRead?: boolean;
 		canDownload?: boolean;
 		canRevoke?: boolean;
@@ -54,8 +61,6 @@
 	let selectedCertificateIds = $state.raw<string[]>([]);
 	let batchOpen = $state(false);
 	let revokeTarget = $state.raw<IssuedCertificateSummary | null>(null);
-	let requestedCampaignId = '';
-	let loadGeneration = 0;
 
 	const campaignName = $derived(certificates[0]?.campaignName ?? 'กิจกรรมนี้');
 	const issuedCount = $derived(
@@ -106,6 +111,58 @@
 		return `${certificate.title ?? ''}${certificate.firstName} ${certificate.lastName}`.trim();
 	}
 
+	const context = $derived(`${identityKey}|${campaignId}`),
+		readRequest = new LatestRequest();
+	let owner = $state(''),
+		ownerEpoch = $state(0),
+		disposed = false,
+		loaded = $state(false);
+	let consumed: typeof initialCertificates | null = null;
+	$effect.pre(() => {
+		const key = context,
+			source = initialCertificates,
+			allowed = canRead;
+		untrack(() => {
+			if (owner !== key) {
+				owner = key;
+				ownerEpoch++;
+				readRequest.abort();
+				resetCampaignView();
+				loaded = false;
+				loading = allowed;
+				error = '';
+			}
+			if (!allowed || consumed === source) return;
+			consumed = source;
+			const t = readRequest.begin();
+			loading = true;
+			error = '';
+			void source.then((r) => applyPrimary(r, t.revision));
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		readRequest.abort();
+	});
+	function applyPrimary(r: Awaited<typeof initialCertificates>, revision: number) {
+		if (!readRequest.isCurrent(revision)) return;
+		loading = false;
+		if (!r.ok) {
+			error = r.error;
+			return;
+		}
+		if (r.data.ownerKey !== context) return;
+		certificates = r.data.records ?? [];
+		const downloadableIds = new Set(
+			certificates
+				.filter((x) => canDownload && x.status === 'issued' && x.capabilities.canDownload)
+				.map((x) => x.id)
+		);
+		selectedCertificateIds = selectedCertificateIds.filter((id) => downloadableIds.has(id));
+		loaded = true;
+	}
+
 	function formatDate(value: string): string {
 		return new Date(`${value}T00:00:00`).toLocaleDateString('th-TH', {
 			day: 'numeric',
@@ -151,55 +208,33 @@
 	}
 
 	async function loadCertificates(targetCampaignId: string) {
-		const generation = ++loadGeneration;
-		if (!canRead) {
-			loading = false;
-			return;
-		}
+		if (disposed || !canRead || targetCampaignId !== campaignId) return;
+		const ownerKey = context,
+			t = readRequest.begin();
 		loading = true;
 		error = '';
-		try {
-			const loaded = await listIssuedCertificates(targetCampaignId);
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			certificates = loaded;
-			const downloadableIds = new Set(
-				loaded
-					.filter(
-						(certificate) =>
-							canDownload &&
-							certificate.status === 'issued' &&
-							certificate.capabilities.canDownload === true
-					)
-					.map((certificate) => certificate.id)
-			);
-			selectedCertificateIds = selectedCertificateIds.filter((id) => downloadableIds.has(id));
-		} catch (loadError) {
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			error = loadError instanceof Error ? loadError.message : 'โหลดใบที่ออกแล้วไม่สำเร็จ';
-		} finally {
-			if (generation === loadGeneration && targetCampaignId === campaignId) loading = false;
-		}
+		applyPrimary(
+			await captureRouteLoad(
+				listIssuedCertificates(targetCampaignId, {}, { signal: t.signal }).then((records) => ({
+					ownerKey,
+					records
+				})),
+				'โหลดข้อมูลเกียรติบัตรไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
 
-	function ensureLoaded() {
-		if (!campaignId || requestedCampaignId === campaignId) return;
-		if (requestedCampaignId !== '' && requestedCampaignId !== campaignId) {
-			resetCampaignView();
-		}
-		requestedCampaignId = campaignId;
-		void loadCertificates(campaignId);
-	}
-
-	function handleRevoked(result: RevokeCertificateResult) {
+	function handleRevoked(result: RevokeCertificateResult, epoch: number, key: string) {
+		if (disposed || epoch !== ownerEpoch || key !== context || !canRevoke) return;
+		readRequest.abort();
+		loading = false;
 		certificates = certificates.map((certificate) =>
 			certificate.id === result.certificate.id ? result.certificate : certificate
 		);
 		selectedCertificateIds = selectedCertificateIds.filter((id) => id !== result.certificate.id);
 		revokeTarget = null;
 	}
-
-	onMount(ensureLoaded);
-	afterNavigate(ensureLoaded);
 </script>
 
 <div class="space-y-4">
@@ -218,6 +253,7 @@
 				</Button>
 				{#if canDownload}
 					<Button
+						data-sveltekit-preload-data="tap"
 						disabled={loading || selectedCertificateIds.length === 0}
 						onclick={() => (batchOpen = true)}
 					>
@@ -235,231 +271,248 @@
 			title="ไม่มีสิทธิ์ดูใบที่ออกแล้ว"
 			description="หน้านี้เปิดได้เมื่อมีสิทธิ์อ่านเกียรติบัตรของหน่วยงานหรือระดับโรงเรียน"
 		/>
-	{:else if loading}
-		<PageSkeleton variant="table" />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดใบที่ออกแล้วไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadCertificates(campaignId)}
-		/>
 	{:else}
-		<div class="space-y-4">
-			<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
-				<div class="grid gap-px bg-border sm:grid-cols-3">
-					<div class="relative overflow-hidden bg-card p-5">
-						<div class="absolute inset-y-0 left-0 w-1 bg-emerald-500"></div>
-						<p class="text-xs font-medium text-muted-foreground">ใช้งานได้</p>
-						<p class="mt-1 text-3xl font-semibold tabular-nums text-emerald-800">
-							{issuedCount.toLocaleString('th-TH')}
-						</p>
-						<p class="mt-1 text-xs text-muted-foreground">ดาวน์โหลดและตรวจสอบได้</p>
-					</div>
-					<div class="relative overflow-hidden bg-card p-5">
-						<div class="absolute inset-y-0 left-0 w-1 bg-red-400"></div>
-						<p class="text-xs font-medium text-muted-foreground">เพิกถอนแล้ว</p>
-						<p class="mt-1 text-3xl font-semibold tabular-nums text-red-800">
-							{revokedCount.toLocaleString('th-TH')}
-						</p>
-						<p class="mt-1 text-xs text-muted-foreground">คงเลขไว้และดาวน์โหลดไม่ได้</p>
-					</div>
-					<div class="relative overflow-hidden bg-card p-5">
-						<div class="absolute inset-y-0 left-0 w-1 bg-blue-400"></div>
-						<p class="text-xs font-medium text-muted-foreground">เชื่อมบัญชีภายใน</p>
-						<p class="mt-1 text-3xl font-semibold tabular-nums text-blue-800">
-							{linkedRecipientCount.toLocaleString('th-TH')}
-						</p>
-						<p class="mt-1 text-xs text-muted-foreground">นักเรียนและบุคลากร</p>
-					</div>
-				</div>
-			</section>
-
-			<div
-				class="grid gap-3 rounded-xl border bg-card p-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_16rem]"
-			>
-				<label class="relative block">
-					<span class="sr-only">ค้นหาเลขหรือชื่อผู้รับ</span>
-					<Search
-						class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-					/>
-					<Input bind:value={search} class="pl-9" placeholder="ค้นหาเลขเกียรติบัตรหรือชื่อผู้รับ" />
-				</label>
-
-				<Select.Root type="single" bind:value={statusFilter}>
-					<Select.Trigger class="w-full" aria-label="กรองตามสถานะ">
-						{statusFilter === 'all'
-							? 'ทุกสถานะ'
-							: statusFilter === 'issued'
-								? 'ใช้งานได้'
-								: 'เพิกถอนแล้ว'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="all">ทุกสถานะ</Select.Item>
-						<Select.Item value="issued">ใช้งานได้</Select.Item>
-						<Select.Item value="revoked">เพิกถอนแล้ว</Select.Item>
-					</Select.Content>
-				</Select.Root>
-
-				<Select.Root type="single" bind:value={templateFilter}>
-					<Select.Trigger class="w-full" aria-label="กรองตามแบบเกียรติบัตร">
-						{templateFilter === 'all'
-							? 'ทุกแบบเกียรติบัตร'
-							: (templateOptions.find(([id]) => id === templateFilter)?.[1] ?? 'แบบเกียรติบัตร')}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="all">ทุกแบบเกียรติบัตร</Select.Item>
-						{#each templateOptions as [id, name] (id)}
-							<Select.Item value={id}>{name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+		{#if loading && loaded}<p role="status">กำลังอัปเดตใบที่ออกแล้ว</p>{/if}
+		{#if error}
+			<PageState
+				variant="error"
+				title="โหลดใบที่ออกแล้วไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => loadCertificates(campaignId)}
+			/>
+		{/if}
+		{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดใบที่ออกแล้ว">
+				<PageSkeleton variant="table" />
 			</div>
+		{:else if loaded}
+			<div class="space-y-4">
+				<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
+					<div class="grid gap-px bg-border sm:grid-cols-3">
+						<div class="relative overflow-hidden bg-card p-5">
+							<div class="absolute inset-y-0 left-0 w-1 bg-emerald-500"></div>
+							<p class="text-xs font-medium text-muted-foreground">ใช้งานได้</p>
+							<p class="mt-1 text-3xl font-semibold tabular-nums text-emerald-800">
+								{issuedCount.toLocaleString('th-TH')}
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">ดาวน์โหลดและตรวจสอบได้</p>
+						</div>
+						<div class="relative overflow-hidden bg-card p-5">
+							<div class="absolute inset-y-0 left-0 w-1 bg-red-400"></div>
+							<p class="text-xs font-medium text-muted-foreground">เพิกถอนแล้ว</p>
+							<p class="mt-1 text-3xl font-semibold tabular-nums text-red-800">
+								{revokedCount.toLocaleString('th-TH')}
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">คงเลขไว้และดาวน์โหลดไม่ได้</p>
+						</div>
+						<div class="relative overflow-hidden bg-card p-5">
+							<div class="absolute inset-y-0 left-0 w-1 bg-blue-400"></div>
+							<p class="text-xs font-medium text-muted-foreground">เชื่อมบัญชีภายใน</p>
+							<p class="mt-1 text-3xl font-semibold tabular-nums text-blue-800">
+								{linkedRecipientCount.toLocaleString('th-TH')}
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">นักเรียนและบุคลากร</p>
+						</div>
+					</div>
+				</section>
 
-			{#if filteredCertificates.length === 0}
-				<PageState
-					title={certificates.length === 0 ? 'ยังไม่มีเกียรติบัตรที่ออกเลขแล้ว' : 'ไม่พบใบที่ค้นหา'}
-					description={certificates.length === 0
-						? 'เมื่อคำขอได้รับการยืนยัน ใบที่ออกเลขแล้วจะปรากฏในทะเบียนนี้'
-						: 'ลองเปลี่ยนเลข ชื่อผู้รับ สถานะ หรือแบบเกียรติบัตร'}
-				/>
-			{:else}
-				<div class="overflow-x-auto rounded-xl border bg-card shadow-sm">
-					<Table.Root class="min-w-[1180px]">
-						<Table.Header>
-							<Table.Row class="bg-muted/40 hover:bg-muted/40">
-								<Table.Head class="w-12">
-									<input
-										type="checkbox"
-										class="size-4 rounded border-input accent-primary"
-										aria-label="เลือกเกียรติบัตรที่ดาวน์โหลดได้ทั้งหมด"
-										checked={allFilteredSelected}
-										disabled={selectableFilteredCertificates.length === 0}
-										onchange={(event) => toggleFiltered(event.currentTarget.checked)}
-									/>
-								</Table.Head>
-								<Table.Head class="w-52">เลขเกียรติบัตร</Table.Head>
-								<Table.Head class="w-56">ผู้รับ</Table.Head>
-								<Table.Head class="w-28">ประเภท</Table.Head>
-								<Table.Head class="w-52">กิจกรรม / รางวัล</Table.Head>
-								<Table.Head class="w-48">แบบ</Table.Head>
-								<Table.Head class="w-32">วันที่ออก</Table.Head>
-								<Table.Head class="w-36">สถานะ</Table.Head>
-								<Table.Head class="w-56 text-right">จัดการ</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each filteredCertificates as certificate (certificate.id)}
-								<Table.Row class={certificate.status === 'revoked' ? 'opacity-70' : undefined}>
-									<Table.Cell>
-										{#if canSelect(certificate)}
-											<input
-												type="checkbox"
-												class="size-4 rounded border-input accent-primary"
-												aria-label={`เลือก ${certificate.certificateNumber}`}
-												checked={selectedCertificateIds.includes(certificate.id)}
-												onchange={(event) =>
-													toggleCertificate(certificate, event.currentTarget.checked)}
-											/>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										<p class="font-mono font-semibold tabular-nums text-foreground">
-											{certificate.certificateNumber}
-										</p>
-										{#if certificate.replacementForCertificateId}
-											<Badge variant="secondary" class="mt-1">ออกทดแทนใบเดิม</Badge>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="font-medium">{displayName(certificate)}</Table.Cell>
-									<Table.Cell>{recipientLabels[certificate.recipientType]}</Table.Cell>
-									<Table.Cell>
-										<p>{certificate.activityItem ?? '-'}</p>
-										{#if certificate.awardOrRole}
-											<p class="mt-1 text-xs text-muted-foreground">{certificate.awardOrRole}</p>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										<span class="inline-flex items-center gap-1.5">
-											<FileBadge2 class="size-4 text-muted-foreground" />
-											{certificate.templateName}
-										</span>
-									</Table.Cell>
-									<Table.Cell>{formatDate(certificate.issueDate)}</Table.Cell>
-									<Table.Cell>
-										{#if certificate.status === 'issued'}
-											<Badge
-												variant="outline"
-												class="border-emerald-200 bg-emerald-50 text-emerald-800"
-											>
-												<Award class="size-3.5" /> ใช้งานได้
-											</Badge>
-										{:else}
-											<Badge variant="outline" class="border-red-200 bg-red-50 text-red-800">
-												<ShieldAlert class="size-3.5" /> เพิกถอนแล้ว
-											</Badge>
-											{#if certificate.replacementCandidateId}
-												<a
-													href={resolve(
-														`/staff/certificates/${campaignId}/recipients#candidate-${certificate.replacementCandidateId}` as '/staff/certificates/[campaignId]/recipients'
-													)}
-													class="mt-2 block text-xs font-medium text-primary underline underline-offset-4"
-												>
-													ไปแก้รายการทดแทน
-												</a>
-											{/if}
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										<div class="flex justify-end gap-2">
-											<CertificateDownloadButton {certificate} {canDownload} />
-											{#if canRevoke && certificate.status === 'issued' && certificate.capabilities.canRevoke}
-												<Button
-													size="sm"
-													variant="destructive"
-													onclick={() => (revokeTarget = certificate)}
-													aria-label={`เพิกถอน ${certificate.certificateNumber}`}
-												>
-													<ShieldAlert class="size-4" /> เพิกถอน
-												</Button>
-											{/if}
-										</div>
-									</Table.Cell>
-								</Table.Row>
+				<div
+					class="grid gap-3 rounded-xl border bg-card p-3 lg:grid-cols-[minmax(16rem,1fr)_12rem_16rem]"
+				>
+					<label class="relative block">
+						<span class="sr-only">ค้นหาเลขหรือชื่อผู้รับ</span>
+						<Search
+							class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+						/>
+						<Input
+							bind:value={search}
+							class="pl-9"
+							placeholder="ค้นหาเลขเกียรติบัตรหรือชื่อผู้รับ"
+						/>
+					</label>
+
+					<Select.Root type="single" bind:value={statusFilter}>
+						<Select.Trigger class="w-full" aria-label="กรองตามสถานะ">
+							{statusFilter === 'all'
+								? 'ทุกสถานะ'
+								: statusFilter === 'issued'
+									? 'ใช้งานได้'
+									: 'เพิกถอนแล้ว'}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="all">ทุกสถานะ</Select.Item>
+							<Select.Item value="issued">ใช้งานได้</Select.Item>
+							<Select.Item value="revoked">เพิกถอนแล้ว</Select.Item>
+						</Select.Content>
+					</Select.Root>
+
+					<Select.Root type="single" bind:value={templateFilter}>
+						<Select.Trigger class="w-full" aria-label="กรองตามแบบเกียรติบัตร">
+							{templateFilter === 'all'
+								? 'ทุกแบบเกียรติบัตร'
+								: (templateOptions.find(([id]) => id === templateFilter)?.[1] ?? 'แบบเกียรติบัตร')}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="all">ทุกแบบเกียรติบัตร</Select.Item>
+							{#each templateOptions as [id, name] (id)}
+								<Select.Item value={id}>{name}</Select.Item>
 							{/each}
-						</Table.Body>
-					</Table.Root>
+						</Select.Content>
+					</Select.Root>
 				</div>
-			{/if}
 
-			<div class="flex items-center gap-2 text-xs text-muted-foreground">
-				<UsersRound class="size-4" />
-				แสดง {filteredCertificates.length.toLocaleString('th-TH')} จาก
-				{certificates.length.toLocaleString('th-TH')} ใบ
+				{#if filteredCertificates.length === 0}
+					<PageState
+						title={certificates.length === 0
+							? 'ยังไม่มีเกียรติบัตรที่ออกเลขแล้ว'
+							: 'ไม่พบใบที่ค้นหา'}
+						description={certificates.length === 0
+							? 'เมื่อคำขอได้รับการยืนยัน ใบที่ออกเลขแล้วจะปรากฏในทะเบียนนี้'
+							: 'ลองเปลี่ยนเลข ชื่อผู้รับ สถานะ หรือแบบเกียรติบัตร'}
+					/>
+				{:else}
+					<div class="overflow-x-auto rounded-xl border bg-card shadow-sm">
+						<Table.Root class="min-w-[1180px]">
+							<Table.Header>
+								<Table.Row class="bg-muted/40 hover:bg-muted/40">
+									<Table.Head class="w-12">
+										<input
+											type="checkbox"
+											class="size-4 rounded border-input accent-primary"
+											aria-label="เลือกเกียรติบัตรที่ดาวน์โหลดได้ทั้งหมด"
+											checked={allFilteredSelected}
+											disabled={selectableFilteredCertificates.length === 0}
+											onchange={(event) => toggleFiltered(event.currentTarget.checked)}
+										/>
+									</Table.Head>
+									<Table.Head class="w-52">เลขเกียรติบัตร</Table.Head>
+									<Table.Head class="w-56">ผู้รับ</Table.Head>
+									<Table.Head class="w-28">ประเภท</Table.Head>
+									<Table.Head class="w-52">กิจกรรม / รางวัล</Table.Head>
+									<Table.Head class="w-48">แบบ</Table.Head>
+									<Table.Head class="w-32">วันที่ออก</Table.Head>
+									<Table.Head class="w-36">สถานะ</Table.Head>
+									<Table.Head class="w-56 text-right">จัดการ</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each filteredCertificates as certificate (certificate.id)}
+									<Table.Row class={certificate.status === 'revoked' ? 'opacity-70' : undefined}>
+										<Table.Cell>
+											{#if canSelect(certificate)}
+												<input
+													type="checkbox"
+													class="size-4 rounded border-input accent-primary"
+													aria-label={`เลือก ${certificate.certificateNumber}`}
+													checked={selectedCertificateIds.includes(certificate.id)}
+													onchange={(event) =>
+														toggleCertificate(certificate, event.currentTarget.checked)}
+												/>
+											{/if}
+										</Table.Cell>
+										<Table.Cell>
+											<p class="font-mono font-semibold tabular-nums text-foreground">
+												{certificate.certificateNumber}
+											</p>
+											{#if certificate.replacementForCertificateId}
+												<Badge variant="secondary" class="mt-1">ออกทดแทนใบเดิม</Badge>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="font-medium">{displayName(certificate)}</Table.Cell>
+										<Table.Cell>{recipientLabels[certificate.recipientType]}</Table.Cell>
+										<Table.Cell>
+											<p>{certificate.activityItem ?? '-'}</p>
+											{#if certificate.awardOrRole}
+												<p class="mt-1 text-xs text-muted-foreground">{certificate.awardOrRole}</p>
+											{/if}
+										</Table.Cell>
+										<Table.Cell>
+											<span class="inline-flex items-center gap-1.5">
+												<FileBadge2 class="size-4 text-muted-foreground" />
+												{certificate.templateName}
+											</span>
+										</Table.Cell>
+										<Table.Cell>{formatDate(certificate.issueDate)}</Table.Cell>
+										<Table.Cell>
+											{#if certificate.status === 'issued'}
+												<Badge
+													variant="outline"
+													class="border-emerald-200 bg-emerald-50 text-emerald-800"
+												>
+													<Award class="size-3.5" /> ใช้งานได้
+												</Badge>
+											{:else}
+												<Badge variant="outline" class="border-red-200 bg-red-50 text-red-800">
+													<ShieldAlert class="size-3.5" /> เพิกถอนแล้ว
+												</Badge>
+												{#if certificate.replacementCandidateId}
+													<a
+														href={resolve(
+															`/staff/certificates/${campaignId}/recipients#candidate-${certificate.replacementCandidateId}` as '/staff/certificates/[campaignId]/recipients'
+														)}
+														class="mt-2 block text-xs font-medium text-primary underline underline-offset-4"
+													>
+														ไปแก้รายการทดแทน
+													</a>
+												{/if}
+											{/if}
+										</Table.Cell>
+										<Table.Cell>
+											<div class="flex justify-end gap-2">
+												<CertificateDownloadButton {certificate} {canDownload} />
+												{#if canRevoke && certificate.status === 'issued' && certificate.capabilities.canRevoke}
+													<Button
+														data-sveltekit-preload-data="tap"
+														size="sm"
+														variant="destructive"
+														onclick={() => (revokeTarget = certificate)}
+														aria-label={`เพิกถอน ${certificate.certificateNumber}`}
+													>
+														<ShieldAlert class="size-4" /> เพิกถอน
+													</Button>
+												{/if}
+											</div>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
+				{/if}
+
+				<div class="flex items-center gap-2 text-xs text-muted-foreground">
+					<UsersRound class="size-4" />
+					แสดง {filteredCertificates.length.toLocaleString('th-TH')} จาก
+					{certificates.length.toLocaleString('th-TH')} ใบ
+				</div>
 			</div>
-		</div>
+		{/if}
 	{/if}
 </div>
 
-<CertificateBatchDownloadDialog
-	open={batchOpen}
-	{campaignId}
-	{campaignName}
-	{certificates}
-	{selectedCertificateIds}
-	onopenchange={(open) => (batchOpen = open)}
-	ondownloaded={() => (selectedCertificateIds = [])}
-/>
+{#if batchOpen && canDownload}
+	<CertificateBatchDownloadDialog
+		open={batchOpen}
+		{campaignId}
+		{campaignName}
+		{canDownload}
+		{certificates}
+		{selectedCertificateIds}
+		onopenchange={(open) => (batchOpen = open)}
+		ondownloaded={() => (selectedCertificateIds = [])}
+	/>
+{/if}
 
-{#if revokeTarget}
-	{#key revokeTarget.id}
+{#if revokeTarget && canRevoke}
+	{#key `${owner}|${revokeTarget.id}`}
+		{@const revokeEpoch = ownerEpoch}
+		{@const revokeKey = owner}
 		<CertificateRevokeDialog
 			open={true}
 			certificate={revokeTarget}
 			{canRevoke}
 			onopenchange={(open) => !open && (revokeTarget = null)}
-			onrevoked={handleRevoked}
+			onrevoked={(result) => handleRevoked(result, revokeEpoch, revokeKey)}
 		/>
 	{/key}
 {/if}

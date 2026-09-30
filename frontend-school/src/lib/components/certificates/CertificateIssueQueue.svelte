@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { afterNavigate } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
 		listCertificateIssueRequests,
@@ -13,9 +13,23 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
 	import { AlertTriangle, ArrowRight, RefreshCw, ShieldCheck } from '@lucide/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 
-	let { canIssue }: { canIssue: boolean } = $props();
+	let {
+		canIssue,
+		identityKey,
+		initialRequests,
+		selectedStatus
+	}: {
+		canIssue: boolean;
+		identityKey: string;
+		initialRequests: Promise<
+			RouteLoadResult<{ ownerKey: string; records: CertificateIssueRequestSummary[] | null }>
+		>;
+		selectedStatus: CertificateIssueRequestStatus | 'all';
+	} = $props();
 
 	type StatusFilter = CertificateIssueRequestStatus | 'all';
 
@@ -31,8 +45,50 @@
 	let statusFilter = $state<StatusFilter>('all');
 	let loading = $state(true);
 	let error = $state('');
-	let loadGeneration = 0;
-	let initialized = false;
+
+	const context = $derived(`${identityKey}|${selectedStatus}`),
+		readRequest = new LatestRequest();
+	let owner = $state(''),
+		disposed = false,
+		loaded = $state(false);
+	let consumed: typeof initialRequests | null = null;
+	$effect.pre(() => {
+		const key = context,
+			source = initialRequests,
+			allowed = canIssue;
+		untrack(() => {
+			if (owner !== key) {
+				owner = key;
+				readRequest.abort();
+				requests = [];
+				statusFilter = selectedStatus;
+				loaded = false;
+				loading = allowed;
+				error = '';
+			}
+			if (!allowed || consumed === source) return;
+			consumed = source;
+			const t = readRequest.begin();
+			loading = true;
+			error = '';
+			void source.then((r) => applyPrimary(r, t.revision));
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		readRequest.abort();
+	});
+	function applyPrimary(r: Awaited<typeof initialRequests>, revision: number) {
+		if (!readRequest.isCurrent(revision)) return;
+		loading = false;
+		if (!r.ok) {
+			error = r.error;
+			return;
+		}
+		if (r.data.ownerKey !== context) return;
+		requests = r.data.records ?? [];
+		loaded = true;
+	}
 
 	function formatDate(value: string): string {
 		return new Intl.DateTimeFormat('th-TH', {
@@ -43,25 +99,21 @@
 	}
 
 	async function loadQueue() {
-		const generation = ++loadGeneration;
-		if (!canIssue) {
-			loading = false;
-			return;
-		}
+		if (disposed || !canIssue) return;
+		const ownerKey = context,
+			t = readRequest.begin();
 		loading = true;
 		error = '';
-		try {
-			const loaded = await listCertificateIssueRequests({
-				status: statusFilter === 'all' ? undefined : statusFilter
-			});
-			if (generation !== loadGeneration) return;
-			requests = loaded;
-		} catch (loadError) {
-			if (generation !== loadGeneration) return;
-			error = loadError instanceof Error ? loadError.message : 'โหลดคิวคำขอไม่สำเร็จ';
-		} finally {
-			if (generation === loadGeneration) loading = false;
-		}
+		applyPrimary(
+			await captureRouteLoad(
+				listCertificateIssueRequests(
+					{ status: selectedStatus === 'all' ? undefined : selectedStatus },
+					{ signal: t.signal }
+				).then((records) => ({ ownerKey, records })),
+				'โหลดข้อมูลเกียรติบัตรไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
 
 	function changeStatusFilter(value: string): void {
@@ -74,18 +126,12 @@
 			value !== 'issued'
 		)
 			return;
-		statusFilter = value;
-		void loadQueue();
+		void goto(
+			resolve(
+				`/staff/certificate-requests${value === 'all' ? '' : `?status=${value}`}` as '/staff/certificate-requests'
+			)
+		);
 	}
-
-	function initialize() {
-		if (initialized) return;
-		initialized = true;
-		void loadQueue();
-	}
-
-	onMount(initialize);
-	afterNavigate(initialize);
 </script>
 
 <PageShell
@@ -136,9 +182,8 @@
 			</label>
 		</section>
 
-		{#if loading}
-			<PageSkeleton variant="table" />
-		{:else if error}
+		{#if loading && loaded}<p role="status">กำลังอัปเดตคิวคำขอ</p>{/if}
+		{#if error}
 			<PageState
 				variant="error"
 				title="โหลดคิวคำขอไม่สำเร็จ"
@@ -146,13 +191,17 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={loadQueue}
 			/>
-		{:else if requests.length === 0}
+		{/if}
+		{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดคิวคำขอ">
+				<PageSkeleton variant="table" />
+			</div>
+		{:else if loaded && requests.length === 0}
 			<PageState
 				variant="empty"
 				title="ไม่มีคำขอในสถานะนี้"
 				description="เมื่อหน่วยงานส่งรายชื่อพร้อมออก คำขอจะปรากฏในถาดงานนี้"
 			/>
-		{:else}
+		{:else if loaded}
 			<div class="overflow-x-auto rounded-xl border bg-card shadow-sm">
 				<Table.Root class="min-w-[1040px]">
 					<Table.Header>
@@ -213,6 +262,7 @@
 								</Table.Cell>
 								<Table.Cell class="align-top">
 									<Button
+										data-sveltekit-preload-data="tap"
 										size="icon-sm"
 										variant="ghost"
 										href={resolve(

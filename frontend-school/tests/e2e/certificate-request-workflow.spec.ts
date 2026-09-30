@@ -301,20 +301,19 @@ function harnessPlugin(): Plugin {
 						onsubmit: async (candidateIds) => { submittedIds.push(...candidateIds); }
 					} });
 				} else if (view === 'history') {
-					mount(CertificateCampaignRequests, { target, props: { campaignId, canSubmit: true } });
+					mount(CertificateCampaignRequests, { target, props: { campaignId, canRead: true, canSubmit: true, identityKey: 'fixture', initialRequests: window.__certificateRequestApi.listCampaignRequests(campaignId).then(records => ({ok:true,data:{ownerKey:'fixture|'+campaignId,records}})) } });
 				} else if (view === 'race') {
 					const reviewComponent = createClassComponent({
 						component: CertificateIssueRequestReview,
 						target,
-						props: { requestId, canIssue: true }
+						props: { requestId, canIssue: true, identityKey:'fixture', initialRequest: window.__certificateRequestApi.getRequest(requestId).then(record => ({ok:true,data:{ownerKey:'fixture|'+requestId,record}})) }
 					});
 					window.certificateRequestHarness.setReviewRequestId = (nextRequestId) => {
-						reviewComponent.$set({ requestId: nextRequestId });
+						reviewComponent.$set({ requestId: nextRequestId, initialRequest: window.__certificateRequestApi.getRequest(nextRequestId).then(record => ({ok:true,data:{ownerKey:'fixture|'+nextRequestId,record}})) });
 						flushSync();
-						window.__triggerCertificateAfterNavigate();
 					};
 				} else {
-					mount(CertificateIssueRequestReview, { target, props: { requestId, canIssue: true } });
+					mount(CertificateIssueRequestReview, { target, props: { requestId, canIssue: true, identityKey:'fixture', initialRequest: window.__certificateRequestApi.getRequest(requestId).then(record => ({ok:true,data:{ownerKey:'fixture|'+requestId,record}})) } });
 				}
 			`;
 		},

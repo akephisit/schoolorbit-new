@@ -1,4 +1,14 @@
 <script lang="ts">
+	import type { PageProps } from './$types';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { authStore } from '$lib/stores/auth';
+	let { data }: PageProps = $props();
+	const identityKey = $derived.by(() => {
+		void $authStore.user;
+		void $can;
+		return appIdentityKey();
+	});
+
 	import { page } from '$app/state';
 	import { PageShell } from '$lib/components/app-layout';
 	import CertificateIssuedTable from '$lib/components/certificates/CertificateIssuedTable.svelte';
@@ -22,5 +32,12 @@
 	title="ใบที่ออกแล้ว"
 	description="ค้นหา ดาวน์โหลด และตรวจสถานะเลขเกียรติบัตรของกิจกรรม โดยใบเก่าจะสร้างไฟล์จากแบบปัจจุบัน"
 >
-	<CertificateIssuedTable {campaignId} {canRead} {canDownload} {canRevoke} />
+	<CertificateIssuedTable
+		{identityKey}
+		initialCertificates={data.certificates}
+		{campaignId}
+		{canRead}
+		{canDownload}
+		{canRevoke}
+	/>
 </PageShell>

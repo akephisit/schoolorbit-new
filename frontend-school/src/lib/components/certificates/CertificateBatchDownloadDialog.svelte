@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
 	import {
 		createIssuedCertificateRenderManifests,
 		type IssuedCertificateSummary
@@ -19,6 +21,7 @@
 		open,
 		campaignId,
 		campaignName,
+		canDownload,
 		certificates,
 		selectedCertificateIds,
 		onopenchange,
@@ -27,6 +30,7 @@
 		open: boolean;
 		campaignId: string;
 		campaignName: string;
+		canDownload: boolean;
 		certificates: IssuedCertificateSummary[];
 		selectedCertificateIds: string[];
 		onopenchange: (open: boolean) => void;
@@ -34,6 +38,12 @@
 	} = $props();
 
 	let busy = $state(false);
+	let disposed = false;
+	const request = new LatestRequest();
+	onDestroy(() => {
+		disposed = true;
+		request.abort();
+	});
 	let error = $state('');
 
 	const selectedCertificates = $derived(
@@ -49,12 +59,22 @@
 	}
 
 	async function downloadBatch() {
-		if (busy) return;
+		if (disposed || !open || !canDownload || busy) return;
+		const selectedCampaignId = campaignId,
+			selectedName = campaignName,
+			ids = [...selectedCertificateIds],
+			t = request.begin();
+		const current = () =>
+			!disposed &&
+			open &&
+			canDownload &&
+			campaignId === selectedCampaignId &&
+			request.isCurrent(t.revision);
 		error = '';
 		try {
-			validateCertificateBatchSize(selectedCertificateIds.length);
+			validateCertificateBatchSize(ids.length);
 			if (
-				selectedCertificates.length !== selectedCertificateIds.length ||
+				selectedCertificates.length !== ids.length ||
 				selectedCertificates.some(
 					(certificate) =>
 						certificate.status !== 'issued' || certificate.capabilities.canDownload !== true
@@ -64,28 +84,32 @@
 			}
 
 			busy = true;
-			const manifests = await createIssuedCertificateRenderManifests(campaignId, {
-				certificateIds: selectedCertificateIds
-			});
-			if (manifests.length !== selectedCertificateIds.length) {
+			const manifests = await createIssuedCertificateRenderManifests(
+				selectedCampaignId,
+				{ certificateIds: ids },
+				{ signal: t.signal }
+			);
+			if (manifests.length !== ids.length) {
 				throw new Error('จำนวนไฟล์ที่เตรียมได้ไม่ตรงกับรายการที่เลือก');
 			}
+			if (!current()) return;
 			const renderer = await loadCertificateRenderer();
+			if (!current()) return;
 			const bytes = await renderer.buildCertificatePdf(manifests);
+			if (!current()) return;
 			downloadCertificatePdf(
 				bytes,
-				`เกียรติบัตร-${campaignName}-${selectedCertificateIds.length.toLocaleString('th-TH')}-ใบ.pdf`
+				`เกียรติบัตร-${selectedName}-${ids.length.toLocaleString('th-TH')}-ใบ.pdf`
 			);
-			toast.success(
-				`สร้าง PDF รวม ${selectedCertificateIds.length.toLocaleString('th-TH')} ใบแล้ว`
-			);
+			toast.success(`สร้าง PDF รวม ${ids.length.toLocaleString('th-TH')} ใบแล้ว`);
 			error = '';
 			ondownloaded();
 			onopenchange(false);
 		} catch (downloadError) {
+			if (!current()) return;
 			error = downloadError instanceof Error ? downloadError.message : 'สร้าง PDF รวมไม่สำเร็จ';
 		} finally {
-			busy = false;
+			if (!disposed) busy = false;
 		}
 	}
 </script>

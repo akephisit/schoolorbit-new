@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { afterNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
 		createCertificateTemplatePreviewManifest,
@@ -34,14 +33,22 @@
 		ShieldCheck,
 		UsersRound
 	} from '@lucide/svelte';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 	import { toast } from 'svelte-sonner';
 
 	let {
 		requestId,
+		identityKey,
+		initialRequest,
 		canIssue
 	}: {
 		requestId: string;
+		identityKey: string;
+		initialRequest: Promise<
+			RouteLoadResult<{ ownerKey: string; record: CertificateIssueRequestDetail | null }>
+		>;
 		canIssue: boolean;
 	} = $props();
 
@@ -75,7 +82,7 @@
 	let actionBusy = $state(false);
 	let returnCodes = $state.raw<CertificateIssueCode[]>([]);
 	let returnNote = $state('');
-	let requestedRequestId = '';
+
 	let loadGeneration = 0;
 	let previewOpen = $state(false);
 	let previewState = $state<CertificatePreviewState>('idle');
@@ -99,6 +106,57 @@
 			returnNote.trim().length > 0
 	);
 
+	const context = $derived(`${identityKey}|${requestId}`),
+		readRequest = new LatestRequest();
+	let owner = $state(''),
+		disposed = false;
+	let consumed: typeof initialRequest | null = null;
+	$effect.pre(() => {
+		const key = context,
+			source = initialRequest,
+			allowed = canIssue;
+		untrack(() => {
+			if (owner !== key) {
+				owner = key;
+				loadGeneration++;
+				readRequest.abort();
+				request = null;
+				loading = allowed;
+				error = '';
+				actionBusy = false;
+				returnCodes = [];
+				returnNote = '';
+				issueDialogOpen = false;
+				issueError = '';
+				issueAttemptKey = null;
+				issuedOutcome = issueReturnedOutcome = null;
+				closePreview();
+			}
+			if (!allowed || consumed === source) return;
+			consumed = source;
+			const t = readRequest.begin();
+			loading = true;
+			error = '';
+			void source.then((r) => applyPrimary(r, t.revision));
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		loadGeneration++;
+		readRequest.abort();
+		closePreview();
+	});
+	function applyPrimary(r: Awaited<typeof initialRequest>, revision: number) {
+		if (!readRequest.isCurrent(revision)) return;
+		loading = false;
+		if (!r.ok) {
+			error = r.error;
+			return;
+		}
+		if (r.data.ownerKey !== context) return;
+		request = r.data.record;
+	}
+
 	function formatDate(value: string): string {
 		return new Intl.DateTimeFormat('th-TH', {
 			dateStyle: 'medium',
@@ -113,6 +171,8 @@
 
 	function isCurrentRequest(targetRequestId: string, targetGeneration: number): boolean {
 		return (
+			!disposed &&
+			canIssue &&
 			targetGeneration === loadGeneration &&
 			targetRequestId === requestId &&
 			request?.id === targetRequestId
@@ -126,43 +186,34 @@
 	}
 
 	async function loadRequest(targetRequestId: string) {
-		const generation = ++loadGeneration;
-		actionBusy = false;
-		if (!canIssue) {
-			loading = false;
-			return;
-		}
+		if (disposed || !canIssue || targetRequestId !== requestId) return;
+		const ownerKey = context,
+			t = readRequest.begin();
 		loading = true;
 		error = '';
-		request = null;
-		returnCodes = [];
-		returnNote = '';
-		issueDialogOpen = false;
-		issueError = '';
-		issueAttemptKey = null;
-		issuedOutcome = null;
-		issueReturnedOutcome = null;
-		closePreview();
-		try {
-			const loaded = await getCertificateIssueRequest(targetRequestId);
-			if (generation !== loadGeneration || targetRequestId !== requestId) return;
-			request = loaded;
-		} catch (loadError) {
-			if (generation !== loadGeneration || targetRequestId !== requestId) return;
-			error = loadError instanceof Error ? loadError.message : 'โหลดคำขอไม่สำเร็จ';
-		} finally {
-			if (generation === loadGeneration && targetRequestId === requestId) loading = false;
-		}
+		applyPrimary(
+			await captureRouteLoad(
+				getCertificateIssueRequest(targetRequestId, { signal: t.signal }).then((record) => ({
+					ownerKey,
+					record
+				})),
+				'โหลดคำขอไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
 
 	async function startReview() {
-		if (!request?.capabilities.canStartReview || actionBusy) return;
+		if (disposed || !canIssue || !request?.capabilities.canStartReview || actionBusy) return;
 		const targetRequestId = request.id;
 		const targetGeneration = loadGeneration;
 		actionBusy = true;
 		try {
 			const updated = await startCertificateIssueRequestReview(targetRequestId);
 			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
+			readRequest.abort();
+			loading = false;
+			error = '';
 			request = updated;
 			toast.success('เริ่มตรวจคำขอแล้ว');
 		} catch (reviewError) {
@@ -174,7 +225,7 @@
 	}
 
 	async function returnRequest() {
-		if (!request || !canReturn || actionBusy) return;
+		if (disposed || !canIssue || !request || !canReturn || actionBusy) return;
 		const targetRequestId = request.id;
 		const targetGeneration = loadGeneration;
 		actionBusy = true;
@@ -184,6 +235,9 @@
 				returnNote: returnNote.trim()
 			});
 			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
+			readRequest.abort();
+			loading = false;
+			error = '';
 			request = updated;
 			returnCodes = [];
 			returnNote = '';
@@ -197,13 +251,13 @@
 	}
 
 	function openIssueConfirmation() {
-		if (!request?.capabilities.canIssue || actionBusy) return;
+		if (disposed || !canIssue || !request?.capabilities.canIssue || actionBusy) return;
 		issueError = '';
 		issueDialogOpen = true;
 	}
 
 	async function confirmIssue() {
-		if (!request?.capabilities.canIssue || actionBusy) return;
+		if (disposed || !canIssue || !request?.capabilities.canIssue || actionBusy) return;
 		const targetRequestId = request.id;
 		const targetGeneration = loadGeneration;
 		issueAttemptKey ??= crypto.randomUUID();
@@ -214,6 +268,9 @@
 				idempotencyKey: issueAttemptKey
 			});
 			if (!isCurrentRequest(targetRequestId, targetGeneration)) return;
+			readRequest.abort();
+			loading = false;
+			error = '';
 			if (outcome.outcome === 'issued') {
 				issueAttemptKey = null;
 				issueDialogOpen = false;
@@ -315,16 +372,6 @@
 		previewManifestLoading = false;
 		previewManifestError = '';
 	}
-
-	function ensureLoaded() {
-		if (!requestId || requestedRequestId === requestId) return;
-		requestedRequestId = requestId;
-		void loadRequest(requestId);
-	}
-
-	onMount(ensureLoaded);
-	afterNavigate(ensureLoaded);
-	onDestroy(() => previewController?.abort());
 </script>
 
 <PageShell
@@ -344,12 +391,12 @@
 			<Button variant="outline" href={resolve('/staff/certificate-requests')}>
 				<ArrowLeft class="size-4" /> กลับคิวคำขอ
 			</Button>
-			{#if request?.capabilities.canStartReview}
+			{#if canIssue && request?.capabilities.canStartReview}
 				<LoadingButton loading={actionBusy} onclick={startReview}>
 					<ShieldCheck class="size-4" /> เริ่มตรวจคำขอ
 				</LoadingButton>
 			{/if}
-			{#if request?.capabilities.canIssue}
+			{#if canIssue && request?.capabilities.canIssue}
 				<Button disabled={actionBusy} onclick={openIssueConfirmation}>
 					<Award class="size-4" /> ออกเกียรติบัตร {request.itemCount.toLocaleString('th-TH')} ใบ
 				</Button>
@@ -363,281 +410,287 @@
 			title="ไม่มีสิทธิ์เปิดรายละเอียดคำขอ"
 			description="รายชื่อผู้รับโหลดได้หลังผ่านสิทธิ์ออกเกียรติบัตรระดับโรงเรียนเท่านั้น"
 		/>
-	{:else if loading}
-		<PageSkeleton variant="detail" />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดคำขอไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadRequest(requestId)}
-		/>
-	{:else if request}
-		<div class="space-y-5">
-			{#if issuedOutcome}
-				<section class="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
-					<div class="flex items-start gap-3 p-5 text-emerald-950">
-						<CircleCheckBig class="mt-0.5 size-6 shrink-0 text-emerald-700" />
-						<div class="min-w-0 flex-1">
-							<h2 class="text-lg font-semibold">ออกเลขแล้ว</h2>
-							<p class="mt-1 text-sm text-emerald-800">
-								ออกสำเร็จ {issuedOutcome.certificates.length.toLocaleString('th-TH')} ใบ เลขทุกใบถูกบันทึกและจะไม่ถูกนำกลับมาใช้
-							</p>
-							<div
-								class="mt-4 grid gap-px overflow-hidden rounded-lg border border-emerald-200 bg-emerald-200 sm:grid-cols-2"
-							>
-								<div class="bg-white p-3">
-									<p class="text-xs text-emerald-700">เลขใบแรก</p>
-									<p class="mt-1 font-mono font-semibold tabular-nums">
-										{issuedOutcome.certificates[0]?.certificateNumber ?? '-'}
-									</p>
+	{:else if loading && !request}
+		<div role="status" aria-label="กำลังโหลดรายละเอียดคำขอ"><PageSkeleton variant="detail" /></div>
+	{:else}
+		{#if loading && request}<p role="status">กำลังอัปเดตรายละเอียดคำขอ</p>{/if}
+		{#if error}
+			<PageState
+				variant="error"
+				title="โหลดคำขอไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => loadRequest(requestId)}
+			/>
+		{/if}
+		{#if request}
+			<div class="space-y-5">
+				{#if issuedOutcome}
+					<section class="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50">
+						<div class="flex items-start gap-3 p-5 text-emerald-950">
+							<CircleCheckBig class="mt-0.5 size-6 shrink-0 text-emerald-700" />
+							<div class="min-w-0 flex-1">
+								<h2 class="text-lg font-semibold">ออกเลขแล้ว</h2>
+								<p class="mt-1 text-sm text-emerald-800">
+									ออกสำเร็จ {issuedOutcome.certificates.length.toLocaleString('th-TH')} ใบ เลขทุกใบถูกบันทึกและจะไม่ถูกนำกลับมาใช้
+								</p>
+								<div
+									class="mt-4 grid gap-px overflow-hidden rounded-lg border border-emerald-200 bg-emerald-200 sm:grid-cols-2"
+								>
+									<div class="bg-white p-3">
+										<p class="text-xs text-emerald-700">เลขใบแรก</p>
+										<p class="mt-1 font-mono font-semibold tabular-nums">
+											{issuedOutcome.certificates[0]?.certificateNumber ?? '-'}
+										</p>
+									</div>
+									<div class="bg-white p-3">
+										<p class="text-xs text-emerald-700">เลขใบสุดท้าย</p>
+										<p class="mt-1 font-mono font-semibold tabular-nums">
+											{issuedOutcome.certificates.at(-1)?.certificateNumber ?? '-'}
+										</p>
+									</div>
 								</div>
-								<div class="bg-white p-3">
-									<p class="text-xs text-emerald-700">เลขใบสุดท้าย</p>
-									<p class="mt-1 font-mono font-semibold tabular-nums">
-										{issuedOutcome.certificates.at(-1)?.certificateNumber ?? '-'}
-									</p>
-								</div>
+								<a
+									href={resolve(
+										`/staff/certificates/${request.campaignId}/issued` as '/staff/certificates/[campaignId]/issued'
+									)}
+									class="mt-4 inline-flex items-center font-medium text-emerald-900 underline underline-offset-4"
+								>
+									เปิดทะเบียนใบที่ออกแล้ว
+								</a>
 							</div>
-							<a
-								href={resolve(
-									`/staff/certificates/${request.campaignId}/issued` as '/staff/certificates/[campaignId]/issued'
+						</div>
+					</section>
+				{:else if issueReturnedOutcome}
+					<section class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
+						<div class="flex items-start gap-3">
+							<AlertTriangle class="mt-0.5 size-5 shrink-0" />
+							<div>
+								<h2 class="font-semibold">ระบบส่งคำขอกลับโดยยังไม่ออกเลข</h2>
+								<p class="mt-1 text-sm text-amber-800">
+									ผลตรวจล่าสุดพบข้อมูลเปลี่ยนแปลง ยังไม่มีเลขเกียรติบัตรถูกจอง
+									ให้หน่วยงานแก้รายการด้านล่างแล้วส่งคำขอใหม่
+								</p>
+							</div>
+						</div>
+						<div class="mt-4 space-y-2">
+							{#each issueReturnedOutcome.candidateProblems as problem (problem.candidateId)}
+								{@const problemItem = request.items.find(
+									(item) => item.candidateId === problem.candidateId
 								)}
-								class="mt-4 inline-flex items-center font-medium text-emerald-900 underline underline-offset-4"
-							>
-								เปิดทะเบียนใบที่ออกแล้ว
-							</a>
-						</div>
-					</div>
-				</section>
-			{:else if issueReturnedOutcome}
-				<section class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
-					<div class="flex items-start gap-3">
-						<AlertTriangle class="mt-0.5 size-5 shrink-0" />
-						<div>
-							<h2 class="font-semibold">ระบบส่งคำขอกลับโดยยังไม่ออกเลข</h2>
-							<p class="mt-1 text-sm text-amber-800">
-								ผลตรวจล่าสุดพบข้อมูลเปลี่ยนแปลง ยังไม่มีเลขเกียรติบัตรถูกจอง
-								ให้หน่วยงานแก้รายการด้านล่างแล้วส่งคำขอใหม่
-							</p>
-						</div>
-					</div>
-					<div class="mt-4 space-y-2">
-						{#each issueReturnedOutcome.candidateProblems as problem (problem.candidateId)}
-							{@const problemItem = request.items.find(
-								(item) => item.candidateId === problem.candidateId
-							)}
-							<div class="rounded-lg border border-amber-200 bg-white p-3 text-sm">
-								<p class="font-medium">{problemItem ? displayName(problemItem) : 'รายการผู้รับ'}</p>
-								<div class="mt-2 flex flex-wrap gap-1.5">
-									{#each problem.issueCodes as code (code)}
-										<Badge variant="outline" class="border-amber-300 bg-amber-50 text-amber-900">
-											{issueOptions.find((option) => option.code === code)?.label ?? code}
-										</Badge>
-									{/each}
+								<div class="rounded-lg border border-amber-200 bg-white p-3 text-sm">
+									<p class="font-medium">
+										{problemItem ? displayName(problemItem) : 'รายการผู้รับ'}
+									</p>
+									<div class="mt-2 flex flex-wrap gap-1.5">
+										{#each problem.issueCodes as code (code)}
+											<Badge variant="outline" class="border-amber-300 bg-amber-50 text-amber-900">
+												{issueOptions.find((option) => option.code === code)?.label ?? code}
+											</Badge>
+										{/each}
+									</div>
 								</div>
-							</div>
-						{/each}
-					</div>
-				</section>
-			{/if}
-
-			<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
-				<div class="grid gap-px bg-border sm:grid-cols-[1.4fr_1fr_1fr]">
-					<div class="bg-card p-5">
-						<p class="text-xs font-medium text-muted-foreground">กิจกรรม</p>
-						<h2 class="mt-1 text-lg font-semibold">{request.campaignName}</h2>
-						<p class="mt-1 text-sm text-muted-foreground">
-							{request.ownerOrganizationUnitName ?? 'ระดับโรงเรียน'}
-						</p>
-					</div>
-					<div class="bg-card p-5">
-						<p class="text-xs font-medium text-muted-foreground">ผู้ส่งคำขอ</p>
-						<p class="mt-1 font-medium">{request.submittedByName}</p>
-						<p class="mt-1 text-xs text-muted-foreground">{formatDate(request.submittedAt)}</p>
-					</div>
-					<div class="bg-card p-5">
-						<p class="text-xs font-medium text-muted-foreground">ขอบเขตคำขอ</p>
-						<p class="mt-1 font-medium">
-							{request.itemCount.toLocaleString('th-TH')} รายชื่อ · {request.templateCount.toLocaleString(
-								'th-TH'
-							)} แบบ
-						</p>
-						<p class="mt-1 text-xs text-muted-foreground">
-							ประเมินความพร้อมอีกครั้งจากข้อมูลปัจจุบัน
-						</p>
-					</div>
-				</div>
-				<div class="grid grid-cols-3 border-t text-center">
-					<div class="p-3 text-emerald-800">
-						<strong class="block text-xl tabular-nums"
-							>{request.readyCount.toLocaleString('th-TH')}</strong
-						>
-						<span class="text-xs">พร้อมออก</span>
-					</div>
-					<div class="border-x p-3 text-amber-800">
-						<strong class="block text-xl tabular-nums"
-							>{request.reviewCount.toLocaleString('th-TH')}</strong
-						>
-						<span class="text-xs">ต้องตรวจสอบ</span>
-					</div>
-					<div class="p-3 text-red-800">
-						<strong class="block text-xl tabular-nums"
-							>{request.invalidCount.toLocaleString('th-TH')}</strong
-						>
-						<span class="text-xs">ข้อมูลไม่ถูกต้อง</span>
-					</div>
-				</div>
-			</section>
-
-			<div
-				class="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"
-			>
-				<FileCheck2 class="mt-0.5 size-4 shrink-0" />
-				<div>
-					<p class="font-medium">หน้าตรวจเป็นแบบอ่านอย่างเดียว</p>
-					<p class="mt-1 text-blue-800">
-						หากพบข้อมูลผิด ให้เลือกรหัสเหตุผลและส่งกลับ
-						หน่วยงานจะแก้ในพื้นที่เตรียมแล้วสร้างคำขอใหม่
-					</p>
-				</div>
-			</div>
-
-			<section class="space-y-3">
-				<div class="flex items-center justify-between gap-3">
-					<div>
-						<h2 class="font-semibold">รายชื่อในคำขอ</h2>
-						<p class="text-xs text-muted-foreground">เปิดดูตัวอย่างได้ทีละรายการ</p>
-					</div>
-					<div class="flex items-center gap-2 text-xs text-muted-foreground">
-						<UsersRound class="size-4" />
-						{request.items.length.toLocaleString('th-TH')} รายการ
-					</div>
-				</div>
-				<div class="overflow-x-auto rounded-xl border bg-card shadow-sm">
-					<Table.Root class="min-w-[980px]">
-						<Table.Header>
-							<Table.Row class="bg-muted/40 hover:bg-muted/40">
-								<Table.Head class="w-56">ผู้รับ</Table.Head>
-								<Table.Head class="w-32">ประเภท</Table.Head>
-								<Table.Head class="w-52">กิจกรรม / รางวัล</Table.Head>
-								<Table.Head class="w-52">แบบ</Table.Head>
-								<Table.Head class="w-36">สถานะปัจจุบัน</Table.Head>
-								<Table.Head class="w-28 text-right">ตัวอย่าง</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each request.items as item (item.candidateId)}
-								<Table.Row>
-									<Table.Cell class="font-medium">{displayName(item)}</Table.Cell>
-									<Table.Cell>{recipientLabels[item.recipientType]}</Table.Cell>
-									<Table.Cell>
-										<p>{item.activityItem ?? '-'}</p>
-										{#if item.awardOrRole}
-											<p class="mt-1 text-xs text-muted-foreground">{item.awardOrRole}</p>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>{item.templateName ?? 'ไม่พบแบบ'}</Table.Cell>
-									<Table.Cell>
-										{#if item.validationStatus === 'ready'}
-											<Badge
-												variant="outline"
-												class="border-emerald-200 bg-emerald-50 text-emerald-800">พร้อมออก</Badge
-											>
-										{:else if item.validationStatus === 'needs_review'}
-											<Badge variant="outline" class="border-amber-200 bg-amber-50 text-amber-800"
-												>ต้องตรวจสอบ</Badge
-											>
-										{:else}
-											<Badge variant="outline" class="border-red-200 bg-red-50 text-red-800"
-												>ข้อมูลไม่ถูกต้อง</Badge
-											>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="text-right">
-										<Button
-											size="sm"
-											variant="outline"
-											disabled={!item.templateId || previewing}
-											onclick={() => preview(item)}
-										>
-											<Eye class="size-4" /> ดูตัวอย่าง
-										</Button>
-									</Table.Cell>
-								</Table.Row>
 							{/each}
-						</Table.Body>
-					</Table.Root>
-				</div>
-			</section>
+						</div>
+					</section>
+				{/if}
 
-			{#if request.capabilities.canReturn}
-				<section class="rounded-xl border border-orange-200 bg-orange-50/60 p-5">
-					<div class="flex items-start gap-3">
-						<RotateCcw class="mt-0.5 size-5 text-orange-700" />
-						<div>
-							<h2 class="font-semibold text-orange-950">ส่งกลับให้แก้ไข</h2>
-							<p class="mt-1 text-sm text-orange-800">
-								เลือกรหัสเหตุผลอย่างน้อยหนึ่งข้อ และเขียนเฉพาะคำแนะนำที่จำเป็น
-								ห้ามใส่เลขประจำตัวประชาชน
+				<section class="overflow-hidden rounded-xl border bg-card shadow-sm">
+					<div class="grid gap-px bg-border sm:grid-cols-[1.4fr_1fr_1fr]">
+						<div class="bg-card p-5">
+							<p class="text-xs font-medium text-muted-foreground">กิจกรรม</p>
+							<h2 class="mt-1 text-lg font-semibold">{request.campaignName}</h2>
+							<p class="mt-1 text-sm text-muted-foreground">
+								{request.ownerOrganizationUnitName ?? 'ระดับโรงเรียน'}
+							</p>
+						</div>
+						<div class="bg-card p-5">
+							<p class="text-xs font-medium text-muted-foreground">ผู้ส่งคำขอ</p>
+							<p class="mt-1 font-medium">{request.submittedByName}</p>
+							<p class="mt-1 text-xs text-muted-foreground">{formatDate(request.submittedAt)}</p>
+						</div>
+						<div class="bg-card p-5">
+							<p class="text-xs font-medium text-muted-foreground">ขอบเขตคำขอ</p>
+							<p class="mt-1 font-medium">
+								{request.itemCount.toLocaleString('th-TH')} รายชื่อ · {request.templateCount.toLocaleString(
+									'th-TH'
+								)} แบบ
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								ประเมินความพร้อมอีกครั้งจากข้อมูลปัจจุบัน
 							</p>
 						</div>
 					</div>
-					<div class="mt-4 grid gap-2 sm:grid-cols-2">
-						{#each issueOptions as option (option.code)}
-							<label
-								class="flex items-start gap-2 rounded-lg border border-orange-200 bg-white p-3 text-sm"
+					<div class="grid grid-cols-3 border-t text-center">
+						<div class="p-3 text-emerald-800">
+							<strong class="block text-xl tabular-nums"
+								>{request.readyCount.toLocaleString('th-TH')}</strong
 							>
-								<input
-									type="checkbox"
-									class="mt-0.5 size-4 rounded border-input accent-primary"
-									checked={returnCodes.includes(option.code)}
-									onchange={(event) => toggleIssueCode(option.code, event.currentTarget.checked)}
-								/>
-								<span>{option.label}</span>
-							</label>
-						{/each}
-					</div>
-					<label class="mt-4 block space-y-1.5">
-						<span class="text-sm font-medium text-orange-950">หมายเหตุส่งกลับ</span>
-						<Textarea
-							bind:value={returnNote}
-							maxlength={500}
-							rows={4}
-							placeholder="ระบุสิ่งที่ต้องแก้ให้ชัดเจน โดยไม่ใส่ข้อมูลอ่อนไหว"
-						/>
-						<span class="block text-right text-xs text-orange-800">
-							{returnNote.length.toLocaleString('th-TH')}/500
-						</span>
-					</label>
-					<div class="mt-4 flex justify-end">
-						<LoadingButton loading={actionBusy} disabled={!canReturn} onclick={returnRequest}>
-							<RotateCcw class="size-4" /> ส่งกลับให้แก้ไข
-						</LoadingButton>
+							<span class="text-xs">พร้อมออก</span>
+						</div>
+						<div class="border-x p-3 text-amber-800">
+							<strong class="block text-xl tabular-nums"
+								>{request.reviewCount.toLocaleString('th-TH')}</strong
+							>
+							<span class="text-xs">ต้องตรวจสอบ</span>
+						</div>
+						<div class="p-3 text-red-800">
+							<strong class="block text-xl tabular-nums"
+								>{request.invalidCount.toLocaleString('th-TH')}</strong
+							>
+							<span class="text-xs">ข้อมูลไม่ถูกต้อง</span>
+						</div>
 					</div>
 				</section>
-			{:else if request.status === 'returned' && !issueReturnedOutcome}
-				<section class="rounded-xl border border-orange-200 bg-orange-50 p-5 text-orange-950">
-					<div class="flex items-center gap-2">
-						<RotateCcw class="size-5" />
-						<h2 class="font-semibold">ส่งกลับแล้ว</h2>
+
+				<div
+					class="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"
+				>
+					<FileCheck2 class="mt-0.5 size-4 shrink-0" />
+					<div>
+						<p class="font-medium">หน้าตรวจเป็นแบบอ่านอย่างเดียว</p>
+						<p class="mt-1 text-blue-800">
+							หากพบข้อมูลผิด ให้เลือกรหัสเหตุผลและส่งกลับ
+							หน่วยงานจะแก้ในพื้นที่เตรียมแล้วสร้างคำขอใหม่
+						</p>
 					</div>
-					<div class="mt-3 flex flex-wrap gap-1.5">
-						{#each request.issueCodes as code (code)}
-							<Badge variant="outline" class="border-orange-300 bg-white text-orange-900">
-								{issueOptions.find((option) => option.code === code)?.label ?? code}
-							</Badge>
-						{/each}
+				</div>
+
+				<section class="space-y-3">
+					<div class="flex items-center justify-between gap-3">
+						<div>
+							<h2 class="font-semibold">รายชื่อในคำขอ</h2>
+							<p class="text-xs text-muted-foreground">เปิดดูตัวอย่างได้ทีละรายการ</p>
+						</div>
+						<div class="flex items-center gap-2 text-xs text-muted-foreground">
+							<UsersRound class="size-4" />
+							{request.items.length.toLocaleString('th-TH')} รายการ
+						</div>
 					</div>
-					{#if request.returnNote}<p class="mt-3 text-sm">{request.returnNote}</p>{/if}
+					<div class="overflow-x-auto rounded-xl border bg-card shadow-sm">
+						<Table.Root class="min-w-[980px]">
+							<Table.Header>
+								<Table.Row class="bg-muted/40 hover:bg-muted/40">
+									<Table.Head class="w-56">ผู้รับ</Table.Head>
+									<Table.Head class="w-32">ประเภท</Table.Head>
+									<Table.Head class="w-52">กิจกรรม / รางวัล</Table.Head>
+									<Table.Head class="w-52">แบบ</Table.Head>
+									<Table.Head class="w-36">สถานะปัจจุบัน</Table.Head>
+									<Table.Head class="w-28 text-right">ตัวอย่าง</Table.Head>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
+								{#each request.items as item (item.candidateId)}
+									<Table.Row>
+										<Table.Cell class="font-medium">{displayName(item)}</Table.Cell>
+										<Table.Cell>{recipientLabels[item.recipientType]}</Table.Cell>
+										<Table.Cell>
+											<p>{item.activityItem ?? '-'}</p>
+											{#if item.awardOrRole}
+												<p class="mt-1 text-xs text-muted-foreground">{item.awardOrRole}</p>
+											{/if}
+										</Table.Cell>
+										<Table.Cell>{item.templateName ?? 'ไม่พบแบบ'}</Table.Cell>
+										<Table.Cell>
+											{#if item.validationStatus === 'ready'}
+												<Badge
+													variant="outline"
+													class="border-emerald-200 bg-emerald-50 text-emerald-800">พร้อมออก</Badge
+												>
+											{:else if item.validationStatus === 'needs_review'}
+												<Badge variant="outline" class="border-amber-200 bg-amber-50 text-amber-800"
+													>ต้องตรวจสอบ</Badge
+												>
+											{:else}
+												<Badge variant="outline" class="border-red-200 bg-red-50 text-red-800"
+													>ข้อมูลไม่ถูกต้อง</Badge
+												>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="text-right">
+											<Button
+												size="sm"
+												variant="outline"
+												disabled={!item.templateId || previewing}
+												onclick={() => preview(item)}
+											>
+												<Eye class="size-4" /> ดูตัวอย่าง
+											</Button>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
 				</section>
-			{/if}
-		</div>
+
+				{#if request.capabilities.canReturn}
+					<section class="rounded-xl border border-orange-200 bg-orange-50/60 p-5">
+						<div class="flex items-start gap-3">
+							<RotateCcw class="mt-0.5 size-5 text-orange-700" />
+							<div>
+								<h2 class="font-semibold text-orange-950">ส่งกลับให้แก้ไข</h2>
+								<p class="mt-1 text-sm text-orange-800">
+									เลือกรหัสเหตุผลอย่างน้อยหนึ่งข้อ และเขียนเฉพาะคำแนะนำที่จำเป็น
+									ห้ามใส่เลขประจำตัวประชาชน
+								</p>
+							</div>
+						</div>
+						<div class="mt-4 grid gap-2 sm:grid-cols-2">
+							{#each issueOptions as option (option.code)}
+								<label
+									class="flex items-start gap-2 rounded-lg border border-orange-200 bg-white p-3 text-sm"
+								>
+									<input
+										type="checkbox"
+										class="mt-0.5 size-4 rounded border-input accent-primary"
+										checked={returnCodes.includes(option.code)}
+										onchange={(event) => toggleIssueCode(option.code, event.currentTarget.checked)}
+									/>
+									<span>{option.label}</span>
+								</label>
+							{/each}
+						</div>
+						<label class="mt-4 block space-y-1.5">
+							<span class="text-sm font-medium text-orange-950">หมายเหตุส่งกลับ</span>
+							<Textarea
+								bind:value={returnNote}
+								maxlength={500}
+								rows={4}
+								placeholder="ระบุสิ่งที่ต้องแก้ให้ชัดเจน โดยไม่ใส่ข้อมูลอ่อนไหว"
+							/>
+							<span class="block text-right text-xs text-orange-800">
+								{returnNote.length.toLocaleString('th-TH')}/500
+							</span>
+						</label>
+						<div class="mt-4 flex justify-end">
+							<LoadingButton loading={actionBusy} disabled={!canReturn} onclick={returnRequest}>
+								<RotateCcw class="size-4" /> ส่งกลับให้แก้ไข
+							</LoadingButton>
+						</div>
+					</section>
+				{:else if request.status === 'returned' && !issueReturnedOutcome}
+					<section class="rounded-xl border border-orange-200 bg-orange-50 p-5 text-orange-950">
+						<div class="flex items-center gap-2">
+							<RotateCcw class="size-5" />
+							<h2 class="font-semibold">ส่งกลับแล้ว</h2>
+						</div>
+						<div class="mt-3 flex flex-wrap gap-1.5">
+							{#each request.issueCodes as code (code)}
+								<Badge variant="outline" class="border-orange-300 bg-white text-orange-900">
+									{issueOptions.find((option) => option.code === code)?.label ?? code}
+								</Badge>
+							{/each}
+						</div>
+						{#if request.returnNote}<p class="mt-3 text-sm">{request.returnNote}</p>{/if}
+					</section>
+				{/if}
+			</div>
+		{/if}
 	{/if}
 </PageShell>
 
-{#if request}
+{#if request && issueDialogOpen && canIssue}
 	<CertificateIssueConfirmationDialog
 		open={issueDialogOpen}
 		{request}
@@ -649,17 +702,21 @@
 	/>
 {/if}
 
-<CertificatePreviewDialog
-	open={previewOpen}
-	title="ตัวอย่างเกียรติบัตร"
-	description={`${previewItem ? displayName(previewItem) : ''} · ข้อมูลพรีวิว ไม่ใช่เกียรติบัตรที่ออกเลขแล้ว`}
-	manifest={previewManifest}
-	manifestLoading={previewManifestLoading}
-	manifestError={previewManifestError}
-	ariaLabel="ตัวอย่างเกียรติบัตรสำหรับตรวจคำขอ"
-	loadingLabel="กำลังโหลดฟอนต์และสร้างตัวอย่าง…"
-	renderFailureMessage="สร้างตัวอย่างเกียรติบัตรไม่สำเร็จ"
-	onretry={retryPreview}
-	onstatechange={(state) => (previewState = state)}
-	onopenchange={(open) => !open && closePreview()}
-/>
+{#if previewOpen && canIssue}
+	<CertificatePreviewDialog
+		open={previewOpen}
+		title="ตัวอย่างเกียรติบัตร"
+		description={`${previewItem ? displayName(previewItem) : ''} · ข้อมูลพรีวิว ไม่ใช่เกียรติบัตรที่ออกเลขแล้ว`}
+		manifest={previewManifest}
+		manifestLoading={previewManifestLoading}
+		manifestError={previewManifestError}
+		ariaLabel="ตัวอย่างเกียรติบัตรสำหรับตรวจคำขอ"
+		loadingLabel="กำลังโหลดฟอนต์และสร้างตัวอย่าง…"
+		renderFailureMessage="สร้างตัวอย่างเกียรติบัตรไม่สำเร็จ"
+		onretry={retryPreview}
+		onstatechange={(state) => {
+			if (previewOpen && !disposed && canIssue) previewState = state;
+		}}
+		onopenchange={(open) => !open && closePreview()}
+	/>
+{/if}

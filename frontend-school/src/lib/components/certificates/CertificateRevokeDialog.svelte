@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import {
 		revokeIssuedCertificate,
 		type IssuedCertificateSummary,
@@ -28,6 +29,10 @@
 	let reason = $state('');
 	let createReplacementCandidate = $state(false);
 	let busy = $state(false);
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	let error = $state('');
 	const allowed = $derived(
 		canRevoke && certificate.status === 'issued' && certificate.capabilities.canRevoke === true
@@ -49,22 +54,27 @@
 	}
 
 	async function revoke() {
-		if (!canSubmit) return;
+		if (disposed || !open || !canSubmit) return;
+		const selectedId = certificate.id,
+			selectedNumber = certificate.certificateNumber;
+		const current = () => !disposed && open && allowed && certificate.id === selectedId;
 		busy = true;
 		error = '';
 		try {
-			const result = await revokeIssuedCertificate(certificate.id, {
+			const result = await revokeIssuedCertificate(selectedId, {
 				reason: reason.trim(),
 				createReplacementCandidate
 			});
+			if (!current()) return;
 			onrevoked(result);
-			toast.success(`เพิกถอน ${certificate.certificateNumber} แล้ว`);
+			toast.success(`เพิกถอน ${selectedNumber} แล้ว`);
 			reset();
 			onopenchange(false);
 		} catch (revokeError) {
+			if (!current()) return;
 			error = revokeError instanceof Error ? revokeError.message : 'เพิกถอนเกียรติบัตรไม่สำเร็จ';
 		} finally {
-			busy = false;
+			if (!disposed) busy = false;
 		}
 	}
 </script>

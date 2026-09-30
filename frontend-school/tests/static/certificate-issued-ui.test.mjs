@@ -121,10 +121,7 @@ test('replacement links target a stable candidate row anchor', async () => {
 test('issued workspace clears campaign-local selection before loading a new route id', async () => {
 	const table = await source('src/lib/components/certificates/CertificateIssuedTable.svelte');
 	assert.match(table, /function resetCampaignView\(\)/);
-	assert.match(
-		table,
-		/requestedCampaignId !== ''\s*&&\s*requestedCampaignId !== campaignId[\s\S]*?resetCampaignView\(\)/
-	);
+	assert.match(table, /\$effect\.pre[\s\S]*?owner !== key[\s\S]*?resetCampaignView\(\)/);
 	assert.match(table, /disabled=\{loading \|\| selectedCertificateIds\.length === 0\}/);
 	assert.match(
 		table,

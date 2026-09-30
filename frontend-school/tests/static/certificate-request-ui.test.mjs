@@ -31,8 +31,8 @@ test('certificate request routes keep preparation and school issue scopes separa
 		'src/routes/(app)/staff/certificates/[campaignId]/requests/+page.ts'
 	);
 	for (const permission of [
-		'PERMISSIONS.CERTIFICATE_SUBMIT_ORGANIZATION_UNIT',
-		'PERMISSIONS.CERTIFICATE_SUBMIT_SCHOOL'
+		'PERMISSIONS.CERTIFICATE_READ_ORGANIZATION_UNIT',
+		'PERMISSIONS.CERTIFICATE_READ_SCHOOL'
 	]) {
 		assert.match(campaignRoute, new RegExp(permission.replaceAll('.', '\\.')));
 	}
@@ -123,6 +123,9 @@ test('review detail waits for exact issue permission before loading recipient ro
 	const review = await source(
 		'src/lib/components/certificates/CertificateIssueRequestReview.svelte'
 	);
-	assert.match(review, /if\s*\(!canIssue\)/);
+	assert.match(review, /if\s*\(disposed \|\| !canIssue/);
+	const loader = await source('src/routes/(app)/staff/certificate-requests/[requestId]/+page.ts');
+	assert.match(loader, /get\(can\)\.has\(PERMISSIONS\.CERTIFICATE_ISSUE_SCHOOL\)/);
+	assert.match(loader, /getCertificateIssueRequest/);
 	assert.match(review, /getCertificateIssueRequest/);
 });
