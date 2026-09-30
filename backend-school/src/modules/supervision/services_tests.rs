@@ -1421,6 +1421,13 @@ async fn management_template_summaries_preserve_counts_without_rubric_payloads()
     let summaries = services::list_template_summaries(&pool).await.unwrap();
     for template in [&fixture.template, &second] {
         let summary = summaries.iter().find(|row| row.id == template.id).unwrap();
+        let selected = services::get_template_summary(&pool, template.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&selected).unwrap(),
+            serde_json::to_value(summary).unwrap()
+        );
         assert_eq!(summary.section_count, template.sections.len() as i64);
         assert_eq!(
             summary.item_count,
@@ -1434,4 +1441,8 @@ async fn management_template_summaries_preserve_counts_without_rubric_payloads()
         assert!(value.get("sections").is_none());
         assert!(value.get("steps").is_none());
     }
+    assert!(matches!(
+        services::get_template_summary(&pool, Uuid::new_v4()).await,
+        Err(AppError::NotFound(_))
+    ));
 }

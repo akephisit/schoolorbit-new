@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
+	import {
+		waitForSupervisionAccess,
+		SUPERVISION_OBSERVATION_READ_PERMISSIONS
+	} from '$lib/supervision/supervision-access';
 	import {
 		ArrowLeft,
 		CalendarClock,
@@ -20,8 +27,8 @@
 		getSupervisionObservation,
 		getSupervisionObservationReview,
 		getSupervisionObservationTimetableOptions,
-		getSupervisionTemplate,
-		listSupervisionCycles,
+		getSupervisionTemplateSummary,
+		getSupervisionCycle,
 		replaceSupervisionObservationEvaluators,
 		updateRequestedSupervisionObservation,
 		updateSupervisionObservation,
@@ -35,6 +42,7 @@
 		type SupervisionReviewEvaluatorResult,
 		type SupervisionReviewResponse,
 		type SupervisionTemplate,
+		type SupervisionTemplateSummary,
 		type SupervisionTimetableOption
 	} from '$lib/api/supervision';
 	import {
@@ -87,8 +95,27 @@
 	let error = $state('');
 	let observation = $state<SupervisionObservation | null>(null);
 	let review = $state<SupervisionObservationReview | null>(null);
-	let template = $state<SupervisionTemplate | null>(null);
-	let cycles = $state<SupervisionCycle[]>([]);
+	let template = $state<SupervisionTemplateSummary | null>(null);
+	let cycle = $state<SupervisionCycle | null>(null);
+	let cycleLoading = $state(true);
+	let cycleError = $state('');
+	let templateLoading = $state(true);
+	let templateError = $state('');
+	let reviewOpen = $state(false);
+	let editTimetableError = $state('');
+	let editTimetableLoaded = $state(false);
+	let evaluatorAvailabilityError = $state('');
+	let evaluatorAvailabilityLoaded = $state(false);
+	let contextEpoch = 0;
+	let contextId = '';
+	let lessonWorkflowRevision = 0;
+	let evaluatorWorkflowRevision = 0;
+	const observationRequest = new LatestRequest();
+	const cycleRequest = new LatestRequest();
+	const templateRequest = new LatestRequest();
+	const reviewRequest = new LatestRequest();
+	const editTimetableRequest = new LatestRequest();
+	const evaluatorRequest = new LatestRequest();
 	let availableEvaluators = $state<SupervisionEvaluatorAvailability[]>([]);
 	let loadingReview = $state(false);
 	let reviewError = $state('');
@@ -165,7 +192,16 @@
 					!['published', 'acknowledged', 'completed', 'cancelled'].includes(observation.status)))
 		)
 	);
-	const cycle = $derived(cycles.find((item) => item.id === observation?.cycleId) ?? null);
+	const backHref = $derived(
+		academicContextualMenuPath(
+			'/staff/academic/supervision',
+			{
+				academicYearId: observation?.academicYearId ?? data.academicYearId,
+				academicTermId: observation?.academicTermId ?? data.academicTermId
+			},
+			academicContextOptions
+		)
+	);
 	const pageTitle = $derived(observation?.observedDisplayName ?? 'รายละเอียดรายการนิเทศ');
 	const selectedEvaluators = $derived(
 		availableEvaluators.filter((staff) => selectedEvaluatorIds.includes(staff.id))
@@ -204,7 +240,91 @@
 			: null
 	);
 
-	onMount(loadPage);
+	$effect.pre(() => {
+		const source = data;
+		untrack(() => {
+			if (contextId !== source.observationId) {
+				contextId = source.observationId;
+				contextEpoch += 1;
+				observation = null;
+				cycle = null;
+				template = null;
+				review = null;
+				savingAction = null;
+				reviewOpen = false;
+				editLessonOpen = false;
+				editEvaluatorsOpen = false;
+				evaluatorPickerOpen = false;
+				cancelDialogOpen = false;
+				cancelReason = '';
+				selectedReviewEvaluatorId = 'summary';
+				selectedEvaluatorIds = [];
+				editTimetableBlockGroups = [];
+				availableEvaluators = [];
+				editTimetableLoaded = false;
+				evaluatorAvailabilityLoaded = false;
+				reviewError = '';
+				editTimetableError = '';
+				evaluatorAvailabilityError = '';
+				loadingReview = false;
+				loadingEditTimetable = false;
+				loadingEvaluatorAvailability = false;
+				reviewRequest.abort();
+				editTimetableRequest.abort();
+				evaluatorRequest.abort();
+			}
+			const identityTicket = observationRequest.begin();
+			const cycleTicket = cycleRequest.begin();
+			const templateTicket = templateRequest.begin();
+			loading = true;
+			error = '';
+			cycleLoading = true;
+			cycleError = '';
+			templateLoading = true;
+			templateError = '';
+			void source.observation.then((result) => {
+				if (!observationRequest.isCurrent(identityTicket.revision)) return;
+				loading = false;
+				if (result.ok) observation = result.data;
+				else error = result.error;
+			});
+			void source.cycle.then((result) => {
+				if (!cycleRequest.isCurrent(cycleTicket.revision)) return;
+				cycleLoading = false;
+				if (result.ok) cycle = result.data;
+				else cycleError = result.error;
+			});
+			void source.template.then((result) => {
+				if (!templateRequest.isCurrent(templateTicket.revision)) return;
+				templateLoading = false;
+				if (result.ok) template = result.data;
+				else templateError = result.error;
+			});
+		});
+		return () => {
+			observationRequest.abort();
+			cycleRequest.abort();
+			templateRequest.abort();
+			reviewRequest.abort();
+			editTimetableRequest.abort();
+			evaluatorRequest.abort();
+		};
+	});
+
+	$effect(() => {
+		if (!reviewOpen) {
+			reviewRequest.abort();
+			loadingReview = false;
+		}
+		if (!editLessonOpen) {
+			editTimetableRequest.abort();
+			loadingEditTimetable = false;
+		}
+		if (!editEvaluatorsOpen) {
+			evaluatorRequest.abort();
+			loadingEvaluatorAvailability = false;
+		}
+	});
 
 	function manageableStatus(status: SupervisionObservationStatus): boolean {
 		return status === 'requested' || status === 'planned' || status === 'returned';
@@ -619,36 +739,72 @@
 	}
 
 	function replaceObservation(updated: SupervisionObservation) {
+		observationRequest.abort();
+		reviewRequest.abort();
+		loading = false;
+		loadingReview = false;
 		observation = updated;
+		if (review)
+			review = {
+				...review,
+				observation: updated,
+				averageRating: updated.averageRating ?? review.averageRating
+			};
+	}
+
+	async function retryObservation() {
+		if (!(await waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS))) return;
+		const ticket = observationRequest.begin();
+		loading = true;
+		error = '';
+		const result = await captureRouteLoad(
+			getSupervisionObservation(data.observationId, { signal: ticket.signal }),
+			'โหลดรายการนิเทศไม่สำเร็จ'
+		);
+		if (!observationRequest.isCurrent(ticket.revision)) return;
+		loading = false;
+		if (result.ok) {
+			observation = result.data;
+			if (!cycle && !cycleLoading) void retryCycle();
+			if (!template && !templateLoading) void retryTemplate();
+		} else error = result.error;
+	}
+
+	async function retryCycle() {
+		if (!observation) return;
+		const ticket = cycleRequest.begin();
+		cycleLoading = true;
+		cycleError = '';
+		const result = await captureRouteLoad(
+			getSupervisionCycle(observation.cycleId, { signal: ticket.signal }),
+			'โหลดรอบนิเทศไม่สำเร็จ'
+		);
+		if (!cycleRequest.isCurrent(ticket.revision)) return;
+		cycleLoading = false;
+		if (result.ok) cycle = result.data;
+		else cycleError = result.error;
+	}
+
+	async function retryTemplate() {
+		if (!observation) return;
+		const ticket = templateRequest.begin();
+		templateLoading = true;
+		templateError = '';
+		const result = await captureRouteLoad(
+			getSupervisionTemplateSummary(observation.templateId, { signal: ticket.signal }),
+			'โหลดข้อมูลแบบประเมินไม่สำเร็จ'
+		);
+		if (!templateRequest.isCurrent(ticket.revision)) return;
+		templateLoading = false;
+		if (result.ok) template = result.data;
+		else templateError = result.error;
 	}
 
 	async function loadPage() {
-		loading = true;
-		error = '';
-		review = null;
-		reviewError = '';
-		try {
-			const loadedObservation = await getSupervisionObservation(data.observationId);
-			observation = loadedObservation;
-			const cycleItems = await listSupervisionCycles(
-				loadedObservation.academicYearId,
-				loadedObservation.academicTermId
-			);
-			const loadedTemplate = await getSupervisionTemplate(loadedObservation.templateId);
-			cycles = cycleItems;
-			template = loadedTemplate;
-			if (
-				(actorCanRequestReview() || observationResultsReleased(loadedObservation.status)) &&
-				reviewableStatus(loadedObservation.status)
-			) {
-				await loadReviewDetail(loadedObservation.id);
-			}
-		} catch (loadError) {
-			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดรายการนิเทศได้';
-			toast.error(error);
-		} finally {
-			loading = false;
-		}
+		await Promise.all([
+			retryObservation(),
+			...(observation ? [retryCycle(), retryTemplate()] : [])
+		]);
 	}
 
 	function observationContextLabel(item: SupervisionObservation): string {
@@ -658,83 +814,102 @@
 	}
 
 	async function loadReviewDetail(id = observation?.id) {
-		if (!id || !canViewReviewDetails) return;
+		if (
+			!id ||
+			!canViewReviewDetails ||
+			!reviewOpen ||
+			!observation ||
+			!reviewableStatus(observation.status)
+		)
+			return;
+		const ticket = reviewRequest.begin();
 		loadingReview = true;
 		reviewError = '';
 		try {
-			const loadedReview = await getSupervisionObservationReview(id);
+			const loadedReview = await getSupervisionObservationReview(id, { signal: ticket.signal });
+			if (!reviewRequest.isCurrent(ticket.revision) || !reviewOpen) return;
 			review = loadedReview;
-			observation = loadedReview.observation;
-			template = loadedReview.template;
 			if (
 				selectedReviewEvaluatorId !== 'summary' &&
 				!loadedReview.evaluatorResults.some(
 					(result) => result.evaluatorId === selectedReviewEvaluatorId
 				)
-			) {
+			)
 				selectedReviewEvaluatorId = 'summary';
-			}
 		} catch (loadError) {
+			if (!reviewRequest.isCurrent(ticket.revision) || isAbortError(loadError)) return;
 			reviewError =
 				loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดผลประเมินนิเทศได้';
 		} finally {
-			loadingReview = false;
+			if (reviewRequest.isCurrent(ticket.revision)) loadingReview = false;
 		}
+	}
+
+	function openReview() {
+		reviewOpen = true;
+		void loadReviewDetail();
 	}
 
 	function replaceReviewObservation(updated: SupervisionObservation) {
 		replaceObservation(updated);
-		if (review) {
-			review = {
-				...review,
-				observation: updated,
-				averageRating: updated.averageRating ?? review.averageRating
-			};
-		}
 	}
 
 	async function certifyResult() {
 		if (!observation || !canCertifyResult) return;
+		const sourceEpoch = contextEpoch;
+		const submittedId = observation.id;
 		savingAction = `certify-result:${observation.id}`;
 		try {
-			const response = await certifySupervisionObservation(observation.id);
+			const response = await certifySupervisionObservation(submittedId);
+			if (sourceEpoch !== contextEpoch) return;
 			const updated = mutationData(response, 'รับรองผลไม่สำเร็จ');
 			replaceReviewObservation(updated);
-			await loadReviewDetail(updated.id);
 			toast.success('รับรองผลนิเทศแล้ว');
 		} catch (saveError) {
+			if (sourceEpoch !== contextEpoch) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'รับรองผลไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceEpoch === contextEpoch) savingAction = null;
 		}
 	}
 
 	async function approveResult() {
 		if (!observation || !canApproveResult) return;
+		const sourceEpoch = contextEpoch;
+		const submittedId = observation.id;
 		savingAction = `approve-result:${observation.id}`;
 		try {
-			const response = await approveSupervisionObservation(observation.id);
+			const response = await approveSupervisionObservation(submittedId);
+			if (sourceEpoch !== contextEpoch) return;
 			const updated = mutationData(response, 'อนุมัติผลไม่สำเร็จ');
 			replaceReviewObservation(updated);
-			await loadReviewDetail(updated.id);
 			toast.success('อนุมัติผลนิเทศแล้ว');
 		} catch (saveError) {
+			if (sourceEpoch !== contextEpoch) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'อนุมัติผลไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceEpoch === contextEpoch) savingAction = null;
 		}
 	}
 
 	async function loadEditTimetableOptions(force = false) {
-		if (!observation || !canEditLesson) return;
-		if (!force && editTimetableBlockGroups.length > 0) return;
+		if (!observation || !canEditLesson || !editLessonOpen) return;
+		if (!force && editTimetableLoaded) return;
+		const ticket = editTimetableRequest.begin();
 		loadingEditTimetable = true;
+		editTimetableError = '';
 		try {
-			editTimetableBlockGroups = await getSupervisionObservationTimetableOptions(observation.id);
+			const items = await getSupervisionObservationTimetableOptions(observation.id, {
+				signal: ticket.signal
+			});
+			if (!editTimetableRequest.isCurrent(ticket.revision) || !editLessonOpen) return;
+			editTimetableBlockGroups = items;
+			editTimetableLoaded = true;
 		} catch (loadError) {
-			toast.error(loadError instanceof Error ? loadError.message : 'โหลดคาบสอนไม่สำเร็จ');
+			if (!editTimetableRequest.isCurrent(ticket.revision) || isAbortError(loadError)) return;
+			editTimetableError = loadError instanceof Error ? loadError.message : 'โหลดคาบสอนไม่สำเร็จ';
 		} finally {
-			loadingEditTimetable = false;
+			if (editTimetableRequest.isCurrent(ticket.revision)) loadingEditTimetable = false;
 		}
 	}
 
@@ -752,8 +927,9 @@
 			observedTime: formatTimeInput(observation.observedAt),
 			reason: observation.manualLesson?.reason ?? 'แก้ไขรายการนิเทศจากหน้ารายละเอียด'
 		};
-		await loadEditTimetableOptions(true);
+		lessonWorkflowRevision += 1;
 		editLessonOpen = true;
+		void loadEditTimetableOptions(true);
 	}
 
 	async function saveLessonEdit() {
@@ -793,46 +969,56 @@
 						} satisfies ManualLesson
 					};
 
+		const sourceEpoch = contextEpoch;
+		const submittedId = observation.id;
+		const workflowRevision = lessonWorkflowRevision;
 		savingAction = 'lesson';
 		try {
 			const response = canManageObservation
-				? await updateSupervisionObservation(observation.id, payload)
-				: await updateRequestedSupervisionObservation(observation.id, payload);
+				? await updateSupervisionObservation(submittedId, payload)
+				: await updateRequestedSupervisionObservation(submittedId, payload);
+			if (sourceEpoch !== contextEpoch) return;
 			const updated = mutationData(response, 'แก้ไขรายการนิเทศไม่สำเร็จ');
 			replaceObservation(updated);
-			editLessonOpen = false;
+			if (workflowRevision === lessonWorkflowRevision) editLessonOpen = false;
 			toast.success('แก้ไขคาบนิเทศแล้ว');
 		} catch (saveError) {
+			if (sourceEpoch !== contextEpoch) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขรายการนิเทศไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceEpoch === contextEpoch) savingAction = null;
 		}
 	}
 
 	async function openEvaluatorEditor() {
 		if (!observation || !canEditEvaluators) return;
-		await loadEvaluatorAvailability(true);
+		evaluatorWorkflowRevision += 1;
 		selectedEvaluatorIds = observation.evaluators.map((evaluator) => evaluator.evaluatorUserId);
 		editEvaluatorsOpen = true;
+		void loadEvaluatorAvailability(true);
 	}
 
 	async function loadEvaluatorAvailability(force = false) {
-		if (!observation || !canEditEvaluators) return;
-		if (!force && availableEvaluators.length > 0) return;
+		if (!observation || !canEditEvaluators || !editEvaluatorsOpen) return;
+		if (!force && evaluatorAvailabilityLoaded) return;
+		const ticket = evaluatorRequest.begin();
 		loadingEvaluatorAvailability = true;
+		evaluatorAvailabilityError = '';
 		try {
-			const items = await getSupervisionEvaluatorAvailability(observation.id);
-			const availableIds = new Set(
-				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
-			);
+			const items = await getSupervisionEvaluatorAvailability(observation.id, {
+				signal: ticket.signal
+			});
+			if (!evaluatorRequest.isCurrent(ticket.revision) || !editEvaluatorsOpen) return;
 			availableEvaluators = items;
+			evaluatorAvailabilityLoaded = true;
+			const availableIds = new Set(items.filter((item) => item.available).map((item) => item.id));
 			selectedEvaluatorIds = selectedEvaluatorIds.filter((id) => availableIds.has(id));
 		} catch (loadError) {
-			toast.error(
-				loadError instanceof Error ? loadError.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้'
-			);
+			if (!evaluatorRequest.isCurrent(ticket.revision) || isAbortError(loadError)) return;
+			evaluatorAvailabilityError =
+				loadError instanceof Error ? loadError.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้';
 		} finally {
-			loadingEvaluatorAvailability = false;
+			if (evaluatorRequest.isCurrent(ticket.revision)) loadingEvaluatorAvailability = false;
 		}
 	}
 
@@ -854,45 +1040,55 @@
 			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คน');
 			return;
 		}
+		const sourceEpoch = contextEpoch;
+		const submittedId = observation.id;
+		const workflowRevision = evaluatorWorkflowRevision;
 		savingAction = 'evaluators';
 		try {
-			const response = await replaceSupervisionObservationEvaluators(observation.id, {
+			const response = await replaceSupervisionObservationEvaluators(submittedId, {
 				evaluators: selectedEvaluatorIds.map((evaluatorUserId) => ({
 					evaluatorUserId,
 					isRequired: true
 				}))
 			});
+			if (sourceEpoch !== contextEpoch) return;
 			const updated = mutationData(response, 'แก้ไขผู้ประเมินไม่สำเร็จ');
 			replaceObservation(updated);
-			editEvaluatorsOpen = false;
+			if (workflowRevision === evaluatorWorkflowRevision) editEvaluatorsOpen = false;
 			toast.success('แก้ไขผู้ประเมินแล้ว');
 		} catch (saveError) {
+			if (sourceEpoch !== contextEpoch) return;
 			void loadEvaluatorAvailability(true);
+			if (sourceEpoch !== contextEpoch) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขผู้ประเมินไม่สำเร็จ');
 		} finally {
-			savingAction = null;
+			if (sourceEpoch === contextEpoch) savingAction = null;
 		}
 	}
 
 	async function cancelObservation() {
 		if (!observation || !canCancelObservation) return;
+		const sourceEpoch = contextEpoch;
+		const submittedId = observation.id;
 		savingAction = 'cancel';
 		try {
 			const response =
 				canManageObservation && !canEditOwnRequested
-					? await cancelSupervisionObservation(observation.id, { reason: cancelReason || null })
-					: await cancelRequestedSupervisionObservation(observation.id);
+					? await cancelSupervisionObservation(submittedId, { reason: cancelReason || null })
+					: await cancelRequestedSupervisionObservation(submittedId);
+			if (sourceEpoch !== contextEpoch) return;
 			const updated = mutationData(response, 'ยกเลิกรายการนิเทศไม่สำเร็จ');
 			replaceObservation(updated);
 			cancelDialogOpen = false;
 			cancelReason = '';
 			toast.success('ยกเลิกรายการนิเทศแล้ว');
 		} catch (cancelError) {
+			if (sourceEpoch !== contextEpoch) return;
 			toast.error(
 				cancelError instanceof Error ? cancelError.message : 'ยกเลิกรายการนิเทศไม่สำเร็จ'
 			);
 		} finally {
-			savingAction = null;
+			if (sourceEpoch === contextEpoch) savingAction = null;
 		}
 	}
 </script>
@@ -900,11 +1096,11 @@
 <PageShell
 	title={pageTitle}
 	description="รายละเอียดคาบนิเทศ ผู้ประเมิน ผลประเมิน และการจัดการรายการเดียว"
-	backHref="/staff/academic/supervision"
+	{backHref}
 	backLabel="กลับหน้านิเทศการสอน"
 >
 	{#snippet actions()}
-		<Button variant="outline" href="/staff/academic/supervision">
+		<Button variant="outline" href={backHref} data-sveltekit-preload-data="off">
 			<ArrowLeft class="h-4 w-4" />
 			กลับ
 		</Button>
@@ -914,432 +1110,484 @@
 		</Button>
 	{/snippet}
 
-	{#if loading}
-		<PageSkeleton />
-	{:else if error}
-		<PageState title="โหลดรายการนิเทศไม่สำเร็จ" description={error} />
-	{:else if !observation}
-		<PageState title="ไม่พบรายการนิเทศ" description="รายการนี้อาจถูกลบหรือคุณไม่มีสิทธิ์เข้าถึง" />
-	{:else}
-		<div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-			<div class="min-w-0 space-y-4">
-				<Card.Root>
-					<Card.Header>
-						<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-							<div class="min-w-0 space-y-1">
-								<Card.Title class="flex flex-wrap items-center gap-2">
-									{observationSubjectLabel(observation)}
-									<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-								</Card.Title>
-								<Card.Description>
-									{observationPeriodLabel(observation)} · {observationClassroomLabel(observation)}
-								</Card.Description>
-							</div>
-							<div class="flex flex-wrap gap-2">
-								{#if canEditLesson}
-									<Button variant="outline" onclick={() => void openLessonEditor()}>
-										<CalendarClock class="h-4 w-4" />
-										แก้คาบ/วันเวลา
-									</Button>
-								{/if}
-								{#if canEditEvaluators}
-									<Button variant="outline" onclick={openEvaluatorEditor}>
-										<UserCheck class="h-4 w-4" />
-										แก้ผู้ประเมิน
-									</Button>
-								{/if}
-								{#if canCancelObservation}
-									<Button variant="destructive" onclick={() => (cancelDialogOpen = true)}>
-										<Trash2 class="h-4 w-4" />
-										ยกเลิก
-									</Button>
-								{/if}
-							</div>
-						</div>
-					</Card.Header>
-					<Card.Content>
-						<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-							{#each lessonDetails(observation) as detail (detail.label)}
-								<div class="rounded-md border bg-muted/20 p-3">
-									<p class="text-xs text-muted-foreground">{detail.label}</p>
-									<p class="font-medium">{detail.value}</p>
+	<div data-testid="supervision-detail" aria-busy={loading}>
+		{#if loading && !observation}
+			<div role="status" aria-label="กำลังโหลด"><PageSkeleton /></div>
+		{:else if !observation && error}
+			<PageState title="โหลดรายการนิเทศไม่สำเร็จ" description={error} />
+			<Button variant="outline" onclick={retryObservation}>ลองใหม่</Button>
+		{:else if !observation}
+			<PageState
+				title="ไม่พบรายการนิเทศ"
+				description="รายการนี้อาจถูกลบหรือคุณไม่มีสิทธิ์เข้าถึง"
+			/>
+		{:else}
+			{#if loading}<p role="status" class="text-sm text-muted-foreground">
+					กำลังอัปเดตรายการ...
+				</p>{/if}
+			{#if error}<PageState title="อัปเดตรายการไม่สำเร็จ" description={error} /><Button
+					variant="outline"
+					onclick={retryObservation}>ลองใหม่</Button
+				>{/if}
+			<div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+				<div class="min-w-0 space-y-4">
+					<Card.Root>
+						<Card.Header>
+							<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+								<div class="min-w-0 space-y-1">
+									<Card.Title class="flex flex-wrap items-center gap-2">
+										{observationSubjectLabel(observation)}
+										<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+									</Card.Title>
+									<Card.Description>
+										{observationPeriodLabel(observation)} · {observationClassroomLabel(observation)}
+									</Card.Description>
 								</div>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>ผู้ประเมิน</Card.Title>
-						<Card.Description>ผู้ที่ได้รับมอบหมายให้ประเมินรายการนี้</Card.Description>
-					</Card.Header>
-					<Card.Content class="space-y-3">
-						{#if observation.evaluators.length === 0}
-							<PageState
-								title="ยังไม่มีผู้ประเมิน"
-								description="รายการนี้ยังไม่ได้มอบหมายผู้ประเมิน"
-							/>
-						{:else}
-							{#each observation.evaluators as evaluator (evaluator.id)}
-								<div
-									class="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-								>
-									<div class="min-w-0">
-										<p class="font-medium">{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}</p>
-										<p class="text-sm text-muted-foreground">
-											{evaluator.roleLabel ?? 'ผู้ประเมิน'} · {evaluator.isRequired
-												? 'จำเป็น'
-												: 'ไม่จำเป็น'}
-										</p>
-									</div>
-									<div class="flex flex-wrap items-center gap-2">
-										<Badge
-											variant={evaluator.status === 'submitted'
-												? 'default'
-												: evaluator.status === 'draft'
-													? 'secondary'
-													: 'outline'}
-										>
-											{evaluatorStatusLabel(evaluator.status)}
-										</Badge>
-										<span class="text-sm text-muted-foreground">
-											{formatDateTime(evaluator.submittedAt)}
-										</span>
-									</div>
-								</div>
-							{/each}
-						{/if}
-					</Card.Content>
-				</Card.Root>
-
-				<Card.Root>
-					<Card.Header>
-						<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-							<div>
-								<Card.Title>แบบประเมินและผล</Card.Title>
-								<Card.Description>
-									ตรวจคำตอบรายข้อ คะแนนเฉลี่ย และรับรอง/อนุมัติผลจากหน้านี้
-								</Card.Description>
-							</div>
-							<div class="flex flex-wrap gap-2">
-								{#if canCertifyResult}
-									<LoadingButton
-										variant="outline"
-										onclick={certifyResult}
-										loading={savingAction === `certify-result:${observation.id}`}
-										loadingLabel="กำลังรับรอง..."
-									>
-										รับรองผล
-									</LoadingButton>
-								{/if}
-								{#if canApproveResult}
-									<LoadingButton
-										variant="outline"
-										onclick={approveResult}
-										loading={savingAction === `approve-result:${observation.id}`}
-										loadingLabel="กำลังอนุมัติ..."
-									>
-										อนุมัติผล
-									</LoadingButton>
-								{/if}
-							</div>
-						</div>
-					</Card.Header>
-					<Card.Content class="space-y-4">
-						<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-							<div class="rounded-md border bg-muted/20 p-3">
-								<p class="text-xs text-muted-foreground">แบบประเมิน</p>
-								<p class="font-medium">
-									{review?.template.title ?? template?.title ?? 'ไม่พบแบบประเมิน'}
-								</p>
-							</div>
-							<div class="rounded-md border bg-muted/20 p-3">
-								<p class="text-xs text-muted-foreground">คะแนนเฉลี่ยทั้งหมด</p>
-								<p class="font-medium">
-									{review
-										? reviewAverageScoreLabel(review.averageRating)
-										: observationAverageScoreLabel(observation)}
-								</p>
-							</div>
-							<div class="rounded-md border bg-muted/20 p-3">
-								<p class="text-xs text-muted-foreground">จำนวนผู้ประเมิน</p>
-								<p class="font-medium">{observation.evaluators.length} คน</p>
-							</div>
-							<div class="rounded-md border bg-muted/20 p-3">
-								<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-								<p class="font-medium">{cycle?.title ?? '-'}</p>
-							</div>
-						</div>
-
-						{#if !canViewReviewDetails}
-							<PageState
-								title="ยังไม่เปิดเผยผลประเมินรายข้อ"
-								description="ผลคะแนนรายข้อจะแสดงหลังหัวหน้ากลุ่มบริหารวิชาการอนุมัติผลแล้ว"
-							/>
-						{:else if loadingReview}
-							<PageState
-								title="กำลังโหลดผลประเมิน"
-								description="กำลังดึงคำตอบรายข้อจากผู้ประเมิน"
-							/>
-						{:else if reviewError}
-							<div class="space-y-3">
-								<PageState title="โหลดผลประเมินไม่สำเร็จ" description={reviewError} />
-								<Button variant="outline" onclick={() => void loadReviewDetail()}>
-									<RefreshCw class="h-4 w-4" />
-									โหลดผลอีกครั้ง
-								</Button>
-							</div>
-						{:else if review}
-							<div class="space-y-4" data-supervision-review-rubric="readonly">
-								<div
-									class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
-								>
-									<div>
-										<p class="text-xs text-muted-foreground">มุมมอง</p>
-										<p class="font-medium">
-											{selectedReviewEvaluator?.evaluatorDisplayName ?? 'สรุปเฉลี่ยทุกผู้ประเมิน'}
-										</p>
-									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">คะแนนเฉลี่ยมุมมองนี้</p>
-										<p class="font-medium">
-											{selectedReviewEvaluator
-												? reviewAverageScoreLabel(selectedReviewEvaluator.averageRating)
-												: reviewAverageScoreLabel(review.averageRating)}
-										</p>
-									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">ตอบแบบคะแนน</p>
-										<p class="font-medium">
-											{selectedReviewSummary?.answeredRatingCount ?? 0} /
-											{selectedReviewSummary?.ratingItemCount ?? 0}
-										</p>
-									</div>
-									<div>
-										<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
-										<p class="font-medium">
-											{selectedReviewSummary?.percentage === null ||
-											selectedReviewSummary?.percentage === undefined
-												? '-'
-												: `${selectedReviewSummary.percentage.toFixed(2)}% · ${selectedReviewSummary.qualityLabel}`}
-										</p>
-									</div>
-								</div>
-
 								<div class="flex flex-wrap gap-2">
-									<Button
-										type="button"
-										size="sm"
-										variant={selectedReviewEvaluatorId === 'summary' ? 'default' : 'outline'}
-										onclick={() => (selectedReviewEvaluatorId = 'summary')}
-									>
-										สรุปเฉลี่ย
-									</Button>
-									{#each review.evaluatorResults as evaluator (evaluator.evaluatorId)}
-										<Button
-											type="button"
-											size="sm"
-											variant={selectedReviewEvaluatorId === evaluator.evaluatorId
-												? 'default'
-												: 'outline'}
-											onclick={() => (selectedReviewEvaluatorId = evaluator.evaluatorId)}
-										>
-											{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-											<Badge variant="secondary" class="ml-1">
-												{reviewAverageScoreLabel(evaluator.averageRating)}
-											</Badge>
+									{#if canEditLesson}
+										<Button variant="outline" onclick={() => void openLessonEditor()}>
+											<CalendarClock class="h-4 w-4" />
+											แก้คาบ/วันเวลา
 										</Button>
-									{/each}
+									{/if}
+									{#if canEditEvaluators}
+										<Button variant="outline" onclick={openEvaluatorEditor}>
+											<UserCheck class="h-4 w-4" />
+											แก้ผู้ประเมิน
+										</Button>
+									{/if}
+									{#if canCancelObservation}
+										<Button variant="destructive" onclick={() => (cancelDialogOpen = true)}>
+											<Trash2 class="h-4 w-4" />
+											ยกเลิก
+										</Button>
+									{/if}
 								</div>
-
-								{#each reviewRubricSections as section (section.localId)}
-									{@const progress = sectionRubricProgress(
-										section,
-										selectedReviewDrafts,
-										review.template.ratingMax
-									)}
-									<div class="space-y-3 rounded-md border bg-background p-3">
-										<div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-											<div>
-												<h3 class="text-sm font-semibold">{section.title}</h3>
-												{#if section.description}
-													<p class="text-xs text-muted-foreground">{section.description}</p>
-												{/if}
-											</div>
-											<div class="flex flex-wrap gap-2">
-												<Badge variant="outline">
-													ตอบ {progress.answeredRatingCount}/{progress.ratingCount}
-												</Badge>
-												<Badge variant="outline">
-													คะแนน {progress.totalScore.toFixed(2)}/{progress.maxScore}
-												</Badge>
-												<Badge variant="secondary">
-													{progress.percentage === null ? '-' : progress.percentage.toFixed(2)}% ·
-													{qualityLevelFromPercentage(progress.percentage)}
-												</Badge>
-											</div>
-										</div>
-										<div class="overflow-x-auto rounded-md border">
-											<Table.Root>
-												<Table.Header>
-													<Table.Row>
-														<Table.Head class="min-w-72">หัวข้อประเมิน</Table.Head>
-														{#each ratingScale(review.template.ratingMin, review.template.ratingMax) as score (score)}
-															<Table.Head class="w-14 text-center">{score}</Table.Head>
-														{/each}
-														<Table.Head class="min-w-40">ผล</Table.Head>
-													</Table.Row>
-												</Table.Header>
-												<Table.Body>
-													{#each section.items as item (item.localId)}
-														{@const itemRating = reviewItemRatingFor(item)}
-														<Table.Row>
-															<Table.Cell class="align-top">
-																<p class="font-medium">{item.label}</p>
-																{#if item.description}
-																	<p class="text-xs text-muted-foreground">{item.description}</p>
-																{/if}
-															</Table.Cell>
-															{#if item.itemType === 'rating'}
-																{#each ratingScale(review.template.ratingMin, review.template.ratingMax) as score (score)}
-																	<Table.Cell class="text-center align-middle">
-																		<div
-																			class={cn(
-																				'mx-auto flex h-8 w-8 items-center justify-center rounded-md border text-xs',
-																				selectedReviewEvaluator && itemRating === score
-																					? 'border-primary bg-primary text-primary-foreground'
-																					: !selectedReviewEvaluator &&
-																						  itemRating !== null &&
-																						  Math.round(itemRating) === score
-																						? 'border-primary/60 bg-primary/10 text-primary'
-																						: 'bg-muted/20 text-muted-foreground'
-																			)}
-																		>
-																			{#if selectedReviewEvaluator && itemRating === score}
-																				<Check class="h-4 w-4" />
-																			{:else}
-																				{score}
-																			{/if}
-																		</div>
-																	</Table.Cell>
-																{/each}
-																<Table.Cell class="align-top">
-																	{#if selectedReviewEvaluator}
-																		<Badge variant="secondary">
-																			คะแนน {reviewAverageScoreLabel(itemRating)}
-																		</Badge>
-																	{:else}
-																		<div class="space-y-1">
-																			<Badge variant="secondary">
-																				เฉลี่ย {reviewAverageScoreLabel(itemRating)}
-																			</Badge>
-																			<p class="text-xs text-muted-foreground">
-																				{reviewItemSummaryFor(item.localId)?.responseCount ?? 0} คำตอบ
-																			</p>
-																		</div>
-																	{/if}
-																</Table.Cell>
-															{:else}
-																<Table.Cell
-																	colspan={ratingScale(
-																		review.template.ratingMin,
-																		review.template.ratingMax
-																	).length}
-																	class="align-top"
-																>
-																	<p class="whitespace-pre-wrap text-sm">
-																		{reviewItemTextFor(item) || '-'}
-																	</p>
-																</Table.Cell>
-																<Table.Cell class="align-top">
-																	<Badge variant="outline">ข้อความ</Badge>
-																</Table.Cell>
-															{/if}
-														</Table.Row>
-													{/each}
-												</Table.Body>
-											</Table.Root>
-										</div>
+							</div>
+						</Card.Header>
+						<Card.Content>
+							<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+								{#each lessonDetails(observation) as detail (detail.label)}
+									<div class="rounded-md border bg-muted/20 p-3">
+										<p class="text-xs text-muted-foreground">{detail.label}</p>
+										<p class="font-medium">{detail.value}</p>
 									</div>
 								{/each}
 							</div>
-						{:else}
-							<PageState
-								title="ยังไม่มีผลประเมินสำหรับตรวจ"
-								description="ผลรายข้อจะแสดงเมื่อผู้ประเมินส่งแบบประเมินครบและรายการเข้าสู่ขั้นตอนรับรองผล"
-							/>
-						{/if}
-					</Card.Content>
-				</Card.Root>
-			</div>
+						</Card.Content>
+					</Card.Root>
 
-			<div class="min-w-0 space-y-4">
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>ภาพรวม</Card.Title>
-					</Card.Header>
-					<Card.Content class="space-y-3 text-sm">
-						<div>
-							<p class="text-xs text-muted-foreground">ผู้รับการนิเทศ</p>
-							<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-						</div>
-						<div>
-							<p class="text-xs text-muted-foreground">สถานะ</p>
-							<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-						</div>
-						<div>
-							<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-							<p class="font-medium">{cycle?.title ?? '-'}</p>
-						</div>
-						<div>
-							<p class="text-xs text-muted-foreground">ภาคเรียน/ปีการศึกษา</p>
-							<p class="font-medium">{observationContextLabel(observation)}</p>
-						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>ประวัติ</Card.Title>
-						<Card.Description>ลำดับการทำงานที่บันทึกจากระบบ</Card.Description>
-					</Card.Header>
-					<Card.Content class="space-y-3">
-						{#if observation.actions.length === 0}
-							<PageState
-								title="ยังไม่มีประวัติ"
-								description="เมื่อมีการดำเนินการ ระบบจะแสดงประวัติที่นี่"
-							/>
-						{:else}
-							{#each observation.actions as action (action.id)}
-								<div class="flex items-start gap-3 rounded-md border p-3">
-									<div class="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary"></div>
-									<div class="min-w-0 space-y-1">
+					<Card.Root>
+						<Card.Header>
+							<Card.Title>ผู้ประเมิน</Card.Title>
+							<Card.Description>ผู้ที่ได้รับมอบหมายให้ประเมินรายการนี้</Card.Description>
+						</Card.Header>
+						<Card.Content class="space-y-3">
+							{#if observation.evaluators.length === 0}
+								<PageState
+									title="ยังไม่มีผู้ประเมิน"
+									description="รายการนี้ยังไม่ได้มอบหมายผู้ประเมิน"
+								/>
+							{:else}
+								{#each observation.evaluators as evaluator (evaluator.id)}
+									<div
+										class="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+									>
+										<div class="min-w-0">
+											<p class="font-medium">{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}</p>
+											<p class="text-sm text-muted-foreground">
+												{evaluator.roleLabel ?? 'ผู้ประเมิน'} · {evaluator.isRequired
+													? 'จำเป็น'
+													: 'ไม่จำเป็น'}
+											</p>
+										</div>
 										<div class="flex flex-wrap items-center gap-2">
-											<p class="text-sm font-medium">{actionKindLabel(action.actionKind)}</p>
-											{#if action.fromStatus || action.toStatus}
-												<Badge variant="outline">
-													{action.fromStatus ? statusLabel(action.fromStatus) : '-'} → {action.toStatus
-														? statusLabel(action.toStatus)
-														: '-'}
-												</Badge>
+											<Badge
+												variant={evaluator.status === 'submitted'
+													? 'default'
+													: evaluator.status === 'draft'
+														? 'secondary'
+														: 'outline'}
+											>
+												{evaluatorStatusLabel(evaluator.status)}
+											</Badge>
+											<span class="text-sm text-muted-foreground">
+												{formatDateTime(evaluator.submittedAt)}
+											</span>
+										</div>
+									</div>
+								{/each}
+							{/if}
+						</Card.Content>
+					</Card.Root>
+
+					<Card.Root>
+						<Card.Header>
+							<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+								<div>
+									<Card.Title>แบบประเมินและผล</Card.Title>
+									<Card.Description>
+										ตรวจคำตอบรายข้อ คะแนนเฉลี่ย และรับรอง/อนุมัติผลจากหน้านี้
+									</Card.Description>
+								</div>
+								<div class="flex flex-wrap gap-2">
+									{#if canCertifyResult}
+										<LoadingButton
+											variant="outline"
+											onclick={certifyResult}
+											loading={savingAction === `certify-result:${observation.id}`}
+											loadingLabel="กำลังรับรอง..."
+										>
+											รับรองผล
+										</LoadingButton>
+									{/if}
+									{#if canApproveResult}
+										<LoadingButton
+											variant="outline"
+											onclick={approveResult}
+											loading={savingAction === `approve-result:${observation.id}`}
+											loadingLabel="กำลังอนุมัติ..."
+										>
+											อนุมัติผล
+										</LoadingButton>
+									{/if}
+								</div>
+							</div>
+						</Card.Header>
+						<Card.Content class="space-y-4">
+							<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+								<div class="rounded-md border bg-muted/20 p-3">
+									<p class="text-xs text-muted-foreground">แบบประเมิน</p>
+									<p class="font-medium">
+										{review?.template.title ??
+											template?.title ??
+											(templateLoading ? 'กำลังโหลด...' : '-')}
+									</p>
+								</div>
+								<div class="rounded-md border bg-muted/20 p-3">
+									<p class="text-xs text-muted-foreground">คะแนนเฉลี่ยทั้งหมด</p>
+									<p class="font-medium">
+										{review
+											? reviewAverageScoreLabel(review.averageRating)
+											: observationAverageScoreLabel(observation)}
+									</p>
+								</div>
+								<div class="rounded-md border bg-muted/20 p-3">
+									<p class="text-xs text-muted-foreground">จำนวนผู้ประเมิน</p>
+									<p class="font-medium">{observation.evaluators.length} คน</p>
+								</div>
+								<div class="rounded-md border bg-muted/20 p-3">
+									<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
+									<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
+								</div>
+							</div>
+
+							<div data-testid="supervision-review" aria-busy={loadingReview}>
+								{#if reviewOpen}<Button variant="outline" onclick={() => (reviewOpen = false)}
+										>ปิดผลรายข้อ</Button
+									>{/if}
+								{#if !canViewReviewDetails}
+									<PageState
+										title="ยังไม่เปิดเผยผลประเมินรายข้อ"
+										description="ผลคะแนนรายข้อจะแสดงหลังหัวหน้ากลุ่มบริหารวิชาการอนุมัติผลแล้ว"
+									/>
+								{:else if !reviewOpen && reviewableStatus(observation.status)}
+									<Button variant="outline" onclick={openReview}>ดูผลประเมินรายข้อ</Button>
+								{:else if loadingReview && !review}
+									<div role="status" aria-label="กำลังโหลดผลประเมิน">
+										<PageSkeleton variant="detail" />
+									</div>
+								{:else if reviewError && !review}
+									<div class="space-y-3">
+										<PageState title="โหลดผลประเมินไม่สำเร็จ" description={reviewError} />
+										<Button variant="outline" onclick={() => void loadReviewDetail()}>
+											<RefreshCw class="h-4 w-4" />
+											โหลดผลอีกครั้ง
+										</Button>
+									</div>
+								{:else if review && reviewOpen}
+									{#if loadingReview}<p role="status">กำลังอัปเดตผล...</p>{/if}
+									{#if reviewError}<PageState
+											title="อัปเดตผลไม่สำเร็จ"
+											description={reviewError}
+										/><Button variant="outline" onclick={() => void loadReviewDetail()}
+											>โหลดผลอีกครั้ง</Button
+										>{/if}
+									<div class="space-y-4" data-supervision-review-rubric="readonly">
+										<div
+											class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
+										>
+											<div>
+												<p class="text-xs text-muted-foreground">มุมมอง</p>
+												<p class="font-medium">
+													{selectedReviewEvaluator?.evaluatorDisplayName ??
+														'สรุปเฉลี่ยทุกผู้ประเมิน'}
+												</p>
+											</div>
+											<div>
+												<p class="text-xs text-muted-foreground">คะแนนเฉลี่ยมุมมองนี้</p>
+												<p class="font-medium">
+													{selectedReviewEvaluator
+														? reviewAverageScoreLabel(selectedReviewEvaluator.averageRating)
+														: reviewAverageScoreLabel(review.averageRating)}
+												</p>
+											</div>
+											<div>
+												<p class="text-xs text-muted-foreground">ตอบแบบคะแนน</p>
+												<p class="font-medium">
+													{selectedReviewSummary?.answeredRatingCount ?? 0} /
+													{selectedReviewSummary?.ratingItemCount ?? 0}
+												</p>
+											</div>
+											<div>
+												<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
+												<p class="font-medium">
+													{selectedReviewSummary?.percentage === null ||
+													selectedReviewSummary?.percentage === undefined
+														? '-'
+														: `${selectedReviewSummary.percentage.toFixed(2)}% · ${selectedReviewSummary.qualityLabel}`}
+												</p>
+											</div>
+										</div>
+
+										<div class="flex flex-wrap gap-2">
+											<Button
+												type="button"
+												size="sm"
+												variant={selectedReviewEvaluatorId === 'summary' ? 'default' : 'outline'}
+												onclick={() => (selectedReviewEvaluatorId = 'summary')}
+											>
+												สรุปเฉลี่ย
+											</Button>
+											{#each review.evaluatorResults as evaluator (evaluator.evaluatorId)}
+												<Button
+													type="button"
+													size="sm"
+													variant={selectedReviewEvaluatorId === evaluator.evaluatorId
+														? 'default'
+														: 'outline'}
+													onclick={() => (selectedReviewEvaluatorId = evaluator.evaluatorId)}
+												>
+													{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+													<Badge variant="secondary" class="ml-1">
+														{reviewAverageScoreLabel(evaluator.averageRating)}
+													</Badge>
+												</Button>
+											{/each}
+										</div>
+
+										{#each reviewRubricSections as section (section.localId)}
+											{@const progress = sectionRubricProgress(
+												section,
+												selectedReviewDrafts,
+												review.template.ratingMax
+											)}
+											<div class="space-y-3 rounded-md border bg-background p-3">
+												<div
+													class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between"
+												>
+													<div>
+														<h3 class="text-sm font-semibold">{section.title}</h3>
+														{#if section.description}
+															<p class="text-xs text-muted-foreground">{section.description}</p>
+														{/if}
+													</div>
+													<div class="flex flex-wrap gap-2">
+														<Badge variant="outline">
+															ตอบ {progress.answeredRatingCount}/{progress.ratingCount}
+														</Badge>
+														<Badge variant="outline">
+															คะแนน {progress.totalScore.toFixed(2)}/{progress.maxScore}
+														</Badge>
+														<Badge variant="secondary">
+															{progress.percentage === null ? '-' : progress.percentage.toFixed(2)}%
+															·
+															{qualityLevelFromPercentage(progress.percentage)}
+														</Badge>
+													</div>
+												</div>
+												<div class="overflow-x-auto rounded-md border">
+													<Table.Root>
+														<Table.Header>
+															<Table.Row>
+																<Table.Head class="min-w-72">หัวข้อประเมิน</Table.Head>
+																{#each ratingScale(review.template.ratingMin, review.template.ratingMax) as score (score)}
+																	<Table.Head class="w-14 text-center">{score}</Table.Head>
+																{/each}
+																<Table.Head class="min-w-40">ผล</Table.Head>
+															</Table.Row>
+														</Table.Header>
+														<Table.Body>
+															{#each section.items as item (item.localId)}
+																{@const itemRating = reviewItemRatingFor(item)}
+																<Table.Row>
+																	<Table.Cell class="align-top">
+																		<p class="font-medium">{item.label}</p>
+																		{#if item.description}
+																			<p class="text-xs text-muted-foreground">
+																				{item.description}
+																			</p>
+																		{/if}
+																	</Table.Cell>
+																	{#if item.itemType === 'rating'}
+																		{#each ratingScale(review.template.ratingMin, review.template.ratingMax) as score (score)}
+																			<Table.Cell class="text-center align-middle">
+																				<div
+																					class={cn(
+																						'mx-auto flex h-8 w-8 items-center justify-center rounded-md border text-xs',
+																						selectedReviewEvaluator && itemRating === score
+																							? 'border-primary bg-primary text-primary-foreground'
+																							: !selectedReviewEvaluator &&
+																								  itemRating !== null &&
+																								  Math.round(itemRating) === score
+																								? 'border-primary/60 bg-primary/10 text-primary'
+																								: 'bg-muted/20 text-muted-foreground'
+																					)}
+																				>
+																					{#if selectedReviewEvaluator && itemRating === score}
+																						<Check class="h-4 w-4" />
+																					{:else}
+																						{score}
+																					{/if}
+																				</div>
+																			</Table.Cell>
+																		{/each}
+																		<Table.Cell class="align-top">
+																			{#if selectedReviewEvaluator}
+																				<Badge variant="secondary">
+																					คะแนน {reviewAverageScoreLabel(itemRating)}
+																				</Badge>
+																			{:else}
+																				<div class="space-y-1">
+																					<Badge variant="secondary">
+																						เฉลี่ย {reviewAverageScoreLabel(itemRating)}
+																					</Badge>
+																					<p class="text-xs text-muted-foreground">
+																						{reviewItemSummaryFor(item.localId)?.responseCount ?? 0} คำตอบ
+																					</p>
+																				</div>
+																			{/if}
+																		</Table.Cell>
+																	{:else}
+																		<Table.Cell
+																			colspan={ratingScale(
+																				review.template.ratingMin,
+																				review.template.ratingMax
+																			).length}
+																			class="align-top"
+																		>
+																			<p class="whitespace-pre-wrap text-sm">
+																				{reviewItemTextFor(item) || '-'}
+																			</p>
+																		</Table.Cell>
+																		<Table.Cell class="align-top">
+																			<Badge variant="outline">ข้อความ</Badge>
+																		</Table.Cell>
+																	{/if}
+																</Table.Row>
+															{/each}
+														</Table.Body>
+													</Table.Root>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<PageState
+										title="ยังไม่มีผลประเมินสำหรับตรวจ"
+										description="ผลรายข้อจะแสดงเมื่อผู้ประเมินส่งแบบประเมินครบและรายการเข้าสู่ขั้นตอนรับรองผล"
+									/>
+								{/if}
+							</div>
+						</Card.Content>
+					</Card.Root>
+				</div>
+
+				<div class="min-w-0 space-y-4">
+					<div data-testid="supervision-detail-cycle" aria-busy={cycleLoading}>
+						{#if cycleLoading && !cycle}<div role="status" aria-label="กำลังโหลด">
+								<PageSkeleton rows={1} columns={1} />
+							</div>{:else if cycleLoading}<p role="status">กำลังอัปเดตรอบ...</p>{/if}
+						{#if cycleError}<PageState
+								title="โหลดรอบนิเทศไม่สำเร็จ"
+								description={cycleError}
+							/><Button variant="outline" onclick={retryCycle}>ลองใหม่</Button>{/if}
+					</div>
+					<div data-testid="supervision-detail-template" aria-busy={templateLoading}>
+						{#if templateLoading && !template}<div role="status" aria-label="กำลังโหลด">
+								<PageSkeleton rows={1} columns={1} />
+							</div>{:else if templateLoading}<p role="status">กำลังอัปเดตแบบประเมิน...</p>{/if}
+						{#if templateError}<PageState
+								title="โหลดข้อมูลแบบประเมินไม่สำเร็จ"
+								description={templateError}
+							/><Button variant="outline" onclick={retryTemplate}>ลองใหม่</Button>{/if}
+					</div>
+					<Card.Root>
+						<Card.Header>
+							<Card.Title>ภาพรวม</Card.Title>
+						</Card.Header>
+						<Card.Content class="space-y-3 text-sm">
+							<div>
+								<p class="text-xs text-muted-foreground">ผู้รับการนิเทศ</p>
+								<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+							</div>
+							<div>
+								<p class="text-xs text-muted-foreground">สถานะ</p>
+								<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+							</div>
+							<div>
+								<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
+								<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
+							</div>
+							<div>
+								<p class="text-xs text-muted-foreground">ภาคเรียน/ปีการศึกษา</p>
+								<p class="font-medium">{observationContextLabel(observation)}</p>
+							</div>
+						</Card.Content>
+					</Card.Root>
+
+					<Card.Root>
+						<Card.Header>
+							<Card.Title>ประวัติ</Card.Title>
+							<Card.Description>ลำดับการทำงานที่บันทึกจากระบบ</Card.Description>
+						</Card.Header>
+						<Card.Content class="space-y-3">
+							{#if observation.actions.length === 0}
+								<PageState
+									title="ยังไม่มีประวัติ"
+									description="เมื่อมีการดำเนินการ ระบบจะแสดงประวัติที่นี่"
+								/>
+							{:else}
+								{#each observation.actions as action (action.id)}
+									<div class="flex items-start gap-3 rounded-md border p-3">
+										<div class="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary"></div>
+										<div class="min-w-0 space-y-1">
+											<div class="flex flex-wrap items-center gap-2">
+												<p class="text-sm font-medium">{actionKindLabel(action.actionKind)}</p>
+												{#if action.fromStatus || action.toStatus}
+													<Badge variant="outline">
+														{action.fromStatus ? statusLabel(action.fromStatus) : '-'} → {action.toStatus
+															? statusLabel(action.toStatus)
+															: '-'}
+													</Badge>
+												{/if}
+											</div>
+											<p class="text-sm text-muted-foreground">
+												{action.actorDisplayName ?? 'ระบบ'} · {formatDateTime(action.createdAt)}
+											</p>
+											{#if action.comment}
+												<p class="text-sm">{action.comment}</p>
 											{/if}
 										</div>
-										<p class="text-sm text-muted-foreground">
-											{action.actorDisplayName ?? 'ระบบ'} · {formatDateTime(action.createdAt)}
-										</p>
-										{#if action.comment}
-											<p class="text-sm">{action.comment}</p>
-										{/if}
 									</div>
-								</div>
-							{/each}
-						{/if}
-					</Card.Content>
-				</Card.Root>
+								{/each}
+							{/if}
+						</Card.Content>
+					</Card.Root>
+				</div>
 			</div>
-		</div>
-	{/if}
+		{/if}
+	</div>
 </PageShell>
 
 <Dialog.Root bind:open={editLessonOpen}>
@@ -1389,7 +1637,12 @@
 			</div>
 
 			{#if loadingEditTimetable}
-				<PageState title="กำลังโหลดตารางสอน" description="กำลังดึงคาบสอนสำหรับแก้ไขรายการนิเทศ" />
+				<div role="status" aria-label="กำลังโหลด"><PageSkeleton /></div>
+			{:else if editTimetableError}
+				<PageState title="โหลดคาบสอนไม่สำเร็จ" description={editTimetableError} />
+				<Button variant="outline" onclick={() => void loadEditTimetableOptions(true)}
+					>ลองใหม่</Button
+				>
 			{:else if editTimetableBlockGroups.length === 0}
 				<PageState
 					title="ไม่พบคาบสอนในตาราง"
@@ -1532,7 +1785,7 @@
 </Dialog.Root>
 
 <Dialog.Root bind:open={editEvaluatorsOpen}>
-	<Dialog.Content class="sm:max-w-2xl">
+	<Dialog.Content class="sm:max-w-2xl" aria-busy={loadingEvaluatorAvailability}>
 		<Dialog.Header>
 			<Dialog.Title>แก้ผู้ประเมิน</Dialog.Title>
 			<Dialog.Description>
@@ -1540,6 +1793,15 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-3">
+			{#if loadingEvaluatorAvailability}<div role="status" aria-label="กำลังโหลด">
+					<PageSkeleton />
+				</div>{/if}
+			{#if evaluatorAvailabilityError}<PageState
+					title="โหลดผู้ประเมินไม่สำเร็จ"
+					description={evaluatorAvailabilityError}
+				/><Button variant="outline" onclick={() => void loadEvaluatorAvailability(true)}
+					>ลองใหม่</Button
+				>{/if}
 			<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2">
 				{#if selectedEvaluators.length === 0}
 					<span class="text-sm text-muted-foreground">ยังไม่ได้เลือกผู้ประเมิน</span>
@@ -1567,9 +1829,12 @@
 							type="button"
 							variant="outline"
 							role="combobox"
+							aria-label="เพิ่ม/เลือกผู้ประเมิน"
 							aria-expanded={evaluatorPickerOpen}
 							class="w-full justify-between font-normal"
-							disabled={loadingEvaluatorAvailability}
+							disabled={loadingEvaluatorAvailability ||
+								!evaluatorAvailabilityLoaded ||
+								Boolean(evaluatorAvailabilityError)}
 							{...props}
 						>
 							<span class="truncate">
@@ -1619,6 +1884,9 @@
 			<Button variant="outline" onclick={() => (editEvaluatorsOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
 				onclick={saveEvaluatorEdit}
+				disabled={loadingEvaluatorAvailability ||
+					!evaluatorAvailabilityLoaded ||
+					Boolean(evaluatorAvailabilityError)}
 				loading={savingAction === 'evaluators'}
 				loadingLabel="กำลังบันทึก..."
 			>

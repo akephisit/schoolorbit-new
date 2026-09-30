@@ -124,6 +124,14 @@ export function createSupervisionCycle(
 	return apiClient.post<SupervisionCycle>('/api/supervision/cycles', payload);
 }
 
+export async function getSupervisionCycle(
+	id: CycleId,
+	options: ApiRequestOptions = {}
+): Promise<SupervisionCycle> {
+	const response = await apiClient.get<SupervisionCycle>(`/api/supervision/cycles/${id}`, options);
+	return requireApiData(response, 'ไม่สามารถโหลดรอบนิเทศได้');
+}
+
 export function updateSupervisionCycle(
 	id: CycleId,
 	payload: UpdateSupervisionCycleRequest
@@ -160,6 +168,17 @@ export async function getSupervisionTemplate(
 		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดแบบประเมินนิเทศได้');
+}
+
+export async function getSupervisionTemplateSummary(
+	id: TemplateId,
+	options: ApiRequestOptions = {}
+): Promise<SupervisionTemplateSummary> {
+	const response = await apiClient.get<SupervisionTemplateSummary>(
+		`/api/supervision/templates/${id}/summary`,
+		options
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดข้อมูลแบบประเมินนิเทศได้');
 }
 
 export function createSupervisionTemplate(

@@ -140,6 +140,46 @@ pub async fn list_template_summaries(
         .collect()
 }
 
+/// One selected summary; rubric contents remain a separate optional read.
+pub async fn get_template_summary(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<SupervisionTemplateSummary, AppError> {
+    let row = sqlx::query_as::<_, TemplateSummaryRow>(
+        r#"
+        WITH section_counts AS (
+            SELECT template_id, COUNT(*) AS section_count
+            FROM supervision_template_sections WHERE template_id = $1 GROUP BY template_id
+        ), item_counts AS (
+            SELECT s.template_id, COUNT(*) AS item_count
+            FROM supervision_template_sections s
+            JOIN supervision_template_items i ON i.section_id = s.id
+            WHERE s.template_id = $1 GROUP BY s.template_id
+        )
+        SELECT t.id, t.title, t.status, t.rating_min, t.rating_max,
+               COALESCE(s.section_count, 0)::bigint AS section_count,
+               COALESCE(i.item_count, 0)::bigint AS item_count
+        FROM supervision_templates t
+        LEFT JOIN section_counts s ON s.template_id = t.id
+        LEFT JOIN item_counts i ON i.template_id = t.id
+        WHERE t.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("ไม่พบแบบประเมินนิเทศ".into()))?;
+    Ok(SupervisionTemplateSummary {
+        id: row.id,
+        title: row.title,
+        status: parse_template_status(&row.status)?,
+        rating_min: row.rating_min,
+        rating_max: row.rating_max,
+        section_count: row.section_count,
+        item_count: row.item_count,
+    })
+}
+
 pub async fn list_templates(pool: &PgPool) -> Result<Vec<SupervisionTemplate>, AppError> {
     let rows = sqlx::query_as::<_, SupervisionTemplateRow>(
         r#"

@@ -7,9 +7,7 @@ mod shared;
 mod templates;
 mod term_preparation;
 
-#[cfg(any(test, feature = "integration-test-support"))]
-pub use cycles::get_cycle;
-pub use cycles::{create_cycle, list_cycles, update_cycle};
+pub use cycles::{create_cycle, get_cycle, list_cycles, update_cycle};
 pub use evaluations::{replace_observation_evaluators, submit_my_evaluation};
 pub use lifecycle::pending_term_work;
 pub use observations::{
@@ -27,7 +25,8 @@ pub use shared::{
     SupervisionObservationListAccess,
 };
 pub use templates::{
-    create_template, get_template, list_template_summaries, list_templates, update_template,
+    create_template, get_template, get_template_summary, list_template_summaries, list_templates,
+    update_template,
 };
 pub use term_preparation::apply as apply_term_preparation;
 

@@ -5384,7 +5384,7 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
+		get: operations['getSupervisionCycle'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -5695,6 +5695,22 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch: operations['updateSupervisionTemplate'];
+		trace?: never;
+	};
+	'/api/supervision/templates/{id}/summary': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionTemplateSummary'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
 		trace?: never;
 	};
 	'/api/supervision/templates/summaries': {
@@ -9360,6 +9376,24 @@ export interface components {
 				title: string;
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupervisionTemplateSummary: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				itemCount: number;
+				/** Format: int32 */
+				ratingMax: number;
+				/** Format: int32 */
+				ratingMin: number;
+				/** Format: int64 */
+				sectionCount: number;
+				status: components['schemas']['SupervisionTemplateStatus'];
+				title: string;
 			};
 			message?: string;
 			success: boolean;
@@ -43163,6 +43197,56 @@ export interface operations {
 			};
 		};
 	};
+	getSupervisionCycle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supervision cycle ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supervision cycle */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionCycle'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision cycle not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	updateSupervisionCycle: {
 		parameters: {
 			query?: never;
@@ -44628,6 +44712,56 @@ export interface operations {
 				};
 			};
 			/** @description Supervision template not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionTemplateSummary: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Template summary ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Template summary */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionTemplateSummary'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Template summary not found */
 			404: {
 				headers: {
 					[name: string]: unknown;

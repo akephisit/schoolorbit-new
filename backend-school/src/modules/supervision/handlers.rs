@@ -97,6 +97,54 @@ fn redact_teacher_status_results_for_actor(
 
 #[utoipa::path(
     get,
+    path = "/api/supervision/templates/{id}/summary",
+    operation_id = "getSupervisionTemplateSummary",
+    tag = "supervision",
+    params(("id" = Uuid, Path, description = "Template summary ID")),
+    responses(
+        (status = 200, description = "Template summary", body = ApiResponse<SupervisionTemplateSummary>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Supervision access denied", body = ApiErrorResponse),
+        (status = 404, description = "Template summary not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_template_summary(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    supervision_access_policy::require_supervision_access(&context.actor)?;
+    let item = services::get_template_summary(&context.tenant.pool, id).await?;
+    Ok(Json(ApiResponse::ok(item)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/supervision/cycles/{id}",
+    operation_id = "getSupervisionCycle",
+    tag = "supervision",
+    params(("id" = Uuid, Path, description = "Supervision cycle ID")),
+    responses(
+        (status = 200, description = "Supervision cycle", body = ApiResponse<SupervisionCycle>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Supervision access denied", body = ApiErrorResponse),
+        (status = 404, description = "Supervision cycle not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_cycle(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    supervision_access_policy::require_supervision_access(&context.actor)?;
+    let item = services::get_cycle(&context.tenant.pool, id).await?;
+    Ok(Json(ApiResponse::ok(item)).into_response())
+}
+
+#[utoipa::path(
+    get,
     path = "/api/supervision/cycles",
     operation_id = "listSupervisionCycles",
     tag = "supervision",
@@ -1022,9 +1070,10 @@ pub async fn teacher_status_overview(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/cycles", get(list_cycles).post(create_cycle))
-        .route("/cycles/{id}", patch(update_cycle))
+        .route("/cycles/{id}", get(get_cycle).patch(update_cycle))
         .route("/templates", get(list_templates).post(create_template))
         .route("/templates/summaries", get(list_template_summaries))
+        .route("/templates/{id}/summary", get(get_template_summary))
         .route("/templates/{id}", get(get_template).patch(update_template))
         .route("/observations", get(list_observations))
         .route("/observations/requests", post(request_observation))

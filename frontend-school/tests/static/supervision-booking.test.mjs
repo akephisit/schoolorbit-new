@@ -308,7 +308,7 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(detailPage, /replaceObservation\(updated/);
 	assert.match(detailPage, /observation\.actions/);
 	assert.match(detailPage, /actionKindLabel/);
-	assert.match(parentPage, /href=\{`\/staff\/academic\/supervision\/\$\{observation\.id\}`\}/);
+	assert.match(parentPage, /href=\{observationDetailHref\(observation\)\}/);
 });
 
 test('teaching supervision detail hides scores until academic approval releases results', async () => {

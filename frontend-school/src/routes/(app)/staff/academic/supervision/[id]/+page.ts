@@ -1,4 +1,14 @@
 import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import {
+	getSupervisionObservation,
+	getSupervisionCycle,
+	getSupervisionTemplateSummary
+} from '$lib/api/supervision';
+import { captureRouteLoad } from '$lib/navigation/route-load';
+import {
+	waitForSupervisionAccess,
+	SUPERVISION_OBSERVATION_READ_PERMISSIONS
+} from '$lib/supervision/supervision-access';
 import type { PageLoad } from './$types';
 
 export const _meta = {
@@ -8,9 +18,33 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = async ({ params }) => {
+export const load: PageLoad = ({ params, fetch, url }) => {
+	const identity = Promise.all([
+		waitForSupervisionAccess(_meta.access.permission),
+		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)
+	]).then(([route, read]) =>
+		route && read ? getSupervisionObservation(params.id, { requestFetch: fetch }) : null
+	);
+	// References depend only on identity, and neither waits for its sibling.
+	const cycle = captureRouteLoad(
+		identity.then((item) =>
+			item ? getSupervisionCycle(item.cycleId, { requestFetch: fetch }) : null
+		),
+		'โหลดรอบนิเทศไม่สำเร็จ'
+	);
+	const template = captureRouteLoad(
+		identity.then((item) =>
+			item ? getSupervisionTemplateSummary(item.templateId, { requestFetch: fetch }) : null
+		),
+		'โหลดข้อมูลแบบประเมินไม่สำเร็จ'
+	);
 	return {
 		title: 'รายละเอียดรายการนิเทศ',
-		observationId: params.id
+		observationId: params.id,
+		academicYearId: url.searchParams.get('academicYearId'),
+		academicTermId: url.searchParams.get('academicTermId'),
+		observation: captureRouteLoad(identity, 'โหลดรายการนิเทศไม่สำเร็จ'),
+		cycle,
+		template
 	};
 };

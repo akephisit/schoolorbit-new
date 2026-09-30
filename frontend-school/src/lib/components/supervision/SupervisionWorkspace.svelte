@@ -1165,6 +1165,14 @@
 		);
 	}
 
+	function observationDetailHref(item: SupervisionObservation): string {
+		return academicContextualMenuPath(
+			`/staff/academic/supervision/${item.id}`,
+			{ academicYearId: item.academicYearId, academicTermId: item.academicTermId ?? null },
+			academicContextOptions
+		);
+	}
+
 	function observationSubjectLabel(observation: SupervisionObservation): string {
 		return (
 			observation.lessonSnapshot.subjectName ??
@@ -2694,7 +2702,8 @@
 													<Button
 														size="sm"
 														variant="outline"
-														href={`/staff/academic/supervision/${observation.id}`}
+														href={observationDetailHref(observation)}
+														data-sveltekit-preload-data="tap"
 													>
 														<Eye class="h-4 w-4" />
 														รายละเอียด
@@ -2967,7 +2976,8 @@
 													size="sm"
 													variant="outline"
 													class="h-8"
-													href={`/staff/academic/supervision/${observation.id}`}
+													href={observationDetailHref(observation)}
+													data-sveltekit-preload-data="tap"
 												>
 													<Eye class="h-4 w-4" />
 													รายละเอียด
@@ -3097,7 +3107,8 @@
 													<Button
 														size="sm"
 														variant="outline"
-														href={`/staff/academic/supervision/${observation.id}`}
+														href={observationDetailHref(observation)}
+														data-sveltekit-preload-data="tap"
 													>
 														<Eye class="h-4 w-4" />
 														รายละเอียด
@@ -3187,7 +3198,8 @@
 													<Button
 														size="sm"
 														variant="outline"
-														href={`/staff/academic/supervision/${observation.id}`}
+														href={observationDetailHref(observation)}
+														data-sveltekit-preload-data="tap"
 													>
 														<Eye class="h-4 w-4" />
 														รายละเอียด
@@ -3660,7 +3672,8 @@
 															size="sm"
 															variant="outline"
 															class="h-8"
-															href={`/staff/academic/supervision/${observation.id}`}
+															href={observationDetailHref(observation)}
+															data-sveltekit-preload-data="tap"
 														>
 															<Eye class="h-4 w-4" />
 															ตรวจผล

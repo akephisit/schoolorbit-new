@@ -36,7 +36,12 @@ export async function mock(
 			| 'summaries'
 			| 'timetable'
 			| 'evaluator'
-			| 'progress';
+			| 'progress'
+			| 'selected-cycle'
+			| 'summary'
+			| 'observation-detail'
+			| 'review'
+			| 'timetable-detail';
 		fail?:
 			| 'cycles'
 			| 'teacher-status'
@@ -45,7 +50,12 @@ export async function mock(
 			| 'summaries'
 			| 'timetable'
 			| 'evaluator'
-			| 'progress';
+			| 'progress'
+			| 'selected-cycle'
+			| 'summary'
+			| 'observation-detail'
+			| 'review'
+			| 'timetable-detail';
 		failAt?: number;
 		holdAt?: number;
 		term?: boolean;
@@ -185,37 +195,78 @@ export async function mock(
 					updatedAt: '2026-09-01T00:00:00Z',
 					targets: []
 				}));
-			const snapshot = observation(url.searchParams.get('academicYearId') ?? year);
-			const kind =
-				resource === '/api/supervision/cycles'
-					? 'cycles'
-					: resource.endsWith('/teacher-status')
-						? 'teacher-status'
-						: resource === `/api/supervision/templates/${templateId}`
-							? 'detail'
-							: resource === '/api/supervision/observations'
-								? 'observations'
-								: resource.endsWith('/summaries')
-									? 'summaries'
-									: resource === '/api/me/timetable'
-										? 'timetable'
-										: resource.endsWith('/evaluator-availability')
-											? 'evaluator'
-											: resource.endsWith('/progress')
-												? 'progress'
-												: '';
+			const selectedId = resource.match(/\/observations\/([^/]+)$/)?.[1];
+			const snapshot = {
+				...observation(url.searchParams.get('academicYearId') ?? year),
+				...(selectedId
+					? {
+							id: selectedId,
+							observedDisplayName: selectedId === id(40) ? 'ครู รายการสอง' : 'ครู ในคิว'
+						}
+					: {})
+			};
+			const kind = resource.endsWith('/review')
+				? 'review'
+				: resource.endsWith('/timetable-options')
+					? 'timetable-detail'
+					: resource.endsWith('/summary')
+						? 'summary'
+						: resource === `/api/supervision/cycles/${firstCycle}`
+							? 'selected-cycle'
+							: selectedId
+								? 'observation-detail'
+								: resource === '/api/supervision/cycles'
+									? 'cycles'
+									: resource.endsWith('/teacher-status')
+										? 'teacher-status'
+										: resource === `/api/supervision/templates/${templateId}`
+											? 'detail'
+											: resource === '/api/supervision/observations'
+												? 'observations'
+												: resource.endsWith('/summaries')
+													? 'summaries'
+													: resource === '/api/me/timetable'
+														? 'timetable'
+														: resource.endsWith('/evaluator-availability')
+															? 'evaluator'
+															: resource.endsWith('/progress')
+																? 'progress'
+																: '';
 			if (method === 'GET' && kind) {
 				if (
 					options.hold === kind &&
 					(!options.holdAt || counts.get(resource) === options.holdAt) &&
 					(!['cycles', 'observations'].includes(kind) ||
 						url.searchParams.get('academicYearId') === year) &&
-					(kind !== 'teacher-status' || resource.includes(secondCycle))
+					(kind !== 'teacher-status' || resource.includes(secondCycle)) &&
+					(kind !== 'observation-detail' || selectedId === id(30))
 				)
 					await held.promise;
 				if (options.fail === kind && counts.get(resource) === (options.failAt ?? 1))
 					return reply(route, 'region ไม่พร้อม', 503);
 			}
+			if (selectedId && method === 'GET') return reply(route, snapshot);
+			if (resource.endsWith('/review') && method === 'GET')
+				return reply(route, {
+					observation: observation(),
+					template: detail(),
+					evaluatorResults: [],
+					itemSummaries: [{ templateItemId: id(7), averageRating: 4, responseCount: 1 }],
+					averageRating: 4
+				});
+			if (resource.endsWith('/timetable-options')) return reply(route, { items: [] });
+			if (resource === `/api/supervision/cycles/${firstCycle}` && method === 'GET')
+				return reply(route, cycles()[0]);
+			if (resource.endsWith('/summary'))
+				return reply(route, {
+					id: templateId,
+					title: templateTitle,
+					status: 'active',
+					ratingMin: 1,
+					ratingMax: 5,
+					sectionCount: 1,
+					itemCount: 1
+				});
 			if (resource === '/api/supervision/observations' && method === 'GET')
 				return reply(route, { items: [snapshot] });
 			if (resource === '/api/me/timetable') return reply(route, []);
@@ -234,11 +285,17 @@ export async function mock(
 				});
 			if (method === 'POST' && resource.includes(`/observations/${id(30)}/`)) {
 				if (options.hold === 'patch') await held.promise;
-				observationStatus = resource.endsWith('/return-request')
-					? 'returned'
-					: resource.includes('/evaluations/')
-						? 'evaluators_submitted'
-						: 'scheduled';
+				observationStatus = resource.endsWith('/cancel')
+					? 'cancelled'
+					: resource.endsWith('/certify')
+						? 'approved'
+						: resource.endsWith('/approve')
+							? 'published'
+							: resource.endsWith('/return-request')
+								? 'returned'
+								: resource.includes('/evaluations/')
+									? 'evaluators_submitted'
+									: 'scheduled';
 				return reply(route, observation());
 			}
 			if (resource === '/api/supervision/cycles' && method === 'GET')

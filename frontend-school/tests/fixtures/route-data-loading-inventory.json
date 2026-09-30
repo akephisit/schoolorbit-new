@@ -459,13 +459,12 @@
 		{
 			"route": "staff/academic/supervision/[id]",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "observation-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Component API reads include getSupervisionEvaluatorAvailability, getSupervisionObservation, getSupervisionObservationReview, getSupervisionObservationTimetableOptions, getSupervisionTemplate; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Selected observation route region; cycle and minimal template summary depend only on identity, then read concurrently. Review rubric, timetable edit and evaluator options load on open with focused retries and stale/close supersession; typed actions patch only the observation."
 		},
 		{
 			"route": "staff/academic/supervision/approvals",

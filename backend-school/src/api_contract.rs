@@ -554,6 +554,8 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::enroll_my_activity_registration,
         crate::modules::academic::delivery::handlers::unenroll_my_activity_registration,
         crate::modules::supervision::handlers::list_cycles,
+        crate::modules::supervision::handlers::get_cycle,
+        crate::modules::supervision::handlers::get_template_summary,
         crate::modules::supervision::handlers::create_cycle,
         crate::modules::supervision::handlers::update_cycle,
         crate::modules::supervision::handlers::list_templates,

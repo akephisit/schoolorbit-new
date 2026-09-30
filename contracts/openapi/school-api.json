@@ -13013,6 +13013,61 @@
         ],
         "type": "object"
       },
+      "ApiResponse_SupervisionTemplateSummary": {
+        "properties": {
+          "data": {
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "itemCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "ratingMax": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "ratingMin": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "sectionCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "status": {
+                "$ref": "#/components/schemas/SupervisionTemplateStatus"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "ratingMin",
+              "ratingMax",
+              "sectionCount",
+              "itemCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_SwapTimetableBlocksResponse": {
         "properties": {
           "data": {
@@ -81324,6 +81379,66 @@
       }
     },
     "/api/supervision/cycles/{id}": {
+      "get": {
+        "operationId": "getSupervisionCycle",
+        "parameters": [
+          {
+            "description": "Supervision cycle ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionCycle"
+                }
+              }
+            },
+            "description": "Supervision cycle"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision cycle not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      },
       "patch": {
         "operationId": "updateSupervisionCycle",
         "parameters": [
@@ -83165,6 +83280,68 @@
               }
             },
             "description": "Supervision template not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/templates/{id}/summary": {
+      "get": {
+        "operationId": "getSupervisionTemplateSummary",
+        "parameters": [
+          {
+            "description": "Template summary ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionTemplateSummary"
+                }
+              }
+            },
+            "description": "Template summary"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision access denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Template summary not found"
           }
         },
         "tags": [
