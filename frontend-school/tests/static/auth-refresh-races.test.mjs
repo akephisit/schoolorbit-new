@@ -113,35 +113,43 @@ test('permission signal during refresh discards old snapshot and queues one fres
 	assert.equal(h.state.user.firstName, 'Updated');
 });
 
-test('work counts and items ignore older overlapping responses', async () => {
+test('work changes signal active route reconciliation without fetching hidden items', async () => {
 	const counts = [];
-	const items = [];
+	let itemReads = 0;
 	const { workStore } = await load('../../src/lib/stores/work.ts', {
 		'svelte/store': { writable },
 		'$lib/api/work': {
 			getMyWorkCounts: () => new Promise((resolve) => counts.push(resolve)),
-			getMyWorkItems: () => new Promise((resolve) => items.push(resolve))
+			getMyWorkItems: () => {
+				itemReads++;
+				return Promise.resolve([]);
+			}
 		}
 	});
 	let state;
 	workStore.subscribe((value) => (state = value));
 	const old = workStore.refreshSilently();
 	const fresh = workStore.refreshSilently();
+	assert.equal(state.revision, 2);
+	assert.equal(state.windowsRevision, 0);
+	assert.equal(itemReads, 0);
 	counts[1]({ total: 2 });
-	items[1]([{ id: 'fresh' }]);
 	await fresh;
 	counts[0]({ total: 1 });
-	items[0]([{ id: 'old' }]);
 	await old;
 	assert.equal(state.counts.total, 2);
-	assert.equal(state.items[0].id, 'fresh');
-	const pending = workStore.refreshSilently();
+	assert.equal(state.revision, 2);
+	const pending = workStore.refreshSilently({ windowsChanged: true });
+	assert.equal(state.windowsRevision, 1);
 	workStore.reset();
 	counts[2]({ total: 3 });
-	items[2]([{ id: 'logout' }]);
 	await pending;
 	assert.equal(state.counts.total, 0);
-	assert.deepEqual(state.items, []);
+	assert.equal(state.revision, 0);
+	assert.equal(state.windowsRevision, 0);
+	await workStore.refreshSilently({ isCurrent: () => false });
+	assert.equal(counts.length, 3);
+	assert.equal(state.revision, 0);
 });
 
 test('layout-owned counts cannot overwrite a newer refresh or refill a reset identity', async () => {

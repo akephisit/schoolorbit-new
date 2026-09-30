@@ -906,7 +906,8 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 	assert.doesNotMatch(workApi, /res\.data as/);
 
 	assert.match(workStore, /getMyWorkCounts/);
-	assert.match(workStore, /getMyWorkItems/);
+	assert.doesNotMatch(workStore, /getMyWorkItems/);
+	assert.match(workInboxPage, /getMyWorkItems/);
 	assert.match(workStore, /refreshSilently/);
 	assert.doesNotMatch(workStore, /\bfetch\s*\(/);
 

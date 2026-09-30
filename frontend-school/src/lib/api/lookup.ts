@@ -70,8 +70,11 @@ async function fetchLookup<T>(
  * Fetch staff list for dropdowns
  * Returns: id, name, title
  */
-export async function lookupStaff(options?: LookupOptions): Promise<StaffLookupItem[]> {
-	return fetchLookup<StaffLookupItem>('staff', options);
+export async function lookupStaff(
+	options?: LookupOptions,
+	requestOptions: ApiRequestOptions = {}
+): Promise<StaffLookupItem[]> {
+	return fetchLookup<StaffLookupItem>('staff', options, requestOptions);
 }
 
 /**
@@ -96,9 +99,10 @@ export async function lookupRoles(options?: LookupOptions): Promise<RoleLookupIt
  * Returns: id, code, name
  */
 export async function lookupOrganizationUnits(
-	options?: LookupOptions
+	options?: LookupOptions,
+	requestOptions: ApiRequestOptions = {}
 ): Promise<OrganizationUnitLookupItem[]> {
-	return fetchLookup<OrganizationUnitLookupItem>('organization-units', options);
+	return fetchLookup<OrganizationUnitLookupItem>('organization-units', options, requestOptions);
 }
 
 /**

@@ -241,7 +241,7 @@ function createNotificationStore() {
 			if (action === 'reconnect') {
 				const results = await Promise.all([
 					notificationStore.fetchNotifications(10, ownsSnapshot),
-					workStore.refreshSilently({ isCurrent: ownsSnapshot })
+					workStore.refreshSilently({ isCurrent: ownsSnapshot, windowsChanged: true })
 				]);
 				if (ownsSnapshot() && results.every(Boolean)) needsReconcile = false;
 			}
@@ -334,7 +334,7 @@ function createNotificationStore() {
 		source.addEventListener('workflow_window_changed', () => {
 			if (!ownsEventSource(source, generation)) return;
 			signalVersion++;
-			void workStore.refreshSilently();
+			void workStore.refreshSilently({ windowsChanged: true });
 		});
 
 		const recover = () => {

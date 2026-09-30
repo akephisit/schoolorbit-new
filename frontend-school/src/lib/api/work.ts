@@ -138,10 +138,12 @@ function workflowWindowsQuery(params: ListWorkflowWindowsParams = {}): string {
 }
 
 export async function listManageableWorkflowWindows(
-	params: ListWorkflowWindowsParams = {}
+	params: ListWorkflowWindowsParams = {},
+	options: ApiRequestOptions = {}
 ): Promise<WorkflowWindow[]> {
 	const response = await apiClient.get<{ items: WorkflowWindow[] }>(
-		`/api/me/workflow-windows/manageable${workflowWindowsQuery(params)}`
+		`/api/me/workflow-windows/manageable${workflowWindowsQuery(params)}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรอบงานที่จัดการได้').items;
 }
@@ -159,9 +161,13 @@ export async function updateWorkflowWindowStatus(
 	return apiClient.patch<WorkflowWindow>(`/api/workflow-windows/${id}`, { status });
 }
 
-export async function getMyWorkItems(params: ListWorkItemsParams = {}): Promise<WorkItem[]> {
+export async function getMyWorkItems(
+	params: ListWorkItemsParams = {},
+	options: ApiRequestOptions = {}
+): Promise<WorkItem[]> {
 	const response = await apiClient.get<{ items: WorkItem[] }>(
-		`/api/me/work-items${workItemsQuery(params)}`
+		`/api/me/work-items${workItemsQuery(params)}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายการงานได้').items;
 }

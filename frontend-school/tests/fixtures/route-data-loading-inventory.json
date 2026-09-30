@@ -955,24 +955,22 @@
 		{
 			"route": "staff/work",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-workflow",
-			"notes": "workStore.fetchCounts and workStore.fetchItems start together on mount.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct event-fetch route items; shared layout owns counts. Realtime revision reconciles items only on the active route, with focused skeleton/error/retry and retained refresh."
 		},
 		{
 			"route": "staff/work/manage",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-workflow",
-			"notes": "Component API reads include listManageableWorkflowWindows, lookupOrganizationUnits, lookupStaff; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct route-owned manageable windows; create/assignment forms and bounded staff/unit options open lazily. Exact managed permission gates, typed local window patches and owner/draft/disposal guards; relevant window realtime only."
 		},
 		{
 			"route": "student",
