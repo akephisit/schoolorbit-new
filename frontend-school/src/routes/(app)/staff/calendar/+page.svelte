@@ -1,9 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { addMonths } from 'date-fns';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { pushState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import type { PageProps } from './$types';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { calendarRouteFilters } from '$lib/utils/calendar-route-filters';
+	import { authStore } from '$lib/stores/auth';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from 'svelte-sonner';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
+
 	import {
 		listGradeLevelOptions,
 		listHomerooms,
@@ -72,15 +80,20 @@
 	type AudienceFilter = '' | CalendarAudienceType;
 
 	const todayDate = toIsoDate(new Date());
-	const academicContext = getAcademicContextStore();
-	const academicYearId = $derived($academicContext.selected.academicYearId);
-	const academicTermId = $derived($academicContext.selected.academicTermId);
+	const currentUrl = $derived(page.state.calendarUrl ? new URL(page.state.calendarUrl) : page.url);
+	const committed = $derived(calendarRouteFilters(currentUrl));
+	const academicYearId = $derived(committed.academicYearId);
+	const academicTermId = $derived(committed.academicTermId);
+	let { data }: PageProps = $props();
+	const eventsSource = $derived(data.events),
+		categoriesSource = $derived(data.categories),
+		tagsSource = $derived(data.tags);
 
 	let events = $state.raw<CalendarEvent[]>([]);
 	let categories = $state.raw<CalendarCategory[]>([]);
 	let tags = $state.raw<CalendarTag[]>([]);
 	let loading = $state(true);
-	let selectedMonth = $state(todayDate);
+	const selectedMonth = $derived(committed.month);
 	let selectedDate = $state(todayDate);
 	let search = $state('');
 	let categoryId = $state('');
@@ -98,12 +111,29 @@
 	let homerooms = $state.raw<Homeroom[]>([]);
 	let manageOptionsLoaded = $state(false);
 	let manageOptionsLoading = $state(false);
-	let manageOptionsPromise = $state<Promise<boolean> | null>(null);
-	let manageOptionsRevision = 0;
 	let deleteDialogOpen = $state(false);
 	let deletingEvent = $state<CalendarEvent | null>(null);
 	let deleting = $state(false);
-	let calendarLoadSequence = 0;
+	let eventsLoaded = $state(false),
+		categoriesLoaded = $state(false),
+		categoriesLoading = $state(true),
+		categoriesError = $state(''),
+		tagsLoaded = $state(false),
+		tagsLoading = $state(true),
+		tagsError = $state('');
+	let manageOptionsError = $state('');
+	const eventsRequest = new LatestRequest(),
+		categoriesRequest = new LatestRequest(),
+		tagsRequest = new LatestRequest(),
+		optionsRequest = new LatestRequest();
+	let consumedEventsSource: typeof data.events = null;
+	let activeEventOwner = '',
+		identityOwner = '',
+		ownerEpoch = 0,
+		eventDraft = 0,
+		categoryDraft = 0,
+		disposed = false,
+		actionSequence = 0;
 
 	const audienceOptions: { value: AudienceFilter; label: string }[] = [
 		{ value: '', label: 'ทุกกลุ่มผู้ชม' },
@@ -152,49 +182,225 @@
 		visibilityOptions.find((option) => option.value === visibility)?.label
 	);
 
+	function applyEvents(result: Awaited<NonNullable<typeof data.events>>, revision: number) {
+		if (!eventsRequest.isCurrent(revision)) return;
+		loading = false;
+		if (result.ok) {
+			events = result.data;
+			eventsLoaded = true;
+		} else error = result.error;
+	}
 	async function loadCalendar() {
-		if (!canReadCalendar) {
-			loading = false;
-			error = '';
-			return;
-		}
-
-		const requestSequence = ++calendarLoadSequence;
+		if (!canReadCalendar || !academicYearId) return;
+		const ticket = eventsRequest.begin();
 		loading = true;
 		error = '';
-
-		try {
-			const range = calendarGridRange(selectedMonth);
-			if (!academicYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-			const nextEvents = await listCalendarEvents({
-				academicYearId,
-				academicTermId: academicTermId ?? undefined,
-				...range,
-				categoryId: categoryId || undefined,
-				tagId: tagId || undefined,
-				audience: audience || undefined,
-				visibility: visibility || undefined,
-				q: search.trim() || undefined
-			});
-			const nextCategories = await listCalendarCategories();
-			const nextTags = await listCalendarTags();
-
-			if (requestSequence !== calendarLoadSequence) return;
-			events = nextEvents;
-			categories = nextCategories;
-			tags = nextTags;
-		} catch (loadError: unknown) {
-			if (requestSequence !== calendarLoadSequence) return;
-			error =
-				(loadError instanceof Error ? loadError.message : String(loadError)) ||
-				'โหลดปฏิทินไม่สำเร็จ';
-			toast.error(error);
-		} finally {
-			if (requestSequence === calendarLoadSequence) {
-				loading = false;
-			}
-		}
+		applyEvents(
+			await captureRouteLoad(
+				listCalendarEvents(committed.filters, { signal: ticket.signal }),
+				'โหลดกิจกรรมไม่สำเร็จ'
+			),
+			ticket.revision
+		);
 	}
+	function applyCategories(result: Awaited<typeof data.categories>, revision: number) {
+		if (!categoriesRequest.isCurrent(revision)) return;
+		categoriesLoading = false;
+		if (result.ok) {
+			categories = result.data;
+			categoriesLoaded = true;
+		} else categoriesError = result.error;
+	}
+	async function loadCategories() {
+		if (!canReadCalendar) return;
+		const ticket = categoriesRequest.begin();
+		categoriesLoading = true;
+		categoriesError = '';
+		applyCategories(
+			await captureRouteLoad(
+				listCalendarCategories({ signal: ticket.signal }),
+				'โหลดหมวดหมู่ไม่สำเร็จ'
+			),
+			ticket.revision
+		);
+	}
+	function applyTags(result: Awaited<typeof data.tags>, revision: number) {
+		if (!tagsRequest.isCurrent(revision)) return;
+		tagsLoading = false;
+		if (result.ok) {
+			tags = result.data;
+			tagsLoaded = true;
+		} else tagsError = result.error;
+	}
+	async function loadTags() {
+		if (!canReadCalendar) return;
+		const ticket = tagsRequest.begin();
+		tagsLoading = true;
+		tagsError = '';
+		applyTags(
+			await captureRouteLoad(listCalendarTags({ signal: ticket.signal }), 'โหลดแท็กไม่สำเร็จ'),
+			ticket.revision
+		);
+	}
+	function commitFilters(month = selectedMonth) {
+		const url = new URL(currentUrl);
+		for (const [key, value] of Object.entries({
+			month: month.slice(0, 7),
+			q: search.trim(),
+			categoryId,
+			tagId,
+			audience,
+			visibility
+		})) {
+			if (value) url.searchParams.set(key, value);
+			else url.searchParams.delete(key);
+		}
+		pushState(resolve(`/staff/calendar?${url.searchParams.toString()}${url.hash}`), {
+			...page.state,
+			calendarUrl: url.href
+		});
+	}
+	$effect.pre(() => {
+		const identity = `${$authStore.user?.id ?? ''}|${canReadCalendar}|${canManageCalendar}`;
+		untrack(() => {
+			if (identityOwner === identity) return;
+			identityOwner = identity;
+			ownerEpoch++;
+			eventsRequest.abort();
+			categoriesRequest.abort();
+			tagsRequest.abort();
+			optionsRequest.abort();
+			events = [];
+			eventsLoaded = false;
+			categories = [];
+			categoriesLoaded = false;
+			tags = [];
+			tagsLoaded = false;
+			eventDialogOpen = false;
+			categoryDialogOpen = false;
+			embedDialogOpen = false;
+			deleteDialogOpen = false;
+			saving = false;
+			deleting = false;
+		});
+	});
+	$effect.pre(() => {
+		const operation = eventsSource,
+			key = committed.key,
+			allowed = canReadCalendar;
+		untrack(() => {
+			const changed = activeEventOwner !== key;
+			if (changed) {
+				activeEventOwner = key;
+				ownerEpoch++;
+				events = [];
+				eventsLoaded = false;
+				search = committed.q;
+				categoryId = committed.categoryId;
+				tagId = committed.tagId;
+				audience = committed.audience;
+				visibility = committed.visibility;
+				selectedDate = todayDate.startsWith(selectedMonth.slice(0, 7)) ? todayDate : selectedMonth;
+				optionsRequest.abort();
+				manageOptionsLoaded = false;
+				manageOptionsLoading = false;
+				manageOptionsError = '';
+				gradeLevels = [];
+				homerooms = [];
+				eventDialogOpen = false;
+				categoryDialogOpen = false;
+				deleteDialogOpen = false;
+				editingEvent = null;
+				deletingEvent = null;
+				saving = false;
+				deleting = false;
+			}
+			if (!allowed) {
+				eventsRequest.abort();
+				loading = false;
+				events = [];
+				eventsLoaded = false;
+				return;
+			}
+			if (!academicYearId) {
+				eventsRequest.abort();
+				loading = true;
+				error = '';
+				return;
+			}
+			if (operation && key === data.eventKey && operation !== consumedEventsSource) {
+				consumedEventsSource = operation;
+				const ticket = eventsRequest.begin();
+				loading = true;
+				error = '';
+				void operation.then((result) => applyEvents(result, ticket.revision));
+			} else if (changed || (operation && operation !== consumedEventsSource)) {
+				consumedEventsSource = operation;
+				void loadCalendar();
+			}
+		});
+		return () => eventsRequest.abort();
+	});
+	$effect.pre(() => {
+		const source = categoriesSource;
+		untrack(() => {
+			const ticket = categoriesRequest.begin();
+			categoriesLoading = true;
+			categoriesError = '';
+			void source.then((result) => applyCategories(result, ticket.revision));
+		});
+		return () => categoriesRequest.abort();
+	});
+	$effect.pre(() => {
+		const source = tagsSource;
+		untrack(() => {
+			const ticket = tagsRequest.begin();
+			tagsLoading = true;
+			tagsError = '';
+			void source.then((result) => applyTags(result, ticket.revision));
+		});
+		return () => tagsRequest.abort();
+	});
+	$effect.pre(() => {
+		const open = eventDialogOpen;
+		untrack(() => {
+			eventDraft++;
+			void open;
+		});
+	});
+	$effect.pre(() => {
+		const open = categoryDialogOpen;
+		untrack(() => {
+			categoryDraft++;
+			void open;
+		});
+	});
+	$effect.pre(() => {
+		const opened = eventDialogOpen,
+			allowed = canManageCalendar,
+			year = academicYearId;
+		untrack(() => {
+			if (!opened || !allowed || !year) {
+				optionsRequest.abort();
+				manageOptionsLoaded = false;
+				gradeLevels = [];
+				homerooms = [];
+				manageOptionsError = '';
+				manageOptionsLoading = false;
+				return;
+			}
+			void ensureManageOptions();
+		});
+		return () => optionsRequest.abort();
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		eventsRequest.abort();
+		categoriesRequest.abort();
+		tagsRequest.abort();
+		optionsRequest.abort();
+	});
 
 	function sortCalendarEvents(items: CalendarEvent[]) {
 		return [...items].sort(
@@ -208,15 +414,18 @@
 	function eventMatchesCurrentFilters(event: CalendarEvent) {
 		const range = calendarGridRange(selectedMonth);
 		if (event.startDate > range.to || event.endDate < range.from) return false;
-		if (categoryId && event.categoryId !== categoryId) return false;
-		if (tagId && !event.tags.some((tag) => tag.id === tagId)) return false;
-		if (visibility === 'public' && !event.isPublic) return false;
-		if (visibility === 'private' && event.isPublic) return false;
-		if (audience && !event.targets.some((target) => target.audienceType === audience)) {
+		if (committed.categoryId && event.categoryId !== committed.categoryId) return false;
+		if (committed.tagId && !event.tags.some((tag) => tag.id === committed.tagId)) return false;
+		if (committed.visibility === 'public' && !event.isPublic) return false;
+		if (committed.visibility === 'private' && event.isPublic) return false;
+		if (
+			committed.audience &&
+			!event.targets.some((target) => target.audienceType === committed.audience)
+		) {
 			return false;
 		}
 
-		const query = search.trim().toLowerCase();
+		const query = committed.q.toLowerCase();
 		if (query) {
 			const searchableText = [
 				event.title,
@@ -246,21 +455,44 @@
 	}
 
 	async function saveEvent(payload: CreateCalendarEventRequest) {
+		if (
+			!canManageCalendar ||
+			!eventDialogOpen ||
+			saving ||
+			!manageOptionsLoaded ||
+			manageOptionsLoading ||
+			manageOptionsError
+		)
+			return;
+		const epoch = ownerEpoch,
+			draft = eventDraft,
+			target = editingEvent?.id;
+		const current = () => !disposed && epoch === ownerEpoch && canManageCalendar;
+		const ownsDraft = () => current() && draft === eventDraft && eventDialogOpen;
+		eventsRequest.abort();
+		loading = false;
+		const action = ++actionSequence;
 		saving = true;
 		try {
-			const savedEvent = editingEvent
-				? await updateCalendarEvent(editingEvent.id, payload)
+			const savedEvent = target
+				? await updateCalendarEvent(target, payload)
 				: await createCalendarEvent(payload);
-			patchSavedEvent(savedEvent);
+			if (!current()) return;
+			eventsRequest.abort();
+			loading = false;
+			if (eventsLoaded) patchSavedEvent(savedEvent);
+			else await loadCalendar();
+			if (!ownsDraft()) return;
 			eventDialogOpen = false;
 			editingEvent = null;
 			toast.success('บันทึกกิจกรรมแล้ว');
 		} catch (saveError: unknown) {
+			if (!ownsDraft()) return;
 			toast.error(
 				(saveError instanceof Error ? saveError.message : String(saveError)) || 'บันทึกไม่สำเร็จ'
 			);
 		} finally {
-			saving = false;
+			if (current() && action === actionSequence) saving = false;
 		}
 	}
 
@@ -279,23 +511,30 @@
 
 	async function confirmDeleteEvent() {
 		const target = deletingEvent;
-		if (!target || !canManageCalendar) return;
-
+		if (!target || !canManageCalendar || deleting) return;
+		const epoch = ownerEpoch;
+		const current = () => !disposed && epoch === ownerEpoch && canManageCalendar;
+		eventsRequest.abort();
+		loading = false;
 		deleting = true;
 		try {
 			await deleteCalendarEvent(target.id);
+			if (!current()) return;
+			eventsRequest.abort();
+			loading = false;
 			events = events.filter((item) => item.id !== target.id);
 			deleteDialogOpen = false;
 			deletingEvent = null;
 			toast.success('ลบกิจกรรมแล้ว');
 		} catch (deleteError: unknown) {
+			if (!current()) return;
 			deleteDialogOpen = true;
 			toast.error(
 				(deleteError instanceof Error ? deleteError.message : String(deleteError)) ||
 					'ลบกิจกรรมไม่สำเร็จ'
 			);
 		} finally {
-			deleting = false;
+			if (current()) deleting = false;
 		}
 	}
 
@@ -303,11 +542,26 @@
 		id: string | null,
 		payload: UpsertCalendarCategoryRequest
 	): Promise<boolean> {
+		if (!categoryDialogOpen || !canManageCalendar || saving) return false;
+		const identity = identityOwner,
+			draft = categoryDraft;
+		const current = () => !disposed && identity === identityOwner && canManageCalendar;
+		const ownsDraft = () => current() && draft === categoryDraft && categoryDialogOpen;
+		categoriesRequest.abort();
+		categoriesLoading = false;
+
+		const action = ++actionSequence;
 		saving = true;
 		try {
 			const savedCategory = id
 				? await updateCalendarCategory(id, payload)
 				: await createCalendarCategory(payload);
+			if (!current()) return false;
+			categoriesRequest.abort();
+			categoriesLoading = false;
+			eventsRequest.abort();
+			loading = false;
+
 			categories = categories.some((category) => category.id === savedCategory.id)
 				? categories.map((category) =>
 						category.id === savedCategory.id ? savedCategory : category
@@ -326,152 +580,201 @@
 					)
 					.filter(eventMatchesCurrentFilters)
 			);
-			toast.success('บันทึกหมวดหมู่แล้ว');
-			return true;
+			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (ownsDraft()) toast.success('บันทึกหมวดหมู่แล้ว');
+			return ownsDraft();
 		} catch (saveError: unknown) {
+			if (!ownsDraft()) return false;
 			toast.error(
 				(saveError instanceof Error ? saveError.message : String(saveError)) ||
 					'บันทึกหมวดหมู่ไม่สำเร็จ'
 			);
 			return false;
 		} finally {
-			saving = false;
+			if (current() && action === actionSequence) saving = false;
 		}
 	}
 
 	async function deleteCategory(category: CalendarCategory): Promise<boolean> {
 		if (!canManageCalendar) return false;
 
+		if (!categoryDialogOpen || !canManageCalendar || saving) return false;
+		const identity = identityOwner,
+			draft = categoryDraft;
+		const current = () => !disposed && identity === identityOwner && canManageCalendar;
+		const ownsDraft = () => current() && draft === categoryDraft && categoryDialogOpen;
+		categoriesRequest.abort();
+		categoriesLoading = false;
+
+		const action = ++actionSequence;
 		saving = true;
 		try {
 			await deleteCalendarCategory(category.id);
+			if (!current()) return false;
+			categoriesRequest.abort();
+			categoriesLoading = false;
+			eventsRequest.abort();
+			loading = false;
+
 			categories = categories.filter((item) => item.id !== category.id);
 			events = events.map((event) =>
 				event.categoryId === category.id
 					? { ...event, categoryId: null, categoryName: null, categoryColor: null }
 					: event
 			);
-			if (categoryId === category.id) {
-				categoryId = '';
-				await loadCalendar();
+			if (committed.categoryId === category.id) {
+				const url = new URL(currentUrl);
+				url.searchParams.delete('categoryId');
+				pushState(resolve(`/staff/calendar?${url.searchParams.toString()}${url.hash}`), {
+					...page.state,
+					calendarUrl: url.href
+				});
 			}
-			toast.success('ลบหมวดหมู่แล้ว กิจกรรมเดิมยังอยู่ครบ');
-			return true;
+			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (ownsDraft()) toast.success('ลบหมวดหมู่แล้ว กิจกรรมเดิมยังอยู่ครบ');
+			return ownsDraft();
 		} catch (deleteError: unknown) {
+			if (!ownsDraft()) return false;
 			toast.error(
 				(deleteError instanceof Error ? deleteError.message : String(deleteError)) ||
 					'ลบหมวดหมู่ไม่สำเร็จ'
 			);
 			return false;
 		} finally {
-			saving = false;
+			if (current() && action === actionSequence) saving = false;
 		}
 	}
 
 	async function saveTag(id: string | null, payload: UpsertCalendarTagRequest): Promise<boolean> {
+		if (!categoryDialogOpen || !canManageCalendar || saving) return false;
+		const identity = identityOwner,
+			draft = categoryDraft;
+		const current = () => !disposed && identity === identityOwner && canManageCalendar;
+		const ownsDraft = () => current() && draft === categoryDraft && categoryDialogOpen;
+		tagsRequest.abort();
+		tagsLoading = false;
+
+		const action = ++actionSequence;
 		saving = true;
 		try {
 			const savedTag = id ? await updateCalendarTag(id, payload) : await createCalendarTag(payload);
+			if (!current()) return false;
+			tagsRequest.abort();
+			tagsLoading = false;
+			eventsRequest.abort();
+			loading = false;
+
 			tags = tags.some((tag) => tag.id === savedTag.id)
 				? tags.map((tag) => (tag.id === savedTag.id ? savedTag : tag))
 				: [...tags, savedTag].sort((left, right) => left.name.localeCompare(right.name, 'th'));
-			events = events.map((event) => ({
-				...event,
-				tags: event.tags.map((tag) =>
-					tag.id === savedTag.id ? { id: savedTag.id, name: savedTag.name } : tag
-				)
-			}));
-			toast.success('บันทึกแท็กแล้ว');
-			return true;
+			events = events
+				.map((event) => ({
+					...event,
+					tags: event.tags.map((tag) =>
+						tag.id === savedTag.id ? { id: savedTag.id, name: savedTag.name } : tag
+					)
+				}))
+				.filter(eventMatchesCurrentFilters);
+			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (ownsDraft()) toast.success('บันทึกแท็กแล้ว');
+			return ownsDraft();
 		} catch (saveError: unknown) {
+			if (!ownsDraft()) return false;
 			toast.error(
 				(saveError instanceof Error ? saveError.message : String(saveError)) ||
 					'บันทึกแท็กไม่สำเร็จ'
 			);
 			return false;
 		} finally {
-			saving = false;
+			if (current() && action === actionSequence) saving = false;
 		}
 	}
 
 	async function deleteTag(tag: CalendarTag): Promise<boolean> {
 		if (!canManageCalendar) return false;
 
+		if (!categoryDialogOpen || !canManageCalendar || saving) return false;
+		const identity = identityOwner,
+			draft = categoryDraft;
+		const current = () => !disposed && identity === identityOwner && canManageCalendar;
+		const ownsDraft = () => current() && draft === categoryDraft && categoryDialogOpen;
+		tagsRequest.abort();
+		tagsLoading = false;
+
+		const action = ++actionSequence;
 		saving = true;
 		try {
 			await deleteCalendarTag(tag.id);
+			if (!current()) return false;
+			tagsRequest.abort();
+			tagsLoading = false;
+			eventsRequest.abort();
+			loading = false;
+
 			tags = tags.filter((item) => item.id !== tag.id);
-			events = events.map((event) => ({
-				...event,
-				tags: event.tags.filter((item) => item.id !== tag.id)
-			}));
-			if (tagId === tag.id) {
-				tagId = '';
-				await loadCalendar();
+			events = events
+				.map((event) => ({
+					...event,
+					tags: event.tags.filter((item) => item.id !== tag.id)
+				}))
+				.filter(eventMatchesCurrentFilters);
+			if (committed.tagId === tag.id) {
+				const url = new URL(currentUrl);
+				url.searchParams.delete('tagId');
+				pushState(resolve(`/staff/calendar?${url.searchParams.toString()}${url.hash}`), {
+					...page.state,
+					calendarUrl: url.href
+				});
 			}
-			toast.success('ลบแท็กแล้ว กิจกรรมเดิมยังอยู่ครบ');
-			return true;
+			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (ownsDraft()) toast.success('ลบแท็กแล้ว กิจกรรมเดิมยังอยู่ครบ');
+			return ownsDraft();
 		} catch (deleteError: unknown) {
+			if (!ownsDraft()) return false;
 			toast.error(
 				(deleteError instanceof Error ? deleteError.message : String(deleteError)) ||
 					'ลบแท็กไม่สำเร็จ'
 			);
 			return false;
 		} finally {
-			saving = false;
+			if (current() && action === actionSequence) saving = false;
 		}
 	}
 
 	async function ensureManageOptions(): Promise<boolean> {
+		if (!eventDialogOpen || !canManageCalendar || !academicYearId) return false;
 		if (manageOptionsLoaded) return true;
-		if (manageOptionsPromise) return manageOptionsPromise;
-		if (!academicYearId) {
-			toast.error('กรุณาเลือกปีการศึกษาก่อน');
+		const ticket = optionsRequest.begin();
+		manageOptionsLoading = true;
+		manageOptionsError = '';
+		const result = await captureRouteLoad(
+			Promise.all([
+				listGradeLevelOptions(academicYearId, { signal: ticket.signal }),
+				listHomerooms(academicYearId, { signal: ticket.signal })
+			]),
+			'โหลดตัวเลือกชั้นเรียนไม่สำเร็จ'
+		);
+		if (!optionsRequest.isCurrent(ticket.revision)) return false;
+		manageOptionsLoading = false;
+		if (!result.ok) {
+			manageOptionsError = result.error;
 			return false;
 		}
-
-		const yearId = academicYearId;
-		const requestRevision = ++manageOptionsRevision;
-		manageOptionsLoading = true;
-		manageOptionsPromise = (async () => {
-			try {
-				const nextGradeLevels = await listGradeLevelOptions(yearId);
-				const nextHomerooms = await listHomerooms(yearId);
-				if (requestRevision !== manageOptionsRevision || yearId !== academicYearId) return false;
-				gradeLevels = nextGradeLevels;
-				homerooms = nextHomerooms;
-				manageOptionsLoaded = true;
-				return true;
-			} catch (loadError: unknown) {
-				toast.error(
-					(loadError instanceof Error ? loadError.message : String(loadError)) ||
-						'โหลดตัวเลือกชั้นเรียนไม่สำเร็จ'
-				);
-				return false;
-			} finally {
-				if (requestRevision === manageOptionsRevision) {
-					manageOptionsLoading = false;
-					manageOptionsPromise = null;
-				}
-			}
-		})();
-
-		return manageOptionsPromise;
+		[gradeLevels, homerooms] = result.data;
+		manageOptionsLoaded = true;
+		return true;
 	}
-
-	async function openEventDialog(event: { id: string } | null = null) {
-		if (!canManageCalendar) return;
-
-		const optionsReady = await ensureManageOptions();
-		if (!optionsReady) return;
-
+	function openEventDialog(event: { id: string } | null = null) {
+		if (!canManageCalendar || !categoriesLoaded || !tagsLoaded || categoriesError || tagsError)
+			return;
 		editingEvent = event ? (events.find((item) => item.id === event.id) ?? null) : null;
-		eventDialogSession += 1;
+		eventDialogSession++;
 		eventDialogOpen = true;
 	}
 
 	function openCategoryDialog() {
-		if (!canManageCalendar) return;
+		if (!canManageCalendar || !categoriesLoaded || !tagsLoaded || categoriesError || tagsError)
+			return;
 		categoryDialogOpen = true;
 	}
 
@@ -480,15 +783,11 @@
 		const nextMonth = monthRange(
 			toIsoDate(addMonths(new Date(`${currentMonthStart}T00:00:00`), offset))
 		).from;
-		selectedMonth = nextMonth;
-		selectedDate = nextMonth;
-		await loadCalendar();
+		commitFilters(nextMonth);
 	}
 
 	async function goToToday() {
-		selectedMonth = todayDate;
-		selectedDate = todayDate;
-		await loadCalendar();
+		commitFilters(todayDate);
 	}
 
 	async function resetFilters() {
@@ -497,7 +796,7 @@
 		tagId = '';
 		audience = '';
 		visibility = '';
-		await loadCalendar();
+		commitFilters();
 	}
 
 	async function copyPublicCalendarLink() {
@@ -508,24 +807,6 @@
 			toast.error('คัดลอกลิงก์ไม่สำเร็จ');
 		}
 	}
-
-	onMount(() => {
-		let loadedContext = '';
-		return academicContext.subscribe((state) => {
-			const yearId = state.selected.academicYearId;
-			const termId = state.selected.academicTermId;
-			const contextKey = `${yearId ?? ''}:${termId ?? ''}`;
-			if (!yearId || contextKey === loadedContext) return;
-			loadedContext = contextKey;
-			manageOptionsRevision += 1;
-			manageOptionsLoaded = false;
-			manageOptionsLoading = false;
-			manageOptionsPromise = null;
-			gradeLevels = [];
-			homerooms = [];
-			void loadCalendar();
-		});
-	});
 </script>
 
 <PageShell title="ปฏิทินโรงเรียน" description="กิจกรรมและประกาศตามช่วงเดือน">
@@ -542,11 +823,22 @@
 				</Button>
 			{/if}
 			{#if canManageCalendar}
-				<Button variant="outline" onclick={openCategoryDialog}>
+				<Button
+					variant="outline"
+					onclick={openCategoryDialog}
+					disabled={!categoriesLoaded || !tagsLoaded || !!categoriesError || !!tagsError}
+				>
 					<FolderPlus class="h-4 w-4" />
 					หมวดหมู่และแท็ก
 				</Button>
-				<Button onclick={() => openEventDialog()} disabled={manageOptionsLoading}>
+				<Button
+					onclick={() => openEventDialog()}
+					disabled={manageOptionsLoading ||
+						!categoriesLoaded ||
+						!tagsLoaded ||
+						!!categoriesError ||
+						!!tagsError}
+				>
 					<Plus class="h-4 w-4" />
 					เพิ่มกิจกรรม
 				</Button>
@@ -572,7 +864,9 @@
 							<h2 class="truncate text-base font-semibold capitalize">{monthLabel}</h2>
 						</div>
 						<p class="mt-0.5 text-xs text-muted-foreground">
-							{selectedMonthEvents.length} กิจกรรม · {publicEventCount} สาธารณะ
+							{eventsLoaded ? selectedMonthEvents.length : '—'} กิจกรรม · {eventsLoaded
+								? publicEventCount
+								: '—'} สาธารณะ
 						</p>
 					</div>
 					<Button
@@ -607,7 +901,7 @@
 				class="grid gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-[minmax(220px,1fr)_160px_160px_160px_160px_auto]"
 				onsubmit={(submitEvent) => {
 					submitEvent.preventDefault();
-					loadCalendar();
+					commitFilters();
 				}}
 			>
 				<div class="relative sm:col-span-2 xl:col-span-1">
@@ -618,24 +912,53 @@
 						bind:value={search}
 					/>
 				</div>
-				<Select.Root type="single" bind:value={categoryId}>
-					<Select.Trigger class="w-full">{categoryLabel}</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="">ทุกหมวดหมู่</Select.Item>
-						{#each activeCategories as category (category.id)}
-							<Select.Item value={category.id}>{category.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Select.Root type="single" bind:value={tagId}>
-					<Select.Trigger class="w-full">{tagLabel}</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="">ทุกแท็ก</Select.Item>
-						{#each tags as tag (tag.id)}
-							<Select.Item value={tag.id}>{tag.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+				<div data-testid="calendar-categories" aria-busy={categoriesLoading}>
+					{#if categoriesError}<PageState
+							variant="error"
+							title="โหลดหมวดหมู่ไม่สำเร็จ"
+							description={categoriesError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadCategories}
+						/>{/if}
+					{#if categoriesLoading && !categoriesLoaded}<div
+							role="status"
+							aria-label="กำลังโหลดหมวดหมู่"
+						>
+							<Skeleton class="h-9 w-full" />
+						</div>{:else}<Select.Root
+							type="single"
+							disabled={!categoriesLoaded}
+							bind:value={categoryId}
+						>
+							<Select.Trigger class="w-full">{categoryLabel}</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">ทุกหมวดหมู่</Select.Item>
+								{#each activeCategories as category (category.id)}
+									<Select.Item value={category.id}>{category.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>{/if}
+				</div>
+				<div data-testid="calendar-tags" aria-busy={tagsLoading}>
+					{#if tagsError}<PageState
+							variant="error"
+							title="โหลดแท็กไม่สำเร็จ"
+							description={tagsError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadTags}
+						/>{/if}
+					{#if tagsLoading && !tagsLoaded}<div role="status" aria-label="กำลังโหลดแท็ก">
+							<Skeleton class="h-9 w-full" />
+						</div>{:else}<Select.Root type="single" disabled={!tagsLoaded} bind:value={tagId}>
+							<Select.Trigger class="w-full">{tagLabel}</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="">ทุกแท็ก</Select.Item>
+								{#each tags as tag (tag.id)}
+									<Select.Item value={tag.id}>{tag.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>{/if}
+				</div>
 				<Select.Root type="single" bind:value={audience}>
 					<Select.Trigger class="w-full">{audienceLabel}</Select.Trigger>
 					<Select.Content>
@@ -670,59 +993,66 @@
 		</div>
 	{/if}
 
-	{#if !canReadCalendar && !loading}
-		<PageState
-			variant="permission"
-			title="ไม่มีสิทธิ์ดูปฏิทินโรงเรียน"
-			description="ติดต่อผู้ดูแลระบบหากต้องการเข้าถึงข้อมูลนี้"
-		/>
-	{:else if loading}
-		<PageSkeleton variant="detail" />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดปฏิทินไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={loadCalendar}
-		/>
-	{:else}
-		<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
-			<div class="min-w-0 space-y-3">
-				<CalendarMonthGrid
-					monthDate={selectedMonth}
-					{events}
-					{selectedDate}
-					onselect={(date) => (selectedDate = date)}
+	<section data-testid="calendar-events" aria-busy={loading}>
+		{#if !canReadCalendar && !loading}
+			<PageState
+				variant="permission"
+				title="ไม่มีสิทธิ์ดูปฏิทินโรงเรียน"
+				description="ติดต่อผู้ดูแลระบบหากต้องการเข้าถึงข้อมูลนี้"
+			/>
+		{:else}
+			{#if loading && eventsLoaded}<p role="status" class="text-sm text-muted-foreground">
+					กำลังอัปเดตกิจกรรม...
+				</p>{/if}
+			{#if error}
+				<PageState
+					variant="error"
+					title="โหลดปฏิทินไม่สำเร็จ"
+					description={error}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadCalendar}
 				/>
-				{#if activeCategories.length > 0}
-					<CalendarColorKey items={activeCategories} />
-				{/if}
-			</div>
-			<section class="space-y-3">
-				<div class="flex items-center gap-3 rounded-xl border bg-card p-4">
-					<div
-						class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-					>
-						<CalendarDays class="size-5" />
+			{/if}
+			{#if loading && !eventsLoaded}<div role="status" aria-label="กำลังโหลดกิจกรรม">
+					<PageSkeleton variant="detail" />
+				</div>{:else if eventsLoaded}
+				<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
+					<div class="min-w-0 space-y-3">
+						<CalendarMonthGrid
+							monthDate={selectedMonth}
+							{events}
+							{selectedDate}
+							onselect={(date) => (selectedDate = date)}
+						/>
+						{#if activeCategories.length > 0}
+							<CalendarColorKey items={activeCategories} />
+						{/if}
 					</div>
-					<div class="min-w-0">
-						<h2 class="truncate font-semibold">{formatCalendarDate(selectedDate)}</h2>
-						<p class="text-sm text-muted-foreground">
-							{selectedDateEvents.length} รายการในวันที่เลือก
-						</p>
-					</div>
+					<section class="space-y-3">
+						<div class="flex items-center gap-3 rounded-xl border bg-card p-4">
+							<div
+								class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+							>
+								<CalendarDays class="size-5" />
+							</div>
+							<div class="min-w-0">
+								<h2 class="truncate font-semibold">{formatCalendarDate(selectedDate)}</h2>
+								<p class="text-sm text-muted-foreground">
+									{selectedDateEvents.length} รายการในวันที่เลือก
+								</p>
+							</div>
+						</div>
+						<CalendarEventList
+							events={selectedDateEvents}
+							canManage={canManageCalendar}
+							onedit={openEventDialog}
+							ondelete={requestDeleteEvent}
+						/>
+					</section>
 				</div>
-				<CalendarEventList
-					events={selectedDateEvents}
-					canManage={canManageCalendar}
-					onedit={openEventDialog}
-					ondelete={requestDeleteEvent}
-				/>
-			</section>
-		</div>
-	{/if}
-
+			{/if}
+		{/if}
+	</section>
 	<AlertDialog.Root bind:open={deleteDialogOpen}>
 		<AlertDialog.Content>
 			<AlertDialog.Header>
@@ -743,29 +1073,40 @@
 		</AlertDialog.Content>
 	</AlertDialog.Root>
 
-	{#key eventDialogSession}
-		<CalendarEventDialog
-			bind:open={eventDialogOpen}
+	{#if eventDialogOpen && canManageCalendar}
+		{#key eventDialogSession}
+			<CalendarEventDialog
+				bind:open={eventDialogOpen}
+				{categories}
+				{tags}
+				{gradeLevels}
+				{homerooms}
+				academicYearId={academicYearId ?? ''}
+				{academicTermId}
+				event={editingEvent}
+				{saving}
+				optionsLoading={manageOptionsLoading}
+				optionsLoaded={manageOptionsLoaded}
+				optionsError={manageOptionsError}
+				onretryoptions={ensureManageOptions}
+				onsave={saveEvent}
+			/>
+		{/key}
+	{/if}
+	{#if categoryDialogOpen && canManageCalendar}
+		<CalendarCategoryDialog
+			bind:open={categoryDialogOpen}
 			{categories}
 			{tags}
-			{gradeLevels}
-			{homerooms}
-			academicYearId={academicYearId ?? ''}
-			{academicTermId}
-			event={editingEvent}
 			{saving}
-			onsave={saveEvent}
+			onsavecategory={saveCategory}
+			ondeletecategory={deleteCategory}
+			onsavetag={saveTag}
+			ondeletetag={deleteTag}
 		/>
-	{/key}
-	<CalendarCategoryDialog
-		bind:open={categoryDialogOpen}
-		{categories}
-		{tags}
-		{saving}
-		onsavecategory={saveCategory}
-		ondeletecategory={deleteCategory}
-		onsavetag={saveTag}
-		ondeletetag={deleteTag}
-	/>
-	<CalendarEmbedDialog bind:open={embedDialogOpen} origin={page.url.origin} />
+	{/if}
+	{#if embedDialogOpen}<CalendarEmbedDialog
+			bind:open={embedDialogOpen}
+			origin={page.url.origin}
+		/>{/if}
 </PageShell>

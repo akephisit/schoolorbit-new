@@ -719,7 +719,8 @@ test('calendar consumers use explicit year and optional term contexts', async ()
 	assert.doesNotMatch(api, /URLSearchParams|params\.set|calendarQuery|publicCalendarQuery/);
 	assert.doesNotMatch(`${academicCoreApi}\n${api}`, /academic_year_id|category_id|tag_id/);
 	assert.doesNotMatch(api, /classRoomId/);
-	assert.match(staffPage, /getAcademicContextStore/);
+	assert.match(staffPage, /calendarRouteFilters\(currentUrl\)/);
+	assert.match(staffMetadata, /calendarRouteFilters\(url\)/);
 	assert.match(studentPage, /listMyAcademicContextOptions/);
 	assert.match(studentPage, /academicYearId:\s*selectedYearId/);
 	assert.match(parentPage, /listChildAcademicContextOptions/);

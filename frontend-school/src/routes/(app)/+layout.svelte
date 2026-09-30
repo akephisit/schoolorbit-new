@@ -170,7 +170,10 @@
 
 	$effect(() => {
 		const routeId = page.route.id;
-		const url = page.url;
+		const url =
+			routeId === '/(app)/staff/calendar' && page.state.calendarUrl
+				? new URL(page.state.calendarUrl)
+				: page.url;
 		const permissions = $userPermissions;
 		const user = $authStore.user;
 

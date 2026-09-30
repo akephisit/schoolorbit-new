@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -72,9 +72,13 @@ export interface UpsertCalendarTagRequest {
 	name: string;
 }
 
-export async function listCalendarEvents(filters: CalendarEventFilters): Promise<CalendarEvent[]> {
+export async function listCalendarEvents(
+	filters: CalendarEventFilters,
+	options: ApiRequestOptions = {}
+): Promise<CalendarEvent[]> {
 	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarEventDto[]>('/api/calendar/events', {
+		...options,
 		query: { ...filters }
 	});
 	return requireApiData(response, 'ไม่สามารถโหลดกิจกรรมปฏิทินได้').map(calendarEventFromDto);
@@ -137,8 +141,10 @@ export async function deleteCalendarEvent(id: string): Promise<Record<string, ne
 	return requireApiData(response, 'ไม่สามารถลบกิจกรรมปฏิทินได้');
 }
 
-export async function listCalendarCategories(): Promise<CalendarCategory[]> {
-	const response = await apiClient.get<CalendarCategory[]>('/api/calendar/categories');
+export async function listCalendarCategories(
+	options: ApiRequestOptions = {}
+): Promise<CalendarCategory[]> {
+	const response = await apiClient.get<CalendarCategory[]>('/api/calendar/categories', options);
 	return requireApiData(response, 'ไม่สามารถโหลดหมวดหมู่ปฏิทินได้');
 }
 
@@ -167,8 +173,8 @@ export async function deleteCalendarCategory(id: string): Promise<Record<string,
 	return requireApiData(response, 'ไม่สามารถลบหมวดหมู่ปฏิทินได้');
 }
 
-export async function listCalendarTags(): Promise<CalendarTag[]> {
-	const response = await apiClient.get<CalendarTag[]>('/api/calendar/tags');
+export async function listCalendarTags(options: ApiRequestOptions = {}): Promise<CalendarTag[]> {
+	const response = await apiClient.get<CalendarTag[]>('/api/calendar/tags', options);
 	return requireApiData(response, 'ไม่สามารถโหลดแท็กปฏิทินได้');
 }
 

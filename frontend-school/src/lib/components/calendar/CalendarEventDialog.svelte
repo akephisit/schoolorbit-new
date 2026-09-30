@@ -8,7 +8,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import { LoadingButton } from '$lib/components/app-state';
+	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import type {
 		CalendarAudienceType,
 		CalendarCategory,
@@ -32,6 +32,10 @@
 		academicYearId,
 		academicTermId = null,
 		saving = false,
+		optionsLoading = false,
+		optionsLoaded = true,
+		optionsError = '',
+		onretryoptions,
 		onsave
 	}: {
 		open: boolean;
@@ -43,6 +47,10 @@
 		academicYearId: string;
 		academicTermId?: string | null;
 		saving?: boolean;
+		optionsLoading?: boolean;
+		optionsLoaded?: boolean;
+		optionsError?: string;
+		onretryoptions?: () => void;
 		onsave?: (payload: CreateCalendarEventRequest) => void;
 	} = $props();
 
@@ -207,7 +215,7 @@
 	}
 
 	function submitForm() {
-		if (hasMultipleTargetRows) return;
+		if (saving || optionsLoading || !optionsLoaded || optionsError || hasMultipleTargetRows) return;
 
 		const targets: CalendarEventTargetInput[] = selectedAudiences.map((audienceType) => ({
 			audienceType,
@@ -243,6 +251,21 @@
 			<Dialog.Description>กำหนดรายละเอียด วันเวลา ผู้ชม และการแจ้งเตือน</Dialog.Description>
 		</Dialog.Header>
 
+		<section data-testid="calendar-target-options" aria-busy={optionsLoading}>
+			{#if optionsError}<PageState
+					variant="error"
+					title="โหลดตัวเลือกชั้นเรียนไม่สำเร็จ"
+					description={optionsError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={onretryoptions}
+				/>{/if}
+			{#if optionsLoading && !optionsLoaded}<div
+					role="status"
+					aria-label="กำลังโหลดตัวเลือกชั้นเรียน"
+				>
+					<PageSkeleton variant="form" rows={1} />
+				</div>{/if}
+		</section>
 		<form
 			class="min-h-0 flex-1 overflow-y-auto px-6 py-5"
 			onsubmit={(submitEvent) => {
@@ -435,7 +458,13 @@
 					type="submit"
 					loading={saving}
 					loadingLabel="กำลังบันทึก..."
-					disabled={hasMultipleTargetRows || !title.trim() || !startDate || !endDate}
+					disabled={optionsLoading ||
+						!optionsLoaded ||
+						!!optionsError ||
+						hasMultipleTargetRows ||
+						!title.trim() ||
+						!startDate ||
+						!endDate}
 					class={cn('min-w-36')}
 				>
 					บันทึกและเผยแพร่

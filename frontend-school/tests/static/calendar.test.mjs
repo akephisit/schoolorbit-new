@@ -252,22 +252,23 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 	const staffPage = await readProjectFile('src/routes/(app)/staff/calendar/+page.svelte');
 	const staffSource = stripComments(staffPage);
 
-	assert.match(staffSource, /onMount\(\(\) => {[\s\S]*loadCalendar\(\)/);
+	assert.doesNotMatch(staffSource, /onMount/);
+	assert.match(staffSource, /eventsSource/);
 	assert.doesNotMatch(staffSource, /hasAttemptedInitialLoad/);
 	assert.match(staffSource, /calendarGridRange\(selectedMonth\)/);
 	assert.match(staffSource, /from '\$lib\/components\/ui\/alert-dialog'/);
 	assert.match(staffSource, /function requestDeleteEvent/);
 	assert.match(staffSource, /function confirmDeleteEvent/);
 	assert.match(staffSource, /activeFilterCount/);
-	assert.match(staffSource, /listCalendarTags\(\)/);
-	assert.match(staffSource, /tagId: tagId \|\| undefined/);
+	assert.match(staffSource, /listCalendarTags\(\{ signal: ticket.signal \}\)/);
+	assert.match(staffSource, /committed\.filters/);
 	assert.match(staffSource, /async function ensureManageOptions\(\): Promise<boolean>/);
-	assert.match(staffSource, /manageOptionsPromise/);
+	assert.match(staffSource, /optionsRequest/);
 	assert.match(staffSource, /let eventDialogSession = \$state\(0\);/);
-	assert.match(staffSource, /eventDialogSession \+= 1;\s*eventDialogOpen = true;/);
+	assert.match(staffSource, /eventDialogSession(?:\+\+| \+= 1);\s*eventDialogOpen = true;/);
 	assert.match(staffSource, /\{#key eventDialogSession\}[\s\S]*<CalendarEventDialog/);
-	assert.match(staffSource, /const optionsReady = await ensureManageOptions\(\);/);
-	assert.match(staffSource, /if \(!optionsReady\) return;/);
+	assert.match(staffSource, /void ensureManageOptions\(\)/);
+	assert.match(staffSource, /eventDialogOpen && canManageCalendar/);
 	assert.doesNotMatch(staffSource, /function replaceEvent/);
 	assert.match(staffSource, /function eventMatchesCurrentFilters\(event: CalendarEvent\)/);
 	assert.match(staffSource, /function patchSavedEvent\(event: CalendarEvent\)/);
@@ -280,11 +281,11 @@ test('calendar routes keep staff reads and local state filter-aware', async () =
 	assert.doesNotMatch(matcherBody, /event\.categoryName/);
 	assert.match(
 		staffSource,
-		/event\.targets\.some\(\(target\) => target\.audienceType === audience\)/
+		/event\.targets\.some\(\(target\) => target\.audienceType === committed\.audience\)/
 	);
 	assert.match(staffSource, /categoryName: savedCategory\.name/);
 	assert.match(staffSource, /categoryColor: savedCategory\.color/);
-	assert.match(staffSource, /categoryId = '';\s*await loadCalendar\(\);/);
+	assert.match(staffSource, /url\.searchParams\.delete\('categoryId'\)/);
 });
 
 test('staff calendar copies the current school public URL with feedback', async () => {

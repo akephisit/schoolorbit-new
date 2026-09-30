@@ -43,6 +43,7 @@
 		ondeletetag?: (tag: CalendarTag) => Promise<boolean>;
 	} = $props();
 
+	let selectionEpoch = 0;
 	let selectedCategoryId = $state('new');
 	let activeTab = $state('categories');
 	let categoryName = $state('');
@@ -58,6 +59,7 @@
 	let editingTag = $derived(selectedTagId !== 'new');
 
 	function selectCategory(category: CalendarCategory | null) {
+		selectionEpoch++;
 		selectedCategoryId = category?.id ?? 'new';
 		categoryName = category?.name ?? '';
 		categoryColor =
@@ -66,11 +68,14 @@
 	}
 
 	function selectTag(tag: CalendarTag | null) {
+		selectionEpoch++;
 		selectedTagId = tag?.id ?? 'new';
 		tagName = tag?.name ?? '';
 	}
 
 	async function saveCategory() {
+		if (saving || !open) return;
+		const epoch = selectionEpoch;
 		const normalizedOrder = Number(categoryOrderIndex);
 		const saved = await onsavecategory?.(selectedCategoryId === 'new' ? null : selectedCategoryId, {
 			name: categoryName.trim(),
@@ -78,14 +83,17 @@
 			orderIndex: Number.isFinite(normalizedOrder) ? normalizedOrder : 0,
 			isActive: true
 		});
-		if (saved && selectedCategoryId === 'new') selectCategory(null);
+		if (saved && open && epoch === selectionEpoch && selectedCategoryId === 'new')
+			selectCategory(null);
 	}
 
 	async function saveTag() {
+		if (saving || !open) return;
+		const epoch = selectionEpoch;
 		const saved = await onsavetag?.(selectedTagId === 'new' ? null : selectedTagId, {
 			name: tagName.trim()
 		});
-		if (saved && selectedTagId === 'new') selectTag(null);
+		if (saved && open && epoch === selectionEpoch && selectedTagId === 'new') selectTag(null);
 	}
 
 	function requestDelete(candidate: DeleteCandidate) {
@@ -94,13 +102,15 @@
 	}
 
 	async function confirmDelete() {
-		if (!deleteCandidate) return;
+		if (!deleteCandidate || saving || !open) return;
+		const candidate = deleteCandidate,
+			epoch = selectionEpoch;
 
 		const deleted =
 			deleteCandidate.kind === 'category'
 				? await ondeletecategory?.(deleteCandidate.item)
 				: await ondeletetag?.(deleteCandidate.item);
-		if (!deleted) return;
+		if (!deleted || !open || epoch !== selectionEpoch || deleteCandidate !== candidate) return;
 
 		if (deleteCandidate.kind === 'category') selectCategory(null);
 		else selectTag(null);

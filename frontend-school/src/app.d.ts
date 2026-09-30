@@ -17,7 +17,9 @@ declare global {
 			title?: string;
 			description?: string;
 		}
-		// interface PageState {}
+		interface PageState {
+			calendarUrl?: string;
+		}
 		// interface Platform {}
 	}
 

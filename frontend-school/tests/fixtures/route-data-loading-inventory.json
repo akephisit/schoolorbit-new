@@ -608,13 +608,12 @@
 		{
 			"route": "staff/calendar",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
-			"context": "term_optional",
-			"status": "planned",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "academic year + optional term + committed month/filter URL",
+			"status": "complete",
 			"backendOwner": "school-calendar",
-			"notes": "Component API reads include listGradeLevelOptions, listHomerooms, listCalendarCategories, listCalendarEvents, listCalendarTags; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct loader owns concurrent events/categories/tags; shallow history rereads events only. Opened event targets are lazy, typed mutations patch affected regions with owner/draft/disposal guards. SQL audit: date-scoped event query plus three set-based expansions, no N+1 or justified index change."
 		},
 		{
 			"route": "staff/certificate-requests",
