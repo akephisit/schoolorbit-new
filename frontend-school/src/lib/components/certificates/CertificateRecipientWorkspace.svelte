@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { afterNavigate } from '$app/navigation';
+	import { pushState } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 	import { ApiClientError } from '$lib/api/client';
 	import {
 		bulkUpdateCertificateCandidates,
@@ -45,7 +49,7 @@
 		UserPlus,
 		UsersRound
 	} from '@lucide/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	const ALL_TEMPLATES_VALUE = '__all_templates__';
@@ -53,10 +57,32 @@
 
 	let {
 		campaignId,
-		canReadCandidates
+		canReadCandidates,
+		canUpdate,
+		canSubmit,
+		identityKey,
+		initialCampaign,
+		initialTemplates,
+		initialCandidates
 	}: {
 		campaignId: string;
 		canReadCandidates: boolean;
+		canUpdate: boolean;
+		canSubmit: boolean;
+		identityKey: string;
+		initialCampaign: Promise<
+			RouteLoadResult<{ ownerKey: string; record: CertificateCampaignDetail | null }>
+		>;
+		initialTemplates: Promise<
+			RouteLoadResult<{ ownerKey: string; record: CertificateTemplateDetail[] | null }>
+		>;
+		initialCandidates: Promise<
+			RouteLoadResult<{
+				ownerKey: string;
+				filterKey: string;
+				record: CertificateCandidateListResponse | null;
+			}>
+		>;
 	} = $props();
 
 	type ValidationStatus = CertificateCandidateDetail['validationStatus'];
@@ -98,21 +124,229 @@
 	let submitError = $state('');
 	let lockedRequestId = $state<string | null>(null);
 	let externalConfirmationIssues = $state.raw<ExternalConfirmationIssue[]>([]);
-	let loadGeneration = 0;
-	let candidateLoadGeneration = 0;
-	let requestedCampaignId = '';
-
-	function changeTemplateFilter(value: string): void {
+	const context = $derived(`${identityKey}|${campaignId}`);
+	const currentUrl = $derived(
+		new URL(page.state.certificateCandidateUrl ?? page.url.href, page.url)
+	);
+	const candidateFilterKey = $derived(
+		currentUrl.searchParams.get('status') +
+			'|' +
+			currentUrl.searchParams.get('templateId') +
+			'|' +
+			currentUrl.searchParams.get('search')
+	);
+	let owner = '',
+		ownerEpoch = 0,
+		disposed = false;
+	let campaignLoading = $state(true),
+		campaignError = $state(''),
+		templatesLoading = $state(true),
+		templatesError = $state(''),
+		loaded = $state(false);
+	const campaignRequest = new LatestRequest(),
+		templateRequest = new LatestRequest(),
+		candidateRequest = new LatestRequest();
+	let consumedCampaign: typeof initialCampaign | null = null,
+		consumedTemplates: typeof initialTemplates | null = null,
+		consumedCandidates: typeof initialCandidates | null = null;
+	let appliedFilter = '';
+	$effect.pre(() => {
+		const key = context,
+			a = initialCampaign,
+			b = initialTemplates,
+			c = initialCandidates,
+			allowed = canReadCandidates,
+			filter = candidateFilterKey;
+		untrack(() => {
+			if (owner !== key) {
+				owner = key;
+				ownerEpoch++;
+				campaignRequest.abort();
+				templateRequest.abort();
+				candidateRequest.abort();
+				campaign = null;
+				templates = [];
+				candidates = [];
+				summary = { ...emptySummary };
+				selectedIds = [];
+				loaded = false;
+				loading = allowed;
+				tableLoading = false;
+				campaignLoading = allowed;
+				templatesLoading = allowed;
+				campaignError = '';
+				templatesError = '';
+				error = '';
+				actionBusy = false;
+				importOpen = false;
+				accountOpen = false;
+				manualOpen = false;
+				editTarget = null;
+				deleteTarget = null;
+				submitOpen = false;
+				submitError = '';
+				lockedRequestId = null;
+				externalConfirmationIssues = [];
+			}
+			statusFilter =
+				currentUrl.searchParams.get('status') === 'ready'
+					? 'ready'
+					: currentUrl.searchParams.get('status') === 'needs_review'
+						? 'needs_review'
+						: currentUrl.searchParams.get('status') === 'invalid'
+							? 'invalid'
+							: 'all';
+			templateFilter = currentUrl.searchParams.get('templateId') ?? '';
+			searchQuery = currentUrl.searchParams.get('search') ?? '';
+			searchDraft = searchQuery;
+			if (!allowed) return;
+			if (a !== consumedCampaign) {
+				consumedCampaign = a;
+				const t = campaignRequest.begin();
+				campaignLoading = true;
+				void a.then((v) => applyCampaign(v, t.revision));
+			}
+			if (b !== consumedTemplates) {
+				consumedTemplates = b;
+				const t = templateRequest.begin();
+				templatesLoading = true;
+				void b.then((v) => applyTemplates(v, t.revision));
+			}
+			if (c !== consumedCandidates) {
+				consumedCandidates = c;
+				appliedFilter = filter;
+				const t = candidateRequest.begin();
+				loading = true;
+				void c.then((v) => applyCandidates(v, t.revision));
+			} else if (appliedFilter !== filter) {
+				appliedFilter = filter;
+				ownerEpoch++;
+				actionBusy = false;
+				importOpen = false;
+				accountOpen = false;
+				manualOpen = false;
+				editTarget = null;
+				deleteTarget = null;
+				submitOpen = false;
+				selectedIds = [];
+				loaded = false;
+				candidates = [];
+				void loadCandidateList(campaignId);
+			}
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		campaignRequest.abort();
+		templateRequest.abort();
+		candidateRequest.abort();
+	});
+	function current(epoch: number, key: string) {
+		return !disposed && canReadCandidates && epoch === ownerEpoch && context === key;
+	}
+	function applyCampaign(v: Awaited<typeof initialCampaign>, revision: number) {
+		if (!campaignRequest.isCurrent(revision)) return;
+		campaignLoading = false;
+		if (!v.ok) {
+			campaignError = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== context) return;
+		campaign = v.data.record;
+		campaignError = '';
+	}
+	function applyTemplates(v: Awaited<typeof initialTemplates>, revision: number) {
+		if (!templateRequest.isCurrent(revision)) return;
+		templatesLoading = false;
+		if (!v.ok) {
+			templatesError = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== context) return;
+		templates = v.data.record ?? [];
+		templatesError = '';
+	}
+	function applyCandidates(v: Awaited<typeof initialCandidates>, revision: number) {
+		if (!candidateRequest.isCurrent(revision) || (v.ok && v.data.filterKey !== candidateFilterKey))
+			return;
+		loading = false;
+		tableLoading = false;
+		if (!v.ok) {
+			error = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== context) return;
+		candidates = applyExternalConfirmationIssues(v.data.record?.items ?? []);
+		summary = v.data.record?.summary ?? { ...emptySummary };
+		loaded = true;
+		error = '';
+		selectedIds = selectedIds.filter((id) => candidates.some((c) => c.id === id));
+	}
+	async function retryCampaign() {
+		if (disposed || !canReadCandidates) return;
+		const ownerKey = context,
+			t = campaignRequest.begin();
+		campaignLoading = true;
+		campaignError = '';
+		applyCampaign(
+			await captureRouteLoad(
+				getCertificateCampaign(campaignId, { signal: t.signal }).then((record) => ({
+					ownerKey,
+					record
+				})),
+				'โหลดกิจกรรมไม่สำเร็จ'
+			),
+			t.revision
+		);
+	}
+	async function retryTemplates() {
+		if (disposed || !canReadCandidates) return;
+		const ownerKey = context,
+			t = templateRequest.begin();
+		templatesLoading = true;
+		templatesError = '';
+		applyTemplates(
+			await captureRouteLoad(
+				listCertificateTemplates(campaignId, { signal: t.signal }).then((record) => ({
+					ownerKey,
+					record
+				})),
+				'โหลดแบบไม่สำเร็จ'
+			),
+			t.revision
+		);
+	}
+	function commitFilters() {
+		if (actionBusy) return;
+		const url = new URL(currentUrl);
+		if (statusFilter === 'all') url.searchParams.delete('status');
+		else url.searchParams.set('status', statusFilter);
+		if (templateFilter) url.searchParams.set('templateId', templateFilter);
+		else url.searchParams.delete('templateId');
+		if (searchQuery) url.searchParams.set('search', searchQuery);
+		else url.searchParams.delete('search');
+		pushState(resolve(`${url.pathname}${url.search}` as '/staff/certificates'), {
+			...page.state,
+			certificateCandidateUrl: url.href
+		});
+	}
+	function changeTemplateFilter(value: string) {
 		templateFilter = value === ALL_TEMPLATES_VALUE ? '' : value;
-		selectedIds = [];
-		void loadCandidateList(campaignId);
+		commitFilters();
 	}
 
-	const canPrepareCandidates = $derived(campaign?.capabilities.canPrepareCandidates === true);
+	const canPrepareCandidates = $derived(
+		canUpdate &&
+			loaded &&
+			!templatesLoading &&
+			!templatesError &&
+			campaign?.capabilities.canPrepareCandidates === true
+	);
 	const canCreateCandidates = $derived(canPrepareCandidates);
 	const canManageCandidates = $derived(canPrepareCandidates);
 	const canDeleteCandidates = $derived(canManageCandidates);
-	const canSubmitCandidates = $derived(campaign?.capabilities.canSubmit === true);
+	const canSubmitCandidates = $derived(canSubmit && campaign?.capabilities.canSubmit === true);
 	const selectedCandidates = $derived(
 		candidates.filter((candidate) => selectedIds.includes(candidate.id))
 	);
@@ -202,100 +436,89 @@
 		);
 	}
 
-	async function loadWorkspace(targetCampaignId: string) {
-		const generation = ++loadGeneration;
-		candidateLoadGeneration += 1;
-		tableLoading = false;
-		importOpen = false;
-		accountOpen = false;
-		manualOpen = false;
-		editTarget = null;
-		deleteTarget = null;
-		submitOpen = false;
-		submitError = '';
-		lockedRequestId = null;
-		externalConfirmationIssues = [];
-		searchDraft = '';
-		searchQuery = '';
-		statusFilter = 'all';
-		templateFilter = '';
-		bulkTemplateId = '';
-		if (!canReadCandidates) {
-			if (generation === loadGeneration) loading = false;
-			return;
-		}
-		loading = true;
-		error = '';
-		campaign = null;
-		templates = [];
-		candidates = [];
-		summary = { ...emptySummary };
-		selectedIds = [];
-		try {
-			const [loadedCampaign, loadedTemplates, loadedCandidates] = await Promise.all([
-				getCertificateCampaign(targetCampaignId),
-				listCertificateTemplates(targetCampaignId),
-				listCertificateCandidates(targetCampaignId)
-			]);
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			campaign = loadedCampaign;
-			templates = loadedTemplates;
-			candidates = applyExternalConfirmationIssues(loadedCandidates.items);
-			summary = loadedCandidates.summary;
-		} catch (loadError) {
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดรายชื่อผู้รับได้';
-		} finally {
-			if (generation === loadGeneration && targetCampaignId === campaignId) loading = false;
-		}
-	}
-
 	async function loadCandidateList(targetCampaignId: string) {
-		const generation = ++candidateLoadGeneration;
-		tableLoading = true;
-		try {
-			const response = await listCertificateCandidates(targetCampaignId, {
-				status: statusFilter === 'all' ? undefined : statusFilter,
-				templateId: templateFilter || undefined,
-				search: searchQuery || undefined
-			});
-			if (generation !== candidateLoadGeneration || targetCampaignId !== campaignId) return;
-			candidates = applyExternalConfirmationIssues(response.items);
-			summary = response.summary;
-			selectedIds = selectedIds.filter((id) =>
-				response.items.some((candidate) => candidate.id === id)
-			);
-		} catch (loadError) {
-			if (generation !== candidateLoadGeneration || targetCampaignId !== campaignId) return;
-			toast.error(loadError instanceof Error ? loadError.message : 'โหลดรายชื่อผู้รับไม่สำเร็จ');
-		} finally {
-			if (generation === candidateLoadGeneration && targetCampaignId === campaignId)
-				tableLoading = false;
-		}
+		if (disposed || !canReadCandidates || targetCampaignId !== campaignId) return;
+		const ownerKey = context,
+			filterKey = candidateFilterKey,
+			t = candidateRequest.begin();
+		loading = true;
+		tableLoading = loaded;
+		error = '';
+		applyCandidates(
+			await captureRouteLoad(
+				listCertificateCandidates(
+					targetCampaignId,
+					{
+						status: statusFilter === 'all' ? undefined : statusFilter,
+						templateId: templateFilter || undefined,
+						search: searchQuery || undefined
+					},
+					{ signal: t.signal }
+				).then((record) => ({ ownerKey, filterKey, record })),
+				'โหลดรายชื่อผู้รับไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
-
 	function applySearch() {
 		searchQuery = searchDraft.trim();
-		void loadCandidateList(campaignId);
+		commitFilters();
 	}
-
 	function setStatusFilter(status: StatusFilter) {
-		if (statusFilter === status) return;
+		if (status === statusFilter) return;
 		statusFilter = status;
-		selectedIds = [];
-		void loadCandidateList(campaignId);
+		commitFilters();
+	}
+	function patchCandidates(items: CertificateCandidateDetail[]) {
+		candidateRequest.abort();
+		loading = false;
+		tableLoading = false;
+		error = '';
+		const next = { ...summary };
+		const count = (item: CertificateCandidateDetail, delta: number) => {
+			if (item.deletedAt) return;
+			next.totalCount += delta;
+			if (item.validationStatus === 'ready') next.readyCount += delta;
+			else if (item.validationStatus === 'needs_review') next.reviewCount += delta;
+			else next.invalidCount += delta;
+		};
+		for (const item of items) {
+			const previous = candidates.find((c) => c.id === item.id);
+			if (previous) count(previous, -1);
+			count(item, 1);
+		}
+		summary = next;
+		const ids = new Set(items.map((c) => c.id));
+		const matches = (c: CertificateCandidateDetail) =>
+			!c.deletedAt &&
+			(statusFilter === 'all' || c.validationStatus === statusFilter) &&
+			(!templateFilter || c.templateId === templateFilter) &&
+			(!searchQuery ||
+				[c.importedFirstName, c.importedLastName, c.activityItem ?? '', c.awardOrRole ?? ''].some(
+					(x) => x.toLocaleLowerCase('th').includes(searchQuery.toLocaleLowerCase('th'))
+				));
+		candidates = [...candidates.filter((c) => !ids.has(c.id)), ...items.filter(matches)].sort(
+			(a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
+		);
+		loaded = true;
+		selectedIds = selectedIds.filter((id) => candidates.some((c) => c.id === id));
 	}
 
 	async function applyBulk(payload: CertificateCandidateBulkRequest, successMessage: string) {
-		if (actionBusy || payload.candidateIds.length === 0) return;
+		if (!canManageCandidates || actionBusy || payload.candidateIds.length === 0) return;
+		const epoch = ownerEpoch,
+			key = context,
+			targetCampaignId = campaignId;
 		actionBusy = true;
 		try {
-			await bulkUpdateCertificateCandidates(campaignId, payload);
+			const result = await bulkUpdateCertificateCandidates(targetCampaignId, payload);
+			if (!current(epoch, key) || !canManageCandidates) return;
+			patchCandidates(result.candidates);
 			clearExternalConfirmationIssues(payload.candidateIds);
 			selectedIds = [];
-			await loadCandidateList(campaignId);
 			toast.success(successMessage);
 		} catch (bulkError) {
+			if (!current(epoch, key)) return;
 			if (
 				payload.operation === 'confirm_external' &&
 				bulkError instanceof ApiClientError &&
@@ -316,108 +539,135 @@
 				toast.error(bulkError.message);
 				return;
 			}
-			await loadCandidateList(campaignId);
 			toast.error(bulkError instanceof Error ? bulkError.message : 'ปรับปรุงรายชื่อไม่สำเร็จ');
 		} finally {
-			actionBusy = false;
+			if (current(epoch, key)) actionBusy = false;
 		}
 	}
 
 	async function handleImport(parsed: ParsedCertificateImport) {
 		if (!canCreateCandidates || actionBusy) return;
+		const epoch = ownerEpoch,
+			key = context,
+			targetCampaignId = campaignId;
 		actionBusy = true;
 		try {
-			const result = await importCertificateCandidates(campaignId, parsed);
+			const result = await importCertificateCandidates(targetCampaignId, parsed);
+			if (!current(epoch, key) || !canCreateCandidates) return;
+			patchCandidates(result.candidates);
 			importOpen = false;
-			await loadCandidateList(campaignId);
 			toast.success(`นำเข้า ${result.batch.rowCount.toLocaleString('th-TH')} รายการแล้ว`);
 		} catch (importError) {
+			if (!current(epoch, key)) return;
 			toast.error(importError instanceof Error ? importError.message : 'นำเข้ารายชื่อไม่สำเร็จ');
 		} finally {
-			actionBusy = false;
+			if (current(epoch, key)) actionBusy = false;
 		}
 	}
 
 	async function handleAccountCreate(payload: CreateAccountCertificateCandidateRequest) {
 		if (!canCreateCandidates || actionBusy) return;
+		const epoch = ownerEpoch,
+			key = context,
+			targetCampaignId = campaignId;
 		actionBusy = true;
 		try {
-			await createAccountCertificateCandidate(campaignId, payload);
+			const result = await createAccountCertificateCandidate(targetCampaignId, payload);
+			if (!current(epoch, key) || !canCreateCandidates) return;
+			patchCandidates(result.candidates);
 			accountOpen = false;
-			await loadCandidateList(campaignId);
 			toast.success('เพิ่มผู้รับจากบัญชีแล้ว');
 		} catch (createError) {
+			if (!current(epoch, key)) return;
 			toast.error(
 				createError instanceof Error ? createError.message : 'เพิ่มผู้รับจากบัญชีไม่สำเร็จ'
 			);
 		} finally {
-			actionBusy = false;
+			if (current(epoch, key)) actionBusy = false;
 		}
 	}
 
 	async function handleManualCreate(payload: CreateManualExternalCandidateRequest) {
 		if (!canCreateCandidates || actionBusy) return;
+		const epoch = ownerEpoch,
+			key = context,
+			targetCampaignId = campaignId;
 		actionBusy = true;
 		try {
-			await createManualCertificateCandidate(campaignId, payload);
+			const result = await createManualCertificateCandidate(targetCampaignId, payload);
+			if (!current(epoch, key) || !canCreateCandidates) return;
+			patchCandidates(result.candidates);
 			manualOpen = false;
-			await loadCandidateList(campaignId);
 			toast.success('เพิ่มบุคคลภายนอกแล้ว');
 		} catch (createError) {
+			if (!current(epoch, key)) return;
 			toast.error(createError instanceof Error ? createError.message : 'เพิ่มบุคคลภายนอกไม่สำเร็จ');
 		} finally {
-			actionBusy = false;
+			if (current(epoch, key)) actionBusy = false;
 		}
 	}
 
 	async function handleEdit(payload: UpdateCertificateCandidateRequest) {
 		if (!editTarget || !canManageCandidates || actionBusy) return;
+		const epoch = ownerEpoch,
+			key = context;
 		actionBusy = true;
 		try {
 			const candidateId = editTarget.id;
-			await updateCertificateCandidate(candidateId, payload);
+			const updated = await updateCertificateCandidate(candidateId, payload);
+			if (!current(epoch, key) || !canManageCandidates) return;
+			patchCandidates([updated]);
 			clearExternalConfirmationIssues([candidateId]);
 			editTarget = null;
-			await loadCandidateList(campaignId);
 			toast.success('บันทึกรายชื่อแล้ว');
 		} catch (updateError) {
-			await loadCandidateList(campaignId);
+			if (!current(epoch, key)) return;
 			toast.error(updateError instanceof Error ? updateError.message : 'บันทึกรายชื่อไม่สำเร็จ');
 		} finally {
-			actionBusy = false;
+			if (current(epoch, key)) actionBusy = false;
 		}
 	}
 
 	async function handleDelete() {
 		if (!deleteTarget || !canDeleteCandidates || actionBusy) return;
 		const target = deleteTarget;
+		const epoch = ownerEpoch,
+			key = context;
 		actionBusy = true;
 		try {
-			await deleteCertificateCandidate(target.id);
+			const updated = await deleteCertificateCandidate(target.id);
+			if (!current(epoch, key) || !canDeleteCandidates) return;
+			patchCandidates([updated]);
 			clearExternalConfirmationIssues([target.id]);
 			deleteTarget = null;
 			selectedIds = selectedIds.filter((id) => id !== target.id);
-			await loadCandidateList(campaignId);
 			toast.success('ลบรายชื่อแล้ว');
 		} catch (deleteError) {
+			if (!current(epoch, key)) return;
 			toast.error(deleteError instanceof Error ? deleteError.message : 'ลบรายชื่อไม่สำเร็จ');
 		} finally {
-			actionBusy = false;
+			if (current(epoch, key)) actionBusy = false;
 		}
 	}
 
 	async function handleSubmitRequest(candidateIds: string[]) {
 		if (!canSubmitSelection || actionBusy) return;
+		const epoch = ownerEpoch,
+			key = context,
+			targetCampaignId = campaignId;
 		actionBusy = true;
 		submitError = '';
 		lockedRequestId = null;
 		try {
-			await submitCertificateIssueRequest(campaignId, { candidateIds });
+			await submitCertificateIssueRequest(targetCampaignId, { candidateIds });
+			if (!current(epoch, key) || !canSubmitCandidates) return;
 			selectedIds = [];
 			submitOpen = false;
-			await loadWorkspace(campaignId);
+			await Promise.all([retryCampaign(), retryTemplates(), loadCandidateList(targetCampaignId)]);
+			if (!current(epoch, key)) return;
 			toast.success('ส่งคำขอออกเกียรติบัตรแล้ว');
 		} catch (submitFailure) {
+			if (!current(epoch, key)) return;
 			submitError =
 				submitFailure instanceof Error ? submitFailure.message : 'ส่งคำขอออกเกียรติบัตรไม่สำเร็จ';
 			if (
@@ -429,18 +679,9 @@
 			}
 			toast.error(submitError);
 		} finally {
-			actionBusy = false;
+			if (current(epoch, key)) actionBusy = false;
 		}
 	}
-
-	function ensureWorkspaceLoaded() {
-		if (!campaignId || requestedCampaignId === campaignId) return;
-		requestedCampaignId = campaignId;
-		void loadWorkspace(campaignId);
-	}
-
-	onMount(ensureWorkspaceLoaded);
-	afterNavigate(ensureWorkspaceLoaded);
 </script>
 
 <PageShell
@@ -450,11 +691,16 @@
 	{#snippet meta()}
 		<div class="flex items-center gap-2 text-xs text-muted-foreground">
 			<UsersRound class="size-4" />
-			{summary.totalCount.toLocaleString('th-TH')} รายการ{campaign ? ` · ${campaign.name}` : ''}
+			{loaded
+				? `${summary.totalCount.toLocaleString('th-TH')} รายการ`
+				: 'กำลังโหลดรายชื่อ'}{campaign ? ` · ${campaign.name}` : ''}
 		</div>
 	{/snippet}
 
 	{#snippet actions()}
+		{#if canReadCandidates}<Button variant="outline" onclick={() => loadCandidateList(campaignId)}
+				>โหลดรายชื่อใหม่</Button
+			>{/if}
 		{#if canCreateCandidates}
 			<div class="flex flex-wrap gap-2">
 				<Button variant="outline" onclick={() => (accountOpen = true)}>
@@ -476,247 +722,269 @@
 			title="ไม่มีสิทธิ์ดูรายชื่อผู้รับ"
 			description="สิทธิ์การอ่านและขอบเขตหน่วยงานตรวจจาก backend"
 		/>
-	{:else if loading}
-		<PageSkeleton variant="table" />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดรายชื่อผู้รับไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadWorkspace(campaignId)}
-		/>
 	{:else}
-		<section
-			class="overflow-hidden rounded-xl border bg-card shadow-sm"
-			aria-label="สรุปความพร้อมของรายชื่อ"
-		>
-			<div class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/25 px-5 py-3">
-				<div>
-					<p class="text-sm font-semibold">บัญชีตรวจสอบความพร้อม</p>
-					<p class="text-xs text-muted-foreground">
-						ต้องไม่มีรายการตรวจสอบหรือข้อมูลผิดก่อนส่งคำขอออก
-					</p>
-				</div>
-				<span class="text-xs text-muted-foreground"
-					>รวม {summary.totalCount.toLocaleString('th-TH')} รายการ</span
-				>
-			</div>
-			<div class="grid sm:grid-cols-3">
-				<button
-					type="button"
-					class={`group flex items-center justify-between gap-4 border-b px-5 py-4 text-left transition-colors hover:bg-emerald-50/70 sm:border-r sm:border-b-0 ${statusFilter === 'ready' ? 'bg-emerald-50' : ''}`}
-					onclick={() => setStatusFilter(statusFilter === 'ready' ? 'all' : 'ready')}
-				>
-					<span>
-						<span class="block text-sm font-semibold text-emerald-800">พร้อมออก</span>
-						<span class="text-xs text-muted-foreground">ข้อมูลและแบบครบ</span>
-					</span>
-					<strong class="text-3xl tabular-nums text-emerald-700"
-						>{summary.readyCount.toLocaleString('th-TH')}</strong
-					>
-				</button>
-				<button
-					type="button"
-					class={`group flex items-center justify-between gap-4 border-b px-5 py-4 text-left transition-colors hover:bg-amber-50/70 sm:border-r sm:border-b-0 ${statusFilter === 'needs_review' ? 'bg-amber-50' : ''}`}
-					onclick={() => setStatusFilter(statusFilter === 'needs_review' ? 'all' : 'needs_review')}
-				>
-					<span>
-						<span class="block text-sm font-semibold text-amber-800">ต้องตรวจสอบ</span>
-						<span class="text-xs text-muted-foreground">ต้องตัดสินใจหรือยืนยัน</span>
-					</span>
-					<strong class="text-3xl tabular-nums text-amber-700"
-						>{summary.reviewCount.toLocaleString('th-TH')}</strong
-					>
-				</button>
-				<button
-					type="button"
-					class={`group flex items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-red-50/70 ${statusFilter === 'invalid' ? 'bg-red-50' : ''}`}
-					onclick={() => setStatusFilter(statusFilter === 'invalid' ? 'all' : 'invalid')}
-				>
-					<span>
-						<span class="block text-sm font-semibold text-red-800">ข้อมูลไม่ถูกต้อง</span>
-						<span class="text-xs text-muted-foreground">ต้องแก้ข้อมูลต้นทาง</span>
-					</span>
-					<strong class="text-3xl tabular-nums text-red-700"
-						>{summary.invalidCount.toLocaleString('th-TH')}</strong
-					>
-				</button>
-			</div>
-		</section>
-
-		<section class="space-y-3 rounded-xl border bg-card p-3 sm:p-4">
-			<div class="flex flex-wrap items-end gap-3">
-				<label class="min-w-64 flex-1 space-y-1.5">
-					<span class="text-xs font-medium text-muted-foreground"
-						>ค้นหารายชื่อ รหัส หรือกิจกรรม</span
-					>
-					<div class="flex gap-2">
-						<Input
-							bind:value={searchDraft}
-							placeholder="ค้นหาในรายชื่อผู้รับ"
-							onkeydown={(event) => {
-								if (event.key === 'Enter') applySearch();
-							}}
-						/>
-						<Button size="icon" variant="outline" aria-label="ค้นหารายชื่อ" onclick={applySearch}>
-							<Search class="size-4" />
-						</Button>
-					</div>
-				</label>
-				<label class="min-w-56 space-y-1.5">
-					<span class="text-xs font-medium text-muted-foreground">กรองตามแบบ</span>
-					<Select.Root
-						type="single"
-						value={templateFilter || ALL_TEMPLATES_VALUE}
-						onValueChange={changeTemplateFilter}
-					>
-						<Select.Trigger class="w-full">
-							{templates.find((template) => template.id === templateFilter)?.name ?? 'ทุกแบบ'}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value={ALL_TEMPLATES_VALUE}>ทุกแบบ</Select.Item>
-							{#each templates as template (template.id)}
-								<Select.Item value={template.id}>{template.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</label>
+		{#if campaignLoading}<p role="status">กำลังโหลดกิจกรรม</p>{/if}
+		{#if campaignError}<PageState
+				variant="error"
+				title="โหลดกิจกรรมไม่สำเร็จ"
+				description={campaignError}
+				actionLabel="ลองกิจกรรมอีกครั้ง"
+				onaction={retryCampaign}
+			/>{/if}
+		{#if templatesLoading}<p role="status">กำลังโหลดแบบเกียรติบัตร</p>{/if}
+		{#if templatesError}<PageState
+				variant="error"
+				title="โหลดแบบไม่สำเร็จ"
+				description={templatesError}
+				actionLabel="ลองแบบอีกครั้ง"
+				onaction={retryTemplates}
+			/>{/if}
+		{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดรายชื่อผู้รับ">
+				<PageSkeleton variant="table" />
+			</div>{/if}
+		{#if error}
+			<PageState
+				variant="error"
+				title="โหลดรายชื่อผู้รับไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => loadCandidateList(campaignId)}
+			/>
+		{/if}
+		{#if loaded}
+			<section
+				class="overflow-hidden rounded-xl border bg-card shadow-sm"
+				aria-label="สรุปความพร้อมของรายชื่อ"
+			>
 				<div
-					class="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-3 text-xs text-muted-foreground"
+					class="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/25 px-5 py-3"
 				>
-					<Filter class="size-4" />
-					{statusFilter === 'all' ? 'ทุกสถานะ' : 'กำลังกรองสถานะ'}
-				</div>
-			</div>
-
-			{#if canManageCandidates || canSubmitCandidates}
-				<div class="flex flex-wrap items-end gap-2 border-t pt-3">
-					<div class="me-1 min-w-28 text-sm">
-						<p class="font-semibold">เลือกแล้ว {selectedIds.length.toLocaleString('th-TH')}</p>
-						<p class="text-xs text-muted-foreground">คำสั่งหลายรายการ</p>
+					<div>
+						<p class="text-sm font-semibold">บัญชีตรวจสอบความพร้อม</p>
+						<p class="text-xs text-muted-foreground">
+							ต้องไม่มีรายการตรวจสอบหรือข้อมูลผิดก่อนส่งคำขอออก
+						</p>
 					</div>
-					{#if canManageCandidates}
-						<label class="min-w-52 space-y-1">
-							<span class="sr-only">แบบสำหรับรายการที่เลือก</span>
-							<Select.Root
-								type="single"
-								value={bulkTemplateId || NO_BULK_TEMPLATE_VALUE}
-								onValueChange={(value) =>
-									(bulkTemplateId = value === NO_BULK_TEMPLATE_VALUE ? '' : value)}
-							>
-								<Select.Trigger class="w-full">
-									{@const template = bulkCompatibleTemplates.find(
-										(item) => item.id === bulkTemplateId
+					<span class="text-xs text-muted-foreground"
+						>รวม {summary.totalCount.toLocaleString('th-TH')} รายการ</span
+					>
+				</div>
+				<div class="grid sm:grid-cols-3">
+					<button
+						type="button"
+						class={`group flex items-center justify-between gap-4 border-b px-5 py-4 text-left transition-colors hover:bg-emerald-50/70 sm:border-r sm:border-b-0 ${statusFilter === 'ready' ? 'bg-emerald-50' : ''}`}
+						onclick={() => setStatusFilter(statusFilter === 'ready' ? 'all' : 'ready')}
+					>
+						<span>
+							<span class="block text-sm font-semibold text-emerald-800">พร้อมออก</span>
+							<span class="text-xs text-muted-foreground">ข้อมูลและแบบครบ</span>
+						</span>
+						<strong class="text-3xl tabular-nums text-emerald-700"
+							>{summary.readyCount.toLocaleString('th-TH')}</strong
+						>
+					</button>
+					<button
+						type="button"
+						class={`group flex items-center justify-between gap-4 border-b px-5 py-4 text-left transition-colors hover:bg-amber-50/70 sm:border-r sm:border-b-0 ${statusFilter === 'needs_review' ? 'bg-amber-50' : ''}`}
+						onclick={() =>
+							setStatusFilter(statusFilter === 'needs_review' ? 'all' : 'needs_review')}
+					>
+						<span>
+							<span class="block text-sm font-semibold text-amber-800">ต้องตรวจสอบ</span>
+							<span class="text-xs text-muted-foreground">ต้องตัดสินใจหรือยืนยัน</span>
+						</span>
+						<strong class="text-3xl tabular-nums text-amber-700"
+							>{summary.reviewCount.toLocaleString('th-TH')}</strong
+						>
+					</button>
+					<button
+						type="button"
+						class={`group flex items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-red-50/70 ${statusFilter === 'invalid' ? 'bg-red-50' : ''}`}
+						onclick={() => setStatusFilter(statusFilter === 'invalid' ? 'all' : 'invalid')}
+					>
+						<span>
+							<span class="block text-sm font-semibold text-red-800">ข้อมูลไม่ถูกต้อง</span>
+							<span class="text-xs text-muted-foreground">ต้องแก้ข้อมูลต้นทาง</span>
+						</span>
+						<strong class="text-3xl tabular-nums text-red-700"
+							>{summary.invalidCount.toLocaleString('th-TH')}</strong
+						>
+					</button>
+				</div>
+			</section>
+
+			<section class="space-y-3 rounded-xl border bg-card p-3 sm:p-4">
+				<div class="flex flex-wrap items-end gap-3">
+					<label class="min-w-64 flex-1 space-y-1.5">
+						<span class="text-xs font-medium text-muted-foreground"
+							>ค้นหารายชื่อ รหัส หรือกิจกรรม</span
+						>
+						<div class="flex gap-2">
+							<Input
+								bind:value={searchDraft}
+								placeholder="ค้นหาในรายชื่อผู้รับ"
+								onkeydown={(event) => {
+									if (event.key === 'Enter') applySearch();
+								}}
+							/>
+							<Button size="icon" variant="outline" aria-label="ค้นหารายชื่อ" onclick={applySearch}>
+								<Search class="size-4" />
+							</Button>
+						</div>
+					</label>
+					<label class="min-w-56 space-y-1.5">
+						<span class="text-xs font-medium text-muted-foreground">กรองตามแบบ</span>
+						<Select.Root
+							type="single"
+							value={templateFilter || ALL_TEMPLATES_VALUE}
+							onValueChange={changeTemplateFilter}
+						>
+							<Select.Trigger class="w-full">
+								{templates.find((template) => template.id === templateFilter)?.name ?? 'ทุกแบบ'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value={ALL_TEMPLATES_VALUE}>ทุกแบบ</Select.Item>
+								{#each templates as template (template.id)}
+									<Select.Item value={template.id}>{template.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</label>
+					<div
+						class="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-3 text-xs text-muted-foreground"
+					>
+						<Filter class="size-4" />
+						{statusFilter === 'all' ? 'ทุกสถานะ' : 'กำลังกรองสถานะ'}
+					</div>
+				</div>
+
+				{#if canManageCandidates || canSubmitCandidates}
+					<div class="flex flex-wrap items-end gap-2 border-t pt-3">
+						<div class="me-1 min-w-28 text-sm">
+							<p class="font-semibold">เลือกแล้ว {selectedIds.length.toLocaleString('th-TH')}</p>
+							<p class="text-xs text-muted-foreground">คำสั่งหลายรายการ</p>
+						</div>
+						{#if canManageCandidates}
+							<label class="min-w-52 space-y-1">
+								<span class="sr-only">แบบสำหรับรายการที่เลือก</span>
+								<Select.Root
+									type="single"
+									value={bulkTemplateId || NO_BULK_TEMPLATE_VALUE}
+									onValueChange={(value) =>
+										(bulkTemplateId = value === NO_BULK_TEMPLATE_VALUE ? '' : value)}
+								>
+									<Select.Trigger class="w-full">
+										{@const template = bulkCompatibleTemplates.find(
+											(item) => item.id === bulkTemplateId
+										)}
+										{template
+											? `${template.name} · ${template.allowedRecipientTypes
+													.map((type) => recipientTypeLabels[type])
+													.join('/')}`
+											: 'เลือกแบบเกียรติบัตร'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value={NO_BULK_TEMPLATE_VALUE}>เลือกแบบเกียรติบัตร</Select.Item>
+										{#each bulkCompatibleTemplates as template (template.id)}
+											<Select.Item value={template.id}>
+												{template.name} · {template.allowedRecipientTypes
+													.map((type) => recipientTypeLabels[type])
+													.join('/')}
+											</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</label>
+							<LoadingButton
+								variant="outline"
+								loading={actionBusy}
+								disabled={selectedIds.length === 0 || !bulkTemplateAllowed}
+								onclick={() =>
+									applyBulk(
+										{
+											candidateIds: selectedIds,
+											operation: 'assign_template',
+											templateId: bulkTemplateId
+										},
+										'กำหนดแบบให้รายการที่เลือกแล้ว'
 									)}
-									{template
-										? `${template.name} · ${template.allowedRecipientTypes
-												.map((type) => recipientTypeLabels[type])
-												.join('/')}`
-										: 'เลือกแบบเกียรติบัตร'}
-								</Select.Trigger>
-								<Select.Content>
-									<Select.Item value={NO_BULK_TEMPLATE_VALUE}>เลือกแบบเกียรติบัตร</Select.Item>
-									{#each bulkCompatibleTemplates as template (template.id)}
-										<Select.Item value={template.id}>
-											{template.name} · {template.allowedRecipientTypes
-												.map((type) => recipientTypeLabels[type])
-												.join('/')}
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</label>
-						<LoadingButton
-							variant="outline"
-							loading={actionBusy}
-							disabled={selectedIds.length === 0 || !bulkTemplateAllowed}
-							onclick={() =>
-								applyBulk(
-									{
-										candidateIds: selectedIds,
-										operation: 'assign_template',
-										templateId: bulkTemplateId
-									},
-									'กำหนดแบบให้รายการที่เลือกแล้ว'
-								)}
-						>
-							กำหนดแบบให้รายการที่เลือก
-						</LoadingButton>
-						<Button
-							variant="outline"
-							disabled={!canBulkChooseName || actionBusy}
-							onclick={() =>
-								applyBulk(
-									{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'account' },
-									'ใช้ชื่อจากบัญชีแล้ว'
-								)}
-						>
-							ใช้ชื่อจากบัญชี
-						</Button>
-						<Button
-							variant="outline"
-							disabled={!canBulkChooseName || actionBusy}
-							onclick={() =>
-								applyBulk(
-									{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'file' },
-									'ใช้ชื่อจากไฟล์แล้ว'
-								)}
-						>
-							ใช้ชื่อจากไฟล์
-						</Button>
-						<Button
-							variant="outline"
-							disabled={!canBulkConfirmExternal || actionBusy}
-							title={selectedIds.length > 0 && !canBulkConfirmExternal
-								? 'เลือกเฉพาะรายการที่ไม่พบบัญชีและยืนยันได้ทั้งหมด'
-								: undefined}
-							onclick={() =>
-								applyBulk(
-									{ candidateIds: selectedIds, operation: 'confirm_external' },
-									'ยืนยันเป็นบุคคลภายนอกแล้ว'
-								)}
-						>
-							ยืนยันเป็นบุคคลภายนอก
-						</Button>
-						<Button
-							variant="outline"
-							disabled={!canBulkConfirmDuplicate || actionBusy}
-							onclick={() =>
-								applyBulk(
-									{ candidateIds: selectedIds, operation: 'confirm_duplicate' },
-									'ยืนยันรายชื่อซ้ำแล้ว'
-								)}
-						>
-							ยืนยันรายชื่อซ้ำ
-						</Button>
-					{/if}
-					{#if canSubmitCandidates}
-						<Button
-							disabled={!canSubmitSelection || actionBusy}
-							title={selectedIds.length > 0 && !canSubmitSelection
-								? 'เลือกเฉพาะรายการสถานะพร้อมออก'
-								: undefined}
-							onclick={() => {
-								submitError = '';
-								lockedRequestId = null;
-								submitOpen = true;
-							}}
-						>
-							<Send class="size-4" /> ส่งคำขอออกเกียรติบัตร
-						</Button>
-					{/if}
+							>
+								กำหนดแบบให้รายการที่เลือก
+							</LoadingButton>
+							<Button
+								variant="outline"
+								disabled={!canBulkChooseName || actionBusy}
+								onclick={() =>
+									applyBulk(
+										{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'account' },
+										'ใช้ชื่อจากบัญชีแล้ว'
+									)}
+							>
+								ใช้ชื่อจากบัญชี
+							</Button>
+							<Button
+								variant="outline"
+								disabled={!canBulkChooseName || actionBusy}
+								onclick={() =>
+									applyBulk(
+										{ candidateIds: selectedIds, operation: 'choose_name', nameSource: 'file' },
+										'ใช้ชื่อจากไฟล์แล้ว'
+									)}
+							>
+								ใช้ชื่อจากไฟล์
+							</Button>
+							<Button
+								variant="outline"
+								disabled={!canBulkConfirmExternal || actionBusy}
+								title={selectedIds.length > 0 && !canBulkConfirmExternal
+									? 'เลือกเฉพาะรายการที่ไม่พบบัญชีและยืนยันได้ทั้งหมด'
+									: undefined}
+								onclick={() =>
+									applyBulk(
+										{ candidateIds: selectedIds, operation: 'confirm_external' },
+										'ยืนยันเป็นบุคคลภายนอกแล้ว'
+									)}
+							>
+								ยืนยันเป็นบุคคลภายนอก
+							</Button>
+							<Button
+								variant="outline"
+								disabled={!canBulkConfirmDuplicate || actionBusy}
+								onclick={() =>
+									applyBulk(
+										{ candidateIds: selectedIds, operation: 'confirm_duplicate' },
+										'ยืนยันรายชื่อซ้ำแล้ว'
+									)}
+							>
+								ยืนยันรายชื่อซ้ำ
+							</Button>
+						{/if}
+						{#if canSubmitCandidates}
+							<Button
+								disabled={!canSubmitSelection || actionBusy}
+								title={selectedIds.length > 0 && !canSubmitSelection
+									? 'เลือกเฉพาะรายการสถานะพร้อมออก'
+									: undefined}
+								onclick={() => {
+									submitError = '';
+									lockedRequestId = null;
+									submitOpen = true;
+								}}
+							>
+								<Send class="size-4" /> ส่งคำขอออกเกียรติบัตร
+							</Button>
+						{/if}
+					</div>
+				{/if}
+			</section>
+
+			{#if tableLoading}
+				<div
+					class="flex items-center justify-center gap-2 rounded-xl border py-10 text-sm text-muted-foreground"
+				>
+					<Sparkles class="size-4 animate-pulse" /> กำลังปรับรายการตามตัวกรอง...
 				</div>
 			{/if}
-		</section>
-
-		{#if tableLoading}
-			<div
-				class="flex items-center justify-center gap-2 rounded-xl border py-10 text-sm text-muted-foreground"
-			>
-				<Sparkles class="size-4 animate-pulse" /> กำลังปรับรายการตามตัวกรอง...
-			</div>
-		{:else}
 			<CertificateCandidateTable
 				{candidates}
 				{selectedIds}
@@ -747,7 +1015,7 @@
 	{/if}
 </PageShell>
 
-{#if importOpen}
+{#if importOpen && canCreateCandidates}
 	<CertificateImportDialog
 		open={importOpen}
 		busy={actionBusy}
@@ -756,7 +1024,7 @@
 	/>
 {/if}
 
-{#if accountOpen}
+{#if accountOpen && canCreateCandidates}
 	<CertificateAccountSearchDialog
 		open={accountOpen}
 		{campaignId}
@@ -767,7 +1035,7 @@
 	/>
 {/if}
 
-{#if manualOpen}
+{#if manualOpen && canCreateCandidates}
 	<CertificateManualExternalDialog
 		open={manualOpen}
 		{templates}
@@ -777,7 +1045,7 @@
 	/>
 {/if}
 
-{#if editTarget}
+{#if editTarget && canManageCandidates}
 	{#key editTarget.id}
 		<CertificateCandidateEditDialog
 			open={true}
@@ -790,7 +1058,7 @@
 	{/key}
 {/if}
 
-{#if submitOpen && campaign}
+{#if submitOpen && campaign && canSubmitCandidates}
 	<CertificateSubmitRequestDialog
 		open={submitOpen}
 		{campaignId}

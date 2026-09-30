@@ -1,4 +1,11 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	let disposed = false,
+		parseEpoch = 0;
+	onDestroy(() => {
+		disposed = true;
+		parseEpoch++;
+	});
 	import { LoadingButton } from '$lib/components/app-state';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
@@ -43,13 +50,17 @@
 		parsed = null;
 		error = '';
 		if (!file) return;
+		const epoch = ++parseEpoch;
 		parsing = true;
 		try {
-			parsed = await parseCertificateImport(file);
+			const result = await parseCertificateImport(file);
+			if (disposed || !open || epoch !== parseEpoch) return;
+			parsed = result;
 		} catch (parseError) {
+			if (disposed || !open || epoch !== parseEpoch) return;
 			error = parseError instanceof Error ? parseError.message : 'อ่านไฟล์รายชื่อไม่สำเร็จ';
 		} finally {
-			parsing = false;
+			if (!disposed && epoch === parseEpoch) parsing = false;
 		}
 	}
 

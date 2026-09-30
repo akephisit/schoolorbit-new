@@ -187,10 +187,12 @@ export async function listCertificateOwnerOptions(
 }
 
 export async function listCertificateTemplates(
-	campaignId: string
+	campaignId: string,
+	options: ApiRequestOptions = {}
 ): Promise<CertificateTemplateDetail[]> {
 	const response = await apiClient.get<CertificateTemplateDetail[]>(
-		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/templates`
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/templates`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดแม่แบบเกียรติบัตรได้');
 }
@@ -207,10 +209,12 @@ export async function createCertificateTemplate(
 }
 
 export async function getCertificateTemplate(
-	templateId: string
+	templateId: string,
+	options: ApiRequestOptions = {}
 ): Promise<CertificateTemplateDetail> {
 	const response = await apiClient.get<CertificateTemplateDetail>(
-		`/api/certificates/templates/${encodeURIComponent(templateId)}`
+		`/api/certificates/templates/${encodeURIComponent(templateId)}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดแม่แบบเกียรติบัตรได้');
 }
@@ -270,10 +274,12 @@ export async function inspectCertificateFontUploads(
 }
 
 export async function listCertificateSchoolFonts(
-	templateId: string
+	templateId: string,
+	options: ApiRequestOptions = {}
 ): Promise<SchoolFontListResponse> {
 	const response = await apiClient.get<SchoolFontListResponse>(
-		`/api/certificates/templates/${encodeURIComponent(templateId)}/fonts`
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/fonts`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดคลังฟอนต์ของโรงเรียนได้');
 }
@@ -300,10 +306,12 @@ export async function deleteCertificateTemplateAsset(
 }
 
 export async function getCertificateTemplateVariableCatalog(
-	templateId: string
+	templateId: string,
+	options: ApiRequestOptions = {}
 ): Promise<CertificateTemplateVariableCatalog> {
 	const response = await apiClient.get<CertificateTemplateVariableCatalog>(
-		`/api/certificates/templates/${encodeURIComponent(templateId)}/variables`
+		`/api/certificates/templates/${encodeURIComponent(templateId)}/variables`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดตัวแปรแม่แบบได้');
 }
@@ -323,7 +331,8 @@ export async function createCertificateTemplatePreviewManifest(
 
 export async function listCertificateCandidates(
 	campaignId: string,
-	query: CertificateCandidateListQuery = {}
+	query: CertificateCandidateListQuery = {},
+	options: ApiRequestOptions = {}
 ): Promise<CertificateCandidateListResponse> {
 	const params = new URLSearchParams();
 	if (query.status) params.set('status', query.status);
@@ -331,7 +340,8 @@ export async function listCertificateCandidates(
 	if (query.search?.trim()) params.set('search', query.search.trim());
 	const suffix = params.size > 0 ? `?${params.toString()}` : '';
 	const response = await apiClient.get<CertificateCandidateListResponse>(
-		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates${suffix}`
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates${suffix}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายชื่อผู้รับเกียรติบัตรได้');
 }
@@ -360,14 +370,16 @@ export async function createManualCertificateCandidate(
 
 export async function searchCertificateCandidateAccounts(
 	campaignId: string,
-	query: CertificateAccountSearchQuery
+	query: CertificateAccountSearchQuery,
+	options: ApiRequestOptions = {}
 ): Promise<CertificateCandidateAccount[]> {
 	const params = new URLSearchParams({
 		recipientType: query.recipientType,
 		search: query.search.trim()
 	});
 	const response = await apiClient.get<CertificateCandidateAccount[]>(
-		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/account-search?${params.toString()}`
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}/candidates/account-search?${params.toString()}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถค้นหาบัญชีผู้รับได้');
 }

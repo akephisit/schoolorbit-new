@@ -580,7 +580,7 @@ test('editor adds, moves, duplicates, saves, previews, and resolves conflicts ex
 	page
 }) => {
 	const harnessModuleResponse = page.waitForResponse((response) =>
-		response.url().includes('/@id/virtual:certificate-editor-test')
+		/\/@id\/(?:__x00__)?virtual:certificate-editor-test/.test(response.url())
 	);
 	await page.goto(`${baseUrl}${harnessPath}`);
 	const moduleResponse = await harnessModuleResponse;
@@ -681,11 +681,14 @@ test('editor selects exact font assets and preserves or resets inspected image r
 	await expect(page.getByTestId('certificate-editor')).toBeVisible();
 	await page.getByRole('button', { name: 'เลือกองค์ประกอบ text' }).click();
 
-	await page.getByLabel('ตระกูลฟอนต์').selectOption('school_font:uploaded thai');
+	await page.getByRole('button', { name: 'ตระกูลฟอนต์', exact: true }).click();
+	await page.getByRole('option', { name: 'Uploaded Thai (คลังโรงเรียน)', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'ตัวเอียง' })).toBeEnabled();
 	await page.getByRole('button', { name: 'ตัวเอียง' }).click();
 	await expect(page.getByRole('button', { name: 'ตัวหนา' })).toBeDisabled();
-	await expect(page.getByLabel('น้ำหนักฟอนต์').locator('option')).toHaveText(['400']);
+	await page.getByRole('button', { name: 'น้ำหนักฟอนต์', exact: true }).click();
+	await expect(page.getByRole('option')).toHaveText(['400']);
+	await page.keyboard.press('Escape');
 	await page.getByRole('button', { name: 'บันทึก' }).click();
 	await expect
 		.poll(() => page.evaluate(() => window.certificateEditorHarness.savedPayloads().length))
@@ -705,9 +708,8 @@ test('editor selects exact font assets and preserves or resets inspected image r
 	text = payload.layout.elements.find((element) => element.type === 'text') as typeof text;
 	expect(text.fontSource.font_id).toBe('50000000-0000-4000-8000-000000000002');
 
-	await page
-		.getByLabel('เพิ่มรูปภาพ', { exact: true })
-		.selectOption('60000000-0000-4000-8000-000000000001');
+	await page.getByLabel('เพิ่มรูปภาพ', { exact: true }).click();
+	await page.getByRole('option', { name: 'ภาพ 1200 × 800', exact: true }).click();
 	await page.getByRole('button', { name: 'เพิ่มรูปภาพที่เลือก' }).click();
 	const widthInput = page.getByLabel('กว้าง', { exact: true });
 	const heightInput = page.getByLabel('สูง', { exact: true });

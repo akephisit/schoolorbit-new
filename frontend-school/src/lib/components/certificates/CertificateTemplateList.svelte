@@ -22,6 +22,7 @@
 
 	let {
 		campaignId,
+		canManage,
 		templates,
 		onpatched,
 		onedit,
@@ -30,6 +31,7 @@
 		onpendingchange
 	}: {
 		campaignId: string;
+		canManage: boolean;
 		templates: CertificateTemplateDetail[];
 		onpatched: (template: CertificateTemplateDetail) => void;
 		onedit: (template: CertificateTemplateDetail) => void;
@@ -70,6 +72,7 @@
 	}
 
 	function toggleFiles(templateId: string) {
+		if (!canManage || !templates.find((t) => t.id === templateId)?.capabilities.canUpdate) return;
 		if (expandedTemplateId && hasPendingUpload(expandedTemplateId)) {
 			toast.error('แนบหรือลบไฟล์ชั่วคราวให้เสร็จก่อนปิดส่วนจัดการไฟล์');
 			return;
@@ -187,6 +190,7 @@
 							<div class="mt-5 flex flex-wrap gap-2">
 								<Button
 									size="sm"
+									data-sveltekit-preload-data="tap"
 									href={resolve(
 										`/staff/certificates/${campaignId}/templates/${template.id}/editor` as '/staff/certificates'
 									)}
@@ -200,6 +204,7 @@
 									size="sm"
 									variant="outline"
 									onclick={() => toggleFiles(template.id)}
+									disabled={!canManage || !template.capabilities.canUpdate}
 									aria-expanded={expandedTemplateId === template.id}
 								>
 									<Settings2 class="size-4" /> จัดการไฟล์
@@ -207,7 +212,7 @@
 										class={`size-3.5 transition-transform ${expandedTemplateId === template.id ? 'rotate-180' : ''}`}
 									/>
 								</Button>
-								{#if template.capabilities.canUpdate}
+								{#if canManage && template.capabilities.canUpdate}
 									<Button
 										size="sm"
 										variant="ghost"
@@ -233,7 +238,7 @@
 					</div>
 				</Card.Content>
 
-				{#if expandedTemplateId === template.id}
+				{#if expandedTemplateId === template.id && canManage && template.capabilities.canUpdate}
 					<div class="border-t bg-muted/10 p-5 pl-6">
 						<div class="space-y-6">
 							{#if template.backgroundFileId}
@@ -248,6 +253,7 @@
 										<Button
 											size="sm"
 											variant="outline"
+											data-sveltekit-preload-data="tap"
 											href={resolve(
 												`/staff/certificates/${campaignId}/templates/${template.id}/editor` as '/staff/certificates'
 											)}

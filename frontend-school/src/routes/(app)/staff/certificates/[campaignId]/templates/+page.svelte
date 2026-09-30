@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { afterNavigate, beforeNavigate } from '$app/navigation';
+	import { beforeNavigate } from '$app/navigation';
+	import type { PageProps } from './$types';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { authStore } from '$lib/stores/auth';
 	import { page } from '$app/state';
 	import {
 		deleteCertificateTemplate,
@@ -21,9 +27,16 @@
 	import { FileBadge2, Plus, Trash2 } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
+	let { data }: PageProps = $props();
+	const identityKey = $derived.by(() => {
+		void $authStore;
+		void $can;
+		return appIdentityKey();
+	});
 	let campaign = $state.raw<CertificateCampaignDetail | null>(null);
 
 	const campaignId = $derived(page.params.campaignId ?? '');
+	const context = $derived(`${identityKey}|${campaignId}`);
 	const canReadTemplates = $derived(
 		$can.hasAny(PERMISSIONS.CERTIFICATE_READ_ORGANIZATION_UNIT, PERMISSIONS.CERTIFICATE_READ_SCHOOL)
 	);
@@ -52,41 +65,133 @@
 	let deleting = $state(false);
 	let formHasPendingUpload = $state(false);
 	let listHasPendingUpload = $state(false);
-	let loadGeneration = 0;
+	let disposed = false,
+		owner = '',
+		ownerEpoch = $state(0);
+	let campaignLoading = $state(true),
+		campaignError = $state(''),
+		loaded = $state(false),
+		formEpoch = $state(0);
+	const campaignRequest = new LatestRequest(),
+		templateRequest = new LatestRequest();
+	let consumedCampaign: typeof data.campaign | null = null,
+		consumedTemplates: typeof data.templates | null = null;
+	$effect.pre(() => {
+		const key = context,
+			a = data.campaign,
+			b = data.templates,
+			allowed = canReadTemplates;
+		untrack(() => {
+			if (owner !== key) {
+				owner = key;
+				ownerEpoch++;
+				campaignRequest.abort();
+				templateRequest.abort();
+				campaign = null;
+				templates = [];
+				loaded = false;
+				loading = allowed;
+				campaignLoading = allowed;
+				campaignError = '';
+				error = '';
+				formOpen = false;
+				formTemplate = null;
+				deleteTarget = null;
+				deleting = false;
+				formHasPendingUpload = false;
+				listHasPendingUpload = false;
+				formEpoch++;
+			}
+			if (!allowed) return;
+			if (a !== consumedCampaign) {
+				consumedCampaign = a;
+				const t = campaignRequest.begin();
+				campaignLoading = true;
+				void a.then((v) => applyCampaign(v, t.revision));
+			}
+			if (b !== consumedTemplates) {
+				consumedTemplates = b;
+				const t = templateRequest.begin();
+				loading = true;
+				void b.then((v) => applyTemplates(v, t.revision));
+			}
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		campaignRequest.abort();
+		templateRequest.abort();
+	});
+	function current(epoch: number, key: string) {
+		return !disposed && canReadTemplates && epoch === ownerEpoch && key === context;
+	}
+	function applyCampaign(v: Awaited<typeof data.campaign>, revision: number) {
+		if (!campaignRequest.isCurrent(revision)) return;
+		campaignLoading = false;
+		if (!v.ok) {
+			campaignError = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== context) return;
+		campaign = v.data.record;
+		campaignError = '';
+	}
+	function applyTemplates(v: Awaited<typeof data.templates>, revision: number) {
+		if (!templateRequest.isCurrent(revision)) return;
+		loading = false;
+		if (!v.ok) {
+			error = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== context) return;
+		templates = v.data.record ?? [];
+		loaded = true;
+		error = '';
+	}
 
 	const hasPendingUpload = $derived(formHasPendingUpload || listHasPendingUpload);
 
-	async function loadWorkspace(targetCampaignId: string) {
-		const generation = ++loadGeneration;
-		if (!canReadTemplates) {
-			if (generation === loadGeneration) loading = false;
-			return;
-		}
+	async function retryCampaign() {
+		if (disposed || !canReadTemplates) return;
+		const ownerKey = context,
+			t = campaignRequest.begin();
+		campaignLoading = true;
+		campaignError = '';
+		applyCampaign(
+			await captureRouteLoad(
+				getCertificateCampaign(campaignId, { signal: t.signal }).then((record) => ({
+					ownerKey,
+					record
+				})),
+				'โหลดกิจกรรมไม่สำเร็จ'
+			),
+			t.revision
+		);
+	}
+	async function retryTemplates() {
+		if (disposed || !canReadTemplates) return;
+		const ownerKey = context,
+			t = templateRequest.begin();
 		loading = true;
 		error = '';
-		campaign = null;
-		templates = [];
-		formOpen = false;
-		formTemplate = null;
-		deleteTarget = null;
-		try {
-			const [loadedCampaign, loadedTemplates] = await Promise.all([
-				getCertificateCampaign(targetCampaignId),
-				listCertificateTemplates(targetCampaignId)
-			]);
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			campaign = loadedCampaign;
-			templates = loadedTemplates;
-		} catch (loadError) {
-			if (generation !== loadGeneration || targetCampaignId !== campaignId) return;
-			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดแบบเกียรติบัตรได้';
-		} finally {
-			if (generation === loadGeneration && targetCampaignId === campaignId) loading = false;
-		}
+		applyTemplates(
+			await captureRouteLoad(
+				listCertificateTemplates(campaignId, { signal: t.signal }).then((record) => ({
+					ownerKey,
+					record
+				})),
+				'โหลดแบบไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
 
 	function patchTemplate(updated: CertificateTemplateDetail) {
-		if (updated.campaignId !== campaignId) return;
+		if (disposed || !canReadTemplates || updated.campaignId !== campaignId) return;
+		templateRequest.abort();
+		loading = false;
+		error = '';
 		const current = templates.find((template) => template.id === updated.id);
 		if (!current) {
 			templates = [updated, ...templates];
@@ -102,17 +207,19 @@
 			return;
 		}
 		templates = templates.map((template) => (template.id === updated.id ? updated : template));
-		if (formTemplate?.id === updated.id) formTemplate = updated;
 	}
 
 	function openCreate() {
-		if (!canCreateTemplates) return;
+		if (!canCreateTemplates || !loaded) return;
+		formEpoch++;
 		formHasPendingUpload = false;
 		formTemplate = null;
 		formOpen = true;
 	}
 
 	function openEdit(template: CertificateTemplateDetail) {
+		if (!hasUpdatePermission || !template.capabilities.canUpdate) return;
+		formEpoch++;
 		formHasPendingUpload = false;
 		formTemplate = template;
 		formOpen = true;
@@ -134,24 +241,31 @@
 	}
 
 	async function handleDelete() {
-		if (!deleteTarget || deleting) return;
+		if (!deleteTarget || deleting || !deleteTarget.capabilities.canDelete) return;
+		const epoch = ownerEpoch,
+			key = context;
 		const target = deleteTarget;
 		deleting = true;
 		try {
 			const result = await deleteCertificateTemplate(target.id);
+			if (!current(epoch, key)) return;
+			templateRequest.abort();
+			loading = false;
 			if (result.disposition === 'deleted') {
 				templates = templates.filter((template) => template.id !== target.id);
 				toast.success('ลบแบบเกียรติบัตรแล้ว');
 			} else {
 				const updated = await getCertificateTemplate(target.id);
+				if (!current(epoch, key)) return;
 				patchTemplate(updated);
 				toast.success('ปิดใช้แบบเกียรติบัตรแล้ว เพราะมีใบที่ออกด้วยแบบนี้');
 			}
 			deleteTarget = null;
 		} catch (deleteError) {
+			if (!current(epoch, key)) return;
 			toast.error(deleteError instanceof Error ? deleteError.message : 'ลบแบบเกียรติบัตรไม่สำเร็จ');
 		} finally {
-			deleting = false;
+			if (current(epoch, key)) deleting = false;
 		}
 	}
 
@@ -159,10 +273,6 @@
 		if (!hasPendingUpload) return;
 		cancel();
 		toast.error('แนบหรือลบไฟล์ชั่วคราวให้เสร็จก่อนออกจากหน้านี้');
-	});
-
-	afterNavigate(() => {
-		void loadWorkspace(campaignId);
 	});
 </script>
 
@@ -173,11 +283,15 @@
 	{#snippet meta()}
 		<div class="flex items-center gap-2 text-xs text-muted-foreground">
 			<FileBadge2 class="size-4" />
-			{templates.length} แบบ{campaign ? ` · ${campaign.name}` : 'ในกิจกรรมนี้'}
+			{loaded ? `${templates.length} แบบ` : 'กำลังโหลดแบบ'}{campaign
+				? ` · ${campaign.name}`
+				: 'ในกิจกรรมนี้'}
 		</div>
 	{/snippet}
 
 	{#snippet actions()}
+		{#if canReadTemplates}<Button variant="outline" onclick={retryTemplates}>โหลดแบบใหม่</Button
+			>{/if}
 		{#if canCreateTemplates}
 			<Button onclick={openCreate}>
 				<Plus class="size-4" /> เพิ่มแบบเกียรติบัตร
@@ -191,26 +305,42 @@
 			title="ไม่มีสิทธิ์ดูแบบเกียรติบัตร"
 			description="สิทธิ์การอ่านและหน่วยงานเจ้าของกิจกรรมตรวจจาก backend"
 		/>
-	{:else if loading}
-		<PageSkeleton variant="cards" />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดแบบเกียรติบัตรไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={() => loadWorkspace(campaignId)}
-		/>
 	{:else}
-		<CertificateTemplateList
-			{campaignId}
-			{templates}
-			onpatched={patchTemplate}
-			onedit={openEdit}
-			ondelete={(template) => (deleteTarget = template)}
-			oncreate={canCreateTemplates ? openCreate : undefined}
-			onpendingchange={(pending) => (listHasPendingUpload = pending)}
-		/>
+		{#if campaignLoading}<p role="status">กำลังโหลดกิจกรรม</p>{/if}
+		{#if campaignError}<PageState
+				variant="error"
+				title="โหลดกิจกรรมไม่สำเร็จ"
+				description={campaignError}
+				actionLabel="ลองกิจกรรมอีกครั้ง"
+				onaction={retryCampaign}
+			/>{/if}
+		{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดแบบเกียรติบัตร">
+				<PageSkeleton variant="cards" />
+			</div>{/if}
+		{#if loading && loaded}<p role="status">กำลังอัปเดตแบบเกียรติบัตร</p>{/if}
+		{#if error}
+			<PageState
+				variant="error"
+				title="โหลดแบบเกียรติบัตรไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={retryTemplates}
+			/>
+		{/if}
+		{#if loaded}
+			{#key context}
+				<CertificateTemplateList
+					canManage={hasUpdatePermission}
+					{campaignId}
+					{templates}
+					onpatched={patchTemplate}
+					onedit={openEdit}
+					ondelete={(template) => (deleteTarget = template)}
+					oncreate={canCreateTemplates ? openCreate : undefined}
+					onpendingchange={(pending) => (listHasPendingUpload = pending)}
+				/>
+			{/key}
+		{/if}
 	{/if}
 </PageShell>
 
@@ -225,14 +355,19 @@
 					: 'ระบบจะสร้างโครงแบบก่อน แล้วอัปโหลดและตรวจ PDF พื้นหลังด้วยรหัสแบบเดียวกัน'}
 			</Dialog.Description>
 		</Dialog.Header>
-		{#if formOpen}
-			{#key formTemplate?.id ?? 'new-template'}
+		{#if formOpen && hasUpdatePermission && (formTemplate?.capabilities.canUpdate || canCreateTemplates)}
+			{@const epoch = ownerEpoch}
+			{@const key = context}
+			{@const draft = formEpoch}
+			{#key `${context}|${formEpoch}`}
 				<CertificateTemplateForm
 					{campaignId}
 					template={formTemplate ?? undefined}
-					onpatched={patchTemplate}
+					onpatched={(updated) => current(epoch, key) && patchTemplate(updated)}
 					onpendingchange={(pending) => (formHasPendingUpload = pending)}
-					oncompleted={completeForm}
+					oncompleted={() => {
+						if (current(epoch, key) && draft === formEpoch) completeForm();
+					}}
 					oncancel={closeForm}
 				/>
 			{/key}

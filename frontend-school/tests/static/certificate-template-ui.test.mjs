@@ -42,8 +42,8 @@ test('pending uploads survive UI controls and campaign route loads are race safe
 	]);
 
 	assert.match(page, /beforeNavigate/);
-	assert.match(page, /afterNavigate/);
-	assert.match(page, /loadGeneration/);
+	assert.match(page, /\$effect\.pre/);
+	assert.match(page, /LatestRequest/);
 	assert.match(page, /Date\.parse\([^)]+updatedAt\)/);
 	assert.match(page, /formHasPendingUpload/);
 	assert.match(list, /pendingUploadKeys/);

@@ -63,7 +63,19 @@ const certificateApiStub = `
 `;
 
 const stubModules = new Map([
-	['$app/navigation', navigationStub],
+	[
+		'$app/navigation',
+		navigationStub +
+			`
+import { page } from '$app/state';
+export function pushState(url,state){page.state=state;page.url.href=new URL(url,page.url).href;}
+`
+	],
+	['$app/paths', `export const resolve=(p)=>p;`],
+	[
+		'$app/state',
+		`import { SvelteURL } from 'svelte/reactivity';export const page={url:new SvelteURL('http://test/staff/certificates/10000000-0000-4000-8000-000000000001/recipients'),state:{}};`
+	],
 	['$lib/api/client', apiClientStub],
 	['$lib/api/certificates', certificateApiStub]
 ]);
@@ -71,6 +83,8 @@ const stubModules = new Map([
 function findStubModule(id: string): string | undefined {
 	if (stubModules.has(id)) return id;
 	if (id.endsWith('/@sveltejs/kit/src/runtime/app/navigation.js')) return '$app/navigation';
+	if (id.endsWith('/@sveltejs/kit/src/runtime/app/state/index.js')) return '$app/state';
+	if (id.endsWith('/@sveltejs/kit/src/runtime/app/paths/index.js')) return '$app/paths';
 	for (const stubId of stubModules.keys()) {
 		if (!stubId.startsWith('$lib/')) continue;
 		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
@@ -96,6 +110,8 @@ function harnessPlugin(): Plugin {
 		},
 		load(id) {
 			if (id.startsWith(stubPrefix)) return stubModules.get(id.slice(stubPrefix.length));
+			const stub = findStubModule(id);
+			if (stub) return stubModules.get(stub);
 			if (id !== resolvedVirtualModuleId) return;
 			return `
 				import { mount } from 'svelte';
@@ -364,7 +380,10 @@ function harnessPlugin(): Plugin {
 					target: document.getElementById('app'),
 					props: {
 						campaignId,
-						canReadCandidates: true
+						canReadCandidates: true,canUpdate:true,canSubmit:true,identityKey:'fixture',
+ initialCampaign:window.__certificateRecipientApi.getCampaign(campaignId).then(record=>({ok:true,data:{ownerKey:'fixture|'+campaignId,record}})),
+ initialTemplates:window.__certificateRecipientApi.listTemplates(campaignId).then(record=>({ok:true,data:{ownerKey:'fixture|'+campaignId,record}})),
+ initialCandidates:window.__certificateRecipientApi.listCandidates(campaignId).then(record=>({ok:true,data:{ownerKey:'fixture|'+campaignId,filterKey:'null|null|null',record}}))
 					}
 				});
 			`;
@@ -473,7 +492,8 @@ test('account search ignores a stale recipient-type response', async ({ page }) 
 	await expect
 		.poll(() => page.evaluate(() => window.certificateRecipientHarness.accountSearchQueries()))
 		.toEqual([{ recipientType: 'student', search: 'กมล' }]);
-	await page.getByLabel('ประเภทบัญชี').selectOption('staff');
+	await page.getByRole('button', { name: 'ประเภทบัญชี', exact: true }).click();
+	await page.getByRole('option', { name: 'บุคลากร', exact: true }).click();
 	await page.evaluate(() =>
 		window.certificateRecipientHarness.resolveAccountSearch(0, [
 			{

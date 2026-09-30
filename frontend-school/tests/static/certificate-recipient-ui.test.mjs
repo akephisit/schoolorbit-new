@@ -66,8 +66,8 @@ test('recipient route sends only parsed typed rows and uses dedicated account/ma
 	assert.doesNotMatch(source, /(?:Record<string, unknown>|ApiResponse<unknown>|\bas any\b)/);
 	assert.match(source, /PERMISSIONS\.CERTIFICATE_READ_ORGANIZATION_UNIT/);
 	assert.match(source, /PERMISSIONS\.CERTIFICATE_READ_SCHOOL/);
-	assert.match(source, /afterNavigate/);
-	assert.match(source, /loadGeneration/);
+	assert.match(source, /captureRouteLoad/);
+	assert.match(source, /LatestRequest/);
 });
 
 test('recipient review invalidates stale route work and keeps external conflicts actionable', async () => {
@@ -79,7 +79,7 @@ test('recipient review invalidates stale route work and keeps external conflicts
 		new URL('src/lib/components/certificates/CertificateAccountSearchDialog.svelte', projectRoot),
 		'utf8'
 	);
-	assert.match(workspace, /candidateLoadGeneration\s*\+=\s*1/);
+	assert.match(workspace, /candidateRequest\.abort\(\)/);
 	assert.match(workspace, /tableLoading\s*=\s*false/);
 	for (const reset of [
 		'importOpen = false',

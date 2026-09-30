@@ -14,7 +14,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { AlertTriangle, FileImage, ImagePlus, RefreshCw, Trash2, Upload } from '@lucide/svelte';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import CertificateFontBatchUpload from './CertificateFontBatchUpload.svelte';
 
@@ -33,6 +33,15 @@
 		onpatched: (template: CertificateTemplateDetail) => void;
 		onpendingchange: (pending: boolean) => void;
 	} = $props();
+
+	let disposed = false;
+	const mountedTemplate = untrack(() => template.id);
+	const current = () =>
+		!disposed && template.id === mountedTemplate && template.capabilities.canUpdate;
+	onDestroy(() => {
+		disposed = true;
+		schoolFontsPatchGeneration++;
+	});
 
 	const templateId = $derived(template.id);
 	const images = $derived(template.assets);
@@ -53,30 +62,28 @@
 	let schoolFontsError = $state('');
 	let schoolFontsPatchGeneration = 0;
 
-	onMount(() => {
-		const targetTemplateId = templateId;
-		const generation = schoolFontsPatchGeneration;
-		let active = true;
+	async function loadFonts() {
+		if (!current()) return;
+		const generation = ++schoolFontsPatchGeneration;
 		schoolFontsLoading = true;
 		schoolFontsError = '';
-		void listCertificateSchoolFonts(targetTemplateId)
-			.then((result) => {
-				if (active && generation === schoolFontsPatchGeneration) schoolFonts = result.items;
-			})
-			.catch((error: unknown) => {
-				if (!active || generation !== schoolFontsPatchGeneration) return;
-				schoolFontsError =
-					error instanceof Error ? error.message : 'โหลดคลังฟอนต์ของโรงเรียนไม่สำเร็จ';
-			})
-			.finally(() => {
-				if (active && generation === schoolFontsPatchGeneration) schoolFontsLoading = false;
-			});
-		return () => {
-			active = false;
-		};
+		try {
+			const result = await listCertificateSchoolFonts(templateId);
+			if (!current() || generation !== schoolFontsPatchGeneration) return;
+			schoolFonts = result.items;
+		} catch (error) {
+			if (!current() || generation !== schoolFontsPatchGeneration) return;
+			schoolFontsError = error instanceof Error ? error.message : 'โหลดคลังฟอนต์ไม่สำเร็จ';
+		} finally {
+			if (current() && generation === schoolFontsPatchGeneration) schoolFontsLoading = false;
+		}
+	}
+	onMount(() => {
+		void loadFonts();
 	});
 
 	function handleSchoolFontsAttached(items: SchoolFontSummary[]) {
+		if (!current()) return;
 		schoolFontsPatchGeneration += 1;
 		const attachedIds = new Set(items.map((font) => font.id));
 		schoolFonts = [...schoolFonts.filter((font) => !attachedIds.has(font.id)), ...items];
@@ -89,7 +96,7 @@
 	}
 
 	function reportPending() {
-		onpendingchange(imagePending || fontPending);
+		if (current()) onpendingchange(imagePending || fontPending);
 	}
 
 	function setImagePending(pending: boolean) {
@@ -129,7 +136,7 @@
 	}
 
 	async function attachPendingAsset() {
-		if (!unattachedFile) return;
+		if (!current() || !unattachedFile) return;
 		const pending = unattachedFile;
 		try {
 			const updated = await attachCertificateTemplateAsset(templateId, {
@@ -137,19 +144,22 @@
 				kind: 'image',
 				displayName: pending.displayName
 			});
+			if (!current()) return;
 			setUnattachedFile(null);
 			attachError = null;
 			clearImageForm();
+			if (!current()) return;
 			onpatched(updated);
 			toast.success('เพิ่มรูปประกอบแล้ว');
 		} catch (error) {
+			if (!current()) return;
 			attachError = asError(error, 'แนบไฟล์กับแม่แบบไม่สำเร็จ');
 		}
 	}
 
 	async function uploadImage(event: SubmitEvent) {
 		event.preventDefault();
-		if (uploadingImage || unattachedFile) return;
+		if (!current() || uploadingImage || unattachedFile) return;
 		const file = imageFile;
 		const displayName = imageDisplayName.trim().replace(/\s+/g, ' ');
 		if (!file || !displayName) {
@@ -166,12 +176,14 @@
 				'certificate_template_image',
 				templateId
 			);
+			if (!current()) return;
 			setUnattachedFile({
 				metadata,
 				displayName
 			});
 			await attachPendingAsset();
 		} catch (error) {
+			if (!current()) return;
 			attachError = asError(error, 'อัปโหลดทรัพยากรแม่แบบไม่สำเร็จ');
 		} finally {
 			uploadingImage = false;
@@ -191,11 +203,13 @@
 		cleaning = true;
 		try {
 			await deleteFile(unattachedFile.metadata.id, templateId);
+			if (!current()) return;
 			setUnattachedFile(null);
 			attachError = null;
 			clearImageForm();
 			toast.success('ลบไฟล์ชั่วคราวแล้ว');
 		} catch (error) {
+			if (!current()) return;
 			attachError = asError(error, 'ลบไฟล์ชั่วคราวไม่สำเร็จ');
 		} finally {
 			cleaning = false;
@@ -207,10 +221,12 @@
 		deleting = true;
 		try {
 			const updated = await deleteCertificateTemplateAsset(templateId, deleteTarget.id);
+			if (!current()) return;
 			onpatched(updated);
 			toast.success('ลบรูปประกอบแล้ว');
 			deleteTarget = null;
 		} catch (error) {
+			if (!current()) return;
 			toast.error(error instanceof Error ? error.message : 'ลบทรัพยากรแม่แบบไม่สำเร็จ');
 		} finally {
 			deleting = false;
@@ -308,6 +324,7 @@
 					กำลังโหลดคลังฟอนต์…
 				{:else if schoolFontsError}
 					{schoolFontsError}
+					<Button size="sm" variant="outline" onclick={loadFonts}>ลองฟอนต์อีกครั้ง</Button>
 				{:else}
 					คลังโรงเรียนมีฟอนต์พร้อมใช้ {schoolFonts.length} รูปแบบ
 				{/if}

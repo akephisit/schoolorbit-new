@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import {
 		attachCertificateTemplateBackground,
 		createCertificateTemplate,
@@ -31,6 +31,18 @@
 		oncompleted: () => void;
 		oncancel: () => void;
 	} = $props();
+
+	let disposed = false;
+	const mountedCampaign = untrack(() => campaignId),
+		mountedTemplate = untrack(() => template?.id);
+	const isCurrentDraft = () =>
+		!disposed &&
+		campaignId === mountedCampaign &&
+		template?.id === mountedTemplate &&
+		(!template || template.capabilities.canUpdate);
+	onDestroy(() => {
+		disposed = true;
+	});
 
 	const recipientOptions: Array<{ value: RecipientType; label: string; hint: string }> = [
 		{ value: 'student', label: 'นักเรียน', hint: 'ทั้งนักเรียนในโรงเรียนและนักเรียนภายนอก' },
@@ -73,17 +85,18 @@
 
 	function setUnattachedFile(file: FileMetadata | null) {
 		unattachedFile = file;
-		onpendingchange(file !== null);
+		if (isCurrentDraft()) onpendingchange(file !== null);
 	}
 
 	async function attachInitialBackground(current: CertificateTemplateDetail) {
-		if (!unattachedFile) return;
+		if (!isCurrentDraft() || !unattachedFile) return;
 		try {
 			const attached = await attachCertificateTemplateBackground(current.id, {
 				fileId: unattachedFile.id,
 				geometryAction: 'preserve',
 				previewConfirmed: false
 			});
+			if (!isCurrentDraft()) return;
 			workingTemplate = attached;
 			setUnattachedFile(null);
 			backgroundFile = null;
@@ -92,6 +105,7 @@
 			onpatched(attached);
 			oncompleted();
 		} catch (error) {
+			if (!isCurrentDraft()) return;
 			attachError = asError(error, 'แนบ PDF พื้นหลังไม่สำเร็จ');
 		}
 	}
@@ -102,7 +116,7 @@
 		onpendingchange(true);
 		await attachInitialBackground(workingTemplate);
 		saving = false;
-		if (!unattachedFile) onpendingchange(false);
+		if (isCurrentDraft() && !unattachedFile) onpendingchange(false);
 	}
 
 	async function deleteTemporaryUpload() {
@@ -110,11 +124,13 @@
 		cleaning = true;
 		try {
 			await deleteFile(unattachedFile.id, workingTemplate.id);
+			if (!isCurrentDraft()) return;
 			setUnattachedFile(null);
 			backgroundFile = null;
 			attachError = null;
 			fileInputKey += 1;
 		} catch (error) {
+			if (!isCurrentDraft()) return;
 			attachError = asError(error, 'ลบไฟล์ชั่วคราวไม่สำเร็จ');
 		} finally {
 			cleaning = false;
@@ -123,7 +139,7 @@
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
-		if (saving || unattachedFile) return;
+		if (!isCurrentDraft() || saving || unattachedFile) return;
 		validationError = '';
 		attachError = null;
 		const normalizedName = name.trim().replace(/\s+/g, ' ');
@@ -149,6 +165,7 @@
 					name: normalizedName,
 					allowedRecipientTypes
 				});
+				if (!isCurrentDraft()) return;
 				workingTemplate = current;
 				onpatched(current);
 			} else if (
@@ -160,6 +177,7 @@
 					name: normalizedName,
 					allowedRecipientTypes
 				});
+				if (!isCurrentDraft()) return;
 				workingTemplate = current;
 				onpatched(current);
 			}
@@ -174,19 +192,20 @@
 				return;
 			}
 
-			setUnattachedFile(
-				await uploadCertificateTemplateFile(
-					backgroundFile,
-					'certificate_template_background',
-					current.id
-				)
+			const uploaded = await uploadCertificateTemplateFile(
+				backgroundFile,
+				'certificate_template_background',
+				current.id
 			);
+			if (!isCurrentDraft()) return;
+			setUnattachedFile(uploaded);
 			await attachInitialBackground(current);
 		} catch (error) {
+			if (!isCurrentDraft()) return;
 			attachError = asError(error, 'บันทึกแบบเกียรติบัตรไม่สำเร็จ');
 		} finally {
 			saving = false;
-			if (!unattachedFile) onpendingchange(false);
+			if (isCurrentDraft() && !unattachedFile) onpendingchange(false);
 		}
 	}
 

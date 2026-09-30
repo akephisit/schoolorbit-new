@@ -668,12 +668,12 @@
 		{
 			"route": "staff/certificates/[campaignId]/recipients",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "campaign-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Visible reads start in CertificateRecipientWorkspace; move primary data to the owning route loader."
+			"notes": "Direct route owns independent campaign, template choices and URL-filtered candidates. Independent focused retries; typed preparation mutations patch rows and summary, successful submit refreshes affected locks only. Opened exact-scope workflows reject stale owners and closed drafts."
 		},
 		{
 			"route": "staff/certificates/[campaignId]/requests",
@@ -688,22 +688,22 @@
 		{
 			"route": "staff/certificates/[campaignId]/templates",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "campaign-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Component API reads include getCertificateCampaign, getCertificateTemplate, listCertificateTemplates; classify default and optional regions during migration."
+			"notes": "Direct route owns independent campaign and template list. Local first/retained retry; typed saves patch list without replacing opened drafts. Assets/fonts load only on opened exact-update workflow; disposed uploads cannot attach."
 		},
 		{
 			"route": "staff/certificates/[campaignId]/templates/[templateId]/editor",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "campaign-id + template-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Component API reads include getCertificateTemplate, getCertificateTemplateVariableCatalog, listCertificateSchoolFonts; classify default and optional regions during migration."
+			"notes": "Direct route owns selected template and validates campaign relationship before editor references. Explicit opened exact-update editor starts manifest, variables and fonts independently with local retries; read-only/preload performs no POST or optional reads. Owner/disposal guards preserve drafts."
 		},
 		{
 			"route": "staff/certificates/new",

@@ -412,7 +412,9 @@ test('editor loads school fonts separately while template assets remain image-on
 		)
 	]);
 	assert.match(route, /listCertificateSchoolFonts/);
-	assert.match(route, /Promise\.all\([\s\S]*listCertificateSchoolFonts/);
+	assert.match(route, /retryFonts[\s\S]*listCertificateSchoolFonts/);
+	assert.match(route, /retryVariables/);
+	assert.match(route, /template\?\.capabilities\.canUpdate/);
 	assert.match(route, /<CertificateEditor[\s\S]*\{schoolFonts\}/);
 	assert.match(editor, /schoolFonts:\s*SchoolFontSummary\[\]/);
 	assert.match(editor, /<CertificateElementPanel[\s\S]*\{schoolFonts\}/);

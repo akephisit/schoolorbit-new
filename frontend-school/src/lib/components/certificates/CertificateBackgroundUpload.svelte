@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import {
 		attachCertificateTemplateBackground,
 		type AttachCertificateBackgroundRequest,
@@ -199,14 +199,20 @@
 		return () => controller.abort();
 	});
 
+	let disposed = false;
+	const mountedTemplate = untrack(() => template.id);
+	const current = () =>
+		!disposed && template.id === mountedTemplate && template.capabilities.canUpdate;
+
 	async function attachUploadedFile() {
-		if (!unattachedFile) return;
+		if (!current() || !unattachedFile) return;
 		try {
 			const updated = await attachCertificateTemplateBackground(template.id, {
 				fileId: unattachedFile.id,
 				geometryAction: geometryChanged === false ? 'preserve' : geometryAction,
 				previewConfirmed: template.backgroundFileId === null ? false : previewConfirmed
 			});
+			if (!current()) return;
 			setUnattachedFile(null);
 			selectedFile = null;
 			attachError = null;
@@ -219,31 +225,33 @@
 				template.backgroundFileId ? 'เปลี่ยน PDF พื้นหลังแล้ว' : 'แนบ PDF พื้นหลังแล้ว'
 			);
 		} catch (error) {
+			if (!current()) return;
 			attachError = asError(error, 'แนบ PDF พื้นหลังไม่สำเร็จ');
 		}
 	}
 
 	async function uploadAndAttach() {
-		if (uploading || (!selectedFile && !unattachedFile) || !replacementReady) return;
+		if (!current() || uploading || (!selectedFile && !unattachedFile) || !replacementReady) return;
 		uploading = true;
 		onpendingchange(true);
 		attachError = null;
 		try {
 			if (!unattachedFile && selectedFile) {
-				setUnattachedFile(
-					await uploadCertificateTemplateFile(
-						selectedFile,
-						'certificate_template_background',
-						template.id
-					)
+				const uploaded = await uploadCertificateTemplateFile(
+					selectedFile,
+					'certificate_template_background',
+					template.id
 				);
+				if (!current()) return;
+				setUnattachedFile(uploaded);
 			}
 			await attachUploadedFile();
 		} catch (error) {
+			if (!current()) return;
 			attachError = asError(error, 'อัปโหลด PDF พื้นหลังไม่สำเร็จ');
 		} finally {
 			uploading = false;
-			if (!unattachedFile) onpendingchange(false);
+			if (current() && !unattachedFile) onpendingchange(false);
 		}
 	}
 
@@ -252,6 +260,7 @@
 		cleaning = true;
 		try {
 			await deleteFile(unattachedFile.id, template.id);
+			if (!current()) return;
 			setUnattachedFile(null);
 			selectedFile = null;
 			attachError = null;
@@ -260,13 +269,17 @@
 			clearPreviewUrl();
 			toast.success('ลบไฟล์ชั่วคราวแล้ว');
 		} catch (error) {
+			if (!current()) return;
 			attachError = asError(error, 'ลบไฟล์ชั่วคราวไม่สำเร็จ');
 		} finally {
 			cleaning = false;
 		}
 	}
 
-	onDestroy(clearPreviewUrl);
+	onDestroy(() => {
+		disposed = true;
+		clearPreviewUrl();
+	});
 </script>
 
 <section class="space-y-4" aria-labelledby={`background-title-${template.id}`}>

@@ -54,6 +54,19 @@
 		schoolFonts: SchoolFontSummary[];
 	} = $props();
 
+	let disposed = false;
+	const mountedTemplate = untrack(() => template.id);
+	const current = () =>
+		!disposed && template.id === mountedTemplate && template.capabilities.canUpdate;
+	$effect(() => {
+		const options = variables,
+			fonts = initialSchoolFonts;
+		untrack(() => {
+			variableOptions = [...options];
+			schoolFonts = [...fonts];
+		});
+	});
+
 	let currentTemplate = $state.raw(untrack(() => template));
 	let manifest = $state.raw(untrack(() => initialManifest));
 	let variableOptions = $state.raw(untrack(() => [...variables]));
@@ -227,7 +240,7 @@
 	}
 
 	async function saveLayout(confirmMissingIssuedValues = false) {
-		if (!canEdit || saving || !dirty) return;
+		if (!current() || !canEdit || saving || !dirty) return;
 		saving = true;
 		conflictError = '';
 		missingValueWarning = '';
@@ -239,6 +252,7 @@
 				showSafeArea,
 				confirmMissingIssuedValues
 			});
+			if (!current()) return;
 			currentTemplate = updated;
 			layout = cloneCertificateLayout(updated.layout);
 			safeMarginPoints = updated.safeMarginPoints;
@@ -246,6 +260,7 @@
 			dirty = false;
 			toast.success('บันทึกการจัดวางแล้ว');
 		} catch (error) {
+			if (!current()) return;
 			if (error instanceof ApiClientError && error.status === 409) {
 				if (error.message.includes('ตัวแปรว่าง')) missingValueWarning = error.message;
 				else conflictError = error.message;
@@ -258,7 +273,7 @@
 	}
 
 	async function reloadServerCopy() {
-		if (reloading) return;
+		if (!current() || reloading) return;
 		reloading = true;
 		try {
 			const [updated, catalog, updatedManifest, updatedFonts] = await Promise.all([
@@ -269,6 +284,7 @@
 				}),
 				listCertificateSchoolFonts(currentTemplate.id)
 			]);
+			if (!current()) return;
 			currentTemplate = updated;
 			manifest = updatedManifest;
 			variableOptions = catalog.variables;
@@ -282,6 +298,7 @@
 			missingValueWarning = '';
 			toast.success('โหลดสำเนาล่าสุดจากระบบแล้ว');
 		} catch (error) {
+			if (!current()) return;
 			toast.error(error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ');
 		} finally {
 			reloading = false;
@@ -310,6 +327,8 @@
 				{ signal: controller.signal }
 			);
 			controller.signal.throwIfAborted();
+			if (!current()) return;
+			if (!current()) return;
 			manifest = freshManifest;
 			previewManifest = freshManifest;
 		} catch {
@@ -338,6 +357,7 @@
 			layout: layoutSnapshot
 		})
 			.then((freshManifest) => {
+				if (!current()) throw new DOMException('Editor closed', 'AbortError');
 				manifest = freshManifest;
 				return freshManifest;
 			})
@@ -349,6 +369,7 @@
 	}
 
 	async function handleBackgroundPatched(updated: CertificateTemplateDetail) {
+		if (!current()) return;
 		currentTemplate = updated;
 		layout = cloneCertificateLayout(updated.layout);
 		safeMarginPoints = updated.safeMarginPoints;
@@ -358,10 +379,13 @@
 		conflictError = '';
 		missingValueWarning = '';
 		try {
-			manifest = await createCertificateTemplatePreviewManifest(updated.id, {
+			const fresh = await createCertificateTemplatePreviewManifest(updated.id, {
 				previewKind: 'short'
 			});
+			if (!current()) return;
+			manifest = fresh;
 		} catch (error) {
+			if (!current()) return;
 			toast.error(error instanceof Error ? error.message : 'โหลดพื้นหลังใหม่ไม่สำเร็จ');
 		}
 	}
@@ -386,7 +410,10 @@
 		);
 	});
 
-	onDestroy(() => previewController?.abort());
+	onDestroy(() => {
+		disposed = true;
+		previewController?.abort();
+	});
 </script>
 
 <div

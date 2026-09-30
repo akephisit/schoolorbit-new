@@ -1,4 +1,10 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+		searchGeneration++;
+	});
 	import {
 		searchCertificateCandidateAccounts,
 		type CertificateCandidateAccount,
@@ -75,7 +81,7 @@
 	}
 
 	async function runSearch() {
-		if (search.trim().length < 2 || searching) return;
+		if (disposed || !open || search.trim().length < 2 || searching) return;
 		const generation = ++searchGeneration;
 		const requestedType = recipientType;
 		const requestedSearch = search.trim();
@@ -88,6 +94,8 @@
 				search: requestedSearch
 			});
 			if (
+				disposed ||
+				!open ||
 				generation !== searchGeneration ||
 				requestedType !== recipientType ||
 				requestedSearch !== search.trim()
@@ -96,7 +104,7 @@
 			results = loadedResults;
 			searched = true;
 		} catch (searchError) {
-			if (generation !== searchGeneration) return;
+			if (disposed || !open || generation !== searchGeneration) return;
 			error = searchError instanceof Error ? searchError.message : 'ค้นหาบัญชีไม่สำเร็จ';
 			results = [];
 		} finally {
