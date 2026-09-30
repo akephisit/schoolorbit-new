@@ -70,7 +70,7 @@ test('personal home and menu administration share the configurable hierarchy', a
 	const menuAdmin = await readProjectFile('src/routes/(app)/staff/menu/+page.svelte');
 	const menuAdminApi = await readProjectFile('src/lib/api/menu-admin.ts');
 
-	assert.match(dashboard, /getUserMenu/);
+	assert.match(dashboard, /getAppMenuRegion/);
 	assert.match(dashboard, /buildSidebarNavigation/);
 	assert.match(dashboard, /serviceWorkspaces/);
 	assert.match(dashboard, /หน้าหลักของฉัน/);

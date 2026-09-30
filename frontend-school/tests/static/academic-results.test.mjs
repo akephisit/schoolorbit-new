@@ -177,9 +177,9 @@ test('late lock responses cannot patch a different academic year with a reused t
 });
 
 test('large result workflow reads require tap rather than incidental hover preload', async () => {
-	const sidebar = await read('src/lib/components/layout/Sidebar.svelte');
-	assert.match(sidebar, /path === '\/staff\/academic\/result-locks'/);
-	assert.match(sidebar, /path === '\/staff\/academic\/result-corrections'/);
+	const policy = await read('src/lib/navigation/menu-preload.ts');
+	assert.match(policy, /path === '\/staff\/academic\/result-locks'/);
+	assert.match(policy, /path === '\/staff\/academic\/result-corrections'/);
 });
 
 test('correction empty-state handoff keeps the selected year and term', async () => {

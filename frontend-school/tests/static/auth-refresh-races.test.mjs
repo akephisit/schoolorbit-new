@@ -143,3 +143,40 @@ test('work counts and items ignore older overlapping responses', async () => {
 	assert.equal(state.counts.total, 0);
 	assert.deepEqual(state.items, []);
 });
+
+test('layout-owned counts cannot overwrite a newer refresh or refill a reset identity', async () => {
+	const counts = [];
+	const { workStore } = await load('../../src/lib/stores/work.ts', {
+		'svelte/store': { writable },
+		'$lib/api/work': {
+			getMyWorkCounts: () => new Promise((resolve) => counts.push(resolve)),
+			getMyWorkItems: async () => []
+		}
+	});
+	let state;
+	workStore.subscribe((value) => (state = value));
+	let release;
+	workStore.consumeRouteCounts(new Promise((resolve) => (release = resolve)), () => true);
+	const refresh = workStore.fetchCounts();
+	counts[0]({ total: 2 });
+	await refresh;
+	release({ ok: true, data: { identityKey: 'old', counts: { total: 1 } }, error: null });
+	await Promise.resolve();
+	assert.equal(state.counts.total, 2);
+	workStore.consumeRouteCounts(new Promise((resolve) => (release = resolve)), () => true);
+	workStore.reset();
+	release({ ok: true, data: { identityKey: 'old', counts: { total: 3 } }, error: null });
+	await Promise.resolve();
+	assert.equal(state.counts.total, 0);
+	assert.equal(state.loadedCounts, false);
+	workStore.consumeRouteCounts(
+		Promise.resolve({
+			ok: true,
+			data: { identityKey: 'another-user', counts: { total: 4 } },
+			error: null
+		}),
+		() => false
+	);
+	await Promise.resolve();
+	assert.equal(state.counts.total, 0);
+});

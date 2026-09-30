@@ -4,7 +4,7 @@ import type {
 	UpdateAchievementRequest,
 	AchievementListFilter
 } from '$lib/types/achievement';
-import { apiClient, type ApiResponse } from '$lib/api/client';
+import { apiClient, type ApiResponse, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -15,7 +15,8 @@ function networkErrorResponse<T>(): ApiResponse<T> {
 }
 
 export async function getAchievements(
-	filter?: AchievementListFilter
+	filter?: AchievementListFilter,
+	options: ApiRequestOptions = {}
 ): Promise<ApiResponse<Achievement[]>> {
 	try {
 		const params = new URLSearchParams();
@@ -23,7 +24,7 @@ export async function getAchievements(
 		if (filter?.start_date) params.append('start_date', filter.start_date);
 		if (filter?.end_date) params.append('end_date', filter.end_date);
 
-		return await apiClient.get<Achievement[]>(`/api/achievements?${params.toString()}`);
+		return await apiClient.get<Achievement[]>(`/api/achievements?${params.toString()}`, options);
 	} catch (e) {
 		console.error('Fetch achievements error:', e);
 		return networkErrorResponse();

@@ -98,13 +98,12 @@
 		{
 			"route": "staff",
 			"wave": "staff",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include getUserMenu, getStaffDashboard; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns year aggregate; app layout owns shared service menu and work counts. Independent regional skeleton/error/retry, retained refresh and year supersession; service links share contextual preload policy."
 		},
 		{
 			"route": "staff/academic/admission",
@@ -840,13 +839,12 @@
 		{
 			"route": "staff/profile",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "authAPI.getFullProfile is the initial page read; refreshCurrentUser runs after profile mutation.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns full typed private profile using settled layout auth. Save patches returned profile with stale guards; only explicit avatar mutation refreshes shared identity. Compression/cropper/HEIC tools load after file selection."
 		},
 		{
 			"route": "staff/roles",
@@ -957,13 +955,12 @@
 		{
 			"route": "staff/view/[id]",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "staff-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include getPublicStaffProfile, getAchievements; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns selected public identity and authorized achievements concurrently. Regional retry/selected-person supersession; own-only achievements cannot read another person. Private preview remains interaction-lazy; unbounded history avoids hover preload."
 		},
 		{
 			"route": "staff/work",

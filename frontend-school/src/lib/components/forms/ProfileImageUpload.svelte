@@ -5,10 +5,8 @@
 	import { toast } from 'svelte-sonner';
 	import { Pencil, Camera, Trash2, UserCircle, LoaderCircle } from '@lucide/svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import ImageCropper from './ImageCropper.svelte';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import { cn } from '$lib/utils';
-	import Compressor from 'compressorjs';
 
 	interface Props {
 		currentFileId?: string | null;
@@ -37,6 +35,7 @@
 	let localFileId = $state<string | null | undefined>(undefined);
 	let imageFileId = $derived(localFileId === undefined ? currentFileId : localFileId);
 	let showCropper = $state(false);
+	let ImageCropper = $state<typeof import('./ImageCropper.svelte').default>();
 	let tempImageSrc = $state<string | null>(null);
 	let fileInput = $state<HTMLInputElement>();
 
@@ -81,8 +80,12 @@
 					});
 				}
 
-				// Optimize & Fix Orientation with Compressor.js
-				// Optimize & Fix Orientation with Compressor.js
+				const [{ default: Compressor }, { default: Cropper }] = await Promise.all([
+					import('compressorjs'),
+					import('./ImageCropper.svelte')
+				]);
+				ImageCropper = Cropper;
+				// Optimize orientation only after selection.
 				new Compressor(file, {
 					quality: 0.8,
 					maxWidth: 1920,
@@ -237,9 +240,9 @@
 	{/if}
 
 	<!-- Image Cropper Modal -->
-	<ImageCropper
-		bind:open={showCropper}
-		imageSrc={tempImageSrc}
-		onCropComplete={handleCropComplete}
-	/>
+	{#if ImageCropper}<ImageCropper
+			bind:open={showCropper}
+			imageSrc={tempImageSrc}
+			onCropComplete={handleCropComplete}
+		/>{/if}
 </div>

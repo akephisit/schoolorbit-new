@@ -24,14 +24,15 @@ test('exam round and staff schedule lists start their primary read in a route lo
 });
 
 test('exam list wrappers use route fetch and large or unbounded lists do not hover preload', async () => {
-	const [api, sidebar] = await Promise.all([
+	const [api, sidebar, policy] = await Promise.all([
 		source('src/lib/api/examSchedule.ts'),
-		source('src/lib/components/layout/Sidebar.svelte')
+		source('src/lib/components/layout/Sidebar.svelte'),
+		source('src/lib/navigation/menu-preload.ts')
 	]);
 	assert.match(api, /listExamRounds[\s\S]{0,100}ApiRequestOptions/);
 	assert.match(api, /listStaffExamSchedules[\s\S]{0,100}ApiRequestOptions/);
 	assert.match(
-		sidebar,
+		policy,
 		/if \(\s*path === '\/staff\/academic\/exam-schedules' \|\|\s*path === '\/staff\/exams'[^)]*\)\s*return 'off'/
 	);
 	assert.match(sidebar, /data-sveltekit-preload-data=\{menuPreloadPolicy\(item\)\}/);

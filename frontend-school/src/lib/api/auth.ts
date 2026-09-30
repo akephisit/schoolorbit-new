@@ -1,4 +1,4 @@
-import { ApiClientError, apiClient, requireApiData } from '$lib/api/client';
+import { ApiClientError, apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 import { clearSessionSecurity } from '$lib/api/session-security';
 import { authRefreshDecision, type AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
@@ -162,8 +162,8 @@ class AuthAPI {
 	/**
 	 * Get full user profile with all fields
 	 */
-	async getFullProfile(): Promise<ProfileResponse> {
-		const response = await apiClient.get<ProfileResponse>('/api/auth/me/profile');
+	async getFullProfile(options: ApiRequestOptions = {}): Promise<ProfileResponse> {
+		const response = await apiClient.get<ProfileResponse>('/api/auth/me/profile', options);
 		return requireApiData(response, 'ไม่สามารถโหลดข้อมูลได้');
 	}
 

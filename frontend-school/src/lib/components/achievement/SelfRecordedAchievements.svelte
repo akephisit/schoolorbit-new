@@ -399,6 +399,7 @@
 														size="icon"
 														class="h-8 w-8"
 														href={`/staff/view/${achievement.user_id}`}
+														data-sveltekit-preload-data="off"
 														title="ดูโปรไฟล์"
 													>
 														<ExternalLink class="w-4 h-4" />

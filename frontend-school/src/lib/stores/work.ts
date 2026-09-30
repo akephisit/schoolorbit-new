@@ -1,11 +1,14 @@
 import { getMyWorkCounts, getMyWorkItems, type WorkItem, type WorkItemCounts } from '$lib/api/work';
 import { writable } from 'svelte/store';
+import type { RouteLoadResult } from '$lib/navigation/route-load';
 
 interface WorkStoreState {
 	items: WorkItem[];
 	counts: WorkItemCounts;
 	loadingItems: boolean;
 	loadingCounts: boolean;
+	loadedCounts: boolean;
+	countsError: string | null;
 	error: string | null;
 }
 
@@ -23,6 +26,8 @@ const initialState: WorkStoreState = {
 	counts: emptyCounts,
 	loadingItems: false,
 	loadingCounts: false,
+	loadedCounts: false,
+	countsError: null,
 	error: null
 };
 
@@ -35,6 +40,36 @@ function createWorkStore() {
 	return {
 		subscribe,
 
+		consumeRouteCounts(
+			operation: Promise<RouteLoadResult<{ identityKey: string; counts: WorkItemCounts }>>,
+			ownsIdentity: (identityKey: string) => boolean
+		) {
+			const requestGeneration = generation;
+			const request = ++countsRequest;
+			update((state) => ({ ...state, loadingCounts: true, countsError: null }));
+			void operation.then((result) => {
+				if (requestGeneration !== generation || request !== countsRequest) return;
+				if (!result.ok) {
+					update((state) => ({
+						...state,
+						loadingCounts: false,
+						countsError: result.error,
+						error: result.error
+					}));
+					return;
+				}
+				if (!ownsIdentity(result.data.identityKey)) return;
+				update((state) => ({
+					...state,
+					counts: result.data.counts,
+					loadedCounts: true,
+					loadingCounts: false,
+					countsError: null,
+					error: null
+				}));
+			});
+		},
+
 		async fetchCounts(options: { silent?: boolean; isCurrent?: () => boolean } = {}) {
 			const requestGeneration = generation;
 			const request = ++countsRequest;
@@ -43,7 +78,7 @@ function createWorkStore() {
 				request === countsRequest &&
 				(options.isCurrent?.() ?? true);
 			if (!options.silent) {
-				update((state) => ({ ...state, loadingCounts: true, error: null }));
+				update((state) => ({ ...state, loadingCounts: true, countsError: null, error: null }));
 			}
 
 			try {
@@ -52,6 +87,8 @@ function createWorkStore() {
 				update((state) => ({
 					...state,
 					counts,
+					loadedCounts: true,
+					countsError: null,
 					loadingCounts: false,
 					error: null
 				}));
@@ -61,6 +98,7 @@ function createWorkStore() {
 				update((state) => ({
 					...state,
 					loadingCounts: false,
+					countsError: error instanceof Error ? error.message : 'ไม่สามารถโหลดจำนวนงานได้',
 					error: error instanceof Error ? error.message : 'ไม่สามารถโหลดจำนวนงานได้'
 				}));
 				return false;

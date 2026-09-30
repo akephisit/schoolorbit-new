@@ -1,7 +1,13 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import type { PageProps } from './$types';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { requireApiData } from '$lib/api/client';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { menuPreloadPolicy } from '$lib/navigation/menu-preload';
+	import { getAppMenuRegion } from '$lib/navigation/app-menu.svelte';
+	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
 	import { getAcademicContextStore } from '$lib/academic-context/store';
-	import { getUserMenu, type MenuGroup } from '$lib/api/menu';
 	import { getStaffDashboard, type StaffDashboardOverview } from '$lib/api/staff';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -29,17 +35,18 @@
 		Users
 	} from '@lucide/svelte';
 
+	let { data }: PageProps = $props();
+	const appMenu = getAppMenuRegion();
 	const academicContext = getAcademicContextStore();
-	const academicYearId = $derived(
-		$academicContext.status === 'ready' ? ($academicContext.selected.academicYearId ?? '') : ''
-	);
+	const academicYearId = $derived(data.academicYearId ?? '');
 	let stats = $state<StaffDashboardOverview | null>(null);
-	let menuGroups = $state<MenuGroup[]>([]);
-	let loadingStats = $state(false);
-	let loadingMenu = $state(true);
+	const menuGroups = $derived(appMenu.groups);
+	let loadingStats = $state(true);
+	const loadingMenu = $derived(appMenu.loading);
 	let statsError = $state('');
-	let menuError = $state('');
-	let statsRevision = 0;
+	const menuError = $derived(appMenu.error);
+	const statsRequest = new LatestRequest();
+	let statsYear = '';
 
 	const numberFormatter = new Intl.NumberFormat('th-TH');
 	const displayName = $derived(
@@ -72,50 +79,47 @@
 		)
 	);
 
-	async function loadDashboard(yearId: string) {
-		const current = ++statsRevision;
-		loadingStats = true;
-		stats = null;
-		statsError = '';
-		try {
-			const response = await getStaffDashboard(yearId);
-			if (!response.success || !response.data) {
-				throw new Error(response.error || 'ไม่สามารถโหลดภาพรวมโรงเรียนได้');
+	$effect.pre(() => {
+		const source = data;
+		untrack(() => {
+			if (statsYear !== source.academicYearId) {
+				statsYear = source.academicYearId ?? '';
+				stats = null;
 			}
-			if (current === statsRevision) stats = response.data;
-		} catch (error) {
-			if (current === statsRevision) {
-				statsError = error instanceof Error ? error.message : 'ไม่สามารถโหลดภาพรวมโรงเรียนได้';
-			}
-		} finally {
-			if (current === statsRevision) loadingStats = false;
-		}
-	}
-
-	async function loadMenu() {
-		loadingMenu = true;
-		menuError = '';
-		try {
-			const response = await getUserMenu();
-			menuGroups = response.groups;
-		} catch (error) {
-			menuError = error instanceof Error ? error.message : 'ไม่สามารถโหลดเมนูบริการได้';
-		} finally {
-			loadingMenu = false;
-		}
-	}
-
-	onMount(() => {
-		void Promise.all([loadMenu(), workStore.fetchCounts()]);
-		let loadedYearId: string | null = null;
-		return academicContext.subscribe((state) => {
-			const yearId = state.status === 'ready' ? state.selected.academicYearId : null;
-			if (yearId && yearId !== loadedYearId) {
-				loadedYearId = yearId;
-				void loadDashboard(yearId);
-			}
+			const ticket = statsRequest.begin();
+			loadingStats = source.overview !== null;
+			statsError = '';
+			if (source.overview)
+				void source.overview.then((result) => {
+					if (!statsRequest.isCurrent(ticket.revision)) return;
+					loadingStats = false;
+					if (result.ok) stats = result.data;
+					else statsError = result.error;
+				});
 		});
+		return () => statsRequest.abort();
 	});
+
+	async function loadDashboard(yearId: string) {
+		if (!yearId) return;
+		const ticket = statsRequest.begin();
+		loadingStats = true;
+		statsError = '';
+		const result = await captureRouteLoad(
+			getStaffDashboard(yearId, { signal: ticket.signal }).then((response) =>
+				requireApiData(response, 'โหลดภาพรวมโรงเรียนไม่สำเร็จ')
+			),
+			'โหลดภาพรวมโรงเรียนไม่สำเร็จ'
+		);
+		if (!statsRequest.isCurrent(ticket.revision)) return;
+		loadingStats = false;
+		if (result.ok) stats = result.data;
+		else statsError = result.error;
+	}
+
+	function serviceHref(path: string): string {
+		return academicContextualMenuPath(path, $academicContext.selected, $academicContext.options);
+	}
 </script>
 
 <PageShell title="หน้าหลักของฉัน" description="งานที่ต้องติดตามและบริการของโรงเรียนที่คุณใช้งานได้">
@@ -138,7 +142,21 @@
 		</CardContent>
 	</Card>
 
-	<section aria-labelledby="personal-summary-title" class="space-y-3">
+	<section
+		data-testid="staff-work-counts"
+		aria-busy={$workStore.loadingCounts}
+		aria-labelledby="personal-summary-title"
+		class="space-y-3"
+	>
+		{#if $workStore.countsError}<PageState
+				title="โหลดจำนวนงานไม่สำเร็จ"
+				description={$workStore.countsError}
+				actionLabel="ลองใหม่"
+				onaction={() => void workStore.fetchCounts()}
+			/>{/if}
+		{#if $workStore.loadingCounts}<p role="status" class="text-sm text-muted-foreground">
+				กำลังโหลดจำนวนงาน...
+			</p>{/if}
 		<div>
 			<h2 id="personal-summary-title" class="text-lg font-semibold">สรุปของฉัน</h2>
 			<p class="text-sm text-muted-foreground">รายการที่ควรทราบก่อนเริ่มงานวันนี้</p>
@@ -148,7 +166,9 @@
 				<CardContent class="flex items-center justify-between gap-4 p-4">
 					<div>
 						<p class="text-sm text-muted-foreground">งานที่เปิดอยู่</p>
-						<p class="text-2xl font-semibold">{numberFormatter.format($workStore.counts.open)}</p>
+						<p class="text-2xl font-semibold">
+							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.open) : '—'}
+						</p>
 					</div>
 					<div class="rounded-lg bg-sky-500/10 p-3 text-sky-600">
 						<Inbox class="h-5 w-5" />
@@ -160,7 +180,7 @@
 					<div>
 						<p class="text-sm text-muted-foreground">ใกล้ครบกำหนด</p>
 						<p class="text-2xl font-semibold">
-							{numberFormatter.format($workStore.counts.dueSoon)}
+							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.dueSoon) : '—'}
 						</p>
 					</div>
 					<div class="rounded-lg bg-amber-500/10 p-3 text-amber-600">
@@ -173,7 +193,7 @@
 					<div>
 						<p class="text-sm text-muted-foreground">เกินกำหนด</p>
 						<p class="text-2xl font-semibold text-destructive">
-							{numberFormatter.format($workStore.counts.overdue)}
+							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.overdue) : '—'}
 						</p>
 					</div>
 					<div class="rounded-lg bg-destructive/10 p-3 text-destructive">
@@ -185,7 +205,9 @@
 				<CardContent class="flex items-center justify-between gap-4 p-4">
 					<div>
 						<p class="text-sm text-muted-foreground">บริการที่เข้าถึงได้</p>
-						<p class="text-2xl font-semibold">{numberFormatter.format(accessibleServiceCount)}</p>
+						<p class="text-2xl font-semibold">
+							{appMenu.loaded ? numberFormatter.format(accessibleServiceCount) : '—'}
+						</p>
 					</div>
 					<div class="rounded-lg bg-violet-500/10 p-3 text-violet-600">
 						<LayoutGrid class="h-5 w-5" />
@@ -195,7 +217,19 @@
 		</div>
 	</section>
 
-	<section aria-labelledby="services-title" class="space-y-4">
+	<section
+		data-testid="staff-services"
+		aria-busy={loadingMenu}
+		aria-labelledby="services-title"
+		class="space-y-4"
+	>
+		{#if menuError && appMenu.loaded}<PageState
+				title="อัปเดตบริการไม่สำเร็จ"
+				description={menuError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={appMenu.retry}
+			/>{/if}
+		{#if loadingMenu && appMenu.loaded}<p role="status">กำลังอัปเดตบริการ...</p>{/if}
 		<div>
 			<h2 id="services-title" class="text-lg font-semibold">บริการของโรงเรียน</h2>
 			<p class="text-sm text-muted-foreground">
@@ -203,15 +237,17 @@
 			</p>
 		</div>
 
-		{#if loadingMenu}
-			<PageSkeleton variant="cards" rows={4} />
-		{:else if menuError}
+		{#if loadingMenu && !appMenu.loaded}
+			<div role="status" aria-label="กำลังโหลดบริการ">
+				<PageSkeleton variant="cards" rows={4} />
+			</div>
+		{:else if menuError && !appMenu.loaded}
 			<PageState
 				variant="error"
 				title="โหลดบริการไม่สำเร็จ"
 				description={menuError}
 				actionLabel="ลองอีกครั้ง"
-				onaction={loadMenu}
+				onaction={appMenu.retry}
 			/>
 		{:else if serviceWorkspaces.length === 0}
 			<PageState
@@ -250,7 +286,8 @@
 											{@const ItemIcon = getIconComponent(item.icon)}
 											<Button
 												variant="outline"
-												href={item.path}
+												href={serviceHref(item.path)}
+												data-sveltekit-preload-data={menuPreloadPolicy(item)}
 												class="h-auto min-h-11 justify-start gap-2.5 whitespace-normal px-3 py-2.5 text-left"
 											>
 												<ItemIcon class="h-4 w-4 shrink-0 text-primary" />
@@ -267,7 +304,19 @@
 		{/if}
 	</section>
 
-	<section aria-labelledby="school-summary-title" class="space-y-3">
+	<section
+		data-testid="staff-overview"
+		aria-busy={loadingStats}
+		aria-labelledby="school-summary-title"
+		class="space-y-3"
+	>
+		{#if loadingStats && stats}<p role="status">กำลังอัปเดตภาพรวม...</p>{/if}
+		{#if statsError && stats}<PageState
+				title="อัปเดตภาพรวมไม่สำเร็จ"
+				description={statsError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => void loadDashboard(academicYearId)}
+			/>{/if}
 		<div class="flex items-center justify-between gap-3">
 			<div>
 				<h2 id="school-summary-title" class="text-lg font-semibold">ภาพรวมโรงเรียน</h2>
@@ -291,9 +340,11 @@
 				title="เลือกปีการศึกษาก่อน"
 				description="ใช้ตัวเลือกปีการศึกษาบนแถบด้านบน"
 			/>
-		{:else if loadingStats}
-			<PageSkeleton variant="cards" rows={3} />
-		{:else if statsError}
+		{:else if loadingStats && !stats}
+			<div role="status" aria-label="กำลังโหลดภาพรวม">
+				<PageSkeleton variant="cards" rows={3} />
+			</div>
+		{:else if statsError && !stats}
 			<PageState
 				variant="error"
 				title="โหลดภาพรวมโรงเรียนไม่สำเร็จ"

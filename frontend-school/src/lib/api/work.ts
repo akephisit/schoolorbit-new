@@ -1,4 +1,9 @@
-import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import {
+	apiClient,
+	requireApiData,
+	type ApiResponse,
+	type ApiRequestOptions
+} from '$lib/api/client';
 
 export type WorkflowWindowStatus = 'draft' | 'open' | 'closed' | 'archived';
 export type WorkflowWindowTimeState =
@@ -161,8 +166,8 @@ export async function getMyWorkItems(params: ListWorkItemsParams = {}): Promise<
 	return requireApiData(response, 'ไม่สามารถโหลดรายการงานได้').items;
 }
 
-export async function getMyWorkCounts(): Promise<WorkItemCounts> {
-	const response = await apiClient.get<WorkItemCounts>('/api/me/work-items/counts');
+export async function getMyWorkCounts(options: ApiRequestOptions = {}): Promise<WorkItemCounts> {
+	const response = await apiClient.get<WorkItemCounts>('/api/me/work-items/counts', options);
 	return requireApiData(response, 'ไม่สามารถโหลดจำนวนงานได้');
 }
 

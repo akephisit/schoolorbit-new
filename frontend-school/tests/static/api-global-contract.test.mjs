@@ -1556,7 +1556,7 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	);
 
 	assert.deepEqual(routeViolations, []);
-	assert.match(staffDashboard, /getUserMenu/);
+	assert.match(staffDashboard, /getAppMenuRegion/);
 	assert.match(staffDashboard, /buildSidebarNavigation/);
 	assert.match(staffDashboard, /workStore\.fetchCounts/);
 	assert.match(staffDashboard, /serviceWorkspaces/);

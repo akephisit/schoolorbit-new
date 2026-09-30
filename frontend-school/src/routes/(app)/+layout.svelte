@@ -1,10 +1,14 @@
 <script lang="ts">
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import Header from '$lib/components/layout/Header.svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
+	import type { LayoutProps } from './$types';
+	import { createAppMenuRegion } from '$lib/navigation/app-menu.svelte';
+	import { workStore } from '$lib/stores/work';
+	import { appIdentityKey } from '$lib/auth/settled-user';
 	import { createAcademicContextStore, setAcademicContextStore } from '$lib/academic-context/store';
 	import {
 		getAcademicContextRequirement,
@@ -20,7 +24,39 @@
 
 	import { uiPreferences } from '$lib/stores/ui-preferences';
 	import { notificationStore } from '$lib/stores/notification';
-	let { children } = $props();
+	let { children, data }: LayoutProps = $props();
+	const appMenu = createAppMenuRegion();
+	const sharedMenuRead = $derived(data.userMenu);
+	const sharedCountsRead = $derived(data.workCounts);
+	const authenticatedUserId = $derived($authStore.user?.id);
+	let previousIdentity: string | null = null;
+	$effect.pre(() => {
+		const menuRead = sharedMenuRead;
+		const countsRead = sharedCountsRead;
+		const userId = authenticatedUserId;
+		if (!userId) return;
+		untrack(() => {
+			appMenu.consume(menuRead);
+			workStore.consumeRouteCounts(countsRead, (key) => key === appIdentityKey());
+		});
+	});
+	$effect.pre(() => {
+		const user = $authStore.user;
+		const permissions = $userPermissions;
+		if (!user) {
+			appMenu.reset();
+			workStore.reset();
+			previousIdentity = null;
+			return;
+		}
+		const key = `${user.id}:${permissions.slice().sort().join(',')}`;
+		if (previousIdentity !== null && previousIdentity !== key) {
+			appMenu.reset();
+			workStore.reset();
+			void invalidate('school:app-identity');
+		}
+		previousIdentity = key;
+	});
 
 	type AuthStatus = 'checking' | 'authenticated' | 'unavailable' | 'redirecting';
 
@@ -113,6 +149,8 @@
 
 	onDestroy(() => {
 		academicContext.reset();
+		appMenu.reset();
+		workStore.reset();
 	});
 
 	$effect(() => {

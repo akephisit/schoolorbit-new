@@ -4,7 +4,9 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth';
-	import { getUserMenu, type MenuGroup } from '$lib/api/menu';
+	import { menuPreloadPolicy } from '$lib/navigation/menu-preload';
+	import { getAppMenuRegion } from '$lib/navigation/app-menu.svelte';
+	import { PageState } from '$lib/components/app-state';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -27,45 +29,13 @@
 	let { isCollapsed = $bindable($uiPreferences.sidebarCollapsed) }: { isCollapsed?: boolean } =
 		$props();
 	let isMobileOpen = $state(false);
-	let menuGroups = $state<MenuGroup[]>([]);
-	let menuLoading = $state(true);
+	const appMenu = getAppMenuRegion();
+	const menuGroups = $derived(appMenu.groups);
+	const menuLoading = $derived(appMenu.loading);
 	const academicContext = getAcademicContextStore();
 
-	function hasAcademicContextDestination(groups: MenuGroup[]): boolean {
-		return groups.some((group) =>
-			group.items.some((item) => {
-				const target = new URL(item.path, 'https://schoolorbit.invalid');
-				return getAcademicContextRequirement(`/(app)${target.pathname}`) !== 'none';
-			})
-		);
-	}
-
-	async function loadMenu(primeAcademicContext: boolean) {
-		try {
-			menuLoading = true;
-			const academicContextReady = primeAcademicContext ? academicContext.primeOptions() : null;
-			const response = await getUserMenu();
-			if (academicContextReady && hasAcademicContextDestination(response.groups)) {
-				await academicContextReady;
-			}
-			menuGroups = response.groups;
-		} catch (error) {
-			console.error('Failed to load menu:', error);
-			menuGroups = [];
-		} finally {
-			menuLoading = false;
-		}
-	}
-
 	$effect(() => {
-		const user = $authStore.user;
-		if (user?.id) {
-			loadMenu(user.user_type === 'staff');
-			void workStore.fetchCounts({ silent: true });
-		} else {
-			menuGroups = [];
-			workStore.reset();
-		}
+		if ($authStore.user?.user_type === 'staff') void academicContext.primeOptions();
 	});
 
 	$effect(() => {
@@ -145,38 +115,6 @@
 			$academicContext.selected,
 			$academicContext.options
 		);
-	}
-
-	function menuPreloadPolicy(item: SidebarMenuItem): 'hover' | 'tap' | 'off' {
-		const path = item.path.split('?')[0];
-		if (
-			path === '/staff/academic/exam-schedules' ||
-			path === '/staff/exams' ||
-			path === '/staff/academic/supervision' ||
-			path === '/staff/academic/supervision/requests' ||
-			path === '/staff/academic/supervision/evaluate' ||
-			path === '/staff/academic/supervision/approvals' ||
-			path === '/staff/academic/supervision/cycles' ||
-			path === '/staff/academic/supervision/templates'
-		)
-			return 'off';
-		return path === '/staff/academic/supervision/overview' ||
-			path === '/staff/academic/timetable' ||
-			path === '/staff/academic/timetable/today' ||
-			path === '/staff/academic/assessments' ||
-			path === '/staff/academic/gradebook' ||
-			path === '/staff/academic/promotion' ||
-			path === '/staff/academic/promotion/policies' ||
-			path === '/staff/academic/term-lifecycle' ||
-			path === '/staff/academic/year-lifecycle' ||
-			path === '/staff/academic/results' ||
-			path === '/staff/academic/results/aggregates' ||
-			path === '/staff/academic/results/annual' ||
-			path === '/staff/academic/result-locks' ||
-			path === '/staff/academic/result-corrections' ||
-			path === '/staff/academic/question-bank'
-			? 'tap'
-			: 'hover';
 	}
 
 	function preloadMenuItem(item: SidebarMenuItem, trigger: 'hover' | 'tap') {
@@ -282,19 +220,30 @@
 	<!-- Navigation -->
 	<Tooltip.Provider>
 		<nav
+			aria-busy={menuLoading}
 			class={cn(
 				'flex-1 overflow-y-auto overflow-x-hidden py-4 sidebar-nav',
 				isCollapsed ? 'flex flex-col items-center gap-1 px-4' : 'space-y-1 px-4'
 			)}
 		>
-			{#if menuLoading}
+			{#if appMenu.error}<PageState
+					title="โหลดเมนูไม่สำเร็จ"
+					description={appMenu.error}
+					actionLabel="ลองใหม่"
+					onaction={appMenu.retry}
+				/>{/if}
+			{#if menuLoading && appMenu.loaded}<p role="status" class="text-xs text-muted-foreground">
+					กำลังอัปเดตเมนู...
+				</p>{/if}
+			{#if menuLoading && !appMenu.loaded}
 				<!-- Loading skeleton -->
+				<span role="status" class="sr-only">กำลังโหลดเมนู</span>
 				<div class="space-y-2">
 					{#each Array(6) as _, idx (idx)}
 						<div class="h-10 bg-muted rounded-lg animate-pulse"></div>
 					{/each}
 				</div>
-			{:else if menuGroups.length === 0}
+			{:else if !appMenu.error && menuGroups.length === 0}
 				<!-- No menus -->
 				{#if !isCollapsed}
 					<div class="p-4 text-center">
@@ -302,7 +251,7 @@
 						<p class="text-xs text-muted-foreground mt-1">กรุณาติดต่อผู้ดูแลระบบ</p>
 					</div>
 				{/if}
-			{:else}
+			{:else if appMenu.loaded}
 				<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
 					<Tooltip.Trigger class="w-full">
 						<Button

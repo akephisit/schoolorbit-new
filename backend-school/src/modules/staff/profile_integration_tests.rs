@@ -6,6 +6,43 @@ use school_test_db::create_named_test_pool_with_max_connections;
 use uuid::Uuid;
 
 #[tokio::test]
+async fn public_profile_does_not_hide_failed_role_or_organization_reads() {
+    let pool = create_named_test_pool_with_max_connections("public_profile_read_errors", 5).await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    assert!(
+        school_staff::services::staff_service::get_public_staff_profile(&pool, staff_id)
+            .await
+            .is_ok()
+    );
+    for (table, hide, restore) in [
+        (
+            "roles",
+            "ALTER TABLE roles RENAME TO profile_test_hidden_table",
+            "ALTER TABLE profile_test_hidden_table RENAME TO roles",
+        ),
+        (
+            "organization_units",
+            "ALTER TABLE organization_units RENAME TO profile_test_hidden_table",
+            "ALTER TABLE profile_test_hidden_table RENAME TO organization_units",
+        ),
+    ] {
+        sqlx::query(hide).execute(&pool).await.unwrap();
+        let result =
+            school_staff::services::staff_service::get_public_staff_profile(&pool, staff_id).await;
+        assert!(
+            result.is_err(),
+            "A failed {table} read must not return an empty successful profile"
+        );
+        sqlx::query(restore).execute(&pool).await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn staff_profile_reads_canonical_teaching_and_homeroom_assignments() {
     let pool = create_named_test_pool_with_max_connections("staff_profile_canonical", 5).await;
     apply_migrations_through(&pool, 40).await.unwrap();

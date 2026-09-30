@@ -1,7 +1,12 @@
 // API Client for Staff Management
 // ติดต่อกับ backend-school service
 
-import { apiClient, requireApiData, type ApiResponse } from '$lib/api/client';
+import {
+	apiClient,
+	requireApiData,
+	type ApiResponse,
+	type ApiRequestOptions
+} from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -57,12 +62,13 @@ interface StaffFilter {
 type StaffListData = Schemas['StaffListData'];
 
 export async function getStaffDashboard(
-	academicYearId: string
+	academicYearId: string,
+	options: ApiRequestOptions = {}
 ): Promise<ApiResponse<StaffDashboardOverview>> {
 	const selectedYearId = academicYearId.trim();
 	if (!selectedYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const query = new URLSearchParams({ academicYearId: selectedYearId });
-	return apiClient.get<StaffDashboardOverview>(`/api/staff/dashboard?${query}`);
+	return apiClient.get<StaffDashboardOverview>(`/api/staff/dashboard?${query}`, options);
 }
 
 export async function listStaff(filter?: StaffFilter): Promise<StaffListResponse> {
@@ -90,9 +96,10 @@ export async function getStaffProfile(staffId: string): Promise<ApiResponse<Staf
 }
 
 export async function getPublicStaffProfile(
-	staffId: string
+	staffId: string,
+	options: ApiRequestOptions = {}
 ): Promise<ApiResponse<PublicStaffProfileResponse>> {
-	return apiClient.get<PublicStaffProfileResponse>(`/api/staff/${staffId}/public-profile`);
+	return apiClient.get<PublicStaffProfileResponse>(`/api/staff/${staffId}/public-profile`, options);
 }
 
 export async function createStaff(data: CreateStaffRequest): Promise<ApiResponse<UuidIdData>> {

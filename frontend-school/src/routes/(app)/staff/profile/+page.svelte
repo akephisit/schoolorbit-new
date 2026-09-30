@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import type { PageProps } from './$types';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
 	import { authStore } from '$lib/stores/auth';
 	import { authAPI, type ProfileResponse } from '$lib/api/auth';
 	import { Button } from '$lib/components/ui/button';
@@ -21,6 +24,11 @@
 	import { Save, User, Calendar, Mail, Phone, MapPin, Shield, Lock } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
+	let { data }: PageProps = $props();
+	const profileRequest = new LatestRequest();
+	let profileEpoch = 0;
+	let profileActive = false;
+	let profileOwner = '';
 	const user = $derived($authStore.user);
 
 	// Full profile data from API
@@ -56,41 +64,84 @@
 	});
 
 	let saving = $state(false);
-	let loading = $state(false);
+	let loading = $state(true);
 	let profileLoadError = $state('');
 
+	function applyLoadedProfile(loaded: ProfileResponse) {
+		profile = loaded;
+		formData = {
+			title: loaded.title ?? '',
+			nickname: loaded.nickname ?? '',
+			email: loaded.email ?? '',
+			phone: loaded.phone ?? '',
+			emergency_contact: loaded.emergencyContact ?? '',
+			line_id: loaded.lineId ?? '',
+			date_of_birth: loaded.dateOfBirth ?? '',
+			gender: loaded.gender ?? 'male',
+			address: loaded.address ?? '',
+			profile_image_file_id: loaded.profileImageFileId ?? ''
+		};
+	}
+	$effect.pre(() => {
+		const source = data.profile;
+		const owner = $authStore.user?.id ?? '';
+		untrack(() => {
+			profileActive = true;
+			if (profileOwner !== owner) {
+				profileOwner = owner;
+				profile = null;
+				profileEpoch += 1;
+				saving = false;
+			}
+			const ticket = profileRequest.begin();
+			loading = true;
+			profileLoadError = '';
+			void source.then((result) => {
+				if (!profileRequest.isCurrent(ticket.revision)) return;
+				loading = false;
+				if (result.ok && result.data) applyLoadedProfile(result.data);
+				else profileLoadError = result.ok ? 'คุณไม่มีสิทธิ์เข้าถึงโปรไฟล์นี้' : result.error;
+			});
+		});
+		return () => {
+			profileActive = false;
+			profileEpoch += 1;
+			profileRequest.abort();
+		};
+	});
 	async function loadProfile() {
-		// Load full user profile from API
+		const ticket = profileRequest.begin();
 		loading = true;
 		profileLoadError = '';
+		const result = await captureRouteLoad(
+			authAPI.getFullProfile({ signal: ticket.signal }),
+			'โหลดโปรไฟล์ไม่สำเร็จ'
+		);
+		if (!profileRequest.isCurrent(ticket.revision)) return;
+		loading = false;
+		if (result.ok) applyLoadedProfile(result.data);
+		else profileLoadError = result.error;
+	}
+	async function saveProfileImage(fileId: string | null) {
+		if (!profileActive || !profile) return;
+		const sourceEpoch = profileEpoch;
 		try {
-			profile = await authAPI.getFullProfile();
-
-			// Populate form with profile data
-			formData = {
-				title: profile.title || '',
-				nickname: profile.nickname || '',
-				email: profile.email || '',
-				phone: profile.phone || '',
-				emergency_contact: profile.emergencyContact || '',
-				line_id: profile.lineId || '',
-				date_of_birth: profile.dateOfBirth || '',
-				gender: profile.gender || 'male',
-				address: profile.address || '',
-				profile_image_file_id: profile.profileImageFileId || ''
-			};
-		} catch (error) {
-			profileLoadError = error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลได้';
-			toast.error(profileLoadError);
-			console.error('Failed to load profile:', error);
-		} finally {
+			const updated = await authAPI.updateProfile({ profileImageFileId: fileId });
+			if (sourceEpoch !== profileEpoch || !profileActive) return;
+			profileRequest.abort();
 			loading = false;
+			profile = updated;
+			formData.profile_image_file_id = updated.profileImageFileId ?? '';
+			const result = await authAPI.refreshCurrentUser({ silent: true });
+			if (sourceEpoch !== profileEpoch || !profileActive) return;
+			if (result === 'authenticated') toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว');
+			else if (result === 'unavailable')
+				toast.warning('บันทึกรูปแล้ว แต่ยังรีเฟรชรูปบนแถบเมนูไม่ได้');
+		} catch (error) {
+			if (sourceEpoch === profileEpoch && profileActive)
+				toast.error(error instanceof Error ? error.message : 'บันทึกรูปไม่สำเร็จ');
 		}
 	}
-
-	onMount(async () => {
-		await loadProfile();
-	});
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
@@ -101,6 +152,8 @@
 			return;
 		}
 
+		if (!profileActive || !profile) return;
+		const sourceEpoch = profileEpoch;
 		saving = true;
 
 		try {
@@ -119,14 +172,17 @@
 			});
 
 			// Update local profile state
+			if (sourceEpoch !== profileEpoch || !profileActive) return;
+			profileRequest.abort();
+			loading = false;
 			profile = updatedProfile;
 			toast.success('บันทึกข้อมูลสำเร็จ');
 		} catch (error) {
+			if (sourceEpoch !== profileEpoch || !profileActive) return;
 			const errorMessage = error instanceof Error ? error.message : 'ไม่สามารถบันทึกข้อมูลได้';
 			toast.error(errorMessage);
-			console.error('Failed to update profile:', error);
 		} finally {
-			saving = false;
+			if (sourceEpoch === profileEpoch && profileActive) saving = false;
 		}
 	}
 
@@ -175,285 +231,287 @@
 			{saving ? 'กำลังบันทึก...' : 'บันทึกการเปลี่ยนแปลง'}
 		</Button>
 	{/snippet}
-
-	{#if loading}
-		<PageSkeleton variant="form" rows={6} />
-	{:else if profileLoadError}
-		<PageState
-			variant="error"
-			title="โหลดโปรไฟล์ไม่สำเร็จ"
-			description={profileLoadError}
-			actionLabel="ลองอีกครั้ง"
-			onaction={loadProfile}
-		/>
-	{:else}
-		<form onsubmit={handleSubmit} class="space-y-6">
-			<!-- Profile Avatar -->
-			<Card>
-				<CardHeader>
-					<CardTitle>รูปโปรไฟล์</CardTitle>
-					<CardDescription>อัพโหลดรูปโปรไฟล์ของคุณ</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-6">
-					<div class="flex flex-col md:flex-row items-center md:items-start gap-8">
-						<!-- Image Upload Component (Shows Avatar + Edit Button) -->
-						<div class="flex-shrink-0">
-							<ProfileImageUpload
-								currentFileId={formData.profile_image_file_id}
-								resourceId={profile?.id}
-								onsuccess={async ({ fileId }: { fileId: string | null }) => {
-									formData.profile_image_file_id = fileId ?? '';
-									try {
-										await authAPI.updateProfile({ profileImageFileId: fileId });
-										const result = await authAPI.refreshCurrentUser({ silent: true });
-										if (result === 'authenticated') {
-											toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว');
-										} else if (result === 'unavailable') {
-											toast.warning('บันทึกรูปแล้ว แต่ยังรีเฟรชรูปบนแถบเมนูไม่ได้');
-										}
-									} catch (e) {
-										console.error(e);
-										toast.warning('อัปโหลดสำเร็จ แต่การบันทึกข้อมูลมีปัญหา');
-									}
-								}}
-								onerror={(err: string) => toast.error(err)}
-							/>
-						</div>
-
-						<!-- User Info -->
-						<div class="flex-1 space-y-2 text-center md:text-left py-4">
-							<div>
-								<h3 class="font-bold text-2xl text-foreground tracking-tight">
-									{readOnlyData.first_name}
-									{readOnlyData.last_name}
-								</h3>
-								<p class="text-muted-foreground font-medium">
-									{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}
-								</p>
+	<div data-testid="staff-own-profile" aria-busy={loading}>
+		{#if loading && !profile}
+			<div role="status" aria-label="กำลังโหลดโปรไฟล์">
+				<PageSkeleton variant="form" rows={6} />
+			</div>
+		{:else if profileLoadError && !profile}
+			<PageState
+				variant="error"
+				title="โหลดโปรไฟล์ไม่สำเร็จ"
+				description={profileLoadError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadProfile}
+			/>
+		{:else}
+			<form onsubmit={handleSubmit} class="space-y-6">
+				<!-- Profile Avatar -->
+				<Card>
+					<CardHeader>
+						<CardTitle>รูปโปรไฟล์</CardTitle>
+						<CardDescription>อัพโหลดรูปโปรไฟล์ของคุณ</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-6">
+						<div class="flex flex-col md:flex-row items-center md:items-start gap-8">
+							<!-- Image Upload Component (Shows Avatar + Edit Button) -->
+							<div class="flex-shrink-0">
+								<ProfileImageUpload
+									currentFileId={formData.profile_image_file_id}
+									resourceId={profile?.id}
+									onsuccess={({ fileId }: { fileId: string | null }) =>
+										void saveProfileImage(fileId)}
+									onerror={(err: string) => toast.error(err)}
+								/>
 							</div>
 
-							<div class="pt-4 text-sm text-muted-foreground">
-								<p>อัปโหลดรูปภาพของคุณเพื่อใช้เป็นรูปโปรไฟล์</p>
-								<p>รองรับไฟล์ JPG, PNG, WebP ขนาดไม่เกิน 5 MB</p>
+							<!-- User Info -->
+							<div class="flex-1 space-y-2 text-center md:text-left py-4">
+								<div>
+									<h3 class="font-bold text-2xl text-foreground tracking-tight">
+										{readOnlyData.first_name}
+										{readOnlyData.last_name}
+									</h3>
+									<p class="text-muted-foreground font-medium">
+										{readOnlyData.primary_role_name || 'ผู้ใช้งาน'}
+									</p>
+								</div>
+
+								<div class="pt-4 text-sm text-muted-foreground">
+									<p>อัปโหลดรูปภาพของคุณเพื่อใช้เป็นรูปโปรไฟล์</p>
+									<p>รองรับไฟล์ JPG, PNG, WebP ขนาดไม่เกิน 5 MB</p>
+								</div>
 							</div>
 						</div>
-					</div>
-				</CardContent>
-			</Card>
+					</CardContent>
+				</Card>
 
-			<!-- Read-Only Information -->
-			<Card>
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<Lock class="w-5 h-5" />
-						ข้อมูลระบบ (ไม่สามารถแก้ไขได้)
-					</CardTitle>
-					<CardDescription>ข้อมูลเหล่านี้ไม่สามารถแก้ไขได้ กรุณาติดต่อผู้ดูแลระบบ</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-4">
-					<div class="grid gap-4 md:grid-cols-2">
-						<!-- Username -->
-						<div class="space-y-2">
-							<Label>ชื่อผู้ใช้งาน (Username)</Label>
-							<Input value={readOnlyData.username || 'ไม่ระบุ'} disabled class="bg-muted" />
+				<!-- Read-Only Information -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<Lock class="w-5 h-5" />
+							ข้อมูลระบบ (ไม่สามารถแก้ไขได้)
+						</CardTitle>
+						<CardDescription>ข้อมูลเหล่านี้ไม่สามารถแก้ไขได้ กรุณาติดต่อผู้ดูแลระบบ</CardDescription
+						>
+					</CardHeader>
+					<CardContent class="space-y-4">
+						<div class="grid gap-4 md:grid-cols-2">
+							<!-- Username -->
+							<div class="space-y-2">
+								<Label>ชื่อผู้ใช้งาน (Username)</Label>
+								<Input value={readOnlyData.username || 'ไม่ระบุ'} disabled class="bg-muted" />
+							</div>
+
+							<!-- National ID -->
+							<div class="space-y-2">
+								<Label>เลขบัตรประชาชน</Label>
+								<Input value={readOnlyData.national_id || 'ไม่ระบุ'} disabled class="bg-muted" />
+							</div>
+
+							<!-- User ID -->
+							<div class="space-y-2">
+								<Label>User ID</Label>
+								<Input value={readOnlyData.id} disabled class="bg-muted font-mono text-xs" />
+							</div>
 						</div>
 
-						<!-- National ID -->
-						<div class="space-y-2">
-							<Label>เลขบัตรประชาชน</Label>
-							<Input value={readOnlyData.national_id || 'ไม่ระบุ'} disabled class="bg-muted" />
+						<div class="grid gap-4 md:grid-cols-2">
+							<!-- First Name -->
+							<div class="space-y-2">
+								<Label>ชื่อ</Label>
+								<Input value={readOnlyData.first_name} disabled class="bg-muted" />
+							</div>
+
+							<!-- Last Name -->
+							<div class="space-y-2">
+								<Label>นามสกุล</Label>
+								<Input value={readOnlyData.last_name} disabled class="bg-muted" />
+							</div>
 						</div>
 
-						<!-- User ID -->
-						<div class="space-y-2">
-							<Label>User ID</Label>
-							<Input value={readOnlyData.id} disabled class="bg-muted font-mono text-xs" />
-						</div>
-					</div>
+						<div class="grid gap-4 md:grid-cols-3">
+							<!-- User Type -->
+							<div class="space-y-2">
+								<Label>ประเภทผู้ใช้</Label>
+								<Input value={readOnlyData.user_type} disabled class="bg-muted capitalize" />
+							</div>
 
-					<div class="grid gap-4 md:grid-cols-2">
-						<!-- First Name -->
-						<div class="space-y-2">
-							<Label>ชื่อ</Label>
-							<Input value={readOnlyData.first_name} disabled class="bg-muted" />
-						</div>
+							<!-- Status -->
+							<div class="space-y-2">
+								<Label>สถานะ</Label>
+								<Input value={getStatusLabel(readOnlyData.status)} disabled class="bg-muted" />
+							</div>
 
-						<!-- Last Name -->
-						<div class="space-y-2">
-							<Label>นามสกุล</Label>
-							<Input value={readOnlyData.last_name} disabled class="bg-muted" />
-						</div>
-					</div>
-
-					<div class="grid gap-4 md:grid-cols-3">
-						<!-- User Type -->
-						<div class="space-y-2">
-							<Label>ประเภทผู้ใช้</Label>
-							<Input value={readOnlyData.user_type} disabled class="bg-muted capitalize" />
+							<!-- Created At -->
+							<div class="space-y-2">
+								<Label>วันที่สร้างบัญชี</Label>
+								<Input
+									value={readOnlyData.created_at
+										? new Date(readOnlyData.created_at).toLocaleDateString('th-TH')
+										: 'ไม่ระบุ'}
+									disabled
+									class="bg-muted"
+								/>
+							</div>
 						</div>
 
-						<!-- Status -->
+						<!-- Primary Role -->
 						<div class="space-y-2">
-							<Label>สถานะ</Label>
-							<Input value={getStatusLabel(readOnlyData.status)} disabled class="bg-muted" />
-						</div>
-
-						<!-- Created At -->
-						<div class="space-y-2">
-							<Label>วันที่สร้างบัญชี</Label>
+							<Label class="flex items-center gap-2">
+								<Shield class="w-4 h-4" />
+								บทบาทหลัก
+							</Label>
 							<Input
-								value={readOnlyData.created_at
-									? new Date(readOnlyData.created_at).toLocaleDateString('th-TH')
-									: 'ไม่ระบุ'}
+								value={readOnlyData.primary_role_name || 'ไม่ระบุ'}
 								disabled
 								class="bg-muted"
 							/>
+							<p class="text-xs text-muted-foreground">
+								ต้องการเปลี่ยนบทบาท กรุณาติดต่อผู้ดูแลระบบ
+							</p>
 						</div>
-					</div>
+					</CardContent>
+				</Card>
 
-					<!-- Primary Role -->
-					<div class="space-y-2">
-						<Label class="flex items-center gap-2">
-							<Shield class="w-4 h-4" />
-							บทบาทหลัก
-						</Label>
-						<Input value={readOnlyData.primary_role_name || 'ไม่ระบุ'} disabled class="bg-muted" />
-						<p class="text-xs text-muted-foreground">ต้องการเปลี่ยนบทบาท กรุณาติดต่อผู้ดูแลระบบ</p>
-					</div>
-				</CardContent>
-			</Card>
+				<!-- Editable Personal Information -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<User class="w-5 h-5" />
+							ข้อมูลส่วนตัว
+						</CardTitle>
+						<CardDescription>อัพเดทข้อมูลส่วนตัวของคุณ</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-4">
+						<!-- Title and Gender -->
+						<div class="grid grid-cols-2 gap-4">
+							<div class="space-y-2">
+								<Label for="title">คำนำหน้า</Label>
+								<Select.Root type="single" bind:value={formData.title}>
+									<Select.Trigger>{getTitleLabel(formData.title)}</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="">ไม่ระบุ</Select.Item>
+										<Select.Item value="นาย">นาย</Select.Item>
+										<Select.Item value="นาง">นาง</Select.Item>
+										<Select.Item value="นางสาว">นางสาว</Select.Item>
+										<Select.Item value="ดร.">ดร.</Select.Item>
+										<Select.Item value="ศ.">ศ.</Select.Item>
+										<Select.Item value="รศ.">รศ.</Select.Item>
+										<Select.Item value="ผศ.">ผศ.</Select.Item>
+										<Select.Item value="ศ.ดร.">ศ.ดร.</Select.Item>
+										<Select.Item value="รศ.ดร.">รศ.ดร.</Select.Item>
+										<Select.Item value="ผศ.ดร.">ผศ.ดร.</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
 
-			<!-- Editable Personal Information -->
-			<Card>
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<User class="w-5 h-5" />
-						ข้อมูลส่วนตัว
-					</CardTitle>
-					<CardDescription>อัพเดทข้อมูลส่วนตัวของคุณ</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-4">
-					<!-- Title and Gender -->
-					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2">
-							<Label for="title">คำนำหน้า</Label>
-							<Select.Root type="single" bind:value={formData.title}>
-								<Select.Trigger>{getTitleLabel(formData.title)}</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="">ไม่ระบุ</Select.Item>
-									<Select.Item value="นาย">นาย</Select.Item>
-									<Select.Item value="นาง">นาง</Select.Item>
-									<Select.Item value="นางสาว">นางสาว</Select.Item>
-									<Select.Item value="ดร.">ดร.</Select.Item>
-									<Select.Item value="ศ.">ศ.</Select.Item>
-									<Select.Item value="รศ.">รศ.</Select.Item>
-									<Select.Item value="ผศ.">ผศ.</Select.Item>
-									<Select.Item value="ศ.ดร.">ศ.ดร.</Select.Item>
-									<Select.Item value="รศ.ดร.">รศ.ดร.</Select.Item>
-									<Select.Item value="ผศ.ดร.">ผศ.ดร.</Select.Item>
-								</Select.Content>
-							</Select.Root>
+							<div class="space-y-2">
+								<Label for="gender">เพศ</Label>
+								<Select.Root type="single" bind:value={formData.gender}>
+									<Select.Trigger>{getGenderLabel(formData.gender)}</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="male">ชาย</Select.Item>
+										<Select.Item value="female">หญิง</Select.Item>
+										<Select.Item value="other">อื่นๆ</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
 						</div>
 
+						<!-- Nickname -->
 						<div class="space-y-2">
-							<Label for="gender">เพศ</Label>
-							<Select.Root type="single" bind:value={formData.gender}>
-								<Select.Trigger>{getGenderLabel(formData.gender)}</Select.Trigger>
-								<Select.Content>
-									<Select.Item value="male">ชาย</Select.Item>
-									<Select.Item value="female">หญิง</Select.Item>
-									<Select.Item value="other">อื่นๆ</Select.Item>
-								</Select.Content>
-							</Select.Root>
+							<Label for="nickname">ชื่อเล่น</Label>
+							<Input id="nickname" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
 						</div>
-					</div>
 
-					<!-- Nickname -->
-					<div class="space-y-2">
-						<Label for="nickname">ชื่อเล่น</Label>
-						<Input id="nickname" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
-					</div>
-
-					<!-- Date of Birth -->
-					<div class="space-y-2">
-						<Label for="dateOfBirth">
-							<Calendar class="w-4 h-4 inline mr-1" />
-							วันเกิด
-						</Label>
-						<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
-					</div>
-				</CardContent>
-			</Card>
-
-			<!-- Contact Information -->
-			<Card>
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<Phone class="w-5 h-5" />
-						ข้อมูลการติดต่อ
-					</CardTitle>
-					<CardDescription>ข้อมูลสำหรับการติดต่อ</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-4">
-					<!-- Email -->
-					<div class="space-y-2">
-						<Label for="email">
-							<Mail class="w-4 h-4 inline mr-1" />
-							อีเมล
-						</Label>
-						<Input
-							id="email"
-							type="email"
-							bind:value={formData.email}
-							placeholder="example@school.ac.th"
-						/>
-					</div>
-
-					<!-- Phone Numbers -->
-					<div class="grid grid-cols-2 gap-4">
+						<!-- Date of Birth -->
 						<div class="space-y-2">
-							<Label for="phone">
-								<Phone class="w-4 h-4 inline mr-1" />
-								หมายเลขโทรศัพท์
+							<Label for="dateOfBirth">
+								<Calendar class="w-4 h-4 inline mr-1" />
+								วันเกิด
 							</Label>
-							<Input id="phone" type="tel" bind:value={formData.phone} placeholder="081-234-5678" />
+							<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
 						</div>
+					</CardContent>
+				</Card>
 
+				<!-- Contact Information -->
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<Phone class="w-5 h-5" />
+							ข้อมูลการติดต่อ
+						</CardTitle>
+						<CardDescription>ข้อมูลสำหรับการติดต่อ</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-4">
+						<!-- Email -->
 						<div class="space-y-2">
-							<Label for="emergencyContact">
-								<Phone class="w-4 h-4 inline mr-1" />
-								เบอร์ติดต่อฉุกเฉิน
+							<Label for="email">
+								<Mail class="w-4 h-4 inline mr-1" />
+								อีเมล
 							</Label>
 							<Input
-								id="emergencyContact"
-								type="tel"
-								bind:value={formData.emergency_contact}
-								placeholder="081-234-5678"
+								id="email"
+								type="email"
+								bind:value={formData.email}
+								placeholder="example@school.ac.th"
 							/>
 						</div>
-					</div>
 
-					<!-- Line ID -->
-					<div class="space-y-2">
-						<Label for="lineId">Line ID</Label>
-						<Input id="lineId" bind:value={formData.line_id} placeholder="@lineid" />
-					</div>
+						<!-- Phone Numbers -->
+						<div class="grid grid-cols-2 gap-4">
+							<div class="space-y-2">
+								<Label for="phone">
+									<Phone class="w-4 h-4 inline mr-1" />
+									หมายเลขโทรศัพท์
+								</Label>
+								<Input
+									id="phone"
+									type="tel"
+									bind:value={formData.phone}
+									placeholder="081-234-5678"
+								/>
+							</div>
 
-					<!-- Address -->
-					<div class="space-y-2">
-						<Label for="address">
-							<MapPin class="w-4 h-4 inline mr-1" />
-							ที่อยู่
-						</Label>
-						<Textarea
-							id="address"
-							bind:value={formData.address}
-							placeholder="ที่อยู่ปัจจุบัน"
-							rows={3}
-						/>
-					</div>
-				</CardContent>
-			</Card>
-		</form>
-	{/if}
+							<div class="space-y-2">
+								<Label for="emergencyContact">
+									<Phone class="w-4 h-4 inline mr-1" />
+									เบอร์ติดต่อฉุกเฉิน
+								</Label>
+								<Input
+									id="emergencyContact"
+									type="tel"
+									bind:value={formData.emergency_contact}
+									placeholder="081-234-5678"
+								/>
+							</div>
+						</div>
+
+						<!-- Line ID -->
+						<div class="space-y-2">
+							<Label for="lineId">Line ID</Label>
+							<Input id="lineId" bind:value={formData.line_id} placeholder="@lineid" />
+						</div>
+
+						<!-- Address -->
+						<div class="space-y-2">
+							<Label for="address">
+								<MapPin class="w-4 h-4 inline mr-1" />
+								ที่อยู่
+							</Label>
+							<Textarea
+								id="address"
+								bind:value={formData.address}
+								placeholder="ที่อยู่ปัจจุบัน"
+								rows={3}
+							/>
+						</div>
+					</CardContent>
+				</Card>
+			</form>
+		{/if}
+	</div>
 </PageShell>

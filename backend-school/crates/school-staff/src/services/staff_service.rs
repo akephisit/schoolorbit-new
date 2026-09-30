@@ -1130,8 +1130,7 @@ pub async fn get_public_staff_profile(
     )
     .bind(staff_id)
     .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    .await?;
 
     #[derive(sqlx::FromRow)]
     struct PublicOrganizationUnitRow {
@@ -1150,8 +1149,7 @@ pub async fn get_public_staff_profile(
     )
     .bind(staff_id)
     .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    .await?;
 
     Ok(PublicStaffProfile {
         id: user_rec.id,
