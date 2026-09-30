@@ -19,7 +19,7 @@ test('organization permission dialog preserves position-scoped grants', async ()
 	assert.match(source, /permissionPositionColumns/);
 	assert.match(source, /selectedGrantKeys/);
 	assert.match(source, /grantKey\(/);
-	assert.match(source, /position_code:\s*parseGrantKey/);
+	assert.match(source, /Array\.from\(selectedGrantKeys\)\.map\(\(key\) => parseGrantKey\(key\)\)/);
 	assert.doesNotMatch(source, /if\s*\(\s*!grant\.position_code\s*\)\s*selectedPermissionIds\.add/);
 	assert.doesNotMatch(source, /Array\.from\(selectedPermissionIds\)/);
 
@@ -103,7 +103,10 @@ test('organization member picker is a searchable combobox with browsable initial
 	assert.match(source, /<Command\.Root shouldFilter=\{false\}>/);
 	assert.match(source, /<Command\.Input[^>]+bind:value=\{staffSearch\}/);
 	assert.match(source, /loadStaffOptions\(''\)/);
-	assert.match(source, /listStaff\(\{ search: query \|\| undefined, page_size: 50 \}\)/);
+	assert.match(
+		source,
+		/listStaff\(\s*\{ search: query \|\| undefined, page_size: 50 \},\s*\{ signal: ticket\.signal \}/
+	);
 	assert.doesNotMatch(source, /if\s*\(\s*staffSearch\.length < 2\s*\)/);
 });
 
@@ -118,8 +121,8 @@ test('organization delegation tab follows backend school-wide authorization poli
 		/\$can\.hasAny\(\s*PERMISSIONS\.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,\s*PERMISSIONS\.ROLES_ASSIGN_ALL,\s*PERMISSIONS\.ROLES_UPDATE_ALL\s*\)/
 	);
 	assert.match(source, /if\s*\(\s*canManageDelegations\s*\)/);
-	assert.match(source, /if\s*\(\s*!loading\s*&&\s*canManageDelegations\s*&&\s*currentDeptId\s*\)/);
-	assert.match(source, /loadDelegations\(currentDeptId\)/);
+	assert.match(source, /if \(tab === 'delegations' && allowed && id\)/);
+	assert.match(source, /void loadDelegations\(\)/);
 });
 
 test('organization overview uses focused navigation with selected-unit details', async () => {
@@ -155,12 +158,14 @@ test('organization detail reloads when the route id changes without remounting',
 	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
 
 	assert.doesNotMatch(source, /import\s+\{\s*onMount\s*\}\s+from\s+['"]svelte['"]/);
-	assert.match(source, /\$effect\(\(\)\s*=>\s*\{\s*const currentDeptId = deptId;/);
-	assert.match(source, /loadData\(currentDeptId\)/);
-	assert.match(source, /async function loadData\(currentDeptId: string\)/);
-	assert.match(source, /if\s*\(\s*currentDeptId !== deptId\s*\)\s*return/);
-	assert.match(source, /listOrganizationMembers\(currentDeptId\)/);
-	assert.match(source, /parent_unit_id === currentDeptId/);
+	assert.match(source, /const source = unitSource/);
+	assert.match(source, /unitRequest\.begin\(\)/);
+	assert.match(source, /membersRequest\.begin\(\)/);
+	assert.match(source, /ownerEpoch\+\+/);
+	assert.match(source, /unit\.parent_unit_id === deptId/);
+	const loader = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.ts');
+	assert.match(loader, /const unitId = params\.id/);
+	assert.match(loader, /listOrganizationMembers\(\s*unitId/);
 });
 
 test('organization member and delegation dialogs use shadcn-svelte primitives', async () => {

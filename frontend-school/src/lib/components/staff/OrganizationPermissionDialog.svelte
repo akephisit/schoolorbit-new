@@ -16,6 +16,13 @@
 	} from '$lib/api/staff';
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle, Shield, Layers, UsersRound } from '@lucide/svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { can } from '$lib/stores/permissions';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { requireApiData } from '$lib/api/client';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	type PermissionPositionValue =
@@ -51,19 +58,26 @@
 
 	let permissionModules = $state<PermissionsByModule>({});
 	let selectedGrantKeys = new SvelteSet<string>();
-	let loading = $state(false);
+	let catalogLoading = $state(false),
+		grantsLoading = $state(false),
+		catalogLoaded = $state(false),
+		grantsLoaded = $state(false),
+		catalogError = $state(''),
+		grantsError = $state('');
+	const loading = $derived(catalogLoading || grantsLoading);
+	const catalogRequest = new LatestRequest(),
+		grantsRequest = new LatestRequest();
+	const canReadCatalog = $derived($can.has(PERMISSIONS.SETTINGS_READ_ALL));
+	const canReadGrants = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canSave = $derived(!readOnly && $can.has(PERMISSIONS.ROLES_UPDATE_ALL));
+	let disposed = false,
+		ownerEpoch = 0;
 	let saving = $state(false);
 
 	let moduleKeys = $derived(Object.keys(permissionModules).sort());
 	let totalPermissionCount = $derived(
 		Object.values(permissionModules).reduce((total, permissions) => total + permissions.length, 0)
 	);
-
-	$effect(() => {
-		if (open && organizationUnit) {
-			loadData();
-		}
-	});
 
 	function grantKey(permissionId: string, position: PermissionPositionValue | null | undefined) {
 		return `${permissionId}::${position ?? 'all'}`;
@@ -145,57 +159,110 @@
 		}
 	}
 
-	async function loadData() {
-		if (!organizationUnit) return;
-
-		try {
-			loading = true;
-			const [permResp, currentAccess] = await Promise.all([
-				permissionAPI.listPermissionsByModule(),
-				getOrganizationPermissions(organizationUnit.id)
-			]);
-
-			if (permResp.success && permResp.data) {
-				permissionModules = permResp.data;
-			}
-
+	async function loadCatalog() {
+		if (!open || !canReadCatalog) return;
+		const ticket = catalogRequest.begin();
+		catalogLoading = true;
+		catalogError = '';
+		const result = await captureRouteLoad(
+			permissionAPI
+				.listPermissionsByModule({ signal: ticket.signal })
+				.then((reply) => requireApiData(reply, 'โหลดรายการสิทธิ์ไม่สำเร็จ')),
+			'โหลดรายการสิทธิ์ไม่สำเร็จ'
+		);
+		if (!catalogRequest.isCurrent(ticket.revision)) return;
+		catalogLoading = false;
+		if (result.ok) {
+			permissionModules = result.data;
+			catalogLoaded = true;
+		} else catalogError = result.error;
+	}
+	async function loadGrants() {
+		if (!open || !organizationUnit || !canReadGrants) return;
+		const ticket = grantsRequest.begin();
+		grantsLoading = true;
+		grantsError = '';
+		const result = await captureRouteLoad(
+			getOrganizationPermissions(organizationUnit.id, { signal: ticket.signal }),
+			'โหลดสิทธิ์หน่วยงานไม่สำเร็จ'
+		);
+		if (!grantsRequest.isCurrent(ticket.revision)) return;
+		grantsLoading = false;
+		if (result.ok) {
 			selectedGrantKeys.clear();
-			for (const grant of currentAccess) {
+			for (const grant of result.data)
 				selectedGrantKeys.add(
 					grantKey(grant.permission_id, normalizePositionCode(grant.position_code))
 				);
-			}
-		} catch (error) {
-			toast.error('โหลดข้อมูลสิทธิ์ไม่สำเร็จ');
-			console.error(error);
-		} finally {
-			loading = false;
-		}
+			grantsLoaded = true;
+		} else grantsError = result.error;
 	}
-
 	async function handleSave() {
-		if (readOnly) return;
-		if (!organizationUnit) return;
-
+		if (
+			!open ||
+			!organizationUnit ||
+			!canSave ||
+			saving ||
+			!grantsLoaded ||
+			!catalogLoaded ||
+			loading ||
+			grantsError ||
+			catalogError
+		)
+			return;
+		const owner = organizationUnit.id,
+			epoch = ownerEpoch;
+		const current = () => !disposed && epoch === ownerEpoch && organizationUnit?.id === owner;
+		grantsRequest.abort();
+		saving = true;
 		try {
-			saving = true;
-			await updateOrganizationPermissions(
-				organizationUnit.id,
-				Array.from(selectedGrantKeys).map((key) => ({
-					permission_id: parseGrantKey(key).permission_id,
-					position_code: parseGrantKey(key).position_code
-				}))
+			const res = await updateOrganizationPermissions(
+				owner,
+				Array.from(selectedGrantKeys).map((key) => parseGrantKey(key))
 			);
+			if (!current()) return;
+			if (!res.success) throw new Error(res.error ?? 'บันทึกสิทธิ์ไม่สำเร็จ');
 			toast.success('บันทึกสิทธิ์การเข้าใช้งานสำเร็จ');
 			open = false;
 			onSuccess?.();
 		} catch (error) {
-			toast.error('บันทึกไม่สำเร็จ');
-			console.error(error);
+			if (current()) toast.error(error instanceof Error ? error.message : 'บันทึกสิทธิ์ไม่สำเร็จ');
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
+	$effect.pre(() => {
+		const id = organizationUnit?.id,
+			visible = open,
+			readGrants = canReadGrants,
+			readCatalog = canReadCatalog;
+		untrack(() => {
+			ownerEpoch++;
+			saving = false;
+			permissionModules = {};
+			selectedGrantKeys.clear();
+			catalogLoaded = false;
+			grantsLoaded = false;
+			catalogLoading = false;
+			grantsLoading = false;
+			catalogError = '';
+			grantsError = '';
+			if (visible && id) {
+				if (readGrants) void loadGrants();
+				if (readCatalog) void loadCatalog();
+			}
+		});
+		return () => {
+			catalogRequest.abort();
+			grantsRequest.abort();
+		};
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		catalogRequest.abort();
+		grantsRequest.abort();
+	});
 </script>
 
 <Dialog.Root bind:open>
@@ -215,26 +282,63 @@
 				<div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
 					<div class="rounded-md border bg-muted/30 px-3 py-2">
 						<p class="text-xs text-muted-foreground">สิทธิ์ทั้งหมด</p>
-						<p class="font-semibold">{totalPermissionCount}</p>
+						<p class="font-semibold">{catalogLoaded ? totalPermissionCount : '—'}</p>
 					</div>
 					<div class="rounded-md border bg-muted/30 px-3 py-2">
 						<p class="text-xs text-muted-foreground">รายการที่เลือก</p>
-						<p class="font-semibold">{selectedGrantKeys.size}</p>
+						<p class="font-semibold">{grantsLoaded ? selectedGrantKeys.size : '—'}</p>
 					</div>
 					<div class="rounded-md border bg-muted/30 px-3 py-2">
 						<p class="text-xs text-muted-foreground">ทุกตำแหน่ง</p>
-						<p class="font-semibold">{positionGrantCount('all')}</p>
+						<p class="font-semibold">{grantsLoaded ? positionGrantCount('all') : '—'}</p>
 					</div>
 					<div class="rounded-md border bg-muted/30 px-3 py-2">
 						<p class="text-xs text-muted-foreground">เฉพาะตำแหน่ง</p>
-						<p class="font-semibold">{selectedGrantKeys.size - positionGrantCount('all')}</p>
+						<p class="font-semibold">
+							{grantsLoaded ? selectedGrantKeys.size - positionGrantCount('all') : '—'}
+						</p>
 					</div>
 				</div>
 			</div>
 		</Dialog.Header>
 
 		<div class="flex-1 overflow-y-auto px-6 py-5">
-			{#if loading}
+			<section data-testid="organization-grants" aria-busy={grantsLoading}>
+				{#if !canReadGrants}<PageState variant="permission" title="ไม่มีสิทธิ์อ่านสิทธิ์หน่วยงาน" />
+				{:else if grantsLoading && !grantsLoaded}<div
+						role="status"
+						aria-label="กำลังโหลดสิทธิ์หน่วยงาน"
+					>
+						<PageSkeleton variant="cards" rows={1} />
+					</div>
+				{:else if grantsLoaded}<p>สิทธิ์ที่บันทึกไว้ {selectedGrantKeys.size} รายการ</p>{/if}
+				{#if grantsError}<PageState
+						variant="error"
+						title="โหลดสิทธิ์หน่วยงานไม่สำเร็จ"
+						description={grantsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={loadGrants}
+					/>{/if}
+			</section>
+			<section data-testid="organization-permission-catalog" aria-busy={catalogLoading}>
+				{#if !canReadCatalog}<PageState
+						variant="permission"
+						title="ไม่มีสิทธิ์อ่านรายการสิทธิ์"
+					/>{/if}
+				{#if catalogError}<PageState
+						variant="error"
+						title="โหลดรายการสิทธิ์ไม่สำเร็จ"
+						description={catalogError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={loadCatalog}
+					/>{/if}
+				{#if catalogLoading && !catalogLoaded}<div role="status" aria-label="กำลังโหลดรายการสิทธิ์">
+						<PageSkeleton variant="cards" rows={1} />
+					</div>{/if}
+			</section>
+			{#if !canReadCatalog || !canReadGrants || catalogError || grantsError}
+				<p class="text-sm text-muted-foreground">ยังไม่สามารถแก้ไขสิทธิ์ได้</p>
+			{:else if loading}
 				<div class="flex items-center justify-center py-20">
 					<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
 				</div>
@@ -284,7 +388,7 @@
 															indeterminate={isModulePositionIndeterminate(module, column.value)}
 															onCheckedChange={(checked) =>
 																toggleModulePosition(module, column.value, !!checked)}
-															disabled={readOnly}
+															disabled={!canSave || !grantsLoaded || loading}
 														/>
 													</div>
 												</th>
@@ -332,7 +436,7 @@
 																checked={hasGrant(permission.id, column.value)}
 																onCheckedChange={(checked) =>
 																	toggleGrant(permission.id, column.value, !!checked)}
-																disabled={readOnly}
+																disabled={!canSave || !grantsLoaded || loading}
 															/>
 														</div>
 													</td>
@@ -358,8 +462,16 @@
 					<Button variant="outline" onclick={() => (open = false)}>
 						{readOnly ? 'ปิด' : 'ยกเลิก'}
 					</Button>
-					{#if !readOnly}
-						<Button onclick={handleSave} disabled={saving}>
+					{#if canSave}
+						<Button
+							onclick={handleSave}
+							disabled={saving ||
+								loading ||
+								!grantsLoaded ||
+								!catalogLoaded ||
+								!!grantsError ||
+								!!catalogError}
+						>
 							{#if saving}
 								<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
 							{/if}

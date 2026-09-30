@@ -166,8 +166,14 @@ export async function getOrganizationUnitLookup(
 	return apiClient.get<OrganizationUnitLookupItem>(`/api/lookup/organization-units/${id}`);
 }
 
-export async function getOrganizationUnit(unitId: string): Promise<ApiResponse<OrganizationUnit>> {
-	return apiClient.get<OrganizationUnit>(`/api/organization/units/${unitId}`);
+export async function getOrganizationUnit(
+	unitId: string,
+	options: ApiRequestOptions = {}
+): Promise<ApiResponse<OrganizationUnit>> {
+	return apiClient.get<OrganizationUnit>(
+		`/api/organization/units/${encodeURIComponent(unitId)}`,
+		options
+	);
 }
 
 export type CreateOrganizationUnitRequest = Schemas['CreateOrganizationUnitRequest'];
@@ -200,10 +206,12 @@ export type OrganizationPermissionGrant = Schemas['OrganizationPermissionGrant']
 type OrganizationPermissionGrantInput = Schemas['OrganizationPermissionGrantInput'];
 
 export async function getOrganizationPermissions(
-	unitId: string
+	unitId: string,
+	options: ApiRequestOptions = {}
 ): Promise<OrganizationPermissionGrant[]> {
 	const response = await apiClient.get<OrganizationPermissionGrant[]>(
-		`/api/organization/units/${unitId}/permissions`
+		`/api/organization/units/${encodeURIComponent(unitId)}/permissions`,
+		options
 	);
 	return requireApiData(response, 'Failed to fetch organization permissions');
 }
@@ -226,18 +234,22 @@ export type CreateDelegationBody = Schemas['CreateDelegationRequest'];
 export type DelegatablePermission = Schemas['DelegatablePermission'];
 
 export async function listDelegatablePermissions(
-	organizationUnitId: string
+	organizationUnitId: string,
+	options: ApiRequestOptions = {}
 ): Promise<ApiResponse<DelegatablePermission[]>> {
 	return apiClient.get<DelegatablePermission[]>(
-		`/api/organization/units/${organizationUnitId}/delegatable-permissions`
+		`/api/organization/units/${encodeURIComponent(organizationUnitId)}/delegatable-permissions`,
+		options
 	);
 }
 
 export async function listDelegations(
-	organizationUnitId: string
+	organizationUnitId: string,
+	options: ApiRequestOptions = {}
 ): Promise<ApiResponse<DelegationItem[]>> {
 	return apiClient.get<DelegationItem[]>(
-		`/api/organization/units/${organizationUnitId}/delegations`
+		`/api/organization/units/${encodeURIComponent(organizationUnitId)}/delegations`,
+		options
 	);
 }
 
@@ -265,11 +277,13 @@ export type UpdateMemberBody = Schemas['UpdateMemberRequest'];
 
 export async function listOrganizationMembers(
 	unitId: string,
-	options?: Schemas['ListMembersQuery']
+	options?: Schemas['ListMembersQuery'],
+	requestOptions: ApiRequestOptions = {}
 ): Promise<ApiResponse<OrganizationMemberItem[]>> {
 	const params = options?.include_children ? '?include_children=true' : '';
 	return apiClient.get<OrganizationMemberItem[]>(
-		`/api/organization/units/${unitId}/members${params}`
+		`/api/organization/units/${encodeURIComponent(unitId)}/members${params}`,
+		requestOptions
 	);
 }
 

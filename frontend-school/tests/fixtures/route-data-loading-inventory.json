@@ -814,23 +814,22 @@
 		{
 			"route": "staff/organization",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include listOrganizationMembers, listOrganizationUnits; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct event-fetch route ownership; catalog resolves initial selection before shared member read."
 		},
 		{
 			"route": "staff/organization/[id]",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
-			"context": "organization-unit-id",
-			"status": "planned",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "unit-id",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include getOrganizationUnit, listOrganizationUnits, listDelegations, listDelegatablePermissions, listOrganizationMembers; classify default and optional regions during migration."
+			"notes": "Independent unit, structure and shared member regions; delegation tab, grants dialog, labels and staff picker stay interaction-lazy. Focused retry and mutation reconciliation, ID/disposal/draft supersession."
 		},
 		{
 			"route": "staff/profile",

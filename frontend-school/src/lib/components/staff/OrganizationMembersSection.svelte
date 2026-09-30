@@ -1,6 +1,5 @@
 <script lang="ts">
 	import {
-		listOrganizationMembers,
 		addOrganizationMember,
 		updateOrganizationMember,
 		removeOrganizationMember,
@@ -9,6 +8,9 @@
 		type StaffListItem,
 		type OrganizationUnit
 	} from '$lib/api/staff';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
@@ -35,7 +37,12 @@
 		organizationUnitId: string;
 		childUnits?: OrganizationUnit[];
 		canAssignMembers?: boolean;
-		onChanged?: () => void;
+		members: OrganizationMemberItem[];
+		loadingMembers: boolean;
+		membersLoaded: boolean;
+		membersError: string;
+		onRefresh: () => void;
+		onChanged?: () => Promise<void>;
 	}
 
 	type PositionCode =
@@ -57,21 +64,38 @@
 		organizationUnitId,
 		childUnits = [],
 		canAssignMembers = undefined,
-		onChanged
+		onChanged,
+		members,
+		loadingMembers,
+		membersLoaded,
+		membersError,
+		onRefresh
 	}: Props = $props();
 
 	const includeChildren = $derived(childUnits.length > 0);
 	const canManageMembers = $derived(canAssignMembers ?? $can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
 
-	let members: OrganizationMemberItem[] = $state([]);
-	let loadingMembers = $state(false);
+	let mutationError = $state('');
+	const canReadPicker = $derived(
+		$can.hasAny(
+			PERMISSIONS.STAFF_PROFILE_READ_OWN,
+			PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE,
+			PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
+		)
+	);
+	const pickerRequest = new LatestRequest();
+	let disposed = false,
+		ownerEpoch = 0,
+		activeOwner = '',
+		draftEpoch = 0;
 
 	let showAddDialog = $state(false);
 	let staffPickerOpen = $state(false);
 	let staffSearch = $state('');
 	let selectedStaffLabel = $state('');
 	let staffResults: StaffListItem[] = $state([]);
-	let staffOptionsLoaded = $state(false);
+
 	let searchLoading = $state(false);
 	let staffSearchError = $state('');
 	let staffSearchRequestId = 0;
@@ -92,6 +116,7 @@
 		new_organization_unit_id: ''
 	});
 	let editSubmitting = $state(false);
+	let removingMemberId = $state('');
 
 	const positionOptions: PositionOption[] = [
 		{ value: 'director', label: 'ผู้อำนวยการ', group: 'leadership' },
@@ -154,70 +179,73 @@
 		...childUnits.map((unit) => ({ id: unit.id, name: unit.name }))
 	]);
 
-	async function loadMembers() {
-		if (!organizationUnitId) return;
-		loadingMembers = true;
-		const res = await listOrganizationMembers(organizationUnitId, {
-			include_children: includeChildren
-		});
-		if (res.success && res.data) members = res.data;
-		loadingMembers = false;
-	}
-
 	async function loadStaffOptions(query: string) {
+		if (!showAddDialog || !canManageMembers || !canReadPicker) return;
 		query = query.trim();
+		const ticket = pickerRequest.begin();
 		const requestId = ++staffSearchRequestId;
 		searchLoading = true;
 		staffSearchError = '';
 
 		try {
-			const res = await listStaff({ search: query || undefined, page_size: 50 });
-			if (requestId !== staffSearchRequestId) return;
+			const res = await listStaff(
+				{ search: query || undefined, page_size: 50 },
+				{ signal: ticket.signal }
+			);
+			if (requestId !== staffSearchRequestId || !pickerRequest.isCurrent(ticket.revision)) return;
 
 			const activeMemberIds = new Set(members.map((member) => member.user_id));
 			staffResults = (res.data ?? []).filter(
 				(staff) => !activeMemberIds.has(staff.id) || staff.id === addForm.user_id
 			);
-			if (!query) staffOptionsLoaded = true;
 		} catch (error) {
-			if (requestId !== staffSearchRequestId) return;
+			if (requestId !== staffSearchRequestId || !pickerRequest.isCurrent(ticket.revision)) return;
 			console.error('Failed to load staff options:', error);
-			staffResults = [];
 			staffSearchError = 'โหลดรายชื่อบุคลากรไม่สำเร็จ';
 		} finally {
-			if (requestId === staffSearchRequestId) {
+			if (requestId === staffSearchRequestId && pickerRequest.isCurrent(ticket.revision)) {
 				searchLoading = false;
 			}
 		}
 	}
 
 	async function handleAdd() {
-		if (!addForm.user_id || !addForm.position_code) return;
-		addSubmitting = true;
-		addError = '';
+		if (
+			!canManageMembers ||
+			!showAddDialog ||
+			!addForm.user_id ||
+			addSubmitting ||
+			editSubmitting ||
+			removingMemberId
+		)
+			return;
+		const epoch = ownerEpoch,
+			draft = draftEpoch;
+		const current = () => !disposed && epoch === ownerEpoch;
 		const targetUnit =
 			includeChildren && addForm.target_unit_id ? addForm.target_unit_id : organizationUnitId;
-		const res = await addOrganizationMember(targetUnit, {
-			user_id: addForm.user_id,
-			position_code: addForm.position_code,
-			is_primary: addForm.is_primary
-		});
-		if (res.success) {
-			showAddDialog = false;
-			addForm = { user_id: '', position_code: 'member', is_primary: false, target_unit_id: '' };
-			staffSearch = '';
-			selectedStaffLabel = '';
-			staffResults = [];
-			staffOptionsLoaded = false;
-			await loadMembers();
-			onChanged?.();
-		} else {
-			addError = res.error ?? 'เกิดข้อผิดพลาด';
+		addSubmitting = true;
+		addError = '';
+		try {
+			const res = await addOrganizationMember(targetUnit, {
+				user_id: addForm.user_id,
+				position_code: addForm.position_code,
+				is_primary: addForm.is_primary
+			});
+			if (!current()) return;
+			if (!res.success) throw new Error(res.error ?? 'เพิ่มสมาชิกไม่สำเร็จ');
+			if (draft === draftEpoch) showAddDialog = false;
+			await onChanged?.();
+		} catch (error) {
+			if (current() && draft === draftEpoch)
+				addError = error instanceof Error ? error.message : 'เพิ่มสมาชิกไม่สำเร็จ';
+		} finally {
+			if (current()) addSubmitting = false;
 		}
-		addSubmitting = false;
 	}
 
 	function openEdit(member: OrganizationMemberItem) {
+		if (!canManageMembers || editSubmitting || addSubmitting || removingMemberId) return;
 		editingMember = member;
 		editForm = {
 			position_code: member.position_code as PositionCode,
@@ -228,45 +256,65 @@
 	}
 
 	async function handleEdit() {
-		if (!editingMember) return;
-		editSubmitting = true;
-		const body: {
-			position_code: string;
-			is_primary: boolean;
-			new_organization_unit_id?: string;
-		} = {
-			position_code: editForm.position_code,
-			is_primary: editForm.is_primary
-		};
 		if (
-			includeChildren &&
-			editForm.new_organization_unit_id !== editingMember.organization_unit_id
-		) {
-			body.new_organization_unit_id = editForm.new_organization_unit_id;
+			!editingMember ||
+			!canManageMembers ||
+			!showEditDialog ||
+			editSubmitting ||
+			addSubmitting ||
+			removingMemberId
+		)
+			return;
+		const member = editingMember,
+			epoch = ownerEpoch,
+			draft = draftEpoch;
+		const current = () => !disposed && epoch === ownerEpoch;
+		const body = {
+			position_code: editForm.position_code,
+			is_primary: editForm.is_primary,
+			new_organization_unit_id:
+				includeChildren && editForm.new_organization_unit_id !== member.organization_unit_id
+					? editForm.new_organization_unit_id
+					: undefined
+		};
+		editSubmitting = true;
+		mutationError = '';
+		try {
+			const res = await updateOrganizationMember(member.organization_unit_id, member.user_id, body);
+			if (!current()) return;
+			if (!res.success) throw new Error(res.error ?? 'แก้ไขสมาชิกไม่สำเร็จ');
+			if (draft === draftEpoch) {
+				showEditDialog = false;
+				editingMember = null;
+			}
+			await onChanged?.();
+		} catch (error) {
+			if (current() && draft === draftEpoch)
+				mutationError = error instanceof Error ? error.message : 'แก้ไขสมาชิกไม่สำเร็จ';
+		} finally {
+			if (current()) editSubmitting = false;
 		}
-		const res = await updateOrganizationMember(
-			editingMember.organization_unit_id,
-			editingMember.user_id,
-			body
-		);
-		if (res.success) {
-			showEditDialog = false;
-			editingMember = null;
-			await loadMembers();
-			onChanged?.();
-		}
-		editSubmitting = false;
 	}
-
 	async function handleRemove(member: OrganizationMemberItem) {
-		const res = await removeOrganizationMember(member.organization_unit_id, member.user_id);
-		if (res.success) {
-			await loadMembers();
-			onChanged?.();
+		if (!canManageMembers || editSubmitting || addSubmitting || removingMemberId) return;
+		const epoch = ownerEpoch;
+		const current = () => !disposed && epoch === ownerEpoch;
+		removingMemberId = member.user_id;
+		mutationError = '';
+		try {
+			const res = await removeOrganizationMember(member.organization_unit_id, member.user_id);
+			if (!current()) return;
+			if (!res.success) throw new Error(res.error ?? 'ลบสมาชิกไม่สำเร็จ');
+			await onChanged?.();
+		} catch (error) {
+			if (current()) mutationError = error instanceof Error ? error.message : 'ลบสมาชิกไม่สำเร็จ';
+		} finally {
+			if (current()) removingMemberId = '';
 		}
 	}
 
 	function openAddDialog() {
+		if (!canManageMembers || editSubmitting || addSubmitting || removingMemberId) return;
 		addForm = {
 			user_id: '',
 			position_code: 'member',
@@ -278,7 +326,7 @@
 		selectedStaffLabel = '';
 		staffResults = [];
 		staffSearchError = '';
-		staffOptionsLoaded = false;
+
 		showAddDialog = true;
 		void loadStaffOptions('');
 	}
@@ -322,21 +370,58 @@
 		addForm.user_id = '';
 		selectedStaffLabel = '';
 		clearTimeout(debounceTimer);
+		pickerRequest.abort();
+		staffSearchRequestId++;
+		staffResults = [];
+		searchLoading = true;
 		debounceTimer = setTimeout(() => loadStaffOptions(staffSearch), 300);
 	}
 
-	$effect(() => {
-		if (organizationUnitId) loadMembers();
+	$effect.pre(() => {
+		const id = organizationUnitId,
+			addOpen = showAddDialog,
+			editOpen = showEditDialog,
+			allowed = canManageMembers,
+			read = canReadPicker;
+		untrack(() => {
+			draftEpoch++;
+			if (id !== activeOwner) {
+				activeOwner = id;
+				ownerEpoch++;
+				showAddDialog = false;
+				showEditDialog = false;
+				addSubmitting = false;
+				editSubmitting = false;
+				removingMemberId = '';
+				mutationError = '';
+			}
+			if (!addOpen || !allowed || !read) {
+				pickerRequest.abort();
+				staffSearchRequestId++;
+				clearTimeout(debounceTimer);
+				searchLoading = false;
+				staffResults = [];
+			}
+			if (!allowed) {
+				showAddDialog = false;
+				showEditDialog = false;
+			}
+			if (!editOpen) editingMember = null;
+		});
 	});
-
-	$effect(() => {
-		if (staffPickerOpen && !staffOptionsLoaded && !searchLoading) {
-			void loadStaffOptions('');
-		}
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		pickerRequest.abort();
+		clearTimeout(debounceTimer);
 	});
 </script>
 
-<section class="rounded-lg border bg-card">
+<section
+	data-testid="organization-members"
+	aria-busy={loadingMembers}
+	class="rounded-lg border bg-card"
+>
 	<div class="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
 		<div class="space-y-1">
 			<h2 class="flex items-center gap-2 text-lg font-semibold">
@@ -360,8 +445,29 @@
 	</div>
 
 	<div class="p-5">
-		{#if loadingMembers}
-			<p class="py-6 text-center text-sm text-muted-foreground">กำลังโหลด...</p>
+		{#if mutationError}<PageState
+				variant="error"
+				title="แก้ไขสมาชิกไม่สำเร็จ"
+				description={mutationError}
+			/>{/if}
+		{#if membersError && membersLoaded}<PageState
+				variant="error"
+				title="โหลดสมาชิกไม่สำเร็จ"
+				description={membersError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={onRefresh}
+			/>{/if}
+		{#if loadingMembers && membersLoaded}<p role="status">กำลังอัปเดตสมาชิก...</p>{/if}
+		{#if loadingMembers && !membersLoaded}<div role="status" aria-label="กำลังโหลดสมาชิก">
+				<PageSkeleton variant="table" rows={3} />
+			</div>
+		{:else if membersError && !membersLoaded}<PageState
+				variant="error"
+				title="โหลดสมาชิกไม่สำเร็จ"
+				description={membersError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={onRefresh}
+			/>
 		{:else if members.length === 0}
 			<div class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
 				ยังไม่มีสมาชิก
@@ -414,7 +520,13 @@
 
 									{#if canManageMembers}
 										<div class="flex shrink-0 items-center gap-1">
-											<Button variant="ghost" size="sm" onclick={() => openEdit(member)}>
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => openEdit(member)}
+												aria-label={`แก้ไขสมาชิก ${member.name}`}
+												disabled={editSubmitting || addSubmitting || !!removingMemberId}
+											>
 												<Pencil class="h-3.5 w-3.5" />
 											</Button>
 											<Button
@@ -422,6 +534,8 @@
 												size="sm"
 												class="text-destructive hover:text-destructive"
 												onclick={() => handleRemove(member)}
+												aria-label={`ลบสมาชิก ${member.name}`}
+												disabled={editSubmitting || addSubmitting || !!removingMemberId}
 											>
 												<Trash2 class="h-3.5 w-3.5" />
 											</Button>
@@ -445,6 +559,10 @@
 		</Dialog.Header>
 
 		<div class="space-y-4 py-2">
+			{#if !canReadPicker}<PageState
+					variant="permission"
+					title="ไม่มีสิทธิ์อ่านตัวเลือกบุคลากร"
+				/>{/if}
 			{#if addError}
 				<div class="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{addError}</div>
 			{/if}
@@ -479,9 +597,17 @@
 							/>
 							<Command.List class="max-h-64">
 								{#if searchLoading}
-									<div class="py-6 text-center text-sm text-muted-foreground">กำลังค้นหา...</div>
+									<div role="status" aria-label="กำลังค้นหาบุคลากร">
+										<PageSkeleton variant="table" rows={3} />
+									</div>
 								{:else if staffSearchError}
-									<div class="py-6 text-center text-sm text-destructive">{staffSearchError}</div>
+									<PageState
+										variant="error"
+										title="โหลดตัวเลือกบุคลากรไม่สำเร็จ"
+										description={staffSearchError}
+										actionLabel="ลองอีกครั้ง"
+										onaction={() => loadStaffOptions(staffSearch)}
+									/>
 								{:else if staffResults.length === 0}
 									<div class="py-6 text-center text-sm text-muted-foreground">
 										ไม่พบรายชื่อบุคลากร

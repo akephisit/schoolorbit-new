@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { requireApiData } from '$lib/api/client';
 	import type { PageProps } from './$types';
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import {
 		getOrganizationUnit,
@@ -47,10 +50,13 @@
 	} from '@lucide/svelte';
 	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
 
-	const { params }: PageProps = $props();
+	let { data }: PageProps = $props();
+	const unitSource = $derived(data.unit),
+		structureSource = $derived(data.structure),
+		membersSource = $derived(data.members);
 	type DetailTab = 'members' | 'permissions' | 'children' | 'delegations';
 
-	let deptId = $derived(params.id);
+	let deptId = $derived(data.unitId);
 	let department: OrganizationUnit | null = $state(null);
 	let allDepartments: OrganizationUnit[] = $state([]);
 	let childDepts: OrganizationUnit[] = $state([]);
@@ -64,6 +70,28 @@
 	let delegatablePerms: DelegatablePermission[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
+	let structureLoading = $state(true),
+		structureLoaded = $state(false),
+		structureError = $state('');
+	let membersLoading = $state(true),
+		membersLoaded = $state(false),
+		membersError = $state(''),
+		allMembers: OrganizationMemberItem[] = $state([]);
+	let delegationsLoading = $state(false),
+		delegationsLoaded = $state(false),
+		delegationsError = $state('');
+	let optionsLoading = $state(false),
+		optionsLoaded = $state(false),
+		optionsError = $state('');
+	const unitRequest = new LatestRequest(),
+		structureRequest = new LatestRequest(),
+		membersRequest = new LatestRequest(),
+		delegationsRequest = new LatestRequest(),
+		optionsRequest = new LatestRequest();
+	let activeOwner = '',
+		ownerEpoch = 0,
+		disposed = false,
+		draftEpoch = 0;
 
 	let showDelegateDialog = $state(false);
 	let delegateForm = $state({ to_user_id: '', permission_id: '', reason: '', expires_at: '' });
@@ -109,19 +137,35 @@
 		parentName:
 			parentUnit?.name ?? (department?.unit_type === 'school' ? 'ระดับโรงเรียน' : 'ไม่มีข้อมูล'),
 		parentCode: parentUnit?.code ?? '',
-		childCount: childDepts.length,
-		memberCount: deptMembers.length
+		childCount: structureLoaded ? childDepts.length : '—',
+		memberCount: membersLoaded ? deptMembers.length : '—'
 	}));
 
 	let detailStats = $derived.by(() => {
 		const stats = [
-			{ label: 'สมาชิก', value: deptMembers.length, helper: 'คนในหน่วยงานนี้' },
-			{ label: 'งานหลัก', value: primaryMembers.length, helper: 'หัวหน้าและผู้รับผิดชอบ' },
-			{ label: 'หน่วยงานย่อย', value: childDepts.length, helper: 'ใต้โครงสร้างนี้' }
+			{
+				label: 'สมาชิก',
+				value: membersLoaded ? String(deptMembers.length) : '—',
+				helper: 'คนในหน่วยงานนี้'
+			},
+			{
+				label: 'งานหลัก',
+				value: membersLoaded ? String(primaryMembers.length) : '—',
+				helper: 'หัวหน้าและผู้รับผิดชอบ'
+			},
+			{
+				label: 'หน่วยงานย่อย',
+				value: structureLoaded ? String(childDepts.length) : '—',
+				helper: 'ใต้โครงสร้างนี้'
+			}
 		];
 
 		if (canManageDelegations) {
-			stats.push({ label: 'มอบหมายสิทธิ์', value: delegations.length, helper: 'รายการที่ใช้งาน' });
+			stats.push({
+				label: 'มอบหมายสิทธิ์',
+				value: delegationsLoaded ? String(delegations.length) : '—',
+				helper: 'รายการที่ใช้งาน'
+			});
 		}
 
 		return stats;
@@ -157,13 +201,21 @@
 
 	let detailTabs = $derived.by(() => {
 		const tabs: { id: DetailTab; label: string; count?: number }[] = [
-			{ id: 'members', label: 'สมาชิก', count: deptMembers.length },
+			{ id: 'members', label: 'สมาชิก', count: membersLoaded ? deptMembers.length : undefined },
 			{ id: 'permissions', label: 'สิทธิ์ตามตำแหน่ง' },
-			{ id: 'children', label: 'หน่วยงานย่อย', count: childDepts.length }
+			{
+				id: 'children',
+				label: 'หน่วยงานย่อย',
+				count: structureLoaded ? childDepts.length : undefined
+			}
 		];
 
 		if (canManageDelegations) {
-			tabs.push({ id: 'delegations', label: 'มอบหมายสิทธิ์', count: delegations.length });
+			tabs.push({
+				id: 'delegations',
+				label: 'มอบหมายสิทธิ์',
+				count: delegationsLoaded ? delegations.length : undefined
+			});
 		}
 
 		return tabs;
@@ -183,75 +235,135 @@
 		return member.responsibilities || positionLabel(member.position_code, member.position_title);
 	}
 
-	async function loadData(currentDeptId: string) {
-		if (!canReadOrganization) {
-			department = null;
-			allDepartments = [];
-			childDepts = [];
-			deptMembers = [];
-			error = 'ไม่มีสิทธิ์ดูข้อมูลหน่วยงาน';
-			loading = false;
-			return;
-		}
-
-		try {
-			loading = true;
-			error = '';
-			delegations = [];
-			delegatablePerms = [];
-			const [deptRes, membersRes, allDeptsRes] = await Promise.all([
-				getOrganizationUnit(currentDeptId),
-				listOrganizationMembers(currentDeptId),
-				listOrganizationUnits()
-			]);
-			if (currentDeptId !== deptId) return;
-			if (deptRes.success && deptRes.data) {
-				department = deptRes.data;
-			} else {
-				throw new Error(deptRes.error || 'OrganizationUnit not found');
-			}
-			if (membersRes.success && membersRes.data) {
-				deptMembers = membersRes.data;
-			}
-			if (allDeptsRes.success && allDeptsRes.data) {
-				allDepartments = allDeptsRes.data;
-				childDepts = allDeptsRes.data
-					.filter((unit) => unit.parent_unit_id === currentDeptId)
-					.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
-			}
-		} catch (e: unknown) {
-			if (currentDeptId !== deptId) return;
-			error = (e instanceof Error ? e.message : String(e)) || 'Error loading data';
-		} finally {
-			if (currentDeptId === deptId) {
-				loading = false;
-			}
-		}
+	function applyUnit(result: Awaited<typeof data.unit>, revision: number) {
+		if (!unitRequest.isCurrent(revision)) return;
+		loading = false;
+		if (result.ok) department = result.data;
+		else error = result.error;
 	}
-
-	async function loadDelegations(currentDeptId: string) {
-		const [delRes, permRes] = await Promise.all([
-			listDelegations(currentDeptId),
-			listDelegatablePermissions(currentDeptId)
-		]);
-		if (currentDeptId !== deptId) return;
-		if (delRes.success && delRes.data) delegations = delRes.data;
-		if (permRes.success && permRes.data) delegatablePerms = permRes.data;
+	function applyStructure(result: Awaited<typeof data.structure>, revision: number) {
+		if (!structureRequest.isCurrent(revision)) return;
+		structureLoading = false;
+		if (result.ok) {
+			allDepartments = result.data;
+			childDepts = result.data
+				.filter((unit) => unit.parent_unit_id === deptId)
+				.sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+			structureLoaded = true;
+		} else structureError = result.error;
 	}
-
-	function refreshCurrentUnit() {
-		if (!deptId) return;
-		loadData(deptId);
+	function applyMembers(result: Awaited<typeof data.members>, revision: number) {
+		if (!membersRequest.isCurrent(revision)) return;
+		membersLoading = false;
+		if (result.ok) {
+			allMembers = result.data;
+			deptMembers = result.data.filter((member) => member.organization_unit_id === deptId);
+			membersLoaded = true;
+		} else membersError = result.error;
 	}
-
-	function goToChildDept(id: string) {
-		goto(resolve(`/staff/organization/${id}`));
+	async function loadUnit() {
+		if (!canReadOrganization) return;
+		const ticket = unitRequest.begin();
+		loading = true;
+		error = '';
+		applyUnit(
+			await captureRouteLoad(
+				getOrganizationUnit(deptId, { signal: ticket.signal }).then((reply) =>
+					requireApiData(reply, 'โหลดหน่วยงานไม่สำเร็จ')
+				),
+				'โหลดหน่วยงานไม่สำเร็จ'
+			),
+			ticket.revision
+		);
+	}
+	async function loadStructure() {
+		if (!canReadOrganization) return;
+		const ticket = structureRequest.begin();
+		structureLoading = true;
+		structureError = '';
+		applyStructure(
+			await captureRouteLoad(
+				listOrganizationUnits(undefined, { signal: ticket.signal }).then((reply) =>
+					requireApiData(reply, 'โหลดโครงสร้างไม่สำเร็จ')
+				),
+				'โหลดโครงสร้างไม่สำเร็จ'
+			),
+			ticket.revision
+		);
+	}
+	async function loadMembers() {
+		if (!canReadOrganization) return;
+		const ticket = membersRequest.begin();
+		membersLoading = true;
+		membersError = '';
+		applyMembers(
+			await captureRouteLoad(
+				listOrganizationMembers(deptId, { include_children: true }, { signal: ticket.signal }).then(
+					(reply) => requireApiData(reply, 'โหลดสมาชิกไม่สำเร็จ')
+				),
+				'โหลดสมาชิกไม่สำเร็จ'
+			),
+			ticket.revision
+		);
+	}
+	async function loadDelegations() {
+		if (!canManageDelegations || activeTab !== 'delegations') return;
+		const ticket = delegationsRequest.begin();
+		delegationsLoading = true;
+		delegationsError = '';
+		const result = await captureRouteLoad(
+			listDelegations(deptId, { signal: ticket.signal }).then((reply) =>
+				requireApiData(reply, 'โหลดการมอบหมายไม่สำเร็จ')
+			),
+			'โหลดการมอบหมายไม่สำเร็จ'
+		);
+		if (!delegationsRequest.isCurrent(ticket.revision)) return;
+		delegationsLoading = false;
+		if (result.ok) {
+			delegations = result.data;
+			delegationsLoaded = true;
+		} else delegationsError = result.error;
+	}
+	async function loadDelegatableOptions() {
+		if (!canManageDelegations || !showDelegateDialog) return;
+		const ticket = optionsRequest.begin();
+		optionsLoading = true;
+		optionsError = '';
+		const result = await captureRouteLoad(
+			listDelegatablePermissions(deptId, { signal: ticket.signal }).then((reply) =>
+				requireApiData(reply, 'โหลดตัวเลือกสิทธิ์ไม่สำเร็จ')
+			),
+			'โหลดตัวเลือกสิทธิ์ไม่สำเร็จ'
+		);
+		if (!optionsRequest.isCurrent(ticket.revision)) return;
+		optionsLoading = false;
+		if (result.ok) {
+			delegatablePerms = result.data;
+			optionsLoaded = true;
+		} else optionsError = result.error;
+	}
+	async function refreshCurrentUnit() {
+		await Promise.all([loadUnit(), loadStructure()]);
 	}
 
 	async function handleRevoke(delegationId: string) {
-		const res = await revokeDelegation(delegationId);
-		if (res.success) {
+		if (!canManageDelegations || delegateSubmitting) return;
+		const epoch = ownerEpoch;
+		const current = () => !disposed && epoch === ownerEpoch;
+		delegationsRequest.abort();
+		delegationsLoading = false;
+		delegateSubmitting = true;
+		delegationsError = '';
+		try {
+			const res = await revokeDelegation(delegationId);
+			if (!current()) return;
+			if (!res.success) throw new Error(res.error ?? 'เพิกถอนสิทธิ์ไม่สำเร็จ');
 			delegations = delegations.filter((delegation) => delegation.id !== delegationId);
+		} catch (error) {
+			if (current())
+				delegationsError = error instanceof Error ? error.message : 'เพิกถอนสิทธิ์ไม่สำเร็จ';
+		} finally {
+			if (current()) delegateSubmitting = false;
 		}
 	}
 
@@ -271,44 +383,149 @@
 	}
 
 	async function handleDelegate() {
-		const currentDeptId = deptId;
-		if (!currentDeptId || !delegateForm.to_user_id || !delegateForm.permission_id) return;
+		if (
+			!canManageDelegations ||
+			!showDelegateDialog ||
+			delegateSubmitting ||
+			!delegateForm.to_user_id ||
+			!delegateForm.permission_id
+		)
+			return;
+		const target = deptId,
+			epoch = ownerEpoch,
+			draft = draftEpoch;
+		const current = () => !disposed && epoch === ownerEpoch && target === deptId;
+		const body: CreateDelegationBody = {
+			to_user_id: delegateForm.to_user_id,
+			permission_id: delegateForm.permission_id,
+			reason: delegateForm.reason || undefined,
+			expires_at: delegateForm.expires_at
+				? new Date(delegateForm.expires_at).toISOString()
+				: undefined
+		};
 		delegateSubmitting = true;
 		delegateError = '';
+		delegationsRequest.abort();
+		delegationsLoading = false;
 		try {
-			const body: CreateDelegationBody = {
-				to_user_id: delegateForm.to_user_id,
-				permission_id: delegateForm.permission_id
-			};
-			if (delegateForm.reason) body.reason = delegateForm.reason;
-			if (delegateForm.expires_at)
-				body.expires_at = new Date(delegateForm.expires_at).toISOString();
-
-			const res = await createDelegation(currentDeptId, body);
-			if (res.success) {
+			const res = await createDelegation(target, body);
+			if (!current()) return;
+			if (!res.success) throw new Error(res.error ?? 'มอบหมายสิทธิ์ไม่สำเร็จ');
+			if (draft === draftEpoch) {
 				closeDelegateDialog();
 				delegateForm = { to_user_id: '', permission_id: '', reason: '', expires_at: '' };
-				await loadDelegations(currentDeptId);
-			} else {
-				delegateError = res.error || 'เกิดข้อผิดพลาด';
 			}
+			await loadDelegations();
+		} catch (error) {
+			if (current() && draft === draftEpoch)
+				delegateError = error instanceof Error ? error.message : 'มอบหมายสิทธิ์ไม่สำเร็จ';
 		} finally {
-			delegateSubmitting = false;
+			if (current()) delegateSubmitting = false;
 		}
 	}
-
-	$effect(() => {
-		const currentDeptId = deptId;
-		if (!currentDeptId) return;
-		activeTab = 'members';
-		loadData(currentDeptId);
+	$effect.pre(() => {
+		const id = deptId,
+			allowed = canReadOrganization;
+		untrack(() => {
+			if (activeOwner !== id || !allowed) {
+				activeOwner = id;
+				ownerEpoch++;
+				department = null;
+				allDepartments = [];
+				childDepts = [];
+				allMembers = [];
+				deptMembers = [];
+				structureLoaded = false;
+				membersLoaded = false;
+				delegations = [];
+				delegationsLoaded = false;
+				delegatablePerms = [];
+				optionsLoaded = false;
+				activeTab = 'members';
+				showEditDialog = false;
+				showAddChildDialog = false;
+				showPermissionDialog = false;
+				showDelegateDialog = false;
+				delegateSubmitting = false;
+				delegateError = '';
+			}
+		});
 	});
-
-	$effect(() => {
-		const currentDeptId = deptId;
-		if (!loading && canManageDelegations && currentDeptId) {
-			loadDelegations(currentDeptId);
-		}
+	$effect.pre(() => {
+		const source = unitSource;
+		untrack(() => {
+			const ticket = unitRequest.begin();
+			loading = true;
+			error = '';
+			void source.then((result) => applyUnit(result, ticket.revision));
+		});
+		return () => unitRequest.abort();
+	});
+	$effect.pre(() => {
+		const source = structureSource;
+		untrack(() => {
+			const ticket = structureRequest.begin();
+			structureLoading = true;
+			structureError = '';
+			void source.then((result) => applyStructure(result, ticket.revision));
+		});
+		return () => structureRequest.abort();
+	});
+	$effect.pre(() => {
+		const source = membersSource;
+		untrack(() => {
+			const ticket = membersRequest.begin();
+			membersLoading = true;
+			membersError = '';
+			void source.then((result) => applyMembers(result, ticket.revision));
+		});
+		return () => membersRequest.abort();
+	});
+	$effect.pre(() => {
+		const id = deptId,
+			tab = activeTab,
+			allowed = canManageDelegations;
+		untrack(() => {
+			if (tab === 'delegations' && allowed && id) void loadDelegations();
+			else {
+				delegationsRequest.abort();
+				delegationsLoading = false;
+			}
+			if (!allowed) {
+				delegations = [];
+				delegationsLoaded = false;
+				showDelegateDialog = false;
+			}
+		});
+		return () => delegationsRequest.abort();
+	});
+	$effect.pre(() => {
+		const open = showDelegateDialog,
+			id = deptId,
+			allowed = canManageDelegations;
+		untrack(() => {
+			draftEpoch++;
+			if (open && allowed && id) {
+				delegateForm = { to_user_id: '', permission_id: '', reason: '', expires_at: '' };
+				delegateError = '';
+				void loadDelegatableOptions();
+			} else {
+				optionsRequest.abort();
+				delegatablePerms = [];
+				optionsLoaded = false;
+				optionsLoading = false;
+			}
+		});
+		return () => optionsRequest.abort();
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		unitRequest.abort();
+		structureRequest.abort();
+		membersRequest.abort();
+		delegationsRequest.abort();
+		optionsRequest.abort();
 	});
 </script>
 
@@ -317,74 +534,103 @@
 	description={department?.name ?? 'ข้อมูลหน่วยงานในโครงสร้างโรงเรียน'}
 	backHref="/staff/organization"
 	backLabel="โครงสร้าง"
+	backPreload="tap"
 >
-	{#if loading}
-		<PageSkeleton variant="detail" />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดข้อมูลหน่วยงานไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={refreshCurrentUnit}
-		/>
-	{:else if department}
+	{#snippet actions()}
+		<Button variant="outline" onclick={loadUnit} disabled={loading || !canReadOrganization}
+			>รีเฟรชหน่วยงาน</Button
+		>
+		<Button
+			variant="outline"
+			onclick={loadStructure}
+			disabled={structureLoading || !canReadOrganization}>รีเฟรชโครงสร้าง</Button
+		>
+		<Button
+			variant="outline"
+			onclick={loadMembers}
+			disabled={membersLoading || !canReadOrganization}>รีเฟรชสมาชิก</Button
+		>
+	{/snippet}
+	{#if !canReadOrganization}<PageState variant="permission" title="ไม่มีสิทธิ์ดูข้อมูลหน่วยงาน" />
+	{:else}
 		<div class="space-y-5">
 			<section class="rounded-lg border bg-card p-5">
-				<div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-					<div class="min-w-0 space-y-4">
-						<div class="flex flex-wrap items-center gap-2">
-							<Badge variant="outline">{department.code}</Badge>
-							<Badge variant="secondary">{categoryText}</Badge>
-							<Badge variant={department.unit_type === 'management_group' ? 'default' : 'outline'}>
-								{unitTypeText}
-							</Badge>
+				<div data-testid="organization-unit" aria-busy={loading}>
+					{#if loading && department}<p role="status">กำลังอัปเดตหน่วยงาน...</p>{/if}
+					{#if error}<PageState
+							variant="error"
+							title="โหลดหน่วยงานไม่สำเร็จ"
+							description={error}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadUnit}
+						/>{/if}
+					{#if loading && !department}<div role="status" aria-label="กำลังโหลดหน่วยงาน">
+							<PageSkeleton variant="detail" />
 						</div>
+					{:else if department}
+						<div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+							<div class="min-w-0 space-y-4">
+								<div class="flex flex-wrap items-center gap-2">
+									<Badge variant="outline">{department?.code ?? '—'}</Badge>
+									<Badge variant="secondary">{categoryText}</Badge>
+									<Badge
+										variant={department.unit_type === 'management_group' ? 'default' : 'outline'}
+									>
+										{unitTypeText}
+									</Badge>
+								</div>
 
-						<div class="flex items-start gap-3">
-							<div
-								class="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
-							>
-								{#if department.category === 'academic'}
-									<GraduationCap class="h-6 w-6" />
-								{:else}
-									<Briefcase class="h-6 w-6" />
+								<div class="flex items-start gap-3">
+									<div
+										class="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+									>
+										{#if department.category === 'academic'}
+											<GraduationCap class="h-6 w-6" />
+										{:else}
+											<Briefcase class="h-6 w-6" />
+										{/if}
+									</div>
+									<div class="min-w-0">
+										<h1 class="break-words text-2xl font-bold text-foreground">
+											{department?.name ?? 'หน่วยงานนี้'}
+										</h1>
+										{#if department.name_en}
+											<p class="mt-1 text-sm text-muted-foreground">{department.name_en}</p>
+										{/if}
+										<p class="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+											{department.description || 'ยังไม่มีรายละเอียดหน่วยงาน'}
+										</p>
+									</div>
+								</div>
+							</div>
+
+							<div class="flex flex-wrap gap-2">
+								{#if canUpdateOrganizationUnit}
+									<Button variant="outline" class="gap-2" onclick={() => (showEditDialog = true)}>
+										<Pencil class="h-4 w-4" />
+										แก้ไขหน่วยงาน
+									</Button>
+								{/if}
+								{#if canReadOrganizationPermissions}
+									<Button
+										variant="outline"
+										class="gap-2"
+										onclick={() => (showPermissionDialog = true)}
+									>
+										<KeyRound class="h-4 w-4" />
+										{canUpdateOrganizationPermissions ? 'สิทธิ์ตามตำแหน่ง' : 'ดูสิทธิ์ตามตำแหน่ง'}
+									</Button>
+								{/if}
+								{#if canCreateOrganizationUnit}
+									<Button class="gap-2" onclick={() => (showAddChildDialog = true)}>
+										<Plus class="h-4 w-4" />
+										เพิ่มหน่วยงานย่อย
+									</Button>
 								{/if}
 							</div>
-							<div class="min-w-0">
-								<h1 class="break-words text-2xl font-bold text-foreground">{department.name}</h1>
-								{#if department.name_en}
-									<p class="mt-1 text-sm text-muted-foreground">{department.name_en}</p>
-								{/if}
-								<p class="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-									{department.description || 'ยังไม่มีรายละเอียดหน่วยงาน'}
-								</p>
-							</div>
 						</div>
-					</div>
-
-					<div class="flex flex-wrap gap-2">
-						{#if canUpdateOrganizationUnit}
-							<Button variant="outline" class="gap-2" onclick={() => (showEditDialog = true)}>
-								<Pencil class="h-4 w-4" />
-								แก้ไขหน่วยงาน
-							</Button>
-						{/if}
-						{#if canReadOrganizationPermissions}
-							<Button variant="outline" class="gap-2" onclick={() => (showPermissionDialog = true)}>
-								<KeyRound class="h-4 w-4" />
-								{canUpdateOrganizationPermissions ? 'สิทธิ์ตามตำแหน่ง' : 'ดูสิทธิ์ตามตำแหน่ง'}
-							</Button>
-						{/if}
-						{#if canCreateOrganizationUnit}
-							<Button class="gap-2" onclick={() => (showAddChildDialog = true)}>
-								<Plus class="h-4 w-4" />
-								เพิ่มหน่วยงานย่อย
-							</Button>
-						{/if}
-					</div>
+					{/if}
 				</div>
-
 				<div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 					{#each detailStats as stat (stat.label)}
 						<div class="rounded-lg border bg-muted/20 p-4">
@@ -423,12 +669,17 @@
 					</div>
 
 					{#if activeTab === 'members'}
-						<OrganizationMembersSection
-							organizationUnitId={deptId}
-							childUnits={childDepts}
-							canAssignMembers={canAssignOrganizationMembers}
-							onChanged={refreshCurrentUnit}
-						/>
+						{#key deptId}<OrganizationMembersSection
+								members={allMembers}
+								loadingMembers={membersLoading}
+								{membersLoaded}
+								{membersError}
+								onRefresh={loadMembers}
+								organizationUnitId={deptId}
+								childUnits={childDepts}
+								canAssignMembers={canAssignOrganizationMembers}
+								onChanged={loadMembers}
+							/>{/key}
 					{:else if activeTab === 'permissions'}
 						<section class="space-y-4 rounded-lg border bg-card p-5">
 							<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -451,11 +702,13 @@
 							<div class="grid gap-3 sm:grid-cols-3">
 								<div class="rounded-lg border bg-muted/20 p-3">
 									<p class="text-xs text-muted-foreground">หน่วยงาน</p>
-									<p class="mt-1 truncate text-sm font-medium">{department.name}</p>
+									<p class="mt-1 truncate text-sm font-medium">
+										{department?.name ?? 'หน่วยงานนี้'}
+									</p>
 								</div>
 								<div class="rounded-lg border bg-muted/20 p-3">
 									<p class="text-xs text-muted-foreground">รหัส</p>
-									<p class="mt-1 font-mono text-sm font-medium">{department.code}</p>
+									<p class="mt-1 font-mono text-sm font-medium">{department?.code ?? '—'}</p>
 								</div>
 								<div class="rounded-lg border bg-muted/20 p-3">
 									<p class="text-xs text-muted-foreground">ตำแหน่งหลัก</p>
@@ -472,7 +725,7 @@
 										หน่วยงานย่อย
 									</h2>
 									<p class="text-sm text-muted-foreground">
-										หน่วยงานที่อยู่ภายใต้ {department.name}
+										หน่วยงานที่อยู่ภายใต้ {department?.name ?? 'หน่วยงานนี้'}
 									</p>
 								</div>
 								{#if canCreateOrganizationUnit}
@@ -482,7 +735,30 @@
 									</Button>
 								{/if}
 							</div>
-							{#if childDepts.length === 0}
+							{#if structureError && structureLoaded}<PageState
+									variant="error"
+									title="โหลดโครงสร้างไม่สำเร็จ"
+									description={structureError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={loadStructure}
+								/>{/if}
+							{#if structureLoading && structureLoaded}<p role="status">
+									กำลังอัปเดตโครงสร้าง...
+								</p>{/if}
+							{#if structureLoading && !structureLoaded}<div
+									role="status"
+									aria-label="กำลังโหลดโครงสร้าง"
+								>
+									<PageSkeleton variant="table" rows={2} />
+								</div>
+							{:else if structureError && !structureLoaded}<PageState
+									variant="error"
+									title="โหลดโครงสร้างไม่สำเร็จ"
+									description={structureError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={loadStructure}
+								/>
+							{:else if childDepts.length === 0}
 								<div
 									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
 								>
@@ -491,9 +767,9 @@
 							{:else}
 								<div class="grid gap-3 md:grid-cols-2">
 									{#each childDepts as child (child.id)}
-										<button
-											type="button"
-											onclick={() => goToChildDept(child.id)}
+										<a
+											href={resolve(`/staff/organization/${child.id}`)}
+											data-sveltekit-preload-data="tap"
 											class="flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
 										>
 											<div class="min-w-0">
@@ -501,7 +777,7 @@
 												<p class="mt-1 font-mono text-xs text-muted-foreground">{child.code}</p>
 											</div>
 											<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-										</button>
+										</a>
 									{/each}
 								</div>
 							{/if}
@@ -518,13 +794,41 @@
 										มอบหมายสิทธิ์ชั่วคราวให้สมาชิกในหน่วยงานนี้
 									</p>
 								</div>
-								<Button size="sm" class="gap-2" onclick={() => (showDelegateDialog = true)}>
+								<Button
+									size="sm"
+									class="gap-2"
+									disabled={!membersLoaded || delegateSubmitting}
+									onclick={() => (showDelegateDialog = true)}
+								>
 									<Plus class="h-4 w-4" />
 									มอบหมาย
 								</Button>
 							</div>
 
-							{#if delegations.length === 0}
+							{#if delegationsError && delegationsLoaded}<PageState
+									variant="error"
+									title="โหลดการมอบหมายไม่สำเร็จ"
+									description={delegationsError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={loadDelegations}
+								/>{/if}
+							{#if delegationsLoading && delegationsLoaded}<p role="status">
+									กำลังอัปเดตการมอบหมาย...
+								</p>{/if}
+							{#if delegationsLoading && !delegationsLoaded}<div
+									role="status"
+									aria-label="กำลังโหลดการมอบหมาย"
+								>
+									<PageSkeleton variant="table" rows={3} />
+								</div>
+							{:else if delegationsError && !delegationsLoaded}<PageState
+									variant="error"
+									title="โหลดการมอบหมายไม่สำเร็จ"
+									description={delegationsError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={loadDelegations}
+								/>
+							{:else if delegations.length === 0}
 								<div
 									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
 								>
@@ -553,6 +857,7 @@
 												variant="ghost"
 												size="sm"
 												onclick={() => handleRevoke(delegation.id)}
+												disabled={delegateSubmitting}
 												class="shrink-0 text-destructive hover:text-destructive"
 											>
 												<Trash2 class="h-4 w-4" />
@@ -608,7 +913,17 @@
 							<Badge variant="outline">{contextPanel.memberCount} คน</Badge>
 						</div>
 
-						{#if primaryMembers.length === 0}
+						{#if membersLoading && !membersLoaded}<div role="status" aria-label="กำลังโหลดงานหลัก">
+								<PageSkeleton variant="table" rows={2} />
+							</div>
+						{:else if membersError && !membersLoaded}<PageState
+								variant="error"
+								title="โหลดสมาชิกไม่สำเร็จ"
+								description={membersError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadMembers}
+							/>
+						{:else if primaryMembers.length === 0}
 							<div
 								class="mt-4 rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground"
 							>
@@ -643,7 +958,11 @@
 						{/if}
 					</section>
 
-					<section class="rounded-lg border bg-card p-5">
+					<section
+						data-testid="organization-structure"
+						aria-busy={structureLoading}
+						class="rounded-lg border bg-card p-5"
+					>
 						<div class="flex items-center justify-between gap-3">
 							<div class="flex items-center gap-2">
 								<Network class="h-5 w-5 text-primary" />
@@ -651,14 +970,37 @@
 							</div>
 							<Badge variant="outline">{contextPanel.childCount}</Badge>
 						</div>
-						{#if childDepts.length === 0}
+						{#if structureError && structureLoaded}<PageState
+								variant="error"
+								title="โหลดโครงสร้างไม่สำเร็จ"
+								description={structureError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadStructure}
+							/>{/if}
+						{#if structureLoading && structureLoaded}<p role="status">
+								กำลังอัปเดตโครงสร้าง...
+							</p>{/if}
+						{#if structureLoading && !structureLoaded}<div
+								role="status"
+								aria-label="กำลังโหลดโครงสร้าง"
+							>
+								<PageSkeleton variant="table" rows={2} />
+							</div>
+						{:else if structureError && !structureLoaded}<PageState
+								variant="error"
+								title="โหลดโครงสร้างไม่สำเร็จ"
+								description={structureError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadStructure}
+							/>
+						{:else if childDepts.length === 0}
 							<p class="mt-4 text-sm text-muted-foreground">ยังไม่มีหน่วยงานย่อย</p>
 						{:else}
 							<div class="mt-4 space-y-2">
 								{#each childDepts.slice(0, 4) as child (child.id)}
-									<button
-										type="button"
-										onclick={() => goToChildDept(child.id)}
+									<a
+										href={resolve(`/staff/organization/${child.id}`)}
+										data-sveltekit-preload-data="tap"
 										class="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted/30"
 									>
 										<div class="min-w-0">
@@ -666,7 +1008,7 @@
 											<p class="font-mono text-xs text-muted-foreground">{child.code}</p>
 										</div>
 										<ArrowRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-									</button>
+									</a>
 								{/each}
 							</div>
 							{#if childDepts.length > 4}
@@ -679,17 +1021,10 @@
 				</aside>
 			</div>
 		</div>
-	{:else}
-		<PageState
-			title="ไม่พบหน่วยงาน"
-			description="หน่วยงานนี้อาจถูกลบ หรือคุณอาจไม่มีสิทธิ์เข้าถึง"
-			actionLabel="กลับหน้าโครงสร้าง"
-			href="/staff/organization"
-		/>
 	{/if}
 </PageShell>
 
-{#if canUpdateOrganizationUnit}
+{#if showEditDialog && canUpdateOrganizationUnit}
 	<OrganizationUnitDialog
 		bind:open={showEditDialog}
 		organizationUnitToEdit={department}
@@ -698,7 +1033,7 @@
 	/>
 {/if}
 
-{#if canCreateOrganizationUnit}
+{#if showAddChildDialog && canCreateOrganizationUnit}
 	<OrganizationUnitDialog
 		bind:open={showAddChildDialog}
 		organizationUnits={allDepartments}
@@ -708,11 +1043,10 @@
 	/>
 {/if}
 
-{#if canReadOrganizationPermissions}
+{#if showPermissionDialog && canReadOrganizationPermissions}
 	<OrganizationPermissionDialog
 		bind:open={showPermissionDialog}
 		organizationUnit={department}
-		onSuccess={refreshCurrentUnit}
 		readOnly={!canUpdateOrganizationPermissions}
 	/>
 {/if}
@@ -725,6 +1059,16 @@
 		</Dialog.Header>
 
 		<div class="space-y-4 py-2">
+			{#if optionsError}<PageState
+					variant="error"
+					title="โหลดตัวเลือกสิทธิ์ไม่สำเร็จ"
+					description={optionsError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadDelegatableOptions}
+				/>{/if}
+			{#if optionsLoading && !optionsLoaded}<div role="status" aria-label="กำลังโหลดตัวเลือกสิทธิ์">
+					<PageSkeleton variant="form" rows={2} />
+				</div>{/if}
 			{#if delegateError}
 				<div class="rounded bg-destructive/10 p-3 text-sm text-destructive">{delegateError}</div>
 			{/if}

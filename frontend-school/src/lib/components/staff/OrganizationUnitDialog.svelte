@@ -11,6 +11,9 @@
 		type OrganizationUnit,
 		type CreateOrganizationUnitRequest
 	} from '$lib/api/staff';
+	import { onDestroy, untrack } from 'svelte';
+	import { can } from '$lib/stores/permissions';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { toast } from 'svelte-sonner';
 
 	let {
@@ -30,6 +33,13 @@
 	}>();
 
 	let loading = $state(false);
+	let disposed = false,
+		ownerEpoch = 0;
+	const canSave = $derived(
+		organizationUnitToEdit
+			? $can.has(PERMISSIONS.ROLES_UPDATE_ALL)
+			: $can.has(PERMISSIONS.ROLES_CREATE_ALL)
+	);
 
 	let formData = $state({
 		code: '',
@@ -46,40 +56,58 @@
 	});
 
 	// Pre-fill data when organizationUnitToEdit changes
-	$effect(() => {
-		if (organizationUnitToEdit) {
-			formData = {
-				code: organizationUnitToEdit.code,
-				name: organizationUnitToEdit.name,
-				name_en: organizationUnitToEdit.name_en || '',
-				description: organizationUnitToEdit.description || '',
-				parent_unit_id: organizationUnitToEdit.parent_unit_id || 'none',
-				category: organizationUnitToEdit.category || forcedCategory || 'general',
-				unit_type: organizationUnitToEdit.unit_type || 'division',
-				phone: organizationUnitToEdit.phone || '',
-				email: organizationUnitToEdit.email || '',
-				location: organizationUnitToEdit.location || '',
-				display_order: organizationUnitToEdit.display_order || 0
-			};
-		} else {
-			formData = {
-				code: '',
-				name: '',
-				name_en: '',
-				description: '',
-				parent_unit_id: forcedParentId || 'none',
-				category: forcedCategory || 'general',
-				unit_type: 'division',
-				phone: '',
-				email: '',
-				location: '',
-				display_order: 0
-			};
-		}
+	$effect.pre(() => {
+		const visible = open,
+			unitId = organizationUnitToEdit?.id,
+			parent = forcedParentId;
+		untrack(() => {
+			ownerEpoch++;
+			loading = false;
+			if (unitId && organizationUnitToEdit) {
+				formData = {
+					code: organizationUnitToEdit.code,
+					name: organizationUnitToEdit.name,
+					name_en: organizationUnitToEdit.name_en || '',
+					description: organizationUnitToEdit.description || '',
+					parent_unit_id: organizationUnitToEdit.parent_unit_id || 'none',
+					category: organizationUnitToEdit.category || forcedCategory || 'general',
+					unit_type: organizationUnitToEdit.unit_type || 'division',
+					phone: organizationUnitToEdit.phone || '',
+					email: organizationUnitToEdit.email || '',
+					location: organizationUnitToEdit.location || '',
+					display_order: organizationUnitToEdit.display_order || 0
+				};
+			} else {
+				formData = {
+					code: '',
+					name: '',
+					name_en: '',
+					description: '',
+					parent_unit_id: forcedParentId || 'none',
+					category: forcedCategory || 'general',
+					unit_type: 'division',
+					phone: '',
+					email: '',
+					location: '',
+					display_order: 0
+				};
+			}
+			void visible;
+			void parent;
+			void unitId;
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
 	});
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
+		if (!open || !canSave || loading) return;
+		const target = organizationUnitToEdit?.id,
+			epoch = ownerEpoch;
+		const current = () => !disposed && epoch === ownerEpoch;
 		loading = true;
 
 		try {
@@ -91,19 +119,19 @@
 			// Convert types if needed (e.g. string -> number)
 			payload.display_order = Number(payload.display_order);
 
-			if (organizationUnitToEdit) {
-				await updateOrganizationUnit(organizationUnitToEdit.id, payload);
-				toast.success('อัปเดตหน่วยงานสำเร็จ');
-			} else {
-				await createOrganizationUnit(payload as CreateOrganizationUnitRequest);
-				toast.success('สร้างหน่วยงานสำเร็จ');
-			}
+			const response = target
+				? await updateOrganizationUnit(target, payload)
+				: await createOrganizationUnit(payload as CreateOrganizationUnitRequest);
+			if (!current()) return;
+			if (!response.success) throw new Error(response.error ?? 'บันทึกหน่วยงานไม่สำเร็จ');
+			toast.success(target ? 'อัปเดตหน่วยงานสำเร็จ' : 'สร้างหน่วยงานสำเร็จ');
 			open = false;
 			onSuccess?.();
 		} catch (error) {
+			if (!current()) return;
 			toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
 		} finally {
-			loading = false;
+			if (current()) loading = false;
 		}
 	}
 </script>

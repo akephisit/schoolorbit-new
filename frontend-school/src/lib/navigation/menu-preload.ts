@@ -15,6 +15,7 @@ export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | 'of
 	)
 		return 'off';
 	return path === '/staff/profile' ||
+		path === '/staff/organization' ||
 		path === '/staff/academic/supervision/overview' ||
 		path === '/staff/academic/timetable' ||
 		path === '/staff/academic/timetable/today' ||

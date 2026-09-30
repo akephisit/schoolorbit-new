@@ -103,7 +103,7 @@ test('organization management uses reversible hierarchy-aware status controls', 
 		'frontend-school/src/routes/(app)/staff/organization/+page.svelte'
 	);
 
-	assert.match(page, /listOrganizationUnits\(\{ include_inactive: true \}\)/);
+	assert.match(page, /listOrganizationUnits\(\s*\{ include_inactive: true \},/);
 	assert.match(page, /deleteOrganizationUnit/);
 	assert.match(page, /canDeleteOrganizationUnit/);
 	assert.match(page, /selectedUnit\.is_system/);
