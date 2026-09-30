@@ -36,6 +36,17 @@ pub async fn can_read_student_profile(
     actor: &ActorContext,
     target_user_id: Uuid,
 ) -> Result<(), AppError> {
+    authorize_student_profile_read(pool, actor, target_user_id)
+        .await
+        .map(|_| ())
+}
+
+/// Authorize the profile and decide its separate PII scope from the same assignment snapshot.
+pub async fn authorize_student_profile_read(
+    pool: &PgPool,
+    actor: &ActorContext,
+    target_user_id: Uuid,
+) -> Result<bool, AppError> {
     let target = student_resource_target(pool, target_user_id).await?;
     resource_access_policy::require_resource_access(
         pool,
@@ -44,16 +55,7 @@ pub async fn can_read_student_profile(
         &target,
         "ไม่มีสิทธิ์ดูข้อมูลนักเรียนนี้",
     )
-    .await
-    .map(|_| ())
-}
-
-pub async fn can_read_student_pii(
-    pool: &PgPool,
-    actor: &ActorContext,
-    target_user_id: Uuid,
-) -> Result<bool, AppError> {
-    let target = student_resource_target(pool, target_user_id).await?;
+    .await?;
     Ok(
         resource_access_policy::can_access_direct_resource(actor, STUDENT_PII_ACCESS, &target)
             .is_some(),

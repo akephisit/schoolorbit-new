@@ -582,11 +582,11 @@ test('staff student views consume the selected academic year without legacy pagi
 	const editPage = await readProjectFile('src/routes/(app)/staff/students/[id]/edit/+page.svelte');
 
 	for (const source of [listPage, detailPage, editPage]) {
-		assert.match(source, /getAcademicContextStore/);
+		assert.match(source, /data.academicYearId/);
 		assert.match(source, /academicYearId/);
 	}
-	assert.doesNotMatch(listPage, /page_size\s*:|total_pages|class_room/);
-	assert.match(listPage, /result\.page_size/);
+	assert.doesNotMatch(listPage, /(?<!\.)\bpage_size\s*:|total_pages|class_room/);
+	assert.match(listPage, /result\.data\.page_size/);
 	assert.match(listPage, /homeroom/);
 });
 

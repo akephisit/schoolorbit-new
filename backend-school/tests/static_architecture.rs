@@ -3965,8 +3965,16 @@ fn student_profile_access_uses_resource_policy_and_separate_pii_scope() {
     );
 
     assert!(policies_root.contains("pub mod student_access_policy;"));
-    assert!(student_handler.contains("student_access_policy::can_read_student_profile"));
-    assert!(student_handler.contains("student_access_policy::can_read_student_pii"));
+    assert_eq!(
+        student_handler
+            .matches("student_access_policy::authorize_student_profile_read")
+            .count(),
+        2
+    );
+    assert!(!student_handler.contains("student_access_policy::can_read_student_pii"));
+    let policy = read_source(manifest_dir().join("src/policies/student_access_policy.rs"));
+    assert!(policy.contains("STUDENT_PII_ACCESS"));
+    assert!(policy.contains("resource_access_policy::require_resource_access"));
     assert!(student_handler.contains("student_access_policy::resolve_student_list_access"));
     assert!(!student_handler.contains("actor.require_permission(codes::STUDENT_READ"));
     assert!(student_handler.contains("student_list_access"));

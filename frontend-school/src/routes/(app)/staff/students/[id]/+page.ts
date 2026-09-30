@@ -28,7 +28,7 @@ export const load: PageLoad = ({ fetch, params, url, depends }) => {
 		'โหลดข้อมูลนักเรียนไม่สำเร็จ'
 	);
 	return {
-		title: 'แก้ไขข้อมูลนักเรียน',
+		title: 'ข้อมูลนักเรียน',
 		studentId,
 		academicYearId,
 		profileKey: `${studentId}:${academicYearId}`,

@@ -2,10 +2,16 @@
  * Student Management Page (Staff)
  */
 
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { get } from 'svelte/store';
+import { can } from '$lib/stores/permissions';
+import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
+import { captureRouteLoad } from '$lib/navigation/route-load';
+import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
+import type { PageLoad } from './$types';
+import { listStudents } from '$lib/api/students';
 
 export const _meta = {
-	academicContext: 'year_required',
+	academicContext: 'year_required' as const,
 	menu: {
 		title: 'รายชื่อนักเรียน',
 		icon: 'GraduationCap',
@@ -17,8 +23,44 @@ export const _meta = {
 	}
 };
 
-export const load = async () => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
+	depends('school:app-identity');
+	const academicYearId = url.searchParams.get('academicYearId') ?? '';
+	const search = url.searchParams.get('search') ?? '';
+	const requestedStatus = url.searchParams.get('status');
+	const status =
+		requestedStatus === 'all' || requestedStatus === 'inactive' ? requestedStatus : 'active';
+	const requestedPage = Number(url.searchParams.get('page'));
+	const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+	const query = {
+		academicYearId,
+		search: search || undefined,
+		status: status === 'all' ? undefined : status,
+		page,
+		pageSize: 20
+	};
+	const students = captureRouteLoad(
+		waitForAuthenticatedUser().then((user) =>
+			academicYearId &&
+			user?.user_type === 'staff' &&
+			get(can).hasAny(
+				PERMISSIONS.STUDENT_READ_SCHOOL,
+				PERMISSIONS.STUDENT_READ_ASSIGNED,
+				PERMISSIONS.STUDENT_READ_OWN
+			)
+				? listStudents(query, { requestFetch: fetch })
+				: null
+		),
+		'โหลดรายชื่อนักเรียนไม่สำเร็จ'
+	);
 	return {
-		title: _meta.menu.title
+		title: _meta.menu.title,
+		academicYearId,
+		search,
+		status,
+		page,
+		query,
+		listKey: JSON.stringify([academicYearId, search, status, page]),
+		students
 	};
 };

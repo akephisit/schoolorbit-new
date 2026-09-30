@@ -3,7 +3,7 @@
  * Handles all student-related API calls (both admin and self-service)
  */
 
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -24,9 +24,12 @@ type EmptyData = Schemas['EmptyData'];
 /**
  * List all students (Admin)
  */
-export async function listStudents(query: ListStudentsQuery): Promise<StudentListResponse> {
+export async function listStudents(
+	query: ListStudentsQuery,
+	options: ApiRequestOptions = {}
+): Promise<StudentListResponse> {
 	return requireApiData(
-		await apiClient.get<StudentListResponse>('/api/students', { query: { ...query } }),
+		await apiClient.get<StudentListResponse>('/api/students', { ...options, query: { ...query } }),
 		'Failed to list students'
 	);
 }
@@ -34,12 +37,16 @@ export async function listStudents(query: ListStudentsQuery): Promise<StudentLis
 /**
  * Get student by ID (Admin)
  */
-export async function getStudent(id: string, academicYearId: string): Promise<Student> {
+export async function getStudent(
+	id: string,
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+): Promise<Student> {
 	const query = { academicYearId } satisfies NonNullable<
 		operations['getStudent']['parameters']['query']
 	>;
 	return requireApiData(
-		await apiClient.get<Student>(`/api/students/${encodeURIComponent(id)}`, { query }),
+		await apiClient.get<Student>(`/api/students/${encodeURIComponent(id)}`, { ...options, query }),
 		'Failed to get student'
 	);
 }

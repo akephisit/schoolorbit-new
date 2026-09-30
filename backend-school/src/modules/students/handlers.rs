@@ -55,9 +55,8 @@ pub async fn get_own_profile(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    student_access_policy::can_read_student_profile(&pool, &actor, actor.user_id).await?;
     let include_pii =
-        student_access_policy::can_read_student_pii(&pool, &actor, actor.user_id).await?;
+        student_access_policy::authorize_student_profile_read(&pool, &actor, actor.user_id).await?;
     let student =
         student_service::get_own_profile(&pool, actor.user_id, query.academic_year_id, include_pii)
             .await?;
@@ -181,9 +180,8 @@ pub async fn get_student(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    student_access_policy::can_read_student_profile(&pool, &actor, student_id).await?;
     let include_pii =
-        student_access_policy::can_read_student_pii(&pool, &actor, student_id).await?;
+        student_access_policy::authorize_student_profile_read(&pool, &actor, student_id).await?;
 
     let student =
         student_service::get_student(&pool, student_id, query.academic_year_id, include_pii)

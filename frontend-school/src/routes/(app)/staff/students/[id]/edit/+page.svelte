@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
@@ -10,7 +12,6 @@
 	import { Card } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { toast } from 'svelte-sonner';
@@ -26,17 +27,23 @@
 	} from '$lib/api/students';
 	import * as Dialog from '$lib/components/ui/dialog';
 
-	let { params }: PageProps = $props();
-	let studentId = $derived(params.id);
-	let student = $state<Student | null>(null);
+	let { data }: PageProps = $props();
+	const studentId = $derived(data.studentId);
+	const profileKey = $derived(data.profileKey);
+	const source = $derived(data.student);
+	const studentRequest = new LatestRequest();
+	let activeKey = '';
+	let disposed = false;
+	let mutationEpoch = 0;
+	let student = $state.raw<Student | null>(null);
 	let loading = $state(true);
 	let loadError = $state('');
 	let editing = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
-	let revision = 0;
-	const academicContext = getAcademicContextStore();
-	const academicYearId = $derived($academicContext.selected.academicYearId);
+	let mutating = $state(false);
+	let parentEpoch = 0;
+	const academicYearId = $derived(data.academicYearId);
 	const academicYearQuery = $derived(
 		academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''
 	);
@@ -86,134 +93,159 @@
 
 	let parentErrors = $state<Record<string, string>>({});
 
-	onMount(() => {
-		let loadedYearId = '';
-		return academicContext.subscribe((state) => {
-			const yearId = state.selected.academicYearId;
-			if (!yearId || yearId === loadedYearId) return;
-			loadedYearId = yearId;
-			void loadStudent(yearId);
-		});
-	});
-
-	async function loadStudent(yearId: string) {
-		const current = ++revision;
-		if (!canReadStudent) {
-			if (current === revision) {
+	$effect.pre(() => {
+		const key = profileKey,
+			read = source;
+		untrack(() => {
+			if (key !== activeKey) {
+				activeKey = key;
+				mutationEpoch++;
 				student = null;
-				loading = false;
+				editing = false;
+				saving = false;
+				deleting = false;
+				mutating = false;
+				isAddParentOpen = false;
+				parentLoading = false;
+				resetParentForm();
 			}
-			return;
-		}
+			const ticket = studentRequest.begin();
+			loading = true;
+			loadError = '';
+			void read.then((result) => applyStudent(result, ticket.revision));
+		});
+		return () => studentRequest.abort();
+	});
+	onDestroy(() => {
+		disposed = true;
+		mutationEpoch++;
+		studentRequest.abort();
+	});
+	function applyStudent(result: Awaited<typeof data.student>, revision: number) {
+		if (!studentRequest.isCurrent(revision)) return;
+		loading = false;
+		if (result.ok) {
+			student = result.data;
+			if (student && !editing) resetForm();
+		} else loadError = result.error;
+	}
+	async function reloadCurrentYear() {
+		if (!academicYearId || !canReadStudent) return;
+		const ticket = studentRequest.begin();
 		loading = true;
 		loadError = '';
-		try {
-			const loaded = await getStudent(studentId, yearId);
-			if (current !== revision) return;
-			student = loaded;
-
-			// Initialize form data
-			formData = {
-				email: student.email || '',
-				first_name: student.first_name || '',
-				last_name: student.last_name || '',
-				phone: student.phone || '',
-				address: student.address || '',
-				grade_level: student.grade_level || '',
-				homeroom: student.homeroom || '',
-				student_number: student.student_number || null
-			};
-		} catch (error) {
-			if (current !== revision) return;
-			console.error('Failed to load student:', error);
-			const message = error instanceof Error ? error.message : 'ไม่พบนักเรียน';
-			loadError = message;
-			toast.error(message);
-		} finally {
-			if (current === revision) loading = false;
-		}
+		const result = await captureRouteLoad(
+			getStudent(studentId, academicYearId, { signal: ticket.signal }),
+			'โหลดข้อมูลนักเรียนไม่สำเร็จ'
+		);
+		applyStudent(result, ticket.revision);
 	}
 
-	async function reloadCurrentYear() {
-		if (!academicYearId) return;
-		await loadStudent(academicYearId);
+	function resetForm() {
+		if (!student) return;
+		formData = {
+			email: student.email || '',
+			first_name: student.first_name || '',
+			last_name: student.last_name || '',
+			phone: student.phone || '',
+			address: student.address || '',
+			grade_level: student.grade_level || '',
+			homeroom: student.homeroom || '',
+			student_number: student.student_number ?? null
+		};
 	}
-
+	function resetParentForm() {
+		parentForm = {
+			title: '',
+			first_name: '',
+			last_name: '',
+			phone: '',
+			relationship: 'บิดา',
+			national_id: '',
+			email: ''
+		};
+		parentErrors = {};
+	}
+	$effect.pre(() => {
+		const open = isAddParentOpen;
+		untrack(() => {
+			parentEpoch++;
+			if (!open) resetParentForm();
+		});
+	});
+	function beginMutation() {
+		const key = profileKey,
+			epoch = ++mutationEpoch;
+		studentRequest.abort();
+		loading = false;
+		mutating = true;
+		return () => !disposed && epoch === mutationEpoch && key === profileKey;
+	}
 	async function handleSave() {
-		if (!canUpdateStudent) return;
+		if (!canUpdateStudent || mutating || !student) return;
+		const current = beginMutation();
 		saving = true;
 		try {
 			const { grade_level: _gradeLevel, homeroom: _homeroom, ...updateData } = formData;
-
 			await updateStudent(studentId, {
 				...updateData,
-				student_number: formData.student_number || undefined
+				student_number: formData.student_number ?? undefined
 			});
+			if (!current()) return;
 			toast.success('บันทึกข้อมูลสำเร็จ');
 			editing = false;
 			await reloadCurrentYear();
 		} catch (error) {
-			console.error('Failed to save:', error);
-			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-			toast.error(message);
+			if (current()) toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
 		} finally {
-			saving = false;
+			if (current()) {
+				saving = false;
+				mutating = false;
+			}
 		}
 	}
-
 	function handleCancel() {
-		// Reset to original values
-		if (student) {
-			formData = {
-				email: student.email || '',
-				first_name: student.first_name || '',
-				last_name: student.last_name || '',
-				phone: student.phone || '',
-				address: student.address || '',
-				grade_level: student.grade_level || '',
-				homeroom: student.homeroom || '',
-				student_number: student.student_number || null
-			};
-		}
+		resetForm();
 		editing = false;
 	}
-
 	async function handleDelete() {
-		if (!canDeleteStudent) return;
-		if (!confirm('คุณแน่ใจหรือไม่ที่จะลบนักเรียนคนนี้?')) {
+		if (
+			!canDeleteStudent ||
+			mutating ||
+			!student ||
+			!confirm('คุณแน่ใจหรือไม่ที่จะลบนักเรียนคนนี้?')
+		)
 			return;
-		}
-
+		const current = beginMutation();
 		deleting = true;
+		const destination = academicYearId
+			? resolve(`/staff/students?academicYearId=${encodeURIComponent(academicYearId)}`)
+			: resolve('/staff/students');
 		try {
 			await deleteStudent(studentId);
+			if (!current()) return;
 			toast.success('ลบนักเรียนสำเร็จ');
-			if (academicYearId) {
-				goto(resolve(`/staff/students?academicYearId=${encodeURIComponent(academicYearId)}`));
-			} else {
-				goto(resolve('/staff/students'));
-			}
+			await goto(destination);
 		} catch (error) {
-			console.error('Failed to delete:', error);
-			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-			toast.error(message);
+			if (current()) toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
 		} finally {
-			deleting = false;
+			if (current()) {
+				deleting = false;
+				mutating = false;
+			}
 		}
 	}
-
 	async function handleAddParent() {
-		if (!canUpdateStudent) return;
-		// Validate
+		if (!canUpdateStudent || mutating || !isAddParentOpen || !student) return;
 		parentErrors = {};
 		if (!parentForm.first_name) parentErrors.first_name = 'กรุณากรอกชื่อ';
 		if (!parentForm.last_name) parentErrors.last_name = 'กรุณากรอกนามสกุล';
 		if (!parentForm.phone) parentErrors.phone = 'กรุณากรอกเบอร์โทร';
 		if (parentForm.phone && !/^\d{9,10}$/.test(parentForm.phone))
 			parentErrors.phone = 'เบอร์โทรไม่ถูกต้อง';
-
 		if (Object.keys(parentErrors).length > 0) return;
-
+		const current = beginMutation(),
+			draft = parentEpoch;
 		parentLoading = true;
 		try {
 			await addParentToStudent(studentId, {
@@ -221,60 +253,67 @@
 				email: parentForm.email || undefined,
 				national_id: parentForm.national_id || undefined
 			});
-			toast.success('เพิ่มผู้ปกครองสำเร็จ');
-			isAddParentOpen = false;
-			parentForm = {
-				// Reset form
-				title: '',
-				first_name: '',
-				last_name: '',
-				phone: '',
-				relationship: 'บิดา',
-				national_id: '',
-				email: ''
-			};
+			if (!current()) return;
+			if (draft === parentEpoch) {
+				toast.success('เพิ่มผู้ปกครองสำเร็จ');
+				isAddParentOpen = false;
+				resetParentForm();
+			}
 			await reloadCurrentYear();
 		} catch (error) {
-			console.error('Failed to add parent:', error);
-			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-			toast.error(message);
+			if (current() && draft === parentEpoch)
+				toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
 		} finally {
-			parentLoading = false;
+			if (current()) {
+				parentLoading = false;
+				mutating = false;
+			}
 		}
 	}
-
 	async function handleDeleteParent(parentId: string) {
-		if (!canUpdateStudent) return;
-		if (!confirm('ยืนยันลบผู้ปกครองท่านนี้ออกจากนักเรียน?')) return;
-
+		if (
+			!canUpdateStudent ||
+			mutating ||
+			!student ||
+			!confirm('ยืนยันลบผู้ปกครองท่านนี้ออกจากนักเรียน?')
+		)
+			return;
+		const current = beginMutation();
 		try {
 			await removeParentFromStudent(studentId, parentId);
+			if (!current()) return;
 			toast.success('ลบผู้ปกครองสำเร็จ');
 			await reloadCurrentYear();
 		} catch (error) {
-			console.error('Failed to remove parent:', error);
-			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-			toast.error(message);
+			if (current()) toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาด');
+		} finally {
+			if (current()) mutating = false;
 		}
 	}
 </script>
 
 <PageShell
-	title={student ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
+	title={student && canReadStudent ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
 	description="รายละเอียดและจัดการข้อมูลนักเรียน"
 	backHref={listHref}
+	backPreload="off"
 >
 	{#snippet actions()}
-		{#if !editing && !loading && (canUpdateStudent || canDeleteStudent)}
+		<Button
+			variant="outline"
+			onclick={reloadCurrentYear}
+			disabled={loading || !canReadStudent || editing || mutating}>รีเฟรช</Button
+		>
+		{#if student && canReadStudent && !editing && !loading && (canUpdateStudent || canDeleteStudent)}
 			<div class="flex gap-2">
 				{#if canUpdateStudent}
-					<Button onclick={() => (editing = true)}>
+					<Button onclick={() => (editing = true)} disabled={mutating}>
 						<Edit class="w-4 h-4 mr-2" />
 						แก้ไข
 					</Button>
 				{/if}
 				{#if canDeleteStudent}
-					<Button variant="destructive" onclick={handleDelete} disabled={deleting}>
+					<Button variant="destructive" onclick={handleDelete} disabled={mutating}>
 						{#if deleting}
 							กำลังลบ...
 						{:else}
@@ -287,337 +326,362 @@
 		{/if}
 	{/snippet}
 
-	{#if !canReadStudent}
-		<PageState
-			variant="permission"
-			title="ไม่มีสิทธิ์ดูข้อมูลนักเรียน"
-			description="บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนคนนี้ในขอบเขตที่ระบบอนุญาต"
-		/>
-	{:else if canReadStudent && !canUpdateStudent}
-		<PageState
-			variant="permission"
-			title="อ่านได้อย่างเดียว"
-			description="บัญชีนี้ยังไม่มีสิทธิ์แก้ไขข้อมูลนักเรียน"
-		/>
-	{/if}
-
-	{#if loading}
-		<PageSkeleton variant="form" rows={6} />
-	{:else if loadError}
-		<PageState
-			variant="error"
-			title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
-			description={loadError}
-			actionLabel="ลองอีกครั้ง"
-			onaction={reloadCurrentYear}
-		/>
-	{:else if student}
-		<!-- Student ID & Status -->
-		<Card class="p-6">
-			<div class="flex items-center justify-between">
-				<div>
-					<p class="text-sm text-muted-foreground">รหัสนักเรียน</p>
-					<p class="text-2xl font-bold">{student.student_id}</p>
-				</div>
-				<Badge
-					variant={student.status === 'active' ? 'default' : 'secondary'}
-					class={student.status === 'active' ? 'bg-green-500' : ''}
-				>
-					{student.status === 'active' ? 'ใช้งาน' : 'ไม่ใช้งาน'}
-				</Badge>
-			</div>
-		</Card>
-
-		<!-- Basic Information -->
-		<Card class="p-6">
-			<h2 class="text-xl font-semibold mb-6">ข้อมูลพื้นฐาน</h2>
-
-			{#if editing && canUpdateStudent}
-				<div class="space-y-4">
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label for="first_name">ชื่อ</Label>
-							<Input
-								id="first_name"
-								type="text"
-								bind:value={formData.first_name}
-								disabled={saving}
-							/>
-						</div>
-
-						<div>
-							<Label for="last_name">นามสกุล</Label>
-							<Input id="last_name" type="text" bind:value={formData.last_name} disabled={saving} />
-						</div>
-					</div>
-
-					<div class="grid grid-cols-2 gap-4">
-						<div>
-							<Label for="email">อีเมล</Label>
-							<Input id="email" type="email" bind:value={formData.email} disabled={saving} />
-						</div>
-
-						<div>
-							<Label for="phone">เบอร์โทรศัพท์</Label>
-							<Input id="phone" type="tel" bind:value={formData.phone} disabled={saving} />
-						</div>
-					</div>
-
-					<div>
-						<Label for="address">ที่อยู่</Label>
-						<Input id="address" type="text" bind:value={formData.address} disabled={saving} />
-					</div>
-				</div>
-			{:else}
-				<div class="grid grid-cols-2 gap-6">
-					<div>
-						<Label>ชื่อ-นามสกุล</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.title || ''}
-							{student.first_name}
-							{student.last_name}
-						</div>
-					</div>
-
-					<div>
-						<Label>เพศ</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.gender === 'male' ? 'ชาย' : student.gender === 'female' ? 'หญิง' : '-'}
-						</div>
-					</div>
-
-					<div>
-						<Label>วันเกิด</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.date_of_birth || '-'}
-						</div>
-					</div>
-
-					{#if canReadStudentPii}
-						<div>
-							<Label>เลขบัตรประชาชน</Label>
-							<div class="px-3 py-2 bg-muted/50 rounded-md">
-								{student.national_id || '-'}
-							</div>
-						</div>
-					{:else}
-						<div>
-							<Label>เลขบัตรประชาชน</Label>
-							<div class="px-3 py-2 bg-muted/50 rounded-md text-muted-foreground">
-								ไม่มีสิทธิ์ดูข้อมูลส่วนบุคคล
-							</div>
-						</div>
-					{/if}
-
-					<div>
-						<Label>อีเมล</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.email || '-'}
-						</div>
-					</div>
-
-					<div>
-						<Label>เบอร์โทรศัพท์</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.phone || '-'}
-						</div>
-					</div>
-
-					<div class="col-span-2">
-						<Label>ที่อยู่</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.address || '-'}
-						</div>
-					</div>
-				</div>
-			{/if}
-		</Card>
-
-		<!-- Student Information -->
-		<Card class="p-6">
-			<h2 class="text-xl font-semibold mb-6">ข้อมูลนักเรียน</h2>
-
-			{#if editing && canUpdateStudent}
-				<div class="space-y-4">
-					<div class="grid grid-cols-3 gap-4">
-						<div>
-							<Label for="grade_level">ระดับชั้น</Label>
-							<Input
-								id="grade_level"
-								type="text"
-								bind:value={formData.grade_level}
-								placeholder="ม.1"
-								disabled={saving}
-							/>
-						</div>
-
-						<div>
-							<Label for="homeroom">ห้อง</Label>
-							<Input
-								id="homeroom"
-								type="text"
-								bind:value={formData.homeroom}
-								placeholder="1"
-								disabled={saving}
-							/>
-						</div>
-
-						<div>
-							<Label for="student_number">เลขที่</Label>
-							<Input
-								id="student_number"
-								type="number"
-								bind:value={formData.student_number}
-								placeholder="1"
-								disabled={saving}
-							/>
-						</div>
-					</div>
-
-					<div class="flex gap-3 mt-6">
-						<Button onclick={handleSave} disabled={saving} class="flex-1">
-							{#if saving}
-								กำลังบันทึก...
-							{:else}
-								<Save class="w-4 h-4 mr-2" />
-								บันทึก
-							{/if}
-						</Button>
-						<Button variant="outline" onclick={handleCancel} disabled={saving}>
-							<X class="w-4 h-4 mr-2" />
-							ยกเลิก
-						</Button>
-					</div>
-				</div>
-			{:else}
-				<div class="grid grid-cols-3 gap-6">
-					<div>
-						<Label>ระดับชั้น</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.grade_level || '-'}
-						</div>
-					</div>
-
-					<div>
-						<Label>ห้อง</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.homeroom || '-'}
-						</div>
-					</div>
-
-					<div>
-						<Label>เลขที่</Label>
-						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.student_number || '-'}
-						</div>
-					</div>
-				</div>
-			{/if}
-		</Card>
-
-		<!-- Medical Information (if any) -->
-		{#if student.blood_type || student.allergies || student.medical_conditions}
-			<Card class="p-6">
-				<h2 class="text-xl font-semibold mb-6">ข้อมูลสุขภาพ</h2>
-
-				<div class="grid grid-cols-2 gap-6">
-					{#if student.blood_type}
-						<div>
-							<Label>หมู่เลือด</Label>
-							<div class="px-3 py-2 bg-muted/50 rounded-md">
-								{student.blood_type}
-							</div>
-						</div>
-					{/if}
-
-					{#if student.allergies}
-						<div class="col-span-2">
-							<Label>อาการแพ้</Label>
-							<div class="px-3 py-2 bg-muted/50 rounded-md">
-								{student.allergies}
-							</div>
-						</div>
-					{/if}
-
-					{#if student.medical_conditions}
-						<div class="col-span-2">
-							<Label>โรคประจำตัว</Label>
-							<div class="px-3 py-2 bg-muted/50 rounded-md">
-								{student.medical_conditions}
-							</div>
-						</div>
-					{/if}
-				</div>
-			</Card>
+	<section data-testid="student-profile" aria-busy={loading}>
+		{#if loadError && student && canReadStudent}<PageState
+				title="อัปเดตข้อมูลนักเรียนไม่สำเร็จ"
+				description={loadError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={reloadCurrentYear}
+			/>{/if}
+		{#if loading && student && canReadStudent}<p role="status">กำลังอัปเดตข้อมูลนักเรียน...</p>{/if}
+		{#if !canReadStudent}
+			<PageState
+				variant="permission"
+				title="ไม่มีสิทธิ์ดูข้อมูลนักเรียน"
+				description="บัญชีนี้ยังไม่มีสิทธิ์อ่านข้อมูลนักเรียนคนนี้ในขอบเขตที่ระบบอนุญาต"
+			/>
+		{:else if canReadStudent && !canUpdateStudent}
+			<PageState
+				variant="permission"
+				title="อ่านได้อย่างเดียว"
+				description="บัญชีนี้ยังไม่มีสิทธิ์แก้ไขข้อมูลนักเรียน"
+			/>
 		{/if}
 
-		<!-- Parent Information -->
-		<Card class="p-6">
-			<div class="flex items-center justify-between mb-6">
-				<h2 class="text-xl font-semibold">ข้อมูลผู้ปกครอง</h2>
-				{#if editing && canUpdateStudent}
-					<Button variant="outline" size="sm" onclick={() => (isAddParentOpen = true)}>
-						+ เพิ่มผู้ปกครอง
-					</Button>
-				{/if}
-			</div>
+		{#if canReadStudent}
+			{#if loading && !student}
+				<div role="status" aria-label="กำลังโหลดข้อมูลนักเรียน">
+					<PageSkeleton variant="form" rows={6} />
+				</div>
+			{:else if loadError && !student}
+				<PageState
+					variant="error"
+					title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
+					description={loadError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={reloadCurrentYear}
+				/>
+			{:else if student}
+				<!-- Student ID & Status -->
+				<Card class="p-6">
+					<div class="flex items-center justify-between">
+						<div>
+							<p class="text-sm text-muted-foreground">รหัสนักเรียน</p>
+							<p class="text-2xl font-bold">{student.student_id}</p>
+						</div>
+						<Badge
+							variant={student.status === 'active' ? 'default' : 'secondary'}
+							class={student.status === 'active' ? 'bg-green-500' : ''}
+						>
+							{student.status === 'active' ? 'ใช้งาน' : 'ไม่ใช้งาน'}
+						</Badge>
+					</div>
+				</Card>
 
-			{#if student.parents && student.parents.length > 0}
-				<div class="space-y-4">
-					{#each student.parents as parent (parent.id)}
-						<div class="p-4 border rounded-lg bg-muted/10 relative">
-							{#if editing && canUpdateStudent}
-								<Button
-									variant="ghost"
-									size="icon"
-									class="absolute top-2 right-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-									onclick={() => handleDeleteParent(parent.id)}
-								>
-									<Trash2 class="w-4 h-4" />
-								</Button>
-							{/if}
+				<!-- Basic Information -->
+				<Card class="p-6">
+					<h2 class="text-xl font-semibold mb-6">ข้อมูลพื้นฐาน</h2>
+
+					{#if editing && canUpdateStudent}
+						<div class="space-y-4">
+							<div class="grid grid-cols-2 gap-4">
+								<div>
+									<Label for="first_name">ชื่อ</Label>
+									<Input
+										id="first_name"
+										type="text"
+										bind:value={formData.first_name}
+										disabled={mutating}
+									/>
+								</div>
+
+								<div>
+									<Label for="last_name">นามสกุล</Label>
+									<Input
+										id="last_name"
+										type="text"
+										bind:value={formData.last_name}
+										disabled={mutating}
+									/>
+								</div>
+							</div>
 
 							<div class="grid grid-cols-2 gap-4">
 								<div>
-									<Label class="text-xs text-muted-foreground">ชื่อ-นามสกุล</Label>
-									<p class="font-medium">{parent.first_name} {parent.last_name}</p>
+									<Label for="email">อีเมล</Label>
+									<Input id="email" type="email" bind:value={formData.email} disabled={mutating} />
 								</div>
+
 								<div>
-									<Label class="text-xs text-muted-foreground">ความสัมพันธ์</Label>
-									<div class="flex items-center gap-2">
-										<p>{parent.relationship}</p>
-										{#if parent.is_primary}
-											<Badge variant="secondary" class="text-xs">หลัก</Badge>
-										{/if}
+									<Label for="phone">เบอร์โทรศัพท์</Label>
+									<Input id="phone" type="tel" bind:value={formData.phone} disabled={mutating} />
+								</div>
+							</div>
+
+							<div>
+								<Label for="address">ที่อยู่</Label>
+								<Input id="address" type="text" bind:value={formData.address} disabled={mutating} />
+							</div>
+						</div>
+					{:else}
+						<div class="grid grid-cols-2 gap-6">
+							<div>
+								<Label>ชื่อ-นามสกุล</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.title || ''}
+									{student.first_name}
+									{student.last_name}
+								</div>
+							</div>
+
+							<div>
+								<Label>เพศ</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.gender === 'male' ? 'ชาย' : student.gender === 'female' ? 'หญิง' : '-'}
+								</div>
+							</div>
+
+							<div>
+								<Label>วันเกิด</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.date_of_birth || '-'}
+								</div>
+							</div>
+
+							{#if canReadStudentPii}
+								<div>
+									<Label>เลขบัตรประชาชน</Label>
+									<div class="px-3 py-2 bg-muted/50 rounded-md">
+										{student.national_id || '-'}
 									</div>
 								</div>
+							{:else}
 								<div>
-									<Label class="text-xs text-muted-foreground">เบอร์โทรศัพท์</Label>
-									<p>{parent.phone || '-'}</p>
+									<Label>เลขบัตรประชาชน</Label>
+									<div class="px-3 py-2 bg-muted/50 rounded-md text-muted-foreground">
+										ไม่มีสิทธิ์ดูข้อมูลส่วนบุคคล
+									</div>
 								</div>
-								<div>
-									<Label class="text-xs text-muted-foreground">Username</Label>
-									<p class="font-mono text-sm">{parent.username}</p>
+							{/if}
+
+							<div>
+								<Label>อีเมล</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.email || '-'}
+								</div>
+							</div>
+
+							<div>
+								<Label>เบอร์โทรศัพท์</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.phone || '-'}
+								</div>
+							</div>
+
+							<div class="col-span-2">
+								<Label>ที่อยู่</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.address || '-'}
 								</div>
 							</div>
 						</div>
-					{/each}
-				</div>
+					{/if}
+				</Card>
+
+				<!-- Student Information -->
+				<Card class="p-6">
+					<h2 class="text-xl font-semibold mb-6">ข้อมูลนักเรียน</h2>
+
+					{#if editing && canUpdateStudent}
+						<div class="space-y-4">
+							<div class="grid grid-cols-3 gap-4">
+								<div>
+									<Label for="grade_level">ระดับชั้น</Label>
+									<Input
+										id="grade_level"
+										type="text"
+										bind:value={formData.grade_level}
+										placeholder="ม.1"
+										disabled={mutating}
+									/>
+								</div>
+
+								<div>
+									<Label for="homeroom">ห้อง</Label>
+									<Input
+										id="homeroom"
+										type="text"
+										bind:value={formData.homeroom}
+										placeholder="1"
+										disabled={mutating}
+									/>
+								</div>
+
+								<div>
+									<Label for="student_number">เลขที่</Label>
+									<Input
+										id="student_number"
+										type="number"
+										bind:value={formData.student_number}
+										placeholder="1"
+										disabled={mutating}
+									/>
+								</div>
+							</div>
+
+							<div class="flex gap-3 mt-6">
+								<Button onclick={handleSave} disabled={mutating} class="flex-1">
+									{#if saving}
+										กำลังบันทึก...
+									{:else}
+										<Save class="w-4 h-4 mr-2" />
+										บันทึก
+									{/if}
+								</Button>
+								<Button variant="outline" onclick={handleCancel} disabled={mutating}>
+									<X class="w-4 h-4 mr-2" />
+									ยกเลิก
+								</Button>
+							</div>
+						</div>
+					{:else}
+						<div class="grid grid-cols-3 gap-6">
+							<div>
+								<Label>ระดับชั้น</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.grade_level || '-'}
+								</div>
+							</div>
+
+							<div>
+								<Label>ห้อง</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.homeroom || '-'}
+								</div>
+							</div>
+
+							<div>
+								<Label>เลขที่</Label>
+								<div class="px-3 py-2 bg-muted/50 rounded-md">
+									{student.student_number || '-'}
+								</div>
+							</div>
+						</div>
+					{/if}
+				</Card>
+
+				<!-- Medical Information (if any) -->
+				{#if student.blood_type || student.allergies || student.medical_conditions}
+					<Card class="p-6">
+						<h2 class="text-xl font-semibold mb-6">ข้อมูลสุขภาพ</h2>
+
+						<div class="grid grid-cols-2 gap-6">
+							{#if student.blood_type}
+								<div>
+									<Label>หมู่เลือด</Label>
+									<div class="px-3 py-2 bg-muted/50 rounded-md">
+										{student.blood_type}
+									</div>
+								</div>
+							{/if}
+
+							{#if student.allergies}
+								<div class="col-span-2">
+									<Label>อาการแพ้</Label>
+									<div class="px-3 py-2 bg-muted/50 rounded-md">
+										{student.allergies}
+									</div>
+								</div>
+							{/if}
+
+							{#if student.medical_conditions}
+								<div class="col-span-2">
+									<Label>โรคประจำตัว</Label>
+									<div class="px-3 py-2 bg-muted/50 rounded-md">
+										{student.medical_conditions}
+									</div>
+								</div>
+							{/if}
+						</div>
+					</Card>
+				{/if}
+
+				<!-- Parent Information -->
+				<Card class="p-6">
+					<div class="flex items-center justify-between mb-6">
+						<h2 class="text-xl font-semibold">ข้อมูลผู้ปกครอง</h2>
+						{#if editing && canUpdateStudent}
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => (isAddParentOpen = true)}
+								disabled={mutating}
+							>
+								+ เพิ่มผู้ปกครอง
+							</Button>
+						{/if}
+					</div>
+
+					{#if student.parents && student.parents.length > 0}
+						<div class="space-y-4">
+							{#each student.parents as parent (parent.id)}
+								<div class="p-4 border rounded-lg bg-muted/10 relative">
+									{#if editing && canUpdateStudent}
+										<Button
+											variant="ghost"
+											size="icon"
+											class="absolute top-2 right-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+											onclick={() => handleDeleteParent(parent.id)}
+											aria-label="ลบผู้ปกครอง"
+											disabled={mutating}
+										>
+											<Trash2 class="w-4 h-4" />
+										</Button>
+									{/if}
+
+									<div class="grid grid-cols-2 gap-4">
+										<div>
+											<Label class="text-xs text-muted-foreground">ชื่อ-นามสกุล</Label>
+											<p class="font-medium">{parent.first_name} {parent.last_name}</p>
+										</div>
+										<div>
+											<Label class="text-xs text-muted-foreground">ความสัมพันธ์</Label>
+											<div class="flex items-center gap-2">
+												<p>{parent.relationship}</p>
+												{#if parent.is_primary}
+													<Badge variant="secondary" class="text-xs">หลัก</Badge>
+												{/if}
+											</div>
+										</div>
+										<div>
+											<Label class="text-xs text-muted-foreground">เบอร์โทรศัพท์</Label>
+											<p>{parent.phone || '-'}</p>
+										</div>
+										<div>
+											<Label class="text-xs text-muted-foreground">Username</Label>
+											<p class="font-mono text-sm">{parent.username}</p>
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<div class="text-center py-8 text-muted-foreground">ยังไม่มีข้อมูลผู้ปกครอง</div>
+					{/if}
+				</Card>
 			{:else}
-				<div class="text-center py-8 text-muted-foreground">ยังไม่มีข้อมูลผู้ปกครอง</div>
+				<PageState
+					title="ไม่พบข้อมูลนักเรียน"
+					description="ไม่พบข้อมูลนักเรียนสำหรับรายการนี้"
+					actionLabel="กลับหน้ารายชื่อนักเรียน"
+					href={listHref}
+				/>
 			{/if}
-		</Card>
-	{:else if canReadStudent}
-		<PageState
-			title="ไม่พบข้อมูลนักเรียน"
-			description="ไม่พบข้อมูลนักเรียนสำหรับรายการนี้"
-			actionLabel="กลับหน้ารายชื่อนักเรียน"
-			href={listHref}
-		/>
-	{/if}
+		{/if}
+	</section>
 </PageShell>
 
-{#if canUpdateStudent}
+{#if canReadStudent && canUpdateStudent}
 	<Dialog.Root bind:open={isAddParentOpen}>
 		<Dialog.Content class="sm:max-w-[425px]">
 			<Dialog.Header>
@@ -648,17 +712,6 @@
 						/>
 						{#if parentErrors.first_name}<p class="text-[10px] text-destructive">
 								{parentErrors.first_name}
-							</p>{/if}
-					</div>
-					<div>
-						<Label for="p_last_name">นามสกุล <span class="text-destructive">*</span></Label>
-						<Input
-							id="p_last_name"
-							bind:value={parentForm.last_name}
-							class={parentErrors.last_name ? 'border-destructive' : ''}
-						/>
-						{#if parentErrors.last_name}<p class="text-[10px] text-destructive">
-								{parentErrors.last_name}
 							</p>{/if}
 					</div>
 				</div>

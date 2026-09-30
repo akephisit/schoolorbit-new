@@ -900,35 +900,32 @@
 		{
 			"route": "staff/students",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "year_required",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-students",
-			"notes": "Component API reads include listStudents; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Selected-year route owns the bounded URL search/status/page list with focused retry and same-list mutation refresh."
 		},
 		{
 			"route": "staff/students/[id]",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
-			"context": "student-id",
-			"status": "planned",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "student-id+year_required",
+			"status": "complete",
 			"backendOwner": "school-students",
-			"notes": "Component API reads include getStudent; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Selected student and year route owns the profile and visible parent relationships; parent form opens on interaction, empty mutations refresh only this profile, stale contexts and disposed pages cannot apply results."
 		},
 		{
 			"route": "staff/students/[id]/edit",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
-			"context": "student-id",
-			"status": "planned",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "student-id+year_required",
+			"status": "complete",
 			"backendOwner": "school-students",
-			"notes": "Component API reads include getStudent; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Selected student and year route owns the profile and visible parent relationships; parent form opens on interaction, empty mutations refresh only this profile, stale contexts and disposed pages cannot apply results."
 		},
 		{
 			"route": "staff/students/new",
