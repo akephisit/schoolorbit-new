@@ -86,12 +86,15 @@ export async function deleteStudent(id: string): Promise<{ success: boolean }> {
 /**
  * Get own profile (Student self-service)
  */
-export async function getOwnProfile(academicYearId: string): Promise<Student> {
+export async function getOwnProfile(
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+): Promise<Student> {
 	const query = { academicYearId } satisfies NonNullable<
 		operations['getStudentProfile']['parameters']['query']
 	>;
 	return requireApiData(
-		await apiClient.get<Student>('/api/student/profile', { query }),
+		await apiClient.get<Student>('/api/student/profile', { ...options, query }),
 		'Failed to get profile'
 	);
 }

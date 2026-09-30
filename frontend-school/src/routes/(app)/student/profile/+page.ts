@@ -1,19 +1,4 @@
-/**
- * Student Dashboard
- * Main dashboard for students (no specific permission required)
- */
-
-export const _meta = {
-	menu: {
-		title: 'แดชบอร์ด',
-		icon: 'LayoutDashboard',
-		group: 'main',
-		workspace: 'home',
-		order: 1,
-		user_type: 'student'
-	}
-};
-
+export const _meta = { access: { user_type: 'student' } };
 import type { PageLoad } from './$types';
 import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
 import { captureRouteLoad } from '$lib/navigation/route-load';
@@ -56,5 +41,5 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		}),
 		'โหลดข้อมูลนักเรียนไม่สำเร็จ'
 	);
-	return { title: 'แดชบอร์ด', requestKey, requestHref: url.href, context, profile };
+	return { title: 'ข้อมูลส่วนตัว', requestKey, requestHref: url.href, context, profile };
 };

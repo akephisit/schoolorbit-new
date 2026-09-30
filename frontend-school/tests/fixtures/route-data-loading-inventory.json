@@ -968,13 +968,12 @@
 		{
 			"route": "student",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "own academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-students",
-			"notes": "Component API reads include listMyAcademicContextOptions, getOwnProfile; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct loader shares one learner-scoped academic-context promise with selected self profile. Shallow canonical URL repair avoids duplicate reads; independent prerequisite/primary first and retained retry, consumed identity/URL sources and logout/disposal guards. Profile update stays explicit, failed save preserves draft and empty success rereads selected profile only."
 		},
 		{
 			"route": "student/activities",
@@ -1022,13 +1021,12 @@
 		{
 			"route": "student/profile",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "own academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-students",
-			"notes": "Component API reads include listMyAcademicContextOptions, getOwnProfile; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct loader shares one learner-scoped academic-context promise with selected self profile. Shallow canonical URL repair avoids duplicate reads; independent prerequisite/primary first and retained retry, consumed identity/URL sources and logout/disposal guards. Profile update stays explicit, failed save preserves draft and empty success rereads selected profile only."
 		},
 		{
 			"route": "student/settings",

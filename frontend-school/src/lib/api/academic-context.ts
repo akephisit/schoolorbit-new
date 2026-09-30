@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -28,11 +28,12 @@ export async function listPublicAcademicContextOptions(
 }
 
 export async function listMyAcademicContextOptions(
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	options: ApiRequestOptions = {}
 ): Promise<AcademicContextOptionsResponse> {
 	const response = await apiClient.get<AcademicContextOptionsResponse>(
 		'/api/me/academic-context/options',
-		{ signal }
+		{ ...options, signal: signal ?? options.signal }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดประวัติปีและภาคเรียนได้');
 }

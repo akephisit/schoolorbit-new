@@ -597,10 +597,14 @@ test('student dashboard and profile select only authorized academic years', asyn
 		'src/lib/components/academic-context/ScopedAcademicYearSelect.svelte'
 	);
 
-	for (const source of [dashboard, profile]) {
-		assert.match(source, /listMyAcademicContextOptions/);
+	for (const [route, source] of [
+		['student', dashboard],
+		['student/profile', profile]
+	]) {
+		const loader = await readProjectFile(`src/routes/(app)/${route}/+page.ts`);
+		assert.match(loader, /listMyAcademicContextOptions/);
 		assert.match(source, /resolveScopedAcademicYearUrl/);
-		assert.match(source, /getOwnProfile\(selectedYearId\)/);
+		assert.match(loader, /getOwnProfile/);
 		assert.match(source, /ScopedAcademicYearSelect/);
 		assert.match(source, /ยังไม่มีประวัติปีการศึกษาสำหรับบัญชีนี้/);
 	}
