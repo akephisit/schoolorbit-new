@@ -74,6 +74,7 @@ function harnessPlugin(): Plugin {
 				import { mount } from 'svelte';
 				import '/src/routes/layout.css';
 				import MyCertificateList from '/src/lib/components/certificates/MyCertificateList.svelte';
+ import {listOwnCertificates} from '$lib/api/certificates';
 
 				const timestamp = '2026-08-15T02:00:00Z';
 				const base = {
@@ -132,9 +133,9 @@ function harnessPlugin(): Plugin {
 				const portal = new URL(window.location.href).searchParams.get('portal');
 				mount(MyCertificateList, {
 					target: document.getElementById('app'),
-					props: portal === 'student'
+					props: {userId:'fixture',canRead:true,initialCertificates:listOwnCertificates().then(records=>({ok:true,data:{ownerKey:'fixture|true',records}})),...(portal === 'student'
 						? { title: 'เกียรติบัตรของฉัน', description: 'คลังนักเรียน' }
-						: { title: 'เกียรติบัตรที่โรงเรียนออก', description: 'คลังบุคลากร' }
+						: { title: 'เกียรติบัตรที่โรงเรียนออก', description: 'คลังบุคลากร' })}
 				});
 			`;
 		},

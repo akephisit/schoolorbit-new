@@ -1223,7 +1223,18 @@ test('achievement workspace mutations patch saved and deleted rows locally', asy
 				new RegExp(`async function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n\\t\\}`)
 			)?.[0] ?? '';
 		assert.notEqual(body, '', `${functionName} should exist`);
-		assert.doesNotMatch(body, /\bloadData\(\)/, `${functionName} should patch local state`);
+		assert.match(body, /if \(loaded\) (?:replaceAchievement|removeAchievement)\(/);
+		assert.doesNotMatch(
+			body,
+			/invalidateAll|Promise\.all/,
+			`${functionName} should reconcile only its affected list`
+		);
+		if (body.includes('loadData()'))
+			assert.match(
+				body,
+				/else await loadData\(\)/,
+				'only an unresolved current tab requires a focused GET'
+			);
 	}
 });
 

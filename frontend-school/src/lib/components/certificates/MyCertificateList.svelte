@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 	import { toast } from 'svelte-sonner';
 	import {
 		Award,
@@ -25,9 +27,17 @@
 	import { loadCertificateRenderer } from '$lib/certificates/renderer';
 
 	let {
+		initialCertificates,
+		userId,
+		canRead,
 		title = 'เกียรติบัตรที่ได้รับ',
 		description = 'ใบที่โรงเรียนออกให้บัญชีนี้ พร้อมสถานะและหลักฐานตรวจสอบ'
 	}: {
+		initialCertificates: Promise<
+			RouteLoadResult<{ ownerKey: string; records: IssuedCertificateSummary[] | null }>
+		>;
+		userId: string;
+		canRead: boolean;
 		title?: string;
 		description?: string;
 	} = $props();
@@ -36,55 +46,97 @@
 	let loading = $state(true);
 	let loadError = $state('');
 	let downloadingId = $state<string | null>(null);
-	let loadController: AbortController | null = null;
+	const request = new LatestRequest();
+	let loaded = $state(false),
+		activeOwner = '',
+		disposed = false,
+		epoch = 0;
+	let consumed: typeof initialCertificates | null = null;
+	const ownerKey = $derived(`${userId}|${canRead}`);
 
 	const issuedCount = $derived(
 		certificates.filter((certificate) => certificate.status === 'issued').length
 	);
 	const revokedCount = $derived(certificates.length - issuedCount);
 
-	onMount(() => {
-		void loadCertificates();
-		return () => loadController?.abort();
+	$effect.pre(() => {
+		const operation = initialCertificates,
+			key = ownerKey,
+			allowed = canRead;
+		untrack(() => {
+			if (activeOwner !== key) {
+				activeOwner = key;
+				epoch++;
+				request.abort();
+				certificates = [];
+				loaded = false;
+				loading = allowed;
+				loadError = '';
+				downloadingId = null;
+			}
+			if (!allowed || operation === consumed) return;
+			consumed = operation;
+			const t = request.begin();
+			loading = true;
+			loadError = '';
+			void operation.then((r) => applyCertificates(r, t.revision));
+		});
 	});
-
-	async function loadCertificates(): Promise<void> {
-		loadController?.abort();
-		const controller = new AbortController();
-		loadController = controller;
+	onDestroy(() => {
+		disposed = true;
+		epoch++;
+		request.abort();
+	});
+	function applyCertificates(r: Awaited<typeof initialCertificates>, revision: number) {
+		if (!request.isCurrent(revision)) return;
+		loading = false;
+		if (!r.ok) {
+			loadError = r.error;
+			return;
+		}
+		if (r.data.ownerKey !== ownerKey || !canRead) return;
+		certificates = r.data.records ?? [];
+		loaded = true;
+	}
+	async function loadCertificates() {
+		if (disposed || !canRead) return;
+		const key = ownerKey,
+			t = request.begin();
 		loading = true;
 		loadError = '';
-		try {
-			const loaded = await listOwnCertificates({ signal: controller.signal });
-			if (controller.signal.aborted) return;
-			certificates = loaded;
-		} catch {
-			if (controller.signal.aborted) return;
-			certificates = [];
-			loadError = 'โหลดคลังเกียรติบัตรไม่สำเร็จ';
-		} finally {
-			if (loadController === controller) loading = false;
-		}
+		applyCertificates(
+			await captureRouteLoad(
+				listOwnCertificates({ signal: t.signal }).then((records) => ({ ownerKey: key, records })),
+				'โหลดคลังเกียรติบัตรไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
 
 	async function downloadCertificate(certificate: IssuedCertificateSummary): Promise<void> {
 		if (
+			disposed ||
+			!canRead ||
 			certificate.status !== 'issued' ||
 			certificate.capabilities.canDownload !== true ||
 			downloadingId
 		) {
 			return;
 		}
+		const owner = epoch;
+		const current = () => !disposed && owner === epoch && canRead;
 		downloadingId = certificate.id;
 		try {
 			const manifest = await createOwnCertificateRenderManifest(certificate.id);
+			if (!current()) return;
 			const renderer = await loadCertificateRenderer();
+			if (!current()) return;
 			const bytes = await renderer.buildCertificatePdf([manifest]);
-			downloadCertificatePdf(bytes, manifest.suggestedFilename);
+			if (current()) downloadCertificatePdf(bytes, manifest.suggestedFilename);
 		} catch {
-			toast.error('สร้างไฟล์ไม่สำเร็จ กรุณาโหลดรายการใหม่แล้วลองอีกครั้ง');
+			if (current()) toast.error('สร้างไฟล์ไม่สำเร็จ กรุณาโหลดรายการใหม่แล้วลองอีกครั้ง');
 		} finally {
-			downloadingId = null;
+			if (current()) downloadingId = null;
 		}
 	}
 
@@ -99,108 +151,116 @@
 </script>
 
 <PageShell {title} {description}>
-	{#if loading}
-		<div class="certificate-grid" aria-label="กำลังโหลดคลังเกียรติบัตร" aria-busy="true">
-			{#each { length: 3 }, index (index)}
-				<div class="certificate-skeleton" aria-hidden="true"></div>
-			{/each}
-		</div>
-	{:else if loadError}
-		<PageState
-			variant="error"
-			title={loadError}
-			description="ตรวจสอบการเชื่อมต่อแล้วลองโหลดอีกครั้ง"
-			actionLabel="ลองใหม่"
-			onaction={loadCertificates}
-		/>
-	{:else if certificates.length === 0}
-		<PageState
-			title="ยังไม่มีเกียรติบัตรในบัญชีนี้"
-			description="เมื่อโรงเรียนออกเกียรติบัตรให้บัญชีนี้ รายการจะปรากฏที่นี่โดยอัตโนมัติ"
-		/>
+	{#if !canRead}<PageState variant="permission" title="ไม่มีสิทธิ์ดูเกียรติบัตรของตนเอง" />
 	{:else}
-		<div class="registry-summary" aria-label="สรุปคลังเกียรติบัตร">
-			<div>
-				<span>ในทะเบียน</span>
-				<strong>{certificates.length} ใบ</strong>
+		{#if loading && loaded}<p role="status">กำลังอัปเดตคลังเกียรติบัตร</p>{/if}
+		{#if loadError}<PageState
+				variant="error"
+				title={loadError}
+				actionLabel="ลองใหม่"
+				onaction={loadCertificates}
+			/>{/if}
+		{#if loading && !loaded}
+			<div
+				class="certificate-grid"
+				role="status"
+				aria-label="กำลังโหลดคลังเกียรติบัตร"
+				aria-busy="true"
+			>
+				{#each { length: 3 }, index (index)}
+					<div class="certificate-skeleton" aria-hidden="true"></div>
+				{/each}
 			</div>
-			<p>ใช้ได้ {issuedCount} · เพิกถอน {revokedCount}</p>
-			<Button variant="ghost" size="sm" onclick={loadCertificates}>
-				<RefreshCw class="size-4" aria-hidden="true" /> โหลดใหม่
-			</Button>
-		</div>
+		{:else if !loaded}<span class="sr-only">รอข้อมูลคลังเกียรติบัตร</span>
+		{:else if certificates.length === 0}
+			<PageState
+				title="ยังไม่มีเกียรติบัตรในบัญชีนี้"
+				description="เมื่อโรงเรียนออกเกียรติบัตรให้บัญชีนี้ รายการจะปรากฏที่นี่โดยอัตโนมัติ"
+			/>
+		{:else}
+			<div class="registry-summary" aria-label="สรุปคลังเกียรติบัตร">
+				<div>
+					<span>ในทะเบียน</span>
+					<strong>{certificates.length} ใบ</strong>
+				</div>
+				<p>ใช้ได้ {issuedCount} · เพิกถอน {revokedCount}</p>
+				<Button variant="ghost" size="sm" onclick={loadCertificates}>
+					<RefreshCw class="size-4" aria-hidden="true" /> โหลดใหม่
+				</Button>
+			</div>
 
-		<div class="certificate-grid" data-testid="my-certificate-list">
-			{#each certificates as certificate (certificate.id)}
-				{@const downloadable =
-					certificate.status === 'issued' && certificate.capabilities.canDownload === true}
-				<article
-					class={['certificate-docket', { revoked: certificate.status === 'revoked' }]}
-					data-testid="my-certificate-card"
-				>
-					<div class="status-spine" aria-hidden="true"></div>
-					<header>
-						<div class="status-mark">
-							{#if certificate.status === 'issued'}
-								<ShieldCheck size={21} aria-hidden="true" />
-								<span>ใช้ได้</span>
-							{:else}
-								<ShieldX size={21} aria-hidden="true" />
-								<span>เพิกถอนแล้ว</span>
-							{/if}
-						</div>
-						<div class="registry-number">
-							<span>เลขทะเบียน</span>
-							<strong>{certificate.certificateNumber}</strong>
-						</div>
-					</header>
-
-					<div class="docket-body">
-						<p class="template-name"><FileCheck2 size={16} /> {certificate.templateName}</p>
-						<h2>{certificate.campaignName}</h2>
-						{#if certificate.activityItem}
-							<p class="activity"><Award size={16} /> {certificate.activityItem}</p>
-						{/if}
-						{#if certificate.awardOrRole}
-							<p class="award-role">{certificate.awardOrRole}</p>
-						{/if}
-						<p class="issued-date">
-							<CalendarDays size={16} />
-							{formatThaiDate(certificate.issueDate)} · ปีการศึกษา
-							{certificate.academicYearValue}
-						</p>
-					</div>
-
-					<footer>
-						<a
-							class="verify-link"
-							href={resolve(
-								`/verify/certificate/${encodeURIComponent(certificate.certificateNumber)}` as '/verify/certificate/[certificateNumber]'
-							)}
-							target="_blank"
-							rel="noopener noreferrer"
-							referrerpolicy="no-referrer"
-						>
-							<ExternalLink size={16} aria-hidden="true" /> ตรวจสอบสาธารณะ
-						</a>
-						{#if downloadable}
-							<Button
-								size="sm"
-								onclick={() => downloadCertificate(certificate)}
-								disabled={downloadingId !== null}
-								data-testid="my-certificate-download"
-							>
-								{#if downloadingId === certificate.id}
-									<LoaderCircle class="size-4 animate-spin" aria-hidden="true" /> กำลังสร้าง PDF
+			<div class="certificate-grid" data-testid="my-certificate-list">
+				{#each certificates as certificate (certificate.id)}
+					{@const downloadable =
+						certificate.status === 'issued' && certificate.capabilities.canDownload === true}
+					<article
+						class={['certificate-docket', { revoked: certificate.status === 'revoked' }]}
+						data-testid="my-certificate-card"
+					>
+						<div class="status-spine" aria-hidden="true"></div>
+						<header>
+							<div class="status-mark">
+								{#if certificate.status === 'issued'}
+									<ShieldCheck size={21} aria-hidden="true" />
+									<span>ใช้ได้</span>
 								{:else}
-									<Download class="size-4" aria-hidden="true" /> ดาวน์โหลด
+									<ShieldX size={21} aria-hidden="true" />
+									<span>เพิกถอนแล้ว</span>
 								{/if}
-							</Button>
-						{/if}
-					</footer>
-				</article>
-			{/each}
-		</div>
+							</div>
+							<div class="registry-number">
+								<span>เลขทะเบียน</span>
+								<strong>{certificate.certificateNumber}</strong>
+							</div>
+						</header>
+
+						<div class="docket-body">
+							<p class="template-name"><FileCheck2 size={16} /> {certificate.templateName}</p>
+							<h2>{certificate.campaignName}</h2>
+							{#if certificate.activityItem}
+								<p class="activity"><Award size={16} /> {certificate.activityItem}</p>
+							{/if}
+							{#if certificate.awardOrRole}
+								<p class="award-role">{certificate.awardOrRole}</p>
+							{/if}
+							<p class="issued-date">
+								<CalendarDays size={16} />
+								{formatThaiDate(certificate.issueDate)} · ปีการศึกษา
+								{certificate.academicYearValue}
+							</p>
+						</div>
+
+						<footer>
+							<a
+								class="verify-link"
+								href={resolve(
+									`/verify/certificate/${encodeURIComponent(certificate.certificateNumber)}` as '/verify/certificate/[certificateNumber]'
+								)}
+								target="_blank"
+								rel="noopener noreferrer"
+								referrerpolicy="no-referrer"
+							>
+								<ExternalLink size={16} aria-hidden="true" /> ตรวจสอบสาธารณะ
+							</a>
+							{#if downloadable}
+								<Button
+									size="sm"
+									onclick={() => downloadCertificate(certificate)}
+									disabled={downloadingId !== null}
+									data-testid="my-certificate-download"
+								>
+									{#if downloadingId === certificate.id}
+										<LoaderCircle class="size-4 animate-spin" aria-hidden="true" /> กำลังสร้าง PDF
+									{:else}
+										<Download class="size-4" aria-hidden="true" /> ดาวน์โหลด
+									{/if}
+								</Button>
+							{/if}
+						</footer>
+					</article>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </PageShell>
 

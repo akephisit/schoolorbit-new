@@ -19,14 +19,17 @@
 	import { achievementSchema } from '$lib/validation/schemas';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { PageState } from '$lib/components/app-state';
 
 	interface Props {
 		open: boolean;
 		achievement: Achievement | null;
 		userId: string;
 		canSelectUser?: boolean;
+		busy?: boolean;
 		onclose?: () => void;
-		onsave?: (data: Partial<Achievement>) => void;
+		onsave?: (data: Partial<Achievement>) => Promise<void> | void;
 	}
 
 	let {
@@ -34,6 +37,7 @@
 		achievement = null,
 		userId,
 		canSelectUser = false,
+		busy = false,
 		onclose,
 		onsave
 	}: Props = $props();
@@ -57,14 +61,18 @@
 	let errors = $state<Record<string, string>>({});
 
 	// Staff List for selection
-	import { listStaff, type StaffListItem } from '$lib/api/staff';
+	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { uploadFile } from '$lib/api/files';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
 	import { Check, ChevronsUpDown } from '@lucide/svelte';
 	import { cn } from '$lib/utils';
 
-	let staffList = $state<StaffListItem[]>([]);
+	let staffList = $state<StaffLookupItem[]>([]),
+		staffSearch = $state(''),
+		staffLoading = $state(false),
+		staffError = $state('');
+	const staffRequest = new LatestRequest();
 	let openCombobox = $state(false);
 	let triggerRef = $state<HTMLButtonElement>(null!);
 	$effect.pre(() => {
@@ -81,19 +89,13 @@
 		disposed = true;
 		draftEpoch++;
 		fileEpoch++;
+		staffRequest.abort();
 		if (imagePreview) URL.revokeObjectURL(imagePreview);
 	});
 
 	// Reset or Load form when dialog opens/changes
 	$effect(() => {
 		if (open) {
-			// Load staff list if can select user
-			if (canSelectUser && staffList.length === 0) {
-				listStaff({ page_size: 1000 }).then((res) => {
-					if (res.success) staffList = res.data;
-				});
-			}
-
 			loading = false; // Reset loading state
 			if (achievement) {
 				title = achievement.title;
@@ -116,6 +118,37 @@
 			errors = {};
 		}
 	});
+
+	$effect.pre(() => {
+		const opened = open && openCombobox && canSelectUser && !achievement,
+			query = staffSearch.trim();
+		untrack(() => {
+			staffRequest.abort();
+			staffList = [];
+			staffError = '';
+			staffLoading = false;
+			if (opened) void loadStaffChoices(query);
+		});
+		return () => staffRequest.abort();
+	});
+	async function loadStaffChoices(query = staffSearch.trim()) {
+		if (disposed || !open || !openCombobox || !canSelectUser || achievement) return;
+		const ticket = staffRequest.begin();
+		staffLoading = true;
+		staffError = '';
+		try {
+			const records = await lookupStaff(
+				{ limit: 50, search: query || undefined },
+				{ signal: ticket.signal }
+			);
+			if (staffRequest.isCurrent(ticket.revision)) staffList = records;
+		} catch (error) {
+			if (staffRequest.isCurrent(ticket.revision))
+				staffError = error instanceof Error ? error.message : 'โหลดตัวเลือกบุคลากรไม่สำเร็จ';
+		} finally {
+			if (staffRequest.isCurrent(ticket.revision)) staffLoading = false;
+		}
+	}
 
 	async function compressImage(file: File): Promise<File> {
 		if (!file.type.startsWith('image/')) return file;
@@ -183,6 +216,7 @@
 
 				// 2. Compress (Resize & Optimize)
 				const compressed = await compressImage(file);
+				if (!current()) return;
 
 				// Final check (5MB Limit)
 				if (compressed.size > 5 * 1024 * 1024) {
@@ -214,11 +248,11 @@
 	function getSelectedStaffName() {
 		if (!targetUserId) return 'เลือกบุคลากร';
 		const staff = staffList.find((s) => s.id === targetUserId);
-		return staff ? `${staff.first_name} ${staff.last_name}` : 'เลือกบุคลากร';
+		return staff ? staff.name : 'เลือกบุคลากร';
 	}
 
 	async function handleSubmit() {
-		if (!open || disposed || loading) return;
+		if (!open || disposed || loading || busy) return;
 		const epoch = draftEpoch;
 		const current = () => !disposed && open && epoch === draftEpoch;
 		errors = {};
@@ -272,9 +306,8 @@
 			}
 
 			if (!current()) return;
-			onsave?.({ ...payload, image_file_id: imageFileId });
-
-			loading = false;
+			await onsave?.({ ...payload, image_file_id: imageFileId });
+			if (current()) loading = false;
 
 			// Wait for parent to close or handle state
 		} catch (e) {
@@ -320,10 +353,18 @@
 							{/snippet}
 						</Popover.Trigger>
 						<Popover.Content class="w-full p-0">
-							<Command.Root>
-								<Command.Input placeholder="ค้นหาบุคลากร..." />
+							<Command.Root shouldFilter={false}>
+								<Command.Input bind:value={staffSearch} placeholder="ค้นหาบุคลากร..." />
+								{#if staffLoading}<p role="status">กำลังโหลดตัวเลือกบุคลากร</p>{/if}
+								{#if staffError}<PageState
+										variant="error"
+										title="โหลดตัวเลือกบุคลากรไม่สำเร็จ"
+										description={staffError}
+										actionLabel="ลองโหลดตัวเลือกอีกครั้ง"
+										onaction={() => void loadStaffChoices()}
+									/>{/if}
 								<Command.List>
-									<Command.Empty>ไม่พบรายชื่อ</Command.Empty>
+									{#if !staffLoading && !staffError}<Command.Empty>ไม่พบรายชื่อ</Command.Empty>{/if}
 									<Command.Group>
 										{#each staffList as staff (staff.id)}
 											<Command.Item
@@ -339,8 +380,7 @@
 														targetUserId === staff.id ? 'opacity-100' : 'opacity-0'
 													)}
 												/>
-												{staff.first_name}
-												{staff.last_name}
+												{staff.name}
 											</Command.Item>
 										{/each}
 									</Command.Group>
@@ -433,8 +473,10 @@
 		</div>
 
 		<DialogFooter>
-			<Button variant="outline" onclick={() => onclose?.()} disabled={loading}>ยกเลิก</Button>
-			<Button onclick={handleSubmit} disabled={loading} class="w-[120px]">
+			<Button variant="outline" onclick={() => onclose?.()} disabled={loading || busy}
+				>ยกเลิก</Button
+			>
+			<Button onclick={handleSubmit} disabled={loading || busy} class="w-[120px]">
 				{#if loading}
 					<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />
 					บันทึก...

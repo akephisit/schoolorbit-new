@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { requireApiData } from '$lib/api/client';
 	import { authStore } from '$lib/stores/auth';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
@@ -47,7 +51,24 @@
 	import { toast } from 'svelte-sonner';
 
 	// State
-	let loading = $state(false);
+	let {
+		initialAchievements
+	}: {
+		initialAchievements: Promise<
+			RouteLoadResult<{ identityKey: string; records: Achievement[] | null }>
+		>;
+	} = $props();
+	const request = new LatestRequest();
+	let loaded = $state(false),
+		loadError = $state(''),
+		saving = $state(false);
+	let readOwner = '',
+		identityOwner = '',
+		ownerEpoch = 0,
+		draftEpoch = 0,
+		disposed = false,
+		consumed: typeof initialAchievements | null = null;
+	let loading = $state(true);
 	let achievements = $state<Achievement[]>([]);
 	let searchTerm = $state('');
 	let activeTab = $state('own'); // 'own' | 'all'
@@ -97,44 +118,106 @@
 		})
 	);
 
-	async function loadData() {
-		if (!canReadAchievements) {
-			achievements = [];
-			loading = false;
+	const identityKey = $derived.by(() => {
+		void user;
+		void permissions;
+		return appIdentityKey();
+	});
+	$effect.pre(() => {
+		const operation = initialAchievements,
+			identity = identityKey,
+			mode = activeTab,
+			allowed = canReadAchievements,
+			all = canReadAll;
+		untrack(() => {
+			if (identityOwner !== identity) {
+				identityOwner = identity;
+				ownerEpoch++;
+				saving = false;
+				deleting = false;
+				showDialog = false;
+				showDeleteDialog = false;
+				showFileDialog = false;
+				viewingFileId = '';
+				viewingResourceId = '';
+			}
+			if (mode === 'all' && !all) {
+				activeTab = 'own';
+				return;
+			}
+			const key = `${identity}|${mode}`,
+				changed = readOwner !== key;
+			readOwner = key;
+			if (changed) {
+				request.abort();
+				achievements = [];
+				loaded = false;
+				loadError = '';
+				loading = allowed;
+			}
+			if (!allowed) return;
+			if (operation !== consumed) {
+				consumed = operation;
+				if (mode === 'own') {
+					const t = request.begin();
+					loading = true;
+					loadError = '';
+					void operation.then((r) => applyAchievements(r, t.revision, identity, mode));
+					return;
+				}
+			}
+			if (changed) void loadData();
+		});
+	});
+	$effect.pre(() => {
+		const opened = `${showDialog}|${showDeleteDialog}|${selectedAchievement?.id ?? ''}`;
+		untrack(() => {
+			void opened;
+			draftEpoch++;
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		draftEpoch++;
+		request.abort();
+	});
+	function applyAchievements(
+		r: Awaited<typeof initialAchievements>,
+		revision: number,
+		identity: string,
+		mode: string
+	) {
+		if (!request.isCurrent(revision) || identity !== identityKey || mode !== activeTab) return;
+		loading = false;
+		if (!r.ok) {
+			loadError = r.error;
 			return;
 		}
-		if (!userId) return;
-
-		try {
-			loading = true;
-
-			const filter: AchievementListFilter = {};
-			if (activeTab === 'all' && !canReadAll) {
-				activeTab = 'own';
-			}
-			if (activeTab === 'own') {
-				filter.user_id = userId;
-			}
-			// If 'all', send no user_id filter (backend handles permission check too)
-
-			const res = await getAchievements(filter);
-			if (res.success && res.data) {
-				achievements = res.data;
-			} else {
-				achievements = [];
-			}
-		} catch (error) {
-			console.error('Failed to load data:', error);
-			toast.error('ไม่สามารถโหลดข้อมูลได้');
-		} finally {
-			loading = false;
-		}
+		if (r.data.identityKey !== identity) return;
+		achievements = r.data.records ?? [];
+		loaded = true;
 	}
-
+	async function loadData() {
+		if (disposed || !canReadAchievements || !userId) return;
+		const identity = identityKey,
+			mode = activeTab,
+			t = request.begin();
+		loading = true;
+		loadError = '';
+		const filter: AchievementListFilter = mode === 'own' ? { user_id: userId } : {};
+		const result = await captureRouteLoad(
+			getAchievements(filter, { signal: t.signal }).then((reply) => ({
+				identityKey: identity,
+				records: requireApiData(reply, 'โหลดผลงานไม่สำเร็จ')
+			})),
+			'โหลดผลงานไม่สำเร็จ'
+		);
+		applyAchievements(result, t.revision, identity, mode);
+	}
 	function handleTabChange(value: string) {
 		if (value === 'all' && !canReadAll) return;
 		activeTab = value;
-		loadData();
 	}
 
 	function achievementMatchesCurrentTab(achievement: Achievement) {
@@ -189,44 +272,48 @@
 	}
 
 	async function handleSave(payload: Partial<Achievement>) {
-		// If create mode and canCreateAll -> payload.user_id might be set to selected user
-		// If edit mode -> payload.id exists
-
-		let res;
-		if (payload.id) {
-			if (!(
-				canUpdateAll ||
-				(canUpdateOwn && selectedAchievement && selectedAchievement.user_id === userId)
-			)) {
-				return;
-			}
-			res = await updateAchievement(payload.id, {
+		if (disposed || saving || !showDialog) return;
+		const target = selectedAchievement,
+			epoch = ownerEpoch,
+			draft = draftEpoch,
+			targetUserId = payload.user_id || userId;
+		const permitted = () =>
+			payload.id
+				? Boolean(
+						target?.id === payload.id &&
+						(canUpdateAll || (canUpdateOwn && target.user_id === userId))
+					)
+				: canCreateAll || (canCreateOwn && targetUserId === userId);
+		if (!permitted()) return;
+		const current = () => !disposed && epoch === ownerEpoch && permitted();
+		const ownsDraft = () => current() && showDialog && draft === draftEpoch;
+		saving = true;
+		try {
+			const fields = {
 				title: payload.title ?? '',
 				description: payload.description,
 				achievement_date: payload.achievement_date ?? '',
 				image_file_id: payload.image_file_id
-				// user_id is generally not updatable via this specific simple DTO but let's check
-			});
-		} else {
-			const targetUserId = payload.user_id || userId;
-			if (!(canCreateAll || (canCreateOwn && targetUserId === userId))) return;
-			res = await createAchievement({
-				user_id: targetUserId,
-				title: payload.title ?? '',
-				description: payload.description,
-				achievement_date: payload.achievement_date ?? '',
-				image_file_id: payload.image_file_id
-			});
-		}
-
-		if (res.success) {
-			toast.success('บันทึกข้อมูลเรียบร้อย');
-			showDialog = false;
-			if (res.data) {
-				replaceAchievement(res.data);
+			};
+			const reply = payload.id
+				? await updateAchievement(payload.id, fields)
+				: await createAchievement({ ...fields, user_id: targetUserId });
+			const saved = requireApiData(reply, 'บันทึกข้อมูลไม่สำเร็จ');
+			if (!current()) return;
+			request.abort();
+			loading = false;
+			loadError = '';
+			if (loaded) replaceAchievement(saved);
+			else await loadData();
+			if (ownsDraft()) {
+				toast.success('บันทึกข้อมูลเรียบร้อย');
+				showDialog = false;
 			}
-		} else {
-			toast.error(res.error || 'บันทึกข้อมูลไม่สำเร็จ');
+		} catch (error) {
+			if (ownsDraft())
+				toast.error(error instanceof Error ? error.message : 'บันทึกข้อมูลไม่สำเร็จ');
+		} finally {
+			if (current()) saving = false;
 		}
 	}
 
@@ -238,31 +325,34 @@
 	}
 
 	async function confirmDelete() {
-		if (!deleteId) return;
-		const achievement = achievements.find((item) => item.id === deleteId);
-		if (!achievement || !(canDeleteAll || (canDeleteOwn && achievement.user_id === userId))) return;
-
+		const target = achievements.find((item) => item.id === deleteId);
+		if (disposed || deleting || !showDeleteDialog || !target) return;
+		const permitted = () => canDeleteAll || (canDeleteOwn && target.user_id === userId);
+		if (!permitted()) return;
+		const epoch = ownerEpoch,
+			draft = draftEpoch,
+			current = () => !disposed && epoch === ownerEpoch && permitted();
+		const ownsDraft = () => current() && showDeleteDialog && draft === draftEpoch;
 		deleting = true;
-		const res = await deleteAchievement(deleteId);
-		deleting = false;
-
-		if (res.success) {
-			toast.success('ลบข้อมูลเรียบร้อย');
-			removeAchievement(deleteId);
-		} else {
-			toast.error(res.error || 'ลบข้อมูลไม่สำเร็จ');
+		try {
+			const reply = await deleteAchievement(target.id);
+			if (!reply.success) throw new Error(reply.error || 'ลบข้อมูลไม่สำเร็จ');
+			if (!current()) return;
+			request.abort();
+			loading = false;
+			if (loaded) removeAchievement(target.id);
+			else await loadData();
+			if (ownsDraft()) {
+				toast.success('ลบข้อมูลเรียบร้อย');
+				showDeleteDialog = false;
+				deleteId = null;
+			}
+		} catch (error) {
+			if (ownsDraft()) toast.error(error instanceof Error ? error.message : 'ลบข้อมูลไม่สำเร็จ');
+		} finally {
+			if (current()) deleting = false;
 		}
-		showDeleteDialog = false;
-		deleteId = null;
 	}
-
-	onMount(() => {
-		// Permissions are auto-loaded by authStore when user logs in
-		// Just load data when page mounts
-		if (userId) {
-			loadData();
-		}
-	});
 </script>
 
 <PageShell
@@ -271,7 +361,7 @@
 >
 	{#snippet actions()}
 		{#if canCreateAchievement}
-			<Button onclick={openCreateDialog}>
+			<Button disabled={!loaded} onclick={openCreateDialog}>
 				<Plus class="w-4 h-4 mr-2" />
 				เพิ่มรายการใหม่
 			</Button>
@@ -317,6 +407,14 @@
 					</div>
 				</div>
 
+				{#if loadError}<PageState
+						variant="error"
+						title="โหลดผลงานไม่สำเร็จ"
+						description={loadError}
+						actionLabel="ลองโหลดผลงานอีกครั้ง"
+						onaction={loadData}
+					/>{/if}
+				{#if loading && loaded}<p role="status">กำลังอัปเดตผลงาน</p>{/if}
 				<!-- Table -->
 				<div class="rounded-md border">
 					<Table>
@@ -330,12 +428,16 @@
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{#if loading}
+							{#if loading && !loaded}
 								<TableRow>
 									<TableCell colspan={5} class="p-0">
-										<PageSkeleton variant="table" rows={5} columns={5} />
+										<div role="status" aria-label="กำลังโหลดผลงาน">
+											<PageSkeleton variant="table" rows={5} columns={5} />
+										</div>
 									</TableCell>
 								</TableRow>
+							{:else if !loaded}<TableRow><TableCell colspan={5}>รอข้อมูลผลงาน</TableCell></TableRow
+								>
 							{:else if filteredAchievements.length === 0}
 								<TableRow>
 									<TableCell colspan={5} class="h-24">
@@ -411,6 +513,7 @@
 														variant="ghost"
 														size="icon"
 														class="h-8 w-8 hover:bg-muted"
+														aria-label={`แก้ไขผลงาน ${achievement.title}`}
 														onclick={() => openEditDialog(achievement)}
 														title="แก้ไข"
 													>
@@ -423,6 +526,8 @@
 														variant="ghost"
 														size="icon"
 														class="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+														disabled={saving || deleting}
+														aria-label={`ลบผลงาน ${achievement.title}`}
 														onclick={() => handleDelete(achievement.id)}
 														title="ลบ"
 													>
@@ -440,12 +545,13 @@
 			</CardContent>
 		</Card>
 
-		{#if canCreateAchievement || canUpdateAchievement}
+		{#if showDialog && (canCreateAchievement || canUpdateAchievement)}
 			<AchievementDialog
 				open={showDialog}
 				achievement={selectedAchievement}
 				{userId}
-				canSelectUser={canCreateAll}
+				canSelectUser={!selectedAchievement && canCreateAll}
+				busy={saving}
 				onclose={() => (showDialog = false)}
 				onsave={handleSave}
 			/>
@@ -459,7 +565,7 @@
 				<div
 					class="relative flex-1 bg-muted/30 min-h-[200px] flex items-center justify-center overflow-auto p-4"
 				>
-					{#if viewingFileId}
+					{#if showFileDialog && viewingFileId}
 						<PrivateFileImage
 							fileId={viewingFileId}
 							resourceId={viewingResourceId}

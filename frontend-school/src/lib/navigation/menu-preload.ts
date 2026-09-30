@@ -14,7 +14,9 @@ export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | 'of
 		path === '/staff/academic/supervision/templates'
 	)
 		return 'off';
-	return path === '/staff/facility/buildings' ||
+	return path.startsWith('/staff/achievements') ||
+		path === '/student/certificates' ||
+		path === '/staff/facility/buildings' ||
 		path === '/staff/features' ||
 		path === '/staff/school-settings' ||
 		path === '/staff/school-fonts' ||

@@ -17,6 +17,7 @@
 		{#if canViewIssued}
 			<a
 				href={resolve('/staff/achievements/issued')}
+				data-sveltekit-preload-data="tap"
 				aria-current={page.url.pathname === '/staff/achievements/issued' ? 'page' : undefined}
 			>
 				<Award size={17} aria-hidden="true" /> ใบที่โรงเรียนออก
@@ -25,6 +26,7 @@
 		{#if canViewSelfRecorded}
 			<a
 				href={resolve('/staff/achievements/self-recorded')}
+				data-sveltekit-preload-data="tap"
 				aria-current={page.url.pathname === '/staff/achievements/self-recorded'
 					? 'page'
 					: undefined}
