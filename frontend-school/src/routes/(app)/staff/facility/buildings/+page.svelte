@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import type { PageProps } from './$types';
+	import { authStore } from '$lib/stores/auth';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -74,42 +78,127 @@
 	let editingItem = $state<Building | Room | null>(null);
 	let deleteTarget = $state<{ type: 'building' | 'room'; id: string; name: string } | null>(null);
 
-	// Initial Data
-	async function loadData() {
-		if (!canReadFacility) {
-			buildings = [];
-			rooms = [];
-			loading = false;
-			return;
-		}
-		try {
-			loading = true;
-			const [bRes, rRes] = await Promise.all([
-				listBuildings(),
-				listRooms({
-					building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter
-				}) // Preload active rooms
-			]);
-			buildings = bRes.data;
-			rooms = rRes.data;
-		} catch {
-			toast.error('โหลดข้อมูลไม่สำเร็จ');
-		} finally {
-			loading = false;
-		}
+	let { data }: PageProps = $props();
+	const source = $derived(data.buildings),
+		buildingsRequest = new LatestRequest(),
+		roomsRequest = new LatestRequest();
+	let buildingsLoaded = $state(false),
+		buildingsError = $state(''),
+		roomsLoaded = $state(false),
+		roomsLoading = $state(false),
+		roomsError = $state('');
+	let owner = '',
+		ownerEpoch = 0,
+		draftEpoch = 0,
+		activeRoomsKey = '',
+		disposed = false;
+	const roomFiltersKey = $derived(`${selectedBuildingFilter}|${searchTerm.trim()}`);
+	function applyBuildings(result: Awaited<typeof data.buildings>, revision: number) {
+		if (!buildingsRequest.isCurrent(revision)) return;
+		loading = false;
+		if (result.ok) {
+			buildings = result.data?.data ?? [];
+			buildingsLoaded = true;
+		} else buildingsError = result.error;
 	}
-
+	$effect.pre(() => {
+		const operation = source,
+			identity = `${$authStore.user?.id ?? ''}|${canReadFacility}`;
+		untrack(() => {
+			if (owner !== identity) {
+				owner = identity;
+				ownerEpoch++;
+				buildings = [];
+				buildingsLoaded = false;
+				rooms = [];
+				roomsLoaded = false;
+				roomsRequest.abort();
+				showBuildingDialog = false;
+				showRoomDialog = false;
+				showDeleteDialog = false;
+				submitting = false;
+			}
+			const ticket = buildingsRequest.begin();
+			loading = true;
+			buildingsError = '';
+			void operation.then((result) => applyBuildings(result, ticket.revision));
+		});
+		return () => buildingsRequest.abort();
+	});
+	$effect.pre(() => {
+		const permissions = `${canCreateFacility}|${canUpdateFacility}|${canDeleteFacility}`;
+		untrack(() => {
+			void permissions;
+			ownerEpoch++;
+			submitting = false;
+		});
+	});
+	$effect.pre(() => {
+		const opened = activeTab === 'rooms',
+			allowed = canReadFacility,
+			key = roomFiltersKey;
+		untrack(() => {
+			if (!opened || !allowed) {
+				roomsRequest.abort();
+				rooms = [];
+				roomsLoaded = false;
+				roomsLoading = false;
+				roomsError = '';
+				return;
+			}
+			if (activeRoomsKey !== key) {
+				activeRoomsKey = key;
+				rooms = [];
+				roomsLoaded = false;
+			}
+			void refreshRooms();
+		});
+		return () => roomsRequest.abort();
+	});
+	$effect.pre(() => {
+		const context = `${showBuildingDialog}|${showRoomDialog}|${showDeleteDialog}`;
+		untrack(() => {
+			void context;
+			draftEpoch++;
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		buildingsRequest.abort();
+		roomsRequest.abort();
+	});
+	async function loadBuildings() {
+		if (!canReadFacility || disposed) return;
+		const ticket = buildingsRequest.begin();
+		loading = true;
+		buildingsError = '';
+		applyBuildings(
+			await captureRouteLoad(listBuildings({ signal: ticket.signal }), 'โหลดรายการอาคารไม่สำเร็จ'),
+			ticket.revision
+		);
+	}
 	async function refreshRooms() {
-		if (!canReadFacility) return;
-		try {
-			const res = await listRooms({
-				building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter,
-				search: searchTerm || undefined
-			});
-			rooms = res.data;
-		} catch {
-			toast.error('โหลดข้อมูลห้องไม่สำเร็จ');
-		}
+		if (!canReadFacility || activeTab !== 'rooms' || disposed) return;
+		const ticket = roomsRequest.begin();
+		roomsLoading = true;
+		roomsError = '';
+		const result = await captureRouteLoad(
+			listRooms(
+				{
+					building_id: selectedBuildingFilter === 'all' ? undefined : selectedBuildingFilter,
+					search: searchTerm.trim() || undefined
+				},
+				{ signal: ticket.signal }
+			),
+			'โหลดรายการห้องไม่สำเร็จ'
+		);
+		if (!roomsRequest.isCurrent(ticket.revision)) return;
+		roomsLoading = false;
+		if (result.ok) {
+			rooms = result.data.data;
+			roomsLoaded = true;
+		} else roomsError = result.error;
 	}
 
 	function replaceBuilding(building: Building) {
@@ -125,8 +214,13 @@
 	}
 
 	function removeBuilding(id: string) {
+		if (selectedBuildingFilter === id) selectedBuildingFilter = 'all';
 		buildings = buildings.filter((building) => building.id !== id);
-		rooms = rooms.filter((room) => room.building_id !== id);
+		rooms = rooms
+			.map((room) =>
+				room.building_id === id ? { ...room, building_id: null, building_name: null } : room
+			)
+			.filter(roomMatchesCurrentFilters);
 	}
 
 	function roomMatchesCurrentFilters(room: Room) {
@@ -134,7 +228,7 @@
 			return false;
 		const query = searchTerm.trim().toLowerCase();
 		if (!query) return true;
-		return [room.name_th, room.name_en, room.code, room.building_name]
+		return [room.name_th, room.code]
 			.filter(Boolean)
 			.some((value) => value!.toLowerCase().includes(query));
 	}
@@ -155,95 +249,137 @@
 		rooms = rooms.filter((room) => room.id !== id);
 	}
 
-	// Actions: Buildings
+	// Actions snapshot owner, target and draft before awaiting server state.
 	async function handleSaveBuilding(e: SubmitEvent) {
 		e.preventDefault();
-		if ((editingItem && !canUpdateFacility) || (!editingItem && !canCreateFacility)) return;
-		const form = e.target as HTMLFormElement;
-		const formData = new FormData(form);
+		const target = editingItem?.id;
+		if (
+			disposed ||
+			submitting ||
+			!showBuildingDialog ||
+			!buildingsLoaded ||
+			(target ? !canUpdateFacility : !canCreateFacility)
+		)
+			return;
+		const epoch = ownerEpoch,
+			draft = draftEpoch;
+		const current = () =>
+			!disposed && epoch === ownerEpoch && (target ? canUpdateFacility : canCreateFacility);
+		const ownsDraft = () => current() && draft === draftEpoch && showBuildingDialog;
+		const formData = new FormData(e.target as HTMLFormElement);
 		const payload = {
-			name_th: formData.get('name_th') as string,
-			name_en: formData.get('name_en') as string,
-			code: formData.get('code') as string,
-			description: formData.get('description') as string
+			name_th: String(formData.get('name_th') ?? ''),
+			name_en: String(formData.get('name_en') ?? ''),
+			code: String(formData.get('code') ?? ''),
+			description: String(formData.get('description') ?? '')
 		};
-
+		buildingsRequest.abort();
+		loading = false;
 		submitting = true;
 		try {
-			if (editingItem) {
-				replaceBuilding((await updateBuilding(editingItem.id, payload)).data);
-				toast.success('บันทึกข้อมูลอาคารสำเร็จ');
-			} else {
-				replaceBuilding((await createBuilding(payload)).data);
-				toast.success('เพิ่มอาคารสำเร็จ');
+			const saved = (target ? await updateBuilding(target, payload) : await createBuilding(payload))
+				.data;
+			if (!current()) return;
+			buildingsRequest.abort();
+			loading = false;
+			roomsRequest.abort();
+			roomsLoading = false;
+			replaceBuilding(saved);
+			// A building rename also changes joined names used by the visible room list.
+			if (activeTab === 'rooms' && !roomsLoaded) await refreshRooms();
+			if (ownsDraft()) {
+				toast.success(target ? 'บันทึกข้อมูลอาคารสำเร็จ' : 'เพิ่มอาคารสำเร็จ');
+				showBuildingDialog = false;
 			}
-			showBuildingDialog = false;
-		} catch {
-			toast.error('บันทึกไม่สำเร็จ');
+		} catch (error) {
+			if (ownsDraft()) toast.error(error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ');
 		} finally {
-			submitting = false;
+			if (current()) submitting = false;
 		}
 	}
-
-	// Actions: Rooms
 	async function handleSaveRoom(e: SubmitEvent) {
 		e.preventDefault();
-		if ((editingItem && !canUpdateFacility) || (!editingItem && !canCreateFacility)) return;
-		const form = e.target as HTMLFormElement;
-		const formData = new FormData(form);
-
+		const target = editingItem?.id;
+		if (
+			disposed ||
+			submitting ||
+			!showRoomDialog ||
+			!buildingsLoaded ||
+			buildingsError ||
+			(target ? !canUpdateFacility : !canCreateFacility)
+		)
+			return;
+		const epoch = ownerEpoch,
+			draft = draftEpoch;
+		const current = () =>
+			!disposed && epoch === ownerEpoch && (target ? canUpdateFacility : canCreateFacility);
+		const ownsDraft = () => current() && draft === draftEpoch && showRoomDialog;
+		const formData = new FormData(e.target as HTMLFormElement);
 		const payload = {
-			name_th: formData.get('name_th') as string,
-			name_en: formData.get('name_en') as string,
-			code: formData.get('code') as string,
-			room_type: formData.get('room_type') as string,
-			building_id: (formData.get('building_id') as string) || undefined,
-			capacity: parseInt(formData.get('capacity') as string) || 40,
-			floor: parseInt(formData.get('floor') as string) || undefined,
-			description: formData.get('description') as string
+			name_th: String(formData.get('name_th') ?? ''),
+			name_en: String(formData.get('name_en') ?? ''),
+			code: String(formData.get('code') ?? ''),
+			room_type: String(formData.get('room_type') ?? ''),
+			building_id: String(formData.get('building_id') ?? '') || undefined,
+			capacity: parseInt(String(formData.get('capacity'))) || 40,
+			floor: parseInt(String(formData.get('floor'))) || undefined,
+			description: String(formData.get('description') ?? '')
 		};
-
+		roomsRequest.abort();
+		roomsLoading = false;
 		submitting = true;
 		try {
-			if (editingItem) {
-				replaceRoom((await updateRoom(editingItem.id, payload)).data);
-				toast.success('บันทึกข้อมูลห้องสำเร็จ');
-			} else {
-				replaceRoom((await createRoom(payload)).data);
-				toast.success('เพิ่มห้องสำเร็จ');
+			const saved = (target ? await updateRoom(target, payload) : await createRoom(payload)).data;
+			if (!current()) return;
+			roomsRequest.abort();
+			roomsLoading = false;
+			if (roomsLoaded) replaceRoom(saved);
+			else if (activeTab === 'rooms') await refreshRooms();
+			if (ownsDraft()) {
+				toast.success(target ? 'บันทึกข้อมูลห้องสำเร็จ' : 'เพิ่มห้องสำเร็จ');
+				showRoomDialog = false;
 			}
-			showRoomDialog = false;
-		} catch {
-			toast.error('บันทึกไม่สำเร็จ');
+		} catch (error) {
+			if (ownsDraft()) toast.error(error instanceof Error ? error.message : 'บันทึกไม่สำเร็จ');
 		} finally {
-			submitting = false;
+			if (current()) submitting = false;
 		}
 	}
-
 	async function handleDelete() {
-		if (!deleteTarget || !canDeleteFacility) return;
+		const target = deleteTarget;
+		if (!target || !canDeleteFacility || disposed || submitting || !showDeleteDialog) return;
+		const epoch = ownerEpoch,
+			draft = draftEpoch;
+		const current = () => !disposed && epoch === ownerEpoch && canDeleteFacility;
+		const ownsDraft = () => current() && draft === draftEpoch && showDeleteDialog;
 		submitting = true;
 		try {
-			if (deleteTarget.type === 'building') {
-				await deleteBuilding(deleteTarget.id);
-				removeBuilding(deleteTarget.id);
-				toast.success('ลบอาคารสำเร็จ');
-			} else {
-				await deleteRoom(deleteTarget.id);
-				removeRoom(deleteTarget.id);
-				toast.success('ลบห้องสำเร็จ');
+			if (target.type === 'building') await deleteBuilding(target.id);
+			else await deleteRoom(target.id);
+			if (!current()) return;
+			roomsRequest.abort();
+			roomsLoading = false;
+			if (target.type === 'building') {
+				buildingsRequest.abort();
+				loading = false;
+				removeBuilding(target.id);
+			} else removeRoom(target.id);
+			if (activeTab === 'rooms' && !roomsLoaded) await refreshRooms();
+			if (ownsDraft()) {
+				toast.success(target.type === 'building' ? 'ลบอาคารสำเร็จ' : 'ลบห้องสำเร็จ');
+				showDeleteDialog = false;
 			}
-			showDeleteDialog = false;
-		} catch {
-			toast.error('ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)');
+		} catch (error) {
+			if (ownsDraft())
+				toast.error(error instanceof Error ? error.message : 'ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยง)');
 		} finally {
-			submitting = false;
+			if (current()) submitting = false;
 		}
 	}
 
 	// Helpers
 	function openAddBuilding() {
-		if (!canCreateFacility) return;
+		if (!buildingsLoaded || !canCreateFacility) return;
 		editingItem = null;
 		showBuildingDialog = true;
 	}
@@ -253,12 +389,12 @@
 		showBuildingDialog = true;
 	}
 	function openAddRoom() {
-		if (!canCreateFacility) return;
+		if (!buildingsLoaded || buildingsError || !canCreateFacility) return;
 		editingItem = null;
 		showRoomDialog = true;
 	}
 	function openEditRoom(r: Room) {
-		if (!canUpdateFacility) return;
+		if (!buildingsLoaded || buildingsError || !canUpdateFacility) return;
 		editingItem = r;
 		showRoomDialog = true;
 	}
@@ -293,8 +429,6 @@
 	let editingRoom = $derived(
 		editingItem && 'room_type' in editingItem ? (editingItem as Room) : null
 	);
-
-	onMount(loadData);
 </script>
 
 <PageShell
@@ -320,203 +454,255 @@
 
 			<!-- Buildings Tab -->
 			<Tabs.Content value="buildings" class="space-y-4 pt-4">
-				{#if canCreateFacility}
-					<div class="flex justify-end">
-						<Button onclick={openAddBuilding}>
-							<Plus class="w-4 h-4 mr-2" /> เพิ่มอาคาร
-						</Button>
-					</div>
-				{/if}
+				<section data-testid="facility-buildings" aria-busy={loading}>
+					{#if loading && buildingsLoaded}<p role="status">กำลังอัปเดตอาคาร</p>{/if}
+					{#if buildingsError}<PageState
+							variant="error"
+							title="โหลดอาคารไม่สำเร็จ"
+							description={buildingsError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadBuildings}
+						/>{/if}
+					{#if canCreateFacility}
+						<div class="flex justify-end">
+							<Button onclick={openAddBuilding} disabled={!buildingsLoaded}>
+								<Plus class="w-4 h-4 mr-2" /> เพิ่มอาคาร
+							</Button>
+						</div>
+					{/if}
 
-				<Card.Root>
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head class="w-[100px]">รหัส</Table.Head>
-								<Table.Head>ชื่ออาคาร</Table.Head>
-								<Table.Head>รายละเอียด</Table.Head>
-								{#if canMutateFacility}
-									<Table.Head class="text-right">จัดการ</Table.Head>
-								{/if}
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#if loading}
+					<Card.Root>
+						<Table.Root>
+							<Table.Header>
 								<Table.Row>
-									<Table.Cell colspan={canMutateFacility ? 4 : 3} class="p-0">
-										<PageSkeleton variant="table" rows={4} columns={canMutateFacility ? 4 : 3} />
-									</Table.Cell>
+									<Table.Head class="w-[100px]">รหัส</Table.Head>
+									<Table.Head>ชื่ออาคาร</Table.Head>
+									<Table.Head>รายละเอียด</Table.Head>
+									{#if canMutateFacility}
+										<Table.Head class="text-right">จัดการ</Table.Head>
+									{/if}
 								</Table.Row>
-							{:else if buildings.length === 0}
-								<Table.Row>
-									<Table.Cell colspan={canMutateFacility ? 4 : 3} class="h-24">
-										<PageState
-											title="ไม่พบข้อมูลอาคาร"
-											description="เพิ่มอาคารเพื่อใช้จัดกลุ่มห้องเรียนและห้องปฏิบัติการ"
-											actionLabel={canCreateFacility ? 'เพิ่มอาคาร' : undefined}
-											onaction={openAddBuilding}
-										/>
-									</Table.Cell>
-								</Table.Row>
-							{:else}
-								{#each buildings as b (b.id)}
+							</Table.Header>
+							<Table.Body>
+								{#if loading && !buildingsLoaded}
 									<Table.Row>
-										<Table.Cell class="font-mono text-xs">{b.code || '-'}</Table.Cell>
-										<Table.Cell>
-											<div class="font-medium">{b.name_th}</div>
-											{#if b.name_en}<div class="text-xs text-muted-foreground">
-													{b.name_en}
-												</div>{/if}
+										<Table.Cell colspan={canMutateFacility ? 4 : 3} class="p-0">
+											<div role="status" aria-label="กำลังโหลดอาคาร">
+												<PageSkeleton
+													variant="table"
+													rows={4}
+													columns={canMutateFacility ? 4 : 3}
+												/>
+											</div>
 										</Table.Cell>
-										<Table.Cell class="text-muted-foreground text-sm"
-											>{b.description || '-'}</Table.Cell
-										>
-										{#if canMutateFacility}
-											<Table.Cell class="text-right">
-												{#if canUpdateFacility}
-													<Button variant="ghost" size="icon" onclick={() => openEditBuilding(b)}>
-														<Settings class="w-4 h-4" />
-													</Button>
-												{/if}
-												{#if canDeleteFacility}
-													<Button
-														variant="ghost"
-														size="icon"
-														class="text-destructive"
-														onclick={() => confirmDelete('building', b)}
-													>
-														<Trash2 class="w-4 h-4" />
-													</Button>
-												{/if}
-											</Table.Cell>
-										{/if}
 									</Table.Row>
-								{/each}
-							{/if}
-						</Table.Body>
-					</Table.Root>
-				</Card.Root>
+								{:else if buildingsLoaded && buildings.length === 0}
+									<Table.Row>
+										<Table.Cell colspan={canMutateFacility ? 4 : 3} class="h-24">
+											<PageState
+												title="ไม่พบข้อมูลอาคาร"
+												description="เพิ่มอาคารเพื่อใช้จัดกลุ่มห้องเรียนและห้องปฏิบัติการ"
+												actionLabel={canCreateFacility ? 'เพิ่มอาคาร' : undefined}
+												onaction={openAddBuilding}
+											/>
+										</Table.Cell>
+									</Table.Row>
+								{:else if buildingsLoaded}
+									{#each buildings as b (b.id)}
+										<Table.Row>
+											<Table.Cell class="font-mono text-xs">{b.code || '-'}</Table.Cell>
+											<Table.Cell>
+												<div class="font-medium">{b.name_th}</div>
+												{#if b.name_en}<div class="text-xs text-muted-foreground">
+														{b.name_en}
+													</div>{/if}
+											</Table.Cell>
+											<Table.Cell class="text-muted-foreground text-sm"
+												>{b.description || '-'}</Table.Cell
+											>
+											{#if canMutateFacility}
+												<Table.Cell class="text-right">
+													{#if canUpdateFacility}
+														<Button
+															variant="ghost"
+															size="icon"
+															aria-label={`แก้ไขอาคาร ${b.name_th}`}
+															onclick={() => openEditBuilding(b)}
+														>
+															<Settings class="w-4 h-4" />
+														</Button>
+													{/if}
+													{#if canDeleteFacility}
+														<Button
+															variant="ghost"
+															size="icon"
+															class="text-destructive"
+															aria-label={`ลบอาคาร ${b.name_th}`}
+															onclick={() => confirmDelete('building', b)}
+														>
+															<Trash2 class="w-4 h-4" />
+														</Button>
+													{/if}
+												</Table.Cell>
+											{/if}
+										</Table.Row>
+									{/each}
+								{/if}
+							</Table.Body>
+						</Table.Root>
+					</Card.Root>
+				</section>
 			</Tabs.Content>
 
 			<!-- Rooms Tab -->
 			<Tabs.Content value="rooms" class="space-y-4 pt-4">
-				<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
-					<div class="w-[200px]">
-						<Select.Root
-							type="single"
-							bind:value={selectedBuildingFilter}
-							onValueChange={refreshRooms}
-						>
-							<Select.Trigger class="w-full">
-								{selectedBuildingFilter === 'all'
-									? 'ทุกอาคาร'
-									: buildings.find((b) => b.id === selectedBuildingFilter)?.name_th || 'เลือกอาคาร'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="all">ทุกอาคาร</Select.Item>
-								{#each buildings as b (b.id)}
-									<Select.Item value={b.id}>{b.name_th}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+				<section data-testid="facility-rooms" aria-busy={roomsLoading}>
+					<div data-testid="facility-building-options">
+						{#if loading && !buildingsLoaded}<p role="status" aria-label="กำลังโหลดตัวเลือกอาคาร">
+								กำลังโหลดตัวเลือกอาคาร
+							</p>{/if}
+						{#if buildingsError}<PageState
+								variant="error"
+								title="โหลดตัวเลือกอาคารไม่สำเร็จ"
+								description={buildingsError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadBuildings}
+							/>{/if}
 					</div>
-					<div class="relative w-[300px]">
-						<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-						<Input
-							placeholder="ค้นหาชื่อห้อง/รหัส..."
-							class="pl-8"
-							bind:value={searchTerm}
-							oninput={refreshRooms}
-						/>
-					</div>
-					{#if canCreateFacility}
-						<div class="ml-auto">
-							<Button onclick={openAddRoom}>
-								<Plus class="w-4 h-4 mr-2" /> เพิ่มห้อง
-							</Button>
+					{#if roomsLoading && roomsLoaded}<p role="status">กำลังอัปเดตห้อง</p>{/if}
+					{#if roomsError}<PageState
+							variant="error"
+							title="โหลดห้องไม่สำเร็จ"
+							description={roomsError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={refreshRooms}
+						/>{/if}
+					<div class="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3 sm:p-4">
+						<div class="w-[200px]">
+							<Select.Root
+								type="single"
+								bind:value={selectedBuildingFilter}
+								disabled={!buildingsLoaded || !!buildingsError}
+							>
+								<Select.Trigger class="w-full" aria-label="เลือกอาคารสำหรับห้อง">
+									{selectedBuildingFilter === 'all'
+										? 'ทุกอาคาร'
+										: buildings.find((b) => b.id === selectedBuildingFilter)?.name_th ||
+											'เลือกอาคาร'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="all">ทุกอาคาร</Select.Item>
+									{#each buildings as b (b.id)}
+										<Select.Item value={b.id}>{b.name_th}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
-					{/if}
-				</div>
+						<div class="relative w-[300px]">
+							<Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+							<Input placeholder="ค้นหาชื่อห้อง/รหัส..." class="pl-8" bind:value={searchTerm} />
+						</div>
+						{#if canCreateFacility}
+							<div class="ml-auto">
+								<Button onclick={openAddRoom} disabled={!buildingsLoaded || !!buildingsError}>
+									<Plus class="w-4 h-4 mr-2" /> เพิ่มห้อง
+								</Button>
+							</div>
+						{/if}
+					</div>
 
-				<Card.Root>
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head class="w-[100px]">รหัสห้อง</Table.Head>
-								<Table.Head>ชื่อห้อง</Table.Head>
-								<Table.Head>ประเภท</Table.Head>
-								<Table.Head>อาคาร/ชั้น</Table.Head>
-								<Table.Head class="text-center">ความจุ</Table.Head>
-								{#if canMutateFacility}
-									<Table.Head class="text-right">จัดการ</Table.Head>
-								{/if}
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#if loading && rooms.length === 0}
+					<Card.Root>
+						<Table.Root>
+							<Table.Header>
 								<Table.Row>
-									<Table.Cell colspan={canMutateFacility ? 6 : 5} class="p-0">
-										<PageSkeleton variant="table" rows={4} columns={canMutateFacility ? 6 : 5} />
-									</Table.Cell>
+									<Table.Head class="w-[100px]">รหัสห้อง</Table.Head>
+									<Table.Head>ชื่อห้อง</Table.Head>
+									<Table.Head>ประเภท</Table.Head>
+									<Table.Head>อาคาร/ชั้น</Table.Head>
+									<Table.Head class="text-center">ความจุ</Table.Head>
+									{#if canMutateFacility}
+										<Table.Head class="text-right">จัดการ</Table.Head>
+									{/if}
 								</Table.Row>
-							{:else if rooms.length === 0}
-								<Table.Row>
-									<Table.Cell colspan={canMutateFacility ? 6 : 5} class="h-24">
-										<PageState
-											title="ไม่พบข้อมูลห้อง"
-											description="เพิ่มห้องเรียนหรือห้องปฏิบัติการเพื่อใช้กับตารางสอนและงานอาคาร"
-											actionLabel={canCreateFacility ? 'เพิ่มห้อง' : undefined}
-											onaction={openAddRoom}
-										/>
-									</Table.Cell>
-								</Table.Row>
-							{:else}
-								{#each rooms as r (r.id)}
+							</Table.Header>
+							<Table.Body>
+								{#if roomsLoading && !roomsLoaded}
 									<Table.Row>
-										<Table.Cell class="font-bold">{r.code || '-'}</Table.Cell>
-										<Table.Cell>
-											<div class="font-medium">{r.name_th}</div>
-											{#if r.name_en}<div class="text-xs text-muted-foreground">
-													{r.name_en}
-												</div>{/if}
+										<Table.Cell colspan={canMutateFacility ? 6 : 5} class="p-0">
+											<div role="status" aria-label="กำลังโหลดห้อง">
+												<PageSkeleton
+													variant="table"
+													rows={4}
+													columns={canMutateFacility ? 6 : 5}
+												/>
+											</div>
 										</Table.Cell>
-										<Table.Cell>
-											<Badge variant="outline">
-												{ROOM_TYPES.find((t) => t.value === r.room_type)?.label || r.room_type}
-											</Badge>
-										</Table.Cell>
-										<Table.Cell>
-											<div class="text-sm">{r.building_name || '-'}</div>
-											{#if r.floor}<div class="text-xs text-muted-foreground">
-													ชั้น {r.floor}
-												</div>{/if}
-										</Table.Cell>
-										<Table.Cell class="text-center">{r.capacity}</Table.Cell>
-										{#if canMutateFacility}
-											<Table.Cell class="text-right">
-												{#if canUpdateFacility}
-													<Button variant="ghost" size="icon" onclick={() => openEditRoom(r)}>
-														<Settings class="w-4 h-4" />
-													</Button>
-												{/if}
-												{#if canDeleteFacility}
-													<Button
-														variant="ghost"
-														size="icon"
-														class="text-destructive"
-														onclick={() => confirmDelete('room', r)}
-													>
-														<Trash2 class="w-4 h-4" />
-													</Button>
-												{/if}
-											</Table.Cell>
-										{/if}
 									</Table.Row>
-								{/each}
-							{/if}
-						</Table.Body>
-					</Table.Root>
-				</Card.Root>
+								{:else if roomsLoaded && rooms.length === 0}
+									<Table.Row>
+										<Table.Cell colspan={canMutateFacility ? 6 : 5} class="h-24">
+											<PageState
+												title="ไม่พบข้อมูลห้อง"
+												description="เพิ่มห้องเรียนหรือห้องปฏิบัติการเพื่อใช้กับตารางสอนและงานอาคาร"
+												actionLabel={canCreateFacility ? 'เพิ่มห้อง' : undefined}
+												onaction={openAddRoom}
+											/>
+										</Table.Cell>
+									</Table.Row>
+								{:else if roomsLoaded}
+									{#each rooms as r (r.id)}
+										<Table.Row>
+											<Table.Cell class="font-bold">{r.code || '-'}</Table.Cell>
+											<Table.Cell>
+												<div class="font-medium">{r.name_th}</div>
+												{#if r.name_en}<div class="text-xs text-muted-foreground">
+														{r.name_en}
+													</div>{/if}
+											</Table.Cell>
+											<Table.Cell>
+												<Badge variant="outline">
+													{ROOM_TYPES.find((t) => t.value === r.room_type)?.label || r.room_type}
+												</Badge>
+											</Table.Cell>
+											<Table.Cell>
+												<div class="text-sm">{r.building_name || '-'}</div>
+												{#if r.floor}<div class="text-xs text-muted-foreground">
+														ชั้น {r.floor}
+													</div>{/if}
+											</Table.Cell>
+											<Table.Cell class="text-center">{r.capacity}</Table.Cell>
+											{#if canMutateFacility}
+												<Table.Cell class="text-right">
+													{#if canUpdateFacility}
+														<Button
+															variant="ghost"
+															size="icon"
+															aria-label={`แก้ไขห้อง ${r.name_th}`}
+															onclick={() => openEditRoom(r)}
+														>
+															<Settings class="w-4 h-4" />
+														</Button>
+													{/if}
+													{#if canDeleteFacility}
+														<Button
+															variant="ghost"
+															size="icon"
+															class="text-destructive"
+															aria-label={`ลบห้อง ${r.name_th}`}
+															onclick={() => confirmDelete('room', r)}
+														>
+															<Trash2 class="w-4 h-4" />
+														</Button>
+													{/if}
+												</Table.Cell>
+											{/if}
+										</Table.Row>
+									{/each}
+								{/if}
+							</Table.Body>
+						</Table.Root>
+					</Card.Root>
+				</section>
 			</Tabs.Content>
 		</Tabs.Root>
 
@@ -646,7 +832,9 @@
 							<Button variant="outline" type="button" onclick={() => (showRoomDialog = false)}
 								>ยกเลิก</Button
 							>
-							<Button type="submit" disabled={submitting}>บันทึก</Button>
+							<Button type="submit" disabled={submitting || !buildingsLoaded || !!buildingsError}
+								>บันทึก</Button
+							>
 						</Dialog.Footer>
 					</form>
 				</Dialog.Content>

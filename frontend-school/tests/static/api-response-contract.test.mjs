@@ -1202,7 +1202,7 @@ test('facility workspace mutations patch buildings and rooms locally', async () 
 		assert.notEqual(body, '', `${functionName} should exist`);
 		assert.doesNotMatch(
 			body,
-			/\b(loadData|refreshRooms)\(\)/,
+			/\b(loadData|loadBuildings)\(\)/,
 			`${functionName} should patch local state`
 		);
 	}

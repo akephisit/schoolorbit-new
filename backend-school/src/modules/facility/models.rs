@@ -4,18 +4,21 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Building {
     pub id: Uuid,
     pub name_th: String,
+    #[schema(required = true)]
     pub name_en: Option<String>,
+    #[schema(required = true)]
     pub code: Option<String>,
+    #[schema(required = true)]
     pub description: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateBuildingRequest {
     pub name_th: String,
     pub name_en: Option<String>,
@@ -23,7 +26,7 @@ pub struct CreateBuildingRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateBuildingRequest {
     pub name_th: Option<String>,
     pub name_en: Option<String>,
@@ -57,7 +60,7 @@ pub struct Room {
     pub building_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateRoomRequest {
     pub building_id: Option<Uuid>,
     pub name_th: String,
@@ -70,7 +73,7 @@ pub struct CreateRoomRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateRoomRequest {
     pub building_id: Option<Uuid>,
     pub name_th: Option<String>,

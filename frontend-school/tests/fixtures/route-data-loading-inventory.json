@@ -731,13 +731,12 @@
 		{
 			"route": "staff/facility/buildings",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school facility",
-			"notes": "Component API reads include listBuildings, listRooms; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Default building catalog is route-owned; inactive rooms tab reads only opened current filters. Independent local skeleton/error/retry, lazy building-dependent forms, request/owner/draft supersession and typed affected-list/FK patches; existing facility contracts generated from Rust OpenAPI."
 		},
 		{
 			"route": "staff/features",

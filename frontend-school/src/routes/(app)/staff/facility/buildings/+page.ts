@@ -1,4 +1,10 @@
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import type { PageLoad } from './$types';
+import { listBuildings } from '$lib/api/facility';
+import { get } from 'svelte/store';
+import { can } from '$lib/stores/permissions';
+import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
+import { captureRouteLoad } from '$lib/navigation/route-load';
+import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -12,8 +18,17 @@ export const _meta = {
 	}
 };
 
-export const load = async () => {
+export const load: PageLoad = ({ fetch, depends }) => {
+	depends('school:app-identity');
 	return {
-		title: _meta.menu.title
+		title: _meta.menu.title,
+		buildings: captureRouteLoad(
+			waitForAuthenticatedUser().then((user) =>
+				user?.user_type === 'staff' && get(can).has(PERMISSIONS.FACILITY_READ_ALL)
+					? listBuildings({ requestFetch: fetch })
+					: null
+			),
+			'โหลดรายการอาคารไม่สำเร็จ'
+		)
 	};
 };

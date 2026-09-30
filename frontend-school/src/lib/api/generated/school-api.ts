@@ -4236,6 +4236,70 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/facilities/buildings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listFacilityBuildings'];
+		put?: never;
+		post: operations['createFacilityBuilding'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/facilities/buildings/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateFacilityBuilding'];
+		post?: never;
+		delete: operations['deleteFacilityBuilding'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/facilities/rooms': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listFacilityRooms'];
+		put?: never;
+		post: operations['createFacilityRoom'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/facilities/rooms/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateFacilityRoom'];
+		post?: never;
+		delete: operations['deleteFacilityRoom'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/files': {
 		parameters: {
 			query?: never;
@@ -7009,6 +7073,22 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Building: {
+			data: {
+				code: string | null;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: uuid */
+				id: string;
+				name_en: string | null;
+				name_th: string;
+				/** Format: date-time */
+				updated_at: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_BulkActivityResultLockOutcome: {
 			data: {
 				locked: components['schemas']['ActivityResultLock'][];
@@ -8951,6 +9031,31 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Room: {
+			data: {
+				/** Format: uuid */
+				building_id: string | null;
+				building_name: string | null;
+				/** Format: int32 */
+				capacity: number;
+				code: string | null;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: int32 */
+				floor: number | null;
+				/** Format: uuid */
+				id: string;
+				name_en: string | null;
+				name_th: string;
+				room_type: string;
+				status: string;
+				/** Format: date-time */
+				updated_at: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_RosterPreview: {
 			data: {
 				added: number;
@@ -10111,6 +10216,22 @@ export interface components {
 				/** Format: int32 */
 				orderIndex: number;
 				startTime: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_Building: {
+			data: {
+				code: string | null;
+				/** Format: date-time */
+				created_at: string;
+				description: string | null;
+				/** Format: uuid */
+				id: string;
+				name_en: string | null;
+				name_th: string;
+				/** Format: date-time */
+				updated_at: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -11940,6 +12061,18 @@ export interface components {
 			label: string;
 			startTime: string;
 		};
+		Building: {
+			code: string | null;
+			/** Format: date-time */
+			created_at: string;
+			description: string | null;
+			/** Format: uuid */
+			id: string;
+			name_en: string | null;
+			name_th: string;
+			/** Format: date-time */
+			updated_at: string;
+		};
 		BulkActivityResultLockOutcome: {
 			locked: components['schemas']['ActivityResultLock'][];
 			skipped: components['schemas']['GroupResultReadiness'][];
@@ -13113,6 +13246,12 @@ export interface components {
 			/** Format: uuid */
 			owningOrganizationUnitId?: string | null;
 		};
+		CreateBuildingRequest: {
+			code?: string | null;
+			description?: string | null;
+			name_en?: string | null;
+			name_th: string;
+		};
 		CreateCatalogActivityRequest: {
 			activityType: string;
 			code: string;
@@ -13326,6 +13465,20 @@ export interface components {
 			name_en?: string | null;
 			permissions?: string[] | null;
 			user_type: string;
+		};
+		CreateRoomRequest: {
+			/** Format: uuid */
+			building_id?: string | null;
+			/** Format: int32 */
+			capacity?: number | null;
+			code?: string | null;
+			description?: string | null;
+			/** Format: int32 */
+			floor?: number | null;
+			name_en?: string | null;
+			name_th: string;
+			room_type: string;
+			status?: string | null;
 		};
 		CreateStaffInfoRequest: {
 			education_level?: string | null;
@@ -18752,6 +18905,12 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		UpdateBuildingRequest: {
+			code?: string | null;
+			description?: string | null;
+			name_en?: string | null;
+			name_th?: string | null;
+		};
 		UpdateCatalogActivityRequest: {
 			activityType: string;
 			archived: boolean;
@@ -18969,6 +19128,20 @@ export interface components {
 			name_en?: string | null;
 			permissions?: string[] | null;
 			user_type?: string | null;
+		};
+		UpdateRoomRequest: {
+			/** Format: uuid */
+			building_id?: string | null;
+			/** Format: int32 */
+			capacity?: number | null;
+			code?: string | null;
+			description?: string | null;
+			/** Format: int32 */
+			floor?: number | null;
+			name_en?: string | null;
+			name_th?: string | null;
+			room_type?: string | null;
+			status?: string | null;
 		};
 		UpdateStaffRequest: {
 			address?: string | null;
@@ -39079,6 +39252,333 @@ export interface operations {
 			};
 			/** @description Certificate template not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listFacilityBuildings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description List building result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Building'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Facility action permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createFacilityBuilding: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateBuildingRequest'];
+			};
+		};
+		responses: {
+			/** @description Create building result */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Building'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Facility action permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateFacilityBuilding: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateBuildingRequest'];
+			};
+		};
+		responses: {
+			/** @description Update building result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Building'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Facility action permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteFacilityBuilding: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Delete building result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Facility action permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listFacilityRooms: {
+		parameters: {
+			query?: {
+				building_id?: string;
+				room_type?: string;
+				search?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description List room result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Room'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createFacilityRoom: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateRoomRequest'];
+			};
+		};
+		responses: {
+			/** @description Create room result */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Room'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Facility action permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateFacilityRoom: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateRoomRequest'];
+			};
+		};
+		responses: {
+			/** @description Update room result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Room'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Facility action permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteFacilityRoom: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Delete room result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Facility action permission required */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

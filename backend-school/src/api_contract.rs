@@ -6,7 +6,10 @@ use crate::modules::admission::handlers::applications::StaffDocumentMultipart;
 use crate::modules::admission::handlers::portal::{
     PortalDocumentMultipart, PortalUploadDocumentData,
 };
-use crate::modules::facility::models::Room;
+use crate::modules::facility::models::{
+    Building, CreateBuildingRequest, CreateRoomRequest, Room, UpdateBuildingRequest,
+    UpdateRoomRequest,
+};
 use crate::modules::files::models::{
     FileDeleteResult, FileDownloadGrantResponse, FileMetadata, FileUploadMultipart,
     PublicFileDeliveryResponse,
@@ -209,6 +212,14 @@ use utoipa::OpenApi;
         crate::modules::menu::handlers::admin::apply_recommended_academic_menu_template,
         crate::modules::lookup::handlers::lookup_staff,
         crate::modules::lookup::handlers::lookup_students,
+        crate::modules::facility::handlers::list_buildings,
+        crate::modules::facility::handlers::create_building,
+        crate::modules::facility::handlers::update_building,
+        crate::modules::facility::handlers::delete_building,
+        crate::modules::facility::handlers::list_rooms,
+        crate::modules::facility::handlers::create_room,
+        crate::modules::facility::handlers::update_room,
+        crate::modules::facility::handlers::delete_room,
         crate::modules::lookup::handlers::lookup_rooms,
         crate::modules::lookup::handlers::lookup_roles,
         crate::modules::lookup::handlers::lookup_organization_units,
@@ -687,6 +698,14 @@ use utoipa::OpenApi;
         AcademicYearLookupItem,
         StudentLookupItem,
         Room,
+        Building,
+        CreateBuildingRequest,
+        UpdateBuildingRequest,
+        CreateRoomRequest,
+        UpdateRoomRequest,
+        ApiResponse<Vec<Building>>,
+        ApiResponse<Building>,
+        ApiResponse<Room>,
         ApiResponse<Vec<LookupItem>>,
         ApiResponse<Vec<StaffLookupItem>>,
         ApiResponse<Vec<RoleLookupItem>>,
@@ -1705,6 +1724,7 @@ use utoipa::OpenApi;
         (name = "roles", description = "Role assignment and role administration"),
         (name = "permissions", description = "Permission discovery and effective permissions"),
         (name = "organization", description = "Organization units and scoped access"),
+        (name = "facility", description = "School buildings and rooms"),
         (name = "lookup", description = "Authenticated reference-data lookups"),
         (name = "menu", description = "User and administrator menu reads"),
         (name = "system", description = "System feature reads"),
@@ -2875,6 +2895,41 @@ mod tests {
         let grant = &schemas["OrganizationPermissionGrant"];
         assert!(required(grant).contains(&"position_code"));
         assert!(contains_null(&grant["properties"]["position_code"]));
+    }
+
+    #[test]
+    fn documents_facility_operations_and_nullable_building_fields() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/facilities/buildings", "get", "listFacilityBuildings"),
+                (
+                    "/api/facilities/buildings",
+                    "post",
+                    "createFacilityBuilding",
+                ),
+                (
+                    "/api/facilities/buildings/{id}",
+                    "put",
+                    "updateFacilityBuilding",
+                ),
+                (
+                    "/api/facilities/buildings/{id}",
+                    "delete",
+                    "deleteFacilityBuilding",
+                ),
+                ("/api/facilities/rooms", "get", "listFacilityRooms"),
+                ("/api/facilities/rooms", "post", "createFacilityRoom"),
+                ("/api/facilities/rooms/{id}", "put", "updateFacilityRoom"),
+                ("/api/facilities/rooms/{id}", "delete", "deleteFacilityRoom"),
+            ],
+        );
+        let building = &document["components"]["schemas"]["Building"];
+        for field in ["name_en", "code", "description"] {
+            assert!(required(building).contains(&field));
+            assert!(contains_null(&building["properties"][field]));
+        }
     }
 
     #[test]
