@@ -48,7 +48,10 @@ test('management API wrappers type inactive lists and deactivation envelopes', a
 	assert.match(rolesApi, /apiClient\.delete<EmptyData>/);
 
 	assert.match(staffApi, /type ManagedListOptions = \{ include_inactive\?: boolean \}/);
-	assert.match(staffApi, /listOrganizationUnits\(\s*options\?: ManagedListOptions\s*\)/);
+	assert.match(
+		staffApi,
+		/listOrganizationUnits\(\s*options\?: ManagedListOptions,\s*requestOptions: ApiRequestOptions/
+	);
 	assert.match(
 		staffApi,
 		/if \(options\?\.include_inactive\) params\.set\('include_inactive', 'true'\)/

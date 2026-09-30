@@ -18,7 +18,7 @@
 	import { toast } from 'svelte-sonner';
 	import { achievementSchema } from '$lib/validation/schemas';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
-	import Compressor from 'compressorjs';
+	import { onDestroy, untrack } from 'svelte';
 
 	interface Props {
 		open: boolean;
@@ -39,6 +39,10 @@
 	}: Props = $props();
 
 	let loading = $state(false);
+	let activeDraftContext = '';
+	let disposed = false,
+		draftEpoch = 0,
+		fileEpoch = 0;
 
 	// Form State
 	let title = $state('');
@@ -63,6 +67,22 @@
 	let staffList = $state<StaffListItem[]>([]);
 	let openCombobox = $state(false);
 	let triggerRef = $state<HTMLButtonElement>(null!);
+	$effect.pre(() => {
+		const context = [open, userId, achievement?.id, canSelectUser, targetUserId].join(':');
+		untrack(() => {
+			if (context !== activeDraftContext) {
+				activeDraftContext = context;
+				draftEpoch++;
+				fileEpoch++;
+			}
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		draftEpoch++;
+		fileEpoch++;
+		if (imagePreview) URL.revokeObjectURL(imagePreview);
+	});
 
 	// Reset or Load form when dialog opens/changes
 	$effect(() => {
@@ -97,8 +117,9 @@
 		}
 	});
 
-	function compressImage(file: File): Promise<File> {
-		if (!file.type.startsWith('image/')) return Promise.resolve(file);
+	async function compressImage(file: File): Promise<File> {
+		if (!file.type.startsWith('image/')) return file;
+		const { default: Compressor } = await import('compressorjs');
 
 		return new Promise((resolve) => {
 			new Compressor(file, {
@@ -122,6 +143,10 @@
 	}
 
 	async function handleFileChange(e: Event) {
+		if (!open || disposed) return;
+		const draft = draftEpoch,
+			selection = ++fileEpoch;
+		const current = () => !disposed && open && draft === draftEpoch && selection === fileEpoch;
 		const input = e.target as HTMLInputElement;
 		if (input.files && input.files[0]) {
 			let file = input.files[0];
@@ -165,9 +190,12 @@
 					return;
 				}
 
+				if (!current()) return;
+				if (imagePreview) URL.revokeObjectURL(imagePreview);
 				imageFile = compressed;
 				imagePreview = URL.createObjectURL(compressed);
 			} catch (err) {
+				if (!current()) return;
 				console.error(err);
 				toast.error('ไม่สามารถประมวลผลรูปภาพได้ (อาจไม่ใช่ไฟล์รูปภาพที่รองรับ)');
 			}
@@ -175,6 +203,7 @@
 	}
 
 	function removeImage() {
+		fileEpoch++;
 		if (imagePreview) URL.revokeObjectURL(imagePreview);
 		imageFile = null;
 		imagePreview = null;
@@ -189,6 +218,9 @@
 	}
 
 	async function handleSubmit() {
+		if (!open || disposed || loading) return;
+		const epoch = draftEpoch;
+		const current = () => !disposed && open && epoch === draftEpoch;
 		errors = {};
 
 		if (canSelectUser && !targetUserId) {
@@ -220,29 +252,33 @@
 			return;
 		}
 
+		const payload = {
+			id: achievement?.id,
+			user_id: canSelectUser && targetUserId ? targetUserId : userId,
+			title,
+			description,
+			achievement_date: date,
+			image_file_id: currentImageFileId
+		};
+		const selectedImage = imageFile;
 		loading = true;
 		try {
-			let imageFileId = currentImageFileId;
+			let imageFileId = payload.image_file_id;
 
 			// Upload image if selected
-			if (imageFile) {
-				const uploadData = await uploadFile(imageFile, 'achievement_image', targetUserId);
+			if (selectedImage) {
+				const uploadData = await uploadFile(selectedImage, 'achievement_image', payload.user_id);
 				imageFileId = uploadData.id;
 			}
 
-			onsave?.({
-				id: achievement?.id,
-				user_id: canSelectUser && targetUserId ? targetUserId : userId,
-				title,
-				description,
-				achievement_date: date,
-				image_file_id: imageFileId
-			});
+			if (!current()) return;
+			onsave?.({ ...payload, image_file_id: imageFileId });
 
 			loading = false;
 
 			// Wait for parent to close or handle state
 		} catch (e) {
+			if (!current()) return;
 			console.error(e);
 			toast.error('เกิดข้อผิดพลาดในการบันทึก');
 			loading = false;

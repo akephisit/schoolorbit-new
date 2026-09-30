@@ -2,13 +2,14 @@ import { get } from 'svelte/store';
 import { can } from '$lib/stores/permissions';
 import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
 import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 import type { PageLoad } from './$types';
 import { getStaffProfile } from '$lib/api/staff';
 import { requireApiData } from '$lib/api/client';
+import { getAchievements } from '$lib/api/achievement';
 export const _meta = {
 	academicContext: 'none' as const,
-	access: { user_type: 'staff', permission: PERMISSIONS.STAFF_UPDATE_ALL }
+	access: { user_type: 'staff', permission: PERMISSION_MODULES.STAFF_PROFILE }
 };
 export const load: PageLoad = ({ fetch, params, depends }) => {
 	depends('school:app-identity');
@@ -31,5 +32,18 @@ export const load: PageLoad = ({ fetch, params, depends }) => {
 		),
 		'โหลดข้อมูลบุคลากรไม่สำเร็จ'
 	);
-	return { title: 'แก้ไขข้อมูลบุคลากร', staffId, staff };
+	const achievements = captureRouteLoad(
+		userRead.then(async (user) =>
+			user?.user_type === 'staff' &&
+			(get(can).has(PERMISSIONS.ACHIEVEMENT_READ_ALL) ||
+				(user.id === staffId && get(can).has(PERMISSIONS.ACHIEVEMENT_READ_OWN)))
+				? requireApiData(
+						await getAchievements({ user_id: staffId }, { requestFetch: fetch }),
+						'โหลดผลงานไม่สำเร็จ'
+					)
+				: []
+		),
+		'โหลดผลงานไม่สำเร็จ'
+	);
+	return { title: 'รายละเอียดบุคลากร', staffId, staff, achievements };
 };

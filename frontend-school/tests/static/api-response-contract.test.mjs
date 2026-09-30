@@ -550,7 +550,7 @@ test('user role assignment API contract stays aligned across backend and fronten
 	);
 	assert.match(
 		frontendApi,
-		/getUserRoles\(userId:\s*string\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/
+		/getUserRoles\(\s*userId:\s*string,\s*options: ApiRequestOptions = \{\}\s*\):\s*Promise<ApiResponse<UserRoleAssignment\[\]>>/
 	);
 	assert.doesNotMatch(frontendApi, /interface\s+UserRole\s*\{/);
 	assert.match(

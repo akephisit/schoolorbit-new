@@ -74,7 +74,7 @@ test('generated people mutation contract owns all migrated operations and DTOs',
 	);
 	assert.match(
 		staffApi,
-		/deleteStaff[\s\S]*apiClient\.delete<EmptyData>\(`\/api\/staff\/\$\{staffId\}`/
+		/deleteStaff[\s\S]*apiClient\.delete<EmptyData>\(`\/api\/staff\/\$\{encodeURIComponent\(staffId\)\}`/
 	);
 	assert.match(
 		studentsApi,
@@ -103,17 +103,20 @@ test('staff profile achievement mutations patch local state without refetching',
 		'frontend-school/src/routes/(app)/staff/manage/[id]/+page.svelte'
 	);
 
-	assert.match(page, /const savedAchievement = res\.data;/);
-	assert.match(page, /achievements = \[savedAchievement, \.\.\.achievements\];/);
-	assert.match(
-		page,
-		/achievements = achievements\.map\([\s\S]{0,100}item\.id === savedAchievement\.id \? savedAchievement : item/
+	assert.match(page, /const saved = requireApiData\(/);
+	assert.match(page, /\[saved, \.\.\.achievements\]/);
+	assert.match(page, /achievements\.map\([\s\S]{0,100}item\.id === saved\.id \? saved : item/);
+	assert.match(page, /achievements = achievements\.filter\(\(item\) => item\.id !== id\);/);
+	const save = page.slice(
+		page.indexOf('async function handleSaveAchievement'),
+		page.indexOf('function confirmDelete')
 	);
-	assert.match(page, /const deletedId = deleteId;/);
-	assert.match(page, /achievements = achievements\.filter\(\(item\) => item\.id !== deletedId\);/);
-	assert.equal(
-		page.match(/\bloadAchievements\(\);/g)?.length,
-		1,
-		'only the initial profile load should fetch achievements'
+	const remove = page.slice(
+		page.indexOf('async function handleDeleteAchievement'),
+		page.indexOf('</script>')
 	);
+	for (const mutation of [save, remove]) {
+		assert.doesNotMatch(mutation, /loadAchievements\(|getAchievements\(|loadStaffProfile\(/);
+		assert.match(mutation, /if \(!current\(\)\) return/);
+	}
 });

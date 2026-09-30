@@ -6,12 +6,17 @@
 	import { User, Shield } from '@lucide/svelte';
 	import UserRoleManager from '$lib/components/UserRoleManager.svelte';
 
-	let { params }: PageProps = $props();
-	let userId = $derived(params.id);
+	let { data }: PageProps = $props();
+	const userId = $derived(data.userId);
 	let activeTab = $state('roles');
 </script>
 
-<PageShell title="จัดการสิทธิ์ผู้ใช้งาน" description="บทบาทและสิทธิ์การเข้าถึง" backHref="/staff">
+<PageShell
+	title="จัดการสิทธิ์ผู้ใช้งาน"
+	description="บทบาทและสิทธิ์การเข้าถึง"
+	backHref="/staff/manage"
+	backPreload="off"
+>
 	<Tabs bind:value={activeTab}>
 		<TabsList>
 			<TabsTrigger value="roles" class="gap-2">
@@ -25,7 +30,7 @@
 		</TabsList>
 
 		<TabsContent value="roles" class="mt-6">
-			<UserRoleManager {userId} />
+			<UserRoleManager {userId} rolesRead={data.roles} permissionsRead={data.permissions} />
 		</TabsContent>
 
 		<TabsContent value="profile" class="mt-6">

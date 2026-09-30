@@ -28,7 +28,18 @@
 		Check,
 		LoaderCircle
 	} from '@lucide/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { requireApiData } from '$lib/api/client';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
+	import { authStore } from '$lib/stores/auth';
+	import {
+		readStaffCreateDraft,
+		saveStaffCreateDraft,
+		clearStaffCreateDraft
+	} from '$lib/forms/staff-create-draft';
 
 	// Form state
 	let currentStep = $state(1);
@@ -36,94 +47,165 @@
 
 	// Loading states
 	let loading = $state(false);
-	let loadingRoles = $state(true);
-	let loadingOrganizationUnits = $state(true);
-	let optionsError = $state('');
-	const optionsLoading = $derived(loadingRoles || loadingOrganizationUnits);
+	let loadingRoles = $state(false);
+	let loadingOrganizationUnits = $state(false);
 
+	const rolesRequest = new LatestRequest(),
+		organizationRequest = new LatestRequest();
+	const canReadOptions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const currentUserId = $derived($authStore.user?.id ?? '');
+	const canMutateStaff = $derived($can.has(PERMISSIONS.STAFF_CREATE_ALL));
+	let rolesLoaded = $state(false),
+		organizationsLoaded = $state(false),
+		rolesError = $state(''),
+		organizationError = $state('');
+	let disposed = false,
+		mutationEpoch = 0;
 	// Available options
 	let roles: Role[] = $state([]);
 	let organizationUnits: OrganizationUnit[] = $state([]);
 
 	// Form data
-	let formData = $state({
-		// Step 1: Personal Information
-		username: '',
-		national_id: '',
-		email: '',
-		password: '',
-		confirmPassword: '',
-		title: 'นาย',
-		first_name: '',
-		last_name: '',
-		nickname: '',
-		phone: '',
-		emergency_contact: '',
-		line_id: '',
-		date_of_birth: '',
-		gender: 'male',
-		address: '',
-		hired_date: new Date().toISOString().split('T')[0],
+	let formData = $state(createForm());
+	function createForm() {
+		return {
+			// Step 1: Personal Information
+			username: '',
+			national_id: '',
+			email: '',
+			password: '',
+			confirmPassword: '',
+			title: 'นาย',
+			first_name: '',
+			last_name: '',
+			nickname: '',
+			phone: '',
+			emergency_contact: '',
+			line_id: '',
+			date_of_birth: '',
+			gender: 'male',
+			address: '',
+			hired_date: new Date().toISOString().split('T')[0],
 
-		// Roles
-		role_ids: [] as string[],
-		primary_role_id: '',
+			// Roles
+			role_ids: [] as string[],
+			primary_role_id: '',
 
-		// Organization Units
-		organization_assignments: [] as Array<{
-			organization_unit_id: string;
-			position_code: string;
-			is_primary: boolean;
-			responsibilities: string;
-		}>
-	});
+			// Organization Units
+			organization_assignments: [] as Array<{
+				organization_unit_id: string;
+				position_code: string;
+				is_primary: boolean;
+				responsibilities: string;
+			}>
+		};
+	}
 
 	// Validation errors
 	let errors = $state<Record<string, string>>({});
 
-	// Load roles and organizationUnits
-	async function loadOptions() {
-		loadingRoles = true;
-		loadingOrganizationUnits = true;
-		optionsError = '';
-		try {
-			const [rolesRes, deptsRes] = await Promise.all([listRoles(), listOrganizationUnits()]);
-
-			if (rolesRes.success && rolesRes.data) {
-				// Filter to show only staff roles
-				roles = rolesRes.data.filter((role) => role.user_type === 'staff');
-			}
-			if (deptsRes.success && deptsRes.data) {
-				organizationUnits = deptsRes.data;
-			}
-		} catch (e) {
-			console.error('Failed to load options:', e);
-			optionsError = e instanceof Error ? e.message : 'ไม่สามารถโหลดตัวเลือกสำหรับแบบฟอร์มได้';
-			toast.error(optionsError);
-		} finally {
-			loadingRoles = false;
-			loadingOrganizationUnits = false;
-		}
-	}
-
-	onMount(() => {
-		loadOptions();
-		// Load draft from localStorage
-		const draft = localStorage.getItem('staff-create-draft');
-		if (draft) {
-			try {
-				formData = JSON.parse(draft);
-			} catch (e) {
-				console.error('Failed to load draft:', e);
-			}
-		}
+	$effect.pre(() => {
+		const step = currentStep,
+			allowed = canReadOptions;
+		untrack(() => {
+			if (!allowed) {
+				rolesRequest.abort();
+				organizationRequest.abort();
+				roles = [];
+				organizationUnits = [];
+				rolesLoaded = false;
+				organizationsLoaded = false;
+				loadingRoles = false;
+				loadingOrganizationUnits = false;
+			} else if (step === 2 && !rolesLoaded) void loadRoleOptions();
+			else if (step === 3 && !organizationsLoaded) void loadOrganizationOptions();
+		});
+		return () => {
+			if (step === 2) rolesRequest.abort();
+			if (step === 3) organizationRequest.abort();
+		};
 	});
-
-	// Save draft to localStorage
-	function saveDraft() {
-		localStorage.setItem('staff-create-draft', JSON.stringify(formData));
+	async function loadRoleOptions() {
+		if (!canReadOptions || currentStep !== 2) return;
+		const ticket = rolesRequest.begin();
+		loadingRoles = true;
+		rolesError = '';
+		const result = await captureRouteLoad(
+			listRoles({ signal: ticket.signal }).then((reply) =>
+				requireApiData(reply, 'โหลดตัวเลือกบทบาทไม่สำเร็จ')
+			),
+			'โหลดตัวเลือกบทบาทไม่สำเร็จ'
+		);
+		if (!rolesRequest.isCurrent(ticket.revision)) return;
+		loadingRoles = false;
+		if (result.ok) {
+			roles = result.data.filter((role) => role.user_type === 'staff');
+			rolesLoaded = true;
+		} else rolesError = result.error;
 	}
-
+	async function loadOrganizationOptions() {
+		if (!canReadOptions || currentStep !== 3) return;
+		const ticket = organizationRequest.begin();
+		loadingOrganizationUnits = true;
+		organizationError = '';
+		const result = await captureRouteLoad(
+			listOrganizationUnits(undefined, { signal: ticket.signal }).then((reply) =>
+				requireApiData(reply, 'โหลดตัวเลือกหน่วยงานไม่สำเร็จ')
+			),
+			'โหลดตัวเลือกหน่วยงานไม่สำเร็จ'
+		);
+		if (!organizationRequest.isCurrent(ticket.revision)) return;
+		loadingOrganizationUnits = false;
+		if (result.ok) {
+			organizationUnits = result.data;
+			organizationsLoaded = true;
+		} else organizationError = result.error;
+	}
+	let draftOwnerId = '';
+	$effect.pre(() => {
+		const ownerId = currentUserId;
+		untrack(() => {
+			if (!ownerId || ownerId === draftOwnerId) return;
+			draftOwnerId = ownerId;
+			mutationEpoch++;
+			loading = false;
+			currentStep = 1;
+			rolesRequest.abort();
+			organizationRequest.abort();
+			roles = [];
+			organizationUnits = [];
+			rolesLoaded = false;
+			organizationsLoaded = false;
+			formData = createForm();
+			try {
+				const draft = readStaffCreateDraft(localStorage, {
+					origin: window.location.origin,
+					userId: ownerId
+				});
+				if (draft) Object.assign(formData, draft);
+			} catch {
+				toast.error('ไม่สามารถอ่านร่างแบบฟอร์มได้');
+			}
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		mutationEpoch++;
+		rolesRequest.abort();
+		organizationRequest.abort();
+	});
+	function saveDraft() {
+		if (!currentUserId) return;
+		try {
+			saveStaffCreateDraft(
+				localStorage,
+				{ origin: window.location.origin, userId: currentUserId },
+				formData
+			);
+		} catch {
+			toast.error('ไม่สามารถบันทึกร่างแบบฟอร์มได้');
+		}
+	}
 	// Validation functions
 	function validateStep1(): boolean {
 		errors = {};
@@ -271,7 +353,10 @@
 
 	// Submit form
 	async function handleSubmit() {
-		if (!validateStep4()) return;
+		if (!canMutateStaff || loading || !validateStep4()) return;
+		const owner = currentUserId,
+			epoch = ++mutationEpoch;
+		const current = () => !disposed && owner === currentUserId && epoch === mutationEpoch;
 
 		loading = true;
 		errors = {};
@@ -305,25 +390,27 @@
 			};
 
 			const result = await createStaff(payload);
+			if (!current()) return;
 
 			if (result.success && result.data) {
 				// Clear draft
-				localStorage.removeItem('staff-create-draft');
+				clearStaffCreateDraft(localStorage, { origin: window.location.origin, userId: owner });
 
 				// Show success toast
 				toast.success('เพิ่มบุคลากรเรียบร้อยแล้ว');
 
 				// Redirect to profile
-				await goto(resolve('/staff/manage'), { invalidateAll: true });
+				await goto(resolve('/staff/manage'));
 			} else {
 				// Show error toast
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร');
 			}
 		} catch (e) {
+			if (!current()) return;
 			const errorMsg = e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการสร้างบุคลากร';
 			toast.error(errorMsg);
 		} finally {
-			loading = false;
+			if (current()) loading = false;
 		}
 	}
 
@@ -347,18 +434,8 @@
 	description={`กรอกข้อมูลบุคลากรให้ครบถ้วน • ขั้นตอน ${currentStep} / ${totalSteps}`}
 	backHref="/staff"
 >
-	{#if optionsLoading}
-		<PageSkeleton variant="form" rows={8} />
-	{:else if optionsError}
-		<PageState
-			variant="error"
-			title="โหลดตัวเลือกสำหรับแบบฟอร์มไม่สำเร็จ"
-			description={optionsError}
-			actionLabel="ลองอีกครั้ง"
-			onaction={loadOptions}
-		/>
-	{:else}
-		<div class="space-y-6">
+	{#if !canMutateStaff}<PageState variant="permission" title="ไม่มีสิทธิ์สร้างบุคลากร" />{:else}
+		<div data-testid="staff-create-form" class="space-y-6">
 			<!-- Progress Steps -->
 			<div class="mb-8">
 				<div class="flex items-center justify-between">
@@ -659,10 +736,20 @@
 					<!-- Step 2: Roles -->
 					<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
 
-					{#if loadingRoles}
-						<div class="flex justify-center py-8">
-							<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
+					{#if !canReadOptions}<PageState
+							variant="permission"
+							title="ไม่มีสิทธิ์อ่านตัวเลือกบทบาท"
+						/>
+					{:else if loadingRoles}<div role="status" aria-label="กำลังโหลดตัวเลือกบทบาท">
+							<PageSkeleton variant="form" rows={3} />
 						</div>
+					{:else if rolesError}<PageState
+							variant="error"
+							title="โหลดตัวเลือกบทบาทไม่สำเร็จ"
+							description={rolesError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadRoleOptions}
+						/>
 					{:else}
 						<div class="space-y-4">
 							<p class="text-sm text-muted-foreground">
@@ -740,10 +827,23 @@
 					<!-- Step 3: Organization Units -->
 					<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
 
-					{#if loadingOrganizationUnits}
-						<div class="flex justify-center py-8">
-							<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
+					{#if !canReadOptions}<PageState
+							variant="permission"
+							title="ไม่มีสิทธิ์อ่านตัวเลือกหน่วยงาน"
+						/>
+					{:else if loadingOrganizationUnits}<div
+							role="status"
+							aria-label="กำลังโหลดตัวเลือกหน่วยงาน"
+						>
+							<PageSkeleton variant="form" rows={3} />
 						</div>
+					{:else if organizationError}<PageState
+							variant="error"
+							title="โหลดตัวเลือกหน่วยงานไม่สำเร็จ"
+							description={organizationError}
+							actionLabel="ลองอีกครั้ง"
+							onaction={loadOrganizationOptions}
+						/>
 					{:else}
 						<div class="space-y-4">
 							<p class="text-sm text-muted-foreground">

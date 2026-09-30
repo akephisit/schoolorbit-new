@@ -23,10 +23,28 @@
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
 	import { ArrowLeft, LoaderCircle, Save, User, Building2, BookOpen, Check } from '@lucide/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { requireApiData } from '$lib/api/client';
+	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '$lib/stores/permissions';
+	import { authStore } from '$lib/stores/auth';
 
-	const { params }: PageProps = $props();
-	const staffId = $derived(params.id);
+	let { data }: PageProps = $props();
+	const staffId = $derived(data.staffId),
+		source = $derived(data.staff);
+	const staffRequest = new LatestRequest();
+	let activeId = '';
+	const currentUserId = $derived($authStore.user?.id ?? '');
+	const canReadStaff = $derived(
+		$can.hasAny(
+			PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE,
+			PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
+		) ||
+			(currentUserId === staffId && $can.has(PERMISSIONS.STAFF_PROFILE_READ_OWN))
+	);
 
 	// Form state
 	let currentStep = $state(1);
@@ -35,9 +53,19 @@
 	// Loading states
 	let loadingProfile = $state(true);
 	let saving = $state(false);
-	let loadingRoles = $state(true);
-	let loadingOrganizationUnits = $state(true);
+	let loadingRoles = $state(false);
+	let loadingOrganizationUnits = $state(false);
 
+	const rolesRequest = new LatestRequest(),
+		organizationRequest = new LatestRequest();
+	const canReadOptions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canMutateStaff = $derived($can.has(PERMISSIONS.STAFF_UPDATE_ALL));
+	let rolesLoaded = $state(false),
+		organizationsLoaded = $state(false),
+		rolesError = $state(''),
+		organizationError = $state('');
+	let disposed = false,
+		mutationEpoch = 0;
 	// Data
 	let staff: StaffProfileResponse | null = $state(null);
 	let roles: Role[] = $state([]);
@@ -83,81 +111,157 @@
 	// Validation errors
 	let errors = $state<Record<string, string>>({});
 
-	// Load staff profile
-	async function loadStaffProfile() {
-		if (!staffId) return;
-
-		try {
+	$effect.pre(() => {
+		const id = staffId,
+			read = source;
+		untrack(() => {
+			if (activeId !== id) {
+				activeId = id;
+				mutationEpoch++;
+				staff = null;
+				saving = false;
+				currentStep = 1;
+				rolesRequest.abort();
+				organizationRequest.abort();
+				roles = [];
+				organizationUnits = [];
+				rolesLoaded = false;
+				organizationsLoaded = false;
+				errors = {};
+			}
+			const ticket = staffRequest.begin();
 			loadingProfile = true;
-			const response = await getStaffProfile(staffId);
-
-			if (response.success && response.data) {
-				staff = response.data;
-
-				// Populate form
-				formData = {
-					profile_image_file_id: staff.profile_image_file_id || '',
-					username: staff.username || '',
-					title: staff.title || 'นาย',
-					first_name: staff.first_name,
-					last_name: staff.last_name,
-					nickname: staff.nickname || '',
-					email: staff.email || '',
-					phone: staff.phone || '',
-					emergency_contact: staff.emergency_contact || '',
-					line_id: staff.line_id || '',
-					date_of_birth: staff.date_of_birth || '',
-					gender: staff.gender || 'male',
-					address: staff.address || '',
-					hired_date: staff.hired_date || '',
-					status: staff.status,
-					education_level: staff.staff_info?.education_level || '',
-					major: staff.staff_info?.major || '',
-					university: staff.staff_info?.university || '',
-					role_ids: staff.roles?.map((r) => r.id) || [],
-					primary_role_id: staff.roles?.find((r) => r.is_primary)?.id || '',
-					organization_assignments:
-						staff.organization_units?.map((d) => ({
-							organization_unit_id: d.id,
-							position_code: d.position_code || 'member',
-							is_primary: d.is_primary || false,
-							responsibilities: d.responsibilities || ''
-						})) || []
-				};
-			}
-		} catch (e) {
-			console.error('Failed to load staff profile:', e);
-			errors.load = 'ไม่สามารถโหลดข้อมูลบุคลากรได้';
-		} finally {
-			loadingProfile = false;
-		}
-	}
-
-	// Load roles and organizationUnits
-	async function loadOptions() {
-		try {
-			const [rolesRes, deptsRes] = await Promise.all([listRoles(), listOrganizationUnits()]);
-
-			if (rolesRes.success && rolesRes.data) {
-				// Filter to show only staff roles
-				roles = rolesRes.data.filter((role) => role.user_type === 'staff');
-			}
-			if (deptsRes.success && deptsRes.data) {
-				organizationUnits = deptsRes.data;
-			}
-		} catch (e) {
-			console.error('Failed to load options:', e);
-		} finally {
-			loadingRoles = false;
-			loadingOrganizationUnits = false;
-		}
-	}
-
-	onMount(() => {
-		loadStaffProfile();
-		loadOptions();
+			errors.load = '';
+			void read.then((result) => applyStaff(result, ticket.revision));
+		});
+		return () => staffRequest.abort();
 	});
+	onDestroy(() => {
+		disposed = true;
+		mutationEpoch++;
+		staffRequest.abort();
+		rolesRequest.abort();
+		organizationRequest.abort();
+	});
+	function applyStaff(result: Awaited<typeof data.staff>, revision: number) {
+		if (!staffRequest.isCurrent(revision)) return;
+		loadingProfile = false;
+		if (!result.ok) {
+			errors.load = result.error;
+			return;
+		}
+		if (!result.data) {
+			staff = null;
+			return;
+		}
+		const initial = staff === null;
+		staff = result.data;
+		if (initial) {
+			// Populate form
+			formData = {
+				profile_image_file_id: staff.profile_image_file_id || '',
+				username: staff.username || '',
+				title: staff.title || 'นาย',
+				first_name: staff.first_name,
+				last_name: staff.last_name,
+				nickname: staff.nickname || '',
+				email: staff.email || '',
+				phone: staff.phone || '',
+				emergency_contact: staff.emergency_contact || '',
+				line_id: staff.line_id || '',
+				date_of_birth: staff.date_of_birth || '',
+				gender: staff.gender || 'male',
+				address: staff.address || '',
+				hired_date: staff.hired_date || '',
+				status: staff.status,
+				education_level: staff.staff_info?.education_level || '',
+				major: staff.staff_info?.major || '',
+				university: staff.staff_info?.university || '',
+				role_ids: staff.roles?.map((r) => r.id) || [],
+				primary_role_id: staff.roles?.find((r) => r.is_primary)?.id || '',
+				organization_assignments:
+					staff.organization_units?.map((d) => ({
+						organization_unit_id: d.id,
+						position_code: d.position_code || 'member',
+						is_primary: d.is_primary || false,
+						responsibilities: d.responsibilities || ''
+					})) || []
+			};
+		}
+	}
+	async function loadStaffProfile() {
+		if (!canReadStaff) return;
+		const ticket = staffRequest.begin();
+		loadingProfile = true;
+		errors.load = '';
+		applyStaff(
+			await captureRouteLoad(
+				getStaffProfile(staffId, { signal: ticket.signal }).then((reply) =>
+					requireApiData(reply, 'โหลดข้อมูลบุคลากรไม่สำเร็จ')
+				),
+				'โหลดข้อมูลบุคลากรไม่สำเร็จ'
+			),
+			ticket.revision
+		);
+	}
 
+	$effect.pre(() => {
+		const step = currentStep,
+			allowed = canReadOptions;
+		untrack(() => {
+			if (!allowed) {
+				rolesRequest.abort();
+				organizationRequest.abort();
+				roles = [];
+				organizationUnits = [];
+				rolesLoaded = false;
+				organizationsLoaded = false;
+				loadingRoles = false;
+				loadingOrganizationUnits = false;
+			} else if (step === 3 && !rolesLoaded) void loadRoleOptions();
+			else if (step === 4 && !organizationsLoaded) void loadOrganizationOptions();
+		});
+		return () => {
+			if (step === 3) rolesRequest.abort();
+			if (step === 4) organizationRequest.abort();
+		};
+	});
+	async function loadRoleOptions() {
+		if (!canReadOptions || currentStep !== 3) return;
+		const ticket = rolesRequest.begin();
+		loadingRoles = true;
+		rolesError = '';
+		const result = await captureRouteLoad(
+			listRoles({ signal: ticket.signal }).then((reply) =>
+				requireApiData(reply, 'โหลดตัวเลือกบทบาทไม่สำเร็จ')
+			),
+			'โหลดตัวเลือกบทบาทไม่สำเร็จ'
+		);
+		if (!rolesRequest.isCurrent(ticket.revision)) return;
+		loadingRoles = false;
+		if (result.ok) {
+			roles = result.data.filter((role) => role.user_type === 'staff');
+			rolesLoaded = true;
+		} else rolesError = result.error;
+	}
+	async function loadOrganizationOptions() {
+		if (!canReadOptions || currentStep !== 4) return;
+		const ticket = organizationRequest.begin();
+		loadingOrganizationUnits = true;
+		organizationError = '';
+		const result = await captureRouteLoad(
+			listOrganizationUnits(undefined, { signal: ticket.signal }).then((reply) =>
+				requireApiData(reply, 'โหลดตัวเลือกหน่วยงานไม่สำเร็จ')
+			),
+			'โหลดตัวเลือกหน่วยงานไม่สำเร็จ'
+		);
+		if (!organizationRequest.isCurrent(ticket.revision)) return;
+		loadingOrganizationUnits = false;
+		if (result.ok) {
+			organizationUnits = result.data;
+			organizationsLoaded = true;
+		} else organizationError = result.error;
+	}
 	// Validation functions
 	function validateStep1(): boolean {
 		errors = {};
@@ -289,7 +393,12 @@
 
 	// Submit form
 	async function handleSubmit() {
-		if (!validateStep4()) return;
+		if (!canMutateStaff || saving || !staff || !validateStep4()) return;
+		const owner = staffId,
+			epoch = ++mutationEpoch;
+		const current = () => !disposed && owner === staffId && epoch === mutationEpoch;
+		staffRequest.abort();
+		loadingProfile = false;
 		if (!staffId) return;
 
 		saving = true;
@@ -323,20 +432,20 @@
 				)
 			};
 
-			const result = await updateStaff(staffId, payload);
+			const result = await updateStaff(owner, payload);
+			if (!current()) return;
 
 			if (result.success) {
 				toast.success('บันทึกข้อมูลสำเร็จ');
-				setTimeout(async () => {
-					await goto(resolve(`/staff/manage/${staffId}`), { invalidateAll: true });
-				}, 1500);
+				await goto(resolve(`/staff/manage/${owner}`));
 			} else {
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 			}
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+			if (current())
+				toast.error(e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
 
@@ -397,19 +506,60 @@
 				return User;
 		}
 	}
+	async function updateProfileImage(fileId: string | null, owner: string) {
+		if (disposed || owner !== staffId || !canMutateStaff || currentStep !== 1) return;
+		const epoch = mutationEpoch;
+		const current = () => !disposed && epoch === mutationEpoch && owner === staffId;
+		const toastId = toast.loading('กำลังอัปเดตรูปโปรไฟล์...');
+		staffRequest.abort();
+		loadingProfile = false;
+		try {
+			const reply = await updateStaff(owner, { profile_image_file_id: fileId });
+			if (!current()) {
+				toast.dismiss(toastId);
+				return;
+			}
+			if (!reply.success) throw new Error(reply.error || 'ไม่สามารถอัปเดตรูปภาพได้');
+			formData.profile_image_file_id = fileId ?? '';
+			if (staff) staff = { ...staff, profile_image_file_id: fileId };
+			toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว', { id: toastId });
+		} catch (e) {
+			if (current())
+				toast.error(e instanceof Error ? e.message : 'ไม่สามารถอัปเดตรูปภาพได้', { id: toastId });
+			else toast.dismiss(toastId);
+		}
+	}
 </script>
 
 <PageShell
 	title="แก้ไขข้อมูลบุคลากร"
-	description={staff
+	description={staff && canReadStaff
 		? `${staff.first_name} ${staff.last_name} • ขั้นตอน ${currentStep} / ${totalSteps}`
 		: `ขั้นตอน ${currentStep} / ${totalSteps}`}
 	backHref={`/staff/manage/${staffId}`}
+	backPreload="tap"
 >
-	<div class="space-y-6">
-		{#if loadingProfile}
-			<PageSkeleton variant="form" rows={8} />
-		{:else if errors.load}
+	{#snippet actions()}<Button
+			variant="outline"
+			onclick={loadStaffProfile}
+			disabled={loadingProfile || saving || !canReadStaff}>รีเฟรชข้อมูล</Button
+		>{/snippet}
+	<div data-testid="staff-edit-profile" aria-busy={loadingProfile} class="space-y-6">
+		{#if errors.load && staff && canReadStaff}<PageState
+				title="อัปเดตข้อมูลบุคลากรไม่สำเร็จ"
+				description={errors.load}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadStaffProfile}
+			/>{/if}
+		{#if loadingProfile && staff && canReadStaff}<p role="status">
+				กำลังอัปเดตข้อมูลบุคลากร...
+			</p>{/if}
+		{#if !canReadStaff}<PageState variant="permission" title="ไม่มีสิทธิ์ดูข้อมูลบุคลากร" />
+		{:else if loadingProfile && !staff}
+			<div role="status" aria-label="กำลังโหลดข้อมูลบุคลากร">
+				<PageSkeleton variant="form" rows={8} />
+			</div>
+		{:else if errors.load && !staff}
 			<PageState
 				variant="error"
 				title="โหลดข้อมูลบุคลากรไม่สำเร็จ"
@@ -480,36 +630,20 @@
 			>
 				<div class="bg-card border border-border rounded-lg p-6">
 					{#if currentStep === 1}
+						{@const imageOwner = staffId}
 						<!-- Step 1: Personal Information -->
 						<h2 class="text-xl font-semibold mb-6">ข้อมูลส่วนตัว</h2>
 
 						<div class="flex justify-center mb-8">
-							<ProfileImageUpload
-								currentFileId={formData.profile_image_file_id}
-								resourceId={staffId}
-								onsuccess={async (data: { fileId: string | null }) => {
-									if (!staffId) return;
-									const toastId = toast.loading('กำลังอัปเดตรูปโปรไฟล์...');
-									try {
-										const res = await updateStaff(staffId, {
-											profile_image_file_id: data.fileId
-										});
-										if (res.success) {
-											formData.profile_image_file_id = data.fileId ?? '';
-											toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว', { id: toastId });
-										} else {
-											toast.error('ไม่สำเร็จ: ' + (res.error || 'ไม่ทราบสาเหตุ'), { id: toastId });
-											errors.profile_image = res.error || 'ไม่สามารถอัปเดตรูปภาพได้';
-										}
-									} catch (err) {
-										toast.error('เกิดข้อผิดพลาด', { id: toastId });
-										console.error(err);
-									}
-								}}
-								onerror={(msg: string) => {
-									errors.profile_image = msg;
-								}}
-							/>
+							{#key staffId}<ProfileImageUpload
+									currentFileId={formData.profile_image_file_id}
+									resourceId={staffId}
+									disabled={saving}
+									onsuccess={(upload) => updateProfileImage(upload.fileId, imageOwner)}
+									onerror={(message) => {
+										if (!disposed && imageOwner === staffId) errors.profile_image = message;
+									}}
+								/>{/key}
 						</div>
 
 						<div class="space-y-4">
@@ -716,10 +850,20 @@
 						<!-- Step 3: Roles -->
 						<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
 
-						{#if loadingRoles}
-							<div class="flex justify-center py-8">
-								<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
+						{#if !canReadOptions}<PageState
+								variant="permission"
+								title="ไม่มีสิทธิ์อ่านตัวเลือกบทบาท"
+							/>
+						{:else if loadingRoles}<div role="status" aria-label="กำลังโหลดตัวเลือกบทบาท">
+								<PageSkeleton variant="form" rows={3} />
 							</div>
+						{:else if rolesError}<PageState
+								variant="error"
+								title="โหลดตัวเลือกบทบาทไม่สำเร็จ"
+								description={rolesError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadRoleOptions}
+							/>
 						{:else}
 							<div class="space-y-4">
 								<p class="text-sm text-muted-foreground">
@@ -797,10 +941,23 @@
 						<!-- Step 4: Organization Units -->
 						<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
 
-						{#if loadingOrganizationUnits}
-							<div class="flex justify-center py-8">
-								<LoaderCircle class="w-8 h-8 animate-spin text-muted-foreground" />
+						{#if !canReadOptions}<PageState
+								variant="permission"
+								title="ไม่มีสิทธิ์อ่านตัวเลือกหน่วยงาน"
+							/>
+						{:else if loadingOrganizationUnits}<div
+								role="status"
+								aria-label="กำลังโหลดตัวเลือกหน่วยงาน"
+							>
+								<PageSkeleton variant="form" rows={3} />
 							</div>
+						{:else if organizationError}<PageState
+								variant="error"
+								title="โหลดตัวเลือกหน่วยงานไม่สำเร็จ"
+								description={organizationError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadOrganizationOptions}
+							/>
 						{:else}
 							<div class="space-y-4">
 								<p class="text-sm text-muted-foreground">

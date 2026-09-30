@@ -753,56 +753,52 @@
 		{
 			"route": "staff/manage",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include listStaff; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "URL search/page owns bounded directory; exact profile-read gates, first/retained local states and retry; deletion rereads only the current list with disposal guards."
 		},
 		{
 			"route": "staff/manage/[id]",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "staff-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include getStaffProfile, getAchievements; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Selected ID profile and scoped achievements start independently; focused retry and retained refresh, typed history mutations patch locally; dialog/uploads remain lazy and ignore changed person or closed draft."
 		},
 		{
 			"route": "staff/manage/[id]/edit",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "staff-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include getStaffProfile, listRoles, listOrganizationUnits; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Selected profile starts in loader with exact read scope; wizard choices start only on the opened step with roles.read; drafts retain same-person refresh and empty saves navigate with ID/disposal guards."
 		},
 		{
 			"route": "staff/manage/[id]/roles",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "staff-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Visible reads start in UserRoleManager; move primary data to the owning route loader."
+			"notes": "Selected assignments and effective permissions start independently; exact read/action permissions, lazy assignment catalog, empty/UUID mutations refresh only both affected regions with owner/dialog guards."
 		},
 		{
 			"route": "staff/manage/new",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "interaction-only",
+			"preload": "none",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-staff",
-			"notes": "Component API reads include listRoles, listOrganizationUnits; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Input-only initial form; role/unit choices load on opened step behind exact roles.read, UUID creation loads only destination list. Filtered tenant/user draft expires in 30 minutes and excludes national ID/passwords."
 		},
 		{
 			"route": "staff/menu",

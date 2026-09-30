@@ -616,10 +616,9 @@ pub async fn get_staff_profile(
         advisor_fut
     );
 
-    let staff_info = staff_info_res.ok().flatten();
+    let staff_info = staff_info_res?;
 
-    let roles: Vec<RoleResponse> = roles_res
-        .unwrap_or_default()
+    let roles: Vec<RoleResponse> = roles_res?
         .into_iter()
         .map(|row| RoleResponse {
             id: row.id,
@@ -632,8 +631,7 @@ pub async fn get_staff_profile(
         })
         .collect();
 
-    let organization_units: Vec<OrganizationUnitResponse> = organization_units_res
-        .unwrap_or_default()
+    let organization_units: Vec<OrganizationUnitResponse> = organization_units_res?
         .into_iter()
         .map(|row| OrganizationUnitResponse {
             id: row.id,
@@ -649,8 +647,7 @@ pub async fn get_staff_profile(
         })
         .collect();
 
-    let teaching_assignments: Vec<TeachingAssignmentItem> = teaching_res
-        .unwrap_or_default()
+    let teaching_assignments: Vec<TeachingAssignmentItem> = teaching_res?
         .into_iter()
         .map(|r| TeachingAssignmentItem {
             learning_group_id: r.learning_group_id,
@@ -670,8 +667,7 @@ pub async fn get_staff_profile(
         })
         .collect();
 
-    let advisor_homerooms: Vec<AdvisorHomeroomItem> = advisor_res
-        .unwrap_or_default()
+    let advisor_homerooms: Vec<AdvisorHomeroomItem> = advisor_res?
         .into_iter()
         .map(|r| AdvisorHomeroomItem {
             homeroom_id: r.homeroom_id,

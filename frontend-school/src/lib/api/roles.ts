@@ -66,8 +66,14 @@ export const permissionAPI = {
 // User Role Assignment API
 export const userRoleAPI = {
 	// Get user's roles
-	async getUserRoles(userId: string): Promise<ApiResponse<UserRoleAssignment[]>> {
-		return apiClient.get<UserRoleAssignment[]>(`/api/users/${userId}/roles`);
+	async getUserRoles(
+		userId: string,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<UserRoleAssignment[]>> {
+		return apiClient.get<UserRoleAssignment[]>(
+			`/api/users/${encodeURIComponent(userId)}/roles`,
+			options
+		);
 	},
 
 	// Assign role to user
@@ -81,7 +87,10 @@ export const userRoleAPI = {
 	},
 
 	// Get user's effective permissions
-	async getUserPermissions(userId: string): Promise<ApiResponse<string[]>> {
-		return apiClient.get<string[]>(`/api/users/${userId}/permissions`);
+	async getUserPermissions(
+		userId: string,
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<string[]>> {
+		return apiClient.get<string[]>(`/api/users/${encodeURIComponent(userId)}/permissions`, options);
 	}
 };

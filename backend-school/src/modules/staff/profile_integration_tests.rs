@@ -82,3 +82,55 @@ async fn staff_profile_reads_canonical_teaching_and_homeroom_assignments() {
         assignment.homeroom_id == homeroom_id && assignment.academic_year == 2025
     }));
 }
+
+#[tokio::test]
+async fn private_profile_does_not_turn_failed_relations_into_empty_success() {
+    let pool = create_named_test_pool_with_max_connections("private_profile_read_errors", 5).await;
+    apply_migrations_through(&pool, 40).await.unwrap();
+    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+        .await
+        .unwrap();
+    apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    assert!(
+        school_staff::services::staff_service::get_staff_profile(&pool, staff_id, false)
+            .await
+            .is_ok()
+    );
+    for (table, hide, restore) in [
+        (
+            "staff_info",
+            "ALTER TABLE staff_info RENAME TO private_profile_hidden_table",
+            "ALTER TABLE private_profile_hidden_table RENAME TO staff_info",
+        ),
+        (
+            "roles",
+            "ALTER TABLE roles RENAME TO private_profile_hidden_table",
+            "ALTER TABLE private_profile_hidden_table RENAME TO roles",
+        ),
+        (
+            "organization_units",
+            "ALTER TABLE organization_units RENAME TO private_profile_hidden_table",
+            "ALTER TABLE private_profile_hidden_table RENAME TO organization_units",
+        ),
+        (
+            "learning_group_teachers",
+            "ALTER TABLE learning_group_teachers RENAME TO private_profile_hidden_table",
+            "ALTER TABLE private_profile_hidden_table RENAME TO learning_group_teachers",
+        ),
+        (
+            "homeroom_advisors",
+            "ALTER TABLE homeroom_advisors RENAME TO private_profile_hidden_table",
+            "ALTER TABLE private_profile_hidden_table RENAME TO homeroom_advisors",
+        ),
+    ] {
+        sqlx::query(hide).execute(&pool).await.unwrap();
+        let result =
+            school_staff::services::staff_service::get_staff_profile(&pool, staff_id, false).await;
+        sqlx::query(restore).execute(&pool).await.unwrap();
+        assert!(
+            result.is_err(),
+            "A failed {table} read must not become an empty successful profile"
+        );
+    }
+}

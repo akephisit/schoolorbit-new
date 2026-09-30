@@ -71,14 +71,17 @@ export async function getStaffDashboard(
 	return apiClient.get<StaffDashboardOverview>(`/api/staff/dashboard?${query}`, options);
 }
 
-export async function listStaff(filter?: StaffFilter): Promise<StaffListResponse> {
+export async function listStaff(
+	filter?: StaffFilter,
+	options: ApiRequestOptions = {}
+): Promise<StaffListResponse> {
 	const params = new URLSearchParams();
 	if (filter?.status) params.append('status', filter.status);
 	if (filter?.search) params.append('search', filter.search);
 	if (filter?.page) params.append('page', filter.page.toString());
 	if (filter?.page_size) params.append('page_size', filter.page_size.toString());
 
-	const response = await apiClient.get<StaffListData>(`/api/staff?${params.toString()}`);
+	const response = await apiClient.get<StaffListData>(`/api/staff?${params.toString()}`, options);
 	const data = requireApiData(response, 'Failed to fetch staff list');
 
 	return {
@@ -91,8 +94,11 @@ export async function listStaff(filter?: StaffFilter): Promise<StaffListResponse
 	};
 }
 
-export async function getStaffProfile(staffId: string): Promise<ApiResponse<StaffProfileResponse>> {
-	return apiClient.get<StaffProfileResponse>(`/api/staff/${staffId}`);
+export async function getStaffProfile(
+	staffId: string,
+	options: ApiRequestOptions = {}
+): Promise<ApiResponse<StaffProfileResponse>> {
+	return apiClient.get<StaffProfileResponse>(`/api/staff/${encodeURIComponent(staffId)}`, options);
 }
 
 export async function getPublicStaffProfile(
@@ -114,15 +120,15 @@ export async function updateStaff(
 }
 
 export async function deleteStaff(staffId: string): Promise<ApiResponse<EmptyData>> {
-	return apiClient.delete<EmptyData>(`/api/staff/${staffId}`);
+	return apiClient.delete<EmptyData>(`/api/staff/${encodeURIComponent(staffId)}`);
 }
 
 // ===================================================================
 // Role APIs
 // ===================================================================
 
-export async function listRoles(): Promise<ApiResponse<Role[]>> {
-	return apiClient.get<Role[]>('/api/roles');
+export async function listRoles(options: ApiRequestOptions = {}): Promise<ApiResponse<Role[]>> {
+	return apiClient.get<Role[]>('/api/roles', options);
 }
 
 export async function getRole(roleId: string): Promise<ApiResponse<Role>> {
@@ -134,12 +140,13 @@ export async function getRole(roleId: string): Promise<ApiResponse<Role>> {
 // ===================================================================
 
 export async function listOrganizationUnits(
-	options?: ManagedListOptions
+	options?: ManagedListOptions,
+	requestOptions: ApiRequestOptions = {}
 ): Promise<ApiResponse<OrganizationUnit[]>> {
 	const params = new URLSearchParams();
 	if (options?.include_inactive) params.set('include_inactive', 'true');
 	const qs = params.toString() ? `?${params}` : '';
-	return apiClient.get<OrganizationUnit[]>(`/api/organization/units${qs}`);
+	return apiClient.get<OrganizationUnit[]>(`/api/organization/units${qs}`, requestOptions);
 }
 
 // Auth-only version (no roles.read.all required) — for non-admin pages
