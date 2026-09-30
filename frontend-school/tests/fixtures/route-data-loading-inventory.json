@@ -638,13 +638,12 @@
 		{
 			"route": "staff/certificates",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Component API reads include listCertificateCampaigns; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct exact staff/read event-fetch campaign collection; identity supersession, first/retained local errors and focused retry. Opened keyed purge only, local removal on completion; create/edit references stay lazy. Owner joined list and set-scoped capabilities have no per-row SQL read."
 		},
 		{
 			"route": "staff/certificates/[campaignId]/issued",
@@ -659,13 +658,12 @@
 		{
 			"route": "staff/certificates/[campaignId]/overview",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "campaign-id",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Component API reads include getCertificateCampaign, listCertificateOwnerOptions, lookupAcademicYears; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct captured selected campaign with identity/ID pre-paint clearing and retry. Immediate opened exact-update editor starts independent needed references; immutable year/owner reuse current DTO. Typed save/status patch selected owner, closed draft and disposal guards; opened purge only. Backend authoritative read grant reused for capability, preserving exact policy while eliminating one repeated unit-scope read; no SQL/index change or latency claim."
 		},
 		{
 			"route": "staff/certificates/[campaignId]/recipients",
@@ -710,13 +708,12 @@
 		{
 			"route": "staff/certificates/new",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-certificates",
-			"notes": "Component API reads include listCertificateOwnerOptions, lookupAcademicYears; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Explicit create route starts independent academic-year and exact-create owner options together; region skeleton/error/retry, stable form draft and save prerequisites, owner/disposal guard against late navigation. No primary lifecycle reads or duplicate identity."
 		},
 		{
 			"route": "staff/exams",

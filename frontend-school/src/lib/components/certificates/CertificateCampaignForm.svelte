@@ -31,6 +31,9 @@
 		allowSchoolOwner = false,
 		allowOwnerChange = true,
 		saving = false,
+		yearsReady = true,
+		ownersReady = true,
+		disabled = false,
 		submitLabel = campaign ? 'บันทึกการแก้ไข' : 'สร้างกิจกรรม',
 		onsubmit,
 		oncancel
@@ -41,6 +44,9 @@
 		allowSchoolOwner?: boolean;
 		allowOwnerChange?: boolean;
 		saving?: boolean;
+		yearsReady?: boolean;
+		ownersReady?: boolean;
+		disabled?: boolean;
 		submitLabel?: string;
 		onsubmit: (value: CertificateCampaignFormValue) => void | Promise<void>;
 		oncancel?: () => void;
@@ -71,6 +77,19 @@
 		}))
 	);
 	let validationError = $state('');
+	$effect.pre(() => {
+		const years = academicYears,
+			owners = visibleOwnerOptions,
+			existing = campaign;
+		untrack(() => {
+			if (existing) return;
+			if (!form.academicYearId)
+				form.academicYearId =
+					years.find((year) => year.status === 'active')?.id ?? years[0]?.id ?? '';
+			if (!form.ownerValue)
+				form.ownerValue = allowSchoolOwner ? SCHOOL_OWNER_VALUE : (owners[0]?.id ?? '');
+		});
+	});
 
 	const hasIssuedCertificates = $derived(
 		campaign?.activitySequence !== null && campaign !== undefined
@@ -108,6 +127,7 @@
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
+		if (saving || disabled || !yearsReady || !ownersReady) return;
 		validationError = '';
 		const name = form.name.trim().replace(/\s+/g, ' ');
 		if (!name || !form.academicYearId || !form.eventDate) {
@@ -160,6 +180,7 @@
 					bind:value={form.name}
 					class="pl-9"
 					maxlength={200}
+					disabled={saving}
 					placeholder="เช่น กิจกรรมวันภาษาไทย"
 					required
 				/>
@@ -171,7 +192,11 @@
 
 		<div class="space-y-2">
 			<Label for="certificate-academic-year">ปีการศึกษา</Label>
-			<Select.Root type="single" bind:value={form.academicYearId} disabled={!canChangeAcademicYear}>
+			<Select.Root
+				type="single"
+				bind:value={form.academicYearId}
+				disabled={!canChangeAcademicYear || saving || !yearsReady}
+			>
 				<Select.Trigger id="certificate-academic-year" class="w-full">
 					<span class="inline-flex items-center gap-2">
 						<GraduationCap class="size-4 text-muted-foreground" />
@@ -193,13 +218,17 @@
 			<Label for="certificate-event-date">วันที่จัดกิจกรรม</Label>
 			<div class="relative">
 				<CalendarDays class="sr-only" />
-				<DatePicker id="certificate-event-date" bind:value={form.eventDate} />
+				<DatePicker id="certificate-event-date" bind:value={form.eventDate} disabled={saving} />
 			</div>
 		</div>
 
 		<div class="space-y-2 md:col-span-2">
 			<Label for="certificate-owner">หน่วยงานเจ้าของกิจกรรม</Label>
-			<Select.Root type="single" bind:value={form.ownerValue} disabled={!canChangeOwner}>
+			<Select.Root
+				type="single"
+				bind:value={form.ownerValue}
+				disabled={!canChangeOwner || saving || !ownersReady}
+			>
 				<Select.Trigger id="certificate-owner" class="w-full">
 					<span class="inline-flex min-w-0 items-center gap-2">
 						<Building2 class="size-4 shrink-0 text-muted-foreground" />
@@ -235,7 +264,11 @@
 		<label
 			class="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"
 		>
-			<Checkbox bind:checked={form.confirmAffectsIssuedCertificates} class="mt-0.5" />
+			<Checkbox
+				bind:checked={form.confirmAffectsIssuedCertificates}
+				class="mt-0.5"
+				disabled={saving}
+			/>
 			<span>
 				<strong class="font-medium">ยืนยันการแก้ข้อมูลร่วมของใบที่ออกแล้ว</strong>
 				<span class="mt-0.5 block text-xs text-amber-800">
@@ -249,7 +282,12 @@
 		{#if oncancel}
 			<Button type="button" variant="outline" onclick={oncancel} disabled={saving}>ยกเลิก</Button>
 		{/if}
-		<LoadingButton type="submit" loading={saving} loadingLabel="กำลังบันทึก...">
+		<LoadingButton
+			type="submit"
+			loading={saving}
+			loadingLabel="กำลังบันทึก..."
+			disabled={disabled || !yearsReady || !ownersReady}
+		>
 			<Save class="size-4" />
 			{submitLabel}
 		</LoadingButton>

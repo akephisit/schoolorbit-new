@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use crate::{
     access_policy::{
-        owner_list_scope, require_owner_action, CertificateAction, CertificateOwnerListScope,
+        owner_list_scope, require_owner_action, CertificateAccessGrant, CertificateAccessScope,
+        CertificateAction, CertificateOwnerListScope,
     },
     models::{
         CertificateCampaignCapabilities, CertificateCampaignDetail, CertificateCampaignListQuery,
@@ -197,14 +198,15 @@ pub async fn get_campaign(
     campaign_id: Uuid,
 ) -> Result<CertificateCampaignDetail, AppError> {
     let row = fetch_campaign_row(pool, campaign_id).await?;
-    require_owner_action(
+    let read_grant = require_owner_action(
         pool,
         actor,
         row.owner_organization_unit_id,
         CertificateAction::Read,
     )
     .await?;
-    let scopes = load_capability_scopes(pool, actor).await?;
+    let scopes =
+        load_capability_scopes_with_read(pool, actor, read_scope_from_grant(read_grant)).await?;
     row_to_detail(row, &scopes)
 }
 
@@ -553,8 +555,28 @@ async fn load_capability_scopes(
     pool: &PgPool,
     actor: &ActorContext,
 ) -> Result<CapabilityScopes, AppError> {
+    let read = optional_owner_scope(pool, actor, CertificateAction::Read).await?;
+    load_capability_scopes_with_read(pool, actor, read).await
+}
+
+// A selected resource already resolved its authoritative read grant. Do not repeat
+// the exact-unit lookup merely to describe the same resource's read capability.
+fn read_scope_from_grant(grant: CertificateAccessGrant) -> OwnerCapabilityScope {
+    match grant.scope {
+        CertificateAccessScope::School => OwnerCapabilityScope::School,
+        CertificateAccessScope::OrganizationUnit(unit) => {
+            OwnerCapabilityScope::Units(HashSet::from([unit]))
+        }
+    }
+}
+
+async fn load_capability_scopes_with_read(
+    pool: &PgPool,
+    actor: &ActorContext,
+    read: OwnerCapabilityScope,
+) -> Result<CapabilityScopes, AppError> {
     Ok(CapabilityScopes {
-        read: optional_owner_scope(pool, actor, CertificateAction::Read).await?,
+        read,
         create: optional_owner_scope(pool, actor, CertificateAction::Create).await?,
         update: optional_owner_scope(pool, actor, CertificateAction::Update).await?,
         delete: optional_owner_scope(pool, actor, CertificateAction::Delete).await?,
@@ -923,6 +945,23 @@ fn campaign_db_error(error: sqlx::Error) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selected_read_grant_preserves_exact_unit_and_school_capabilities() {
+        use crate::access_policy::{CertificateAccessGrant, CertificateAccessScope};
+        let unit = Uuid::from_u128(1);
+        let exact = read_scope_from_grant(CertificateAccessGrant {
+            scope: CertificateAccessScope::OrganizationUnit(unit),
+        });
+        assert!(exact.allows(Some(unit)));
+        assert!(!exact.allows(Some(Uuid::from_u128(2))));
+        assert!(!exact.allows(None));
+        let school = read_scope_from_grant(CertificateAccessGrant {
+            scope: CertificateAccessScope::School,
+        });
+        assert!(school.allows(None));
+        assert!(school.allows(Some(unit)));
+    }
 
     fn unit_scope(ids: impl IntoIterator<Item = Uuid>) -> OwnerCapabilityScope {
         OwnerCapabilityScope::Units(ids.into_iter().collect())

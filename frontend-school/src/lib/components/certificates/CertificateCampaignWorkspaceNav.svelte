@@ -38,6 +38,7 @@
 		{#each items as item (item.sectionPath)}
 			{@const ItemIcon = item.icon}
 			<a
+				data-sveltekit-preload-data="tap"
 				href={resolve(
 					`/staff/certificates/${campaignId}${item.sectionPath}` as '/staff/certificates'
 				)}

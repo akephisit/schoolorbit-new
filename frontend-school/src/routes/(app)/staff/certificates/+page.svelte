@@ -1,5 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import type { PageProps } from './$types';
+	import { authStore } from '$lib/stores/auth';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
 	import { listCertificateCampaigns, type CertificateCampaignSummary } from '$lib/api/certificates';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -21,29 +26,83 @@
 
 	let campaigns: CertificateCampaignSummary[] = $state.raw([]);
 	let loading = $state(true);
-	let error = $state('');
-
-	async function loadCampaigns() {
-		if (!canReadCampaigns) {
-			loading = false;
+	let error = $state(''),
+		loaded = $state(false);
+	let { data }: PageProps = $props();
+	const source = $derived(data.campaigns),
+		request = new LatestRequest();
+	const identity = $derived.by(() => {
+		void $authStore.user;
+		void $can;
+		return appIdentityKey();
+	});
+	let owner = $state(''),
+		ownerEpoch = $state(0),
+		disposed = false,
+		consumed: typeof data.campaigns | null = null;
+	$effect.pre(() => {
+		const key = identity,
+			operation = source,
+			allowed = canReadCampaigns;
+		untrack(() => {
+			if (owner !== key) {
+				owner = key;
+				ownerEpoch++;
+				request.abort();
+				campaigns = [];
+				loaded = false;
+				loading = allowed;
+				error = '';
+			}
+			if (!allowed || operation === consumed) return;
+			consumed = operation;
+			const t = request.begin();
+			loading = true;
+			error = '';
+			void operation.then((r) => applyCampaigns(r, t.revision));
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		request.abort();
+	});
+	function applyCampaigns(r: Awaited<typeof data.campaigns>, revision: number) {
+		if (!request.isCurrent(revision)) return;
+		loading = false;
+		if (!r.ok) {
+			error = r.error;
 			return;
 		}
+		if (r.data.identityKey !== identity) return;
+		campaigns = r.data.records ?? [];
+		loaded = true;
+	}
+
+	async function loadCampaigns() {
+		if (disposed || !canReadCampaigns) return;
+		const identityKey = identity,
+			t = request.begin();
 		loading = true;
 		error = '';
-		try {
-			campaigns = await listCertificateCampaigns();
-		} catch (loadError) {
-			error = loadError instanceof Error ? loadError.message : 'ไม่สามารถโหลดชุดออกเกียรติบัตรได้';
-		} finally {
-			loading = false;
-		}
+		applyCampaigns(
+			await captureRouteLoad(
+				listCertificateCampaigns({}, { signal: t.signal }).then((records) => ({
+					identityKey,
+					records
+				})),
+				'โหลดชุดออกเกียรติบัตรไม่สำเร็จ'
+			),
+			t.revision
+		);
 	}
 
 	function removePurgedCampaign(campaignId: string): void {
+		if (disposed || !canReadCampaigns) return;
+		request.abort();
+		loading = false;
 		campaigns = campaigns.filter((campaign) => campaign.id !== campaignId);
 	}
-
-	onMount(loadCampaigns);
 </script>
 
 <PageShell
@@ -52,7 +111,7 @@
 >
 	{#snippet actions()}
 		{#if canCreateCampaign}
-			<Button href="/staff/certificates/new">
+			<Button href="/staff/certificates/new" data-sveltekit-preload-data="tap">
 				<Plus class="size-4" />
 				สร้างกิจกรรม
 			</Button>
@@ -65,21 +124,33 @@
 			title="ไม่มีสิทธิ์ดูชุดออกเกียรติบัตร"
 			description="ต้องมีสิทธิ์อ่านระดับหน่วยงานหรือระดับโรงเรียน จึงจะเปิดพื้นที่จัดการนี้ได้"
 		/>
-	{:else if loading}
-		<PageSkeleton variant="cards" rows={4} />
-	{:else if error}
-		<PageState
-			variant="error"
-			title="โหลดชุดออกเกียรติบัตรไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={loadCampaigns}
-		/>
 	{:else}
-		<CertificateCampaignList
-			{campaigns}
-			canCreate={canCreateCampaign}
-			onpurged={removePurgedCampaign}
-		/>
+		<section data-testid="certificate-campaigns">
+			{#if loading && loaded}<p role="status">กำลังอัปเดตกิจกรรม</p>{/if}
+			{#if error}
+				<PageState
+					variant="error"
+					title="โหลดชุดออกเกียรติบัตรไม่สำเร็จ"
+					description={error}
+					actionLabel="ลองอีกครั้ง"
+					onaction={loadCampaigns}
+				/>
+			{/if}
+			{#if loading && !loaded}<div role="status" aria-label="กำลังโหลดกิจกรรมเกียรติบัตร">
+					<PageSkeleton variant="cards" rows={4} />
+				</div>
+			{:else if loaded}
+				{#key owner}
+					{@const childOwner = ownerEpoch}
+					<CertificateCampaignList
+						{campaigns}
+						canCreate={canCreateCampaign}
+						onpurged={(id) => {
+							if (childOwner === ownerEpoch) removePurgedCampaign(id);
+						}}
+					/>
+				{/key}
+			{/if}
+		</section>
 	{/if}
 </PageShell>

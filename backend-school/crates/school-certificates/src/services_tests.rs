@@ -2345,6 +2345,55 @@ async fn grant_in_unit_a_does_not_authorize_campaign_in_unit_b() {
 }
 
 #[tokio::test]
+async fn selected_campaign_read_capability_reuses_the_authoritative_exact_grant() {
+    let fixture =
+        CertificatePolicyFixture::with_position_grant("certificate_selected_read", "head").await;
+    sqlx::query(
+        "INSERT INTO organization_permission_grants (organization_unit_id, permission_id, position_code)
+         SELECT $1, id, 'head' FROM permissions WHERE code = $2",
+    )
+    .bind(fixture.unit_a)
+    .bind(codes::CERTIFICATE_READ_ORGANIZATION_UNIT)
+    .execute(&fixture.pool).await.unwrap();
+    let year = insert_academic_year(&fixture.pool, 3140).await;
+    let mut ids = Vec::new();
+    for unit in [fixture.unit_a, fixture.unit_b] {
+        let id: Uuid = sqlx::query_scalar(
+            "INSERT INTO certificate_campaigns (academic_year_id, owner_organization_unit_id, name, event_date)
+             VALUES ($1, $2, 'Synthetic selected read', CURRENT_DATE) RETURNING id",
+        ).bind(year).bind(unit).fetch_one(&fixture.pool).await.unwrap();
+        ids.push(id);
+    }
+    let allowed = campaign_service::get_campaign(&fixture.pool, &fixture.actor, ids[0])
+        .await
+        .unwrap();
+    assert!(allowed.capabilities.can_read);
+    assert!(allowed.capabilities.can_update);
+    assert!(matches!(
+        campaign_service::get_campaign(&fixture.pool, &fixture.actor, ids[1]).await,
+        Err(AppError::Forbidden(_))
+    ));
+    sqlx::query("UPDATE organization_units SET is_active = false WHERE id = $1")
+        .bind(fixture.unit_a)
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        campaign_service::get_campaign(&fixture.pool, &fixture.actor, ids[0]).await,
+        Err(AppError::Forbidden(_))
+    ));
+    let school_actor = ActorContext {
+        user_id: fixture.actor.user_id,
+        permissions: vec![codes::CERTIFICATE_READ_SCHOOL.to_string()],
+    };
+    let school_read = campaign_service::get_campaign(&fixture.pool, &school_actor, ids[0])
+        .await
+        .unwrap();
+    assert!(school_read.capabilities.can_read);
+    assert!(!school_read.capabilities.can_update);
+}
+
+#[tokio::test]
 async fn candidate_preparation_capability_uses_the_exact_campaign_owner_scope() {
     let mut fixture =
         CertificatePolicyFixture::with_position_grant("certificate_candidate_capability", "head")

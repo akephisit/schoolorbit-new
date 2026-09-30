@@ -24,6 +24,32 @@ export const _meta = {
 	}
 };
 
-export const load = async () => ({
-	title: _meta.menu.title
-});
+import type { PageLoad } from './$types';
+import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
+import { captureRouteLoad } from '$lib/navigation/route-load';
+import { can } from '$lib/stores/permissions';
+import { get } from 'svelte/store';
+import { listCertificateCampaigns } from '$lib/api/certificates';
+export const load: PageLoad = ({ fetch, depends }) => {
+	depends('school:app-identity');
+	return {
+		title: 'ชุดออกเกียรติบัตร',
+		campaigns: captureRouteLoad(
+			waitForAuthenticatedUser().then(async (user) => {
+				const identityKey = appIdentityKey();
+				return {
+					identityKey,
+					records:
+						user?.user_type === 'staff' &&
+						get(can).hasAny(
+							PERMISSIONS.CERTIFICATE_READ_ORGANIZATION_UNIT,
+							PERMISSIONS.CERTIFICATE_READ_SCHOOL
+						)
+							? await listCertificateCampaigns({}, { requestFetch: fetch })
+							: null
+				};
+			}),
+			'โหลดชุดออกเกียรติบัตรไม่สำเร็จ'
+		)
+	};
+};

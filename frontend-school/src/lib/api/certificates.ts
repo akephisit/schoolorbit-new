@@ -71,7 +71,8 @@ export type CertificateRenderManifestBatchRequest =
 	Schemas['CertificateRenderManifestBatchRequest'];
 
 export async function listCertificateCampaigns(
-	query: CertificateCampaignListQuery = {}
+	query: CertificateCampaignListQuery = {},
+	options: ApiRequestOptions = {}
 ): Promise<CertificateCampaignSummary[]> {
 	const params = new URLSearchParams();
 	if (query.academicYearId) params.set('academicYearId', query.academicYearId);
@@ -79,16 +80,19 @@ export async function listCertificateCampaigns(
 	if (query.search?.trim()) params.set('search', query.search.trim());
 	const suffix = params.size > 0 ? `?${params.toString()}` : '';
 	const response = await apiClient.get<CertificateCampaignSummary[]>(
-		`/api/certificates/campaigns${suffix}`
+		`/api/certificates/campaigns${suffix}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดกิจกรรมเกียรติบัตรได้');
 }
 
 export async function getCertificateCampaign(
-	campaignId: string
+	campaignId: string,
+	options: ApiRequestOptions = {}
 ): Promise<CertificateCampaignDetail> {
 	const response = await apiClient.get<CertificateCampaignDetail>(
-		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}`
+		`/api/certificates/campaigns/${encodeURIComponent(campaignId)}`,
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดกิจกรรมเกียรติบัตรได้');
 }
@@ -172,8 +176,13 @@ export async function retryCertificateCampaignPurge(
 	return requireApiData(response, 'ไม่สามารถลองลบกิจกรรมต่อได้');
 }
 
-export async function listCertificateOwnerOptions(): Promise<CertificateOwnerOption[]> {
-	const response = await apiClient.get<CertificateOwnerOption[]>('/api/certificates/owner-options');
+export async function listCertificateOwnerOptions(
+	options: ApiRequestOptions = {}
+): Promise<CertificateOwnerOption[]> {
+	const response = await apiClient.get<CertificateOwnerOption[]>(
+		'/api/certificates/owner-options',
+		options
+	);
 	return requireApiData(response, 'ไม่สามารถโหลดหน่วยงานเจ้าของกิจกรรมได้');
 }
 

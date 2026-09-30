@@ -71,6 +71,13 @@ const stubModules = new Map([
 
 function findStubModule(id: string): string | undefined {
 	if (stubModules.has(id)) return id;
+	for (const [entry, module] of [
+		['state/index.js', '$app/state'],
+		['navigation.js', '$app/navigation'],
+		['paths/index.js', '$app/paths']
+	]) {
+		if (id.split('?')[0].endsWith(`/@sveltejs/kit/src/runtime/app/${entry}`)) return module;
+	}
 	for (const stubId of stubModules.keys()) {
 		if (!stubId.startsWith('$lib/')) continue;
 		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
@@ -91,9 +98,13 @@ function harnessPlugin(): Plugin {
 		},
 		load(id) {
 			if (id.startsWith(stubPrefix)) return stubModules.get(id.slice(stubPrefix.length));
+			const stubId = findStubModule(id);
+			if (stubId) return stubModules.get(stubId);
 			if (id !== resolvedVirtualModuleId) return;
 			return `
 				import { mount } from 'svelte';
+				import { appIdentityKey } from '/src/lib/auth/settled-user.ts';
+				import { page } from '$app/state';
 				import '/src/routes/layout.css';
 				import { setPermissions } from '/src/lib/stores/permissions.ts';
 				import { campaignFixture } from '$lib/api/certificates';
@@ -106,7 +117,7 @@ function harnessPlugin(): Plugin {
 					: CampaignOverview;
 				const props = component === CertificateCampaignList
 					? { campaigns: [campaignFixture] }
-					: {};
+					: { data: { campaign: Promise.resolve({ ok: true, error: null, data: { identityKey: appIdentityKey(), campaignId: page.params.campaignId, record: campaignFixture } }) } };
 				mount(component, { target: document.getElementById('app'), props });
 			`;
 		},
