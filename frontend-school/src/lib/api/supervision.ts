@@ -23,6 +23,7 @@ export type SupervisionTemplateItem = Schemas['SupervisionTemplateItem'];
 export type SupervisionTemplateSection = Schemas['SupervisionTemplateSection'];
 export type SupervisionTemplateStep = Schemas['SupervisionTemplateStep'];
 export type SupervisionTemplate = Schemas['SupervisionTemplate'];
+export type SupervisionTemplateSummary = Schemas['SupervisionTemplateSummary'];
 export type ManualLesson = Schemas['ManualLesson'];
 export type SupervisionEvaluator = Schemas['SupervisionEvaluator'];
 export type SupervisionEvaluatorConflict = Schemas['SupervisionEvaluatorConflict'];
@@ -135,6 +136,16 @@ export async function listSupervisionTemplates(
 ): Promise<SupervisionTemplate[]> {
 	const response = await apiClient.get<SupervisionTemplateItems>(
 		'/api/supervision/templates',
+		options
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดแบบประเมินนิเทศได้').items;
+}
+
+export async function listSupervisionTemplateSummaries(
+	options: ApiRequestOptions = {}
+): Promise<SupervisionTemplateSummary[]> {
+	const response = await apiClient.get<Schemas['ItemsData_SupervisionTemplateSummary']>(
+		'/api/supervision/templates/summaries',
 		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดแบบประเมินนิเทศได้').items;

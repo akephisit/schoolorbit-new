@@ -5697,6 +5697,22 @@ export interface paths {
 		patch: operations['updateSupervisionTemplate'];
 		trace?: never;
 	};
+	'/api/supervision/templates/summaries': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSupervisionTemplateSummaries'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/users/{id}/permissions': {
 		parameters: {
 			query?: never;
@@ -8262,6 +8278,26 @@ export interface components {
 					title: string;
 					/** Format: date-time */
 					updatedAt: string;
+				}[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ItemsData_SupervisionTemplateSummary: {
+			data: {
+				items: {
+					/** Format: uuid */
+					id: string;
+					/** Format: int64 */
+					itemCount: number;
+					/** Format: int32 */
+					ratingMax: number;
+					/** Format: int32 */
+					ratingMin: number;
+					/** Format: int64 */
+					sectionCount: number;
+					status: components['schemas']['SupervisionTemplateStatus'];
+					title: string;
 				}[];
 			};
 			message?: string;
@@ -15157,6 +15193,22 @@ export interface components {
 				updatedAt: string;
 			}[];
 		};
+		ItemsData_SupervisionTemplateSummary: {
+			items: {
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				itemCount: number;
+				/** Format: int32 */
+				ratingMax: number;
+				/** Format: int32 */
+				ratingMin: number;
+				/** Format: int64 */
+				sectionCount: number;
+				status: components['schemas']['SupervisionTemplateStatus'];
+				title: string;
+			}[];
+		};
 		ItemsData_SupervisionTimetableOption: {
 			items: {
 				/** Format: uuid */
@@ -17684,6 +17736,20 @@ export interface components {
 		/** @enum {string} */
 		SupervisionTemplateStepActorKind:
 			'supervisor' | 'observed_teacher' | 'permission' | 'organization_position';
+		SupervisionTemplateSummary: {
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			itemCount: number;
+			/** Format: int32 */
+			ratingMax: number;
+			/** Format: int32 */
+			ratingMin: number;
+			/** Format: int64 */
+			sectionCount: number;
+			status: components['schemas']['SupervisionTemplateStatus'];
+			title: string;
+		};
 		SupervisionTimetableOption: {
 			/** Format: uuid */
 			bellSchedulePeriodId: string;
@@ -44563,6 +44629,44 @@ export interface operations {
 			};
 			/** @description Supervision template not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSupervisionTemplateSummaries: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Template summaries without rubric contents */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionTemplateSummary'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Supervision access denied */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

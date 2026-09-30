@@ -149,8 +149,15 @@
 
 	function menuPreloadPolicy(item: SidebarMenuItem): 'hover' | 'tap' | 'off' {
 		const path = item.path.split('?')[0];
-		if (path === '/staff/academic/exam-schedules' || path === '/staff/exams') return 'off';
-		return path === '/staff/academic/timetable' ||
+		if (
+			path === '/staff/academic/exam-schedules' ||
+			path === '/staff/exams' ||
+			path === '/staff/academic/supervision/cycles' ||
+			path === '/staff/academic/supervision/templates'
+		)
+			return 'off';
+		return path === '/staff/academic/supervision/overview' ||
+			path === '/staff/academic/timetable' ||
 			path === '/staff/academic/timetable/today' ||
 			path === '/staff/academic/assessments' ||
 			path === '/staff/academic/gradebook' ||

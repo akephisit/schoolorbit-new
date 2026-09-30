@@ -1,5 +1,7 @@
 <script lang="ts">
+	import type { PageProps } from './$types';
+	let { data }: PageProps = $props();
 	import SupervisionWorkspace from '$lib/components/supervision/SupervisionWorkspace.svelte';
 </script>
 
-<SupervisionWorkspace section="cycles" />
+<SupervisionWorkspace section="cycles" routeData={data} />

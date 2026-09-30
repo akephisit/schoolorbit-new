@@ -8,7 +8,8 @@ use crate::models::{
     CreateSupervisionTemplateRequest, CreateSupervisionTemplateSectionRequest,
     CreateSupervisionTemplateStepRequest, SupervisionTemplate, SupervisionTemplateItem,
     SupervisionTemplateItemType, SupervisionTemplateSection, SupervisionTemplateStatus,
-    SupervisionTemplateStep, SupervisionTemplateStepActorKind, UpdateSupervisionTemplateRequest,
+    SupervisionTemplateStep, SupervisionTemplateStepActorKind, SupervisionTemplateSummary,
+    UpdateSupervisionTemplateRequest,
 };
 use school_errors::AppError;
 
@@ -85,6 +86,58 @@ struct SupervisionTemplateStepRow {
     required: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct TemplateSummaryRow {
+    id: Uuid,
+    title: String,
+    status: String,
+    rating_min: i32,
+    rating_max: i32,
+    section_count: i64,
+    item_count: i64,
+}
+
+/// Lists only fields needed by management tables and template selectors.
+pub async fn list_template_summaries(
+    pool: &PgPool,
+) -> Result<Vec<SupervisionTemplateSummary>, AppError> {
+    let rows = sqlx::query_as::<_, TemplateSummaryRow>(
+        r#"
+        WITH section_counts AS (
+            SELECT template_id, COUNT(*) AS section_count
+            FROM supervision_template_sections GROUP BY template_id
+        ), item_counts AS (
+            SELECT s.template_id, COUNT(*) AS item_count
+            FROM supervision_template_sections s
+            JOIN supervision_template_items i ON i.section_id = s.id
+            GROUP BY s.template_id
+        )
+        SELECT t.id, t.title, t.status, t.rating_min, t.rating_max,
+               COALESCE(s.section_count, 0)::bigint AS section_count,
+               COALESCE(i.item_count, 0)::bigint AS item_count
+        FROM supervision_templates t
+        LEFT JOIN section_counts s ON s.template_id = t.id
+        LEFT JOIN item_counts i ON i.template_id = t.id
+        ORDER BY t.created_at DESC, t.id
+    "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(SupervisionTemplateSummary {
+                id: row.id,
+                title: row.title,
+                status: parse_template_status(&row.status)?,
+                rating_min: row.rating_min,
+                rating_max: row.rating_max,
+                section_count: row.section_count,
+                item_count: row.item_count,
+            })
+        })
+        .collect()
 }
 
 pub async fn list_templates(pool: &PgPool) -> Result<Vec<SupervisionTemplate>, AppError> {

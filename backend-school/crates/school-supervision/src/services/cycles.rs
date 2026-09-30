@@ -68,7 +68,8 @@ pub async fn list_cycles(
         AppError::InternalServerError("ไม่สามารถดึงรอบนิเทศได้".to_string())
     })?;
 
-    let targets_by_cycle = load_cycle_targets_by_cycle(pool).await?;
+    let cycle_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let targets_by_cycle = load_cycle_targets_by_cycle(pool, &cycle_ids).await?;
     rows.into_iter()
         .map(|row| cycle_from_row(row, &targets_by_cycle))
         .collect()
@@ -386,15 +387,21 @@ async fn load_cycle_targets(
 
 async fn load_cycle_targets_by_cycle(
     pool: &PgPool,
+    cycle_ids: &[Uuid],
 ) -> Result<HashMap<Uuid, Vec<SupervisionCycleTarget>>, AppError> {
+    if cycle_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let rows = sqlx::query_as::<_, SupervisionCycleTargetRow>(
         r#"
         SELECT id, cycle_id, target_type, target_id, required_observations,
                priority, created_at, updated_at
         FROM supervision_cycle_targets
+        WHERE cycle_id = ANY($1)
         ORDER BY priority, created_at
         "#,
     )
+    .bind(cycle_ids)
     .fetch_all(pool)
     .await
     .map_err(|error| {

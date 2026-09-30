@@ -26,7 +26,9 @@ pub use shared::{
     can_view_observation_results, teacher_can_edit_requested_observation,
     SupervisionObservationListAccess,
 };
-pub use templates::{create_template, get_template, list_templates, update_template};
+pub use templates::{
+    create_template, get_template, list_template_summaries, list_templates, update_template,
+};
 pub use term_preparation::apply as apply_term_preparation;
 
 #[cfg(feature = "integration-test-support")]

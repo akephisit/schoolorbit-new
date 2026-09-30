@@ -8987,6 +8987,72 @@
         ],
         "type": "object"
       },
+      "ApiResponse_ItemsData_SupervisionTemplateSummary": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "itemCount": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "ratingMax": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "ratingMin": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "sectionCount": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/SupervisionTemplateStatus"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "status",
+                    "ratingMin",
+                    "ratingMax",
+                    "sectionCount",
+                    "itemCount"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ItemsData_SupervisionTimetableOption": {
         "properties": {
           "data": {
@@ -34381,6 +34447,57 @@
         ],
         "type": "object"
       },
+      "ItemsData_SupervisionTemplateSummary": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "itemCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "ratingMax": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "ratingMin": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "sectionCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/SupervisionTemplateStatus"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "status",
+                "ratingMin",
+                "ratingMax",
+                "sectionCount",
+                "itemCount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ItemsData_SupervisionTimetableOption": {
         "properties": {
           "items": {
@@ -43510,6 +43627,46 @@
           "organization_position"
         ],
         "type": "string"
+      },
+      "SupervisionTemplateSummary": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ratingMax": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ratingMin": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sectionCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionTemplateStatus"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "ratingMin",
+          "ratingMax",
+          "sectionCount",
+          "itemCount"
+        ],
+        "type": "object"
       },
       "SupervisionTimetableOption": {
         "properties": {
@@ -83008,6 +83165,46 @@
               }
             },
             "description": "Supervision template not found"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/templates/summaries": {
+      "get": {
+        "operationId": "listSupervisionTemplateSummaries",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionTemplateSummary"
+                }
+              }
+            },
+            "description": "Template summaries without rubric contents"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Supervision access denied"
           }
         },
         "tags": [

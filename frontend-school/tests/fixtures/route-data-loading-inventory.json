@@ -480,12 +480,12 @@
 		{
 			"route": "staff/academic/supervision/cycles",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_optional",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Visible reads start in SupervisionWorkspace; move primary data to the owning route loader."
+			"notes": "Route owns year/optional-term cycles with regional skeleton, retained refresh/error/retry and context supersession. Cycle-create template choices load on open; typed cycle mutations patch only their row. Context target hydration is bounded to selected cycle IDs; unbounded list data preload is disabled."
 		},
 		{
 			"route": "staff/academic/supervision/evaluate",
@@ -500,12 +500,12 @@
 		{
 			"route": "staff/academic/supervision/overview",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "term_optional",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Visible reads start in SupervisionWorkspace; move primary data to the owning route loader."
+			"notes": "Route starts cycle options and explicit selected-cycle teacher status independently; default status depends only on selecting a cycle ID. Organization-scoped readers do not request school-only progress. Focused status retry/selection/Back supersede stale responses; contextual links preserve preload destinations. Volatile status uses tap preload."
 		},
 		{
 			"route": "staff/academic/supervision/requests",
@@ -520,12 +520,12 @@
 		{
 			"route": "staff/academic/supervision/templates",
 			"wave": "admission-supervision",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "term_optional",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Visible reads start in SupervisionWorkspace; move primary data to the owning route loader."
+			"notes": "Route owns minimal template summaries/counts; selected rubric preview/editor loads only on open with focused retry and close/context supersession. Typed save patches summary counts without reloading cycles or templates. Unbounded list data preload is disabled."
 		},
 		{
 			"route": "staff/academic/term-lifecycle",

@@ -1404,3 +1404,34 @@ async fn list_hydrators_preserve_multi_parent_relations() {
         .all(|action| action.observation_id == second.id));
     assert_eq!(listed_second.average_rating, Some(2.0));
 }
+
+#[tokio::test]
+async fn management_template_summaries_preserve_counts_without_rubric_payloads() {
+    let pool = migrated_pool("supervision_template_summaries").await;
+    let fixture = insert_fixture(&pool).await;
+    let mut input = template_input();
+    input.title = "Multiple sections".into();
+    let mut second_section = input.sections[0].clone();
+    second_section.title = "Second section".into();
+    second_section.items.truncate(1);
+    input.sections.push(second_section);
+    let second = services::create_template(&pool, input, fixture.actor_id)
+        .await
+        .unwrap();
+    let summaries = services::list_template_summaries(&pool).await.unwrap();
+    for template in [&fixture.template, &second] {
+        let summary = summaries.iter().find(|row| row.id == template.id).unwrap();
+        assert_eq!(summary.section_count, template.sections.len() as i64);
+        assert_eq!(
+            summary.item_count,
+            template
+                .sections
+                .iter()
+                .map(|section| section.items.len() as i64)
+                .sum::<i64>()
+        );
+        let value = serde_json::to_value(summary).unwrap();
+        assert!(value.get("sections").is_none());
+        assert!(value.get("steps").is_none());
+    }
+}

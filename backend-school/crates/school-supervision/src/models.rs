@@ -363,6 +363,18 @@ pub struct SupervisionTemplateStep {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct SupervisionTemplateSummary {
+    pub id: Uuid,
+    pub title: String,
+    pub status: SupervisionTemplateStatus,
+    pub rating_min: i32,
+    pub rating_max: i32,
+    pub section_count: i64,
+    pub item_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SupervisionTemplate {
     pub id: Uuid,
     pub title: String,

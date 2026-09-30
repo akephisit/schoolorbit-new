@@ -24,7 +24,7 @@ use school_supervision::models::{
     ReturnObservationRequest, SaveEvaluationRequest, SupervisionCycle, SupervisionCycleQuery,
     SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
     SupervisionObservationStatus, SupervisionTeacherStatusRow, SupervisionTemplate,
-    UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
+    SupervisionTemplateSummary, UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
 use school_supervision::services;
@@ -200,6 +200,32 @@ pub async fn list_templates(
     let items = services::list_templates(&context.tenant.pool).await?;
 
     Ok(Json(ApiResponse::ok(ItemsData::<SupervisionTemplate> { items })).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/supervision/templates/summaries",
+    operation_id = "listSupervisionTemplateSummaries",
+    tag = "supervision",
+    responses(
+        (status = 200, description = "Template summaries without rubric contents", body = ApiResponse<ItemsData<SupervisionTemplateSummary>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Supervision access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_template_summaries(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    supervision_access_policy::require_supervision_access(&context.actor)?;
+    let items = services::list_template_summaries(&context.tenant.pool).await?;
+    Ok(
+        Json(ApiResponse::ok(ItemsData::<SupervisionTemplateSummary> {
+            items,
+        }))
+        .into_response(),
+    )
 }
 
 #[utoipa::path(
@@ -998,6 +1024,7 @@ pub fn routes() -> Router<AppState> {
         .route("/cycles", get(list_cycles).post(create_cycle))
         .route("/cycles/{id}", patch(update_cycle))
         .route("/templates", get(list_templates).post(create_template))
+        .route("/templates/summaries", get(list_template_summaries))
         .route("/templates/{id}", get(get_template).patch(update_template))
         .route("/observations", get(list_observations))
         .route("/observations/requests", post(request_observation))
