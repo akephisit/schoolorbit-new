@@ -1,4 +1,10 @@
 <script lang="ts">
+	import { onDestroy, untrack } from 'svelte';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	import {
 		updateMenuItem,
 		type MenuGroup,
@@ -56,39 +62,60 @@
 		return group ? groupLabel(group) : 'เลือกกลุ่มบริหาร / ฝ่ายงาน';
 	});
 
-	$effect(() => {
-		if (!open || !item) return;
-		formData = {
-			name: item.name,
-			name_en: item.name_en ?? '',
-			icon: item.icon ?? '',
-			group_id: item.group_id ?? '',
-			is_active: item.is_active
-		};
+	$effect.pre(() => {
+		const opened = open,
+			target = item?.id;
+		untrack(() => {
+			void target;
+			void opened;
+			if (!open || !item) return;
+			formData = {
+				name: item.name,
+				name_en: item.name_en ?? '',
+				icon: item.icon ?? '',
+				group_id: item.group_id ?? '',
+				is_active: item.is_active
+			};
+		});
 	});
 
 	async function handleSubmit() {
-		if (!item || !canUpdate || !formData.name.trim() || !formData.group_id) {
+		if (
+			disposed ||
+			!open ||
+			saving ||
+			!item ||
+			!canUpdate ||
+			!formData.name.trim() ||
+			!formData.group_id
+		) {
 			toast.error('กรุณากรอกข้อมูลที่จำเป็น');
 			return;
 		}
 
+		const target = item,
+			identity = appIdentityKey();
+		const current = () => identity === appIdentityKey() && canUpdate;
+		const ownsDraft = () => current() && !disposed && open;
 		saving = true;
 		try {
-			const savedItem = await updateMenuItem(item.id, {
+			const savedItem = await updateMenuItem(target.id, {
 				name: formData.name.trim(),
 				name_en: formData.name_en.trim() || null,
 				icon: formData.icon.trim() || null,
 				group_id: formData.group_id,
 				is_active: formData.is_active
 			});
-			toast.success('แก้ไขเมนูสำเร็จ');
-			onSuccess(savedItem);
-			open = false;
+			if (current()) onSuccess(savedItem);
+			if (ownsDraft()) {
+				toast.success('แก้ไขเมนูสำเร็จ');
+				open = false;
+			}
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกเมนูได้');
+			if (ownsDraft())
+				toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกเมนูได้');
 		} finally {
-			saving = false;
+			if (ownsDraft()) saving = false;
 		}
 	}
 </script>

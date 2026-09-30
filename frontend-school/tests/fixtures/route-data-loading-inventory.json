@@ -801,13 +801,12 @@
 		{
 			"route": "staff/menu",
 			"wave": "staff",
-			"dataOwner": "component-primary",
+			"dataOwner": "route",
 			"preload": "hover",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school authorization/menu",
-			"notes": "Component API reads include listMenuGroups, listMenuItems, listMenuWorkspaces; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Three independent route-owned catalogs render and retry by region. Recommended preview is opened-session lazy; typed item/group/workspace edits patch affected lists, deletes reconcile moved resources only, reorder snapshots and owner/draft/disposal guards preserve current state. Layout-owned user menu refreshes only after successful mutations."
 		},
 		{
 			"route": "staff/organization",

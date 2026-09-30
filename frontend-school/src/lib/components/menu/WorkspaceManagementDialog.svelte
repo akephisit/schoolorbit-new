@@ -1,4 +1,10 @@
 <script lang="ts">
+	import { onDestroy, untrack } from 'svelte';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	import {
 		createMenuWorkspace,
 		deleteMenuWorkspace,
@@ -50,36 +56,53 @@
 		is_active: true
 	});
 
-	$effect(() => {
-		if (!open) return;
+	$effect.pre(() => {
+		const opened = open,
+			target = workspace?.id;
+		untrack(() => {
+			void target;
+			void opened;
+			if (!open) return;
 
-		formData = workspace
-			? {
-					code: workspace.code,
-					name: workspace.name,
-					name_en: workspace.name_en ?? '',
-					icon: workspace.icon ?? '',
-					is_active: workspace.is_active
-				}
-			: {
-					code: '',
-					name: '',
-					name_en: '',
-					icon: '',
-					is_active: true
-				};
+			formData = workspace
+				? {
+						code: workspace.code,
+						name: workspace.name,
+						name_en: workspace.name_en ?? '',
+						icon: workspace.icon ?? '',
+						is_active: workspace.is_active
+					}
+				: {
+						code: '',
+						name: '',
+						name_en: '',
+						icon: '',
+						is_active: true
+					};
+		});
 	});
 
 	async function handleSubmit() {
-		if (!canEdit || !formData.name.trim() || (!workspace && !formData.code.trim())) {
+		if (
+			disposed ||
+			!open ||
+			saving ||
+			!canEdit ||
+			!formData.name.trim() ||
+			(!workspace && !formData.code.trim())
+		) {
 			toast.error('กรุณากรอกข้อมูลที่จำเป็น');
 			return;
 		}
 
+		const target = workspace,
+			identity = appIdentityKey();
+		const current = () => identity === appIdentityKey() && (target ? canUpdate : canCreate);
+		const ownsDraft = () => current() && !disposed && open;
 		saving = true;
 		try {
-			const savedWorkspace = workspace
-				? await updateMenuWorkspace(workspace.id, {
+			const savedWorkspace = target
+				? await updateMenuWorkspace(target.id, {
 						name: formData.name.trim(),
 						name_en: formData.name_en.trim() || null,
 						icon: formData.icon.trim() || null,
@@ -92,18 +115,21 @@
 						icon: formData.icon.trim() || null
 					});
 
-			toast.success(workspace ? 'แก้ไขกลุ่มบริหารสำเร็จ' : 'สร้างกลุ่มบริหารสำเร็จ');
-			onSuccess({ type: 'upsert', workspace: savedWorkspace });
-			open = false;
+			if (current()) onSuccess({ type: 'upsert', workspace: savedWorkspace });
+			if (ownsDraft()) {
+				toast.success(target ? 'แก้ไขกลุ่มบริหารสำเร็จ' : 'สร้างกลุ่มบริหารสำเร็จ');
+				open = false;
+			}
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกกลุ่มบริหารได้');
+			if (ownsDraft())
+				toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกกลุ่มบริหารได้');
 		} finally {
-			saving = false;
+			if (ownsDraft()) saving = false;
 		}
 	}
 
 	async function handleDelete() {
-		if (!workspace || !canRemove) return;
+		if (disposed || !open || saving || !workspace || !canRemove) return;
 		if (
 			!confirm(
 				`ต้องการลบ "${workspace.name}" ใช่หรือไม่?\n\nฝ่าย/งานในกลุ่มนี้จะถูกย้ายไปยังกลุ่มบริหารทั่วไป`
@@ -112,16 +138,23 @@
 			return;
 		}
 
+		const target = workspace,
+			identity = appIdentityKey();
+		const current = () => identity === appIdentityKey() && canDelete;
+		const ownsDraft = () => current() && !disposed && open;
 		saving = true;
 		try {
-			await deleteMenuWorkspace(workspace.id);
-			toast.success('ลบกลุ่มบริหารสำเร็จ');
-			onSuccess({ type: 'delete', workspaceId: workspace.id });
-			open = false;
+			await deleteMenuWorkspace(target.id);
+			if (current()) onSuccess({ type: 'delete', workspaceId: target.id });
+			if (ownsDraft()) {
+				toast.success('ลบกลุ่มบริหารสำเร็จ');
+				open = false;
+			}
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถลบกลุ่มบริหารได้');
+			if (ownsDraft())
+				toast.error(error instanceof Error ? error.message : 'ไม่สามารถลบกลุ่มบริหารได้');
 		} finally {
-			saving = false;
+			if (ownsDraft()) saving = false;
 		}
 	}
 </script>

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { onDestroy, untrack } from 'svelte';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { LatestRequest } from '$lib/async/latest-request';
 	import {
 		applyRecommendedAcademicMenuTemplate,
 		previewRecommendedAcademicMenuTemplate,
@@ -18,10 +21,12 @@
 	let {
 		open = $bindable(false),
 		canApply,
+		canPreview,
 		onApplied
 	}: {
 		open?: boolean;
 		canApply: boolean;
+		canPreview: boolean;
 		onApplied: () => Promise<void> | void;
 	} = $props();
 
@@ -34,58 +39,102 @@
 		Boolean(preview && (preview.moves.length > 0 || preview.sectionsToCreate.length > 0))
 	);
 
+	const request = new LatestRequest();
+	let disposed = false,
+		session = 0,
+		permissionEpoch = 0;
+	$effect.pre(() => {
+		const permissions = `${canPreview}|${canApply}`;
+		untrack(() => {
+			void permissions;
+			permissionEpoch++;
+		});
+	});
+	$effect.pre(() => {
+		const context = `${open}|${canPreview}|${canApply}`;
+		untrack(() => {
+			void context;
+			session++;
+			request.abort();
+			applying = false;
+			loading = false;
+			preview = null;
+			errorMessage = '';
+			if (open && canPreview) void loadPreview();
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		session++;
+		request.abort();
+	});
 	async function loadPreview() {
-		if (loading) return;
+		if (disposed || !open || !canPreview) return;
+		const ticket = request.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			preview = await previewRecommendedAcademicMenuTemplate();
+			const result = await previewRecommendedAcademicMenuTemplate({ signal: ticket.signal });
+			if (!request.isCurrent(ticket.revision)) return;
+			preview = result;
 		} catch (error) {
-			preview = null;
+			if (!request.isCurrent(ticket.revision)) return;
 			errorMessage =
 				error instanceof Error ? error.message : 'ไม่สามารถโหลดตัวอย่างโครงสร้างงานวิชาการได้';
 		} finally {
-			loading = false;
+			if (request.isCurrent(ticket.revision)) loading = false;
 		}
 	}
-
 	function openPreview() {
-		open = true;
-		void loadPreview();
+		if (canPreview) open = true;
 	}
-
 	function handleOpenChange(nextOpen: boolean) {
 		open = nextOpen;
-		if (nextOpen && !preview && !loading) void loadPreview();
 	}
-
 	async function applyPreview() {
-		if (!preview || !canApply || !preview.recommendationsReady || !hasChanges) return;
-
+		if (
+			disposed ||
+			!open ||
+			applying ||
+			!preview ||
+			!canApply ||
+			!preview.recommendationsReady ||
+			!hasChanges
+		)
+			return;
+		const revision = preview.revision,
+			identity = appIdentityKey(),
+			draft = session,
+			epoch = permissionEpoch;
+		const current = () => epoch === permissionEpoch && identity === appIdentityKey() && canApply;
+		const ownsDraft = () => current() && !disposed && open && session === draft;
 		applying = true;
 		errorMessage = '';
 		try {
-			const result = await applyRecommendedAcademicMenuTemplate(preview.revision);
+			const result = await applyRecommendedAcademicMenuTemplate(revision);
+			if (!current()) return;
 			await onApplied();
+			if (!ownsDraft()) return;
 			open = false;
 			toast.success(
 				`ใช้โครงสร้างแนะนำแล้ว ย้าย ${result.movedCount} เมนู และสร้าง ${result.createdSectionCount} งาน`
 			);
 		} catch (error) {
+			if (!ownsDraft()) return;
 			if (error instanceof ApiClientError && error.status === 409) {
 				await loadPreview();
-				errorMessage = 'ข้อมูลเมนูเปลี่ยนแล้ว กรุณาตรวจสอบรายการอีกครั้ง';
+				if (ownsDraft()) errorMessage = 'ข้อมูลเมนูเปลี่ยนแล้ว กรุณาตรวจสอบรายการอีกครั้ง';
 				return;
 			}
 			errorMessage =
 				error instanceof Error ? error.message : 'ไม่สามารถใช้โครงสร้างงานวิชาการแนะนำได้';
 		} finally {
-			applying = false;
+			if (ownsDraft()) applying = false;
 		}
 	}
 </script>
 
-<Button variant="outline" onclick={openPreview}>
+<Button variant="outline" onclick={openPreview} disabled={!canPreview}>
 	<LayoutTemplate class="h-4 w-4" />
 	ใช้โครงสร้างงานวิชาการแนะนำ
 </Button>
@@ -104,7 +153,7 @@
 		</Dialog.Header>
 
 		{#if loading}
-			<div class="space-y-3 py-2" aria-label="กำลังโหลดตัวอย่างโครงสร้างเมนู">
+			<div class="space-y-3 py-2" role="status" aria-label="กำลังโหลดตัวอย่างโครงสร้างเมนู">
 				<Skeleton class="h-20 w-full rounded-xl" />
 				<Skeleton class="h-44 w-full rounded-xl" />
 			</div>

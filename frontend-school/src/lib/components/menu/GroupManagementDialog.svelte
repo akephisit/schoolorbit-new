@@ -1,4 +1,10 @@
 <script lang="ts">
+	import { onDestroy, untrack } from 'svelte';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	import type { MenuGroup, MenuWorkspace } from '$lib/api/menu-admin';
 	import { createMenuGroup, updateMenuGroup, deleteMenuGroup } from '$lib/api/menu-admin';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -49,30 +55,36 @@
 	);
 
 	// Reset form when dialog opens/closes or group changes
-	$effect(() => {
-		if (open && group) {
-			// Edit mode
-			formData = {
-				code: group.code,
-				name: group.name,
-				name_en: group.name_en || '',
-				icon: group.icon || '',
-				workspace_code: group.workspace_code
-			};
-		} else if (open && !group) {
-			// Create mode
-			formData = {
-				code: '',
-				name: '',
-				name_en: '',
-				icon: '',
-				workspace_code: workspaces.find((workspace) => workspace.is_active)?.code ?? ''
-			};
-		}
+	$effect.pre(() => {
+		const opened = open,
+			target = group?.id;
+		untrack(() => {
+			void target;
+			void opened;
+			if (open && group) {
+				// Edit mode
+				formData = {
+					code: group.code,
+					name: group.name,
+					name_en: group.name_en || '',
+					icon: group.icon || '',
+					workspace_code: group.workspace_code
+				};
+			} else if (open && !group) {
+				// Create mode
+				formData = {
+					code: '',
+					name: '',
+					name_en: '',
+					icon: '',
+					workspace_code: workspaces.find((workspace) => workspace.is_active)?.code ?? ''
+				};
+			}
+		});
 	});
 
 	async function handleSubmit() {
-		if (!canEditGroup) {
+		if (disposed || !open || saving || !canEditGroup) {
 			toast.error('ไม่มีสิทธิ์บันทึกกลุ่มเมนู');
 			return;
 		}
@@ -82,18 +94,21 @@
 			return;
 		}
 
+		const target = group,
+			identity = appIdentityKey();
+		const current = () => identity === appIdentityKey() && (target ? canUpdate : canCreate);
+		const ownsDraft = () => current() && !disposed && open;
 		saving = true;
 		try {
 			let savedGroup: MenuGroup;
-			if (group) {
+			if (target) {
 				// Update
-				savedGroup = await updateMenuGroup(group.id, {
+				savedGroup = await updateMenuGroup(target.id, {
 					name: formData.name,
 					name_en: formData.name_en || undefined,
 					icon: formData.icon || undefined,
 					workspace_code: formData.workspace_code
 				});
-				toast.success('แก้ไขกลุ่มเมนูสำเร็จ');
 			} else {
 				// Create
 				savedGroup = await createMenuGroup({
@@ -103,20 +118,22 @@
 					icon: formData.icon || undefined,
 					workspace_code: formData.workspace_code
 				});
-				toast.success('สร้างกลุ่มเมนูสำเร็จ');
 			}
-			onSuccess({ type: 'upsert', group: savedGroup });
-			open = false;
+			if (current()) onSuccess({ type: 'upsert', group: savedGroup });
+			if (ownsDraft()) {
+				toast.success(target ? 'แก้ไขกลุ่มเมนูสำเร็จ' : 'สร้างกลุ่มเมนูสำเร็จ');
+				open = false;
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-			toast.error(message);
+			if (ownsDraft()) toast.error(message);
 		} finally {
-			saving = false;
+			if (ownsDraft()) saving = false;
 		}
 	}
 
 	async function handleDelete() {
-		if (!group) return;
+		if (disposed || !open || saving || !group) return;
 		if (!canDelete) {
 			toast.error('ไม่มีสิทธิ์ลบกลุ่มเมนู');
 			return;
@@ -135,17 +152,23 @@
 			return;
 		}
 
+		const target = group,
+			identity = appIdentityKey();
+		const current = () => identity === appIdentityKey() && canDelete;
+		const ownsDraft = () => current() && !disposed && open;
 		saving = true;
 		try {
-			await deleteMenuGroup(group.id);
-			toast.success('ลบกลุ่มเมนูสำเร็จ');
-			onSuccess({ type: 'delete', groupId: group.id });
-			open = false;
+			await deleteMenuGroup(target.id);
+			if (current()) onSuccess({ type: 'delete', groupId: target.id });
+			if (ownsDraft()) {
+				toast.success('ลบกลุ่มเมนูสำเร็จ');
+				open = false;
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
-			toast.error(message);
+			if (ownsDraft()) toast.error(message);
 		} finally {
-			saving = false;
+			if (ownsDraft()) saving = false;
 		}
 	}
 </script>

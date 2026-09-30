@@ -101,12 +101,22 @@
 				{/if}
 
 				{#if canUpdate}
-					<Button size="sm" variant="outline" onclick={() => onEdit(item)}>
+					<Button
+						size="sm"
+						variant="outline"
+						aria-label={`แก้ไขเมนู ${item.name}`}
+						onclick={() => onEdit(item)}
+					>
 						<Pencil class="h-4 w-4" />
 					</Button>
 				{/if}
 				{#if canDelete}
-					<Button size="sm" variant="destructive" onclick={() => onDelete(item)}>
+					<Button
+						size="sm"
+						variant="destructive"
+						aria-label={`ลบเมนู ${item.name}`}
+						onclick={() => onDelete(item)}
+					>
 						<Trash2 class="h-4 w-4" />
 					</Button>
 				{/if}

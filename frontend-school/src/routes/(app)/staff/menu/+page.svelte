@@ -1,5 +1,11 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import type { PageProps } from './$types';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { authStore } from '$lib/stores/auth';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { getAppMenuRegion } from '$lib/navigation/app-menu.svelte';
 	import {
 		deleteMenuItem,
 		listMenuGroups,
@@ -44,7 +50,21 @@
 	let groups = $state<MenuGroup[]>([]);
 	let items = $state<MenuItem[]>([]);
 	let containers = $state<GroupContainer[]>([]);
-	let loading = $state(true);
+	let { data }: PageProps = $props();
+	const workspaceSource = $derived(data.workspaces),
+		groupSource = $derived(data.groups),
+		itemSource = $derived(data.items);
+	const workspaceRequest = new LatestRequest(),
+		groupRequest = new LatestRequest(),
+		itemRequest = new LatestRequest();
+	let workspaceState = $state({ loading: true, loaded: false, error: '' }),
+		groupState = $state({ loading: true, loaded: false, error: '' }),
+		itemState = $state({ loading: true, loaded: false, error: '' });
+	let owner = $state(''),
+		ownerEpoch = $state(0),
+		disposed = false,
+		reordering = $state(false);
+	const appMenu = getAppMenuRegion();
 	let activeTab = $state<ActiveTab>('items');
 	let userTypeFilter = $state<'all' | 'staff' | 'student' | 'parent'>('all');
 
@@ -88,34 +108,159 @@
 					.filter((container) => container.nesteds.length > 0)
 	);
 
-	onMount(() => {
-		void loadData();
-	});
-
-	async function loadData() {
-		if (!canReadMenu) {
+	$effect.pre(() => {
+		const identity = `${$authStore.user?.id ?? ''}|${canReadMenu}|${canCreateMenu}|${canUpdateMenu}|${canDeleteMenu}`;
+		untrack(() => {
+			if (owner === identity) return;
+			owner = identity;
+			ownerEpoch++;
+			reordering = false;
 			workspaces = [];
 			groups = [];
 			items = [];
 			containers = [];
-			loading = false;
+			workspaceState.loaded = false;
+			workspaceState.loading = true;
+			workspaceState.error = '';
+			groupState.loaded = false;
+			groupState.loading = true;
+			groupState.error = '';
+			itemState.loaded = false;
+			itemState.loading = true;
+			itemState.error = '';
+			workspaceRequest.abort();
+			groupRequest.abort();
+			itemRequest.abort();
+			groupDialogOpen = false;
+			workspaceDialogOpen = false;
+			itemDialogOpen = false;
+			academicTemplateDialogOpen = false;
+			resetDragState();
+		});
+	});
+	$effect.pre(() => {
+		const operation = workspaceSource;
+		untrack(() => {
+			const t = workspaceRequest.begin();
+			workspaceState.loading = true;
+			workspaceState.error = '';
+			void operation.then((r) => applyWorkspaces(r, t.revision));
+		});
+		return () => workspaceRequest.abort();
+	});
+	$effect.pre(() => {
+		const operation = groupSource;
+		untrack(() => {
+			const t = groupRequest.begin();
+			groupState.loading = true;
+			groupState.error = '';
+			void operation.then((r) => applyGroups(r, t.revision));
+		});
+		return () => groupRequest.abort();
+	});
+	$effect.pre(() => {
+		const operation = itemSource;
+		untrack(() => {
+			const t = itemRequest.begin();
+			itemState.loading = true;
+			itemState.error = '';
+			void operation.then((r) => applyItems(r, t.revision));
+		});
+		return () => itemRequest.abort();
+	});
+	onDestroy(() => {
+		disposed = true;
+		ownerEpoch++;
+		workspaceRequest.abort();
+		groupRequest.abort();
+		itemRequest.abort();
+	});
+	function applyWorkspaces(r: Awaited<typeof data.workspaces>, revision: number) {
+		if (!workspaceRequest.isCurrent(revision)) return;
+		workspaceState.loading = false;
+		if (!r.ok) {
+			workspaceState.error = r.error;
 			return;
 		}
-
-		loading = true;
-		try {
-			[workspaces, groups, items] = await Promise.all([
-				listMenuWorkspaces(),
-				listMenuGroups(),
-				listMenuItems()
-			]);
-			sortAdministrationData();
-			rebuildContainers();
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถโหลดโครงสร้างเมนูได้');
-		} finally {
-			loading = false;
+		if (r.data.identityKey !== appIdentityKey()) return;
+		workspaces = r.data.records ?? [];
+		workspaceState.loaded = true;
+		sortAdministrationData();
+		rebuildContainers();
+	}
+	function applyGroups(r: Awaited<typeof data.groups>, revision: number) {
+		if (!groupRequest.isCurrent(revision)) return;
+		groupState.loading = false;
+		if (!r.ok) {
+			groupState.error = r.error;
+			return;
 		}
+		if (r.data.identityKey !== appIdentityKey()) return;
+		groups = r.data.records ?? [];
+		groupState.loaded = true;
+		sortAdministrationData();
+		rebuildContainers();
+	}
+	function applyItems(r: Awaited<typeof data.items>, revision: number) {
+		if (!itemRequest.isCurrent(revision)) return;
+		itemState.loading = false;
+		if (!r.ok) {
+			itemState.error = r.error;
+			return;
+		}
+		if (r.data.identityKey !== appIdentityKey()) return;
+		items = r.data.records ?? [];
+		itemState.loaded = true;
+		rebuildContainers();
+	}
+	async function refreshWorkspaces() {
+		if (disposed || !canReadMenu) return;
+		const identityKey = appIdentityKey(),
+			t = workspaceRequest.begin();
+		workspaceState.loading = true;
+		workspaceState.error = '';
+		applyWorkspaces(
+			await captureRouteLoad(
+				listMenuWorkspaces({ signal: t.signal }).then((records) => ({ identityKey, records })),
+				'โหลดกลุ่มบริหารไม่สำเร็จ'
+			),
+			t.revision
+		);
+	}
+	async function refreshGroups() {
+		if (disposed || !canReadMenu) return;
+		const identityKey = appIdentityKey(),
+			t = groupRequest.begin();
+		groupState.loading = true;
+		groupState.error = '';
+		applyGroups(
+			await captureRouteLoad(
+				listMenuGroups({ signal: t.signal }).then((records) => ({ identityKey, records })),
+				'โหลดฝ่าย/งานไม่สำเร็จ'
+			),
+			t.revision
+		);
+	}
+	async function refreshItems() {
+		if (disposed || !canReadMenu) return;
+		const identityKey = appIdentityKey(),
+			t = itemRequest.begin();
+		itemState.loading = true;
+		itemState.error = '';
+		applyItems(
+			await captureRouteLoad(
+				listMenuItems(undefined, { signal: t.signal }).then((records) => ({
+					identityKey,
+					records
+				})),
+				'โหลดเมนูบริการไม่สำเร็จ'
+			),
+			t.revision
+		);
+	}
+	async function handleTemplateApplied() {
+		if (disposed || !canReadMenu) return;
+		await Promise.all([refreshWorkspaces(), refreshGroups(), refreshItems(), appMenu.retry()]);
 	}
 
 	function sortAdministrationData() {
@@ -151,6 +296,10 @@
 	}
 
 	function replaceMenuGroup(group: MenuGroup) {
+		if (disposed || !canReadMenu) return;
+		groupRequest.abort();
+		groupState.loading = false;
+		groupState.error = '';
 		groups = groups.some((current) => current.id === group.id)
 			? groups.map((current) => (current.id === group.id ? group : current))
 			: [...groups, group];
@@ -159,6 +308,10 @@
 	}
 
 	function replaceMenuItem(item: MenuItem) {
+		if (disposed || !canReadMenu) return;
+		itemRequest.abort();
+		itemState.loading = false;
+		itemState.error = '';
 		items = items.map((current) => (current.id === item.id ? item : current));
 		rebuildContainers();
 	}
@@ -166,16 +319,27 @@
 	function handleGroupMutation(
 		result: { type: 'upsert'; group: MenuGroup } | { type: 'delete'; groupId: string }
 	) {
+		if (disposed || !canReadMenu) return;
 		if (result.type === 'upsert') {
 			replaceMenuGroup(result.group);
+			void appMenu.retry();
 			return;
 		}
-		void loadData();
+		groupRequest.abort();
+		groupState.loading = false;
+		groups = groups.filter((g) => g.id !== result.groupId);
+		rebuildContainers();
+		void refreshItems();
+		void appMenu.retry();
 	}
 
 	function handleWorkspaceMutation(
 		result: { type: 'upsert'; workspace: MenuWorkspace } | { type: 'delete'; workspaceId: string }
 	) {
+		if (disposed || !canReadMenu) return;
+		workspaceRequest.abort();
+		workspaceState.loading = false;
+		workspaceState.error = '';
 		if (result.type === 'upsert') {
 			workspaces = workspaces.some((current) => current.id === result.workspace.id)
 				? workspaces.map((current) =>
@@ -184,13 +348,18 @@
 				: [...workspaces, result.workspace];
 			sortAdministrationData();
 			rebuildContainers();
+			void appMenu.retry();
 			return;
 		}
-		void loadData();
+		workspaces = workspaces.filter((w) => w.id !== result.workspaceId);
+		sortAdministrationData();
+		rebuildContainers();
+		void refreshGroups();
+		void appMenu.retry();
 	}
 
 	function handleItemDragStart(event: DragEvent, item: MenuItem) {
-		if (!canUpdateMenu || activeTab !== 'items') return;
+		if (!canUpdateMenu || reordering || activeTab !== 'items') return;
 		event.dataTransfer?.setData('text/plain', item.id);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 		draggedItem = item;
@@ -198,7 +367,7 @@
 	}
 
 	function handleItemDragEnter(_event: DragEvent, targetItem: MenuItem) {
-		if (!canUpdateMenu || dragType !== 'item' || !draggedItem) return;
+		if (!canUpdateMenu || reordering || dragType !== 'item' || !draggedItem) return;
 		if (draggedItem.id === targetItem.id) return;
 
 		const sourceGroupIndex = containers.findIndex((container) =>
@@ -240,7 +409,7 @@
 	}
 
 	function handleGroupDrop(event: DragEvent, targetGroup: MenuGroup) {
-		if (!canUpdateMenu || dragType !== 'item' || !draggedItem) return;
+		if (!canUpdateMenu || reordering || dragType !== 'item' || !draggedItem) return;
 		event.preventDefault();
 
 		const sourceIndex = containers.findIndex((container) =>
@@ -268,18 +437,19 @@
 		);
 		if (payload.length === 0) return;
 
-		await reorderMenuItems(payload);
-		items = containers.flatMap((container) =>
+		const snapshot = containers.flatMap((container) =>
 			container.nesteds.map((item, index) => ({
 				...item,
 				display_order: index + 1,
 				group_id: container.data.id
 			}))
 		);
+		await reorderMenuItems(payload);
+		return snapshot;
 	}
 
 	function handleGroupDragStart(event: DragEvent, group: MenuGroup) {
-		if (!canUpdateMenu || activeTab !== 'groups') return;
+		if (!canUpdateMenu || reordering || activeTab !== 'groups') return;
 		event.dataTransfer?.setData('text/plain', group.id);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 		draggedGroup = group;
@@ -287,7 +457,7 @@
 	}
 
 	function handleGroupDragEnter(_event: DragEvent, targetGroup: MenuGroup) {
-		if (!canUpdateMenu || dragType !== 'group' || !draggedGroup) return;
+		if (!canUpdateMenu || reordering || dragType !== 'group' || !draggedGroup) return;
 		if (
 			draggedGroup.id === targetGroup.id ||
 			draggedGroup.workspace_code !== targetGroup.workspace_code
@@ -312,17 +482,17 @@
 				.filter((group) => group.workspace_code === workspace.code)
 				.map((group, index) => ({ id: group.id, display_order: index + 1 }))
 		);
+		const snapshot = [...groups];
 		await reorderMenuGroups(payload);
 		const orderById = new Map(payload.map((entry) => [entry.id, entry.display_order]));
-		groups = groups.map((group) => ({
+		return snapshot.map((group) => ({
 			...group,
 			display_order: orderById.get(group.id) ?? group.display_order
 		}));
-		rebuildContainers();
 	}
 
 	function handleWorkspaceDragStart(event: DragEvent, workspace: MenuWorkspace) {
-		if (!canUpdateMenu || activeTab !== 'workspaces') return;
+		if (!canUpdateMenu || reordering || activeTab !== 'workspaces') return;
 		event.dataTransfer?.setData('text/plain', workspace.id);
 		if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 		draggedWorkspace = workspace;
@@ -330,7 +500,7 @@
 	}
 
 	function handleWorkspaceDragEnter(_event: DragEvent, targetWorkspace: MenuWorkspace) {
-		if (!canUpdateMenu || dragType !== 'workspace' || !draggedWorkspace) return;
+		if (!canUpdateMenu || reordering || dragType !== 'workspace' || !draggedWorkspace) return;
 		if (draggedWorkspace.id === targetWorkspace.id) return;
 
 		const oldIndex = workspaces.findIndex((workspace) => workspace.id === draggedWorkspace?.id);
@@ -348,54 +518,127 @@
 			id: workspace.id,
 			display_order: index + 1
 		}));
+		const snapshot = [...workspaces];
 		await reorderMenuWorkspaces(payload);
-		workspaces = workspaces.map((workspace, index) => ({
+		return snapshot.map((workspace, index) => ({
 			...workspace,
 			display_order: index + 1
 		}));
-		rebuildContainers();
 	}
 
 	async function handleDragEnd(event: DragEvent) {
 		event.preventDefault();
-		if (!canUpdateMenu || !dragType) {
+		if (!canUpdateMenu || reordering || !dragType) {
 			resetDragState();
 			return;
 		}
 
-		const completedType = dragType;
+		const completedType = dragType,
+			epoch = ownerEpoch;
+		reordering = true;
+		const current = () => !disposed && epoch === ownerEpoch && canUpdateMenu;
+		const affected =
+			completedType === 'item'
+				? itemRequest
+				: completedType === 'group'
+					? groupRequest
+					: workspaceRequest;
+		const affectedState =
+			completedType === 'item'
+				? itemState
+				: completedType === 'group'
+					? groupState
+					: workspaceState;
+		affected.abort();
+		affectedState.loading = false;
 		try {
-			if (completedType === 'item') await commitItemReorder();
-			if (completedType === 'group') await commitGroupReorder();
-			if (completedType === 'workspace') await commitWorkspaceReorder();
+			if (completedType === 'item') {
+				const saved = await commitItemReorder();
+				if (!current()) return;
+				if (saved) items = saved;
+			}
+			if (completedType === 'group') {
+				const saved = await commitGroupReorder();
+				if (!current()) return;
+				groups = saved;
+			}
+			if (completedType === 'workspace') {
+				const saved = await commitWorkspaceReorder();
+				if (!current()) return;
+				workspaces = saved;
+			}
+			affected.abort();
+			affectedState.loading = false;
+			affectedState.error = '';
+			sortAdministrationData();
+			rebuildContainers();
+			void appMenu.retry();
 			toast.success('บันทึกลำดับสำเร็จ');
 		} catch {
+			if (!current()) return;
 			toast.error('บันทึกลำดับไม่สำเร็จ');
-			await loadData();
+			if (completedType === 'item') await refreshItems();
+			if (completedType === 'group') await refreshGroups();
+			if (completedType === 'workspace') await refreshWorkspaces();
 		} finally {
-			resetDragState();
+			if (current()) {
+				reordering = false;
+				resetDragState();
+			}
 		}
 	}
 
 	function openItemDialog(item: MenuItem) {
-		if (!canUpdateMenu) return;
+		if (!canUpdateMenu || reordering || !groupState.loaded || !workspaceState.loaded) return;
 		editingItem = item;
 		itemDialogOpen = true;
 	}
 
 	async function handleDeleteItem(item: MenuItem) {
-		if (!canDeleteMenu || !confirm(`ต้องการลบเมนู "${item.name}" ใช่หรือไม่?`)) return;
+		if (
+			disposed ||
+			reordering ||
+			!canDeleteMenu ||
+			!confirm(`ต้องการลบเมนู "${item.name}" ใช่หรือไม่?`)
+		)
+			return;
+		const epoch = ownerEpoch;
+		const current = () => !disposed && epoch === ownerEpoch && canDeleteMenu;
 		try {
 			await deleteMenuItem(item.id);
+			if (!current()) return;
+			itemRequest.abort();
+			itemState.loading = false;
+			itemState.error = '';
 			items = items.filter((current) => current.id !== item.id);
 			rebuildContainers();
+			void appMenu.retry();
 			toast.success('ลบเมนูสำเร็จ');
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'ไม่สามารถลบเมนูได้');
+			if (current()) toast.error(error instanceof Error ? error.message : 'ไม่สามารถลบเมนูได้');
 		}
 	}
 </script>
 
+{#snippet catalogStatus(
+	label: string,
+	state: { loading: boolean; loaded: boolean; error: string },
+	retry: () => Promise<void>
+)}
+	{#if state.loading}{#if state.loaded}<p role="status">กำลังอัปเดต{label}</p>{:else}<div
+				role="status"
+				aria-label={`กำลังโหลด${label}`}
+			>
+				<PageSkeleton variant="cards" rows={2} />
+			</div>{/if}{/if}
+	{#if state.error}<PageState
+			variant="error"
+			title={`โหลด${label}ไม่สำเร็จ`}
+			description={state.error}
+			actionLabel={`ลองโหลด${label}อีกครั้ง`}
+			onaction={() => void retry()}
+		/>{/if}
+{/snippet}
 <MobileDragDropPolyfill />
 
 <PageShell
@@ -413,7 +656,8 @@
 			<AcademicMenuTemplateDialog
 				bind:open={academicTemplateDialogOpen}
 				canApply={canUpdateMenu}
-				onApplied={loadData}
+				onApplied={handleTemplateApplied}
+				canPreview={canReadMenu}
 			/>
 		</div>
 		<Tabs.Root bind:value={activeTab}>
@@ -446,55 +690,78 @@
 					<p class="text-xs text-muted-foreground sm:ml-auto">ลากเมนูเพื่อเรียงหรือย้ายฝ่าย/งาน</p>
 				</div>
 
-				{#if loading}
-					<PageSkeleton variant="cards" rows={4} />
-				{:else if displayContainers.length === 0}
-					<PageState
-						title="ไม่พบเมนูบริการ"
-						description="ลองเปลี่ยนประเภทผู้ใช้ หรือตรวจสอบรายการ route ของระบบ"
-					/>
-				{:else}
-					<div class="space-y-6 pb-20">
-						{#each displayContainers as { data, nesteds } (data.id)}
-							<MenuGroupContainer
-								{data}
-								itemCount={nesteds.length}
-								draggable={false}
-								onDragOver={handleGroupDragOver}
-								onDrop={handleGroupDrop}
-							>
-								<div class="mb-2 flex items-center gap-2 px-2 text-xs text-muted-foreground">
-									<span>{workspaceNameByCode.get(data.workspace_code) ?? data.workspace_code}</span>
-									<span aria-hidden="true">/</span>
-									<span>{data.name}</span>
-								</div>
-								{#each nesteds as item (item.id)}
-									<SortableItem
-										{item}
-										onEdit={openItemDialog}
-										onDelete={handleDeleteItem}
-										canUpdate={canUpdateMenu}
-										canDelete={canDeleteMenu}
-										canReorder={canUpdateMenu}
-										onDragStart={handleItemDragStart}
-										onDragEnter={handleItemDragEnter}
-										onDragEnd={handleDragEnd}
-									/>
-								{:else}
-									<div class="rounded-lg border-2 border-dashed p-8 text-center">
-										<p class="text-sm text-muted-foreground">ยังไม่มีเมนูในฝ่าย/งานนี้</p>
-									</div>
+				<section data-testid="menu-items">
+					{#if !itemState.loaded || itemState.error || itemState.loading}{@render catalogStatus(
+							'เมนูบริการ',
+							itemState,
+							refreshItems
+						)}{/if}
+					{#if !groupState.loaded || groupState.error || groupState.loading}{@render catalogStatus(
+							'ฝ่าย/งาน',
+							groupState,
+							refreshGroups
+						)}{/if}
+					{#if !workspaceState.loaded || workspaceState.error || workspaceState.loading}{@render catalogStatus(
+							'กลุ่มบริหาร',
+							workspaceState,
+							refreshWorkspaces
+						)}{/if}
+					{#if itemState.loaded && groupState.loaded}
+						{#if displayContainers.length === 0}
+							<PageState
+								title="ไม่พบเมนูบริการ"
+								description="ลองเปลี่ยนประเภทผู้ใช้ หรือตรวจสอบรายการ route ของระบบ"
+							/>
+						{:else}
+							<div class="space-y-6 pb-20">
+								{#each displayContainers as { data, nesteds } (data.id)}
+									<MenuGroupContainer
+										{data}
+										itemCount={nesteds.length}
+										draggable={false}
+										onDragOver={handleGroupDragOver}
+										onDrop={handleGroupDrop}
+									>
+										<div class="mb-2 flex items-center gap-2 px-2 text-xs text-muted-foreground">
+											<span
+												>{workspaceNameByCode.get(data.workspace_code) ?? data.workspace_code}</span
+											>
+											<span aria-hidden="true">/</span>
+											<span>{data.name}</span>
+										</div>
+										{#each nesteds as item (item.id)}
+											<SortableItem
+												{item}
+												onEdit={openItemDialog}
+												onDelete={handleDeleteItem}
+												canUpdate={canUpdateMenu && !reordering}
+												canDelete={canDeleteMenu && !reordering}
+												canReorder={canUpdateMenu && !reordering}
+												onDragStart={handleItemDragStart}
+												onDragEnter={handleItemDragEnter}
+												onDragEnd={handleDragEnd}
+											/>
+										{:else}
+											<div class="rounded-lg border-2 border-dashed p-8 text-center">
+												<p class="text-sm text-muted-foreground">ยังไม่มีเมนูในฝ่าย/งานนี้</p>
+											</div>
+										{/each}
+									</MenuGroupContainer>
 								{/each}
-							</MenuGroupContainer>
-						{/each}
-					</div>
-				{/if}
-			</Tabs.Content>
+							</div>
+						{/if}
+					{/if}
+				</section></Tabs.Content
+			>
 
 			<Tabs.Content value="groups" class="space-y-4">
 				{#if canCreateMenu}
 					<div class="flex justify-end">
 						<Button
+							disabled={!workspaceState.loaded ||
+								!groupState.loaded ||
+								Boolean(workspaceState.error) ||
+								reordering}
 							onclick={() => {
 								editingGroup = null;
 								groupDialogOpen = true;
@@ -503,72 +770,82 @@
 					</div>
 				{/if}
 
-				{#if loading}
-					<PageSkeleton variant="cards" rows={3} />
-				{:else}
-					<div class="space-y-6">
-						{#each groupedWorkspaces as entry (entry.workspace.id)}
-							{@const WorkspaceIcon = getIconComponent(entry.workspace.icon)}
-							<section class="space-y-3">
-								<div class="flex items-center gap-2">
-									<WorkspaceIcon class="h-5 w-5 text-primary" />
-									<h2 class="font-semibold">{entry.workspace.name}</h2>
-									<Badge variant="secondary">{entry.groups.length} ฝ่าย/งาน</Badge>
-								</div>
+				<section data-testid="menu-groups">
+					{#if !groupState.loaded || groupState.error || groupState.loading}{@render catalogStatus(
+							'ฝ่าย/งาน',
+							groupState,
+							refreshGroups
+						)}{/if}
+					{#if !workspaceState.loaded || workspaceState.error || workspaceState.loading}{@render catalogStatus(
+							'กลุ่มบริหาร',
+							workspaceState,
+							refreshWorkspaces
+						)}{/if}
+					{#if groupState.loaded && workspaceState.loaded}
+						<div class="space-y-6">
+							{#each groupedWorkspaces as entry (entry.workspace.id)}
+								{@const WorkspaceIcon = getIconComponent(entry.workspace.icon)}
+								<section class="space-y-3">
+									<div class="flex items-center gap-2">
+										<WorkspaceIcon class="h-5 w-5 text-primary" />
+										<h2 class="font-semibold">{entry.workspace.name}</h2>
+										<Badge variant="secondary">{entry.groups.length} ฝ่าย/งาน</Badge>
+									</div>
 
-								{#if entry.groups.length === 0}
-									<div class="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-										ยังไม่มีฝ่าย/งานในกลุ่มบริหารนี้
-									</div>
-								{:else}
-									<div class="grid gap-3">
-										{#each entry.groups as group (group.id)}
-											<div
-												role="listitem"
-												draggable={canUpdateMenu}
-												ondragstart={(event) => handleGroupDragStart(event, group)}
-												ondragenter={(event) => handleGroupDragEnter(event, group)}
-												ondragend={handleDragEnd}
-												class={canUpdateMenu ? 'cursor-grab active:cursor-grabbing' : ''}
-											>
-												<Card class="p-4">
-													<div class="flex items-center gap-3">
-														{#if canUpdateMenu}
-															<GripVertical class="h-5 w-5 text-muted-foreground" />
-														{/if}
-														<div class="min-w-0 flex-1">
-															<div class="flex flex-wrap items-center gap-2">
-																<h3 class="font-semibold">{group.name}</h3>
-																{#if !group.is_active}
-																	<Badge variant="secondary">ปิดใช้งาน</Badge>
-																{/if}
+									{#if entry.groups.length === 0}
+										<div class="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+											ยังไม่มีฝ่าย/งานในกลุ่มบริหารนี้
+										</div>
+									{:else}
+										<div class="grid gap-3">
+											{#each entry.groups as group (group.id)}
+												<div
+													role="listitem"
+													draggable={canUpdateMenu && !reordering}
+													ondragstart={(event) => handleGroupDragStart(event, group)}
+													ondragenter={(event) => handleGroupDragEnter(event, group)}
+													ondragend={handleDragEnd}
+													class={canUpdateMenu ? 'cursor-grab active:cursor-grabbing' : ''}
+												>
+													<Card class="p-4">
+														<div class="flex items-center gap-3">
+															{#if canUpdateMenu}
+																<GripVertical class="h-5 w-5 text-muted-foreground" />
+															{/if}
+															<div class="min-w-0 flex-1">
+																<div class="flex flex-wrap items-center gap-2">
+																	<h3 class="font-semibold">{group.name}</h3>
+																	{#if !group.is_active}
+																		<Badge variant="secondary">ปิดใช้งาน</Badge>
+																	{/if}
+																</div>
+																<code class="text-xs text-muted-foreground">{group.code}</code>
 															</div>
-															<code class="text-xs text-muted-foreground">{group.code}</code>
+															{#if canUpdateMenu}
+																<Button
+																	size="sm"
+																	variant="outline"
+																	onclick={() => {
+																		editingGroup = group;
+																		groupDialogOpen = true;
+																	}}
+																>
+																	<Pencil class="h-4 w-4" />
+																	แก้ไข
+																</Button>
+															{/if}
 														</div>
-														{#if canUpdateMenu}
-															<Button
-																size="sm"
-																variant="outline"
-																onclick={() => {
-																	editingGroup = group;
-																	groupDialogOpen = true;
-																}}
-															>
-																<Pencil class="h-4 w-4" />
-																แก้ไข
-															</Button>
-														{/if}
-													</div>
-												</Card>
-											</div>
-										{/each}
-									</div>
-								{/if}
-							</section>
-						{/each}
-					</div>
-				{/if}
-			</Tabs.Content>
+													</Card>
+												</div>
+											{/each}
+										</div>
+									{/if}
+								</section>
+							{/each}
+						</div>
+					{/if}
+				</section></Tabs.Content
+			>
 
 			<Tabs.Content value="workspaces" class="space-y-4">
 				<div class="flex items-center justify-between gap-4">
@@ -577,6 +854,7 @@
 					</p>
 					{#if canCreateMenu}
 						<Button
+							disabled={!workspaceState.loaded || reordering}
 							onclick={() => {
 								editingWorkspace = null;
 								workspaceDialogOpen = true;
@@ -585,102 +863,127 @@
 					{/if}
 				</div>
 
-				{#if loading}
-					<PageSkeleton variant="cards" rows={3} />
-				{:else if workspaces.length === 0}
-					<PageState
-						title="ยังไม่มีกลุ่มบริหาร"
-						description="สร้างกลุ่มบริหารเพื่อเริ่มจัดหมวดบริการของโรงเรียน"
-					/>
-				{:else}
-					<div class="grid gap-3">
-						{#each workspaces as workspace (workspace.id)}
-							{@const WorkspaceIcon = getIconComponent(workspace.icon)}
-							<div
-								role="listitem"
-								draggable={canUpdateMenu}
-								ondragstart={(event) => handleWorkspaceDragStart(event, workspace)}
-								ondragenter={(event) => handleWorkspaceDragEnter(event, workspace)}
-								ondragend={handleDragEnd}
-								class={canUpdateMenu ? 'cursor-grab active:cursor-grabbing' : ''}
-							>
-								<Card class="p-4">
-									<div class="flex items-center gap-3">
-										{#if canUpdateMenu}
-											<GripVertical class="h-5 w-5 text-muted-foreground" />
-										{/if}
-										<div
-											class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10"
-										>
-											<WorkspaceIcon class="h-5 w-5 text-primary" />
-										</div>
-										<div class="min-w-0 flex-1">
-											<div class="flex flex-wrap items-center gap-2">
-												<h3 class="font-semibold">{workspace.name}</h3>
-												{#if !workspace.is_active}
-													<Badge variant="secondary">ปิดใช้งาน</Badge>
+				<section data-testid="menu-workspaces">
+					{#if !workspaceState.loaded || workspaceState.error || workspaceState.loading}{@render catalogStatus(
+							'กลุ่มบริหาร',
+							workspaceState,
+							refreshWorkspaces
+						)}{/if}
+					{#if workspaceState.loaded}
+						{#if workspaces.length === 0}
+							<PageState
+								title="ยังไม่มีกลุ่มบริหาร"
+								description="สร้างกลุ่มบริหารเพื่อเริ่มจัดหมวดบริการของโรงเรียน"
+							/>
+						{:else}
+							<div class="grid gap-3">
+								{#each workspaces as workspace (workspace.id)}
+									{@const WorkspaceIcon = getIconComponent(workspace.icon)}
+									<div
+										role="listitem"
+										draggable={canUpdateMenu && !reordering}
+										ondragstart={(event) => handleWorkspaceDragStart(event, workspace)}
+										ondragenter={(event) => handleWorkspaceDragEnter(event, workspace)}
+										ondragend={handleDragEnd}
+										class={canUpdateMenu ? 'cursor-grab active:cursor-grabbing' : ''}
+									>
+										<Card class="p-4">
+											<div class="flex items-center gap-3">
+												{#if canUpdateMenu}
+													<GripVertical class="h-5 w-5 text-muted-foreground" />
+												{/if}
+												<div
+													class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10"
+												>
+													<WorkspaceIcon class="h-5 w-5 text-primary" />
+												</div>
+												<div class="min-w-0 flex-1">
+													<div class="flex flex-wrap items-center gap-2">
+														<h3 class="font-semibold">{workspace.name}</h3>
+														{#if !workspace.is_active}
+															<Badge variant="secondary">ปิดใช้งาน</Badge>
+														{/if}
+													</div>
+													<div class="flex items-center gap-2 text-xs text-muted-foreground">
+														<code>{workspace.code}</code>
+														<span>•</span>
+														<span>
+															{groupState.loaded
+																? groups.filter((group) => group.workspace_code === workspace.code)
+																		.length
+																: '…'}
+															ฝ่าย/งาน
+														</span>
+													</div>
+												</div>
+												{#if canUpdateMenu}
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => {
+															editingWorkspace = workspace;
+															workspaceDialogOpen = true;
+														}}
+													>
+														<Pencil class="h-4 w-4" />
+														แก้ไข
+													</Button>
 												{/if}
 											</div>
-											<div class="flex items-center gap-2 text-xs text-muted-foreground">
-												<code>{workspace.code}</code>
-												<span>•</span>
-												<span>
-													{groups.filter((group) => group.workspace_code === workspace.code).length}
-													ฝ่าย/งาน
-												</span>
-											</div>
-										</div>
-										{#if canUpdateMenu}
-											<Button
-												size="sm"
-												variant="outline"
-												onclick={() => {
-													editingWorkspace = workspace;
-													workspaceDialogOpen = true;
-												}}
-											>
-												<Pencil class="h-4 w-4" />
-												แก้ไข
-											</Button>
-										{/if}
+										</Card>
 									</div>
-								</Card>
+								{/each}
 							</div>
-						{/each}
-					</div>
-				{/if}
-			</Tabs.Content>
+						{/if}
+					{/if}
+				</section></Tabs.Content
+			>
 		</Tabs.Root>
 	{/if}
 </PageShell>
 
-<GroupManagementDialog
-	bind:open={groupDialogOpen}
-	group={editingGroup}
-	{workspaces}
-	canCreate={canCreateMenu}
-	canUpdate={canUpdateMenu}
-	canDelete={canDeleteMenu}
-	onSuccess={handleGroupMutation}
-	onOpenChange={(open) => (groupDialogOpen = open)}
-/>
-
-<WorkspaceManagementDialog
-	bind:open={workspaceDialogOpen}
-	workspace={editingWorkspace}
-	canCreate={canCreateMenu}
-	canUpdate={canUpdateMenu}
-	canDelete={canDeleteMenu}
-	onSuccess={handleWorkspaceMutation}
-	onOpenChange={(open) => (workspaceDialogOpen = open)}
-/>
-
-<MenuItemManagementDialog
-	bind:open={itemDialogOpen}
-	item={editingItem}
-	{groups}
-	{workspaces}
-	canUpdate={canUpdateMenu}
-	onSuccess={replaceMenuItem}
-	onOpenChange={(open) => (itemDialogOpen = open)}
-/>
+{#key owner}
+	{@const dialogOwner = ownerEpoch}
+	{#if groupDialogOpen && canReadMenu && workspaceState.loaded && !workspaceState.error && !reordering}
+		<GroupManagementDialog
+			bind:open={groupDialogOpen}
+			group={editingGroup}
+			{workspaces}
+			canCreate={canCreateMenu}
+			canUpdate={canUpdateMenu && !reordering}
+			canDelete={canDeleteMenu && !reordering}
+			onSuccess={(result) => {
+				if (dialogOwner === ownerEpoch) handleGroupMutation(result);
+			}}
+			onOpenChange={(open) => (groupDialogOpen = open)}
+		/>
+	{/if}
+	{#if workspaceDialogOpen && canReadMenu && !reordering}
+		<WorkspaceManagementDialog
+			bind:open={workspaceDialogOpen}
+			workspace={editingWorkspace}
+			canCreate={canCreateMenu}
+			canUpdate={canUpdateMenu && !reordering}
+			canDelete={canDeleteMenu && !reordering}
+			onSuccess={(result) => {
+				if (dialogOwner === ownerEpoch) handleWorkspaceMutation(result);
+			}}
+			onOpenChange={(open) => (workspaceDialogOpen = open)}
+		/>
+	{/if}
+	{#if itemDialogOpen && canReadMenu && groupState.loaded && workspaceState.loaded && !reordering}
+		<MenuItemManagementDialog
+			bind:open={itemDialogOpen}
+			item={editingItem}
+			{groups}
+			{workspaces}
+			canUpdate={canUpdateMenu && !reordering}
+			onSuccess={(item) => {
+				if (dialogOwner !== ownerEpoch) return;
+				replaceMenuItem(item);
+				if (!disposed) void appMenu.retry();
+			}}
+			onOpenChange={(open) => (itemDialogOpen = open)}
+		/>
+	{/if}
+{/key}

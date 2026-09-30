@@ -3,7 +3,7 @@
  * Module-based permission control for managing menu structure
  */
 
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -23,9 +23,12 @@ export type AcademicMenuTemplateApplyResult = Schemas['AcademicMenuTemplateApply
 
 // ==================== Recommended academic template ====================
 
-export async function previewRecommendedAcademicMenuTemplate(): Promise<AcademicMenuTemplatePreview> {
+export async function previewRecommendedAcademicMenuTemplate(
+	options: ApiRequestOptions = {}
+): Promise<AcademicMenuTemplatePreview> {
 	const response = await apiClient.get<AcademicMenuTemplatePreview>(
-		'/api/admin/menu/templates/academic/recommended'
+		'/api/admin/menu/templates/academic/recommended',
+		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดตัวอย่างโครงสร้างงานวิชาการได้');
 }
@@ -43,8 +46,10 @@ export async function applyRecommendedAcademicMenuTemplate(
 
 // ==================== Management workspaces ====================
 
-export async function listMenuWorkspaces(): Promise<MenuWorkspace[]> {
-	const response = await apiClient.get<MenuWorkspace[]>('/api/admin/menu/workspaces');
+export async function listMenuWorkspaces(
+	options: ApiRequestOptions = {}
+): Promise<MenuWorkspace[]> {
+	const response = await apiClient.get<MenuWorkspace[]>('/api/admin/menu/workspaces', options);
 	return requireApiData(response, 'Failed to fetch menu workspaces');
 }
 
@@ -80,8 +85,8 @@ export async function reorderMenuWorkspaces(workspaces: ReorderItem[]): Promise<
 
 // ==================== Menu Groups ====================
 
-export async function listMenuGroups(): Promise<MenuGroup[]> {
-	const response = await apiClient.get<MenuGroup[]>('/api/admin/menu/groups');
+export async function listMenuGroups(options: ApiRequestOptions = {}): Promise<MenuGroup[]> {
+	const response = await apiClient.get<MenuGroup[]>('/api/admin/menu/groups', options);
 	return requireApiData(response, 'Failed to fetch menu groups');
 }
 
@@ -114,9 +119,12 @@ export async function reorderMenuGroups(groups: ReorderItem[]): Promise<void> {
 
 // ==================== Menu Items ====================
 
-export async function listMenuItems(groupId?: string): Promise<MenuItem[]> {
+export async function listMenuItems(
+	groupId?: string,
+	options: ApiRequestOptions = {}
+): Promise<MenuItem[]> {
 	const endpoint = groupId ? `/api/admin/menu/items?group_id=${groupId}` : '/api/admin/menu/items';
-	const response = await apiClient.get<MenuItem[]>(endpoint);
+	const response = await apiClient.get<MenuItem[]>(endpoint, options);
 	return requireApiData(response, 'Failed to fetch menu items');
 }
 
