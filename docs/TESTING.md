@@ -208,7 +208,7 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-round
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-application-region-loading.spec.ts --project=chromium --workers=2
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-exam-room-region-loading.spec.ts --project=chromium --workers=2
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-score-region-loading.spec.ts --project=chromium --workers=2
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-home-region-loading.spec.ts --project=chromium --workers=2
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-home-region-loading.spec.ts tests/e2e/staff-role-region-loading.spec.ts --project=chromium --workers=2
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supervision-management-region-loading.spec.ts tests/e2e/supervision-queues-region-loading.spec.ts tests/e2e/supervision-detail-region-loading.spec.ts --project=chromium --workers=2
 ```
 

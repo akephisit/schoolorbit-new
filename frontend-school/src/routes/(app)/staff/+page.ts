@@ -22,7 +22,8 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = ({ fetch, url }) => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
+	depends('school:app-identity');
 	const academicYearId = url.searchParams.get('academicYearId');
 	const overview = academicYearId
 		? captureRouteLoad(

@@ -36,7 +36,10 @@ test('management API wrappers type inactive lists and deactivation envelopes', a
 	const staffApi = await readRepoFile('frontend-school/src/lib/api/staff.ts');
 
 	assert.match(rolesApi, /type ManagedListOptions = \{ include_inactive\?: boolean \}/);
-	assert.match(rolesApi, /listRoles\(options\?: ManagedListOptions\)/);
+	assert.match(
+		rolesApi,
+		/listRoles\(\s*options\?: ManagedListOptions,\s*requestOptions: ApiRequestOptions/
+	);
 	assert.match(
 		rolesApi,
 		/if \(options\?\.include_inactive\) params\.set\('include_inactive', 'true'\)/
@@ -75,7 +78,7 @@ test('role management uses reversible permission-aware status controls', async (
 		'frontend-school/src/routes/(app)/staff/roles/[id]/+page.svelte'
 	);
 
-	assert.match(listPage, /roleAPI\.listRoles\(\{ include_inactive: true \}\)/);
+	assert.match(listPage, /roleAPI\s*\.listRoles\(\s*\{ include_inactive: true \},/);
 	assert.match(listPage, /role\.is_system/);
 	assert.match(listPage, /ระบบ/);
 

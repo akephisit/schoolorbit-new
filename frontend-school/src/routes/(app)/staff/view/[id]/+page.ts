@@ -9,7 +9,8 @@ import { captureRouteLoad } from '$lib/navigation/route-load';
 import type { PageLoad } from './$types';
 
 export const _meta = { academicContext: 'none' as const, access: { user_type: 'staff' } };
-export const load: PageLoad = ({ fetch, params }) => {
+export const load: PageLoad = ({ fetch, params, depends }) => {
+	depends('school:app-identity');
 	const identity = waitForAuthenticatedUser();
 	const profile = captureRouteLoad(
 		identity.then(async (user) =>

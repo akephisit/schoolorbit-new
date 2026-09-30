@@ -99,7 +99,7 @@
 			void source.then((result) => {
 				if (!profileRequest.isCurrent(ticket.revision)) return;
 				loading = false;
-				if (result.ok && result.data) applyLoadedProfile(result.data);
+				if (result.ok && result.data?.id === profileOwner) applyLoadedProfile(result.data);
 				else profileLoadError = result.ok ? 'คุณไม่มีสิทธิ์เข้าถึงโปรไฟล์นี้' : result.error;
 			});
 		});
@@ -119,8 +119,8 @@
 		);
 		if (!profileRequest.isCurrent(ticket.revision)) return;
 		loading = false;
-		if (result.ok) applyLoadedProfile(result.data);
-		else profileLoadError = result.error;
+		if (result.ok && result.data.id === profileOwner) applyLoadedProfile(result.data);
+		else profileLoadError = result.ok ? 'คุณไม่มีสิทธิ์เข้าถึงโปรไฟล์นี้' : result.error;
 	}
 	async function saveProfileImage(fileId: string | null) {
 		if (!profileActive || !profile) return;

@@ -849,24 +849,22 @@
 		{
 			"route": "staff/roles",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "none",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school authorization/menu",
-			"notes": "roleAPI.listRoles({ include_inactive: true }) is the initial page read.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns active/inactive role catalog using layout identity and exact roles.read scope. Regional skeleton/retained refresh/error/retry; editor catalog stays absent. Unbounded management catalog avoids incidental hover preload."
 		},
 		{
 			"route": "staff/roles/[id]",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school authorization/menu",
-			"notes": "roleAPI.getRole and permissionAPI.listPermissionsByModule are initial independent reads.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns selected role and visible permission-label catalog independently; new ID uses a blank form without a role GET. Exact roles read/create and settings read gates; independent retries preserve drafts, identity refresh reruns authorized reads, mutation results cannot redirect or toast over newer context."
 		},
 		{
 			"route": "staff/school-fonts",

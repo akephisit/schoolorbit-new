@@ -39,6 +39,10 @@
 
 	let { data }: PageProps = $props();
 	const staffId = $derived(data.staffId);
+	const liveAchievementsReadable = $derived(
+		$can.has(PERMISSIONS.ACHIEVEMENT_READ_ALL) ||
+			($authStore.user?.id === staffId && $can.has(PERMISSIONS.ACHIEVEMENT_READ_OWN))
+	);
 	let staff = $state<PublicStaffProfileResponse | null>(null);
 	let achievements = $state<Achievement[]>([]);
 	let loading = $state(true);
@@ -102,6 +106,21 @@
 			achievementsRequest.abort();
 		};
 	});
+	$effect.pre(() => {
+		if (liveAchievementsReadable) return;
+		untrack(() => {
+			achievementsRequest.abort();
+			achievements = [];
+			achievementsReadable = false;
+			achievementsLoaded = false;
+			loadingAchievements = false;
+			achievementsError = '';
+			showFileDialog = false;
+			viewingFileId = '';
+			viewingResourceId = '';
+		});
+	});
+
 	async function loadStaffProfile() {
 		const ticket = profileRequest.begin();
 		loading = true;
@@ -323,7 +342,8 @@
 							actionLabel="ลองใหม่"
 							onaction={loadAchievements}
 						/>{/if}
-					{#if loadingAchievements && !achievementsLoaded}
+					{#if !liveAchievementsReadable}<PageState title="ไม่มีสิทธิ์ดูผลงานของบุคลากรนี้" />
+					{:else if loadingAchievements && !achievementsLoaded}
 						<div role="status" aria-label="กำลังโหลดผลงาน">
 							<PageSkeleton variant="cards" rows={2} />
 						</div>

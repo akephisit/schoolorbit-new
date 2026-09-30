@@ -3,6 +3,7 @@ export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | 'of
 	if (
 		path === '/staff/academic/exam-schedules' ||
 		path === '/staff/exams' ||
+		path === '/staff/roles' ||
 		path === '/staff/academic/supervision' ||
 		path === '/staff/academic/supervision/requests' ||
 		path === '/staff/academic/supervision/evaluate' ||

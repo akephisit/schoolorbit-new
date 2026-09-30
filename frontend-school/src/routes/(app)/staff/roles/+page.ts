@@ -2,9 +2,17 @@
  * Roles Management Page
  */
 
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { roleAPI } from '$lib/api/roles';
+import { get } from 'svelte/store';
+import { can } from '$lib/stores/permissions';
+import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
+import { captureRouteLoad } from '$lib/navigation/route-load';
+import { requireApiData } from '$lib/api/client';
+import type { PageLoad } from './$types';
+import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
+	academicContext: 'none' as const,
 	menu: {
 		title: 'จัดการบทบาท',
 		icon: 'Shield',
@@ -16,8 +24,18 @@ export const _meta = {
 	}
 };
 
-export const load = async () => {
-	return {
-		title: 'จัดการบทบาท'
-	};
+export const load: PageLoad = ({ fetch, depends }) => {
+	depends('school:app-identity');
+	const roles = captureRouteLoad(
+		waitForAuthenticatedUser().then(async (user) =>
+			user?.user_type === 'staff' && get(can).has(PERMISSIONS.ROLES_READ_ALL)
+				? requireApiData(
+						await roleAPI.listRoles({ include_inactive: true }, { requestFetch: fetch }),
+						'โหลดบทบาทไม่สำเร็จ'
+					)
+				: []
+		),
+		'โหลดบทบาทไม่สำเร็จ'
+	);
+	return { title: _meta.menu.title, roles };
 };

@@ -1,7 +1,6 @@
 // Role & Permission API Client
-import { apiClient } from './client';
+import { apiClient, type ApiRequestOptions, type ApiResponse } from './client';
 import type { components } from './generated/school-api';
-import type { ApiResponse } from './types';
 
 type Schemas = components['schemas'];
 export type Role = Schemas['Role'];
@@ -18,16 +17,19 @@ type ManagedListOptions = { include_inactive?: boolean };
 // Role Management API
 export const roleAPI = {
 	// List active roles by default; management screens can include inactive records.
-	async listRoles(options?: ManagedListOptions): Promise<ApiResponse<Role[]>> {
+	async listRoles(
+		options?: ManagedListOptions,
+		requestOptions: ApiRequestOptions = {}
+	): Promise<ApiResponse<Role[]>> {
 		const params = new URLSearchParams();
 		if (options?.include_inactive) params.set('include_inactive', 'true');
 		const qs = params.toString() ? `?${params}` : '';
-		return apiClient.get<Role[]>(`/api/roles${qs}`);
+		return apiClient.get<Role[]>(`/api/roles${qs}`, requestOptions);
 	},
 
 	// Get single role
-	async getRole(roleId: string): Promise<ApiResponse<Role>> {
-		return apiClient.get<Role>(`/api/roles/${roleId}`);
+	async getRole(roleId: string, options: ApiRequestOptions = {}): Promise<ApiResponse<Role>> {
+		return apiClient.get<Role>(`/api/roles/${roleId}`, options);
 	},
 
 	// Create role
@@ -54,8 +56,10 @@ export const permissionAPI = {
 	},
 
 	// List permissions grouped by module
-	async listPermissionsByModule(): Promise<ApiResponse<PermissionsByModule>> {
-		return apiClient.get<PermissionsByModule>('/api/permissions/modules');
+	async listPermissionsByModule(
+		options: ApiRequestOptions = {}
+	): Promise<ApiResponse<PermissionsByModule>> {
+		return apiClient.get<PermissionsByModule>('/api/permissions/modules', options);
 	}
 };
 
