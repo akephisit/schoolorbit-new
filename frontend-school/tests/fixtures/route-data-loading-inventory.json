@@ -742,12 +742,12 @@
 		{
 			"route": "staff/features",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school features",
-			"notes": "Component API reads include listFeatures; classify default and optional regions during migration."
+			"notes": "Direct exact-scope loader owns visible toggles; independent first/retained error/retry, cancellation and identity/disposal guard. Typed toggle patches only its feature. Owner SQL is one explicit-column SELECT with actor module filtering, no N+1."
 		},
 		{
 			"route": "staff/manage",
@@ -863,23 +863,22 @@
 		{
 			"route": "staff/school-fonts",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-fonts",
-			"notes": "Visible reads start in SchoolFontLibrary; move primary data to the owning route loader."
+			"notes": "Direct exact font.manage.school loader owns the visible list; library child consumes the same result, independent first/retained retry and disposal guards. Batch upload/inspection are explicit interactions and typed batch/delete patch only fonts. Owner SQL uses one grouped reference-count join, no N+1."
 		},
 		{
 			"route": "staff/school-settings",
 			"wave": "staff",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school school-settings",
-			"notes": "Component API reads include getSchoolSettings; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Direct exact-scope loader owns logo settings; first/error/retry and identity/disposal guards. Upload stays interaction-only, draft survives failed empty commit, success patches logo only and a late upload cannot attach after disposal. Owner SQL is one logo-column singleton SELECT; unchanged."
 		},
 		{
 			"route": "staff/settings",

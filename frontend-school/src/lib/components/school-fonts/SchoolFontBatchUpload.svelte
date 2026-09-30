@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	import {
 		deleteSchoolFontTemporaryFile,
 		uploadSchoolFontFile,
@@ -91,6 +96,7 @@
 	}
 
 	function reportPending(): void {
+		if (disposed) return;
 		const pending = rows.some((row) => row.status === 'uploading' || row.metadata !== undefined);
 		if (pending === reportedPending) return;
 		reportedPending = pending;
@@ -98,6 +104,7 @@
 	}
 
 	function replaceRow(key: string, patch: Partial<UploadRow>): void {
+		if (disposed) return;
 		rows = rows.map((row) => (row.key === key ? { ...row, ...patch } : row));
 		reportPending();
 	}
@@ -131,13 +138,14 @@
 
 	async function inspectUploadedRows(): Promise<void> {
 		const uploadedRows = rows.filter((row) => row.metadata);
-		if (uploadedRows.length === 0 || inspecting) return;
+		if (disposed || uploadedRows.length === 0 || inspecting) return;
 		inspecting = true;
 		batchError = null;
 		try {
 			const result = await inspectUploads({
 				fileIds: uploadedRows.map((row) => row.metadata!.id)
 			});
+			if (disposed) return;
 			const byFileId = new Map(result.files.map((file) => [file.fileId, file]));
 			rows = rows.map((row) => {
 				if (!row.metadata) return row;
@@ -168,7 +176,7 @@
 	}
 
 	async function uploadSelectedRows(onlyKey?: string): Promise<void> {
-		if (isBusy) return;
+		if (disposed || isBusy) return;
 		uploading = true;
 		batchError = null;
 		const selectedRows = rows.filter(
@@ -178,6 +186,7 @@
 				(row.status === 'queued' || row.status === 'upload_failed')
 		);
 		for (const row of selectedRows) {
+			if (disposed) return;
 			replaceRow(row.key, { status: 'uploading', error: undefined });
 			try {
 				const metadata = await uploadSchoolFontFile(row.file, context);
@@ -217,6 +226,7 @@
 		replaceRow(key, { cleaning: true, error: undefined });
 		try {
 			await deleteSchoolFontTemporaryFile(row.metadata.id, context);
+			if (disposed) return;
 			rows = rows.filter((candidate) => candidate.key !== key);
 			batchError = null;
 			if (rows.length === 0) resetBatch();
@@ -230,12 +240,13 @@
 	}
 
 	async function attachReviewedBatch(): Promise<void> {
-		if (!allRowsReady || !rightsConfirmed || attaching) return;
+		if (disposed || !allRowsReady || !rightsConfirmed || attaching) return;
 		const fileIds = rows.map((row) => row.metadata!.id);
 		attaching = true;
 		batchError = null;
 		try {
 			const result = await attachBatch({ fileIds, rightsConfirmed: true });
+			if (disposed) return;
 			onattached(result.items);
 			resetBatch();
 			toast.success(`เพิ่มฟอนต์ ${fileIds.length} ไฟล์เข้าคลังแล้ว`);

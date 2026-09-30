@@ -1,8 +1,14 @@
+import type { PageLoad } from './$types';
+import { listFeatures } from '$lib/api/feature-toggles';
+import { get } from 'svelte/store';
+import { can } from '$lib/stores/permissions';
+import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
+import { captureRouteLoad } from '$lib/navigation/route-load';
 /**
  * Feature Toggles Management Page
  */
 
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -16,8 +22,17 @@ export const _meta = {
 	}
 };
 
-export const load = async () => {
+export const load: PageLoad = ({ fetch, depends }) => {
+	depends('school:app-identity');
 	return {
-		title: 'จัดการระบบงาน'
+		title: _meta.menu.title,
+		features: captureRouteLoad(
+			waitForAuthenticatedUser().then((user) =>
+				user?.user_type === 'staff' && get(can).has(PERMISSIONS.FEATURES_READ_ALL)
+					? listFeatures({ requestFetch: fetch })
+					: null
+			),
+			'โหลดข้อมูลไม่สำเร็จ'
+		)
 	};
 };

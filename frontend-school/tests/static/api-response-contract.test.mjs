@@ -463,7 +463,10 @@ test('generated calendar, school, and notification contracts own final read DTOs
 		schoolApi,
 		/export\s+type\s+PublicSchoolInfoDto\s*=\s*Schemas\['PublicSchoolInfoData'\]/
 	);
-	assert.match(schoolApi, /apiClient\.get<SchoolSettingsDto>\('\/api\/school\/settings'\)/);
+	assert.match(
+		schoolApi,
+		/apiClient\.get<SchoolSettingsDto>\('\/api\/school\/settings', options\)/
+	);
 	assert.match(schoolApi, /apiClient\.get<PublicSchoolInfoDto>\('\/api\/school\/public'\)/);
 
 	assert.match(notificationStore, /import\s+type\s+\{\s*components\s*\}/);
@@ -872,7 +875,7 @@ test('school settings API consumes typed envelope data without casts', async () 
 	assert.match(schoolApi, /apiClient\.patch<Record<string, never>>/);
 	assert.match(schoolApi, /apiClient\.delete<Record<string, never>>/);
 	assert.match(schoolApi, /apiClient\.get<PublicSchoolInfoDto>/);
-	assert.match(schoolApi, /schoolSettingsFromDto\(res\.data\)/);
+	assert.match(schoolApi, /schoolSettingsFromDto\(requireApiData\(res,/);
 	assert.match(schoolApi, /publicSchoolInfoFromDto\(res\.data\)/);
 	assert.doesNotMatch(schoolApi, /res\.data as/);
 });

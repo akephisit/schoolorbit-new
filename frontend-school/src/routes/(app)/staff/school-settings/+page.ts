@@ -1,4 +1,10 @@
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import type { PageLoad } from './$types';
+import { getSchoolSettings } from '$lib/api/school';
+import { get } from 'svelte/store';
+import { can } from '$lib/stores/permissions';
+import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
+import { captureRouteLoad } from '$lib/navigation/route-load';
+import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 
 export const _meta = {
 	menu: {
@@ -12,8 +18,17 @@ export const _meta = {
 	}
 };
 
-export const load = async () => {
+export const load: PageLoad = ({ fetch, depends }) => {
+	depends('school:app-identity');
 	return {
-		title: 'ตั้งค่าโรงเรียน'
+		title: _meta.menu.title,
+		settings: captureRouteLoad(
+			waitForAuthenticatedUser().then((user) =>
+				user?.user_type === 'staff' && get(can).has(PERMISSIONS.SETTINGS_READ_ALL)
+					? getSchoolSettings({ requestFetch: fetch })
+					: null
+			),
+			'โหลดข้อมูลไม่สำเร็จ'
+		)
 	};
 };

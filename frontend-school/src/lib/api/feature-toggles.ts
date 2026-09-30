@@ -3,7 +3,7 @@
  * Module-based permission control for managing feature flags
  */
 
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -17,8 +17,8 @@ export interface UpdateFeatureRequest {
 /**
  * List all feature toggles (filtered by user's module permissions)
  */
-export async function listFeatures(): Promise<FeatureToggle[]> {
-	const response = await apiClient.get<FeatureToggle[]>('/api/admin/features');
+export async function listFeatures(options: ApiRequestOptions = {}): Promise<FeatureToggle[]> {
+	const response = await apiClient.get<FeatureToggle[]>('/api/admin/features', options);
 	return requireApiData(response, 'Failed to fetch features');
 }
 

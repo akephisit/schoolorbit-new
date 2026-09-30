@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import type { PageProps } from './$types';
+	import { authStore } from '$lib/stores/auth';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
 	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
@@ -27,27 +31,82 @@
 	const canReadSettings = $derived($can.has(PERMISSIONS.SETTINGS_READ_ALL));
 	const canUpdateSettings = $derived($can.has(PERMISSIONS.SETTINGS_UPDATE_ALL));
 
-	onMount(async () => {
-		if (!canReadSettings) {
-			loading = false;
-			return;
-		}
-
-		try {
-			const s = await getSchoolSettings();
-			logoFileId = s.logoFileId;
-		} catch {
-			toast.error('ไม่สามารถโหลดข้อมูลได้');
-		} finally {
-			loading = false;
-		}
+	let { data }: PageProps = $props();
+	const source = $derived(data.settings),
+		request = new LatestRequest();
+	let loaded = $state(false),
+		loadError = $state('');
+	let owner = '',
+		epoch = 0,
+		disposed = false,
+		pendingUploadId: string | undefined;
+	function clearDraft() {
+		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		previewUrl = undefined;
+		pendingFile = undefined;
+		pendingUploadId = undefined;
+	}
+	function applySettings(result: Awaited<typeof data.settings>, revision: number) {
+		if (!request.isCurrent(revision)) return;
+		loading = false;
+		if (result.ok) {
+			logoFileId = result.data?.logoFileId;
+			loaded = true;
+		} else loadError = result.error;
+	}
+	$effect.pre(() => {
+		const operation = source,
+			identity = `${$authStore.user?.id ?? ''}|${canReadSettings}`;
+		untrack(() => {
+			if (owner !== identity) {
+				owner = identity;
+				epoch++;
+				logoFileId = undefined;
+				loaded = false;
+				saving = false;
+				clearDraft();
+			}
+			const ticket = request.begin();
+			loading = true;
+			loadError = '';
+			void operation.then((result) => applySettings(result, ticket.revision));
+		});
+		return () => request.abort();
 	});
+	$effect.pre(() => {
+		const allowed = canUpdateSettings;
+		untrack(() => {
+			void allowed;
+			epoch++;
+			saving = false;
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		epoch++;
+		request.abort();
+		clearDraft();
+	});
+	async function loadSettings() {
+		if (!canReadSettings) return;
+		const ticket = request.begin();
+		loading = true;
+		loadError = '';
+		applySettings(
+			await captureRouteLoad(
+				getSchoolSettings({ signal: ticket.signal }),
+				'โหลดการตั้งค่าโรงเรียนไม่สำเร็จ'
+			),
+			ticket.revision
+		);
+	}
 
 	function handleLogoSelect(e: Event) {
-		if (!canUpdateSettings) return;
+		if (!canUpdateSettings || saving || disposed) return;
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
 		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		pendingUploadId = undefined;
 		pendingFile = file;
 		previewUrl = URL.createObjectURL(file);
 	}
@@ -58,21 +117,32 @@
 			return;
 		}
 
+		if (saving || !loaded || disposed) return;
+		const mutationEpoch = epoch,
+			file = pendingFile;
+		const current = () => !disposed && mutationEpoch === epoch && canUpdateSettings;
+		request.abort();
+		loading = false;
 		saving = true;
 		try {
-			if (pendingFile) {
-				const uploaded = await uploadFile(pendingFile, 'school_logo');
-				logoFileId = uploaded.id;
-				if (previewUrl) URL.revokeObjectURL(previewUrl);
-				previewUrl = undefined;
-				pendingFile = undefined;
+			let nextLogoId = logoFileId;
+			if (file) {
+				const uploadedId = pendingUploadId ?? (await uploadFile(file, 'school_logo')).id;
+				if (!current()) return;
+				pendingUploadId = uploadedId;
+				nextLogoId = uploadedId;
 			}
-			await updateSchoolSettings({ logoFileId: logoFileId ?? null });
+			await updateSchoolSettings({ logoFileId: nextLogoId ?? null });
+			if (!current()) return;
+			request.abort();
+			loading = false;
+			logoFileId = nextLogoId;
+			if (pendingFile === file) clearDraft();
 			toast.success('บันทึกการตั้งค่าสำเร็จ');
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
+			if (current()) toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
 
@@ -82,15 +152,23 @@
 			return;
 		}
 
+		if (saving || !loaded || disposed) return;
+		const mutationEpoch = epoch;
+		const current = () => !disposed && mutationEpoch === epoch && canUpdateSettings;
+		request.abort();
+		loading = false;
 		saving = true;
 		try {
 			await deleteSchoolLogo();
+			if (!current()) return;
+			request.abort();
+			loading = false;
 			logoFileId = undefined;
 			toast.success('ลบ logo สำเร็จ');
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
+			if (current()) toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
 </script>
@@ -100,102 +178,112 @@
 	description="จัดการข้อมูลและการแสดงผลของโรงเรียน"
 	backHref="/staff"
 >
-	{#if !canReadSettings}
-		<PageState
-			variant="permission"
-			title="ไม่มีสิทธิ์ดูการตั้งค่าโรงเรียน"
-			description="บัญชีนี้เข้า module ตั้งค่าได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลการตั้งค่าโรงเรียน"
-		/>
-	{:else if loading}
-		<PageSkeleton variant="form" rows={3} />
-	{:else}
-		<!-- Logo Card -->
-		<Card class="max-w-lg">
-			<CardHeader>
-				<CardTitle>Logo โรงเรียน</CardTitle>
-				<CardDescription>แสดงบนหน้ารับสมัครนักเรียนและหน้าอื่นๆ ของระบบ</CardDescription>
-			</CardHeader>
-			<CardContent class="space-y-6">
-				<!-- Preview -->
-				<div class="flex flex-col items-center gap-3">
-					<div
-						class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
-					>
-						{#if previewUrl}
-							<img src={previewUrl} alt="school logo" class="w-full h-full object-contain p-1" />
-						{:else if logoFileId}
-							<img
-								src={publicFileUrl(logoFileId)}
-								alt="school logo"
-								class="w-full h-full object-contain p-1"
-							/>
-						{:else}
-							<ImageOff class="w-8 h-8 text-muted-foreground" />
-						{/if}
+	<section data-testid="settings-school" aria-busy={loading}>
+		{#if loading && loaded}<p role="status">กำลังอัปเดตการตั้งค่า</p>{/if}
+		{#if loadError}<PageState
+				variant="error"
+				title="โหลดการตั้งค่าไม่สำเร็จ"
+				description={loadError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={loadSettings}
+			/>{/if}
+		{#if !canReadSettings}
+			<PageState
+				variant="permission"
+				title="ไม่มีสิทธิ์ดูการตั้งค่าโรงเรียน"
+				description="บัญชีนี้เข้า module ตั้งค่าได้ แต่ยังไม่มีสิทธิ์อ่านข้อมูลการตั้งค่าโรงเรียน"
+			/>
+		{:else if loading && !loaded}
+			<div role="status" aria-label="กำลังโหลดการตั้งค่า">
+				<PageSkeleton variant="form" rows={3} />
+			</div>
+		{:else if loaded}
+			<!-- Logo Card -->
+			<Card class="max-w-lg">
+				<CardHeader>
+					<CardTitle>Logo โรงเรียน</CardTitle>
+					<CardDescription>แสดงบนหน้ารับสมัครนักเรียนและหน้าอื่นๆ ของระบบ</CardDescription>
+				</CardHeader>
+				<CardContent class="space-y-6">
+					<!-- Preview -->
+					<div class="flex flex-col items-center gap-3">
+						<div
+							class="w-24 h-24 rounded-2xl border-2 border-dashed border-border flex items-center justify-center bg-muted overflow-hidden"
+						>
+							{#if previewUrl}
+								<img src={previewUrl} alt="school logo" class="w-full h-full object-contain p-1" />
+							{:else if logoFileId}
+								<img
+									src={publicFileUrl(logoFileId)}
+									alt="school logo"
+									class="w-full h-full object-contain p-1"
+								/>
+							{:else}
+								<ImageOff class="w-8 h-8 text-muted-foreground" />
+							{/if}
+						</div>
+						<p class="text-xs text-muted-foreground">
+							{#if pendingFile}
+								<span class="text-amber-600">ยังไม่ได้บันทึก — กด "บันทึก" เพื่อยืนยัน</span>
+							{:else}
+								ตัวอย่าง logo
+							{/if}
+						</p>
 					</div>
-					<p class="text-xs text-muted-foreground">
-						{#if pendingFile}
-							<span class="text-amber-600">ยังไม่ได้บันทึก — กด "บันทึก" เพื่อยืนยัน</span>
-						{:else}
-							ตัวอย่าง logo
-						{/if}
-					</p>
-				</div>
 
-				{#if canUpdateSettings}
-					<!-- Upload -->
-					<div class="space-y-2">
-						<Label>เลือกไฟล์ logo</Label>
-						<p class="text-xs text-muted-foreground">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2 MB</p>
-						<label class="cursor-pointer">
-							<input
-								type="file"
-								accept="image/jpeg,image/png,image/webp"
-								class="hidden"
-								onchange={handleLogoSelect}
-								disabled={saving}
-							/>
-							<Button variant="outline" class="gap-2 pointer-events-none" disabled={saving}>
-								<Upload class="w-4 h-4" />
-								เลือกไฟล์
-							</Button>
-						</label>
-					</div>
-				{/if}
+					{#if canUpdateSettings}
+						<!-- Upload -->
+						<div class="space-y-2">
+							<Label>เลือกไฟล์ logo</Label>
+							<p class="text-xs text-muted-foreground">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2 MB</p>
+							<label class="cursor-pointer">
+								<input
+									type="file"
+									accept="image/jpeg,image/png,image/webp"
+									class="hidden"
+									onchange={handleLogoSelect}
+									disabled={saving}
+								/>
+								<Button variant="outline" class="gap-2 pointer-events-none" disabled={saving}>
+									<Upload class="w-4 h-4" />
+									เลือกไฟล์
+								</Button>
+							</label>
+						</div>
+					{/if}
 
-				{#if canUpdateSettings}
-					<!-- Actions -->
-					<div class="flex items-center gap-3 pt-2">
-						<Button onclick={handleSave} disabled={saving} class="gap-2">
-							<Save class="w-4 h-4" />
-							{saving ? 'กำลังบันทึก...' : 'บันทึก'}
-						</Button>
-						{#if pendingFile}
-							<Button
-								variant="ghost"
-								class="gap-1.5 text-muted-foreground"
-								onclick={() => {
-									if (previewUrl) URL.revokeObjectURL(previewUrl);
-									pendingFile = undefined;
-									previewUrl = undefined;
-								}}
-								disabled={saving}
-							>
-								<X class="w-4 h-4" /> ยกเลิก
+					{#if canUpdateSettings}
+						<!-- Actions -->
+						<div class="flex items-center gap-3 pt-2">
+							<Button onclick={handleSave} disabled={saving} class="gap-2">
+								<Save class="w-4 h-4" />
+								{saving ? 'กำลังบันทึก...' : 'บันทึก'}
 							</Button>
-						{:else if logoFileId}
-							<Button
-								variant="ghost"
-								class="text-destructive hover:text-destructive"
-								onclick={handleDeleteLogo}
-								disabled={saving}
-							>
-								ลบ logo
-							</Button>
-						{/if}
-					</div>
-				{/if}
-			</CardContent>
-		</Card>
-	{/if}
+							{#if pendingFile}
+								<Button
+									variant="ghost"
+									class="gap-1.5 text-muted-foreground"
+									onclick={() => {
+										clearDraft();
+									}}
+									disabled={saving}
+								>
+									<X class="w-4 h-4" /> ยกเลิก
+								</Button>
+							{:else if logoFileId}
+								<Button
+									variant="ghost"
+									class="text-destructive hover:text-destructive"
+									onclick={handleDeleteLogo}
+									disabled={saving}
+								>
+									ลบ logo
+								</Button>
+							{/if}
+						</div>
+					{/if}
+				</CardContent>
+			</Card>
+		{/if}
+	</section>
 </PageShell>

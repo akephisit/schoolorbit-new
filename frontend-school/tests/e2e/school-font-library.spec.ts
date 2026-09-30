@@ -192,7 +192,7 @@ function harnessPlugin(): Plugin {
 					attachedBatches: () => structuredClone(attachedBatches),
 					cleanedFiles: () => [...cleanedFiles]
 				};
-				mount(SchoolFontLibrary, { target: document.getElementById('app') });
+				mount(SchoolFontLibrary, { target: document.getElementById('app'), props: { initialFonts: window.__schoolFontHarnessApi.list().then(data => ({ ok: true, data, error: null })) } });
 			`;
 		},
 		configureServer(server) {

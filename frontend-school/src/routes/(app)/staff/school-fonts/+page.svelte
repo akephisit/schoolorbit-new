@@ -1,4 +1,7 @@
 <script lang="ts">
+	import type { PageProps } from './$types';
+	import { authStore } from '$lib/stores/auth';
+	let { data }: PageProps = $props();
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageState } from '$lib/components/app-state';
 	import SchoolFontLibrary from '$lib/components/school-fonts/SchoolFontLibrary.svelte';
@@ -14,7 +17,7 @@
 	backHref="/staff/settings"
 >
 	{#if canManageFonts}
-		<SchoolFontLibrary />
+		{#key $authStore.user?.id}<SchoolFontLibrary initialFonts={data.fonts} />{/key}
 	{:else}
 		<PageState
 			variant="permission"

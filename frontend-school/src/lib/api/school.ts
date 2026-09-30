@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, requireApiData, type ApiRequestOptions } from './client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -26,10 +26,9 @@ function publicSchoolInfoFromDto(dto: PublicSchoolInfoDto): PublicSchoolInfo {
 	};
 }
 
-export async function getSchoolSettings(): Promise<SchoolSettings> {
-	const res = await apiClient.get<SchoolSettingsDto>('/api/school/settings');
-	if (!res.success) throw new Error(res.error);
-	return res.data ? schoolSettingsFromDto(res.data) : {};
+export async function getSchoolSettings(options: ApiRequestOptions = {}): Promise<SchoolSettings> {
+	const res = await apiClient.get<SchoolSettingsDto>('/api/school/settings', options);
+	return schoolSettingsFromDto(requireApiData(res, 'โหลดการตั้งค่าโรงเรียนไม่สำเร็จ'));
 }
 
 export async function updateSchoolSettings(data: UpdateSchoolSettingsRequest): Promise<void> {

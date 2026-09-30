@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 	import { ApiClientError } from '$lib/api/client';
 	import {
 		attachSchoolFontBatch,
@@ -7,7 +9,8 @@
 		inspectSchoolFontUploads,
 		listSchoolFonts,
 		type SchoolFontDeleteConflict,
-		type SchoolFontSummary
+		type SchoolFontSummary,
+		type SchoolFontListResponse
 	} from '$lib/api/school-fonts';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -24,6 +27,11 @@
 	import { toast } from 'svelte-sonner';
 	import SchoolFontBatchUpload from './SchoolFontBatchUpload.svelte';
 
+	let { initialFonts }: { initialFonts: Promise<RouteLoadResult<SchoolFontListResponse | null>> } =
+		$props();
+	const request = new LatestRequest();
+	let disposed = false;
+	let loaded = $state(false);
 	let fonts = $state.raw<SchoolFontSummary[]>([]);
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
@@ -60,22 +68,50 @@
 		return error instanceof Error ? error.message : fallback;
 	}
 
+	function applyFonts(result: RouteLoadResult<SchoolFontListResponse | null>, revision: number) {
+		if (!request.isCurrent(revision)) return;
+		loading = false;
+		refreshing = false;
+		if (result.ok) {
+			fonts = (result.data?.items ?? []).toSorted(compareFonts);
+			loaded = true;
+		} else loadError = result.error;
+	}
+	$effect.pre(() => {
+		const source = initialFonts;
+		untrack(() => {
+			const ticket = request.begin();
+			loading = true;
+			loadError = null;
+			void source.then((result) => applyFonts(result, ticket.revision));
+		});
+		return () => request.abort();
+	});
+	onDestroy(() => {
+		disposed = true;
+		request.abort();
+	});
 	async function loadFonts(refresh = false): Promise<void> {
-		if (refresh) refreshing = true;
-		else loading = true;
+		if (disposed) return;
+		const ticket = request.begin();
+		refreshing = refresh;
+		loading = true;
 		loadError = null;
-		try {
-			const result = await listSchoolFonts();
-			fonts = result.items.toSorted(compareFonts);
-		} catch (error) {
-			loadError = asMessage(error, 'โหลดคลังฟอนต์ไม่สำเร็จ');
-		} finally {
-			loading = false;
-			refreshing = false;
-		}
+		applyFonts(
+			await captureRouteLoad(listSchoolFonts({ signal: ticket.signal }), 'โหลดคลังฟอนต์ไม่สำเร็จ'),
+			ticket.revision
+		);
 	}
 
 	function patchAttached(items: SchoolFontSummary[]): void {
+		if (disposed) return;
+		request.abort();
+		loading = false;
+		refreshing = false;
+		if (!loaded) {
+			void loadFonts();
+			return;
+		}
 		const attachedIds = new Set(items.map((font) => font.id));
 		fonts = [...fonts.filter((font) => !attachedIds.has(font.id)), ...items].toSorted(compareFonts);
 		actionError = null;
@@ -90,15 +126,23 @@
 
 	async function confirmDelete(): Promise<void> {
 		const target = deleteTarget;
-		if (!target || deletingId) return;
+		if (!target || deletingId || disposed) return;
+		request.abort();
+		loading = false;
+		refreshing = false;
 		deletingId = target.id;
 		actionError = null;
 		try {
 			await deleteSchoolFont(target.id);
+			if (disposed) return;
+			request.abort();
+			loading = false;
+			refreshing = false;
 			fonts = fonts.filter((font) => font.id !== target.id);
 			deleteTarget = null;
 			toast.success(`ลบ ${target.displayName} จากคลังแล้ว`);
 		} catch (error) {
+			if (disposed) return;
 			const conflict = schoolFontDeleteConflict(error);
 			if (conflict) {
 				const referenceCount = conflict.referenceCount;
@@ -109,13 +153,9 @@
 			}
 			deleteTarget = null;
 		} finally {
-			deletingId = null;
+			if (!disposed) deletingId = null;
 		}
 	}
-
-	onMount(() => {
-		void loadFonts();
-	});
 </script>
 
 <div class="space-y-5" data-testid="school-font-library">
@@ -163,15 +203,15 @@
 			<CardContent class="space-y-4">
 				<div class="grid grid-cols-3 divide-x rounded-xl border bg-muted/20 py-3 text-center">
 					<div>
-						<p class="text-lg font-semibold tabular-nums">{families.length}</p>
+						<p class="text-lg font-semibold tabular-nums">{loaded ? families.length : '—'}</p>
 						<p class="text-[11px] text-muted-foreground">family</p>
 					</div>
 					<div>
-						<p class="text-lg font-semibold tabular-nums">{fonts.length}</p>
+						<p class="text-lg font-semibold tabular-nums">{loaded ? fonts.length : '—'}</p>
 						<p class="text-[11px] text-muted-foreground">variant</p>
 					</div>
 					<div>
-						<p class="text-lg font-semibold tabular-nums">{totalReferences}</p>
+						<p class="text-lg font-semibold tabular-nums">{loaded ? totalReferences : '—'}</p>
 						<p class="text-[11px] text-muted-foreground">การใช้งาน</p>
 					</div>
 				</div>
@@ -185,9 +225,13 @@
 					</div>
 				{/if}
 
-				{#if loading}
-					<PageSkeleton variant="detail" rows={4} />
-				{:else if loadError}
+				{#if loading && !loaded}
+					<div role="status" aria-label="กำลังโหลดคลังฟอนต์">
+						<PageSkeleton variant="detail" rows={4} />
+					</div>
+				{/if}
+				{#if loading && loaded}<p role="status">กำลังอัปเดตคลังฟอนต์</p>{/if}
+				{#if loadError}
 					<PageState
 						variant="error"
 						title="โหลดคลังฟอนต์ไม่สำเร็จ"
@@ -195,12 +239,13 @@
 						actionLabel="ลองอีกครั้ง"
 						onaction={() => loadFonts()}
 					/>
-				{:else if families.length === 0}
+				{/if}
+				{#if loaded && families.length === 0}
 					<PageState
 						title="คลังฟอนต์ยังว่าง"
 						description="เลือกไฟล์ทางซ้ายเพื่อตรวจและเพิ่มฟอนต์ชุดแรกของโรงเรียน"
 					/>
-				{:else}
+				{:else if loaded}
 					<div class="space-y-3">
 						{#each families as group (group.family)}
 							<article class="overflow-hidden rounded-xl border">

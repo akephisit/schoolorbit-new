@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
@@ -13,8 +13,10 @@ export type SchoolFontUploadStatus = Schemas['SchoolFontUploadStatus'];
 export type SchoolFontDeleteConflict = Schemas['SchoolFontDeleteConflict'];
 type EmptyData = Schemas['EmptyData'];
 
-export async function listSchoolFonts(): Promise<SchoolFontListResponse> {
-	const response = await apiClient.get<SchoolFontListResponse>('/api/school-fonts');
+export async function listSchoolFonts(
+	options: ApiRequestOptions = {}
+): Promise<SchoolFontListResponse> {
+	const response = await apiClient.get<SchoolFontListResponse>('/api/school-fonts', options);
 	return requireApiData(response, 'โหลดคลังฟอนต์ไม่สำเร็จ');
 }
 
