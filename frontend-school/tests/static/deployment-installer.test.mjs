@@ -433,6 +433,129 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 	}
 });
 
+test('academic smoke reads the canonical timetable workspace with its selected year term and published version', async () => {
+	const smoke = await readRepo('scripts/smoke_test.sh');
+	const openapi = JSON.parse(await readRepo('contracts/openapi/school-api.json'));
+	const [workspacePath, { get: workspace }] = Object.entries(openapi.paths).find(
+		([, resource]) => resource.get?.operationId === 'getTimetableBlockWorkspace'
+	);
+	const yearId = '00000000-0000-0000-0000-000000000001';
+	const termId = '00000000-0000-0000-0000-000000000002';
+	const otherTermId = '00000000-0000-0000-0000-000000000003';
+	const versionId = '00000000-0000-0000-0000-000000000004';
+	const directory = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-academic-smoke-'));
+	try {
+		await writeFile(
+			path.join(directory, 'context.json'),
+			JSON.stringify({
+				success: true,
+				data: {
+					activeAcademicYearId: yearId,
+					activeAcademicTermId: termId,
+					years: [
+						{
+							id: yearId,
+							year: 2569,
+							name: '2569',
+							startDate: '2026-05-01',
+							endDate: '2027-04-30',
+							status: 'active'
+						}
+					],
+					terms: [termId, otherTermId].map((id, index) => ({
+						id,
+						academicYearId: yearId,
+						sequence: index + 1,
+						code: String(index + 1),
+						name: `Term ${index + 1}`,
+						termType: 'regular',
+						startDate: '2026-05-01',
+						plannedEndDate: '2026-10-01',
+						closedOn: null,
+						includedInYearResult: true,
+						blocksYearClosure: true,
+						status: index === 0 ? 'active' : 'planning'
+					}))
+				}
+			})
+		);
+		await writeFile(
+			path.join(directory, 'versions.json'),
+			JSON.stringify({
+				success: true,
+				data: [
+					{
+						id: versionId,
+						academicYearId: yearId,
+						academicTermId: termId,
+						effectiveFrom: '2026-05-01',
+						effectiveUntil: null,
+						status: 'published',
+						displayState: null,
+						sourceVersionId: null,
+						changeSetId: null,
+						bellScheduleId: '00000000-0000-0000-0000-000000000005',
+						rowVersion: 1,
+						createdBy: null,
+						publishedBy: null,
+						publishedAt: '2026-05-01T00:00:00Z',
+						createdAt: '2026-05-01T00:00:00Z',
+						updatedAt: '2026-05-01T00:00:00Z',
+						targets: []
+					}
+				]
+			})
+		);
+		const start = smoke.indexOf('run_academic_context_smoke() {');
+		const end = smoke.indexOf('# Academic Core maintenance read-only smoke end', start);
+		assert.ok(start >= 0 && end > start, 'the runnable academic smoke region must exist');
+		const { stdout } = await execFileAsync('bash', [
+			'-euc',
+			`
+tmp_dir=$1
+academic_context_get() {
+    printf '%s\\t%s\\n' "$1" "$3" >>"$tmp_dir/requests"
+    case "$1" in
+        context) cp "$tmp_dir/context.json" "$tmp_dir/academic-$1.body" ;;
+        timetable-versions-1) cp "$tmp_dir/versions.json" "$tmp_dir/academic-$1.body" ;;
+        timetable-versions-2) printf '%s' '{"success":true,"data":[]}' >"$tmp_dir/academic-$1.body" ;;
+    esac
+}
+pass() { :; }
+fail() { printf '%s\\n' "$1" >&2; exit 1; }
+${smoke.slice(start, end)}
+run_academic_context_smoke
+`,
+			'academic-smoke-test',
+			directory
+		]);
+		const requests = (await readFile(path.join(directory, 'requests'), 'utf8'))
+			.trim()
+			.split('\n')
+			.map((line) => line.split('\t'));
+		const timetableRequests = requests.filter(([key]) => /^timetable-\d+$/.test(key));
+		assert.equal(timetableRequests.length, 1, 'only the context with a published version is read');
+		const url = new URL(timetableRequests[0][1], 'https://school-api.example.test');
+		assert.equal(url.pathname, workspacePath, 'smoke must use the registered workspace operation');
+		assert.deepEqual(Object.fromEntries(url.searchParams), {
+			academicYearId: yearId,
+			academicTermId: termId,
+			timetableVersionId: versionId
+		});
+		for (const parameter of workspace.parameters.filter(
+			(item) => item.in === 'query' && item.required
+		)) {
+			assert.ok(
+				url.searchParams.has(parameter.name),
+				`smoke must supply required query ${parameter.name}`
+			);
+		}
+		assert.match(stdout, /SKIP academic timetable context 2: no published timetable version/);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 test('backend-school deployment repairs the admin network alias before maintenance activation', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const adminNetworkRepair = workflow.indexOf(

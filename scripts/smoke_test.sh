@@ -538,7 +538,7 @@ PY
             timetable_version_id=
         fi
         if [[ -n $timetable_version_id ]]; then
-            academic_context_get "timetable-$term_index" "academic timetable context $term_index" "/api/academic/timetable?timetableVersionId=$timetable_version_id&academicTermId=$term_id"
+            academic_context_get "timetable-$term_index" "academic timetable context $term_index" "/api/academic/timetable-blocks/workspace?academicYearId=$year_id&academicTermId=$term_id&timetableVersionId=$timetable_version_id"
         else
             printf 'SKIP academic timetable context %s: no published timetable version.\n' "$term_index"
         fi
