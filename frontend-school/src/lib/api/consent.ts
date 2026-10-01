@@ -17,35 +17,8 @@ export interface ConsentType {
 	is_active: boolean;
 }
 
-export interface ConsentRecord {
-	id: string;
-	user_id: string;
-	user_type: string;
-	consent_type: string;
-	consent_type_name: string | null;
-	purpose: string;
-	data_categories: string[];
-	consent_status: 'pending' | 'granted' | 'denied' | 'withdrawn';
-	granted_at: string | null;
-	withdrawn_at: string | null;
-	expires_at: string | null;
-	is_expired: boolean;
-	is_required: boolean;
-	consent_method: string;
-	is_minor_consent: boolean;
-	parent_guardian_name: string | null;
-	created_at: string;
-}
-
-export interface UserConsentStatus {
-	user_id: string;
-	user_type: string;
-	total_required: number;
-	granted_required: number;
-	is_compliant: boolean;
-	missing_required_consents: string[];
-	consents: ConsentRecord[];
-}
+export type ConsentRecord = components['schemas']['ConsentRecordResponse'];
+export type UserConsentStatus = components['schemas']['UserConsentStatus'];
 
 export interface CreateConsentRequest {
 	consent_type: string;
@@ -69,7 +42,8 @@ export interface ConsentSummary {
 // Consent API Client
 // ===================================================================
 
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
+import type { components } from '$lib/api/generated/school-api';
 
 const API_BASE = '/api';
 
@@ -87,8 +61,11 @@ export const consentApi = {
 	/**
 	 * Get current user's consent status
 	 */
-	async getMyConsentStatus(): Promise<UserConsentStatus> {
-		const response = await apiClient.get<UserConsentStatus>(`${API_BASE}/consent/my-status`);
+	async getMyConsentStatus(options: ApiRequestOptions = {}): Promise<UserConsentStatus> {
+		const response = await apiClient.get<UserConsentStatus>(
+			`${API_BASE}/consent/my-status`,
+			options
+		);
 		return requireApiData(response, 'Failed to fetch consent status');
 	},
 
@@ -118,13 +95,9 @@ export const consentApi = {
 	/**
 	 * Withdraw consent
 	 */
-	async withdrawConsent(
-		consentId: string,
-		reason?: string
-	): Promise<{ success: boolean; message: string }> {
-		const response = await apiClient.post<Record<string, never>>(
-			`${API_BASE}/consent/${consentId}/withdraw`,
-			{ reason }
+	async withdrawConsent(consentId: string): Promise<{ success: boolean; message: string }> {
+		const response = await apiClient.post<components['schemas']['EmptyData']>(
+			`${API_BASE}/consent/${encodeURIComponent(consentId)}/withdraw`
 		);
 		if (!response.success) throw new Error(response.error || 'Failed to withdraw consent');
 		return { success: true, message: response.message || 'ถอนความยินยอมสำเร็จ' };

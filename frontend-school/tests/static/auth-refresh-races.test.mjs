@@ -17,7 +17,7 @@ async function load(relative, dependencies) {
 	}, exports);
 	return exports;
 }
-async function harness() {
+async function harness(extraClient = {}) {
 	const { authStore } = await load('../../src/lib/stores/auth.ts', {
 		'svelte/store': { writable },
 		'./permissions': { setPermissions() {}, clearPermissions() {} }
@@ -27,12 +27,16 @@ async function harness() {
 	const requests = [];
 	const { authAPI } = await load('../../src/lib/api/auth.ts', {
 		'$lib/api/client': {
-			apiClient: { get: () => new Promise((resolve) => requests.push(resolve)) }
+			apiClient: { get: () => new Promise((resolve) => requests.push(resolve)), ...extraClient },
+			requireApiData(response) {
+				assert.equal(response.success, true);
+				return response.data;
+			}
 		},
 		'$lib/api/session-security': { clearSessionSecurity() {} },
 		'$lib/auth/auth-refresh-policy': { authRefreshDecision },
 		'$lib/stores/auth': { authStore },
-		'svelte-sonner': { toast: {} }
+		'svelte-sonner': { toast: { success() {} } }
 	});
 	return {
 		authAPI,
@@ -187,4 +191,141 @@ test('layout-owned counts cannot overwrite a newer refresh or refill a reset ide
 	);
 	await Promise.resolve();
 	assert.equal(state.counts.total, 0);
+});
+
+test('route session identity survives refresh but changes across same-user reauthentication', async () => {
+	const h = await harness();
+	const user = { id: 'same', firstName: 'Same', lastName: 'User', user_type: 'staff' };
+	h.authStore.setUser(user, []);
+	const before = h.authStore.sessionEpoch;
+	assert.equal(typeof before, 'number');
+	h.authStore.setUser(user, []);
+	assert.equal(h.authStore.sessionEpoch, before);
+	h.authStore.clearUser();
+	h.authStore.setUser(user, []);
+	assert.notEqual(h.authStore.sessionEpoch, before);
+});
+
+for (const action of ['logout', 'logoutAll', 'revokeSession']) {
+	test(`${action}: late completion does not clear a newer authenticated session`, async () => {
+		let release;
+		const operation = () =>
+			new Promise((resolve) => {
+				release = resolve;
+			});
+		const h = await harness({ post: operation, delete: operation });
+		const user = { id: 'same', firstName: 'Same', lastName: 'User', user_type: 'staff' };
+		h.authStore.setUser(user, []);
+		const pending =
+			action === 'revokeSession'
+				? h.authAPI.revokeSession('current', { current: true })
+				: h.authAPI[action]();
+		h.authStore.clearUser();
+		h.authStore.setUser(user, []);
+		release({ success: true, data: {} });
+		await pending;
+		assert.equal(h.state.user.id, 'same');
+	});
+	test(`${action}: an ordinary current-user refresh still permits session cleanup`, async () => {
+		let release;
+		const operation = () =>
+			new Promise((resolve) => {
+				release = resolve;
+			});
+		const h = await harness({ post: operation, delete: operation });
+		const user = { id: 'same', firstName: 'Same', lastName: 'User', user_type: 'staff' };
+		h.authStore.setUser(user, []);
+		const pending =
+			action === 'revokeSession'
+				? h.authAPI.revokeSession('current', { current: true })
+				: h.authAPI[action]();
+		h.authStore.setUser(user, []);
+		release({ success: true, data: {} });
+		await pending;
+		assert.equal(h.state.user, null);
+	});
+}
+
+async function transportHarness() {
+	const h = await harness();
+	const captured = [];
+	const { apiClient } = await load('../../src/lib/api/client.ts', {
+		'$app/environment': { browser: false },
+		'$app/paths': { resolve: (value) => value },
+		'$env/dynamic/public': { env: {} },
+		'$env/static/public': { PUBLIC_BACKEND_URL: 'https://api.example.invalid' },
+		'$lib/api/session-security': {
+			captureSessionSecurityHeaders(headers) {
+				captured.push(headers.get('X-CSRF-Token'));
+			},
+			clearSessionSecurity() {},
+			retryAfterSeconds() {},
+			withSessionSecurityHeaders: (_method, headers) => headers
+		},
+		'$lib/api/query': { appendApiQuery: (endpoint) => endpoint },
+		'$lib/api/school-subdomain': { normalizeSchoolSubdomain: (value) => value ?? null },
+		'$lib/deployment/maintenance': { confirmMaintenance() {}, probeDeploymentStatus() {} },
+		'$lib/deployment/maintenance-controller': { isMaintenanceResponse: () => false },
+		'$lib/stores/auth': { authStore: h.authStore }
+	});
+	return {
+		...h,
+		apiClient,
+		captured,
+		get state() {
+			return h.state;
+		}
+	};
+}
+for (const status of [200, 401]) {
+	test(`late ${status} cannot change CSRF or identity after same-user reauthentication`, async () => {
+		const h = await transportHarness();
+		const user = { id: 'same', firstName: 'Same', lastName: 'User', user_type: 'staff' };
+		h.authStore.setUser(user, []);
+		let release;
+		const pending = h.apiClient.get('/api/held', {
+			requestFetch: () =>
+				new Promise((resolve) => {
+					release = resolve;
+				})
+		});
+		h.authStore.clearUser();
+		h.authStore.setUser(user, []);
+		release(
+			new Response(
+				JSON.stringify(
+					status === 200 ? { success: true, data: [] } : { success: false, error: 'old session' }
+				),
+				{
+					status,
+					headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'old-synthetic-csrf' }
+				}
+			)
+		);
+		const result = await pending;
+		assert.equal(result.status, status);
+		assert.equal(h.state.user?.id, 'same');
+		assert.deepEqual(h.captured, []);
+	});
+}
+test('a current-session 401 still clears authentication after an ordinary refresh', async () => {
+	const h = await transportHarness();
+	const user = { id: 'same', firstName: 'Same', lastName: 'User', user_type: 'staff' };
+	h.authStore.setUser(user, []);
+	let release;
+	const pending = h.apiClient.get('/api/held', {
+		requestFetch: () =>
+			new Promise((resolve) => {
+				release = resolve;
+			})
+	});
+	h.authStore.setUser(user, []);
+	release(
+		new Response(JSON.stringify({ success: false, error: 'expired' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json' }
+		})
+	);
+	await pending;
+	assert.equal(h.state.user, null);
 });

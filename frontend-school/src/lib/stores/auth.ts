@@ -22,6 +22,8 @@ export interface AuthState {
 
 function createAuthStore() {
 	let generation = 0;
+	let sessionEpoch = 0;
+	let identity = '';
 	const { subscribe, set, update } = writable<AuthState>({
 		user: null,
 		isAuthenticated: false,
@@ -34,7 +36,13 @@ function createAuthStore() {
 		get generation() {
 			return generation;
 		},
+		get sessionEpoch() {
+			return sessionEpoch;
+		},
 		setUser: (user: User, permissions: string[]) => {
+			const nextIdentity = `${user.id}:${user.user_type ?? ''}`;
+			if (identity !== nextIdentity) sessionEpoch++;
+			identity = nextIdentity;
 			generation++;
 			set({
 				user,
@@ -46,6 +54,8 @@ function createAuthStore() {
 			setPermissions(permissions);
 		},
 		clearUser: () => {
+			sessionEpoch++;
+			identity = '';
 			generation++;
 			set({
 				user: null,

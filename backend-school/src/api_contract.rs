@@ -6,6 +6,7 @@ use crate::modules::admission::handlers::applications::StaffDocumentMultipart;
 use crate::modules::admission::handlers::portal::{
     PortalDocumentMultipart, PortalUploadDocumentData,
 };
+use crate::modules::consent::models::{ConsentRecordResponse, UserConsentStatus};
 use crate::modules::facility::models::{
     Building, CreateBuildingRequest, CreateRoomRequest, Room, UpdateBuildingRequest,
     UpdateRoomRequest,
@@ -167,6 +168,8 @@ use utoipa::OpenApi;
         crate::modules::auth::session_handlers::list_sessions,
         crate::modules::auth::session_handlers::revoke_session,
         crate::modules::auth::session_handlers::logout_all,
+        crate::modules::consent::handlers::get_my_consent_status,
+        crate::modules::consent::handlers::withdraw_consent,
         crate::modules::files::handlers::upload_file,
         crate::modules::files::handlers::get_file_metadata,
         crate::modules::files::handlers::download_file,
@@ -640,6 +643,9 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::organization_members::remove_member
     ),
     components(schemas(
+        ConsentRecordResponse,
+        UserConsentStatus,
+        ApiResponse<UserConsentStatus>,
         LoginRequest,
         LoginData,
         ProfileResponse,
@@ -1721,6 +1727,7 @@ use utoipa::OpenApi;
     )),
     tags(
         (name = "auth", description = "Authentication and current-user operations"),
+        (name = "consent", description = "Owned consent status and withdrawal"),
         (name = "roles", description = "Role assignment and role administration"),
         (name = "permissions", description = "Permission discovery and effective permissions"),
         (name = "organization", description = "Organization units and scoped access"),
@@ -2895,6 +2902,36 @@ mod tests {
         let grant = &schemas["OrganizationPermissionGrant"];
         assert!(required(grant).contains(&"position_code"));
         assert!(contains_null(&grant["properties"]["position_code"]));
+    }
+
+    #[test]
+    fn documents_owned_consent_status_and_withdraw_operations() {
+        let document = school_api_value().expect("document should serialize");
+        assert_operations(
+            &document,
+            &[
+                ("/api/consent/my-status", "get", "getMyConsentStatus"),
+                ("/api/consent/{id}/withdraw", "post", "withdrawOwnConsent"),
+            ],
+        );
+        let record = &document["components"]["schemas"]["ConsentRecordResponse"];
+        assert!(
+            document["paths"]["/api/consent/{id}/withdraw"]["post"]["responses"]["400"].is_object()
+        );
+        for field in [
+            "consent_type_name",
+            "granted_at",
+            "withdrawn_at",
+            "expires_at",
+            "parent_guardian_name",
+        ] {
+            assert!(required(record).contains(&field));
+            assert!(contains_null(&record["properties"][field]));
+        }
+        assert!(
+            document["components"]["schemas"]["UserConsentStatus"]["properties"]["is_compliant"]
+                .is_object()
+        );
     }
 
     #[test]

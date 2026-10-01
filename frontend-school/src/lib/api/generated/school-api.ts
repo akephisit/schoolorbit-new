@@ -4236,6 +4236,46 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/consent/{id}/withdraw': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/**
+		 * Withdraw consent
+		 *     POST /api/consent/:id/withdraw
+		 */
+		post: operations['withdrawOwnConsent'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/consent/my-status': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/**
+		 * Get user's consent status
+		 *     GET /api/consent/my-status
+		 */
+		get: operations['getMyConsentStatus'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/facilities/buildings': {
 		parameters: {
 			query?: never;
@@ -9838,6 +9878,22 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_UserConsentStatus: {
+			data: {
+				consents: components['schemas']['ConsentRecordResponse'][];
+				/** Format: int32 */
+				granted_required: number;
+				is_compliant: boolean;
+				missing_required_consents: string[];
+				/** Format: int32 */
+				total_required: number;
+				/** Format: uuid */
+				user_id: string;
+				user_type: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_UserMenuData: {
 			data: {
 				groups: components['schemas']['MenuGroupResponse'][];
@@ -13065,6 +13121,31 @@ export interface components {
 			/** Format: int64 */
 			rowVersion?: number | null;
 			sourceChecksum: string;
+		};
+		ConsentRecordResponse: {
+			consent_method: string;
+			consent_status: string;
+			consent_type: string;
+			consent_type_name: string | null;
+			/** Format: date-time */
+			created_at: string;
+			data_categories: string[];
+			/** Format: date-time */
+			expires_at: string | null;
+			/** Format: date-time */
+			granted_at: string | null;
+			/** Format: uuid */
+			id: string;
+			is_expired: boolean;
+			is_minor_consent: boolean;
+			is_required: boolean;
+			parent_guardian_name: string | null;
+			purpose: string;
+			/** Format: uuid */
+			user_id: string;
+			user_type: string;
+			/** Format: date-time */
+			withdrawn_at: string | null;
 		};
 		ControlInput: {
 			entryEnabled: boolean;
@@ -19429,6 +19510,18 @@ export interface components {
 			/** Format: uuid */
 			subjectId: string;
 			tags: string[];
+		};
+		UserConsentStatus: {
+			consents: components['schemas']['ConsentRecordResponse'][];
+			/** Format: int32 */
+			granted_required: number;
+			is_compliant: boolean;
+			missing_required_consents: string[];
+			/** Format: int32 */
+			total_required: number;
+			/** Format: uuid */
+			user_id: string;
+			user_type: string;
 		};
 		UserMenuData: {
 			groups: components['schemas']['MenuGroupResponse'][];
@@ -39252,6 +39345,85 @@ export interface operations {
 			};
 			/** @description Certificate template not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	withdrawOwnConsent: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Owned consent record */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Owned optional consent withdrawn */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Required consent cannot be withdrawn */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Owned consent not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getMyConsentStatus: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Owned consent status */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_UserConsentStatus'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
 				headers: {
 					[name: string]: unknown;
 				};

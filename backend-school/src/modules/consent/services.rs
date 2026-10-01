@@ -381,7 +381,13 @@ fn build_user_consent_status(
         granted_required: granted_required_codes.len() as i32,
         is_compliant: missing_required.is_empty(),
         missing_required_consents: missing_required,
-        consents,
+        consents: consents
+            .into_iter()
+            .map(|mut consent| {
+                consent.is_required = required_code_set.contains(consent.consent_type.as_str());
+                consent
+            })
+            .collect(),
     }
 }
 
@@ -480,6 +486,8 @@ mod tests {
         assert!(status.is_compliant);
         assert_eq!(status.total_required, 1);
         assert_eq!(status.granted_required, 1);
+        assert!(status.consents[0].is_required);
+        assert!(!status.consents[1].is_required);
     }
 
     #[test]

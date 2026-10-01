@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockSelfProfile, studentRoute, year } from './fixtures/self-profile-route-data';
+test.use({ serviceWorkers: 'block' });
 for (const route of ['/student', '/student/profile']) {
 	test(`${route}: delayed primary has first skeleton`, async ({ page }) => {
 		const api = await mockSelfProfile(page, { hold: 'profile' });

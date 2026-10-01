@@ -3,7 +3,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { authStore } from '$lib/stores/auth';
 	import { authAPI } from '$lib/api/auth';
-	import { goto } from '$app/navigation';
+	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
 
@@ -11,7 +11,9 @@
 	const isLoading = $derived($authStore.isLoading);
 
 	async function handleLogout() {
+		const epoch = authStore.sessionEpoch;
 		await authAPI.logout();
+		if ($authStore.isAuthenticated || authStore.sessionEpoch !== epoch + 1) return;
 		// Clear redirectAfterLogin to prevent layout from redirecting back to protected page
 		sessionStorage.removeItem('redirectAfterLogin');
 		await goto(resolve('/login'), { invalidateAll: true });
@@ -49,8 +51,12 @@
 		}
 	}
 
-	function goToSecurity() {
-		void goto(resolve('/account/security'));
+	async function goToSecurity() {
+		const epoch = authStore.sessionEpoch;
+		const target = resolve('/account/security');
+		await preloadData(target);
+		if (!$authStore.isAuthenticated || authStore.sessionEpoch !== epoch) return;
+		await goto(target);
 	}
 </script>
 

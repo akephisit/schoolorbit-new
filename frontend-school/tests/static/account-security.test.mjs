@@ -32,7 +32,7 @@ async function listSourceFiles(relativeDirectory) {
 	return files;
 }
 
-test('account security is guard-only and available to every authenticated user type', async () => {
+test('account security is route-owned and available to every authenticated user type', async () => {
 	const pageMeta = await readFrontendFile('src/routes/(app)/account/security/+page.ts');
 	const page = await readFrontendFile('src/routes/(app)/account/security/+page.svelte');
 	const routeAccess = await readFrontendFile('src/lib/auth/route-access.ts');
@@ -40,7 +40,9 @@ test('account security is guard-only and available to every authenticated user t
 	assert.match(pageMeta, /access:\s*\{\s*authenticated:\s*true\s*\}/s);
 	assert.doesNotMatch(pageMeta, /\bmenu\s*:/);
 	assert.match(page, /<PageShell[^>]*title="ความปลอดภัยของบัญชี"/);
-	assert.match(page, /<SessionSecurityPanel\s*\/>/);
+	assert.match(page, /<SessionSecurityPanel[^>]*source=\{data\.sessions\}/);
+	assert.match(pageMeta, /authAPI\.listSessions/);
+	assert.match(pageMeta, /requestFetch: fetch/);
 	assert.match(routeAccess, /authenticated\?:\s*boolean/);
 	assert.match(routeAccess, /access\.authenticated/);
 	assert.match(routeAccess, /if\s*\(!user\)\s*return\s+false/);
@@ -72,7 +74,9 @@ test('session security panel owns loading, retry, session mutations, and passwor
 	);
 
 	assert.match(panel, /\$state\.raw<SessionDto\[\]>\(\[\]\)/);
-	assert.match(panel, /onMount\(loadSessions\)/);
+	assert.doesNotMatch(panel, /onMount\(/);
+	assert.match(panel, /LatestRequest/);
+	assert.match(panel, /\$effect\.pre/);
 	assert.match(panel, /\{#each\s+sessions\s+as\s+session\s+\(session\.id\)\}/);
 	assert.match(panel, /<PageSkeleton/);
 	assert.match(panel, /<PageState[\s\S]*variant="error"[\s\S]*onaction=\{loadSessions\}/);

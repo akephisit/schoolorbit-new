@@ -19,5 +19,7 @@ export function waitForAuthenticatedUser(): Promise<User | null> {
 
 export function appIdentityKey(): string {
 	const user = get(authStore).user;
-	return user ? `${user.id}:${get(userPermissions).slice().sort().join(',')}` : '';
+	return user
+		? `${authStore.sessionEpoch}:${user.user_type ?? ''}:${user.id}:${get(userPermissions).slice().sort().join(',')}`
+		: '';
 }

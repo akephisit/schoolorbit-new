@@ -9,14 +9,15 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
+use super::models::UserConsentStatus;
 use crate::modules::consent::models::CreateConsentRequest;
 use crate::modules::consent::services::{self as consent_service, ConsentRequestContext};
 use crate::utils::request_context::current_user_tenant_context_from_session;
 use crate::utils::tenant::tenant_pool;
 use crate::AppState;
 use school_auth::session_service::AuthenticatedSession;
-use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
 
 #[derive(Debug, Serialize)]
 struct CreateConsentData {
@@ -59,6 +60,13 @@ pub async fn get_consent_types(
 
 /// Get user's consent status
 /// GET /api/consent/my-status
+#[utoipa::path(
+    get, path = "/api/consent/my-status", operation_id = "getMyConsentStatus", tag = "consent",
+    responses(
+        (status = 200, description = "Owned consent status", body = ApiResponse<UserConsentStatus>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+    )
+)]
 pub async fn get_my_consent_status(
     Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -96,6 +104,16 @@ pub async fn create_consent(
 
 /// Withdraw consent
 /// POST /api/consent/:id/withdraw
+#[utoipa::path(
+    post, path = "/api/consent/{id}/withdraw", operation_id = "withdrawOwnConsent", tag = "consent",
+    params(("id" = Uuid, Path, description = "Owned consent record")),
+    responses(
+        (status = 200, description = "Owned optional consent withdrawn", body = ApiResponse<EmptyData>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 400, description = "Required consent cannot be withdrawn", body = ApiErrorResponse),
+        (status = 404, description = "Owned consent not found", body = ApiErrorResponse)
+    )
+)]
 pub async fn withdraw_consent(
     Extension(session): Extension<AuthenticatedSession>,
     Path(consent_id): Path<Uuid>,

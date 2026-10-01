@@ -14540,6 +14540,65 @@
         ],
         "type": "object"
       },
+      "ApiResponse_UserConsentStatus": {
+        "properties": {
+          "data": {
+            "properties": {
+              "consents": {
+                "items": {
+                  "$ref": "#/components/schemas/ConsentRecordResponse"
+                },
+                "type": "array"
+              },
+              "granted_required": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "is_compliant": {
+                "type": "boolean"
+              },
+              "missing_required_consents": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "total_required": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "user_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "user_type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "user_type",
+              "total_required",
+              "granted_required",
+              "is_compliant",
+              "missing_required_consents",
+              "consents"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_UserMenuData": {
         "properties": {
           "data": {
@@ -26413,6 +26472,105 @@
         "required": [
           "sourceChecksum",
           "rosterChecksum"
+        ],
+        "type": "object"
+      },
+      "ConsentRecordResponse": {
+        "properties": {
+          "consent_method": {
+            "type": "string"
+          },
+          "consent_status": {
+            "type": "string"
+          },
+          "consent_type": {
+            "type": "string"
+          },
+          "consent_type_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "data_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "granted_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "is_expired": {
+            "type": "boolean"
+          },
+          "is_minor_consent": {
+            "type": "boolean"
+          },
+          "is_required": {
+            "type": "boolean"
+          },
+          "parent_guardian_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "user_type": {
+            "type": "string"
+          },
+          "withdrawn_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "user_type",
+          "consent_type",
+          "consent_type_name",
+          "purpose",
+          "data_categories",
+          "consent_status",
+          "granted_at",
+          "withdrawn_at",
+          "expires_at",
+          "is_expired",
+          "is_required",
+          "consent_method",
+          "is_minor_consent",
+          "parent_guardian_name",
+          "created_at"
         ],
         "type": "object"
       },
@@ -49724,6 +49882,50 @@
           "tags",
           "status",
           "choices"
+        ],
+        "type": "object"
+      },
+      "UserConsentStatus": {
+        "properties": {
+          "consents": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentRecordResponse"
+            },
+            "type": "array"
+          },
+          "granted_required": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "is_compliant": {
+            "type": "boolean"
+          },
+          "missing_required_consents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "total_required": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "user_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "user_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "user_type",
+          "total_required",
+          "granted_required",
+          "is_compliant",
+          "missing_required_consents",
+          "consents"
         ],
         "type": "object"
       },
@@ -76189,6 +76391,100 @@
         ]
       }
     },
+    "/api/consent/{id}/withdraw": {
+      "post": {
+        "operationId": "withdrawOwnConsent",
+        "parameters": [
+          {
+            "description": "Owned consent record",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Owned optional consent withdrawn"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Required consent cannot be withdrawn"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Owned consent not found"
+          }
+        },
+        "summary": "Withdraw consent\nPOST /api/consent/:id/withdraw",
+        "tags": [
+          "consent"
+        ]
+      }
+    },
+    "/api/consent/my-status": {
+      "get": {
+        "operationId": "getMyConsentStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserConsentStatus"
+                }
+              }
+            },
+            "description": "Owned consent status"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Get user's consent status\nGET /api/consent/my-status",
+        "tags": [
+          "consent"
+        ]
+      }
+    },
     "/api/facilities/buildings": {
       "get": {
         "operationId": "listFacilityBuildings",
@@ -84519,6 +84815,10 @@
     {
       "description": "Authentication and current-user operations",
       "name": "auth"
+    },
+    {
+      "description": "Owned consent status and withdrawal",
+      "name": "consent"
     },
     {
       "description": "Role assignment and role administration",

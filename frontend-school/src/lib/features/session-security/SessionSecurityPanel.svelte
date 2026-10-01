@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { authStore } from '$lib/stores/auth';
+	import { can } from '$lib/stores/permissions';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
 	import { authAPI, type SessionDto } from '$lib/api/auth';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -20,18 +25,94 @@
 	import { Clock3, KeyRound, Laptop, LogOut, ShieldCheck, Trash2 } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
+	let {
+		source,
+		requestKey
+	}: {
+		source: Promise<RouteLoadResult<{ ownerKey: string; sessions: SessionDto[] }>>;
+		requestKey: string;
+	} = $props();
+	const identityKey = $derived.by(() => {
+		void $authStore;
+		void $can;
+		return appIdentityKey();
+	});
+	const ownerKey = $derived(`${identityKey}|${requestKey}`);
+	const allowed = $derived($authStore.isAuthenticated);
 	let sessions = $state.raw<SessionDto[]>([]);
-	let isLoading = $state(true);
-	let loadError = $state('');
+	let sessionsLoaded = $state(false),
+		isLoading = $state(true),
+		loadError = $state('');
 	let revokingSessionId = $state<string | null>(null);
-	let isLoggingOutAll = $state(false);
-	let isChangingPassword = $state(false);
-	let currentPassword = $state('');
-	let newPassword = $state('');
-	let confirmPassword = $state('');
+	let isLoggingOutAll = $state(false),
+		isChangingPassword = $state(false);
+	let currentPassword = $state(''),
+		newPassword = $state(''),
+		confirmPassword = $state('');
 	let selectedCurrentSession = $state<SessionDto | null>(null);
-	let currentSessionDialogOpen = $state(false);
-	let logoutAllDialogOpen = $state(false);
+	let currentSessionDialogOpen = $state(false),
+		logoutAllDialogOpen = $state(false);
+	const actionBusy = $derived(revokingSessionId !== null || isLoggingOutAll || isChangingPassword);
+	const sessionRequest = new LatestRequest();
+	let consumedSource: typeof source | null = null;
+	let owner = '',
+		disposed = false;
+	$effect.pre(() => {
+		const key = ownerKey,
+			read = source,
+			canRead = allowed;
+		untrack(() => {
+			if (owner !== key || !canRead) {
+				owner = key;
+				sessionRequest.abort();
+				sessions = [];
+				sessionsLoaded = false;
+				isLoading = canRead;
+				loadError = '';
+				currentPassword = '';
+				newPassword = '';
+				confirmPassword = '';
+				selectedCurrentSession = null;
+				currentSessionDialogOpen = false;
+				logoutAllDialogOpen = false;
+				revokingSessionId = null;
+				isLoggingOutAll = false;
+				isChangingPassword = false;
+			}
+			if (!canRead || consumedSource === read) return;
+			consumedSource = read;
+			const request = sessionRequest.begin();
+			isLoading = true;
+			void read.then((result) => applySessions(result, request.revision, key));
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		sessionRequest.abort();
+		currentPassword = '';
+		newPassword = '';
+		confirmPassword = '';
+	});
+	function current(key: string) {
+		return !disposed && allowed && ownerKey === key;
+	}
+	function applySessions(result: Awaited<typeof source>, revision: number, key: string) {
+		if (!current(key) || !sessionRequest.isCurrent(revision)) return;
+		isLoading = false;
+		if (!result.ok) {
+			loadError = result.error;
+			return;
+		}
+		if (result.data.ownerKey !== key) return;
+		sessions = result.data.sessions;
+		sessionsLoaded = true;
+		loadError = '';
+	}
+	function suspendSessionRead() {
+		sessionRequest.abort();
+		isLoading = !sessionsLoaded;
+		loadError = '';
+	}
 
 	const dateTimeFormatter = new Intl.DateTimeFormat('th-TH', {
 		dateStyle: 'medium',
@@ -48,92 +129,111 @@
 	}
 
 	async function loadSessions() {
+		if (!allowed || disposed) return;
+		const key = ownerKey,
+			request = sessionRequest.begin();
 		isLoading = true;
 		loadError = '';
-		try {
-			sessions = await authAPI.listSessions();
-		} catch (error) {
-			loadError = errorMessage(error, 'ไม่สามารถโหลดรายการอุปกรณ์ได้');
-		} finally {
-			isLoading = false;
-		}
+		const result = await captureRouteLoad(
+			authAPI
+				.listSessions({ signal: request.signal })
+				.then((sessions) => ({ ownerKey: key, sessions })),
+			'ไม่สามารถโหลดรายการอุปกรณ์ได้'
+		);
+		applySessions(result, request.revision, key);
 	}
 
-	onMount(loadSessions);
-
 	async function revokeOtherSession(session: SessionDto) {
+		if (
+			!allowed ||
+			disposed ||
+			actionBusy ||
+			session.isCurrent ||
+			!sessions.some((row) => row.id === session.id)
+		)
+			return;
+		const key = ownerKey;
+		suspendSessionRead();
 		revokingSessionId = session.id;
 		try {
 			await authAPI.revokeSession(session.id);
+			if (!current(key)) return;
 			sessions = removeRevokedSession(sessions, session.id);
 			toast.success('นำอุปกรณ์ออกจากบัญชีแล้ว');
 		} catch (error) {
-			toast.error(errorMessage(error, 'ไม่สามารถนำอุปกรณ์ออกได้'));
+			if (current(key)) toast.error(errorMessage(error, 'ไม่สามารถนำอุปกรณ์ออกได้'));
 		} finally {
-			revokingSessionId = null;
+			if (current(key)) revokingSessionId = null;
 		}
 	}
-
 	function requestCurrentSessionLogout(session: SessionDto) {
+		if (!allowed || disposed || actionBusy || !session.isCurrent) return;
 		selectedCurrentSession = session;
 		currentSessionDialogOpen = true;
 	}
-
 	async function revokeCurrentSession() {
 		const session = selectedCurrentSession;
-		if (!session) return;
-
+		if (!session || !allowed || disposed || actionBusy) return;
+		const key = ownerKey,
+			epoch = authStore.sessionEpoch;
+		suspendSessionRead();
 		revokingSessionId = session.id;
 		try {
 			await authAPI.revokeSession(session.id, { current: true });
 		} catch (error) {
-			toast.error(errorMessage(error, 'ไม่สามารถออกจากระบบอุปกรณ์นี้ได้'));
+			if (current(key)) toast.error(errorMessage(error, 'ไม่สามารถออกจากระบบอุปกรณ์นี้ได้'));
 			return;
 		} finally {
-			revokingSessionId = null;
+			if (current(key)) revokingSessionId = null;
 		}
-
-		currentSessionDialogOpen = false;
+		if ($authStore.isAuthenticated || authStore.sessionEpoch !== epoch + 1) return;
 		sessionStorage.removeItem('redirectAfterLogin');
 		await goto(resolve('/login'), { invalidateAll: true });
 	}
-
 	async function logoutAllSessions() {
+		if (!allowed || disposed || actionBusy) return;
+		const key = ownerKey,
+			epoch = authStore.sessionEpoch;
+		suspendSessionRead();
 		isLoggingOutAll = true;
 		try {
 			await authAPI.logoutAll();
 		} catch (error) {
-			toast.error(errorMessage(error, 'ไม่สามารถออกจากระบบทุกอุปกรณ์ได้'));
+			if (current(key)) toast.error(errorMessage(error, 'ไม่สามารถออกจากระบบทุกอุปกรณ์ได้'));
 			return;
 		} finally {
-			isLoggingOutAll = false;
+			if (current(key)) isLoggingOutAll = false;
 		}
-
-		logoutAllDialogOpen = false;
+		if ($authStore.isAuthenticated || authStore.sessionEpoch !== epoch + 1) return;
 		sessionStorage.removeItem('redirectAfterLogin');
 		await goto(resolve('/login'), { invalidateAll: true });
 	}
-
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();
+		if (!allowed || disposed || actionBusy) return;
 		const validationError = passwordValidation(currentPassword, newPassword, confirmPassword);
 		if (validationError) {
 			toast.error(validationError);
 			return;
 		}
-
+		const key = ownerKey;
+		suspendSessionRead();
 		isChangingPassword = true;
 		try {
 			await authAPI.changePassword({ currentPassword, newPassword });
+			if (!current(key)) return;
 			sessions = keepCurrentSession(sessions);
 			currentPassword = '';
 			newPassword = '';
 			confirmPassword = '';
 			toast.success('เปลี่ยนรหัสผ่านสำเร็จ อุปกรณ์อื่นถูกนำออกจากบัญชีแล้ว');
+			if (!sessionsLoaded) await loadSessions();
 		} catch (error) {
+			if (!current(key)) return;
 			toast.error(errorMessage(error, 'ไม่สามารถเปลี่ยนรหัสผ่านได้'));
+			if (!sessionsLoaded) await loadSessions();
 		} finally {
-			isChangingPassword = false;
+			if (current(key)) isChangingPassword = false;
 		}
 	}
 </script>
@@ -154,17 +254,25 @@
 				data-testid="logout-all-sessions"
 				variant="destructive"
 				size="sm"
-				disabled={isLoading || sessions.length === 0}
+				disabled={isLoading || sessions.length === 0 || actionBusy}
 				onclick={() => (logoutAllDialogOpen = true)}
 			>
 				<LogOut class="h-4 w-4" />
 				ออกจากระบบทุกอุปกรณ์
 			</Button>
 		</CardHeader>
-		<CardContent>
-			{#if isLoading}
-				<PageSkeleton variant="cards" rows={2} />
-			{:else if loadError}
+		<CardContent aria-busy={isLoading}>
+			<Button variant="outline" disabled={isLoading || actionBusy} onclick={loadSessions}
+				>โหลดข้อมูลใหม่</Button
+			>
+			{#if isLoading && sessionsLoaded}<p
+					role="status"
+					aria-label="กำลังอัปเดตรายการอุปกรณ์"
+					class="text-muted-foreground text-sm"
+				>
+					กำลังอัปเดตรายการอุปกรณ์…
+				</p>{/if}
+			{#if loadError}
 				<PageState
 					variant="error"
 					title="โหลดรายการอุปกรณ์ไม่สำเร็จ"
@@ -172,12 +280,17 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={loadSessions}
 				/>
-			{:else if sessions.length === 0}
+			{/if}
+			{#if isLoading && !sessionsLoaded}
+				<div role="status" aria-label="กำลังโหลดรายการอุปกรณ์">
+					<PageSkeleton variant="cards" rows={2} />
+				</div>
+			{:else if sessionsLoaded && sessions.length === 0}
 				<PageState
 					title="ยังไม่มีอุปกรณ์ที่เข้าสู่ระบบ"
 					description="เมื่อมีการเข้าสู่ระบบ อุปกรณ์จะแสดงที่นี่"
 				/>
-			{:else}
+			{:else if sessionsLoaded}
 				<div data-testid="session-list" class="divide-y rounded-lg border">
 					{#each sessions as session (session.id)}
 						<div
@@ -213,6 +326,7 @@
 								<Button
 									variant="outline"
 									size="sm"
+									disabled={actionBusy}
 									onclick={() => requestCurrentSessionLogout(session)}
 								>
 									<LogOut class="h-4 w-4" />
@@ -222,6 +336,7 @@
 								<LoadingButton
 									variant="outline"
 									size="sm"
+									disabled={actionBusy}
 									loading={revokingSessionId === session.id}
 									loadingLabel="กำลังนำออก..."
 									onclick={() => revokeOtherSession(session)}
@@ -256,7 +371,7 @@
 						type="password"
 						autocomplete="current-password"
 						bind:value={currentPassword}
-						disabled={isChangingPassword}
+						disabled={actionBusy}
 					/>
 				</div>
 				<div class="space-y-2">
@@ -266,7 +381,7 @@
 						type="password"
 						autocomplete="new-password"
 						bind:value={newPassword}
-						disabled={isChangingPassword}
+						disabled={actionBusy}
 						minlength={8}
 						maxlength={128}
 					/>
@@ -279,7 +394,7 @@
 						type="password"
 						autocomplete="new-password"
 						bind:value={confirmPassword}
-						disabled={isChangingPassword}
+						disabled={actionBusy}
 						minlength={8}
 						maxlength={128}
 					/>
@@ -287,6 +402,7 @@
 				<LoadingButton
 					type="submit"
 					class="w-full"
+					disabled={actionBusy}
 					loading={isChangingPassword}
 					loadingLabel="กำลังเปลี่ยนรหัสผ่าน..."
 				>

@@ -190,6 +190,7 @@ class APIClient {
 		transport: ApiTransport = 'session',
 		requestFetch: typeof globalThis.fetch = globalThis.fetch
 	): Promise<Response> {
+		const sessionEpoch = authStore.sessionEpoch;
 		const method = (options.method ?? 'GET').toUpperCase();
 		const callerHeaders = new Headers(options.headers);
 		callerHeaders.delete(SCHOOL_SUBDOMAIN_HEADER);
@@ -217,7 +218,7 @@ class APIClient {
 			}
 			throw error;
 		}
-		if (usesSession) {
+		if (usesSession && sessionEpoch === authStore.sessionEpoch) {
 			captureSessionSecurityHeaders(response.headers);
 			if (response.status === 401) this.handleUnauthorized();
 		}

@@ -1,20 +1,20 @@
 import type { PageLoad } from './$types';
-import { authAPI } from '$lib/api/auth';
+import { consentApi } from '$lib/api/consent';
 import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
 import { captureRouteLoad } from '$lib/navigation/route-load';
 export const _meta = { access: { authenticated: true } } as const;
 export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity');
 	const requestKey = url.pathname + url.search;
-	const sessions = captureRouteLoad(
+	const consent = captureRouteLoad(
 		waitForAuthenticatedUser().then(async (user) => {
 			const ownerKey = `${appIdentityKey()}|${requestKey}`;
 			return {
 				ownerKey,
-				sessions: user ? await authAPI.listSessions({ requestFetch: fetch }) : []
+				status: user ? await consentApi.getMyConsentStatus({ requestFetch: fetch }) : null
 			};
 		}),
-		'ไม่สามารถโหลดรายการอุปกรณ์ได้'
+		'เกิดข้อผิดพลาดในการโหลดข้อมูล'
 	);
-	return { requestKey, sessions };
+	return { requestKey, consent };
 };

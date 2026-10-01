@@ -14,12 +14,12 @@
 		{
 			"route": "account/security",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-auth",
-			"notes": "SessionSecurityPanel loads session list on mount; move the visible list into route ownership."
+			"notes": "Direct route loader owns the authenticated session list; first/retained local retries and identity supersession. Typed removal/password state patches only affected rows; confirmation workflows are lazy."
 		},
 		{
 			"route": "debug",
@@ -84,13 +84,12 @@
 		{
 			"route": "settings/consent",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "none",
-			"status": "planned",
-			"backendOwner": "school-auth",
-			"notes": "consentApi.getMyConsentStatus is the initial page read.",
-			"legacyMountApiCandidate": true
+			"status": "complete",
+			"backendOwner": "backend-school consent",
+			"notes": "Direct route loader owns authenticated consent status; first/retained local retries, identity and disposal guards. Withdrawal refreshes only own status and required flags use the authoritative catalog."
 		},
 		{
 			"route": "staff",

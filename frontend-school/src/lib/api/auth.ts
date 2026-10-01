@@ -78,30 +78,35 @@ class AuthAPI {
 	 * Logout - Direct to backend through the shared client-side API wrapper.
 	 */
 	async logout(): Promise<void> {
+		const epoch = authStore.sessionEpoch;
 		const response = await apiClient.post<EmptyData>('/api/auth/logout');
 		requireApiData(response, 'ออกจากระบบไม่สำเร็จ');
+		if (epoch !== authStore.sessionEpoch) return;
 		clearSessionSecurity();
 		authStore.clearUser();
 		toast.success(response.message || 'ออกจากระบบสำเร็จ');
 	}
 
-	async listSessions(): Promise<SessionDto[]> {
-		const response = await apiClient.get<SessionListData>('/api/auth/sessions');
+	async listSessions(options: ApiRequestOptions = {}): Promise<SessionDto[]> {
+		const response = await apiClient.get<SessionListData>('/api/auth/sessions', options);
 		return requireApiData(response, 'ไม่สามารถโหลดรายการอุปกรณ์ได้').sessions;
 	}
 
 	async revokeSession(sessionId: string, options: { current?: boolean } = {}): Promise<void> {
+		const epoch = authStore.sessionEpoch;
 		const response = await apiClient.delete<EmptyData>(`/api/auth/sessions/${sessionId}`);
 		requireApiData(response, 'ไม่สามารถเพิกถอนเซสชันได้');
-		if (options.current === true) {
+		if (options.current === true && epoch === authStore.sessionEpoch) {
 			clearSessionSecurity();
 			authStore.clearUser();
 		}
 	}
 
 	async logoutAll(): Promise<void> {
+		const epoch = authStore.sessionEpoch;
 		const response = await apiClient.post<EmptyData>('/api/auth/logout-all');
 		requireApiData(response, 'ไม่สามารถออกจากระบบทุกอุปกรณ์ได้');
+		if (epoch !== authStore.sessionEpoch) return;
 		clearSessionSecurity();
 		authStore.clearUser();
 	}

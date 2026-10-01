@@ -96,7 +96,7 @@ test('generated auth contract exposes minimal current user and session operation
 	assert.match(auth, /Schemas\['CurrentUserResponse'\]/);
 	assert.match(auth, /Schemas\['SessionResponse'\]/);
 	assert.match(auth, /Schemas\['SessionListData'\]/);
-	assert.match(auth, /apiClient\.get<SessionListData>\(['"]\/api\/auth\/sessions['"]\)/);
+	assert.match(auth, /apiClient\.get<SessionListData>\(['"]\/api\/auth\/sessions['"], options\)/);
 	assert.match(auth, /apiClient\.delete<EmptyData>\(`\/api\/auth\/sessions\/\$\{sessionId\}`\)/);
 	assert.match(auth, /apiClient\.post<EmptyData>\(['"]\/api\/auth\/logout-all['"]\)/);
 });

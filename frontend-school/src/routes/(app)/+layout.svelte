@@ -42,14 +42,14 @@
 	});
 	$effect.pre(() => {
 		const user = $authStore.user;
-		const permissions = $userPermissions;
+		void $userPermissions;
 		if (!user) {
 			appMenu.reset();
 			workStore.reset();
 			previousIdentity = null;
 			return;
 		}
-		const key = `${user.id}:${permissions.slice().sort().join(',')}`;
+		const key = appIdentityKey();
 		if (previousIdentity !== null && previousIdentity !== key) {
 			appMenu.reset();
 			workStore.reset();
