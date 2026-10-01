@@ -39,22 +39,24 @@ export async function listMyAcademicContextOptions(
 }
 
 export async function listParentAcademicContextOptions(
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	options: ApiRequestOptions = {}
 ): Promise<AcademicContextOptionsResponse> {
 	const response = await apiClient.get<AcademicContextOptionsResponse>(
 		'/api/parent/academic-context/options',
-		{ signal }
+		{ ...options, signal: signal ?? options.signal }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดประวัติปีและภาคเรียนของบุตรหลานได้');
 }
 
 export async function listChildAcademicContextOptions(
 	studentId: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	options: ApiRequestOptions = {}
 ): Promise<AcademicContextOptionsResponse> {
 	const response = await apiClient.get<AcademicContextOptionsResponse>(
 		`/api/parent/students/${encodeURIComponent(studentId)}/academic-context/options`,
-		{ signal }
+		{ ...options, signal: signal ?? options.signal }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดประวัติปีและภาคเรียนของนักเรียนได้');
 }

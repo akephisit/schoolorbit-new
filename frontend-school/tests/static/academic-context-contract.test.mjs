@@ -612,26 +612,28 @@ test('student dashboard and profile select only authorized academic years', asyn
 	assert.match(selector, /onchange:\s*\(academicYearId:\s*string\)\s*=>\s*void/);
 });
 
-test('parent and child pages select only linked academic years', async () => {
-	const parentHome = await readProjectFile('src/routes/(app)/parent/+page.svelte');
-	const childDetail = await readProjectFile('src/routes/(app)/parent/student/[id]/+page.svelte');
-	const childTimetable = await readProjectFile(
-		'src/routes/(app)/parent/student/[id]/timetable/+page.svelte'
+test('parent and child routes select only linked academic years', async () => {
+	const home = await readProjectFile('src/routes/(app)/parent/+page.ts');
+	const detail = await readProjectFile('src/routes/(app)/parent/student/[id]/+page.ts');
+	const timetable = await readProjectFile(
+		'src/routes/(app)/parent/student/[id]/timetable/+page.ts'
 	);
-
-	assert.match(parentHome, /listParentAcademicContextOptions/);
-	assert.match(parentHome, /resolveScopedAcademicYearUrl/);
-	assert.match(parentHome, /getOwnParentProfile\(selectedYearId\)/);
-	assert.match(parentHome, /ScopedAcademicYearSelect/);
-
-	for (const source of [childDetail, childTimetable]) {
-		assert.match(source, /listChildAcademicContextOptions\(studentId\)/);
-		assert.match(source, /getChildProfile\(studentId, selectedYearId\)/);
-		assert.match(source, /academicYearId/);
+	assert.match(home, /listParentAcademicContextOptions/);
+	assert.match(home, /resolveScopedAcademicYearUrl/);
+	assert.match(home, /getOwnParentProfile\(academicYearId,/);
+	for (const source of [detail, timetable]) {
+		assert.match(source, /listChildAcademicContextOptions\(params\.id,/);
+		assert.match(source, /getChildProfile\(params\.id, academicYearId,/);
+		assert.match(source, /requestFetch: fetch/);
 	}
-	assert.match(childDetail, /resolveScopedAcademicYearUrl/);
-	assert.match(childDetail, /ScopedAcademicYearSelect/);
-	assert.match(childTimetable, /loadTimetable\(selectedTermId, current\)/);
+	assert.match(detail, /resolveScopedAcademicYearUrl/);
+	assert.match(timetable, /resolveScopedAcademicContextUrl/);
+	assert.match(timetable, /getChildTimetable\(params\.id, academicTermId, date,/);
+	for (const route of ['parent', 'parent/student/[id]', 'parent/student/[id]/timetable']) {
+		const page = await readProjectFile(`src/routes/(app)/${route}/+page.svelte`);
+		assert.match(page, /contextOptions\?\.years/);
+		assert.doesNotMatch(page, /onMount\(/);
+	}
 });
 
 test('student and parent history selectors use learner-scoped academic context endpoints', async () => {
@@ -673,7 +675,7 @@ test('student and parent history selectors use learner-scoped academic context e
 	assert.match(parentsApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
 	assert.match(parentsApi, /academicTermId:\s*trimmedAcademicTermId/);
 	assert.match(parentsApi, /date:\s*requiredDate/);
-	assert.match(parentsApi, /\{ query \}/);
+	assert.match(parentsApi, /\{ \.\.\.options, query \}/);
 	assert.doesNotMatch(parentsApi, /\?academicTermId=/);
 	assert.doesNotMatch(parentsApi, /academicSemesterId|academic_semester_id|TimetableEntryDto/);
 });

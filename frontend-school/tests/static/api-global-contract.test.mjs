@@ -1594,7 +1594,7 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/timetable/
 	);
 	assert.match(parentApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
-	assert.match(parentApi, /\{ query \}/);
+	assert.match(parentApi, /\{ \.\.\.options, query \}/);
 	assert.doesNotMatch(parentApi, /\?academicTermId=/);
 	assert.doesNotMatch(parentApi, /\/api\/academic\/timetable/);
 });

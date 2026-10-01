@@ -1,28 +1,25 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
 	import type { PageProps } from './$types';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { authStore } from '$lib/stores/auth';
+	import { can } from '$lib/stores/permissions';
+	import { resolveScopedAcademicContextUrl } from '$lib/academic-context/scoped-year';
 	import {
 		listChildAcademicContextOptions,
 		type AcademicContextOptionsResponse
 	} from '$lib/api/academic-context';
-	import {
-		resolveScopedAcademicYearUrl,
-		urlWithAcademicYear
-	} from '$lib/academic-context/scoped-year';
-	import { getChildProfile, getChildTimetable } from '$lib/api/parents';
+	import { periodsFromTimetableBlocks, type TimetableBlock } from '$lib/api/timetable';
+	import { getChildTimetable, getChildProfile } from '$lib/api/parents';
 	import type { Student } from '$lib/api/students';
-	import {
-		currentLocalDate,
-		periodsFromTimetableBlocks,
-		type TimetableBlock,
-		type TimetablePeriodSummary
-	} from '$lib/api/timetable';
+	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import { MapPin, School } from '@lucide/svelte';
@@ -37,21 +34,44 @@
 		{ value: 'SUN', label: 'อาทิตย์' }
 	];
 
-	let { params }: PageProps = $props();
-	const studentId = $derived(params.id);
-	let child = $state<Student | null>(null);
-	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);
-	let selectedYearId = $state('');
-	let selectedTermId = $state('');
-	let periods = $state<TimetablePeriodSummary[]>([]);
-	let blocks = $state<TimetableBlock[]>([]);
-	let loading = $state(true);
-	let errorMessage = $state('');
-	let revision = 0;
+	let { data }: PageProps = $props();
+	const studentId = $derived(data.studentId);
+
+	const identityKey = $derived.by(() => {
+		void $authStore;
+		void $can;
+		return appIdentityKey();
+	});
+	const ownerKey = $derived(`${identityKey}|${data.requestKey}`);
+	const allowed = $derived($authStore.user?.user_type === 'parent');
+	let child = $state.raw<Student | null>(null);
+	let childLoading = $state(true),
+		childError = $state('');
+	const childRequest = new LatestRequest();
+	let consumedChild: typeof data.profile | null = null;
+	let contextOptions = $state.raw<AcademicContextOptionsResponse | null>(null);
+	let selectedYearId = $state(''),
+		selectedTermId = $state('');
+	const childDetailHref = $derived(
+		`/parent/student/${encodeURIComponent(studentId)}?academicYearId=${encodeURIComponent(selectedYearId)}`
+	);
+	let blocks = $state.raw<TimetableBlock[]>([]);
+	let loading = $state(true),
+		loaded = $state(false),
+		error = $state(''),
+		contextLoading = $state(true),
+		contextError = $state('');
+	let disposed = false,
+		owner = '';
+	const contextRequest = new LatestRequest(),
+		primaryRequest = new LatestRequest();
+	let consumedContext: typeof data.context | null = null,
+		consumedRecords: typeof data.records | null = null;
 
 	const termOptions = $derived(
 		contextOptions?.terms.filter((term) => term.academicYearId === selectedYearId) ?? []
 	);
+	const periods = $derived(periodsFromTimetableBlocks(blocks));
 	const schoolDays = $derived.by(() => {
 		const configured = new Set(blocks.map((block) => block.dayOfWeek));
 		return configured.size > 0
@@ -59,145 +79,187 @@
 			: dayOptions.slice(0, 5);
 	});
 	const tableMinWidth = $derived(96 + periods.length * 132);
-	const childName = $derived(
-		child ? `${child.title ?? ''}${child.first_name} ${child.last_name}`.trim() : ''
-	);
-	const childDetailHref = $derived(
-		`${resolve(`/parent/student/${studentId}`)}${selectedYearId ? `?academicYearId=${encodeURIComponent(selectedYearId)}` : ''}`
-	);
 
-	function authorizedSelection(options: AcademicContextOptionsResponse): {
-		yearId: string;
-		termId: string;
-		replaceUrl: URL | null;
-	} {
-		const yearResolution = resolveScopedAcademicYearUrl(options, page.url);
-		const yearId = yearResolution.academicYearId ?? '';
-		if (!yearId) return { yearId: '', termId: '', replaceUrl: null };
+	$effect.pre(() => {
+		const key = ownerKey,
+			a = data.context,
+			b = data.records,
+			c = data.profile,
+			canRead = allowed;
+		untrack(() => {
+			if (owner !== key || !canRead) {
+				owner = key;
 
-		const terms = options.terms.filter((term) => term.academicYearId === yearId);
-		const queryTermId = page.url.searchParams.get('academicTermId');
-		const termId =
-			terms.find((term) => term.id === queryTermId)?.id ??
-			terms.find((term) => term.id === options.activeAcademicTermId)?.id ??
-			terms[0]?.id ??
-			'';
-
-		const nextUrl = yearResolution.replaceUrl ?? new URL(page.url);
-		if (termId) nextUrl.searchParams.set('academicTermId', termId);
-		else nextUrl.searchParams.delete('academicTermId');
-		return {
-			yearId,
-			termId,
-			replaceUrl: nextUrl.href === page.url.href ? null : nextUrl
-		};
-	}
-
-	async function loadHistory(): Promise<void> {
-		const current = ++revision;
-		loading = true;
-		errorMessage = '';
-		try {
-			const options = await listChildAcademicContextOptions(studentId);
-			if (current !== revision) return;
-			contextOptions = options;
-			const selection = authorizedSelection(options);
-			selectedYearId = selection.yearId;
-			selectedTermId = selection.termId;
-			periods = [];
-			blocks = [];
-
-			if (selection.replaceUrl) {
-				await updateUrl(selection.replaceUrl);
-				if (current !== revision) return;
-			}
-
-			if (!selectedYearId) {
+				contextRequest.abort();
+				primaryRequest.abort();
+				contextOptions = null;
+				selectedYearId = '';
+				selectedTermId = '';
+				blocks = [];
+				childRequest.abort();
 				child = null;
-				return;
+				childLoading = canRead;
+				childError = '';
+				loaded = false;
+				loading = canRead;
+				contextLoading = canRead;
+				error = '';
+				contextError = '';
 			}
+			if (!canRead) return;
 
-			const loadedChild = await getChildProfile(studentId, selectedYearId);
-			if (current !== revision) return;
-			child = loadedChild;
-			if (selectedTermId) await loadTimetable(selectedTermId, current);
-		} catch (error) {
-			if (current === revision) {
-				errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลตารางเรียนไม่สำเร็จ';
+			if (a !== consumedContext) {
+				consumedContext = a;
+				const t = contextRequest.begin();
+				contextLoading = true;
+				void a.then((v) => applyContext(v, t.revision, key));
 			}
-		} finally {
-			if (current === revision) loading = false;
+			if (c !== consumedChild) {
+				consumedChild = c;
+				const t = childRequest.begin();
+				childLoading = true;
+				void c.then((v) => applyChild(v, t.revision, key));
+			}
+			if (b !== consumedRecords) {
+				consumedRecords = b;
+				const t = primaryRequest.begin();
+				loading = true;
+				void b.then((v) => applyRecords(v, t.revision, key));
+			}
+		});
+	});
+	onDestroy(() => {
+		disposed = true;
+		childRequest.abort();
+
+		contextRequest.abort();
+		primaryRequest.abort();
+	});
+	function current(key: string) {
+		return !disposed && allowed && key === ownerKey;
+	}
+	function applyContext(v: Awaited<typeof data.context>, revision: number, key: string) {
+		if (!current(key) || !contextRequest.isCurrent(revision)) return;
+		contextLoading = false;
+		if (!v.ok) {
+			contextError = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== key) return;
+		contextError = '';
+		contextOptions = v.data.options;
+		selectedYearId = v.data.academicYearId;
+		selectedTermId = v.data.academicTermId;
+		if (v.data.replaceHref) {
+			const url = new URL(v.data.replaceHref);
+			replaceState(
+				resolve(`${url.pathname}${url.search}` as '/parent/student/[id]/timetable'),
+				page.state
+			);
 		}
 	}
-
-	async function loadTimetable(termId: string, current = ++revision): Promise<void> {
-		const loaded = await getChildTimetable(studentId, termId, currentLocalDate());
-		if (current !== revision) return;
-		periods = periodsFromTimetableBlocks(loaded);
-		blocks = loaded;
+	function applyRecords(v: Awaited<typeof data.records>, revision: number, key: string) {
+		if (!current(key) || !primaryRequest.isCurrent(revision)) return;
+		loading = false;
+		if (!v.ok) {
+			error = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== key) return;
+		blocks = v.data.records;
+		loaded = contextOptions !== null;
+		error = '';
 	}
+	async function loadPrimary() {
+		if (!allowed || disposed || !selectedYearId || !selectedTermId) return;
+		const key = ownerKey,
+			t = primaryRequest.begin();
+		loading = true;
+		error = '';
+		const v = await captureRouteLoad(
+			getChildTimetable(studentId, selectedTermId, data.date, { signal: t.signal }).then(
+				(records) => ({ ownerKey: key, records })
+			),
+			'โหลดตารางเรียนไม่สำเร็จ'
+		);
+		applyRecords(v, t.revision, key);
+	}
+	async function retryContext() {
+		if (!allowed || disposed) return;
+		const key = ownerKey,
+			t = contextRequest.begin();
+		contextLoading = true;
+		contextError = '';
+		const v = await captureRouteLoad(
+			listChildAcademicContextOptions(studentId, t.signal).then((options) => {
+				const selection = resolveScopedAcademicContextUrl(options, new URL(data.requestHref), true);
+				return {
+					ownerKey: key,
+					options,
+					academicYearId: selection.academicYearId,
+					academicTermId: selection.academicTermId,
+					replaceHref: selection.replaceUrl?.href ?? null
+				};
+			}),
+			'โหลดประวัติปีและภาคเรียนไม่สำเร็จ'
+		);
+		if (!current(key) || !contextRequest.isCurrent(t.revision)) return;
+		applyContext(v, t.revision, key);
+		if (v.ok && selectedYearId)
+			await Promise.all([loadChild(), ...(selectedTermId ? [loadPrimary()] : [])]);
+	}
+	function applyChild(v: Awaited<typeof data.profile>, revision: number, key: string) {
+		if (!current(key) || !childRequest.isCurrent(revision)) return;
+		childLoading = false;
+		if (!v.ok) {
+			childError = v.error;
+			return;
+		}
+		if (v.data.ownerKey !== key) return;
+		child = v.data.student;
+		childError = '';
+	}
+	async function loadChild() {
+		if (!allowed || disposed || !selectedYearId) return;
+		const key = ownerKey,
+			t = childRequest.begin();
+		childLoading = true;
+		childError = '';
+		const v = await captureRouteLoad(
+			getChildProfile(studentId, selectedYearId, { signal: t.signal }).then((student) => ({
+				ownerKey: key,
+				student
+			})),
+			'โหลดข้อมูลนักเรียนไม่สำเร็จ'
+		);
+		applyChild(v, t.revision, key);
+	}
+	async function updateUrl(yearId: string, termId: string) {
+		const url = new URL(data.requestHref);
+		url.searchParams.set('academicYearId', yearId);
+		if (termId) url.searchParams.set('academicTermId', termId);
+		else url.searchParams.delete('academicTermId');
 
-	async function updateUrl(url: URL): Promise<void> {
-		await goto(resolve(`/parent/student/${studentId}/timetable${url.search}${url.hash}`), {
-			replaceState: true,
+		await goto(resolve(`${url.pathname}${url.search}` as '/parent/student/[id]/timetable'), {
 			noScroll: true,
 			keepFocus: true
 		});
 	}
-
-	async function changeYear(yearId: string): Promise<void> {
-		if (yearId === selectedYearId) return;
-		const current = ++revision;
-		loading = true;
-		errorMessage = '';
-		const availableTerms =
-			contextOptions?.terms.filter((term) => term.academicYearId === yearId) ?? [];
-		const nextTerm =
-			availableTerms.find((term) => term.id === contextOptions?.activeAcademicTermId) ??
-			availableTerms[0];
-		selectedYearId = yearId;
-		selectedTermId = nextTerm?.id ?? '';
-		periods = [];
-		blocks = [];
-		try {
-			const nextUrl = urlWithAcademicYear(page.url, selectedYearId);
-			if (selectedTermId) nextUrl.searchParams.set('academicTermId', selectedTermId);
-			await updateUrl(nextUrl);
-			if (current !== revision) return;
-			const loadedChild = await getChildProfile(studentId, selectedYearId);
-			if (current !== revision) return;
-			child = loadedChild;
-			if (selectedTermId) await loadTimetable(selectedTermId, current);
-		} catch (error) {
-			if (current === revision) {
-				errorMessage = error instanceof Error ? error.message : 'เปลี่ยนปีการศึกษาไม่สำเร็จ';
-			}
-		} finally {
-			if (current === revision) loading = false;
-		}
+	async function changeYear(yearId: string) {
+		if (!contextOptions?.years.some((year) => year.id === yearId) || yearId === selectedYearId)
+			return;
+		const terms = contextOptions.terms.filter((term) => term.academicYearId === yearId);
+		const next =
+			terms.find((term) => term.id === contextOptions?.activeAcademicTermId)?.id ??
+			terms[0]?.id ??
+			'';
+		await updateUrl(yearId, next);
 	}
-
-	async function changeTerm(termId: string): Promise<void> {
-		const current = ++revision;
-		selectedTermId = termId;
-		periods = [];
-		blocks = [];
-		loading = true;
-		errorMessage = '';
-		try {
-			const nextUrl = new URL(page.url);
-			nextUrl.searchParams.set('academicYearId', selectedYearId);
-			nextUrl.searchParams.set('academicTermId', selectedTermId);
-			await updateUrl(nextUrl);
-			if (current !== revision) return;
-			await loadTimetable(selectedTermId, current);
-		} catch (error) {
-			if (current === revision) {
-				errorMessage = error instanceof Error ? error.message : 'โหลดตารางเรียนไม่สำเร็จ';
-			}
-		} finally {
-			if (current === revision) loading = false;
-		}
+	async function changeTerm(value: string) {
+		const termId = value;
+		if (termId && !termOptions.some((term) => term.id === termId)) return;
+		if (termId === selectedTermId) return;
+		await updateUrl(selectedYearId, termId);
 	}
 
 	function blocksForCell(day: string, periodId: string): TimetableBlock[] {
@@ -233,124 +295,167 @@
 			.filter(Boolean)
 			.join(', ');
 	}
-
-	onMount(loadHistory);
 </script>
 
 <PageShell
-	title="ตารางเรียน"
-	description={childName ? `ตารางเรียนของ ${childName}` : 'ดูตารางเรียนย้อนหลังของนักเรียน'}
 	backHref={childDetailHref}
+	title="ตารางเรียน"
+	description={child
+		? `ตารางเรียนของ ${child.first_name} ${child.last_name}`
+		: 'ดูตารางเรียนย้อนหลังของนักเรียน'}
 >
-	{#if contextOptions && contextOptions.years.length > 0}
-		<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
-			<div class="min-w-52 space-y-2">
-				<Label for="parent-child-year">ปีการศึกษา</Label>
-				<ScopedAcademicYearSelect
-					id="parent-child-year"
-					years={contextOptions.years}
-					value={selectedYearId}
-					disabled={loading}
-					onchange={changeYear}
-				/>
-			</div>
-			<div class="min-w-52 space-y-2">
-				<Label for="parent-child-term">ภาคเรียน</Label>
-				<Select.Root
-					type="single"
-					value={selectedTermId}
-					disabled={loading || termOptions.length === 0}
-					onValueChange={changeTerm}
-				>
-					<Select.Trigger id="parent-child-term" class="w-full">
-						{termOptions.find((term) => term.id === selectedTermId)?.name ?? 'เลือกภาคเรียน'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each termOptions as term (term.id)}
-							<Select.Item value={term.id}>{term.name}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-		</div>
-	{/if}
+	<Button variant="outline" disabled={loading || contextLoading} onclick={loadPrimary}
+		>โหลดข้อมูลใหม่</Button
+	>
 
-	{#if loading}
-		<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
-	{:else if errorMessage}
+	<div data-testid="parent-child-profile-region" aria-busy={childLoading || contextLoading}>
+		{#if childError}<PageState
+				variant="error"
+				title="โหลดข้อมูลนักเรียนไม่สำเร็จ"
+				description={childError}
+				actionLabel="ลองข้อมูลนักเรียนอีกครั้ง"
+				onaction={loadChild}
+			/>{/if}
+		{#if childLoading && child}<p
+				role="status"
+				aria-label="กำลังอัปเดตข้อมูลนักเรียน"
+				class="text-muted-foreground text-sm"
+			>
+				กำลังอัปเดตข้อมูลนักเรียน…
+			</p>{/if}
+		{#if (childLoading || contextLoading) && !child && !contextError}<div
+				role="status"
+				aria-label="กำลังโหลดข้อมูลนักเรียน"
+			>
+				<PageSkeleton variant="detail" />
+			</div>
+		{:else if child}<p>
+				{child.first_name}
+				{child.last_name} · {child.grade_level} · ห้อง {child.homeroom}
+			</p>{/if}
+	</div>
+
+	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
+		<div class="min-w-52 space-y-2">
+			<Label for="student-year">ปีการศึกษา</Label>
+			<Select.Root
+				type="single"
+				value={selectedYearId}
+				disabled={contextLoading}
+				onValueChange={(value) => void changeYear(value)}
+			>
+				<Select.Trigger id="student-year" class="w-full">
+					{contextOptions?.years.find((year) => year.id === selectedYearId)?.name ??
+						'เลือกปีการศึกษา'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each contextOptions?.years ?? [] as year (year.id)}
+						<Select.Item value={year.id}>{year.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+		<div class="min-w-52 space-y-2">
+			<Label for="student-term">ภาคเรียน</Label>
+			<Select.Root
+				type="single"
+				value={selectedTermId}
+				disabled={contextLoading || termOptions.length === 0}
+				onValueChange={(value) => void changeTerm(value)}
+			>
+				<Select.Trigger id="student-term" class="w-full">
+					{termOptions.find((term) => term.id === selectedTermId)?.name ?? 'เลือกภาคเรียน'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each termOptions as term (term.id)}
+						<Select.Item value={term.id}>{term.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+	</div>
+
+	{#if contextError}<PageState
+			variant="error"
+			title="โหลดประวัติปีและภาคเรียนไม่สำเร็จ"
+			description={contextError}
+			actionLabel="ลองบริบทอีกครั้ง"
+			onaction={retryContext}
+		/>{/if}
+	{#if error}
 		<PageState
 			variant="error"
 			title="โหลดตารางเรียนไม่สำเร็จ"
-			description={errorMessage}
+			description={error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={loadHistory}
+			onaction={loadPrimary}
 		/>
-	{:else if !contextOptions || contextOptions.years.length === 0}
-		<PageState
-			title="ยังไม่มีประวัติปีการศึกษา"
-			description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
-		/>
-	{:else if termOptions.length === 0}
-		<PageState
-			title="ยังไม่มีภาคเรียนในปีที่เลือก"
-			description="โรงเรียนยังไม่ได้ตั้งค่าภาคเรียนสำหรับปีการศึกษานี้"
-		/>
-	{:else if blocks.length === 0}
-		<PageState
-			title="ยังไม่มีตารางเรียน"
-			description="โรงเรียนยังไม่ได้จัดตารางเรียนในภาคเรียนที่เลือก"
-		/>
-	{:else}
-		<div class="overflow-x-auto rounded-lg border">
-			<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
-				<thead>
-					<tr>
-						<th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th>
-						{#each periods as period, index (period.id)}
-							<th class="bg-muted/70 border p-2 text-center text-xs">
-								<p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
-								<p class="text-muted-foreground font-normal">
-									{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
-								</p>
-							</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each schoolDays as day (day.value)}
-						<tr>
-							<th class="bg-muted/30 border p-2 text-xs">{day.label}</th>
-							{#each periods as period (period.id)}
-								{@const cellBlocks = blocksForCell(day.value, period.id)}
-								<td class="h-24 border p-1 align-top">
-									{#each cellBlocks as block (block.id)}
-										<div
-											class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
-										>
-											<p class="truncate font-semibold">{blockTitle(block)}</p>
-											{#if block.offeringName}
-												<p class="mt-1 line-clamp-2 opacity-80">{block.offeringName}</p>
-											{/if}
-											{#if groupLabel(block)}
-												<p class="mt-auto flex items-center gap-1 truncate opacity-70">
-													<School class="size-3" />
-													{groupLabel(block)}
-												</p>
-											{/if}
-											{#if roomLabel(block)}
-												<p class="flex items-center gap-1 truncate opacity-70">
-													<MapPin class="size-3" />
-													{roomLabel(block)}
-												</p>
-											{/if}
-										</div>
-									{/each}
-								</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
 	{/if}
+	<div data-testid="parent-timetable-region" aria-busy={loading || contextLoading}>
+		{#if loading && loaded}
+			<p role="status" aria-label="กำลังอัปเดตข้อมูล" class="text-muted-foreground text-sm">
+				กำลังอัปเดตข้อมูล…
+			</p>
+		{/if}
+		{#if contextLoading || (loading && !loaded)}
+			<div role="status" aria-label="กำลังโหลดตารางเรียน">
+				<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
+			</div>
+		{:else if contextOptions && contextOptions.years.length === 0 && !contextError}
+			<PageState
+				title="ยังไม่มีประวัติปีการศึกษา"
+				description="เมื่อโรงเรียนสร้างข้อมูลนักเรียนประจำปีแล้ว ประวัติจะปรากฏที่นี่"
+			/>
+		{:else if loaded && blocks.length === 0}
+			<PageState
+				title="ยังไม่มีตารางเรียน"
+				description="โรงเรียนยังไม่ได้จัดตารางเรียนในภาคเรียนที่เลือก"
+			/>
+		{:else if loaded}
+			<div class="overflow-x-auto rounded-lg border">
+				<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
+					<thead
+						><tr
+							><th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th
+							>{#each periods as period, index (period.id)}<th
+									class="bg-muted/70 border p-2 text-center text-xs"
+									><p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
+									<p class="text-muted-foreground font-normal">
+										{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+									</p></th
+								>{/each}</tr
+						></thead
+					>
+					<tbody
+						>{#each schoolDays as day (day.value)}<tr
+								><th class="bg-muted/30 border p-2 text-xs">{day.label}</th
+								>{#each periods as period (period.id)}{@const cellBlocks = blocksForCell(
+										day.value,
+										period.id
+									)}<td class="h-24 border p-1 align-top"
+										>{#each cellBlocks as block (block.id)}<div
+												class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
+											>
+												<p class="truncate font-semibold">{blockTitle(block)}</p>
+												{#if block.offeringName}<p class="mt-1 line-clamp-2 opacity-80">
+														{block.offeringName}
+													</p>{/if}{#if groupLabel(block)}<p
+														class="mt-auto flex items-center gap-1 truncate opacity-70"
+													>
+														<School class="size-3" />
+														{groupLabel(block)}
+													</p>{/if}{#if roomLabel(block)}<p
+														class="flex items-center gap-1 truncate opacity-70"
+													>
+														<MapPin class="size-3" />
+														{roomLabel(block)}
+													</p>{/if}
+											</div>{/each}</td
+									>{/each}</tr
+							>{/each}</tbody
+					>
+				</table>
+			</div>
+		{/if}
+	</div>
 </PageShell>

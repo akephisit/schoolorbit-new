@@ -1,4 +1,4 @@
-import { apiClient, requireApiData } from '$lib/api/client';
+import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
 import type { components, operations } from '$lib/api/generated/school-api';
 import type { TimetableBlock } from './timetable';
 import type { Student } from './students';
@@ -11,12 +11,15 @@ export type ParentProfile = Schemas['ParentProfile'];
 /**
  * Get own parent profile (Parent self-service)
  */
-export async function getOwnParentProfile(academicYearId: string): Promise<ParentProfile> {
+export async function getOwnParentProfile(
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+): Promise<ParentProfile> {
 	const query = { academicYearId } satisfies NonNullable<
 		operations['getParentProfile']['parameters']['query']
 	>;
 	return requireApiData(
-		await apiClient.get<ParentProfile>('/api/parent/profile', { query }),
+		await apiClient.get<ParentProfile>('/api/parent/profile', { ...options, query }),
 		'Failed to get parent profile'
 	);
 }
@@ -24,12 +27,17 @@ export async function getOwnParentProfile(academicYearId: string): Promise<Paren
 /**
  * Get detailed profile of a child linked to the current parent
  */
-export async function getChildProfile(studentId: string, academicYearId: string): Promise<Student> {
+export async function getChildProfile(
+	studentId: string,
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+): Promise<Student> {
 	const query = { academicYearId } satisfies NonNullable<
 		operations['getParentChildProfile']['parameters']['query']
 	>;
 	return requireApiData(
 		await apiClient.get<Student>(`/api/parent/students/${encodeURIComponent(studentId)}`, {
+			...options,
 			query
 		}),
 		'Failed to get student profile'
@@ -42,7 +50,8 @@ export async function getChildProfile(studentId: string, academicYearId: string)
 export async function getChildTimetable(
 	studentId: string,
 	academicTermId: string,
-	date: string
+	date: string,
+	options: ApiRequestOptions = {}
 ): Promise<TimetableBlock[]> {
 	const trimmedAcademicTermId = academicTermId.trim();
 	if (!trimmedAcademicTermId) throw new Error('กรุณาเลือกภาคเรียนก่อน');
@@ -55,7 +64,7 @@ export async function getChildTimetable(
 	return requireApiData(
 		await apiClient.get<TimetableBlock[]>(
 			`/api/parent/students/${encodeURIComponent(studentId)}/timetable`,
-			{ query }
+			{ ...options, query }
 		),
 		'ไม่สามารถโหลดตารางเรียนของนักเรียนได้'
 	);

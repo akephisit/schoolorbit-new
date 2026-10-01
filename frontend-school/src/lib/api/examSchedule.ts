@@ -348,11 +348,13 @@ export async function listStaffExamSchedules(
 
 export async function listChildExamSchedules(
 	studentId: string,
-	academicTermId: string
+	academicTermId: string,
+	options: ApiRequestOptions = {}
 ): Promise<PersonalExamScheduleRound[]> {
 	return apiData(
 		await apiClient.get<PersonalExamScheduleRound[]>(
-			`/api/parent/students/${encodeURIComponent(studentId)}/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`
+			`/api/parent/students/${encodeURIComponent(studentId)}/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`,
+			options
 		),
 		'ไม่สามารถโหลดตารางสอบของนักเรียนได้'
 	);

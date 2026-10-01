@@ -851,20 +851,17 @@ test('parent self-service API uses typed student and timetable responses', async
 	assert.match(parentsApi, /getChildTimetable[\s\S]*Promise<TimetableBlock\[\]>/);
 	assert.match(parentsApi, /requireApiData\(/);
 	assert.match(parentsApi, /operations\['getParentChildTimetable'\]\['parameters'\]\['query'\]/);
-	assert.match(parentsApi, /\{ query \}/);
+	assert.match(parentsApi, /\{ \.\.\.options, query \}/);
 	assert.doesNotMatch(parentsApi, /\?academicTermId=/);
 	assert.doesNotMatch(parentsApi, /apiClient\.get<unknown>/);
 	assert.doesNotMatch(parentsApi, /return response as/);
 
 	assert.match(childPage, /import type \{ Student \} from '\$lib\/api\/students'/);
-	assert.match(childPage, /student = loaded/);
+	assert.match(childPage, /student = v\.data\.student/);
 	assert.doesNotMatch(childPage, /response\.data as/);
-	assert.match(timetablePage, /getChildProfile\(studentId, selectedYearId\)/);
-	assert.match(timetablePage, /child = loadedChild/);
-	assert.match(
-		timetablePage,
-		/const loaded = await getChildTimetable\(studentId, termId, currentLocalDate\(\)\)/
-	);
+	assert.match(timetablePage, /getChildProfile\(studentId, selectedYearId,/);
+	assert.match(timetablePage, /child = v\.data\.student/);
+	assert.match(timetablePage, /getChildTimetable\(studentId, selectedTermId, data\.date,/);
 	assert.doesNotMatch(timetablePage, /childData as/);
 });
 

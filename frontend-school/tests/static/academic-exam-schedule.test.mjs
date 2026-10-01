@@ -1487,28 +1487,22 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.match(studentPage, /PageSkeleton/);
 	assert.match(studentPage, /PageState/);
 
-	assert.match(parentPage, /listChildExamSchedules\(requestedStudentId,\s*selectedTermId\)/);
-	assert.doesNotMatch(parentPage, /listMyExamSchedules/);
+	const parentRoute = readFileSync(
+		projectPath('src/routes/(app)/parent/student/[id]/exams/+page.ts'),
+		'utf8'
+	);
+	assert.match(parentRoute, /listChildExamSchedules\(params\.id, academicTermId,/);
+	assert.match(parentRoute, /requestFetch: fetch/);
+	assert.match(parentRoute, /user_type: 'parent'/);
+	assert.doesNotMatch(parentPage, /listMyExamSchedules|onMount|loadHistory/);
 	assert.match(parentPage, /PersonalExamScheduleView/);
 	assert.match(parentPage, /PageSkeleton/);
 	assert.match(parentPage, /PageState/);
 	assert.match(parentPage, /data\.studentId/);
-	assert.match(parentPage, /let scheduleRequestToken = 0/);
-	assert.match(parentPage, /\$effect\(\(\) => \{/);
-	assert.match(parentPage, /void loadHistory\(studentId\)/);
-	assert.match(parentPage, /const requestToken = \+\+scheduleRequestToken/);
-	assert.match(parentPage, /rounds = \[\]/);
-	assert.match(
-		parentPage,
-		/const nextRounds = await listChildExamSchedules\(requestedStudentId,\s*selectedTermId\)/
-	);
-	assert.match(
-		parentPage,
-		/if \(requestToken !== scheduleRequestToken\) return;\s*rounds = nextRounds/
-	);
-	assert.match(parentPage, /requestToken !== scheduleRequestToken/);
-	assert.match(parentPage, /requestToken === scheduleRequestToken/);
-	assert.doesNotMatch(parentPage, /onMount/);
+	assert.match(parentPage, /LatestRequest/);
+	assert.match(parentPage, /\$effect\.pre/);
+	assert.match(parentPage, /primaryRequest\.isCurrent\(revision\)/);
+	assert.match(parentPage, /key === ownerKey/);
 });
 
 test('staff exam schedule API uses a staff-only generated transport type', () => {

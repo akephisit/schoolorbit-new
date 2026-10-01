@@ -34,55 +34,52 @@
 		{
 			"route": "parent",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "linked child",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school parents",
-			"notes": "Component API reads include listParentAcademicContextOptions, getOwnParentProfile; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
 		},
 		{
 			"route": "parent/student/[id]",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "child-id + selected academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school parents + school-students",
-			"notes": "Component API reads include listChildAcademicContextOptions, getChildProfile; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
 		},
 		{
 			"route": "parent/student/[id]/calendar",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "child-id + selected academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "school-calendar",
-			"notes": "Component API reads include listChildAcademicContextOptions, listChildCalendarEvents; classify default and optional regions during migration."
+			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
 		},
 		{
 			"route": "parent/student/[id]/exams",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "child-id + selected academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school exam-schedule",
-			"notes": "Component API reads include listChildAcademicContextOptions, listChildExamSchedules; classify default and optional regions during migration."
+			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
 		},
 		{
 			"route": "parent/student/[id]/timetable",
 			"wave": "self-service",
-			"dataOwner": "component-primary",
-			"preload": "hover",
+			"dataOwner": "route",
+			"preload": "tap",
 			"context": "child-id + selected academic context",
-			"status": "planned",
+			"status": "complete",
 			"backendOwner": "backend-school parents + school-academic-timetable",
-			"notes": "Component API reads include listChildAcademicContextOptions, getChildProfile, getChildTimetable; classify default and optional regions during migration.",
-			"legacyMountApiCandidate": true
+			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
 		},
 		{
 			"route": "settings/consent",

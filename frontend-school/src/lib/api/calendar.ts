@@ -98,12 +98,13 @@ export async function listMyCalendarEvents(
 
 export async function listChildCalendarEvents(
 	studentId: string,
-	filters: ChildCalendarQuery
+	filters: ChildCalendarQuery,
+	options: ApiRequestOptions = {}
 ): Promise<CalendarViewerEvent[]> {
 	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarViewerEvent[]>(
 		`/api/parent/students/${encodeURIComponent(studentId)}/calendar/events`,
-		{ query: { ...filters } satisfies ChildCalendarQuery }
+		{ ...options, query: { ...filters } satisfies ChildCalendarQuery }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินนักเรียนได้');
 }
