@@ -126,6 +126,22 @@ test("release replay selector changes use the full release path", async () => {
   assert.match(result.stdout, /^needs_backend=true$/m);
 });
 
+test("personnel preflight helper changes use the backend release path", async () => {
+  const root = await fixture();
+  const accepted = run("git", ["rev-parse", "HEAD"], root);
+  const release = await commitFile(
+    root,
+    "scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh",
+    "#!/usr/bin/env bash\n",
+  );
+
+  const result = resolve(root, "auto", release, accepted, accepted);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^scope=backend$/m);
+  assert.match(result.stdout, /^needs_frontend=false$/m);
+  assert.match(result.stdout, /^needs_backend=true$/m);
+});
+
 test("missing or divergent accepted baselines force a full release", async () => {
   const root = await fixture();
   const release = await commitFile(

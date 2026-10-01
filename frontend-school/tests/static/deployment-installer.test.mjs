@@ -20,6 +20,24 @@ const loadComposeConfig = async (file, extraArguments = []) => {
 	return parseYaml(stdout);
 };
 
+test('workflow command strings stay within the GitHub Actions 21000 character limit', async () => {
+	const directory = path.join(repoRoot, '.github/workflows');
+	for (const file of (await readdir(directory)).filter((name) => /\.ya?ml$/.test(name))) {
+		const workflow = parseYaml(await readFile(path.join(directory, file), 'utf8'));
+		for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+			for (const step of job.steps ?? []) {
+				for (const command of [step.run, step.with?.script]) {
+					if (typeof command !== 'string') continue;
+					assert.ok(
+						command.length <= 21000,
+						`${file}:${jobName}:${step.name ?? step.id} command is ${command.length} characters; extract a tracked helper`
+					);
+				}
+			}
+		}
+	}
+});
+
 test('Node and Rust workflow jobs select the supported toolchains', async () => {
 	const workflowDirectory = path.join(repoRoot, '.github/workflows');
 	const workflowFiles = (await readdir(workflowDirectory)).filter((file) => /\.ya?ml$/.test(file));
@@ -1286,12 +1304,17 @@ test('durable operations docs describe the guarded replacement VPS path', async 
 
 test('personnel release preflights every tenant before migration and audits before reopening', async () => {
 	const release = await readRepo('.github/workflows/deploy-school-release.yml');
+	const helper = await readRepo('scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh');
 	const verification = release.slice(release.indexOf('tenant_migration_started='));
-	assert.ok(
-		release.indexOf('/internal/personnel-preflight') < release.indexOf('/internal/migrate-all') &&
-			release.includes('/internal/personnel-preflight')
+	const preflight = release.indexOf(
+		'schoolorbit_personnel_preflight "$jq_image" "$migration_response" || exit 1'
 	);
-	assert.match(release, /\.data\.passed == true/);
+	assert.ok(preflight > 0 && preflight < release.indexOf('/internal/migrate-all'));
+	assert.match(release, /- "scripts\/lib\/schoolorbit-installer\/remote\/personnel_preflight\.sh"/);
+	assert.match(release, /source: [^\n]*remote\/personnel_preflight\.sh/);
+	assert.match(release, /\. "\$personnel_helper"/);
+	assert.match(helper, /\/internal\/personnel-preflight/);
+	assert.match(helper, /\.data\.passed == true/);
 	assert.match(verification, /\.personnelCutover\.migrationVersion == 81/);
 	assert.match(verification, /\.personnelCutover\.passed == true/);
 	assert.match(verification, /\.personnelCutover\.checks \| length/);

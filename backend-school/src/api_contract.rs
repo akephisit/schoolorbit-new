@@ -647,6 +647,36 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::organization_members::update_member,
         crate::modules::staff::handlers::organization_members::remove_member
     ),
+    tags(
+        (name = "auth", description = "Authentication and current-user operations"),
+        (name = "consent", description = "Owned consent status and withdrawal"),
+        (name = "roles", description = "Role assignment and role administration"),
+        (name = "permissions", description = "Permission discovery and effective permissions"),
+        (name = "organization", description = "Organization units and scoped access"),
+        (name = "facility", description = "School buildings and rooms"),
+        (name = "lookup", description = "Authenticated reference-data lookups"),
+        (name = "menu", description = "User and administrator menu reads"),
+        (name = "system", description = "System feature reads"),
+        (name = "staff", description = "Staff directory and profiles"),
+        (name = "student", description = "Student self-service reads"),
+        (name = "parent", description = "Parent self-service reads"),
+        (name = "academic", description = "Academic structure administration and self-service reads"),
+        (name = "calendar", description = "Calendar reads"),
+        (name = "supervision", description = "Teaching supervision workflows and reports"),
+        (name = "question-bank", description = "Authorized question bank and export operations"),
+        (name = "school", description = "School settings and public branding reads"),
+        (name = "files", description = "Authorized provider-neutral file operations"),
+        (name = "admission", description = "Admission document attachment operations"),
+        (name = "notifications", description = "Current-user notification reads"),
+        (name = "achievement", description = "Scoped staff achievement operations")
+    )
+)]
+struct SchoolApiDoc;
+
+// Keep generated path and explicit schema registries in separate stack frames.
+// Their combined debug build exceeds the default Rust test-thread stack.
+#[derive(OpenApi)]
+#[openapi(
     components(schemas(
         ConsentRecordResponse,
         UserConsentStatus,
@@ -1734,32 +1764,9 @@ use utoipa::OpenApi;
         ListNotificationsResponse,
         ApiResponse<ListNotificationsResponse>,
         ApiErrorResponse
-    )),
-    tags(
-        (name = "auth", description = "Authentication and current-user operations"),
-        (name = "consent", description = "Owned consent status and withdrawal"),
-        (name = "roles", description = "Role assignment and role administration"),
-        (name = "permissions", description = "Permission discovery and effective permissions"),
-        (name = "organization", description = "Organization units and scoped access"),
-        (name = "facility", description = "School buildings and rooms"),
-        (name = "lookup", description = "Authenticated reference-data lookups"),
-        (name = "menu", description = "User and administrator menu reads"),
-        (name = "system", description = "System feature reads"),
-        (name = "staff", description = "Staff directory and profiles"),
-        (name = "student", description = "Student self-service reads"),
-        (name = "parent", description = "Parent self-service reads"),
-        (name = "academic", description = "Academic structure administration and self-service reads"),
-        (name = "calendar", description = "Calendar reads"),
-        (name = "supervision", description = "Teaching supervision workflows and reports"),
-        (name = "question-bank", description = "Authorized question bank and export operations"),
-        (name = "school", description = "School settings and public branding reads"),
-        (name = "files", description = "Authorized provider-neutral file operations"),
-        (name = "admission", description = "Admission document attachment operations"),
-        (name = "notifications", description = "Current-user notification reads"),
-        (name = "achievement", description = "Scoped staff achievement operations")
-    )
+    ))
 )]
-struct SchoolApiDoc;
+struct SchoolApiSchemasDoc;
 
 fn sort_json(value: &mut Value) {
     match value {
@@ -1777,7 +1784,9 @@ fn sort_json(value: &mut Value) {
 }
 
 pub fn school_api_value() -> Result<Value, serde_json::Error> {
-    let mut value = serde_json::to_value(SchoolApiDoc::openapi())?;
+    let mut document = SchoolApiDoc::openapi();
+    document.merge(SchoolApiSchemasDoc::openapi());
+    let mut value = serde_json::to_value(document)?;
     sort_json(&mut value);
     Ok(value)
 }

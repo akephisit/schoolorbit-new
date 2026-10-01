@@ -21,6 +21,7 @@ on:
       - "scripts/clamd_runtime_matches.sh"
       - "scripts/reconcile_r2_cors.sh"
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+      - "scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh"
       - ".github/workflows/deploy-school-release.yml"
   workflow_dispatch:
     inputs:
@@ -761,7 +762,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -788,6 +789,7 @@ jobs:
             origin_root_installer="$deployment_root/install-origin-root"
             network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
             timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+            personnel_helper="$deployment_root/scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh"
             image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
             clamd_matcher="$deployment_root/scripts/clamd_runtime_matches.sh"
             r2_cors_helper_source="$deployment_root/scripts/reconcile_r2_cors.sh"
@@ -817,6 +819,7 @@ jobs:
             test -f "$maintenance_proxy_template" || { echo "School API maintenance template is missing"; exit 1; }
 
             . "$timing_helper_source"
+            . "$personnel_helper"
 
             runtime_env_value() {
               local key=$1 line value decoded char
@@ -1203,25 +1206,8 @@ jobs:
               echo "Backend internal migration credential is unavailable; maintenance remains enabled"
               exit 1
             fi
-            if ! curl --fail --silent --show-error --connect-timeout 10 --max-time 300 \
-              -H "X-Internal-Caller: school-release" \
-              -H "X-Internal-Secret: ${internal_api_secret}" \
-              -o "$migration_response" http://127.0.0.1:8081/internal/personnel-preflight
-            then
-              echo "Personnel preflight request failed; maintenance remains enabled"
-              exit 1
-            fi
-            if ! podman run --rm -i "$jq_image" -e '
-                .success == true and .data.passed == true and .data.totalSchools > 0
-                and (.data.schools | length) == .data.totalSchools
-                and all(.data.schools[]; .passed == true and (.checks | length) > 0
-                  and all(.checks[]; .passed == true and .count >= 0))
-              ' < "$migration_response" >/dev/null
-            then
-              podman run --rm -i "$jq_image" -r '.data.schools[]? | .subdomain as $school | .checks[]? | select(.passed != true) | "personnel_preflight subdomain=\($school) code=\(.code) count=\(.count)"' < "$migration_response"
-              echo "Personnel preflight failed; no tenant migration started and maintenance remains enabled"
-              exit 1
-            fi
+            SCHOOLORBIT_INTERNAL_API_SECRET="$internal_api_secret" \
+              schoolorbit_personnel_preflight "$jq_image" "$migration_response" || exit 1
             tenant_migration_started="$(schoolorbit_timer_now)"
             if ! curl \
               --fail \
