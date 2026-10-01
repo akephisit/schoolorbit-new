@@ -1,53 +1,84 @@
 <script lang="ts">
+	import { onDestroy, untrack } from 'svelte';
+	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { PageShell } from '$lib/components/app-layout';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
-	import { User, Shield } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
+	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
+	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
+	import { LatestRequest } from '$lib/async/latest-request';
+	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
+	import { requireApiData } from '$lib/api/client';
+	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import UserRoleManager from '$lib/components/UserRoleManager.svelte';
 
 	let { data }: PageProps = $props();
 	const userId = $derived(data.userId);
-	let activeTab = $state('roles');
+	const returnHref = $derived(staffReturnHref(page.url));
+	const profileHref = $derived(withStaffReturn(`/staff/manage/${userId}`, returnHref));
+	let staff: StaffProfileResponse | null = $state(null);
+	let identityError = $state('');
+	let identityLoading = $state(true);
+	const identityRequest = new LatestRequest();
+	$effect.pre(() => {
+		const source = data.staff;
+		untrack(() => {
+			staff = null;
+			identityError = '';
+			identityLoading = true;
+			const ticket = identityRequest.begin();
+			void source.then((result) => {
+				if (!identityRequest.isCurrent(ticket.revision)) return;
+				identityLoading = false;
+				if (result.ok) staff = result.data;
+				else identityError = result.error;
+			});
+		});
+		return () => identityRequest.abort();
+	});
+	async function retryIdentity() {
+		const ticket = identityRequest.begin();
+		identityLoading = true;
+		identityError = '';
+		const result = await captureRouteLoad(
+			getStaffProfile(userId, { signal: ticket.signal }).then((response) =>
+				requireApiData(response, 'โหลดชื่อบุคลากรไม่สำเร็จ')
+			),
+			'โหลดชื่อบุคลากรไม่สำเร็จ'
+		);
+		if (!identityRequest.isCurrent(ticket.revision)) return;
+		identityLoading = false;
+		if (result.ok) staff = result.data;
+		else identityError = result.error;
+	}
+	onDestroy(() => identityRequest.abort());
 </script>
 
 <PageShell
-	title="จัดการสิทธิ์ผู้ใช้งาน"
-	description="บทบาทและสิทธิ์การเข้าถึง"
-	backHref="/staff/manage"
-	backPreload="off"
+	title="บทบาทและสิทธิ์บุคลากร"
+	description={staff
+		? `${staff.first_name} ${staff.last_name} • ${staff.username}`
+		: `บัญชีบุคลากร ${userId}`}
+	backHref={profileHref}
+	backLabel="กลับข้อมูลบุคลากร"
+	backPreload="tap"
 >
-	<Tabs bind:value={activeTab}>
-		<TabsList>
-			<TabsTrigger value="roles" class="gap-2">
-				<Shield class="h-4 w-4" />
-				บทบาทและสิทธิ์
-			</TabsTrigger>
-			<TabsTrigger value="profile" class="gap-2">
-				<User class="h-4 w-4" />
-				ข้อมูลส่วนตัว
-			</TabsTrigger>
-		</TabsList>
-
-		<TabsContent value="roles" class="mt-6">
-			<UserRoleManager {userId} rolesRead={data.roles} permissionsRead={data.permissions} />
-		</TabsContent>
-
-		<TabsContent value="profile" class="mt-6">
-			<Card>
-				<CardHeader>
-					<CardTitle>ข้อมูลส่วนตัว</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<p class="text-muted-foreground">ข้อมูลโปรไฟล์ผู้ใช้งาน...</p>
-				</CardContent>
-			</Card>
-		</TabsContent>
-	</Tabs>
+	{#snippet meta()}<StaffBreadcrumb
+			{returnHref}
+			name={staff ? `${staff.first_name} ${staff.last_name}` : undefined}
+			{profileHref}
+			current="บทบาทและสิทธิ์"
+		/>{/snippet}
+	{#snippet actions()}<Button href={returnHref} data-sveltekit-preload-data="off" variant="outline"
+			>กลับรายชื่อบุคลากร</Button
+		>{/snippet}
+	<div data-testid="staff-role-identity" aria-busy={identityLoading}>
+		{#if identityLoading}<Skeleton class="h-4 w-56" />
+		{:else if identityError}<div class="flex flex-wrap items-center gap-2">
+				<p role="status" class="text-sm text-muted-foreground">{identityError}</p>
+				<Button variant="outline" size="sm" onclick={retryIdentity}>ลองโหลดชื่ออีกครั้ง</Button>
+			</div>{/if}
+	</div>
+	<UserRoleManager {userId} rolesRead={data.roles} permissionsRead={data.permissions} />
 </PageShell>
-
-<style>
-	:global(body) {
-		font-family: 'Kanit', sans-serif;
-	}
-</style>

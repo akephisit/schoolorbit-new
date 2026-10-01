@@ -10,6 +10,11 @@
 	import { can } from '$lib/stores/permissions';
 	import { Button } from '$lib/components/ui/button';
 	import { PageShell } from '$lib/components/app-layout';
+	import { page } from '$app/state';
+	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
+	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import { staffStatusLabel } from '$lib/forms/staff-status';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
@@ -54,6 +59,7 @@
 
 	let { data }: PageProps = $props();
 	const staffId = $derived(data.staffId);
+	const returnHref = $derived(staffReturnHref(page.url));
 	const staffSource = $derived(data.staff),
 		achievementSource = $derived(data.achievements);
 	const staffRequest = new LatestRequest(),
@@ -278,9 +284,14 @@
 	description={staff?.username && canReadStaff
 		? `รายละเอียดบุคลากร • ${staff.username}`
 		: 'รายละเอียดบุคลากร'}
-	backHref="/staff/manage"
+	backHref={returnHref}
+	backLabel="กลับรายชื่อบุคลากร"
 	backPreload="off"
 >
+	{#snippet meta()}<StaffBreadcrumb
+			{returnHref}
+			name={staff && canReadStaff ? `${staff.first_name} ${staff.last_name}` : undefined}
+		/>{/snippet}
 	{#snippet actions()}
 		<Button variant="outline" onclick={loadStaffProfile} disabled={loading || !canReadStaff}
 			>รีเฟรชข้อมูล</Button
@@ -293,7 +304,7 @@
 		>
 		{#if staff && canReadStaff && canUpdateStaff}
 			<Button
-				href="/staff/manage/{staff.id}/edit"
+				href={withStaffReturn(`/staff/manage/${staff.id}/edit`, returnHref)}
 				data-sveltekit-preload-data="tap"
 				class="flex items-center gap-2"
 			>
@@ -361,27 +372,22 @@
 								</div>
 							</div>
 
-							<!-- Status Badge -->
 							<div class="mt-4">
-								{#if staff.status === 'active'}
-									<span
-										class="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm"
-									>
-										<span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
-										ใช้งาน
-									</span>
-								{:else}
-									<span
-										class="inline-flex items-center px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm"
-									>
-										<span class="w-2 h-2 rounded-full bg-gray-500 mr-2"></span>
-										ไม่ใช้งาน
-									</span>
-								{/if}
+								<Badge variant={staff.status === 'active' ? 'default' : 'secondary'}
+									>{staffStatusLabel(staff.status)}</Badge
+								>
 							</div>
 						</div>
 
 						<div class="mt-6 space-y-3 border-t border-border pt-6">
+							{#if canUpdateStaff}<Button
+									href={withStaffReturn(
+										`/staff/manage/${staff.id}/edit?section=personal`,
+										returnHref
+									)}
+									variant="outline"
+									size="sm">แก้ไขข้อมูลติดต่อ</Button
+								>{/if}
 							{#if staff.email}
 								<div class="flex items-center gap-3 text-sm">
 									<Mail class="w-4 h-4 text-muted-foreground" />
@@ -408,7 +414,7 @@
 						<div class="bg-card border border-border rounded-lg p-6">
 							<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
 								<Briefcase class="w-5 h-5" />
-								ข้อมูลการทำงาน
+								การศึกษา
 							</h3>
 							<div class="space-y-3 text-sm">
 								{#if staff.staff_info.education_level}
@@ -442,6 +448,12 @@
 							<GraduationCap class="w-5 h-5" />
 							บทบาทและตำแหน่ง
 						</h3>
+						{#if $can.has(PERMISSIONS.ROLES_READ_ALL)}<Button
+								href={withStaffReturn(`/staff/manage/${staff.id}/roles`, returnHref)}
+								variant="outline"
+								size="sm"
+								class="mb-4">จัดการบทบาทและสิทธิ์</Button
+							>{/if}
 						{#if staff.roles.length > 0}
 							<div class="flex flex-wrap gap-2">
 								{#each staff.roles as role (role.id)}
@@ -477,6 +489,15 @@
 							<Building2 class="w-5 h-5" />
 							สังกัดหน่วยงาน
 						</h3>
+						{#if canUpdateStaff}<Button
+								href={withStaffReturn(
+									`/staff/manage/${staff.id}/edit?section=organizations`,
+									returnHref
+								)}
+								variant="outline"
+								size="sm"
+								class="mb-4">แก้ไขสังกัด</Button
+							>{/if}
 						{#if staff.organization_units.length > 0}
 							<div class="space-y-3">
 								{#each staff.organization_units as dept (dept.id)}
@@ -552,9 +573,11 @@
 							})()}
 
 							<div class="space-y-5">
-								{#each yearGroups as [year, g] (year)}
-									<div>
-										<div class="text-sm font-semibold text-muted-foreground mb-2">{g.label}</div>
+								{#each yearGroups as [year, g], index (year)}
+									<details open={index === 0} class="rounded-lg border p-3">
+										<summary class="mb-2 cursor-pointer text-sm font-semibold text-foreground"
+											>{g.label}</summary
+										>
 
 										{#if g.advisors.length > 0}
 											<div class="mb-2 flex flex-wrap gap-1.5">
@@ -603,7 +626,7 @@
 												{/each}
 											</div>
 										{/if}
-									</div>
+									</details>
 								{/each}
 							</div>
 						{/if}
@@ -615,7 +638,7 @@
 				title="ไม่พบข้อมูลบุคลากร"
 				description="ข้อมูลบุคลากรนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
 				actionLabel="กลับหน้าบุคลากร"
-				href="/staff"
+				href={returnHref}
 			/>
 		{/if}
 	</section>

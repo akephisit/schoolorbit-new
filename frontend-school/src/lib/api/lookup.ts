@@ -90,8 +90,11 @@ export async function lookupStudents(options: AcademicLookupOptions): Promise<St
  * Returns: id, code, name, user_type
  * Requires roles.read.all or roles.assign.all.
  */
-export async function lookupRoles(options?: LookupOptions): Promise<RoleLookupItem[]> {
-	return fetchLookup<RoleLookupItem>('roles', options);
+export async function lookupRoles(
+	options?: LookupOptions,
+	requestOptions: ApiRequestOptions = {}
+): Promise<RoleLookupItem[]> {
+	return fetchLookup<RoleLookupItem>('roles', options, requestOptions);
 }
 
 /**

@@ -99,6 +99,8 @@ export async function mockStaffDirectory(
 			url.pathname === '/api/staff' ||
 			/^\/api\/staff\/[\da-f-]+$/.test(url.pathname) ||
 			url.pathname === '/api/roles' ||
+			url.pathname === '/api/lookup/roles' ||
+			url.pathname === '/api/lookup/organization-units' ||
 			url.pathname === '/api/organization/units' ||
 			url.pathname.startsWith('/api/users/') ||
 			url.pathname.startsWith('/api/achievements') ||
@@ -129,6 +131,10 @@ export async function mockStaffDirectory(
 				reads.push(url);
 				counts.set(path, (counts.get(path) ?? 0) + 1);
 			} else writes.push({ method, path });
+			if (path === '/api/lookup/roles')
+				return reply(route, [{ id: roleId, name: role.name, code: role.code, user_type: 'staff' }]);
+			if (path === '/api/lookup/organization-units')
+				return reply(route, [{ ...org, display_order: 0, name_en: null }]);
 			const profileSnapshot = {
 				id: path.split('/').at(-1),
 				username: 'synthetic-staff',
@@ -201,7 +207,12 @@ export async function mockStaffDirectory(
 			return reply(route, {
 				items: [
 					{
-						...profileSnapshot,
+						username: profileSnapshot.username,
+						title: '',
+						last_name: profileSnapshot.last_name,
+						status: url.searchParams.get('status') === 'inactive' ? 'inactive' : 'active',
+						roles: ['บทบาทตัวเลือก'],
+						organization_units: ['หน่วยงานตัวเลือก'],
 						id: firstStaff,
 						first_name: search ? `ค้นหา ${search}` : pageNumber > 1 ? 'บุคลากรหน้าสอง' : firstName
 					}

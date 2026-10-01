@@ -29,6 +29,119 @@ async function next(page: Page, count = 1) {
 	for (let index = 0; index < count; index++)
 		await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
 }
+test('staff status filter survives detail navigation and returning to the list', async ({
+	page
+}) => {
+	const api = await mockStaffDirectory(page, { fullPage: true });
+	await page.goto('/staff/manage?search=teacher&page=2');
+	await page.getByRole('button', { name: 'สถานะบุคลากร' }).click();
+	await page.getByRole('option', { name: 'ปิดการใช้งาน', exact: true }).click();
+	await expect(page).toHaveURL(/status=inactive/);
+	await expect(page).not.toHaveURL(/page=2/);
+	await expect.poll(() => api.reads.at(-1)?.searchParams.get('status')).toBe('inactive');
+	await page.getByRole('link', { name: 'ดูข้อมูล', exact: true }).click();
+	await expect(page.getByTestId('staff-profile')).toContainText('บุคลากรแรก');
+	await page.getByRole('link', { name: 'กลับรายชื่อบุคลากร', exact: true }).click();
+	await expect(page).toHaveURL(/search=teacher/);
+	await expect(page).toHaveURL(/status=inactive/);
+});
+test('role and organization filters load lazily and send both selected IDs', async ({ page }) => {
+	const api = await mockStaffDirectory(page);
+	await page.goto('/staff/manage');
+	await expect(page.getByTestId('staff-directory')).toContainText('บุคลากรแรก');
+	expect(api.count('/api/lookup/roles')).toBe(0);
+	expect(api.count('/api/lookup/organization-units')).toBe(0);
+	await page.getByRole('button', { name: 'ตัวกรองเพิ่มเติม', exact: true }).click();
+	await page.getByRole('button', { name: 'กรองบทบาท', exact: true }).click();
+	await page.getByRole('option', { name: 'บทบาทตัวเลือก', exact: true }).click();
+	await page.getByRole('button', { name: 'กรองสังกัด', exact: true }).click();
+	await page.getByRole('option', { name: 'หน่วยงานตัวเลือก', exact: true }).click();
+	await expect
+		.poll(() =>
+			api.reads
+				.filter((url) => url.pathname === '/api/staff')
+				.at(-1)
+				?.searchParams.get('organization_unit_id')
+		)
+		.toBe(organizationId);
+	const query = api.reads.filter((url) => url.pathname === '/api/staff').at(-1)!.searchParams;
+	expect(query.get('role_id')).toBe(roleId);
+	await page.getByRole('link', { name: 'ดูข้อมูล', exact: true }).click();
+	await page.getByRole('link', { name: 'กลับรายชื่อบุคลากร', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(`role_id=${roleId}`));
+	await expect(page).toHaveURL(new RegExp(`organization_unit_id=${organizationId}`));
+});
+test('editor saves personal data directly without requesting role or organization choices', async ({
+	page
+}) => {
+	const api = await mockStaffDirectory(page);
+	await page.goto(staffPath(firstStaff, '/edit'));
+	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
+	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรแก้ไข');
+	const saveRequest = page.waitForRequest(
+		(request) => request.method() === 'PUT' && new URL(request.url()).pathname === profileEndpoint
+	);
+	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
+	const payload = (await saveRequest).postDataJSON();
+	expect(payload).not.toHaveProperty('role_ids');
+	expect(payload).not.toHaveProperty('organization_assignments');
+	expect(payload).not.toHaveProperty('status');
+	expect(payload).not.toHaveProperty('staff_info');
+	await expect(page).toHaveURL(staffPath());
+	await expect(page.getByTestId('staff-profile')).toContainText('บุคลากรแก้ไข');
+	expect(api.count('/api/roles')).toBe(0);
+	expect(api.count('/api/organization/units')).toBe(0);
+});
+test('editor validates personal data even when saving from another section', async ({ page }) => {
+	const api = await mockStaffDirectory(page);
+	await page.goto(staffPath(firstStaff, '/edit'));
+	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('');
+	await page.getByRole('link', { name: 'การศึกษา', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
+	await expect(page.getByText('กรุณากรอกชื่อ', { exact: true })).toBeVisible();
+	expect(api.writes).toHaveLength(0);
+});
+test('editor warns before leaving and can discard the unsaved draft', async ({ page }) => {
+	await mockStaffDirectory(page);
+	await page.goto(staffPath(firstStaff, '/edit'));
+	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
+	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('ร่างใหม่');
+	page.once('dialog', (dialog) => dialog.dismiss());
+	await page.getByRole('link', { name: 'กลับข้อมูลบุคลากร', exact: true }).click();
+	await expect(page).toHaveURL(staffPath(firstStaff, '/edit'));
+	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('ร่างใหม่');
+	await page.getByRole('button', { name: 'ยกเลิกการแก้ไข', exact: true }).click();
+	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
+	await expect(
+		page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true })
+	).toBeDisabled();
+	await page.getByRole('link', { name: 'กลับข้อมูลบุคลากร', exact: true }).click();
+	await expect(page).toHaveURL(staffPath());
+});
+test('education deep link saves only the changed education field', async ({ page }) => {
+	await mockStaffDirectory(page);
+	await page.goto(`${staffPath(firstStaff, '/edit')}?section=education`);
+	await page.getByPlaceholder('เช่น มหาวิทยาลัยธรรมศาสตร์').fill('มหาวิทยาลัยทดสอบ');
+	const saved = page.waitForRequest(
+		(request) => request.method() === 'PUT' && new URL(request.url()).pathname === profileEndpoint
+	);
+	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
+	expect((await saved).postDataJSON()).toEqual({ staff_info: { university: 'มหาวิทยาลัยทดสอบ' } });
+});
+test('new staff is reviewed before creation and opens the newly created profile', async ({
+	page
+}) => {
+	await seedCreateDraft(page);
+	const api = await mockStaffDirectory(page);
+	await page.goto('/staff/manage/new');
+	await fillCreate(page);
+	await next(page, 3);
+	await expect(page.getByTestId('staff-create-review')).toContainText('บุคลากรใหม่');
+	await expect(page.getByTestId('staff-create-review')).toContainText('หน่วยงานตัวเลือก');
+	expect(api.writes).toHaveLength(0);
+	await page.getByRole('button', { name: 'สร้างบุคลากร', exact: true }).click();
+	await expect(page).toHaveURL(staffPath('55000000-0000-4000-8000-000000000087'));
+});
 test('staff list starts once without editor options', async ({ page }) => {
 	const api = await mockStaffDirectory(page, { hold: 'list' });
 	await page.goto(directoryPath);
@@ -293,7 +406,7 @@ for (const mode of ['delayed', 'failed'] as const)
 		expect(api.count('/api/roles')).toBe(0);
 		expect(api.count('/api/organization/units')).toBe(0);
 	});
-test('editor choices are opened by step and typed empty save navigates without shared refresh', async ({
+test('editor organization choices are lazy and save navigates without shared refresh', async ({
 	page
 }) => {
 	const api = await mockStaffDirectory(page);
@@ -301,10 +414,10 @@ test('editor choices are opened by step and typed empty save navigates without s
 	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรแก้ไข');
 	expect(api.count('/api/roles')).toBe(0);
-	await next(page, 2);
-	await expect.poll(() => api.count('/api/roles')).toBe(1);
+	await page.getByRole('link', { name: 'การศึกษา', exact: true }).click();
+	expect(api.count('/api/roles')).toBe(0);
 	expect(api.count('/api/organization/units')).toBe(0);
-	await next(page);
+	await page.getByRole('link', { name: 'สังกัดหน่วยงาน', exact: true }).click();
 	await expect.poll(() => api.count('/api/organization/units')).toBe(1);
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
 	await expect(page).toHaveURL(staffPath());
@@ -325,7 +438,7 @@ test('late editor save cannot navigate or reset a newer person', async ({ page }
 	const api = await mockStaffDirectory(page, { hold: 'mutation' });
 	await page.goto(staffPath(firstStaff, '/edit'));
 	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
-	await next(page, 3);
+	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรแก้ไข');
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
 	await expect.poll(() => api.writes.length).toBe(1);
 	await navigate(page, staffPath(secondStaff, '/edit'));
@@ -384,19 +497,17 @@ async function seedCreateDraft(page: Page) {
 		{ actor, roleId, organizationId }
 	);
 }
-test('creation UUID reply clears its draft and loads only the destination list', async ({
-	page
-}) => {
+test('creation UUID reply clears its draft and loads only the new profile', async ({ page }) => {
 	await seedCreateDraft(page);
 	const api = await mockStaffDirectory(page);
 	await page.goto('/staff/manage/new');
 	await fillCreate(page);
-	await next(page, 2);
+	await next(page, 3);
 	await page.getByRole('button', { name: 'สร้างบุคลากร', exact: true }).click();
-	await expect(page).toHaveURL(directoryPath);
-	await expect(page.getByTestId('staff-directory')).toBeVisible();
+	await expect(page).toHaveURL(staffPath('55000000-0000-4000-8000-000000000087'));
+	await expect(page.getByTestId('staff-profile')).toBeVisible();
 	expect(api.writes).toEqual([{ method: 'POST', path: '/api/staff' }]);
-	expect(api.count('/api/staff')).toBe(1);
+	expect(api.count('/api/staff')).toBe(0);
 	expect(api.count('/api/auth/me')).toBe(1);
 	expect(api.count('/api/menu/user')).toBe(1);
 	expect(
@@ -410,7 +521,7 @@ test('late creation cannot navigate from a newer route', async ({ page }) => {
 	const api = await mockStaffDirectory(page, { hold: 'mutation' });
 	await page.goto('/staff/manage/new');
 	await fillCreate(page);
-	await next(page, 2);
+	await next(page, 3);
 	await page.getByRole('button', { name: 'สร้างบุคลากร', exact: true }).click();
 	await expect.poll(() => api.writes.length).toBe(1);
 	await navigate(page, staffPath(secondStaff));

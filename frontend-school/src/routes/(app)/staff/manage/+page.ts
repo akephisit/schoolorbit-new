@@ -9,6 +9,7 @@ import { captureRouteLoad } from '$lib/navigation/route-load';
 import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 import type { PageLoad } from './$types';
 import { listStaff } from '$lib/api/staff';
+import { STAFF_STATUS_OPTIONS } from '$lib/forms/staff-status';
 
 export const _meta = {
 	academicContext: 'none' as const,
@@ -28,7 +29,25 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 	const search = url.searchParams.get('search') ?? '';
 	const requestedPage = Number(url.searchParams.get('page'));
 	const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-	const query = { search: search || undefined, page, page_size: 20 };
+	const requestedStatus = url.searchParams.get('status') ?? 'active';
+	const status =
+		requestedStatus === 'all' ||
+		STAFF_STATUS_OPTIONS.some((option) => option.value === requestedStatus)
+			? requestedStatus
+			: 'active';
+	const uuid = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+	const requestedRole = url.searchParams.get('role_id') ?? '';
+	const requestedOrganization = url.searchParams.get('organization_unit_id') ?? '';
+	const roleId = uuid.test(requestedRole) ? requestedRole : '';
+	const organizationId = uuid.test(requestedOrganization) ? requestedOrganization : '';
+	const query = {
+		search: search || undefined,
+		status,
+		role_id: roleId || undefined,
+		organization_unit_id: organizationId || undefined,
+		page,
+		page_size: 20
+	};
 	const staff = captureRouteLoad(
 		waitForAuthenticatedUser().then((user) =>
 			user?.user_type === 'staff' &&
@@ -47,8 +66,11 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		title: _meta.menu.title,
 		search,
 		page,
+		status,
+		roleId,
+		organizationId,
 		query,
-		listKey: JSON.stringify([search, page]),
+		listKey: JSON.stringify([search, page, status, roleId, organizationId]),
 		staff
 	};
 };

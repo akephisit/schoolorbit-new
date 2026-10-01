@@ -6,6 +6,7 @@ import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 import type { PageLoad } from './$types';
 import { userRoleAPI } from '$lib/api/roles';
 import { requireApiData } from '$lib/api/client';
+import { getStaffProfile } from '$lib/api/staff';
 export const _meta = {
 	academicContext: 'none' as const,
 	access: { user_type: 'staff', permission: PERMISSION_MODULES.ROLES }
@@ -14,6 +15,23 @@ export const load: PageLoad = ({ fetch, params, depends }) => {
 	depends('school:app-identity');
 	const userId = params.id;
 	const userRead = waitForAuthenticatedUser();
+	const staff = captureRouteLoad(
+		userRead.then(async (user) =>
+			user?.user_type === 'staff' &&
+			(get(can).hasAny(
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE,
+				PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
+			) ||
+				(user.id === userId && get(can).has(PERMISSIONS.STAFF_PROFILE_READ_OWN)))
+				? requireApiData(
+						await getStaffProfile(userId, { requestFetch: fetch }),
+						'โหลดชื่อบุคลากรไม่สำเร็จ'
+					)
+				: null
+		),
+		'โหลดชื่อบุคลากรไม่สำเร็จ'
+	);
 	const roles = captureRouteLoad(
 		userRead.then(async (user) =>
 			user?.user_type === 'staff' && get(can).has(PERMISSIONS.ROLES_READ_ALL)
@@ -36,5 +54,5 @@ export const load: PageLoad = ({ fetch, params, depends }) => {
 		),
 		'โหลดสิทธิ์ที่มีผลไม่สำเร็จ'
 	);
-	return { title: 'จัดการสิทธิ์ผู้ใช้งาน', userId, roles, permissions };
+	return { title: 'บทบาทและสิทธิ์บุคลากร', userId, staff, roles, permissions };
 };

@@ -1,15 +1,18 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
+	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
+	import { staffStatusLabel } from '$lib/forms/staff-status';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
 	import {
 		getStaffProfile,
 		updateStaff,
-		listRoles,
 		listOrganizationUnits,
 		type StaffProfileResponse,
-		type Role,
+		type UpdateStaffRequest,
 		type OrganizationUnit
 	} from '$lib/api/staff';
 	import { Button } from '$lib/components/ui/button';
@@ -22,12 +25,13 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { DatePicker } from '$lib/components/ui/date-picker';
 	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
-	import { ArrowLeft, LoaderCircle, Save, User, Building2, BookOpen, Check } from '@lucide/svelte';
+	import { Building2, LoaderCircle, Save, Shield } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { LatestRequest } from '$lib/async/latest-request';
 	import { captureRouteLoad } from '$lib/navigation/route-load';
 	import { requireApiData } from '$lib/api/client';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 	import { can } from '$lib/stores/permissions';
 	import { authStore } from '$lib/stores/auth';
 
@@ -48,27 +52,37 @@
 
 	// Form state
 	let currentStep = $state(1);
-	const totalSteps = 4;
+	const sections = [
+		{ value: 'personal', label: 'ข้อมูลส่วนตัว' },
+		{ value: 'education', label: 'การศึกษา' },
+		{ value: 'organizations', label: 'สังกัดหน่วยงาน' }
+	];
+	const returnHref = $derived(staffReturnHref(page.url));
+	const profileHref = $derived(withStaffReturn(`/staff/manage/${staffId}`, returnHref));
+	function sectionHref(value: string) {
+		const query = new SvelteURLSearchParams(page.url.search);
+		query.set('section', value);
+		return resolve(`/staff/manage/${staffId}/edit?${query}`);
+	}
+	$effect.pre(() => {
+		const section = page.url.searchParams.get('section');
+		currentStep = Math.max(1, sections.findIndex((item) => item.value === section) + 1);
+	});
 
 	// Loading states
 	let loadingProfile = $state(true);
 	let saving = $state(false);
-	let loadingRoles = $state(false);
 	let loadingOrganizationUnits = $state(false);
 
-	const rolesRequest = new LatestRequest(),
-		organizationRequest = new LatestRequest();
+	const organizationRequest = new LatestRequest();
 	const canReadOptions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
 	const canMutateStaff = $derived($can.has(PERMISSIONS.STAFF_UPDATE_ALL));
-	let rolesLoaded = $state(false),
-		organizationsLoaded = $state(false),
-		rolesError = $state(''),
+	let organizationsLoaded = $state(false),
 		organizationError = $state('');
 	let disposed = false,
 		mutationEpoch = 0;
 	// Data
 	let staff: StaffProfileResponse | null = $state(null);
-	let roles: Role[] = $state([]);
 	let organizationUnits: OrganizationUnit[] = $state([]);
 
 	// Form data
@@ -95,10 +109,6 @@
 		major: '',
 		university: '',
 
-		// Roles
-		role_ids: [] as string[],
-		primary_role_id: '',
-
 		// Organization Units
 		organization_assignments: [] as Array<{
 			organization_unit_id: string;
@@ -108,6 +118,20 @@
 		}>
 	});
 
+	let originalForm: typeof formData | null = $state(null);
+	const dirty = $derived(
+		originalForm !== null && JSON.stringify(formData) !== JSON.stringify(originalForm)
+	);
+	beforeNavigate(({ to, cancel, willUnload }) => {
+		if (!dirty || saving || to?.url.pathname === page.url.pathname) return;
+		if (willUnload || !window.confirm('มีข้อมูลที่ยังไม่บันทึก ต้องการออกจากหน้านี้หรือไม่?'))
+			cancel();
+	});
+	function discardChanges() {
+		if (!originalForm || saving) return;
+		formData = structuredClone($state.snapshot(originalForm));
+		errors = {};
+	}
 	// Validation errors
 	let errors = $state<Record<string, string>>({});
 
@@ -120,12 +144,9 @@
 				mutationEpoch++;
 				staff = null;
 				saving = false;
-				currentStep = 1;
-				rolesRequest.abort();
+				originalForm = null;
 				organizationRequest.abort();
-				roles = [];
 				organizationUnits = [];
-				rolesLoaded = false;
 				organizationsLoaded = false;
 				errors = {};
 			}
@@ -140,7 +161,6 @@
 		disposed = true;
 		mutationEpoch++;
 		staffRequest.abort();
-		rolesRequest.abort();
 		organizationRequest.abort();
 	});
 	function applyStaff(result: Awaited<typeof data.staff>, revision: number) {
@@ -177,8 +197,6 @@
 				education_level: staff.staff_info?.education_level || '',
 				major: staff.staff_info?.major || '',
 				university: staff.staff_info?.university || '',
-				role_ids: staff.roles?.map((r) => r.id) || [],
-				primary_role_id: staff.roles?.find((r) => r.is_primary)?.id || '',
 				organization_assignments:
 					staff.organization_units?.map((d) => ({
 						organization_unit_id: d.id,
@@ -187,6 +205,7 @@
 						responsibilities: d.responsibilities || ''
 					})) || []
 			};
+			originalForm = structuredClone($state.snapshot(formData));
 		}
 	}
 	async function loadStaffProfile() {
@@ -210,42 +229,18 @@
 			allowed = canReadOptions;
 		untrack(() => {
 			if (!allowed) {
-				rolesRequest.abort();
 				organizationRequest.abort();
-				roles = [];
 				organizationUnits = [];
-				rolesLoaded = false;
 				organizationsLoaded = false;
-				loadingRoles = false;
 				loadingOrganizationUnits = false;
-			} else if (step === 3 && !rolesLoaded) void loadRoleOptions();
-			else if (step === 4 && !organizationsLoaded) void loadOrganizationOptions();
+			} else if (step === 3 && !organizationsLoaded) void loadOrganizationOptions();
 		});
 		return () => {
-			if (step === 3) rolesRequest.abort();
-			if (step === 4) organizationRequest.abort();
+			if (step === 3) organizationRequest.abort();
 		};
 	});
-	async function loadRoleOptions() {
-		if (!canReadOptions || currentStep !== 3) return;
-		const ticket = rolesRequest.begin();
-		loadingRoles = true;
-		rolesError = '';
-		const result = await captureRouteLoad(
-			listRoles({ signal: ticket.signal }).then((reply) =>
-				requireApiData(reply, 'โหลดตัวเลือกบทบาทไม่สำเร็จ')
-			),
-			'โหลดตัวเลือกบทบาทไม่สำเร็จ'
-		);
-		if (!rolesRequest.isCurrent(ticket.revision)) return;
-		loadingRoles = false;
-		if (result.ok) {
-			roles = result.data.filter((role) => role.user_type === 'staff');
-			rolesLoaded = true;
-		} else rolesError = result.error;
-	}
 	async function loadOrganizationOptions() {
-		if (!canReadOptions || currentStep !== 4) return;
+		if (!canReadOptions || currentStep !== 3) return;
 		const ticket = organizationRequest.begin();
 		loadingOrganizationUnits = true;
 		organizationError = '';
@@ -266,8 +261,8 @@
 	function validateStep1(): boolean {
 		errors = {};
 
-		if (!formData.first_name) errors.first_name = 'กรุณากรอกชื่อ';
-		if (!formData.last_name) errors.last_name = 'กรุณากรอกนามสกุล';
+		if (!formData.first_name.trim()) errors.first_name = 'กรุณากรอกชื่อ';
+		if (!formData.last_name.trim()) errors.last_name = 'กรุณากรอกนามสกุล';
 
 		if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
 			errors.email = 'รูปแบบอีเมลไม่ถูกต้อง';
@@ -280,90 +275,22 @@
 		return Object.keys(errors).length === 0;
 	}
 
-	function validateStep2(): boolean {
-		// Educational info is optional
-		return true;
-	}
-
-	function validateStep3(): boolean {
+	function validateOrganizations(): boolean {
 		errors = {};
-
-		if (formData.role_ids.length === 0) {
-			errors.roles = 'กรุณาเลือกบทบาทอย่างน้อย 1 บทบาท';
-			return false;
-		}
-
-		if (!formData.primary_role_id) {
-			errors.primary_role = 'กรุณาเลือกบทบาทหลัก';
-			return false;
-		}
-
-		return true;
+		if (
+			!formData.organization_assignments.length ||
+			formData.organization_assignments.some((item) => !item.organization_unit_id)
+		)
+			errors.organization_units = 'กรุณาเลือกหน่วยงานให้ครบทุกแถว';
+		else if (
+			new Set(formData.organization_assignments.map((item) => item.organization_unit_id)).size !==
+			formData.organization_assignments.length
+		)
+			errors.organization_units = 'เลือกหน่วยงานซ้ำกัน กรุณาตรวจสอบสังกัด';
+		else if (formData.organization_assignments.filter((item) => item.is_primary).length !== 1)
+			errors.organization_units = 'กรุณาระบุสังกัดหลัก 1 หน่วยงาน';
+		return Object.keys(errors).length === 0;
 	}
-
-	function validateStep4(): boolean {
-		errors = {};
-
-		if (formData.organization_assignments.length === 0) {
-			errors.organization_units = 'กรุณาเพิ่มสังกัดหน่วยงานอย่างน้อย 1 หน่วยงาน';
-			return false;
-		}
-
-		const hasPrimary = formData.organization_assignments.some((d) => d.is_primary);
-		if (!hasPrimary) {
-			errors.organization_units = 'กรุณาระบุสังกัดหลัก';
-			return false;
-		}
-
-		return true;
-	}
-
-	// Navigation functions
-	function nextStep() {
-		let isValid = false;
-
-		switch (currentStep) {
-			case 1:
-				isValid = validateStep1();
-				break;
-			case 2:
-				isValid = validateStep2();
-				break;
-			case 3:
-				isValid = validateStep3();
-				break;
-			case 4:
-				isValid = validateStep4();
-				break;
-		}
-
-		if (isValid && currentStep < totalSteps) {
-			currentStep++;
-		}
-	}
-
-	function prevStep() {
-		if (currentStep > 1) {
-			currentStep--;
-		}
-	}
-
-	// Role management
-	function toggleRole(roleId: string) {
-		const index = formData.role_ids.indexOf(roleId);
-		if (index === -1) {
-			formData.role_ids = [...formData.role_ids, roleId];
-			if (!formData.primary_role_id) {
-				formData.primary_role_id = roleId;
-			}
-		} else {
-			formData.role_ids = formData.role_ids.filter((id) => id !== roleId);
-			if (formData.primary_role_id === roleId) {
-				formData.primary_role_id = formData.role_ids[0] || '';
-			}
-		}
-	}
-
 	// OrganizationUnit management
 	function addOrganizationUnit() {
 		const isFirst = formData.organization_assignments.length === 0;
@@ -379,9 +306,11 @@
 	}
 
 	function removeOrganizationUnit(index: number) {
+		const removedPrimary = formData.organization_assignments[index]?.is_primary;
 		formData.organization_assignments = formData.organization_assignments.filter(
 			(_, i) => i !== index
 		);
+		if (removedPrimary && formData.organization_assignments.length) setPrimaryOrganizationUnit(0);
 	}
 
 	function setPrimaryOrganizationUnit(index: number) {
@@ -393,7 +322,18 @@
 
 	// Submit form
 	async function handleSubmit() {
-		if (!canMutateStaff || saving || !staff || !validateStep4()) return;
+		if (!canMutateStaff || saving || !staff || !originalForm || !dirty) return;
+		if (!validateStep1()) {
+			await goto(sectionHref('personal'), { keepFocus: true, noScroll: true });
+			return;
+		}
+		const organizationsChanged =
+			JSON.stringify(formData.organization_assignments) !==
+			JSON.stringify(originalForm?.organization_assignments);
+		if (organizationsChanged && !validateOrganizations()) {
+			await goto(sectionHref('organizations'), { keepFocus: true, noScroll: true });
+			return;
+		}
 		const owner = staffId,
 			epoch = ++mutationEpoch;
 		const current = () => !disposed && owner === staffId && epoch === mutationEpoch;
@@ -405,39 +345,51 @@
 		errors = {};
 
 		try {
-			const payload = {
-				profile_image_file_id: formData.profile_image_file_id || null,
-				title: formData.title || undefined,
-				first_name: formData.first_name,
-				last_name: formData.last_name,
-				nickname: formData.nickname || undefined,
-				email: formData.email || undefined,
-				phone: formData.phone || undefined,
-				emergency_contact: formData.emergency_contact || undefined,
-				line_id: formData.line_id || undefined,
-				date_of_birth: formData.date_of_birth || undefined,
-				gender: formData.gender || undefined,
-				address: formData.address || undefined,
-				hired_date: formData.hired_date || undefined,
-				status: formData.status,
-				staff_info: {
-					education_level: formData.education_level || undefined,
-					major: formData.major || undefined,
-					university: formData.university || undefined
-				},
-				role_ids: formData.role_ids,
-				primary_role_id: formData.primary_role_id || formData.role_ids[0],
-				organization_assignments: formData.organization_assignments.filter(
-					(d) => d.organization_unit_id
-				)
-			};
+			const payload: UpdateStaffRequest = {};
+			const personalFields = [
+				'title',
+				'first_name',
+				'last_name',
+				'nickname',
+				'email',
+				'phone',
+				'emergency_contact',
+				'line_id',
+				'date_of_birth',
+				'gender',
+				'address',
+				'hired_date',
+				'status'
+			] as const;
+			for (const field of personalFields) {
+				if (formData[field] !== originalForm[field]) {
+					const value =
+						field === 'first_name' || field === 'last_name'
+							? formData[field].trim()
+							: formData[field];
+					payload[field] = value || undefined;
+				}
+			}
+			for (const field of ['education_level', 'major', 'university'] as const) {
+				if (formData[field] !== originalForm[field]) {
+					payload.staff_info ??= {};
+					payload.staff_info[field] = formData[field] || undefined;
+				}
+			}
+			if (organizationsChanged)
+				payload.organization_assignments = formData.organization_assignments;
 
 			const result = await updateStaff(owner, payload);
 			if (!current()) return;
 
 			if (result.success) {
 				toast.success('บันทึกข้อมูลสำเร็จ');
-				await goto(resolve(`/staff/manage/${owner}`));
+				originalForm = structuredClone($state.snapshot(formData));
+				await goto(
+					resolve(
+						withStaffReturn(`/staff/manage/${owner}`, returnHref) as `/staff/manage/${string}`
+					)
+				);
 			} else {
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 			}
@@ -463,17 +415,6 @@
 		return labels[value] || value;
 	}
 
-	function getStatusLabel(value: string): string {
-		const labels: Record<string, string> = {
-			active: 'ใช้งาน',
-			inactive: 'ไม่ใช้งาน',
-			suspended: 'ระงับ',
-			resigned: 'ลาออก',
-			retired: 'เกษียณ'
-		};
-		return labels[value] || value;
-	}
-
 	function getGenderLabel(value: string): string {
 		const labels: Record<string, string> = {
 			male: 'ชาย',
@@ -491,21 +432,6 @@
 		return labels[value] || 'เลือกตำแหน่ง';
 	}
 
-	// Get step icon
-	function getStepIcon(step: number) {
-		switch (step) {
-			case 1:
-				return User;
-			case 2:
-				return BookOpen; // Education
-			case 3:
-				return Building2; // Roles
-			case 4:
-				return Building2; // Organization Units
-			default:
-				return User;
-		}
-	}
 	async function updateProfileImage(fileId: string | null, owner: string) {
 		if (disposed || owner !== staffId || !canMutateStaff || currentStep !== 1) return;
 		const epoch = mutationEpoch;
@@ -521,6 +447,7 @@
 			}
 			if (!reply.success) throw new Error(reply.error || 'ไม่สามารถอัปเดตรูปภาพได้');
 			formData.profile_image_file_id = fileId ?? '';
+			if (originalForm) originalForm.profile_image_file_id = fileId ?? '';
 			if (staff) staff = { ...staff, profile_image_file_id: fileId };
 			toast.success('อัปเดตรูปโปรไฟล์เรียบร้อยแล้ว', { id: toastId });
 		} catch (e) {
@@ -534,11 +461,18 @@
 <PageShell
 	title="แก้ไขข้อมูลบุคลากร"
 	description={staff && canReadStaff
-		? `${staff.first_name} ${staff.last_name} • ขั้นตอน ${currentStep} / ${totalSteps}`
-		: `ขั้นตอน ${currentStep} / ${totalSteps}`}
-	backHref={`/staff/manage/${staffId}`}
+		? `${staff.first_name} ${staff.last_name} • เลือกหมวดที่ต้องการแก้ไข`
+		: 'แก้ไขข้อมูลบุคลากร'}
+	backHref={profileHref}
+	backLabel="กลับข้อมูลบุคลากร"
 	backPreload="tap"
 >
+	{#snippet meta()}<StaffBreadcrumb
+			{returnHref}
+			name={staff && canReadStaff ? `${staff.first_name} ${staff.last_name}` : undefined}
+			{profileHref}
+			current="แก้ไข"
+		/>{/snippet}
 	{#snippet actions()}<Button
 			variant="outline"
 			onclick={loadStaffProfile}
@@ -568,64 +502,29 @@
 				onaction={loadStaffProfile}
 			/>
 		{:else if staff}
-			<!-- Progress Steps -->
-			<div class="mb-8">
-				<div class="flex items-center justify-between">
-					{#each Array.from({ length: totalSteps }, (_v, i) => i) as i (i)}
-						{@const step = i + 1}
-						{@const Icon = getStepIcon(step)}
-						<div class="flex flex-col items-center flex-1">
-							<!-- Circle -->
-							<div
-								class="w-12 h-12 rounded-full flex items-center justify-center transition-all
-								{step < currentStep
-									? 'bg-primary text-primary-foreground'
-									: step === currentStep
-										? 'bg-primary text-primary-foreground ring-4 ring-primary/20'
-										: 'bg-muted text-muted-foreground'}"
-							>
-								{#if step < currentStep}
-									<Check class="w-6 h-6" />
-								{:else}
-									<Icon class="w-6 h-6" />
-								{/if}
-							</div>
-
-							<!-- Line (except last) -->
-							{#if i < totalSteps - 1}
-								<div
-									class="absolute left-1/2 w-full h-0.5 top-6 -z-10
-									{step < currentStep ? 'bg-primary' : 'bg-border'}"
-									style="width: calc(100% / {totalSteps} - 3rem); transform: translateX(1.5rem);"
-								></div>
-							{/if}
-
-							<!-- Label -->
-							<p
-								class="text-xs mt-2 text-center
-								{step === currentStep ? 'text-foreground font-medium' : 'text-muted-foreground'}"
-							>
-								{#if step === 1}
-									ข้อมูลส่วนตัว
-								{:else if step === 2}
-									การศึกษา
-								{:else if step === 3}
-									บทบาท
-								{:else}
-									สังกัดหน่วยงาน
-								{/if}
-							</p>
-						</div>
-					{/each}
-				</div>
-			</div>
+			<nav
+				aria-label="หมวดข้อมูลที่แก้ไข"
+				class="flex flex-wrap gap-2 rounded-xl border bg-card p-3"
+			>
+				{#each sections as section, index (section.value)}
+					<Button
+						href={sectionHref(section.value)}
+						data-sveltekit-preload-data="off"
+						variant={currentStep === index + 1 ? 'default' : 'ghost'}
+						aria-current={currentStep === index + 1 ? 'page' : undefined}>{section.label}</Button
+					>
+				{/each}
+				{#if $can.hasModule(PERMISSION_MODULES.ROLES)}<Button
+						href={withStaffReturn(`/staff/manage/${staffId}/roles`, returnHref)}
+						variant="outline"
+						class="gap-2"><Shield class="size-4" />บทบาทและสิทธิ์</Button
+					>{/if}
+			</nav>
 
 			<form
 				onsubmit={(e) => {
 					e.preventDefault();
-					if (currentStep === totalSteps) {
-						handleSubmit();
-					}
+					void handleSubmit();
 				}}
 			>
 				<div class="bg-card border border-border rounded-lg p-6">
@@ -647,7 +546,7 @@
 						</div>
 
 						<div class="space-y-4">
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">รหัสบุคลากร (Username)</Label>
 									<Input
@@ -662,7 +561,7 @@
 								</div>
 							</div>
 
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">
 										คำนำหน้า <span class="text-destructive">*</span>
@@ -696,7 +595,7 @@
 								</div>
 							</div>
 
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">
 										ชื่อ <span class="text-destructive">*</span>
@@ -704,6 +603,8 @@
 									<Input
 										type="text"
 										bind:value={formData.first_name}
+										aria-label="ชื่อ"
+										aria-invalid={Boolean(errors.first_name)}
 										placeholder="ชื่อ"
 										class="w-full px-3 py-2 border border-border rounded-md
 										{errors.first_name ? 'border-destructive' : ''}"
@@ -720,6 +621,8 @@
 									<Input
 										type="text"
 										bind:value={formData.last_name}
+										aria-label="นามสกุล"
+										aria-invalid={Boolean(errors.last_name)}
 										placeholder="นามสกุล"
 										class="w-full px-3 py-2 border border-border rounded-md
 										{errors.last_name ? 'border-destructive' : ''}"
@@ -735,12 +638,14 @@
 								<Input type="text" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
 							</div>
 
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">อีเมล</Label>
 									<Input
 										type="email"
 										bind:value={formData.email}
+										aria-label="อีเมล"
+										aria-invalid={Boolean(errors.email)}
 										placeholder="email@school.ac.th (ไม่บังคับ)"
 										class="w-full px-3 py-2 border border-border rounded-md
 										{errors.email ? 'border-destructive' : ''}"
@@ -755,6 +660,8 @@
 									<Input
 										type="tel"
 										bind:value={formData.phone}
+										aria-label="เบอร์โทรศัพท์"
+										aria-invalid={Boolean(errors.phone)}
 										placeholder="081-234-5678"
 										class="w-full px-3 py-2 border border-border rounded-md
 										{errors.phone ? 'border-destructive' : ''}"
@@ -765,7 +672,7 @@
 								</div>
 							</div>
 
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">วันเกิด</Label>
 									<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
@@ -777,7 +684,7 @@
 								</div>
 							</div>
 
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">Line ID</Label>
 									<Input type="text" bind:value={formData.line_id} placeholder="@lineid" />
@@ -801,10 +708,10 @@
 							<div>
 								<Label class="mb-2">สถานะ</Label>
 								<Select.Root type="single" bind:value={formData.status}>
-									<Select.Trigger>{getStatusLabel(formData.status)}</Select.Trigger>
+									<Select.Trigger>{staffStatusLabel(formData.status)}</Select.Trigger>
 									<Select.Content>
 										<Select.Item value="active">ใช้งาน</Select.Item>
-										<Select.Item value="inactive">ไม่ใช้งาน</Select.Item>
+										<Select.Item value="inactive">ปิดการใช้งาน</Select.Item>
 										<Select.Item value="suspended">ระงับ</Select.Item>
 										<Select.Item value="resigned">ลาออก</Select.Item>
 										<Select.Item value="retired">เกษียณ</Select.Item>
@@ -826,7 +733,7 @@
 								/>
 							</div>
 
-							<div class="grid grid-cols-2 gap-4">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
 									<Label class="mb-2">สาขา</Label>
 									<Input
@@ -847,97 +754,6 @@
 							</div>
 						</div>
 					{:else if currentStep === 3}
-						<!-- Step 3: Roles -->
-						<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
-
-						{#if !canReadOptions}<PageState
-								variant="permission"
-								title="ไม่มีสิทธิ์อ่านตัวเลือกบทบาท"
-							/>
-						{:else if loadingRoles}<div role="status" aria-label="กำลังโหลดตัวเลือกบทบาท">
-								<PageSkeleton variant="form" rows={3} />
-							</div>
-						{:else if rolesError}<PageState
-								variant="error"
-								title="โหลดตัวเลือกบทบาทไม่สำเร็จ"
-								description={rolesError}
-								actionLabel="ลองอีกครั้ง"
-								onaction={loadRoleOptions}
-							/>
-						{:else}
-							<div class="space-y-4">
-								<p class="text-sm text-muted-foreground">
-									เลือกบทบาทของบุคลากร (สามารถเลือกได้มากกว่า 1 บทบาท)
-								</p>
-
-								{#if errors.roles}
-									<p class="text-sm text-destructive">{errors.roles}</p>
-								{/if}
-
-								<div class="grid grid-cols-2 gap-3">
-									{#each roles as role (role.id)}
-										<Button
-											variant="outline"
-											type="button"
-											onclick={() => toggleRole(role.id)}
-											class="p-4 border-2 rounded-lg text-left transition-all
-											{formData.role_ids.includes(role.id)
-												? 'border-primary bg-primary/5'
-												: 'border-border hover:border-primary/50'}"
-										>
-											<div class="flex items-start justify-between mb-2">
-												<div class="flex-1">
-													<p class="font-medium">{role.name}</p>
-													{#if role.name_en}
-														<p class="text-xs text-muted-foreground">{role.name_en}</p>
-													{/if}
-												</div>
-												<div class="flex gap-1">
-													{#if formData.role_ids.includes(role.id)}
-														<Check class="w-5 h-5 text-primary" />
-													{/if}
-												</div>
-											</div>
-											<div class="flex items-center gap-2 text-xs">
-												<span class="px-2 py-0.5 bg-muted rounded">{role.user_type}</span>
-												<span class="text-muted-foreground">ระดับ {role.level}</span>
-											</div>
-										</Button>
-									{/each}
-								</div>
-
-								{#if formData.role_ids.length > 0}
-									<div class="mt-6">
-										<Label class="mb-2">
-											บทบาทหลัก <span class="text-destructive">*</span>
-										</Label>
-										{#if errors.primary_role}
-											<p class="text-sm text-destructive mb-2">{errors.primary_role}</p>
-										{/if}
-										<Select.Root type="single" bind:value={formData.primary_role_id}>
-											<Select.Trigger>
-												{#if formData.primary_role_id}
-													{roles.find((r) => r.id === formData.primary_role_id)?.name ||
-														'เลือกบทบาทหลัก'}
-												{:else}
-													เลือกบทบาทหลัก
-												{/if}
-											</Select.Trigger>
-											<Select.Content>
-												<Select.Item value="">เลือกบทบาทหลัก</Select.Item>
-												{#each formData.role_ids as roleId (roleId)}
-													{@const role = roles.find((r) => r.id === roleId)}
-													{#if role}
-														<Select.Item value={role.id}>{role.name}</Select.Item>
-													{/if}
-												{/each}
-											</Select.Content>
-										</Select.Root>
-									</div>
-								{/if}
-							</div>
-						{/if}
-					{:else if currentStep === 4}
 						<!-- Step 4: Organization Units -->
 						<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
 
@@ -1100,35 +916,25 @@
 					{/if}
 				</div>
 
-				<!-- Navigation Buttons -->
-				<div class="flex justify-between mt-6">
-					<Button
-						type="button"
-						onclick={prevStep}
-						variant="outline"
-						disabled={currentStep === 1}
-						class="min-w-[120px]"
-					>
-						<ArrowLeft class="w-4 h-4 mr-2" />
-						ย้อนกลับ
-					</Button>
-
-					{#if currentStep < totalSteps}
-						<Button type="button" onclick={nextStep} class="min-w-[120px]">
-							ถัดไป
-							<ArrowLeft class="w-4 h-4 ml-2 rotate-180" />
-						</Button>
-					{:else}
-						<Button type="submit" disabled={saving} class="min-w-[120px]">
-							{#if saving}
-								<LoaderCircle class="w-4 h-4 mr-2 animate-spin" />
-								กำลังบันทึก...
-							{:else}
-								<Save class="w-4 h-4 mr-2" />
-								บันทึกการเปลี่ยนแปลง
-							{/if}
-						</Button>
-					{/if}
+				<div
+					class="sticky bottom-3 z-10 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur"
+				>
+					<p class="text-sm text-muted-foreground" role="status">
+						{dirty ? 'มีข้อมูลที่ยังไม่บันทึก' : 'ยังไม่มีการเปลี่ยนแปลง'}
+					</p>
+					<div class="flex gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							onclick={discardChanges}
+							disabled={saving || !dirty}>ยกเลิกการแก้ไข</Button
+						>
+						<Button type="submit" disabled={saving || !canMutateStaff || !dirty} class="gap-2"
+							>{#if saving}<LoaderCircle class="size-4 animate-spin" />กำลังบันทึก...{:else}<Save
+									class="size-4"
+								/>บันทึกการเปลี่ยนแปลง{/if}</Button
+						>
+					</div>
 				</div>
 			</form>
 		{:else}

@@ -77,6 +77,9 @@ export async function listStaff(
 ): Promise<StaffListResponse> {
 	const params = new URLSearchParams();
 	if (filter?.status) params.append('status', filter.status);
+	if (filter?.role_id) params.append('role_id', filter.role_id);
+	if (filter?.organization_unit_id)
+		params.append('organization_unit_id', filter.organization_unit_id);
 	if (filter?.search) params.append('search', filter.search);
 	if (filter?.page) params.append('page', filter.page.toString());
 	if (filter?.page_size) params.append('page_size', filter.page_size.toString());

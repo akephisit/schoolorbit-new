@@ -4,6 +4,7 @@ use school_crypto as field_encryption;
 use school_errors::AppError;
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
+use std::collections::HashMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -360,7 +361,7 @@ pub async fn list_staff(
     );
     push_staff_list_filters(&mut query, &filter, search_pattern.as_deref(), access);
     query
-        .push(" ORDER BY u.first_name LIMIT ")
+        .push(" ORDER BY u.first_name, u.last_name, u.id LIMIT ")
         .push_bind(page_params.page_size)
         .push(" OFFSET ")
         .push_bind(page_params.offset);
@@ -387,6 +388,44 @@ pub async fn list_staff(
             AppError::InternalServerError("เกิดข้อผิดพลาดในการนับข้อมูล".to_string())
         })?;
 
+    let ids: Vec<Uuid> = staff_rows.iter().map(|row| row.0).collect();
+    let mut roles = HashMap::<Uuid, Vec<String>>::new();
+    let mut organizations = HashMap::<Uuid, Vec<String>>::new();
+    if !ids.is_empty() {
+        let (role_rows, organization_rows) = tokio::try_join!(
+            sqlx::query_as::<_, (Uuid, String)>(
+                "SELECT ur.user_id, r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+                 WHERE ur.user_id = ANY($1) AND ur.ended_at IS NULL
+                 ORDER BY ur.is_primary DESC, r.level DESC, r.name, r.id"
+            )
+            .bind(&ids)
+            .fetch_all(pool),
+            sqlx::query_as::<_, (Uuid, String)>(
+                "SELECT om.user_id, ou.name FROM organization_members om
+                 JOIN organization_units ou ON ou.id = om.organization_unit_id
+                 WHERE om.user_id = ANY($1) AND om.ended_at IS NULL
+                 ORDER BY om.is_primary DESC, ou.name, ou.id"
+            )
+            .bind(&ids)
+            .fetch_all(pool)
+        )
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to load staff directory relations");
+            AppError::InternalServerError("โหลดบทบาทและสังกัดบุคลากรไม่สำเร็จ".to_string())
+        })?;
+        for (id, name) in role_rows {
+            let names = roles.entry(id).or_default();
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        for (id, name) in organization_rows {
+            let names = organizations.entry(id).or_default();
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
         .map(
@@ -396,8 +435,8 @@ pub async fn list_staff(
                 title: staff_title_or_default(title),
                 first_name,
                 last_name,
-                roles: vec![],
-                organization_units: vec![],
+                roles: roles.remove(&id).unwrap_or_default(),
+                organization_units: organizations.remove(&id).unwrap_or_default(),
                 status,
             },
         )
@@ -413,12 +452,22 @@ fn push_staff_list_filters<'args>(
     access: StaffListAccess,
 ) {
     match &filter.status {
+        Some(status) if status == "all" => {}
         Some(status) => {
             query.push(" AND u.status = ").push_bind(status);
         }
         None => {
             query.push(" AND u.status = 'active'");
         }
+    }
+
+    if let Some(role_id) = filter.role_id {
+        query.push(" AND EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id AND ur.ended_at IS NULL AND ur.role_id = ")
+            .push_bind(role_id).push(")");
+    }
+    if let Some(unit_id) = filter.organization_unit_id {
+        query.push(" AND EXISTS (SELECT 1 FROM organization_members om WHERE om.user_id = u.id AND om.ended_at IS NULL AND om.organization_unit_id = ")
+            .push_bind(unit_id).push(")");
     }
 
     if let Some(pattern) = search_pattern {
@@ -1211,6 +1260,114 @@ fn staff_title_or_default(title: Option<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use school_test_db::{create_test_pool, create_test_user, run_test_migrations};
+
+    #[tokio::test]
+    async fn staff_directory_returns_current_relations_and_preserves_access_for_filters() {
+        let pool = create_test_pool().await;
+        run_test_migrations(&pool).await;
+        let fixture = Uuid::new_v4().simple().to_string();
+        let user_id = create_test_user(
+            &pool,
+            &format!("directory-{fixture}@example.test"),
+            "Test1234!",
+        )
+        .await
+        .unwrap();
+        let other_id =
+            create_test_user(&pool, &format!("other-{fixture}@example.test"), "Test1234!")
+                .await
+                .unwrap();
+        let role_id: Uuid = sqlx::query_scalar("INSERT INTO roles (code, name, user_type, level) VALUES ($1, 'Directory role', 'staff', 1) RETURNING id")
+            .bind(format!("DIR{fixture}")).fetch_one(&pool).await.unwrap();
+        let unit_id: Uuid = sqlx::query_scalar("INSERT INTO organization_units (code, name, category, unit_type) VALUES ($1, 'Directory unit', 'other', 'unit') RETURNING id")
+            .bind(format!("DIR{fixture}")).fetch_one(&pool).await.unwrap();
+        sqlx::query("INSERT INTO user_roles (user_id, role_id, is_primary) VALUES ($1, $2, true)")
+            .bind(user_id)
+            .bind(role_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO organization_members (user_id, organization_unit_id, position_code, is_primary) VALUES ($1, $2, 'member', true)")
+            .bind(user_id).bind(unit_id).execute(&pool).await.unwrap();
+        let mut filter = staff_filter(None, None, None);
+        filter.role_id = Some(role_id);
+        filter.organization_unit_id = Some(unit_id);
+        let (items, total, _, _) = list_staff(&pool, filter.clone(), StaffListAccess::Own(user_id))
+            .await
+            .unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(items[0].roles, ["Directory role"]);
+        assert_eq!(items[0].organization_units, ["Directory unit"]);
+        assert!(
+            list_staff(&pool, filter.clone(), StaffListAccess::Own(other_id))
+                .await
+                .unwrap()
+                .0
+                .is_empty()
+        );
+        sqlx::query("UPDATE users SET status = 'inactive' WHERE id = $1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            list_staff(&pool, filter.clone(), StaffListAccess::Own(user_id))
+                .await
+                .unwrap()
+                .0
+                .is_empty()
+        );
+        filter.status = Some("all".to_string());
+        assert_eq!(
+            list_staff(&pool, filter.clone(), StaffListAccess::Own(user_id))
+                .await
+                .unwrap()
+                .1,
+            1
+        );
+        filter.status = Some("inactive".to_string());
+        assert_eq!(
+            list_staff(&pool, filter.clone(), StaffListAccess::Own(user_id))
+                .await
+                .unwrap()
+                .1,
+            1
+        );
+        sqlx::query("UPDATE user_roles SET ended_at = CURRENT_DATE WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            list_staff(&pool, filter.clone(), StaffListAccess::Own(user_id))
+                .await
+                .unwrap()
+                .0
+                .is_empty()
+        );
+        filter.role_id = None;
+        sqlx::query("UPDATE organization_members SET ended_at = CURRENT_DATE WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            list_staff(&pool, filter.clone(), StaffListAccess::Own(user_id))
+                .await
+                .unwrap()
+                .1,
+            0
+        );
+        filter.organization_unit_id = None;
+        let items = list_staff(&pool, filter, StaffListAccess::Own(user_id))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(items.len(), 1);
+        assert!(items[0].roles.is_empty());
+        assert!(items[0].organization_units.is_empty());
+    }
 
     fn staff_filter(
         page: Option<i64>,

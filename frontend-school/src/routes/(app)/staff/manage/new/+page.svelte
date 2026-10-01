@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
+	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
 	import { resolve } from '$app/paths';
 	import {
 		createStaff,
@@ -43,7 +46,8 @@
 
 	// Form state
 	let currentStep = $state(1);
-	const totalSteps = 3;
+	const totalSteps = 4;
+	const returnHref = $derived(staffReturnHref(page.url));
 
 	// Loading states
 	let loading = $state(false);
@@ -221,8 +225,8 @@
 		// }
 
 		// Required: Basic info
-		if (!formData.first_name) errors.first_name = 'กรุณากรอกชื่อ';
-		if (!formData.last_name) errors.last_name = 'กรุณากรอกนามสกุล';
+		if (!formData.first_name.trim()) errors.first_name = 'กรุณากรอกชื่อ';
+		if (!formData.last_name.trim()) errors.last_name = 'กรุณากรอกนามสกุล';
 
 		// Optional: Email
 		if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
@@ -255,7 +259,7 @@
 			return false;
 		}
 
-		if (!formData.primary_role_id) {
+		if (!formData.primary_role_id || !formData.role_ids.includes(formData.primary_role_id)) {
 			errors.primary_role = 'กรุณาเลือกบทบาทหลัก';
 			return false;
 		}
@@ -271,6 +275,17 @@
 			return false;
 		}
 
+		if (formData.organization_assignments.some((item) => !item.organization_unit_id)) {
+			errors.organization_units = 'กรุณาเลือกหน่วยงานให้ครบทุกแถว';
+			return false;
+		}
+		if (
+			new Set(formData.organization_assignments.map((item) => item.organization_unit_id)).size !==
+			formData.organization_assignments.length
+		) {
+			errors.organization_units = 'เลือกหน่วยงานซ้ำกัน กรุณาตรวจสอบสังกัด';
+			return false;
+		}
 		const hasPrimary = formData.organization_assignments.some((d) => d.is_primary);
 		if (!hasPrimary) {
 			errors.organization_units = 'กรุณาระบุสังกัดหลัก';
@@ -313,7 +328,7 @@
 		const index = formData.role_ids.indexOf(roleId);
 		if (index === -1) {
 			formData.role_ids = [...formData.role_ids, roleId];
-			if (!formData.primary_role_id) {
+			if (!formData.primary_role_id || !formData.role_ids.includes(formData.primary_role_id)) {
 				formData.primary_role_id = roleId;
 			}
 		} else {
@@ -353,7 +368,19 @@
 
 	// Submit form
 	async function handleSubmit() {
-		if (!canMutateStaff || loading || !validateStep4()) return;
+		if (!canMutateStaff || loading) return;
+		if (!validateStep1()) {
+			currentStep = 1;
+			return;
+		}
+		if (!validateStep3()) {
+			currentStep = 2;
+			return;
+		}
+		if (!validateStep4()) {
+			currentStep = 3;
+			return;
+		}
 		const owner = currentUserId,
 			epoch = ++mutationEpoch;
 		const current = () => !disposed && owner === currentUserId && epoch === mutationEpoch;
@@ -372,8 +399,8 @@
 				email: payloadData.email || undefined,
 				password: payloadData.password,
 				title: payloadData.title || undefined,
-				first_name: payloadData.first_name,
-				last_name: payloadData.last_name,
+				first_name: payloadData.first_name.trim(),
+				last_name: payloadData.last_name.trim(),
 				nickname: payloadData.nickname || undefined,
 				phone: payloadData.phone || undefined,
 				emergency_contact: payloadData.emergency_contact || undefined,
@@ -400,7 +427,14 @@
 				toast.success('เพิ่มบุคลากรเรียบร้อยแล้ว');
 
 				// Redirect to profile
-				await goto(resolve('/staff/manage'));
+				await goto(
+					resolve(
+						withStaffReturn(
+							`/staff/manage/${result.data.id}`,
+							returnHref
+						) as `/staff/manage/${string}`
+					)
+				);
 			} else {
 				// Show error toast
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการสร้างบุคลากร');
@@ -432,8 +466,10 @@
 <PageShell
 	title="เพิ่มบุคลากรใหม่"
 	description={`กรอกข้อมูลบุคลากรให้ครบถ้วน • ขั้นตอน ${currentStep} / ${totalSteps}`}
-	backHref="/staff"
+	backHref={returnHref}
+	backLabel="กลับรายชื่อบุคลากร"
 >
+	{#snippet meta()}<StaffBreadcrumb {returnHref} current="เพิ่มบุคลากร" />{/snippet}
 	{#if !canMutateStaff}<PageState variant="permission" title="ไม่มีสิทธิ์สร้างบุคลากร" />{:else}
 		<div data-testid="staff-create-form" class="space-y-6">
 			<!-- Progress Steps -->
@@ -442,7 +478,7 @@
 					{#each Array.from({ length: totalSteps }, (_v, i) => i) as i (i)}
 						{@const step = i + 1}
 						{@const Icon = getStepIcon(step)}
-						<div class="flex flex-col items-center flex-1">
+						<div class="relative flex flex-col items-center flex-1">
 							<!-- Circle -->
 							<div
 								class="w-12 h-12 rounded-full flex items-center justify-center transition-all
@@ -477,8 +513,10 @@
 									ข้อมูลส่วนตัว
 								{:else if step === 2}
 									บทบาท
-								{:else}
+								{:else if step === 3}
 									สังกัดหน่วยงาน
+								{:else}
+									ตรวจสอบข้อมูล
 								{/if}
 							</p>
 						</div>
@@ -553,7 +591,7 @@
 									{/if}
 								</div>
 
-								<div class="grid grid-cols-2 gap-4">
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 									<div>
 										<Label class="mb-2">
 											รหัสผ่าน <span class="text-destructive">*</span>
@@ -590,7 +628,7 @@
 						</div>
 
 						<!-- Personal Information Section -->
-						<div class="grid grid-cols-2 gap-4">
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<Label class="mb-2">
 									คำนำหน้า <span class="text-destructive">*</span>
@@ -632,7 +670,7 @@
 							</div>
 						</div>
 
-						<div class="grid grid-cols-2 gap-4">
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<Label class="mb-2">
 									ชื่อ <span class="text-destructive">*</span>
@@ -671,7 +709,7 @@
 							<Input type="text" bind:value={formData.nickname} placeholder="ชื่อเล่น" />
 						</div>
 
-						<div class="grid grid-cols-2 gap-4">
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<Label class="mb-2">อีเมล</Label>
 								<Input
@@ -701,7 +739,7 @@
 							</div>
 						</div>
 
-						<div class="grid grid-cols-2 gap-4">
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
 								<Label class="mb-2">วันเกิด</Label>
 								<DatePicker bind:value={formData.date_of_birth} placeholder="เลือกวันเกิด" />
@@ -760,7 +798,7 @@
 								<p class="text-sm text-destructive">{errors.roles}</p>
 							{/if}
 
-							<div class="grid grid-cols-2 gap-3">
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								{#each roles as role (role.id)}
 									<Button
 										variant="outline"
@@ -982,6 +1020,84 @@
 							</Button>
 						</div>
 					{/if}
+				{:else if currentStep === 4}
+					<section data-testid="staff-create-review" class="space-y-6">
+						<div>
+							<h2 class="text-xl font-semibold">ตรวจสอบก่อนสร้างบุคลากร</h2>
+							<p class="mt-1 text-sm text-muted-foreground">
+								ตรวจชื่อ บัญชี บทบาท และสังกัดก่อนยืนยัน
+							</p>
+						</div>
+						<div class="rounded-xl border p-4">
+							<div class="flex items-center justify-between gap-3">
+								<h3 class="font-medium">ข้อมูลบุคลากร</h3>
+								<Button
+									variant="ghost"
+									size="sm"
+									disabled={loading}
+									onclick={() => (currentStep = 1)}>แก้ไขข้อมูลส่วนตัว</Button
+								>
+							</div>
+							<dl class="mt-3 grid gap-3 sm:grid-cols-2">
+								<div>
+									<dt class="text-xs text-muted-foreground">ชื่อ-นามสกุล</dt>
+									<dd>{formData.title}{formData.first_name} {formData.last_name}</dd>
+								</div>
+								<div>
+									<dt class="text-xs text-muted-foreground">ชื่อผู้ใช้งาน</dt>
+									<dd>{formData.username || 'ระบบสร้างให้อัตโนมัติ'}</dd>
+								</div>
+								<div>
+									<dt class="text-xs text-muted-foreground">อีเมล</dt>
+									<dd>{formData.email || 'ยังไม่ระบุ'}</dd>
+								</div>
+								<div>
+									<dt class="text-xs text-muted-foreground">เบอร์โทรศัพท์</dt>
+									<dd>{formData.phone || 'ยังไม่ระบุ'}</dd>
+								</div>
+							</dl>
+						</div>
+						<div class="rounded-xl border p-4">
+							<div class="flex items-center justify-between gap-3">
+								<h3 class="font-medium">บทบาท</h3>
+								<Button
+									variant="ghost"
+									size="sm"
+									disabled={loading}
+									onclick={() => (currentStep = 2)}>แก้ไขบทบาท</Button
+								>
+							</div>
+							<ul class="mt-3 space-y-2">
+								{#each formData.role_ids as id (id)}<li>
+										{roles.find((role) => role.id === id)?.name ?? 'บทบาทที่เลือก'}{id ===
+										formData.primary_role_id
+											? ' • บทบาทหลัก'
+											: ''}
+									</li>{/each}
+							</ul>
+						</div>
+						<div class="rounded-xl border p-4">
+							<div class="flex items-center justify-between gap-3">
+								<h3 class="font-medium">สังกัดหน่วยงาน</h3>
+								<Button
+									variant="ghost"
+									size="sm"
+									disabled={loading}
+									onclick={() => (currentStep = 3)}>แก้ไขสังกัด</Button
+								>
+							</div>
+							<ul class="mt-3 space-y-2">
+								{#each formData.organization_assignments as assignment (assignment.organization_unit_id)}<li
+									>
+										{organizationUnits.find((unit) => unit.id === assignment.organization_unit_id)
+											?.name ?? 'หน่วยงานที่เลือก'}{assignment.is_primary ? ' • สังกัดหลัก' : ''}
+									</li>{/each}
+							</ul>
+						</div>
+						<p class="text-sm text-muted-foreground">
+							รูปโปรไฟล์และข้อมูลการศึกษาสามารถเพิ่มได้หลังสร้างบัญชี
+						</p>
+					</section>
 				{/if}
 			</div>
 
@@ -991,7 +1107,7 @@
 					type="button"
 					onclick={prevStep}
 					variant="outline"
-					disabled={currentStep === 1}
+					disabled={currentStep === 1 || loading}
 					class="min-w-[120px]"
 				>
 					<ArrowLeft class="w-4 h-4 mr-2" />
@@ -999,7 +1115,7 @@
 				</Button>
 
 				{#if currentStep < totalSteps}
-					<Button type="button" onclick={nextStep} class="min-w-[120px]">
+					<Button type="button" onclick={nextStep} disabled={loading} class="min-w-[120px]">
 						ถัดไป
 						<ArrowRight class="w-4 h-4 ml-2" />
 					</Button>
