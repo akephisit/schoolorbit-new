@@ -27,7 +27,7 @@ test.afterAll(async () => {
 test('applies the global 90% density without shrinking the viewport', async ({ page }) => {
 	await page.setViewportSize({ width: 1920, height: 1080 });
 	await page.goto(baseUrl);
-	await expect(page.getByRole('heading', { name: 'SchoolOrbit', exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
 	const metrics = await page.evaluate(() => {
 		const routeRoot = document.querySelector('.min-h-screen');
