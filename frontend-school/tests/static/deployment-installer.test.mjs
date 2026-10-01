@@ -1283,3 +1283,21 @@ test('durable operations docs describe the guarded replacement VPS path', async 
 	assert.match(adminReadme, /Worker secret binding/);
 	assert.match(adminReadme, /never owns production credentials or URLs/);
 });
+
+test('personnel release preflights every tenant before migration and audits before reopening', async () => {
+	const release = await readRepo('.github/workflows/deploy-school-release.yml');
+	const verification = release.slice(release.indexOf('tenant_migration_started='));
+	assert.ok(
+		release.indexOf('/internal/personnel-preflight') < release.indexOf('/internal/migrate-all') &&
+			release.includes('/internal/personnel-preflight')
+	);
+	assert.match(release, /\.data\.passed == true/);
+	assert.match(verification, /\.personnelCutover\.migrationVersion == 81/);
+	assert.match(verification, /\.personnelCutover\.passed == true/);
+	assert.match(verification, /\.personnelCutover\.checks \| length/);
+	const handler = await readRepo('backend-school/src/modules/system/handlers/migration.rs');
+	assert.ok(
+		handler.indexOf('preflight_personnel_tenants(&schools)') <
+			handler.indexOf('for school in schools')
+	);
+});

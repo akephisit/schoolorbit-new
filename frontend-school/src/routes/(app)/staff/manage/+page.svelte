@@ -1,4 +1,7 @@
 <script lang="ts">
+	import StaffReferencePicker from '$lib/components/staff/StaffReferencePicker.svelte';
+	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '$lib/forms/staff-personnel';
+	import { getPersonnelOverview, type PersonnelBucket } from '$lib/api/personnel';
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { PageProps } from './$types';
@@ -9,7 +12,9 @@
 	import { page } from '$app/state';
 	import { listStaff, deleteStaff, type StaffListItem } from '$lib/api/staff';
 	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { can, userPermissions } from '$lib/stores/permissions';
+	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { authStore } from '$lib/stores/auth';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
@@ -71,6 +76,31 @@
 	const canReadRoleFilter = $derived(
 		$can.hasAny(PERMISSIONS.ROLES_READ_ALL, PERMISSIONS.ROLES_ASSIGN_ALL)
 	);
+	let groupOptions = $state<PersonnelBucket[]>([]),
+		groupOptionsLoading = $state(false),
+		groupOptionsError = $state('');
+	const groupOptionsRequest = new LatestRequest();
+	async function loadGroupFilters() {
+		if (!showFilters || !canReadStaff) return;
+		const ticket = groupOptionsRequest.begin();
+		groupOptionsLoading = true;
+		groupOptionsError = '';
+		const result = await captureRouteLoad(
+			getPersonnelOverview({ status: 'all' }, { signal: ticket.signal }),
+			'โหลดตัวกรองกลุ่มสาระไม่สำเร็จ'
+		);
+		if (!groupOptionsRequest.isCurrent(ticket.revision)) return;
+		groupOptionsLoading = false;
+		if (result.ok) groupOptions = result.data.subjectGroups;
+		else groupOptionsError = result.error;
+	}
+	function navigatePersonnelFilter(field: string, value: string) {
+		const query = new SvelteURLSearchParams(page.url.search);
+		if (value && value !== 'all') query.set(field, value);
+		else query.delete(field);
+		query.delete('page');
+		void goto(resolve(`/staff/manage?${query}`));
+	}
 	const directoryHref = $derived(`${page.url.pathname}${page.url.search}`);
 	let currentPage = $state(1);
 	let totalPages = $state(1);
@@ -89,15 +119,23 @@
 	const canDeleteStaff = $derived($can.has(PERMISSIONS.STAFF_DELETE_ALL));
 
 	let { data }: PageProps = $props();
-	const listKey = $derived(data.listKey),
+	const identityKey = $derived.by(() => {
+		void $authStore.user;
+		void $userPermissions;
+		return appIdentityKey();
+	});
+	const listKey = $derived(`${identityKey}:${data.listKey}`),
 		source = $derived(data.staff);
 	const staffRequest = new LatestRequest();
+	let sourceOwner = '';
+	let previousSource: typeof data.staff | undefined;
 	let activeKey = '',
 		disposed = false,
 		mutationEpoch = 0;
 	let loaded = $state(false);
 	$effect.pre(() => {
-		const key = listKey,
+		const owner = identityKey,
+			key = listKey,
 			read = source;
 		untrack(() => {
 			if (key !== activeKey) {
@@ -114,6 +152,13 @@
 			roleFilter = data.roleId || 'all';
 			organizationFilter = data.organizationId || 'all';
 			currentPage = data.page;
+			if (!owner || (read === previousSource && sourceOwner !== owner)) {
+				staffRequest.abort();
+				loading = Boolean(owner);
+				return;
+			}
+			previousSource = read;
+			sourceOwner = owner;
 			const ticket = staffRequest.begin();
 			loading = true;
 			error = '';
@@ -128,6 +173,7 @@
 		untrack(() => {
 			if (open && allowed) {
 				void loadOrganizationFilters();
+				void loadGroupFilters();
 				if (rolesAllowed) void loadRoleFilters();
 			}
 			if (!rolesAllowed) {
@@ -139,6 +185,7 @@
 		return () => {
 			roleOptionsRequest.abort();
 			organizationOptionsRequest.abort();
+			groupOptionsRequest.abort();
 		};
 	});
 	async function loadRoleFilters() {
@@ -173,6 +220,7 @@
 		disposed = true;
 		mutationEpoch++;
 		staffRequest.abort();
+		groupOptionsRequest.abort();
 		roleOptionsRequest.abort();
 		organizationOptionsRequest.abort();
 	});
@@ -268,6 +316,13 @@
 	title="จัดการบุคลากร"
 	description="ค้นหา ดูข้อมูล และจัดการบัญชีบุคลากรที่คุณมีสิทธิ์เข้าถึง"
 >
+	<div class="flex flex-wrap gap-4 text-sm">
+		<a href={resolve('/staff/manage/overview')} class="text-primary underline">ภาพรวมงานบุคคล</a
+		>{#if $can.has(PERMISSIONS.STAFF_UPDATE_ALL)}<a
+				href={resolve('/staff/manage/reference-data')}
+				class="text-primary underline">จัดการรายการกลาง</a
+			>{/if}
+	</div>
 	{#snippet actions()}
 		<Button variant="outline" onclick={loadStaff} disabled={loading || deleting || !canReadStaff}
 			>รีเฟรช</Button
@@ -386,6 +441,94 @@
 									></Select.Root
 								>{/if}
 						</section>
+						<section>
+							<StaffReferencePicker
+								kind="job_position"
+								label="กรองตำแหน่งงาน"
+								emptyLabel="ทุกตำแหน่ง"
+								missingToken="unspecified"
+								bind:value={
+									() => data.hr.job_position_id || null,
+									(value) => navigatePersonnelFilter('job_position_id', value ?? '')
+								}
+							/>
+						</section>
+						<section class="space-y-2">
+							<p class="text-sm font-medium">กรองวิทยฐานะ</p>
+							<Select.Root
+								type="single"
+								value={data.hr.academic_rank || 'all'}
+								onValueChange={(value) => navigatePersonnelFilter('academic_rank', value)}
+								><Select.Trigger class="w-full" aria-label="กรองวิทยฐานะ"
+									>{data.hr.academic_rank === 'unspecified'
+										? 'ยังไม่ระบุ'
+										: (ACADEMIC_RANK_LABELS[
+												data.hr.academic_rank as keyof typeof ACADEMIC_RANK_LABELS
+											] ?? 'ทุกวิทยฐานะ')}</Select.Trigger
+								><Select.Content
+									><Select.Item value="all">ทุกวิทยฐานะ</Select.Item><Select.Item
+										value="unspecified">ยังไม่ระบุ</Select.Item
+									>{#each Object.entries(ACADEMIC_RANK_LABELS) as [key, label] (key)}<Select.Item
+											value={key}>{label}</Select.Item
+										>{/each}</Select.Content
+								></Select.Root
+							>
+						</section>
+						<section class="space-y-2">
+							<p class="text-sm font-medium">กรองวุฒิการศึกษาสูงสุด</p>
+							<Select.Root
+								type="single"
+								value={data.hr.education_level || 'all'}
+								onValueChange={(value) => navigatePersonnelFilter('education_level', value)}
+								><Select.Trigger class="w-full" aria-label="กรองวุฒิ"
+									>{data.hr.education_level === 'unspecified'
+										? 'ยังไม่ระบุ'
+										: (EDUCATION_LEVEL_LABELS[
+												data.hr.education_level as keyof typeof EDUCATION_LEVEL_LABELS
+											] ?? 'ทุกวุฒิ')}</Select.Trigger
+								><Select.Content
+									><Select.Item value="all">ทุกวุฒิ</Select.Item><Select.Item value="unspecified"
+										>ยังไม่ระบุ</Select.Item
+									>{#each Object.entries(EDUCATION_LEVEL_LABELS) as [key, label] (key)}<Select.Item
+											value={key}>{label}</Select.Item
+										>{/each}</Select.Content
+								></Select.Root
+							>
+						</section>
+						<section class="space-y-2">
+							<p class="text-sm font-medium">กรองกลุ่มสาระ</p>
+							{#if groupOptionsError}<PageState
+									variant="error"
+									title={groupOptionsError}
+									actionLabel="ลองอีกครั้ง"
+									onaction={loadGroupFilters}
+								/>{:else}<Select.Root
+									type="single"
+									value={data.hr.subject_group_id || 'all'}
+									onValueChange={(value) => navigatePersonnelFilter('subject_group_id', value)}
+									><Select.Trigger
+										class="w-full"
+										aria-label="กรองกลุ่มสาระ"
+										disabled={groupOptionsLoading}
+										>{data.hr.subject_group_id === 'unassigned'
+											? 'ยังไม่มีสังกัดกลุ่มสาระ'
+											: (groupOptions.find((group) => group.key === data.hr.subject_group_id)
+													?.label ??
+												(data.hr.subject_group_id
+													? 'กลุ่มสาระที่เลือก'
+													: 'ทุกกลุ่มสาระ'))}</Select.Trigger
+									><Select.Content
+										><Select.Item value="all">ทุกกลุ่มสาระ</Select.Item><Select.Item
+											value="unassigned">ยังไม่มีสังกัดกลุ่มสาระ</Select.Item
+										>{#each groupOptions.filter((group) => group.key !== 'unassigned') as group (group.key)}<Select.Item
+												value={group.key}>{group.label}</Select.Item
+											>{/each}</Select.Content
+									></Select.Root
+								>{/if}
+						</section>
+						<a href={resolve('/staff/manage')} class="self-end text-sm text-primary underline"
+							>ล้างตัวกรองทั้งหมด</a
+						>
 					</div>{/if}
 			</CardContent>
 		</Card>
@@ -427,7 +570,7 @@
 							<TableHeader>
 								<TableRow>
 									<TableHead>ชื่อ-นามสกุล</TableHead>
-									<TableHead>บทบาท</TableHead>
+									<TableHead>ตำแหน่ง / วิทยฐานะ</TableHead><TableHead>บทบาท</TableHead>
 									<TableHead>สังกัด</TableHead>
 									<TableHead>สถานะ</TableHead>
 									<TableHead class="text-right">จัดการ</TableHead>
@@ -449,7 +592,14 @@
 												>{staff.title}{staff.first_name} {staff.last_name}</a
 											>
 											<p class="text-xs text-muted-foreground">{staff.username}</p>
-										</TableCell>
+										</TableCell><TableCell
+											><p class="text-sm">{staff.job_position?.name ?? 'ยังไม่ระบุตำแหน่ง'}</p>
+											<p class="text-xs text-muted-foreground">
+												{staff.academic_rank
+													? ACADEMIC_RANK_LABELS[staff.academic_rank]
+													: 'ยังไม่ระบุวิทยฐานะ'}
+											</p></TableCell
+										>
 										<TableCell>
 											<div class="flex flex-wrap gap-1">
 												{#if staff.roles && staff.roles.length > 0}

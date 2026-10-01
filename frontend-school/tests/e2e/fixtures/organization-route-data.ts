@@ -80,7 +80,7 @@ export async function mockOrganization(
 		(url) =>
 			url.pathname.startsWith('/api/organization/') ||
 			url.pathname === '/api/permissions/modules' ||
-			url.pathname === '/api/staff',
+			url.pathname === '/api/lookup/staff',
 		async (route) => {
 			const url = new URL(route.request().url()),
 				path = url.pathname,
@@ -100,7 +100,7 @@ export async function mockOrganization(
 										? 'delegations'
 										: path.endsWith('/delegatable-permissions')
 											? 'options'
-											: path === '/api/staff'
+											: path === '/api/lookup/staff'
 												? 'staff'
 												: 'unit';
 			if (method === 'GET') {
@@ -145,24 +145,7 @@ export async function mockOrganization(
 			if (kind === 'grants') return reply(route, grants);
 			if (kind === 'delegations') return reply(route, []);
 			if (kind === 'options') return reply(route, [permission]);
-			return reply(route, {
-				items: [
-					{
-						id: id(93),
-						first_name: 'ตัวเลือก',
-						last_name: 'บุคลากร',
-						title: '',
-						username: 'synthetic-picker',
-						status: 'active',
-						roles: [],
-						organization_units: []
-					}
-				],
-				total: 1,
-				page: 1,
-				page_size: 50,
-				total_pages: 1
-			});
+			return reply(route, [{ id: id(93), name: 'ตัวเลือก บุคลากร', title: '' }]);
 		}
 	);
 	return { release, reads, writes, count: (path: string) => counts.get(path) ?? base.count(path) };

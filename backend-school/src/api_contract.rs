@@ -141,6 +141,7 @@ use school_staff::models::{
     UpdateOrganizationUnitRequest, UpdateRoleRequest, UpdateStaffRequest,
     UserRoleAssignmentResponse,
 };
+use school_staff::personnel::*;
 use school_staff::services::dashboard_service::StaffDashboardOverview;
 use school_staff::services::organization_delegation_service::DelegatablePermission;
 use school_staff::services::organization_permission_service::OrganizationPermissionGrant;
@@ -231,6 +232,10 @@ use utoipa::OpenApi;
         crate::modules::lookup::handlers::lookup_homerooms,
         crate::modules::lookup::handlers::lookup_academic_years,
         crate::modules::lookup::handlers::lookup_subjects,
+        crate::modules::staff::handlers::personnel::get_personnel_overview,
+        crate::modules::staff::handlers::personnel::list_reference_items,
+        crate::modules::staff::handlers::personnel::create_reference_item,
+        crate::modules::staff::handlers::personnel::update_reference_item,
         crate::modules::staff::handlers::staff::list_staff,
         crate::modules::staff::handlers::staff::get_staff_dashboard,
         crate::modules::staff::handlers::staff::get_staff_profile,
@@ -893,6 +898,11 @@ use utoipa::OpenApi;
         OrganizationUnitResponse,
         TeachingAssignmentItem,
         AdvisorHomeroomItem,
+        PersonnelOverview,PersonnelBucket,PersonnelStatusFilter,PersonnelDimension,ApiResponse<PersonnelOverview>,
+        StaffSubjectGroupSummary, StaffAcademicRank, StaffEducationLevel, StaffReferenceKind, StaffReferenceSummary,
+        UpdateStaffInfoRequest, ReferenceStatusFilter, StaffReferenceItem, ReferencePage,
+        CreateReferenceRequest, UpdateReferenceRequest,
+        ApiResponse<ReferencePage>, ApiResponse<StaffReferenceItem>,
         StaffInfoResponse,
         StaffProfileResponse,
         CreateStaffInfoRequest,

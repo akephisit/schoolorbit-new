@@ -28,7 +28,7 @@ pub struct StaffListData {
     pub total_pages: i64,
 }
 
-fn staff_list_access(access: UserResourceListAccess) -> StaffListAccess {
+pub(super) fn staff_list_access(access: UserResourceListAccess) -> StaffListAccess {
     match access {
         UserResourceListAccess::Own(user_id) => StaffListAccess::Own(user_id),
         UserResourceListAccess::Assigned(user_id) => StaffListAccess::Assigned(user_id),

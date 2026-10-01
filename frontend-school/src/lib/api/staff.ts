@@ -7,7 +7,7 @@ import {
 	type ApiResponse,
 	type ApiRequestOptions
 } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import type { components, operations } from '$lib/api/generated/school-api';
 
 type Schemas = components['schemas'];
 
@@ -45,15 +45,7 @@ export type OrganizationUnit = Schemas['OrganizationUnit'];
 export type OrganizationUnitLookupItem = Schemas['OrganizationUnitLookupItem'];
 type ManagedListOptions = { include_inactive?: boolean };
 
-interface StaffFilter {
-	user_type?: string;
-	role_id?: string;
-	organization_unit_id?: string;
-	status?: string;
-	search?: string;
-	page?: number;
-	page_size?: number;
-}
+export type StaffFilter = NonNullable<operations['listStaff']['parameters']['query']>;
 
 // ===================================================================
 // Staff APIs
@@ -76,13 +68,9 @@ export async function listStaff(
 	options: ApiRequestOptions = {}
 ): Promise<StaffListResponse> {
 	const params = new URLSearchParams();
-	if (filter?.status) params.append('status', filter.status);
-	if (filter?.role_id) params.append('role_id', filter.role_id);
-	if (filter?.organization_unit_id)
-		params.append('organization_unit_id', filter.organization_unit_id);
-	if (filter?.search) params.append('search', filter.search);
-	if (filter?.page) params.append('page', filter.page.toString());
-	if (filter?.page_size) params.append('page_size', filter.page_size.toString());
+	for (const [key, value] of Object.entries(filter ?? {})) {
+		if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+	}
 
 	const response = await apiClient.get<StaffListData>(`/api/staff?${params.toString()}`, options);
 	const data = requireApiData(response, 'Failed to fetch staff list');

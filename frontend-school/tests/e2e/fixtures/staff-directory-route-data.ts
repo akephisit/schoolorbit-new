@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { components } from '../../../src/lib/api/generated/school-api';
 import { id, mockStaffHome, firstStaff, secondStaff } from './staff-home-route-data';
 export { firstStaff, secondStaff };
 export const staffPath = (person = firstStaff, suffix = '') => `/staff/manage/${person}${suffix}`;
@@ -14,6 +15,7 @@ export async function mockStaffDirectory(
 		failAt?: number;
 		permissions?: string[];
 		fullPage?: boolean;
+		staffInfo?: components['schemas']['StaffInfoResponse'];
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
@@ -154,7 +156,8 @@ export async function mockStaffDirectory(
 				user_type: 'staff',
 				status: 'active',
 				profile_image_file_id: null,
-				staff_info: null,
+				staff_info: options.staffInfo ?? null,
+				subject_groups: [],
 				roles: [{ ...role, is_primary: true }],
 				organization_units: [
 					{ ...org, position_code: 'member', is_primary: true, responsibilities: '' }
@@ -213,6 +216,8 @@ export async function mockStaffDirectory(
 						status: url.searchParams.get('status') === 'inactive' ? 'inactive' : 'active',
 						roles: ['บทบาทตัวเลือก'],
 						organization_units: ['หน่วยงานตัวเลือก'],
+						job_position: options.staffInfo?.job_position ?? null,
+						academic_rank: options.staffInfo?.academic_rank ?? null,
 						id: firstStaff,
 						first_name: search ? `ค้นหา ${search}` : pageNumber > 1 ? 'บุคลากรหน้าสอง' : firstName
 					}

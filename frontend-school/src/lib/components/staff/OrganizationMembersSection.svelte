@@ -3,11 +3,10 @@
 		addOrganizationMember,
 		updateOrganizationMember,
 		removeOrganizationMember,
-		listStaff,
 		type OrganizationMemberItem,
-		type StaffListItem,
 		type OrganizationUnit
 	} from '$lib/api/staff';
+	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '$lib/async/latest-request';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
@@ -77,12 +76,13 @@
 
 	let mutationError = $state('');
 	const canReadPicker = $derived(
-		$can.hasAny(
-			PERMISSIONS.STAFF_PROFILE_READ_OWN,
-			PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT,
-			PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE,
-			PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
-		)
+		canManageMembers ||
+			$can.hasAny(
+				PERMISSIONS.STAFF_PROFILE_READ_OWN,
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE,
+				PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
+			)
 	);
 	const pickerRequest = new LatestRequest();
 	let disposed = false,
@@ -94,7 +94,7 @@
 	let staffPickerOpen = $state(false);
 	let staffSearch = $state('');
 	let selectedStaffLabel = $state('');
-	let staffResults: StaffListItem[] = $state([]);
+	let staffResults: StaffLookupItem[] = $state([]);
 
 	let searchLoading = $state(false);
 	let staffSearchError = $state('');
@@ -188,14 +188,14 @@
 		staffSearchError = '';
 
 		try {
-			const res = await listStaff(
-				{ search: query || undefined, page_size: 50 },
+			const res = await lookupStaff(
+				{ search: query || undefined, limit: 50 },
 				{ signal: ticket.signal }
 			);
 			if (requestId !== staffSearchRequestId || !pickerRequest.isCurrent(ticket.revision)) return;
 
 			const activeMemberIds = new Set(members.map((member) => member.user_id));
-			staffResults = (res.data ?? []).filter(
+			staffResults = res.filter(
 				(staff) => !activeMemberIds.has(staff.id) || staff.id === addForm.user_id
 			);
 		} catch (error) {
@@ -342,19 +342,19 @@
 		editingMember = null;
 	}
 
-	function selectStaff(staff: StaffListItem) {
+	function selectStaff(staff: StaffLookupItem) {
 		addForm.user_id = staff.id;
 		selectedStaffLabel = staffDisplayName(staff);
 		staffSearch = '';
 		staffPickerOpen = false;
 	}
 
-	function staffDisplayName(staff: StaffListItem) {
-		return `${staff.title}${staff.first_name} ${staff.last_name}`.trim();
+	function staffDisplayName(staff: StaffLookupItem) {
+		return staff.name;
 	}
 
-	function staffOptionValue(staff: StaffListItem) {
-		return `${staff.username} ${staffDisplayName(staff)}`;
+	function staffOptionValue(staff: StaffLookupItem) {
+		return staffDisplayName(staff);
 	}
 
 	function unitOptionLabel(unitId: string) {
@@ -626,7 +626,7 @@
 												/>
 												<span class="truncate">{staffDisplayName(staff)}</span>
 												<span class="ml-auto shrink-0 text-xs text-muted-foreground">
-													{staff.username}
+													{staff.title ?? 'บุคลากร'}
 												</span>
 											</Command.Item>
 										{/each}

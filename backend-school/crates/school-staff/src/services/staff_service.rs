@@ -1,3 +1,10 @@
+use super::{
+    staff_directory_query::{
+        push_personnel_filters, push_staff_access_filter, read_subject_groups,
+        validate_directory_filters,
+    },
+    staff_info_service,
+};
 use crate::models::*;
 use chrono::NaiveDate;
 use school_crypto as field_encryption;
@@ -29,13 +36,6 @@ struct UserBasicRow {
     user_type: String,
     status: String,
     profile_image_file_id: Option<Uuid>,
-}
-
-#[derive(Debug, FromRow)]
-struct StaffInfoRow {
-    education_level: Option<String>,
-    major: Option<String>,
-    university: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -351,12 +351,16 @@ pub async fn list_staff(
     filter: StaffListFilter,
     access: StaffListAccess,
 ) -> Result<(Vec<StaffListItem>, i64, i64, i64), AppError> {
+    validate_directory_filters(&filter)?;
     let page_params = staff_page_params(&filter);
 
     let search_pattern = staff_search_pattern(filter.search.clone());
     let mut query = QueryBuilder::<Postgres>::new(
-        "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status
-         FROM users u
+        "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status,
+         CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id',position.id,'code',position.code,'name',position.name,'isActive',position.is_active) END,
+         info.academic_rank FROM users u
+         LEFT JOIN staff_info info ON info.user_id=u.id
+         LEFT JOIN staff_reference_items position ON position.id=info.job_position_id
          WHERE u.user_type = 'staff'",
     );
     push_staff_list_filters(&mut query, &filter, search_pattern.as_deref(), access);
@@ -367,7 +371,16 @@ pub async fn list_staff(
         .push_bind(page_params.offset);
 
     let staff_rows = query
-        .build_query_as::<(Uuid, String, Option<String>, String, String, String)>()
+        .build_query_as::<(
+            Uuid,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            Option<sqlx::types::Json<StaffReferenceSummary>>,
+            Option<String>,
+        )>()
         .fetch_all(pool)
         .await
         .map_err(|e| {
@@ -429,7 +442,7 @@ pub async fn list_staff(
     let items: Vec<StaffListItem> = staff_rows
         .into_iter()
         .map(
-            |(id, username, title, first_name, last_name, status)| StaffListItem {
+            |(id, username, title, first_name, last_name, status, position, rank)| -> Result<StaffListItem,AppError> { Ok(StaffListItem {
                 id,
                 username,
                 title: staff_title_or_default(title),
@@ -438,9 +451,11 @@ pub async fn list_staff(
                 roles: roles.remove(&id).unwrap_or_default(),
                 organization_units: organizations.remove(&id).unwrap_or_default(),
                 status,
-            },
+                job_position: position.map(|sqlx::types::Json(v)|v),
+                academic_rank: rank.map(|v| v.parse()).transpose().map_err(|_| AppError::InternalServerError("ข้อมูลวิทยฐานะไม่ถูกต้อง".into()))?,
+            }) },
         )
-        .collect();
+        .collect::<Result<_,_>>()?;
 
     Ok((items, total, page_params.page, page_params.page_size))
 }
@@ -481,74 +496,8 @@ fn push_staff_list_filters<'args>(
             .push(")");
     }
 
-    push_staff_list_access_filter(query, access);
-}
-
-fn push_staff_list_access_filter(query: &mut QueryBuilder<Postgres>, access: StaffListAccess) {
-    match access {
-        StaffListAccess::School => {}
-        StaffListAccess::Own(actor_user_id) | StaffListAccess::Assigned(actor_user_id) => {
-            query.push(" AND u.id = ").push_bind(actor_user_id);
-        }
-        StaffListAccess::OrganizationUnit(actor_user_id) => {
-            query
-                .push(
-                    r#" AND EXISTS (
-                        SELECT 1
-                        FROM organization_members actor_member
-                        JOIN organization_units active_actor_unit
-                          ON active_actor_unit.id = actor_member.organization_unit_id
-                         AND active_actor_unit.is_active = true
-                        JOIN organization_members target_member
-                          ON target_member.organization_unit_id = actor_member.organization_unit_id
-                        WHERE actor_member.user_id = "#,
-                )
-                .push_bind(actor_user_id)
-                .push(
-                    r#" AND target_member.user_id = u.id
-                        AND (actor_member.ended_at IS NULL OR actor_member.ended_at > CURRENT_DATE)
-                        AND (target_member.ended_at IS NULL OR target_member.ended_at > CURRENT_DATE)
-                    )"#,
-                );
-        }
-        StaffListAccess::OrganizationTree(actor_user_id) => {
-            query
-                .push(
-                    r#" AND EXISTS (
-                        WITH RECURSIVE actor_roots AS (
-                            SELECT actor_member.organization_unit_id
-                            FROM organization_members actor_member
-                            JOIN organization_units active_root
-                              ON active_root.id = actor_member.organization_unit_id
-                             AND active_root.is_active = true
-                            WHERE actor_member.user_id = "#,
-                )
-                .push_bind(actor_user_id)
-                .push(
-                    r#"
-                              AND (actor_member.ended_at IS NULL OR actor_member.ended_at > CURRENT_DATE)
-                        ),
-                        organization_tree AS (
-                            SELECT organization_unit_id
-                            FROM actor_roots
-                            UNION
-                            SELECT child.id
-                            FROM organization_units child
-                            JOIN organization_tree parent_tree
-                              ON child.parent_unit_id = parent_tree.organization_unit_id
-                            WHERE child.is_active = true
-                        )
-                        SELECT 1
-                        FROM organization_members target_member
-                        WHERE target_member.user_id = u.id
-                          AND target_member.organization_unit_id IN (
-                              SELECT organization_unit_id FROM organization_tree
-                          )
-                          AND (target_member.ended_at IS NULL OR target_member.ended_at > CURRENT_DATE)
-                    )"#,
-                );
-        }
-    }
+    push_personnel_filters(query, filter);
+    push_staff_access_filter(query, access);
 }
 
 /// Get staff full profile with parallel queries
@@ -583,12 +532,8 @@ pub async fn get_staff_profile(
         user.national_id = None;
     }
 
-    // 5 independent queries — run in parallel
-    let staff_info_fut = sqlx::query_as::<_, StaffInfoRow>(
-        "SELECT education_level, major, university FROM staff_info WHERE user_id = $1",
-    )
-    .bind(staff_id)
-    .fetch_optional(pool);
+    // Independent profile regions — run in parallel
+    let staff_info_fut = staff_info_service::read_staff_info(pool, staff_id);
 
     let roles_fut = sqlx::query_as::<_, RoleRow>(
         "SELECT r.id, r.code, r.name, r.name_en, r.user_type, r.level, ur.is_primary
@@ -657,12 +602,13 @@ pub async fn get_staff_profile(
     .bind(staff_id)
     .fetch_all(pool);
 
-    let (staff_info_res, roles_res, organization_units_res, teaching_res, advisor_res) = tokio::join!(
+    let (staff_info_res, roles_res, organization_units_res, teaching_res, advisor_res, groups_res) = tokio::join!(
         staff_info_fut,
         roles_fut,
         organization_units_fut,
         teaching_fut,
-        advisor_fut
+        advisor_fut,
+        read_subject_groups(pool, staff_id)
     );
 
     let staff_info = staff_info_res?;
@@ -748,13 +694,10 @@ pub async fn get_staff_profile(
         user_type: user.user_type,
         status: user.status,
         profile_image_file_id: user.profile_image_file_id,
-        staff_info: staff_info.map(|si| StaffInfoResponse {
-            education_level: si.education_level,
-            major: si.major,
-            university: si.university,
-        }),
+        staff_info,
         roles,
         organization_units,
+        subject_groups: groups_res?,
         teaching_assignments,
         advisor_homerooms,
         permissions: vec![],
@@ -863,24 +806,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
     })?;
 
     if let Some(staff_info) = &payload.staff_info {
-        sqlx::query(
-            "INSERT INTO staff_info (
-                user_id, education_level, major, university,
-                teaching_license_number, teaching_license_expiry, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, '{}'::jsonb)",
-        )
-        .bind(user_id)
-        .bind(&staff_info.education_level)
-        .bind(&staff_info.major)
-        .bind(&staff_info.university)
-        .bind(&staff_info.teaching_license_number)
-        .bind(staff_info.teaching_license_expiry)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("❌ Failed to create staff info: {}", e);
-            AppError::InternalServerError("ไม่สามารถสร้างข้อมูลบุคลากรได้".to_string())
-        })?;
+        staff_info_service::create_staff_info(&mut tx, user_id, staff_info).await?;
     }
 
     let role_rows = user_role_bulk_rows(&payload.role_ids, payload.primary_role_id);
@@ -1018,49 +944,7 @@ SELECT EXISTS(
     }
 
     if let Some(staff_info) = &payload.staff_info {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM staff_info WHERE user_id = $1)")
-                .bind(staff_id)
-                .fetch_one(&mut *tx)
-                .await
-                .unwrap_or(false);
-
-        if exists {
-            sqlx::query(
-                "UPDATE staff_info
-                 SET
-                    education_level = COALESCE($2, education_level),
-                    major = COALESCE($3, major),
-                    university = COALESCE($4, university),
-                    updated_at = NOW()
-                 WHERE user_id = $1",
-            )
-            .bind(staff_id)
-            .bind(&staff_info.education_level)
-            .bind(&staff_info.major)
-            .bind(&staff_info.university)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("❌ Failed to update staff_info: {}", e);
-                AppError::InternalServerError("ไม่สามารถอัพเดตข้อมูลบุคลากรได้".to_string())
-            })?;
-        } else {
-            sqlx::query(
-                "INSERT INTO staff_info (user_id, education_level, major, university, metadata)
-                 VALUES ($1, $2, $3, $4, '{}'::jsonb)",
-            )
-            .bind(staff_id)
-            .bind(&staff_info.education_level)
-            .bind(&staff_info.major)
-            .bind(&staff_info.university)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| {
-                tracing::error!("❌ Failed to create staff_info: {}", e);
-                AppError::InternalServerError("ไม่สามารถสร้างข้อมูลบุคลากรได้".to_string())
-            })?;
-        }
+        staff_info_service::patch_staff_info(&mut tx, staff_id, staff_info).await?;
     }
 
     if let Some(role_ids) = &payload.role_ids {
@@ -1382,6 +1266,10 @@ mod tests {
             page_size,
             search,
             status: None,
+            job_position_id: None,
+            academic_rank: None,
+            education_level: None,
+            subject_group_id: None,
         }
     }
 

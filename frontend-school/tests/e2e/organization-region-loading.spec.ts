@@ -149,13 +149,16 @@ test('missing settings read never requests permission labels or enables saving',
 	expect(api.count('/api/permissions/modules')).toBe(0);
 	await expect(page.getByRole('button', { name: 'บันทึกสิทธิ์', exact: true })).toBeDisabled();
 });
-test('membership picker is unopened by default and respects its separate read permission', async ({
+test('membership picker stays lazy and uses minimal lookup under membership permission', async ({
 	page
 }) => {
 	const api = await mockOrganization(page, { permissions: ['roles.read.all', 'roles.assign.all'] });
 	await page.goto(unitPath());
+	expect(api.count('/api/lookup/staff')).toBe(0);
 	await page.getByRole('button', { name: 'เพิ่มสมาชิก', exact: true }).click();
-	await expect(page.getByRole('dialog')).toContainText('ไม่มีสิทธิ์อ่านตัวเลือกบุคลากร');
+	await page.getByRole('dialog').getByRole('combobox').first().click();
+	await expect(page.getByRole('option', { name: /ตัวเลือก บุคลากร/ })).toBeVisible();
+	expect(api.count('/api/lookup/staff')).toBe(1);
 	expect(api.count('/api/staff')).toBe(0);
 });
 test('membership removal rereads only the shared member region once', async ({ page }) => {
@@ -177,7 +180,7 @@ test('membership picker retries without rereading route regions', async ({ page 
 	await page.getByRole('dialog').getByRole('button', { name: 'เพิ่ม', exact: true }).click();
 	await expect(page.getByRole('dialog')).not.toBeVisible();
 	await expect(page.getByTestId('organization-members')).toContainText('สมาชิกใหม่');
-	expect(api.count('/api/staff')).toBe(2);
+	expect(api.count('/api/lookup/staff')).toBe(2);
 	expect(api.count(endpoint('members'))).toBe(2);
 	expect(api.count(endpoint('unit'))).toBe(1);
 	expect(api.count(endpoint('structure'))).toBe(1);

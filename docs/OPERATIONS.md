@@ -472,6 +472,20 @@ release together. After the first write, do not deploy the old app against the n
 traffic closed and repair forward with a reviewed migration/application artifact. Never edit
 `_sqlx_migrations`, an applied migration, cleanup audit, or tenant data to force a green result.
 
+### Personnel data cutover
+
+Migration [081](../backend-school/migrations/081_staff_personnel_data.sql) replaces personnel education text and major/university text with canonical codes and references. Position and academic rank start unspecified; never infer them from a permission role, organization duty, or employment type. Subject groups are derived from current active organization memberships. Migration [082](../backend-school/migrations/082_staff_retirement_status.sql) reconciles the existing duplicate account-status constraints so the established retired status is usable.
+
+Before promotion, retain a protected provider snapshot for at least seven days and rehearse the centralized migration runner on a disposable copy of every active tenant. Report only bounded counts, versions and check codes; keep connection credentials outside arguments and logs. The production full release owns the following sequence:
+
+1. Build the matched backend/contracts/frontend and stage every tenant Worker before maintenance.
+2. Enable maintenance and deploy the candidate backend. `GET /internal/personnel-preflight` checks every active tenant through temporary read-only connections that bypass automatic pool migrations. Actual SQLx history owns the reported version. Unmapped education, invalid references, unavailable connections or missing evidence stop the release before any tenant migration. `/internal/migrate-all` repeats this gate internally before opening an auto-migrating tenant pool.
+3. Apply pending migrations only through the centralized all-tenant runner. Migration 081 locks its source, repeats mapping checks, verifies identities, relationships, employment, licenses and metadata, records bounded reconciliation, and only then drops legacy text columns.
+4. Require every tenant at the repository's latest version and `personnelCutover` at version 81 with `cutoverCompleted`, `passed: true` and nonempty passing checks. The status reader also verifies canonical columns/constraints and absence of the removed columns. Empty or missing evidence fails closed.
+5. Require readiness, authenticated read-only smoke, menu synchronization, matched Worker promotion and browser acceptance before reopening the proxy.
+
+After any tenant applies 081, older binaries that read/write free-text major or university are prohibited, even before the first subsequent write. Keep maintenance active on failure and repair forward through a new reviewed migration/application release. Restore a protected snapshot only through an explicitly reviewed recovery procedure that accounts for writes since the snapshot. Never edit applied migrations, SQLx history, reconciliation checks or personnel rows to force acceptance. Legacy reading remains restricted to the version-guarded migration preflight; product reads and writes use the canonical owner only.
+
 ### Gradebook and results cutover
 
 Migration `060_gradebook_results_and_learner_evaluations.sql` is the Release 2 boundary for Gradebook,

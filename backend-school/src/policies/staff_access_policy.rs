@@ -43,10 +43,6 @@ pub async fn can_read_staff_profile(
 pub fn resolve_staff_profile_list_access(
     actor: &ActorContext,
 ) -> Result<resource_access_policy::UserResourceListAccess, AppError> {
-    if actor.has_any_permission(&[codes::STAFF_READ_ALL, codes::ACHIEVEMENT_CREATE_ALL]) {
-        return Ok(resource_access_policy::UserResourceListAccess::School);
-    }
-
     resource_access_policy::resolve_user_resource_list_access(actor, STAFF_PROFILE_ACCESS)
         .ok_or_else(|| AppError::Forbidden("ไม่มีสิทธิ์ดูรายชื่อบุคลากร".to_string()))
 }
@@ -54,6 +50,21 @@ pub fn resolve_staff_profile_list_access(
 pub fn can_read_staff_pii(actor: &ActorContext, target_user_id: Uuid) -> bool {
     let target = resource_access_policy::ResourceAccessTarget::owned_by(target_user_id);
     resource_access_policy::can_access_direct_resource(actor, STAFF_PII_ACCESS, &target).is_some()
+}
+
+pub fn require_reference_read(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_any_permission(&[
+        codes::STAFF_PROFILE_READ_OWN,
+        codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+        codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
+        codes::STAFF_PROFILE_READ_SCHOOL,
+        codes::STAFF_CREATE_ALL,
+        codes::STAFF_UPDATE_ALL,
+    ])
+}
+
+pub fn require_reference_write(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_permission(codes::STAFF_UPDATE_ALL)
 }
 
 #[cfg(test)]
@@ -87,5 +98,45 @@ mod tests {
         let allowed = can_read_staff_pii(&actor, user_id);
 
         assert!(allowed);
+    }
+
+    #[test]
+    fn reference_mutation_requires_staff_update() {
+        assert!(require_reference_write(&actor(
+            Uuid::new_v4(),
+            &[codes::STAFF_PROFILE_READ_SCHOOL]
+        ))
+        .is_err());
+        assert!(
+            require_reference_write(&actor(Uuid::new_v4(), &[codes::STAFF_CREATE_ALL])).is_err()
+        );
+        assert!(
+            require_reference_write(&actor(Uuid::new_v4(), &[codes::STAFF_UPDATE_ALL])).is_ok()
+        );
+        assert!(
+            require_reference_read(&actor(Uuid::new_v4(), &[codes::STAFF_PROFILE_READ_OWN]))
+                .is_ok()
+        );
+        assert!(require_reference_read(&actor(Uuid::new_v4(), &[])).is_err());
+    }
+
+    #[test]
+    fn personnel_directory_scope_survives_unrelated_permissions() {
+        let id = Uuid::new_v4();
+        let a = actor(
+            id,
+            &[
+                codes::STAFF_PROFILE_READ_OWN,
+                codes::ACHIEVEMENT_CREATE_ALL,
+                codes::STAFF_READ_ALL,
+            ],
+        );
+        assert!(
+            matches!(resolve_staff_profile_list_access(&a).unwrap(), resource_access_policy::UserResourceListAccess::Own(user) if user == id)
+        );
+        assert!(
+            resolve_staff_profile_list_access(&actor(id, &[codes::ACHIEVEMENT_CREATE_ALL]))
+                .is_err()
+        );
     }
 }

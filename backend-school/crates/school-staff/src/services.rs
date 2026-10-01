@@ -4,7 +4,9 @@ pub mod organization_member_service;
 pub mod organization_permission_service;
 pub mod organization_unit_service;
 pub mod permission_service;
+pub mod personnel_cutover_service;
 pub mod role_service;
+pub mod staff_info_service;
 pub mod staff_service;
 pub mod user_role_service;
 
@@ -24,6 +26,9 @@ impl StatusTransitionOutcome {
 mod status_tests;
 
 #[cfg(test)]
+mod personnel_tests;
+
+#[cfg(test)]
 mod tests {
     use super::StatusTransitionOutcome;
 
@@ -34,3 +39,7 @@ mod tests {
         assert!(!StatusTransitionOutcome::Unchanged.changed());
     }
 }
+
+pub mod personnel_overview_service;
+pub mod reference_service;
+mod staff_directory_query;

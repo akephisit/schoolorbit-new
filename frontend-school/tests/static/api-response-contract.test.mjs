@@ -237,7 +237,7 @@ test('generated authorization contracts cover implemented routes and frontend DT
 	assert.doesNotMatch(authApi, /export\s+interface\s+(?:LoginRequest|ProfileResponse)\b/);
 	assert.match(rolesApi, /import\s+type\s+\{\s*components\s*\}/);
 	assert.doesNotMatch(rolesApi, /export\s+interface\s+(?:Role|Permission|UserRoleAssignment)\b/);
-	assert.match(staffApi, /import\s+type\s+\{\s*components\s*\}/);
+	assert.match(staffApi, /import\s+type\s+\{[^}]*\bcomponents\b[^}]*\}/);
 	assert.match(
 		staffApi,
 		/OrganizationUnitLookupItem\s*=\s*Schemas\['OrganizationUnitLookupItem'\]/

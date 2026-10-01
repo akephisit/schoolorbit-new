@@ -4,6 +4,8 @@ use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+pub use crate::personnel::*;
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Role {
     pub id: Uuid,
@@ -132,15 +134,6 @@ pub struct UpdateOrganizationUnitRequest {
     pub subject_group_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct CreateStaffInfoRequest {
-    pub education_level: Option<String>,
-    pub major: Option<String>,
-    pub university: Option<String>,
-    pub teaching_license_number: Option<String>,
-    pub teaching_license_expiry: Option<NaiveDate>,
-}
-
 // ===================================================================
 // Response Models
 // ===================================================================
@@ -262,6 +255,7 @@ pub struct StaffProfileResponse {
 
     // Organization units
     pub organization_units: Vec<OrganizationUnitResponse>,
+    pub subject_groups: Vec<StaffSubjectGroupSummary>,
 
     // กลุ่มการเรียนที่สอน
     pub teaching_assignments: Vec<TeachingAssignmentItem>,
@@ -271,16 +265,6 @@ pub struct StaffProfileResponse {
 
     // Permissions
     pub permissions: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct StaffInfoResponse {
-    #[schema(required = true)]
-    pub education_level: Option<String>,
-    #[schema(required = true)]
-    pub major: Option<String>,
-    #[schema(required = true)]
-    pub university: Option<String>,
 }
 
 // ===================================================================
@@ -347,7 +331,7 @@ pub struct UpdateStaffRequest {
     pub hired_date: Option<NaiveDate>,
     pub status: Option<String>,
     pub profile_image_file_id: Option<Uuid>,
-    pub staff_info: Option<CreateStaffInfoRequest>,
+    pub staff_info: Option<UpdateStaffInfoRequest>,
 
     // Roles
     pub role_ids: Option<Vec<Uuid>>,
@@ -361,7 +345,7 @@ pub struct UpdateStaffRequest {
 // List Filters
 // ===================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct StaffListFilter {
     pub user_type: Option<String>,
@@ -371,6 +355,10 @@ pub struct StaffListFilter {
     pub search: Option<String>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
+    pub job_position_id: Option<String>,
+    pub academic_rank: Option<String>,
+    pub education_level: Option<String>,
+    pub subject_group_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -383,6 +371,10 @@ pub struct StaffListItem {
     pub roles: Vec<String>,
     pub organization_units: Vec<String>,
     pub status: String,
+    #[schema(required = true)]
+    pub job_position: Option<StaffReferenceSummary>,
+    #[schema(required = true)]
+    pub academic_rank: Option<StaffAcademicRank>,
 }
 
 // ===================================================================

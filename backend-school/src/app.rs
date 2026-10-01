@@ -3,7 +3,7 @@ use axum::{
     http::{header::CACHE_CONTROL, HeaderName, HeaderValue},
     middleware::{from_fn, from_fn_with_state, Next},
     response::Response,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use serde_json::json;
@@ -120,6 +120,10 @@ fn internal_routes() -> Router<AppState> {
             post(modules::system::handlers::provision::provision_tenant),
         )
         .route(
+            "/internal/personnel-preflight",
+            get(modules::system::handlers::migration::personnel_preflight),
+        )
+        .route(
             "/internal/migrate-all",
             post(modules::system::handlers::migration::migrate_all_schools),
         )
@@ -162,6 +166,19 @@ fn protected_routes() -> Router<AppState> {
         .route(
             "/api/staff/dashboard",
             get(modules::staff::handlers::staff::get_staff_dashboard),
+        )
+        .route(
+            "/api/staff/personnel-overview",
+            get(modules::staff::handlers::personnel::get_personnel_overview),
+        )
+        .route(
+            "/api/staff/reference-items",
+            get(modules::staff::handlers::personnel::list_reference_items)
+                .post(modules::staff::handlers::personnel::create_reference_item),
+        )
+        .route(
+            "/api/staff/reference-items/{id}",
+            patch(modules::staff::handlers::personnel::update_reference_item),
         )
         .route(
             "/api/staff/{id}",

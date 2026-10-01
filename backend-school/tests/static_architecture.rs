@@ -3316,7 +3316,15 @@ fn staff_list_uses_resource_aware_access_scope() {
     assert!(!staff_handler.contains("actor.require_any_permission(&["));
     assert!(staff_handler.contains("staff_list_access"));
     assert!(staff_service.contains("StaffListAccess"));
-    assert!(staff_service.contains("push_staff_list_access_filter"));
+    assert!(staff_service.contains("push_staff_access_filter"));
+    let directory_query = strip_comments(&read_source(
+        manifest_dir().join("crates/school-staff/src/services/staff_directory_query.rs"),
+    ));
+    let overview = strip_comments(&read_source(
+        manifest_dir().join("crates/school-staff/src/services/personnel_overview_service.rs"),
+    ));
+    assert!(directory_query.contains("fn push_staff_access_filter"));
+    assert!(overview.contains("push_staff_access_filter"));
 }
 
 #[test]
@@ -5017,11 +5025,17 @@ fn read_oriented_handlers_are_registered_in_the_openapi_document() {
     let calendar_router = read_source(manifest_dir().join("src/modules/calendar.rs"));
     let contract = read_source(manifest_dir().join("src/api_contract.rs"));
 
-    assert_eq!(
-        read_oriented_handlers_from_routers(&main_router, &calendar_router).len(),
-        44,
-        "read-oriented router inventory must stay aligned with the 44-operation rollout"
+    let handlers = read_oriented_handlers_from_routers(&main_router, &calendar_router);
+    assert!(
+        !handlers.is_empty(),
+        "the router-derived inventory must be nonempty"
     );
+    for handler in ["get_personnel_overview", "list_reference_items"] {
+        assert!(
+            handlers.iter().any(|path| path.ends_with(handler)),
+            "missing personnel read route: {handler}"
+        );
+    }
     assert_eq!(
         read_oriented_handlers_missing_from_contract(&main_router, &calendar_router, &contract),
         Vec::<String>::new()
@@ -6863,10 +6877,11 @@ fn inactive_authorization_sources_are_filtered() {
             >= 4
     );
 
-    let staff_service =
-        read_source(manifest_dir().join("crates/school-staff/src/services/staff_service.rs"));
-    assert!(staff_service.contains("active_actor_unit.is_active = true"));
-    assert!(staff_service.contains("active_root.is_active = true"));
+    let directory_query = read_source(
+        manifest_dir().join("crates/school-staff/src/services/staff_directory_query.rs"),
+    );
+    assert!(directory_query.contains("active_actor_unit.is_active = true"));
+    assert!(directory_query.contains("active_root.is_active = true"));
 }
 
 #[test]

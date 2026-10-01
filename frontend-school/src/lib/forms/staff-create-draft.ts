@@ -1,6 +1,50 @@
 import { z } from 'zod';
+const referenceSummary = z
+	.object({
+		id: z.string().uuid(),
+		code: z.string(),
+		name: z.string(),
+		isActive: z.boolean()
+	})
+	.nullable();
 const fields = z
 	.object({
+		personnel_references: z.object({
+			job_position: referenceSummary,
+			major: referenceSummary,
+			university: referenceSummary
+		}),
+		personnel: z.object({
+			job_position_id: z.string().uuid().nullable().optional(),
+			academic_rank: z
+				.enum([
+					'none',
+					'not_applicable',
+					'proficient',
+					'senior_proficient',
+					'expert',
+					'senior_expert'
+				])
+				.nullable()
+				.optional(),
+			education_level: z
+				.enum([
+					'primary',
+					'lower_secondary',
+					'upper_secondary',
+					'vocational_certificate',
+					'higher_vocational',
+					'diploma',
+					'bachelor',
+					'master',
+					'doctorate',
+					'other'
+				])
+				.nullable()
+				.optional(),
+			major_id: z.string().uuid().nullable().optional(),
+			university_id: z.string().uuid().nullable().optional()
+		}),
 		username: z.string(),
 		email: z.string(),
 		title: z.string(),

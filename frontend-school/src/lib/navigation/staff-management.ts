@@ -5,7 +5,11 @@ const listParameters = new Set([
 	'status',
 	'page_size',
 	'role_id',
-	'organization_unit_id'
+	'organization_unit_id',
+	'job_position_id',
+	'academic_rank',
+	'education_level',
+	'subject_group_id'
 ]);
 
 export function staffReturnHref(url: URL): string {

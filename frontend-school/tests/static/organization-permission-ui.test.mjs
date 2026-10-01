@@ -105,7 +105,7 @@ test('organization member picker is a searchable combobox with browsable initial
 	assert.match(source, /loadStaffOptions\(''\)/);
 	assert.match(
 		source,
-		/listStaff\(\s*\{ search: query \|\| undefined, page_size: 50 \},\s*\{ signal: ticket\.signal \}/
+		/lookupStaff\(\s*\{ search: query \|\| undefined, limit: 50 \},\s*\{ signal: ticket\.signal \}/
 	);
 	assert.doesNotMatch(source, /if\s*\(\s*staffSearch\.length < 2\s*\)/);
 });

@@ -1,4 +1,11 @@
 <script lang="ts">
+	import StaffPersonnelFields from '$lib/components/staff/StaffPersonnelFields.svelte';
+	import {
+		ACADEMIC_RANK_LABELS,
+		EDUCATION_LEVEL_LABELS,
+		staffPersonnelDraft
+	} from '$lib/forms/staff-personnel';
+	import type { StaffInfoResponse } from '$lib/api/staff';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
@@ -71,8 +78,14 @@
 
 	// Form data
 	let formData = $state(createForm());
+
 	function createForm() {
 		return {
+			personnel: staffPersonnelDraft(null),
+			personnel_references: { job_position: null, major: null, university: null } as Pick<
+				StaffInfoResponse,
+				'job_position' | 'major' | 'university'
+			>,
 			// Step 1: Personal Information
 			username: '',
 			national_id: '',
@@ -186,7 +199,10 @@
 					origin: window.location.origin,
 					userId: ownerId
 				});
-				if (draft) Object.assign(formData, draft);
+				if (draft) {
+					Object.assign(formData, draft);
+					formData.personnel = { ...staffPersonnelDraft(null), ...draft.personnel };
+				}
 			} catch {
 				toast.error('ไม่สามารถอ่านร่างแบบฟอร์มได้');
 			}
@@ -409,6 +425,7 @@
 				gender: payloadData.gender || undefined,
 				address: payloadData.address || undefined,
 				hired_date: payloadData.hired_date || undefined,
+				staff_info: formData.personnel,
 				role_ids: formData.role_ids,
 				primary_role_id: formData.primary_role_id || formData.role_ids[0],
 				organization_assignments: formData.organization_assignments.filter(
@@ -770,6 +787,14 @@
 							<Textarea bind:value={formData.address} placeholder="ที่อยู่ปัจจุบัน" rows={3} />
 						</div>
 					</div>
+					<section class="mt-6 rounded-xl border p-4 space-y-4">
+						<h2 class="font-semibold">ตำแหน่งและการศึกษา</h2>
+						<StaffPersonnelFields
+							bind:value={formData.personnel}
+							bind:references={formData.personnel_references}
+							disabled={loading || !canMutateStaff}
+						/>
+					</section>
 				{:else if currentStep === 2}
 					<!-- Step 2: Roles -->
 					<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
@@ -1027,6 +1052,22 @@
 							<p class="mt-1 text-sm text-muted-foreground">
 								ตรวจชื่อ บัญชี บทบาท และสังกัดก่อนยืนยัน
 							</p>
+						</div>
+						<div class="rounded-xl border p-4 space-y-2">
+							<h3 class="font-medium">ตำแหน่งและการศึกษา</h3>
+							<p>ตำแหน่ง: {formData.personnel_references.job_position?.name ?? 'ยังไม่ระบุ'}</p>
+							<p>
+								วิทยฐานะ: {formData.personnel.academic_rank
+									? ACADEMIC_RANK_LABELS[formData.personnel.academic_rank]
+									: 'ยังไม่ระบุ'}
+							</p>
+							<p>
+								วุฒิ: {formData.personnel.education_level
+									? EDUCATION_LEVEL_LABELS[formData.personnel.education_level]
+									: 'ยังไม่ระบุ'}
+							</p>
+							<p>สาขา: {formData.personnel_references.major?.name ?? 'ยังไม่ระบุ'}</p>
+							<p>สถาบัน: {formData.personnel_references.university?.name ?? 'ยังไม่ระบุ'}</p>
 						</div>
 						<div class="rounded-xl border p-4">
 							<div class="flex items-center justify-between gap-3">

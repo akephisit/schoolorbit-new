@@ -13,6 +13,7 @@ export const _meta = {
 };
 export const load: PageLoad = ({ fetch, params, depends }) => {
 	depends('school:app-identity');
+	depends(`school:staff-profile:${params.id}`);
 	const staffId = params.id;
 	const userRead = waitForAuthenticatedUser();
 	const staff = captureRouteLoad(

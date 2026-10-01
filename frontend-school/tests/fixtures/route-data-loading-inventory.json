@@ -844,6 +844,26 @@
 			"notes": "Input-only initial form; role/unit choices load on opened step behind exact roles.read, UUID creation loads only destination list. Filtered tenant/user draft expires in 30 minutes and excludes national ID/passwords."
 		},
 		{
+			"route": "staff/manage/overview",
+			"wave": "staff-management",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff",
+			"notes": "Scoped loader owns one coherent personnel region; local retries, retained refresh and supersession. Catalog workflows are permission-gated and lazy."
+		},
+		{
+			"route": "staff/manage/reference-data",
+			"wave": "staff-management",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff",
+			"notes": "Scoped loader owns one coherent personnel region; local retries, retained refresh and supersession. Catalog workflows are permission-gated and lazy."
+		},
+		{
 			"route": "staff/menu",
 			"wave": "staff",
 			"dataOwner": "route",

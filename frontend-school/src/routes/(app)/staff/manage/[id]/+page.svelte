@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '$lib/forms/staff-personnel';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '$lib/async/latest-request';
 	import { captureRouteLoad } from '$lib/navigation/route-load';
@@ -21,7 +22,6 @@
 		User,
 		Mail,
 		Phone,
-		Briefcase,
 		GraduationCap,
 		Building2,
 		BookOpen,
@@ -409,35 +409,46 @@
 						</div>
 					</div>
 
-					<!-- Staff Info Card -->
-					{#if staff.staff_info}
-						<div class="bg-card border border-border rounded-lg p-6">
-							<h3 class="font-semibold text-foreground mb-4 flex items-center gap-2">
-								<Briefcase class="w-5 h-5" />
-								การศึกษา
-							</h3>
-							<div class="space-y-3 text-sm">
-								{#if staff.staff_info.education_level}
-									<div>
-										<p class="text-muted-foreground">วุฒิการศึกษา</p>
-										<p class="text-foreground font-medium">{staff.staff_info.education_level}</p>
-									</div>
-								{/if}
-								{#if staff.staff_info.major}
-									<div>
-										<p class="text-muted-foreground">สาขา</p>
-										<p class="text-foreground font-medium">{staff.staff_info.major}</p>
-									</div>
-								{/if}
-								{#if staff.staff_info.university}
-									<div>
-										<p class="text-muted-foreground">สถาบัน</p>
-										<p class="text-foreground font-medium">{staff.staff_info.university}</p>
-									</div>
-								{/if}
+					<div class="rounded-lg border bg-card p-6 space-y-4">
+						<h3 class="font-semibold">ตำแหน่งและการศึกษา</h3>
+						<dl class="space-y-3 text-sm">
+							<div>
+								<dt class="text-muted-foreground">ตำแหน่งงาน</dt>
+								<dd>{staff.staff_info?.job_position?.name ?? 'ยังไม่ระบุ'}</dd>
 							</div>
-						</div>
-					{/if}
+							<div>
+								<dt class="text-muted-foreground">วิทยฐานะ</dt>
+								<dd>
+									{staff.staff_info?.academic_rank
+										? ACADEMIC_RANK_LABELS[staff.staff_info.academic_rank]
+										: 'ยังไม่ระบุ'}
+								</dd>
+							</div>
+							<div>
+								<dt class="text-muted-foreground">วุฒิการศึกษาสูงสุด</dt>
+								<dd>
+									{staff.staff_info?.education_level
+										? EDUCATION_LEVEL_LABELS[staff.staff_info.education_level]
+										: 'ยังไม่ระบุ'}
+								</dd>
+							</div>
+							<div>
+								<dt class="text-muted-foreground">สาขาวิชา</dt>
+								<dd>{staff.staff_info?.major?.name ?? 'ยังไม่ระบุ'}</dd>
+							</div>
+							<div>
+								<dt class="text-muted-foreground">สถาบันการศึกษา</dt>
+								<dd>{staff.staff_info?.university?.name ?? 'ยังไม่ระบุ'}</dd>
+							</div>
+							<div>
+								<dt class="text-muted-foreground">กลุ่มสาระจากสังกัดปัจจุบัน</dt>
+								<dd>
+									{(staff.subject_groups ?? []).map((group) => group.name).join(', ') ||
+										'ยังไม่มีสังกัดกลุ่มสาระ'}
+								</dd>
+							</div>
+						</dl>
+					</div>
 				</div>
 
 				<!-- Right Column - Details -->

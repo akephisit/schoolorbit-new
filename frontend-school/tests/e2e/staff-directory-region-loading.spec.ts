@@ -77,7 +77,13 @@ test('editor saves personal data directly without requesting role or organizatio
 	const api = await mockStaffDirectory(page);
 	await page.goto(staffPath(firstStaff, '/edit'));
 	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรแรก');
+	const preloaded = page.waitForResponse(
+		(r) => new URL(r.url()).pathname === profileEndpoint && r.request().method() === 'GET'
+	);
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรแก้ไข');
+	page.once('dialog', (dialog) => dialog.dismiss());
+	await page.getByRole('link', { name: 'กลับข้อมูลบุคลากร', exact: true }).click();
+	await preloaded;
 	const saveRequest = page.waitForRequest(
 		(request) => request.method() === 'PUT' && new URL(request.url()).pathname === profileEndpoint
 	);
@@ -121,12 +127,13 @@ test('editor warns before leaving and can discard the unsaved draft', async ({ p
 test('education deep link saves only the changed education field', async ({ page }) => {
 	await mockStaffDirectory(page);
 	await page.goto(`${staffPath(firstStaff, '/edit')}?section=education`);
-	await page.getByPlaceholder('เช่น มหาวิทยาลัยธรรมศาสตร์').fill('มหาวิทยาลัยทดสอบ');
+	await page.getByRole('button', { name: 'วุฒิการศึกษาสูงสุด', exact: true }).click();
+	await page.getByRole('option', { name: 'ปริญญาตรี', exact: true }).click();
 	const saved = page.waitForRequest(
 		(request) => request.method() === 'PUT' && new URL(request.url()).pathname === profileEndpoint
 	);
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
-	expect((await saved).postDataJSON()).toEqual({ staff_info: { university: 'มหาวิทยาลัยทดสอบ' } });
+	expect((await saved).postDataJSON()).toEqual({ staff_info: { education_level: 'bachelor' } });
 });
 test('new staff is reviewed before creation and opens the newly created profile', async ({
 	page

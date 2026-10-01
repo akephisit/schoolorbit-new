@@ -402,6 +402,31 @@ root with Bash, Node and jq available. It executes the workflow CORS fragment ag
 controlled AWS CLI boundary, covering unchanged/reordered policies, full-policy drift,
 missing configuration and read/write/verification failures without contacting R2.
 
+### Personnel migration and browser verification
+
+Run the canonical personnel owner and explicit all-tenant boundary against fresh rootless PostgreSQL:
+
+```bash
+./scripts/test_backend_school.sh --package school-staff -- --test-threads=1
+./scripts/test_backend_school.sh personnel_ -- --test-threads=1
+./scripts/test_backend_school.sh policies::staff_access_policy::tests -- --test-threads=1
+```
+
+The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-source drift, retry, identity/license/employment preservation, catalog normalization and deactivation races, nullable patches, scoped directory/aggregate equivalence, current group deduplication and missing-value buckets. Root tests verify no migration future runs after failed preflight and require current nonempty audit evidence.
+
+For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual version and bounded `staff_personnel_cutover_audit` checks afterward. Do not emit credentials, names, source values or national IDs.
+
+Against a production build running in local preview:
+
+```bash
+cd frontend-school
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
+  tests/e2e/personnel-workflow.spec.ts \
+  tests/e2e/staff-directory-region-loading.spec.ts --project=chromium
+```
+
+These synthetic browser fixtures block service workers and exercise dropdown payloads, lazy options, create/edit draft ownership, retry/refresh, chart drilldown and mobile layout. Run deployed read-only acceptance separately with existing runtime credentials and tracing, screenshots and video disabled.
+
 ### Academic Core migration rehearsal
 
 Run the Academic Core chain against disposable local PostgreSQL from the repository root. These

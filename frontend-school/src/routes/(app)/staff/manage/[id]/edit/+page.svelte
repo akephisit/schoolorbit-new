@@ -1,8 +1,14 @@
 <script lang="ts">
-	import { beforeNavigate, goto } from '$app/navigation';
+	import { beforeNavigate, goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
 	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
+	import StaffPersonnelFields from '$lib/components/staff/StaffPersonnelFields.svelte';
+	import {
+		buildStaffPersonnelPatch,
+		staffPersonnelDraft,
+		type StaffPersonnelDraft
+	} from '$lib/forms/staff-personnel';
 	import { staffStatusLabel } from '$lib/forms/staff-status';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
@@ -105,9 +111,7 @@
 		status: 'active',
 
 		// Staff Info
-		education_level: '',
-		major: '',
-		university: '',
+		personnel: {} as StaffPersonnelDraft,
 
 		// Organization Units
 		organization_assignments: [] as Array<{
@@ -118,6 +122,9 @@
 		}>
 	});
 
+	let personnelReferences = $state<
+		Pick<NonNullable<StaffProfileResponse['staff_info']>, 'job_position' | 'major' | 'university'>
+	>({ job_position: null, major: null, university: null });
 	let originalForm: typeof formData | null = $state(null);
 	const dirty = $derived(
 		originalForm !== null && JSON.stringify(formData) !== JSON.stringify(originalForm)
@@ -177,6 +184,11 @@
 		const initial = staff === null;
 		staff = result.data;
 		if (initial) {
+			personnelReferences = {
+				job_position: staff.staff_info?.job_position ?? null,
+				major: staff.staff_info?.major ?? null,
+				university: staff.staff_info?.university ?? null
+			};
 			// Populate form
 			formData = {
 				profile_image_file_id: staff.profile_image_file_id || '',
@@ -194,9 +206,7 @@
 				address: staff.address || '',
 				hired_date: staff.hired_date || '',
 				status: staff.status,
-				education_level: staff.staff_info?.education_level || '',
-				major: staff.staff_info?.major || '',
-				university: staff.staff_info?.university || '',
+				personnel: staffPersonnelDraft(staff.staff_info),
 				organization_assignments:
 					staff.organization_units?.map((d) => ({
 						organization_unit_id: d.id,
@@ -370,12 +380,8 @@
 					payload[field] = value || undefined;
 				}
 			}
-			for (const field of ['education_level', 'major', 'university'] as const) {
-				if (formData[field] !== originalForm[field]) {
-					payload.staff_info ??= {};
-					payload.staff_info[field] = formData[field] || undefined;
-				}
-			}
+			const hrPatch = buildStaffPersonnelPatch(originalForm.personnel, formData.personnel);
+			if (hrPatch) payload.staff_info = hrPatch;
 			if (organizationsChanged)
 				payload.organization_assignments = formData.organization_assignments;
 
@@ -385,6 +391,8 @@
 			if (result.success) {
 				toast.success('บันทึกข้อมูลสำเร็จ');
 				originalForm = structuredClone($state.snapshot(formData));
+				await invalidate(`school:staff-profile:${owner}`);
+				if (!current()) return;
 				await goto(
 					resolve(
 						withStaffReturn(`/staff/manage/${owner}`, returnHref) as `/staff/manage/${string}`
@@ -720,39 +728,12 @@
 							</div>
 						</div>
 					{:else if currentStep === 2}
-						<!-- Step 2: Educational Background -->
-						<h2 class="text-xl font-semibold mb-6">ข้อมูลการศึกษา</h2>
-
-						<div class="space-y-4">
-							<div>
-								<Label class="mb-2">วุฒิการศึกษา</Label>
-								<Input
-									type="text"
-									bind:value={formData.education_level}
-									placeholder="เช่น ปริญญาตรี, ปริญญาโท"
-								/>
-							</div>
-
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<Label class="mb-2">สาขา</Label>
-									<Input
-										type="text"
-										bind:value={formData.major}
-										placeholder="เช่น การศึกษา, คณิตศาสตร์"
-									/>
-								</div>
-
-								<div>
-									<Label class="mb-2">สถาบัน</Label>
-									<Input
-										type="text"
-										bind:value={formData.university}
-										placeholder="เช่น มหาวิทยาลัยธรรมศาสตร์"
-									/>
-								</div>
-							</div>
-						</div>
+						<h2 class="text-xl font-semibold mb-6">ตำแหน่งและการศึกษา</h2>
+						<StaffPersonnelFields
+							bind:value={formData.personnel}
+							bind:references={personnelReferences}
+							disabled={saving || !canMutateStaff}
+						/>
 					{:else if currentStep === 3}
 						<!-- Step 4: Organization Units -->
 						<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
