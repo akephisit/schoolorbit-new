@@ -1,5 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
+test.use({ trace: 'off', screenshot: 'off', video: 'off' });
+process.env.PLAYWRIGHT_NO_COPY_PROMPT = '1';
+
 const configuredSessionUsername = process.env.E2E_SESSION_USERNAME;
 const configuredSessionPassword = process.env.E2E_SESSION_PASSWORD;
 
@@ -33,13 +36,17 @@ async function login(
 	const loginPage = page ?? (await context.newPage());
 	await loginPage.goto(`${primaryOrigin}/login`);
 	await expect(loginPage.getByRole('heading', { name: 'เข้าสู่ระบบ' })).toBeVisible();
-	await loginPage.getByLabel('ชื่อผู้ใช้งาน (Username)').fill(sessionUsername);
-	await loginPage.getByLabel('รหัสผ่าน').fill(sessionPassword);
+	try {
+		await loginPage.getByLabel('ชื่อผู้ใช้งาน (Username)').fill(sessionUsername);
+		await loginPage.getByLabel('รหัสผ่าน').fill(sessionPassword);
 
-	await Promise.all([
-		loginPage.waitForURL(expectedLanding, { timeout: 15_000 }),
-		loginPage.getByRole('button', { name: 'เข้าสู่ระบบ' }).click()
-	]);
+		await Promise.all([
+			loginPage.waitForURL(expectedLanding, { timeout: 15_000 }),
+			loginPage.getByRole('button', { name: 'เข้าสู่ระบบ' }).click()
+		]);
+	} catch {
+		throw new Error('Dedicated session account login failed.');
+	}
 
 	return loginPage;
 }

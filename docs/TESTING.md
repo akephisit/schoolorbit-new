@@ -181,7 +181,7 @@ During implementation, run the relevant static file directly:
 node --test tests/static/<area>.test.mjs
 ```
 
-`test:route-loading` checks authenticated-route inventory coverage and prevents new page-mount API reads while the planned routes move to route-owned loading.
+`test:route-loading` requires every authenticated page to have a completed data-owner review and a primary loader when route-owned. It rejects retired migration allowances and primary mount reads, follows local mount helper calls, and records browser subscription reasons and focused test owners in the inventory. It also guards focused invalidation, safe preload and the absence of generic page-view endpoints.
 
 For the Academic Delivery region-loading browser gate, build and preview the frontend with a local API origin in one terminal, then run the mocked Chromium spec in another:
 
@@ -211,6 +211,31 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/admission-score
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-home-region-loading.spec.ts tests/e2e/staff-role-region-loading.spec.ts --project=chromium --workers=2
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supervision-management-region-loading.spec.ts tests/e2e/supervision-queues-region-loading.spec.ts tests/e2e/supervision-detail-region-loading.spec.ts --project=chromium --workers=2
 ```
+
+Run the cross-domain mocked acceptance together against a ready local production preview:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
+  '.*(region-loading|route-loading)\.spec\.ts$' \
+  tests/e2e/gradebook-workflow.spec.ts \
+  tests/e2e/curriculum-delivery-alignment.spec.ts \
+  tests/e2e/academic-term-aggregates.spec.ts tests/e2e/academic-annual-results.spec.ts \
+  tests/e2e/academic-promotion-policies.spec.ts tests/e2e/academic-promotion-runs.spec.ts \
+  tests/e2e/academic-term-lifecycle.spec.ts tests/e2e/academic-year-lifecycle.spec.ts \
+  --project=chromium --workers=2
+```
+
+Mocked route suites block service workers so same-origin requests reach Playwright interception. Confirm preview readiness and warm the server before starting the command; do not edit product files or run another Playwright invocation concurrently.
+
+For deployed readonly route acceptance, use the ignored `frontend-school/.env.e2e.local` (mode `0600`) with HTTPS `E2E_BASE_URL`, `E2E_API_URL`, and pairs `E2E_STAFF_USERNAME/PASSWORD`, `E2E_STUDENT_USERNAME/PASSWORD`, `E2E_PARENT_USERNAME/PASSWORD`. The parent account must have a linked child with academic history in the same tenant. Supply values locally or through CI secrets, never in a chat, command argument or Git. Node 24 loads this file explicitly; Playwright does not load it automatically.
+
+```bash
+E2E_ROUTE_LOADING_LIVE=1 node --env-file=.env.e2e.local \
+  node_modules/@playwright/test/cli.js test tests/e2e/route-loading-live-acceptance.spec.ts \
+  --project=chromium --workers=1
+```
+
+The readonly live spec also accepts `SMOKE_USERNAME/PASSWORD` for its staff login when deliberately exported from the trusted Bash-owned `.env.smoke.local`. Do not load a Bash env file containing shell escapes with Node `--env-file`; encode literal values in the dedicated dotenv file instead. It navigates only, then logs out its own newly created session; it never opens mutation workflows or revokes other sessions. It discards one warm-up and records medians from exactly five warm runs with fixed role, permissions, academic context, Chromium and default network, using client navigation with preload disabled. Output contains route templates, region names, durations, bytes and available server phases only. Browser artifacts are disabled. Missing credentials or academic context are explicitly unrun. A missing baseline or query plan prevents claims of production speedup or SQL improvement.
 
 The Delivery spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.
 The catalog spec checks the three route-owned list regions, focused retry, local group patching, and lazy history after create.
@@ -648,7 +673,7 @@ E2E_PASSWORD='provided-at-runtime' \
 npm run test:e2e
 ```
 
-`SMOKE_TENANT_URL`, `SMOKE_SUBDOMAIN`, `SMOKE_USERNAME`, and `SMOKE_PASSWORD` are accepted fallbacks only for the non-destructive login spec. The backend sets `__Host-schoolorbit_session` for the API domain, so assertions inspect Playwright browser-context cookies rather than only cookies visible for the tenant page domain.
+`SMOKE_TENANT_URL`, `SMOKE_SUBDOMAIN`, `SMOKE_USERNAME`, and `SMOKE_PASSWORD` are accepted fallbacks only for the non-destructive login spec and the explicitly enabled readonly route acceptance spec. The backend sets `__Host-schoolorbit_session` for the API domain, so assertions inspect Playwright browser-context cookies rather than only cookies visible for the tenant page domain.
 
 Run destructive multi-context session coverage separately with a dedicated disposable account:
 

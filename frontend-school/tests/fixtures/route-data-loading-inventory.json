@@ -219,7 +219,12 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-assessment",
-			"notes": "Loader starts term-scoped plan summaries and phase controls concurrently; each region renders and retries independently. Offering detail is lazy in the editor; save patches its summary. Tap preload avoids false-positive traffic for the bounded 500-offering plan read."
+			"notes": "Loader starts term-scoped plan summaries and phase controls concurrently; each region renders and retries independently. Offering detail is lazy in the editor; save patches its summary. Tap preload avoids false-positive traffic for the bounded 500-offering plan read.",
+			"browserMount": {
+				"reason": "Dirty-draft registration and timer cleanup only; route promises own plans and phase controls.",
+				"tests": ["tests/static/academic-assessment-structure.test.mjs"],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/academic/catalog/activities",
@@ -329,7 +334,15 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-assessment",
-			"notes": "Route-owned visible-tab subjects and selected-group workspace are dependent streamed regions. Inactive tabs, criterion configuration, and permission-gated manager controls load only on interaction; URL selection uses shallow replaceState to avoid duplicate route reads. Score/evaluation save queues and focused phase refresh remain local."
+			"notes": "Route-owned visible-tab subjects and selected-group workspace are dependent streamed regions. Inactive tabs, criterion configuration, and permission-gated manager controls load only on interaction; URL selection uses shallow replaceState to avoid duplicate route reads. Score/evaluation save queues and focused phase refresh remain local.",
+			"browserMount": {
+				"reason": "Queue-status subscriptions and dirty-source registration only; initial plan/workspace reads remain in the loader.",
+				"tests": [
+					"tests/static/academic-gradebook.test.mjs",
+					"tests/e2e/gradebook-workflow.spec.ts"
+				],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/academic/homerooms",
@@ -349,7 +362,12 @@
 			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "Year-scoped 50-row cursor list starts in the route after layout permissions settle. First skeleton, retained refresh/error/retry, year supersession, and typed create patch are verified. Create-dialog policy options remain lazy behind manage permission."
+			"notes": "Year-scoped 50-row cursor list starts in the route after layout permissions settle. First skeleton, retained refresh/error/retry, year supersession, and typed create patch are verified. Create-dialog policy options remain lazy behind manage permission.",
+			"browserMount": {
+				"reason": "Dirty dialog registration and disposal only; promotion list is route-owned.",
+				"tests": ["tests/static/academic-promotion-list-region-loading.test.mjs"],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/academic/promotion/[id]",
@@ -419,7 +437,12 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-results",
-			"notes": "Term roster and policy reads start independently after layout-owned current-user permissions settle. Explicit selected revision history starts separately; preview starts immediately for an explicit policy or after the policy list for a default policy. URL selection, per-region skeleton/error/retry, stale-policy fallback, and focused lock/policy mutation patches are verified. Unbounded year/term roster uses tap preload."
+			"notes": "Term roster and policy reads start independently after layout-owned current-user permissions settle. Explicit selected revision history starts separately; preview starts immediately for an explicit policy or after the policy list for a default policy. URL selection, per-region skeleton/error/retry, stale-policy fallback, and focused lock/policy mutation patches are verified. Unbounded year/term roster uses tap preload.",
+			"browserMount": {
+				"reason": "Dirty lock/policy registration only; roster, policies, preview and history are independent route regions.",
+				"tests": ["tests/static/academic-aggregate-region-loading.test.mjs"],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/academic/results/annual",
@@ -429,7 +452,12 @@
 			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-results",
-			"notes": "Year roster starts after layout-owned current-user permissions settle; explicit selected annual preview and history start independently without waiting for roster. URL selection, per-region skeleton/error/retry, retained refresh, and typed lock patch are verified. Unbounded year roster uses tap preload."
+			"notes": "Year roster starts after layout-owned current-user permissions settle; explicit selected annual preview and history start independently without waiting for roster. URL selection, per-region skeleton/error/retry, retained refresh, and typed lock patch are verified. Unbounded year roster uses tap preload.",
+			"browserMount": {
+				"reason": "Dirty lock registration only; roster, preview and history are route-owned.",
+				"tests": ["tests/static/academic-aggregate-region-loading.test.mjs"],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/academic/student-years",
@@ -529,7 +557,12 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "URL year/term owns one cohesive readiness workspace. First skeleton, retained refresh/error/retry, old-context supersession, and transition/reopen/activation workflows are verified. Opening policy and term preparation dialogs remain action-lazy; volatile cross-domain readiness uses tap preload."
+			"notes": "URL year/term owns one cohesive readiness workspace. First skeleton, retained refresh/error/retry, old-context supersession, and transition/reopen/activation workflows are verified. Opening policy and term preparation dialogs remain action-lazy; volatile cross-domain readiness uses tap preload.",
+			"browserMount": {
+				"reason": "Dirty dialog registration and disposal only; readiness promises come from the loader.",
+				"tests": ["tests/static/academic-lifecycle-region-loading.test.mjs"],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/academic/timetable",
@@ -539,7 +572,16 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-timetable",
-			"notes": "Route-owned version list and selected board workspace; change-set detail follows workspace only when present. Heavy board uses tap preload; mutation resources and export stay action-lazy."
+			"notes": "Route-owned version list and selected board workspace; change-set detail follows workspace only when present. Heavy board uses tap preload; mutation resources and export stay action-lazy.",
+			"browserMount": {
+				"reason": "Context/auth subscriptions synchronize the socket. Refresh subscription reconciles only a positive event with an existing controller; no initial workspace read.",
+				"tests": [
+					"tests/static/timetable-board-templates-route-loading.test.mjs",
+					"tests/static/timetable-idle-reconcile.test.mjs",
+					"tests/e2e/timetable-teacher-board.spec.ts"
+				],
+				"eventReads": ["subscribe:getTimetableBlockWorkspace"]
+			}
 		},
 		{
 			"route": "staff/academic/timetable/templates",
@@ -549,7 +591,12 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-timetable",
-			"notes": "Route-owned independent template and version lists with focused retry; no data preload until the global template list is bounded. Selected template detail and mutations remain interaction-lazy."
+			"notes": "Route-owned independent template and version lists with focused retry; no data preload until the global template list is bounded. Selected template detail and mutations remain interaction-lazy.",
+			"browserMount": {
+				"reason": "Dirty template registration only; templates and versions start independently in the loader.",
+				"tests": ["tests/static/timetable-board-templates-route-loading.test.mjs"],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/academic/timetable/today",
@@ -569,7 +616,12 @@
 			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-lifecycle",
-			"notes": "URL year owns one cohesive year readiness workspace. First skeleton, retained refresh/error/retry, and close/reopening safety are verified. Reopening preview remains action-lazy; volatile annual coverage uses tap preload."
+			"notes": "URL year owns one cohesive year readiness workspace. First skeleton, retained refresh/error/retry, and close/reopening safety are verified. Reopening preview remains action-lazy; volatile annual coverage uses tap preload.",
+			"browserMount": {
+				"reason": "Dirty dialog registration and disposal only; readiness promises come from the loader.",
+				"tests": ["tests/static/academic-lifecycle-region-loading.test.mjs"],
+				"eventReads": []
+			}
 		},
 		{
 			"route": "staff/achievements",

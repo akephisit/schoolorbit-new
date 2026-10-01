@@ -6,15 +6,8 @@ import test from 'node:test';
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 const routesRoot = path.join(projectRoot, 'src/routes/(app)');
 const inventoryPath = path.join(projectRoot, 'tests/fixtures/route-data-loading-inventory.json');
-const dataOwners = new Set([
-	'component-primary',
-	'route',
-	'shared-layout',
-	'interaction-only',
-	'no-data'
-]);
+const dataOwners = new Set(['route', 'shared-layout', 'interaction-only', 'no-data']);
 const preloads = new Set(['hover', 'tap', 'none']);
-const statuses = new Set(['planned', 'complete']);
 
 async function discoverPages(directory = routesRoot) {
 	const pages = [];
@@ -45,13 +38,22 @@ test('every authenticated page has one reviewed route data owner', async () => {
 	const inventory = await readInventory();
 	assert.equal(inventory.version, 1);
 	assert.ok(Array.isArray(inventory.routes));
+	assert.deepEqual(
+		inventory.routes.filter((record) => record.status !== 'complete').map((record) => record.route),
+		[],
+		'every authenticated route must have completed ownership review'
+	);
 	const names = [];
 	for (const record of inventory.routes) {
 		assert.equal(typeof record.route, 'string');
 		assert.ok(record.route.length > 0, 'route name must not be empty');
 		assert.ok(dataOwners.has(record.dataOwner), `${record.route}: invalid data owner`);
 		assert.ok(preloads.has(record.preload), `${record.route}: invalid preload policy`);
-		assert.ok(statuses.has(record.status), `${record.route}: unreviewed status`);
+		assert.equal(record.status, 'complete', `${record.route}: unreviewed status`);
+		assert.ok(
+			!('legacyMountApiCandidate' in record),
+			`${record.route}: retired migration allowance`
+		);
 		for (const key of ['wave', 'context', 'backendOwner', 'notes']) {
 			assert.ok(
 				typeof record[key] === 'string' && record[key].trim().length > 0,
@@ -61,7 +63,7 @@ test('every authenticated page has one reviewed route data owner', async () => {
 		if (record.dataOwner === 'no-data') {
 			assert.equal(record.status, 'complete', `${record.route}: static route is incomplete`);
 		}
-		if (record.dataOwner === 'route' && record.status === 'complete') {
+		if (record.dataOwner === 'route') {
 			const routeDirectory = path.join(routesRoot, record.route);
 			const loaderFiles = ['+page.ts', '+page.server.ts'];
 			const loaders = await Promise.all(

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { mountApiCalls } from '../helpers/route-startup-policy.mjs';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 const appRoutes = path.join(projectRoot, 'src/routes/(app)');
@@ -27,44 +28,57 @@ async function sourceFiles(directory) {
 	return files;
 }
 
-test('legacy page-mount API reads only shrink during route migration', async () => {
+test('primary reads never start from page mount; browser subscriptions have reviewed owners', async () => {
 	const inventory = JSON.parse(await readFile(inventoryPath, 'utf8'));
 	const records = new Map(inventory.routes.map((record) => [record.route, record]));
-	const browserOnlyMountRoutes = new Set([
-		'staff/academic/assessments',
-		'staff/academic/gradebook',
-		'staff/academic/promotion',
-		'staff/academic/term-lifecycle',
-		'staff/academic/year-lifecycle',
-		'staff/academic/results/aggregates',
-		'staff/academic/results/annual',
-		'staff/academic/timetable',
-		'staff/academic/timetable/templates'
-	]);
-	const candidates = [];
 	for (const file of await pageFiles(appRoutes)) {
 		const source = await readFile(file, 'utf8');
+		const route = path.relative(appRoutes, path.dirname(file)).split(path.sep).join('/');
+		const record = records.get(route);
+		const calls = mountApiCalls(source);
+		const review = record?.browserMount;
 		if (/\bonMount\b/.test(source) && /\$lib\/api\//.test(source)) {
-			const route = path.relative(appRoutes, path.dirname(file)).split(path.sep).join('/');
-			const record = records.get(route);
-			// These routes mount only socket/dirty-source subscriptions; their focused tests
-			// assert the mount body never starts a primary API read.
-			if (browserOnlyMountRoutes.has(route)) {
-				assert.equal(record?.status, 'complete', `${route}: mount exception needs route review`);
-				continue;
-			}
-			assert.equal(record?.legacyMountApiCandidate, true, `${route}: new page-mount API read`);
-			assert.equal(record?.dataOwner, 'component-primary', `${route}: unreviewed route owner`);
-			assert.equal(record?.status, 'planned', `${route}: unreviewed route status`);
-			candidates.push(route);
+			assert.ok(review?.reason?.trim(), `${route}: browser mount needs an explicit review reason`);
+			assert.ok(review?.tests?.length, `${route}: browser mount needs a focused test owner`);
+			for (const testFile of review.tests) await readFile(path.join(projectRoot, testFile), 'utf8');
 		}
+		assert.deepEqual(
+			calls.filter((call) => !call.startsWith('subscribe:')),
+			[],
+			`${route}: primary mount API read`
+		);
+		assert.deepEqual(calls, review?.eventReads ?? [], `${route}: unreviewed subscription API read`);
 	}
-	assert.ok(!candidates.includes('staff/academic/delivery'));
-	const delivery = records.get('staff/academic/delivery');
-	assert.equal(delivery?.dataOwner, 'route');
-	assert.equal(delivery?.status, 'complete');
-	const loader = await readFile(path.join(appRoutes, 'staff/academic/delivery/+page.ts'), 'utf8');
-	assert.match(loader, /\$lib\/api\/learning-delivery/);
+	const panel = await readFile(
+		path.join(projectRoot, 'src/lib/features/session-security/SessionSecurityPanel.svelte'),
+		'utf8'
+	);
+	assert.deepEqual(
+		mountApiCalls(panel),
+		[],
+		'route-owned account list must not restart from its child mount'
+	);
+});
+
+test('startup inspection follows aliases and local helpers without banning interaction reads', () => {
+	const imports = `<script lang="ts">import {onMount as mounted} from 'svelte'; import {list as read} from '$lib/api/feature';`;
+	assert.deepEqual(
+		mountApiCalls(`${imports} function primary(){return read()} mounted(primary);</script>`),
+		['read']
+	);
+	assert.deepEqual(
+		mountApiCalls(`${imports} const primary=()=>read(); mounted(()=>primary());</script>`),
+		['read']
+	);
+	assert.deepEqual(
+		mountApiCalls(
+			`${imports} function onClick(){return read()} mounted(()=>window.focus());</script>`
+		),
+		[]
+	);
+	assert.deepEqual(mountApiCalls(`${imports} mounted(()=>store.subscribe(()=>read()));</script>`), [
+		'subscribe:read'
+	]);
 });
 
 test('API contract contains no route-wide page-view endpoint', async () => {
