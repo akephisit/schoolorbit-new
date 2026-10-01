@@ -6461,7 +6461,7 @@ fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live()
         "/api/academic/offerings?academicTermId=",
         "/api/academic/assessments/plans?academicTermId=",
         "/api/academic/timetable-versions?academicTermId=",
-        "/api/academic/timetable?timetableVersionId=",
+        "/api/academic/timetable-blocks/workspace?academicYearId=",
         "/api/academic/exam-schedules?academicTermId=",
         "/api/supervision/cycles?academicYearId=",
         "/api/supervision/observations?academicYearId=",
