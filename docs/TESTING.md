@@ -416,6 +416,8 @@ The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-s
 
 For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual version and bounded `staff_personnel_cutover_audit` checks afterward. Do not emit credentials, names, source values or national IDs.
 
+Also supply `PERSONNEL_PREFLIGHT_NEON_DATABASE_URL` and its exact disposable host as `PERSONNEL_PREFLIGHT_NEON_ENDPOINT` through the private test environment, then run `cargo test --manifest-path backend-school/Cargo.toml personnel_preflight_neon_connection --bin backend-school -- --ignored`. This read-only test exercises both direct and pooled registry URL shapes through the actual preflight owner, verifies startup settings and blocked writes, and never invokes migrations. Local `personnel_` tests independently verify host-only normalization and write rejection on rootless PostgreSQL.
+
 Against a production build running in local preview:
 
 ```bash

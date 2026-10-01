@@ -50,6 +50,25 @@ fn failed_school(subdomain: &str, code: &str) -> PersonnelSchoolPreflight {
         checks: failed_check(code),
     }
 }
+
+fn personnel_preflight_options(mut options: PgConnectOptions) -> PgConnectOptions {
+    // Registry URLs serve ordinary runtime traffic through Neon's transaction pooler.
+    // The explicit migration preflight needs a direct session for read-only startup settings.
+    let host = options.get_host();
+    if host.ends_with(".neon.tech") {
+        if let Some((endpoint, suffix)) = host.split_once('.') {
+            if let Some(endpoint) = endpoint.strip_suffix("-pooler") {
+                let direct_host = format!("{endpoint}.{suffix}");
+                options = options.host(&direct_host);
+            }
+        }
+    }
+    options.options([
+        ("default_transaction_read_only", "on"),
+        ("statement_timeout", "10000"),
+    ])
+}
+
 pub async fn preflight_personnel_tenants(
     schools: &[ActiveSchool],
 ) -> Result<PersonnelTenantPreflight, AppError> {
@@ -67,10 +86,7 @@ pub async fn preflight_personnel_tenants(
             continue;
         };
         let options = match PgConnectOptions::from_str(url) {
-            Ok(options) => options.options([
-                ("default_transaction_read_only", "on"),
-                ("statement_timeout", "10000"),
-            ]),
+            Ok(options) => personnel_preflight_options(options),
             Err(_) => {
                 results.push(failed_school(
                     &school.subdomain,
@@ -180,6 +196,108 @@ pub async fn personnel_cutover_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "Requires the explicitly supplied disposable Neon rehearsal endpoint"]
+    async fn personnel_preflight_neon_connection() {
+        let url = std::env::var("PERSONNEL_PREFLIGHT_NEON_DATABASE_URL")
+            .expect("disposable rehearsal connection required");
+        let endpoint = std::env::var("PERSONNEL_PREFLIGHT_NEON_ENDPOINT")
+            .expect("disposable rehearsal endpoint required");
+        let options = PgConnectOptions::from_str(&url).expect("valid rehearsal connection");
+        assert!(endpoint.starts_with("ep-"));
+        assert_eq!(options.get_host(), endpoint);
+        let mut schools = Vec::new();
+        for pooled in [false, true] {
+            let host = if pooled {
+                let (label, suffix) = endpoint.split_once('.').unwrap();
+                format!("{label}-pooler.{suffix}")
+            } else {
+                options.get_host().to_owned()
+            };
+            let probe = PgPoolOptions::new()
+                .max_connections(1)
+                .connect_with(personnel_preflight_options(options.clone().host(&host)))
+                .await;
+            match probe {
+                Ok(pool) => {
+                    assert_read_only_connection(&pool).await;
+                    pool.close().await;
+                }
+                Err(error) => {
+                    let unsupported = error
+                        .as_database_error()
+                        .is_some_and(|e| e.message().contains("unsupported startup parameter"));
+                    panic!("PERSONNEL_PROVIDER_CONNECTION_FAILED pooled={pooled} unsupported_startup={unsupported} database_code={:?}",
+                        error.as_database_error().and_then(|e| e.code()).map(|c| c.into_owned()));
+                }
+            }
+            let mut connection = url::Url::parse(&url).unwrap();
+            connection.set_host(Some(&host)).unwrap();
+            schools.push(ActiveSchool {
+                subdomain: format!("rehearsal-{pooled}"),
+                db_connection_string: Some(connection.to_string()),
+                migration_version: None,
+                migration_status: None,
+                last_migrated_at: None,
+                migration_error: None,
+            });
+        }
+        let report = preflight_personnel_tenants(&schools).await.unwrap();
+        assert!(report.passed, "{report:?}");
+        assert_eq!(report.total_schools, 2);
+    }
+
+    async fn assert_read_only_connection(pool: &PgPool) {
+        let read_only: String = sqlx::query_scalar("SHOW default_transaction_read_only")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(read_only, "on");
+        let timeout: String = sqlx::query_scalar("SHOW statement_timeout")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(timeout, "10s");
+        let error = sqlx::query("CREATE TABLE personnel_read_only_must_never_exist (id int)")
+            .execute(pool)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().and_then(|e| e.code()).as_deref(),
+            Some("25006")
+        );
+    }
+
+    #[test]
+    fn personnel_preflight_uses_direct_neon_host_without_changing_database_or_user() {
+        for (url, expected_host) in [
+            ("postgres://user-pooler.example:synthetic@ep-example-pooler.ap-southeast-1.aws.neon.tech/campus-pooler.db?sslmode=require", "ep-example.ap-southeast-1.aws.neon.tech"),
+            ("postgres://user-pooler.example:synthetic@ep-example.ap-southeast-1.aws.neon.tech/campus-pooler.db?sslmode=require", "ep-example.ap-southeast-1.aws.neon.tech"),
+            ("postgres://user-pooler.example:synthetic@custom-pooler.example/campus-pooler.db?sslmode=require", "custom-pooler.example"),
+            ("postgres://user-pooler.example:synthetic@127.0.0.1/campus-pooler.db?sslmode=require", "127.0.0.1"),
+        ] {
+            let options = personnel_preflight_options(PgConnectOptions::from_str(url).unwrap());
+            assert_eq!(options.get_host(), expected_host);
+            assert_eq!(options.get_username(), "user-pooler.example");
+            assert_eq!(options.get_database(), Some("campus-pooler.db"));
+        }
+    }
+
+    #[tokio::test]
+    async fn personnel_preflight_connection_rejects_writes() {
+        let url = std::env::var("TEST_DATABASE_URL").expect("local test database required");
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(personnel_preflight_options(
+                PgConnectOptions::from_str(&url).unwrap(),
+            ))
+            .await
+            .unwrap();
+        assert_read_only_connection(&pool).await;
+        pool.close().await;
+    }
+
     #[tokio::test]
     async fn personnel_preflight_prevents_any_tenant_migration_on_failure() {
         let report = PersonnelTenantPreflight {
