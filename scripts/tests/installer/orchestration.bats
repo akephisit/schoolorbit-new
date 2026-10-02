@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load test_helper
+bats_require_minimum_version 1.5.0
 
 setup() {
     setup_installer_test
@@ -250,7 +251,7 @@ install_orchestration_fakes() {
     podman create --name "$HEALTH_TEST_CONTAINER" --network none \
         --rootfs "$TEST_ROOT/rootfs" /bin/true >/dev/null
 
-    run podman inspect --format "$health_format" "$HEALTH_TEST_CONTAINER"
+    run --separate-stderr podman inspect --format "$health_format" "$HEALTH_TEST_CONTAINER"
 
     [ "$status" -eq 0 ]
     [ "$output" = created ]
