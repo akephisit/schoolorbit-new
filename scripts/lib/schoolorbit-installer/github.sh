@@ -122,7 +122,7 @@ github_variable_equals() {
 
 github_runs_succeeded() {
     local workflow_runs=$1 encoded run run_id expected_url response conclusion actual_url
-    jq -e 'type == "array" and length == 4' <<<"$workflow_runs" >/dev/null || die 78 'Deployment workflow checkpoint is invalid' || return
+    jq -e 'type == "array" and length == 3' <<<"$workflow_runs" >/dev/null || die 78 'Deployment workflow checkpoint is invalid' || return
     while IFS= read -r encoded; do
         run=$(printf '%s' "$encoded" | base64 -d) || return 78
         run_id=$(jq -er '.id | numbers' <<<"$run") || return 78

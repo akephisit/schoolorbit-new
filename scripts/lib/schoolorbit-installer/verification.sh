@@ -88,7 +88,7 @@ podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
 deadline=$((SECONDS + 720))
 for container in schoolorbit-backend-admin schoolorbit-backend-school schoolorbit-clamd schoolorbit-nginx; do
     while true; do
-        status=$(podman inspect --format '{{if .State.Health.Status}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
+        status=$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")
         case "$status" in
             healthy) break ;;
             running)

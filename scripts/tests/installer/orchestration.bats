@@ -79,6 +79,9 @@ printf "verified %s\n" "$SMOKE_SUBDOMAIN"
 }
 
 teardown() {
+    if [[ -n ${HEALTH_TEST_CONTAINER-} ]]; then
+        podman rm -f "$HEALTH_TEST_CONTAINER" >/dev/null
+    fi
     vps_cleanup_transients
     teardown_installer_test
 }
@@ -227,7 +230,6 @@ install_orchestration_fakes() {
     grep -F -- '--cacert' "$FAKE_COMMAND_LOG"
     ! grep -Fq -- "$insecure_flag" "$FAKE_COMMAND_LOG"
     grep -Fq 'podman-compose -f podman-compose.yml --dry-run up -d' "$FAKE_COMMAND_LOG"
-    grep -Fq "podman inspect --format '{{if .State.Health.Status}}" "$FAKE_COMMAND_LOG"
     ! grep -Fq 'podman exec schoolorbit-nginx nginx -t' "$FAKE_COMMAND_LOG"
 }
 
@@ -236,6 +238,22 @@ install_orchestration_fakes() {
 
     run verify_direct_origin
     [ "$status" -ne 0 ]
+}
+
+@test "runtime verification reads container state when a healthcheck is absent" {
+    _verify_remote_runtime
+    local health_format
+    health_format=$(awk -F "'" '/status=.*podman inspect --format/ { print $2 }' "$FAKE_COMMAND_LOG")
+    [[ -n $health_format ]]
+    mkdir "$TEST_ROOT/rootfs"
+    HEALTH_TEST_CONTAINER="schoolorbit-installer-health-${BATS_TEST_NUMBER}-$$"
+    podman create --name "$HEALTH_TEST_CONTAINER" --network none \
+        --rootfs "$TEST_ROOT/rootfs" /bin/true >/dev/null
+
+    run podman inspect --format "$health_format" "$HEALTH_TEST_CONTAINER"
+
+    [ "$status" -eq 0 ]
+    [ "$output" = created ]
 }
 
 @test "public verification fails when either service identity is wrong" {

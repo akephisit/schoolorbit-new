@@ -53,6 +53,10 @@ case "${1-} ${2-}" in
         fi
         ;;
     "run watch") exit 0 ;;
+    "run view")
+        printf "{\"conclusion\":\"%s\",\"url\":\"https://github.invalid/owner/repo/actions/runs/%s\"}\n" \
+            "${FAKE_RUN_CONCLUSION:-success}" "$3"
+        ;;
 esac
 '
 
@@ -123,6 +127,31 @@ teardown() {
     [ "$SO_GITHUB_RUN_URL" = 'https://github.invalid/owner/repo/actions/runs/731' ]
     grep -F 'workflow run deploy-backend-admin.yml --repo owner/repo --ref main -f deployment_id=deploy-123' "$FAKE_COMMAND_LOG"
     grep -F 'run watch 731 --repo owner/repo --exit-status' "$FAKE_COMMAND_LOG"
+}
+
+@test "resume accepts successful admin backend, admin frontend and coordinated school release runs" {
+    local runs='[
+        {"workflow":"deploy-backend-admin.yml","id":731,"url":"https://github.invalid/owner/repo/actions/runs/731"},
+        {"workflow":"deploy-frontend-admin.yml","id":732,"url":"https://github.invalid/owner/repo/actions/runs/732"},
+        {"workflow":"deploy-school-release.yml","id":733,"url":"https://github.invalid/owner/repo/actions/runs/733"}
+    ]'
+
+    run github_runs_succeeded "$runs"
+
+    [ "$status" -eq 0 ]
+}
+
+@test "resume rejects a failed checkpointed deployment run" {
+    local runs='[
+        {"workflow":"deploy-backend-admin.yml","id":731,"url":"https://github.invalid/owner/repo/actions/runs/731"},
+        {"workflow":"deploy-frontend-admin.yml","id":732,"url":"https://github.invalid/owner/repo/actions/runs/732"},
+        {"workflow":"deploy-school-release.yml","id":733,"url":"https://github.invalid/owner/repo/actions/runs/733"}
+    ]'
+    export FAKE_RUN_CONCLUSION=failure
+
+    run github_runs_succeeded "$runs"
+
+    [ "$status" -eq 78 ]
 }
 
 @test "school release dispatch requests one full pre-cutover rollout" {
