@@ -186,6 +186,10 @@
 				if (cursor) seen.add(cursor);
 			} while (!fresh && cursor);
 			if (!fresh) throw new Error('ไม่พบรายการล่าสุด กรุณาปิดหน้าต่างแล้วตรวจประวัติอีกครั้ง');
+			if (fresh.fact.kind !== kind)
+				throw new Error(
+					`รายการนี้บันทึกเป็น${CAREER_KIND_LABELS[fresh.fact.kind]}แล้ว เลือกประเภทข้อมูลเดิมเพื่อตรวจสอบ หรือปิดหน้าต่างแล้วเริ่มรายการใหม่`
+				);
 			const previous = expected ? entryDraft(expected)[key] : null,
 				updated = entryDraft(fresh)[key];
 			if (previous)

@@ -20,6 +20,7 @@ async function setup(
 		fail?: boolean;
 		failAt?: number;
 		foreignCursor?: boolean;
+		lostAppend?: boolean;
 		conflict?: boolean;
 		retry?: boolean;
 		readonly?: boolean;
@@ -117,6 +118,26 @@ async function setup(
 			if (method === 'POST') {
 				const input: Schemas['CreateStaffCareerHistoryRequest'] = route.request().postDataJSON();
 				mutationIds.push(input.id);
+				if (options.lostAppend) {
+					const previous = entries.find((entry) => entry.id === input.id);
+					if (!previous) {
+						entries = [
+							careerEntry({
+								...input.entry,
+								id: input.id,
+								isCurrent: false,
+								source: 'staff_entry'
+							}),
+							...entries
+						];
+						return route.fulfill({ status: 503, json: { success: false, error: 'คำตอบขาดหาย' } });
+					}
+					return route.fulfill({
+						status: 409,
+						json: { success: false, error: 'ข้อมูลเปลี่ยนไปแล้ว' }
+					});
+				}
+
 				if (options.retry && mutations === 1)
 					return route.fulfill({
 						status: 503,
@@ -388,4 +409,31 @@ test('a foreign pagination cursor produces a bounded error and keeps usable hist
 	await region(page).getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 	await expect(region(page)).not.toContainText('ตำแหน่งหน้ารายการไม่ถูกต้อง');
 	expect(api.reads).toBe(3);
+});
+
+test('a lost append response with a changed kind preserves draft instead of reconciling to an immutable wrong kind', async ({
+	page
+}) => {
+	await setup(page, { lostAppend: true });
+	await page.goto(staffPath());
+	await region(page).getByRole('button', { name: 'เพิ่มประวัติย้อนหลัง', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('เลขที่คำสั่ง', { exact: true }).fill('1/2563');
+	await dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true }).click();
+	await expect(dialog).toContainText('คำตอบขาดหาย');
+	await dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true }).click();
+	await page.getByRole('option', { name: 'ประเภทบุคลากร', exact: true }).click();
+	await dialog.getByLabel('เลขที่คำสั่ง', { exact: true }).fill('2/2563');
+	await dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true }).click();
+	await expect(dialog).toContainText('ข้อมูลเปลี่ยนไปแล้ว');
+	await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดและตรวจสอบร่าง', exact: true }).click();
+	await expect(dialog).toContainText('รายการนี้บันทึกเป็นวิทยฐานะแล้ว');
+	await expect(dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true })).toBeEnabled();
+	await expect(dialog.getByLabel('เลขที่คำสั่ง', { exact: true })).toHaveValue('2/2563');
+	await expect(dialog.getByRole('button', { name: 'บันทึกประวัติ', exact: true })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'ประเภทข้อมูล', exact: true }).click();
+	await page.getByRole('option', { name: 'วิทยฐานะ', exact: true }).click();
+	await expect(dialog.getByLabel('เลขที่คำสั่ง', { exact: true })).toHaveValue('1/2563');
+	await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดและตรวจสอบร่าง', exact: true }).click();
+	await expect(dialog.getByRole('button', { name: 'บันทึกการแก้ไข', exact: true })).toBeEnabled();
 });
