@@ -1304,28 +1304,25 @@ test('durable operations docs describe the guarded replacement VPS path', async 
 	assert.match(adminReadme, /never owns production credentials or URLs/);
 });
 
-test('personnel release preflights every tenant before migration and audits before reopening', async () => {
+test('completed personnel migration hooks are retired while all-tenant deployment stays gated', async () => {
 	const release = await readRepo('.github/workflows/deploy-school-release.yml');
-	const helper = await readRepo('scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh');
-	const verification = release.slice(release.indexOf('tenant_migration_started='));
-	const preflight = release.indexOf(
-		'schoolorbit_personnel_preflight "$jq_image" "$migration_response" || exit 1'
-	);
-	assert.ok(preflight > 0 && preflight < release.indexOf('/internal/migrate-all'));
-	assert.match(release, /- "scripts\/lib\/schoolorbit-installer\/remote\/personnel_preflight\.sh"/);
-	assert.match(release, /source: [^\n]*remote\/personnel_preflight\.sh/);
-	assert.match(release, /\. "\$personnel_helper"/);
-	assert.match(helper, /\/internal\/personnel-preflight/);
-	assert.match(helper, /\.data\.passed == true/);
-	const gate = await readRepo('scripts/verify_personnel_cutover.sh');
-	assert.match(gate, /\$p\.migrationVersion == 84/);
-	assert.match(verification, /\$personnel_cutover_filter/);
-	assert.match(release, /source: [^\n]*scripts\/verify_personnel_cutover\.sh/);
-	assert.match(gate, /\$p\.passed == true/);
-	assert.match(gate, /PERSONNEL_SIMPLIFICATION_STAFF_PRESERVED/);
 	const handler = await readRepo('backend-school/src/modules/system/handlers/migration.rs');
-	assert.ok(
-		handler.indexOf('preflight_personnel_tenants(&schools)') <
-			handler.indexOf('for school in schools')
+	const routes = await readRepo('backend-school/src/app.rs');
+	for (const source of [release, handler.split('#[cfg(test)]')[0], routes]) {
+		assert.doesNotMatch(
+			source,
+			/personnel_preflight|personnel_cutover|personnelCutover|personnel-preflight/
+		);
+	}
+	assert.match(release, /\/internal\/migrate-all/);
+	assert.match(release, /\/internal\/migration-status/);
+	assert.ok(release.includes('.migration_version == \\$latest'));
+	assert.match(release, /\.migrated == \.total_schools/);
+	assert.match(release, /\.pending == 0 and \.failed == 0 and \.outdated == 0/);
+	assert.match(
+		release,
+		/Tenant migration or cutover audit verification failed; maintenance remains enabled/
 	);
+	assert.match(handler, /for school in schools/);
+	assert.match(handler, /migrate_single_school\(&state, &subdomain, &db_url, latest_version\)/);
 });

@@ -119,7 +119,6 @@ jobs:
             fi
           }
           run_nonempty_tests cargo test -p school-staff personnel_simplification -- --test-threads=1
-          run_nonempty_tests cargo test personnel_ --bin backend-school -- --test-threads=1
           run_nonempty_tests cargo test -p school-auth session_schema_tests -- --nocapture
           run_nonempty_tests cargo test -p school-file-platform schema_tests -- --nocapture
           run_nonempty_tests cargo test modules::academic::core::schema_tests::migration_060 --bin backend-school -- --nocapture --test-threads=4

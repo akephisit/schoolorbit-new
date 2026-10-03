@@ -1,4 +1,4 @@
-//! Migration-only preflight and durable cutover evidence; never a profile read fallback.
+//! Test-only preflight and durable cutover evidence; never a profile read fallback.
 use school_errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{types::Json, PgPool};
@@ -44,7 +44,7 @@ pub(super) fn zero_check(code: &str, count: i64) -> PersonnelCheck {
     }
 }
 
-// Kept only for version-gated release preflight. DB tests prove agreement with migration 081.
+// Test fixture aliases mirror migration 081.
 const LEGACY_EDUCATION_ALIASES: &[&str] = &[
     "primary",
     "ประถมศึกษา",
@@ -103,7 +103,7 @@ pub async fn read_personnel_preflight(pool: &PgPool) -> Result<PersonnelPrefligh
         let audit = read_personnel_cutover_audit(pool).await?;
         let mut checks = audit.checks;
         if version < PERSONNEL_SIMPLIFICATION_EXPAND_VERSION {
-            checks.push(super::personnel_simplification_service::source_check(pool).await?);
+            checks.push(super::personnel_simplification_test_support::source_check(pool).await?);
         }
         if !checks
             .iter()
@@ -147,7 +147,7 @@ pub async fn read_personnel_cutover_audit(
     .fetch_one(pool)
     .await?;
     if version >= PERSONNEL_SIMPLIFICATION_EXPAND_VERSION {
-        return super::personnel_simplification_service::read_audit(pool, version).await;
+        return super::personnel_simplification_test_support::read_audit(pool, version).await;
     }
     read_reference_cutover_audit(pool).await
 }

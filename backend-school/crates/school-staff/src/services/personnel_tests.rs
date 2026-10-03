@@ -1,4 +1,6 @@
-use super::personnel_cutover_service::{read_personnel_cutover_audit, read_personnel_preflight};
+use super::personnel_migration_test_support::{
+    read_personnel_cutover_audit, read_personnel_preflight,
+};
 use school_test_db::create_named_test_pool;
 use sqlx::{migrate::Migrator, PgPool};
 use std::borrow::Cow;

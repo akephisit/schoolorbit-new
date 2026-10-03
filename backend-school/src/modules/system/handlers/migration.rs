@@ -1,16 +1,11 @@
 use crate::modules::academic::reconciliation::{
     read_academic_core_cleanup_audit, ReconciliationCheck, PHASE_B_MIGRATION_VERSION,
 };
-use crate::modules::system::services::personnel_migration_service::{
-    after_personnel_preflight, personnel_cutover_status, preflight_personnel_tenants,
-    PersonnelCutoverStatus,
-};
 use crate::AppState;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use school_academic_results::services::{
     read_gradebook_results_cutover_audit, GRADEBOOK_RESULTS_MIGRATION_VERSION,
 };
-use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -57,8 +52,6 @@ struct SchoolMigrationStatus {
     academic_core_cutover: AcademicCoreCutoverStatus,
     #[serde(rename = "gradebookResultsCutover")]
     gradebook_results_cutover: GradebookResultsCutoverStatus,
-    #[serde(rename = "personnelCutover")]
-    personnel_cutover: PersonnelCutoverStatus,
 }
 
 #[derive(Serialize)]
@@ -228,20 +221,6 @@ async fn academic_core_cutover_status_from_database(
     }
 }
 
-/// Read-only all-tenant preparation; internal authentication is owned by the router.
-pub async fn personnel_preflight(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, AppError> {
-    let schools = state
-        .admin_client
-        .list_active_schools()
-        .await
-        .map_err(|_| AppError::InternalServerError("PERSONNEL_SCHOOL_LIST_UNAVAILABLE".into()))?;
-    Ok(Json(ApiResponse::ok(
-        preflight_personnel_tenants(&schools).await?,
-    )))
-}
-
 /// Migrate all active schools
 pub async fn migrate_all_schools(
     State(state): State<AppState>,
@@ -268,42 +247,39 @@ pub async fn migrate_all_schools(
 
     tracing::info!("📊 Found {} active schools", schools.len());
 
-    let preflight = preflight_personnel_tenants(&schools).await?;
-    let results = after_personnel_preflight(&preflight, async {
-        let mut results = Vec::new();
-
-        for school in schools {
-            let subdomain = school.subdomain.clone();
-            let db_url = match school.db_connection_string {
-                Some(ref url) if !url.is_empty() => url.clone(),
-                _ => {
-                    let _ = state
-                        .admin_client
-                        .update_migration_status(
-                            &subdomain,
-                            0,
-                            "failed",
-                            Some("No database connection string"),
+    let mut results = Vec::with_capacity(schools.len());
+    for school in schools {
+        let subdomain = school.subdomain.clone();
+        let db_url = match school.db_connection_string {
+            Some(ref url) if !url.is_empty() => url.clone(),
+            _ => {
+                state
+                    .admin_client
+                    .update_migration_status(
+                        &subdomain,
+                        0,
+                        "failed",
+                        Some("No database connection string"),
+                    )
+                    .await
+                    .map_err(|_| {
+                        AppError::InternalServerError(
+                            "Failed to record unavailable tenant database".into(),
                         )
-                        .await;
+                    })?;
 
-                    results.push(MigrationResult {
-                        subdomain,
-                        status: "skipped".to_string(),
-                        version: None,
-                        error: Some("No database connection string".to_string()),
-                    });
-                    continue;
-                }
-            };
+                results.push(MigrationResult {
+                    subdomain,
+                    status: "failed".to_string(),
+                    version: None,
+                    error: Some("No database connection string".to_string()),
+                });
+                continue;
+            }
+        };
 
-            let result = migrate_single_school(&state, &subdomain, &db_url, latest_version).await;
-            results.push(result);
-        }
-
-        results
-    })
-    .await?;
+        results.push(migrate_single_school(&state, &subdomain, &db_url, latest_version).await);
+    }
 
     let success_count = results
         .iter()
@@ -357,7 +333,7 @@ pub async fn migration_status(
             .migration_status
             .unwrap_or_else(|| "pending".to_string());
 
-        let (version, academic_core_cutover, gradebook_results_cutover, personnel_cutover) =
+        let (version, academic_core_cutover, gradebook_results_cutover) =
             if let Some(database_url) = school
                 .db_connection_string
                 .as_deref()
@@ -374,18 +350,12 @@ pub async fn migration_status(
                                 .await;
                         let gradebook_results_cutover =
                             gradebook_results_cutover_status(Some(&pool), version).await;
-                        (
-                            version,
-                            academic_core_cutover,
-                            gradebook_results_cutover,
-                            personnel_cutover_status(Some(&pool), version).await,
-                        )
+                        (version, academic_core_cutover, gradebook_results_cutover)
                     }
                     Err(_) => (
                         reported_version,
                         academic_core_cutover_unavailable(reported_version),
                         gradebook_results_cutover_unavailable(reported_version),
-                        personnel_cutover_status(None, reported_version).await,
                     ),
                 }
             } else {
@@ -393,7 +363,6 @@ pub async fn migration_status(
                     reported_version,
                     academic_core_cutover_status(None, reported_version).await,
                     gradebook_results_cutover_status(None, reported_version).await,
-                    personnel_cutover_status(None, reported_version).await,
                 )
             };
 
@@ -421,7 +390,6 @@ pub async fn migration_status(
             migration_error: school.migration_error,
             academic_core_cutover,
             gradebook_results_cutover,
-            personnel_cutover,
         });
     }
 
@@ -719,12 +687,6 @@ mod tests {
                 passed: Some(true),
                 checks: Vec::new(),
             },
-            personnel_cutover: PersonnelCutoverStatus {
-                status: "cutoverCompleted".into(),
-                migration_version: 81,
-                passed: true,
-                checks: Vec::new(),
-            },
         })
         .unwrap();
 
@@ -732,6 +694,7 @@ mod tests {
         assert!(value.get("academic_core_cutover").is_none());
         assert!(value.get("gradebookResultsCutover").is_some());
         assert!(value.get("gradebook_results_cutover").is_none());
+        assert!(value.get("personnelCutover").is_none());
     }
 
     #[test]

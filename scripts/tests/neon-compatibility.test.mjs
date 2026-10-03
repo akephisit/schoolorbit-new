@@ -38,7 +38,7 @@ test('compatibility preserves Cargo failures and accepts actual passing test out
     assert.equal((await runStub('failure')).status, 47);
     const passing = await runStub('positive');
     assert.equal(passing.status, 0, passing.stderr);
-    assert.equal(passing.calls.length, 6);
+    assert.equal(passing.calls.length, 5);
 });
 test('every declared compatibility selection discovers real tests in its current Rust owner', async () => {
     const { calls } = await runStub('positive');

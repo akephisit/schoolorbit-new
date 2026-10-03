@@ -404,21 +404,18 @@ missing configuration and read/write/verification failures without contacting R2
 
 ### Personnel migration and browser verification
 
-Run the canonical personnel owner and explicit all-tenant boundary against fresh rootless PostgreSQL:
+Run the canonical personnel owner and its historical SQL migration fixtures against fresh rootless PostgreSQL:
 
 ```bash
 ./scripts/test_backend_school.sh --package school-staff -- --test-threads=1
-./scripts/test_backend_school.sh personnel_ -- --test-threads=1
 ./scripts/test_backend_school.sh policies::staff_access_policy::tests -- --test-threads=1
 ```
 
-The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-source drift, retry, identity/license/employment preservation, person-owned text validation, preserved custom/inactive positions and deactivation races, nullable patches, scoped directory/aggregate equivalence, current group deduplication and missing-value buckets. Root tests verify no migration future runs after failed preflight and require current nonempty audit evidence.
+The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-source drift, retry, identity/license/employment preservation, person-owned text validation, preserved custom/inactive positions and deactivation races, nullable patches, scoped directory/aggregate equivalence, current group deduplication and missing-value buckets. Historical migration readers are private test-only helpers; production has no personnel preflight endpoint or cutover report.
 
 For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual version and bounded `staff_personnel_simplification_audit` checks afterward. Do not emit credentials, names, source values or national IDs.
 
-Also supply `PERSONNEL_PREFLIGHT_NEON_DATABASE_URL` and its exact disposable host as `PERSONNEL_PREFLIGHT_NEON_ENDPOINT` through the private test environment, then run `cargo test --manifest-path backend-school/Cargo.toml personnel_preflight_neon_connection --bin backend-school -- --ignored`. This read-only test exercises both direct and pooled registry URL shapes through the actual preflight owner, verifies startup settings and blocked writes, and never invokes migrations. Local `personnel_` tests independently verify host-only normalization and write rejection on rootless PostgreSQL.
-
-The new 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The manual `backend-school-neon-compatibility.yml` workflow discovers every declared test selection before creating a branch, runs auth/file schema checks in their current crate owners, and rejects successful Cargo commands with zero passing tests. Run `node --test scripts/tests/neon-compatibility.test.mjs` to verify discovery and failure propagation. The workflow runs the personnel fixtures and root personnel tests against a fresh disposable direct-endpoint child; cleanup and expiry stay with that workflow. Run `node --test scripts/tests/personnel-cutover-gate.test.mjs` to exercise the exact sourced release filter through its native Podman jq image, including all-tenant coverage and unrelated audit failures.
+The 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The manual `backend-school-neon-compatibility.yml` workflow discovers every declared test selection before creating a branch, runs auth/file schema checks in their current crate owners, and rejects successful Cargo commands with zero passing tests. Run `node --test scripts/tests/neon-compatibility.test.mjs` to verify discovery and failure propagation. The workflow runs the staff migration fixtures and the remaining schema/status selections against a fresh disposable direct-endpoint child; cleanup and expiry stay with that workflow. Run `node --test scripts/tests/migration-completion-gate.test.mjs` to exercise the actual all-tenant release filter through its native Podman jq image, including healthy reports without retired personnel fields, all-tenant coverage, future migration versions and other domain audit failures.
 
 Against a production build running in local preview:
 

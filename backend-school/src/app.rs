@@ -120,10 +120,6 @@ fn internal_routes() -> Router<AppState> {
             post(modules::system::handlers::provision::provision_tenant),
         )
         .route(
-            "/internal/personnel-preflight",
-            get(modules::system::handlers::migration::personnel_preflight),
-        )
-        .route(
             "/internal/migrate-all",
             post(modules::system::handlers::migration::migrate_all_schools),
         )

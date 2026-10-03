@@ -8,6 +8,7 @@ on:
       - "scripts/render_nginx_config.sh"
       - "scripts/reconcile_r2_cors.sh"
       - "scripts/tests/r2-cors.test.mjs"
+      - "scripts/tests/migration-completion-gate.test.mjs"
       - "scripts/lib/schoolorbit-installer/**"
       - "scripts/tests/installer/**"
       - "compose.local.yml"
@@ -26,6 +27,7 @@ on:
       - "scripts/render_nginx_config.sh"
       - "scripts/reconcile_r2_cors.sh"
       - "scripts/tests/r2-cors.test.mjs"
+      - "scripts/tests/migration-completion-gate.test.mjs"
       - "scripts/lib/schoolorbit-installer/**"
       - "scripts/tests/installer/**"
       - "compose.local.yml"
@@ -74,6 +76,9 @@ jobs:
 
       - name: Verify deployment invariants
         run: node --test frontend-school/tests/static/deployment-installer.test.mjs
+
+      - name: Test all-tenant migration completion
+        run: node --test scripts/tests/migration-completion-gate.test.mjs
 
       - name: Test R2 CORS reconciliation
         run: node --test --test-concurrency=1 scripts/tests/r2-cors.test.mjs

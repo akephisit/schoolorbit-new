@@ -21,8 +21,6 @@ on:
       - "scripts/clamd_runtime_matches.sh"
       - "scripts/reconcile_r2_cors.sh"
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
-      - "scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh"
-      - "scripts/verify_personnel_cutover.sh"
       - ".github/workflows/deploy-school-release.yml"
   workflow_dispatch:
     inputs:
@@ -763,7 +761,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/verify_personnel_cutover.sh,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -790,7 +788,6 @@ jobs:
             origin_root_installer="$deployment_root/install-origin-root"
             network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
             timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
-            personnel_helper="$deployment_root/scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh"
             image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
             clamd_matcher="$deployment_root/scripts/clamd_runtime_matches.sh"
             r2_cors_helper_source="$deployment_root/scripts/reconcile_r2_cors.sh"
@@ -820,8 +817,6 @@ jobs:
             test -f "$maintenance_proxy_template" || { echo "School API maintenance template is missing"; exit 1; }
 
             . "$timing_helper_source"
-            . "$personnel_helper"
-            . "$deployment_root/scripts/verify_personnel_cutover.sh"
 
             runtime_env_value() {
               local key=$1 line value decoded char
@@ -1208,8 +1203,6 @@ jobs:
               echo "Backend internal migration credential is unavailable; maintenance remains enabled"
               exit 1
             fi
-            SCHOOLORBIT_INTERNAL_API_SECRET="$internal_api_secret" \
-              schoolorbit_personnel_preflight "$jq_image" "$migration_response" || exit 1
             tenant_migration_started="$(schoolorbit_timer_now)"
             if ! curl \
               --fail \
@@ -1260,7 +1253,6 @@ jobs:
               echo "Tenant migration status request failed; maintenance remains enabled"
               exit 1
             fi
-            personnel_cutover_filter="$(schoolorbit_personnel_cutover_filter)"
             migration_completion_filter="
                 .latest_version as \$latest
                 | \$latest >= 84
@@ -1281,7 +1273,6 @@ jobs:
                   and .gradebookResultsCutover.status == \"cutoverCompleted\"
                   and .gradebookResultsCutover.passed == true
                   and all(.gradebookResultsCutover.checks[]; .passed == true)
-                  and $personnel_cutover_filter
                 )
               "
             if ! podman run --rm -i "$jq_image" -e "$migration_completion_filter" < "$migration_response" >/dev/null

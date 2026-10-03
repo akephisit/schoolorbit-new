@@ -1,5 +1,5 @@
-//! Version-scoped migration evidence; not a product compatibility path.
-use super::personnel_cutover_service::{
+//! Test-only assertions for historical migration preservation and refusal fixtures.
+use super::personnel_migration_test_support::{
     report, zero_check, PersonnelCheck, PersonnelCutoverAudit, PERSONNEL_MIGRATION_VERSION,
 };
 use school_errors::AppError;

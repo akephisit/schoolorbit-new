@@ -8219,3 +8219,28 @@ fn personnel_catalog_is_read_only() {
         assert!(!contract.contains(retired));
     }
 }
+
+#[test]
+fn completed_personnel_migration_has_no_runtime_owner() {
+    let system_services = read_source(manifest_dir().join("src/modules/system/services.rs"));
+    assert!(!system_services.contains("personnel_migration_service"));
+    assert!(!manifest_dir()
+        .join("src/modules/system/services/personnel_migration_service.rs")
+        .exists());
+    let staff_services = read_source(workspace_crate_dir("school-staff").join("src/services.rs"));
+    for helper in [
+        "personnel_migration_test_support",
+        "personnel_simplification_test_support",
+    ] {
+        assert!(staff_services.contains(&format!("#[cfg(test)]\nmod {helper};")));
+    }
+    assert!(!staff_services.contains("personnel_cutover_service"));
+    assert!(!staff_services.contains("personnel_simplification_service"));
+    for migration in [
+        "081_staff_personnel_data.sql",
+        "083_staff_personnel_simplification_expand.sql",
+        "084_staff_personnel_simplification_cleanup.sql",
+    ] {
+        assert!(manifest_dir().join("migrations").join(migration).is_file());
+    }
+}

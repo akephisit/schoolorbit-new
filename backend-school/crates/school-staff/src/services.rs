@@ -4,8 +4,10 @@ pub mod organization_member_service;
 pub mod organization_permission_service;
 pub mod organization_unit_service;
 pub mod permission_service;
-pub mod personnel_cutover_service;
-mod personnel_simplification_service;
+#[cfg(test)]
+mod personnel_migration_test_support;
+#[cfg(test)]
+mod personnel_simplification_test_support;
 pub mod role_service;
 pub mod staff_info_service;
 pub mod staff_service;

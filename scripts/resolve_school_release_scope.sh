@@ -56,8 +56,7 @@ if [[ $scope == auto ]]; then
                 backend-school/* | podman-compose.yml | nginx-configs/school-api.* | \
                     scripts/render_nginx_config.sh | scripts/smoke_test.sh | \
                     scripts/prune_runtime_images.sh | scripts/clamd_runtime_matches.sh | \
-                    scripts/reconcile_r2_cors.sh | scripts/verify_personnel_cutover.sh | \
-                    scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh | \
+                    scripts/reconcile_r2_cors.sh | \
                     scripts/lib/schoolorbit-installer/remote/deployment_timing.sh)
                     needs_backend=true
                     ;;
