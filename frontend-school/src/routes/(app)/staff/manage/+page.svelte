@@ -52,7 +52,17 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageShell } from '$lib/components/app-layout';
 	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import { ChevronLeft, ChevronRight, Eye, Pencil, Plus, Search, Trash2 } from '@lucide/svelte';
+	import {
+		ChartNoAxesCombined,
+		ChevronLeft,
+		ChevronRight,
+		Eye,
+		Pencil,
+		Plus,
+		Search,
+		Settings2,
+		Trash2
+	} from '@lucide/svelte';
 
 	let staffList: StaffListItem[] = $state([]);
 	let loading = $state(true);
@@ -316,13 +326,22 @@
 	title="จัดการบุคลากร"
 	description="ค้นหา ดูข้อมูล และจัดการบัญชีบุคลากรที่คุณมีสิทธิ์เข้าถึง"
 >
-	<div class="flex flex-wrap gap-4 text-sm">
-		<a href={resolve('/staff/manage/overview')} class="text-primary underline">ภาพรวมงานบุคคล</a
-		>{#if $can.has(PERMISSIONS.STAFF_UPDATE_ALL)}<a
-				href={resolve('/staff/manage/reference-data')}
-				class="text-primary underline">จัดการรายการกลาง</a
-			>{/if}
-	</div>
+	<nav aria-label="เมนูงานบุคคล" class="flex flex-wrap items-center gap-2">
+		<Button href="/staff/manage/overview" variant="outline" data-sveltekit-preload-data="tap">
+			<ChartNoAxesCombined class="size-4" aria-hidden="true" />
+			ภาพรวมงานบุคคล
+		</Button>
+		{#if $can.has(PERMISSIONS.STAFF_UPDATE_ALL)}
+			<Button
+				href="/staff/manage/reference-data"
+				variant="outline"
+				data-sveltekit-preload-data="tap"
+			>
+				<Settings2 class="size-4" aria-hidden="true" />
+				จัดการรายการกลาง
+			</Button>
+		{/if}
+	</nav>
 	{#snippet actions()}
 		<Button variant="outline" onclick={loadStaff} disabled={loading || deleting || !canReadStaff}
 			>รีเฟรช</Button
