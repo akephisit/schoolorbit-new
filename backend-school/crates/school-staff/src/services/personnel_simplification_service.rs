@@ -46,6 +46,51 @@ pub(super) async fn source_check(pool: &PgPool) -> Result<PersonnelCheck, AppErr
     Ok(zero_check("PERSONNEL_SIMPLIFICATION_SOURCE_INVALID", count))
 }
 
+async fn canonical_schema_errors(pool: &PgPool, completed: bool) -> Result<i64, AppError> {
+    Ok(sqlx::query_scalar(r#"SELECT
+          (SELECT count(*) FROM (VALUES
+             ('staff_info','job_position_id','uuid',NULL::integer,true),
+             ('staff_info','academic_rank','varchar',32,true),
+             ('staff_info','education_level','varchar',100,true),
+             ('staff_info','major','varchar',200,true),
+             ('staff_info','university','varchar',200,true),
+             ('staff_job_positions','id','uuid',NULL::integer,false),
+             ('staff_job_positions','code','varchar',64,false),
+             ('staff_job_positions','name','varchar',200,false),
+             ('staff_job_positions','is_active','bool',NULL::integer,false),
+             ('staff_job_positions','is_selectable','bool',NULL::integer,false),
+             ('staff_job_positions','display_order','int4',NULL::integer,false),
+             ('staff_job_positions','created_at','timestamptz',NULL::integer,false),
+             ('staff_job_positions','updated_at','timestamptz',NULL::integer,false)
+          ) required(table_name,column_name,udt_name,max_length,nullable)
+           WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c
+             WHERE c.table_schema=current_schema() AND c.table_name=required.table_name
+               AND c.column_name=required.column_name AND c.udt_name=required.udt_name
+               AND c.character_maximum_length IS NOT DISTINCT FROM required.max_length
+               AND (c.is_nullable='YES')=required.nullable))
+          + (SELECT count(*) FROM (VALUES
+             ('staff_info','staff_info_job_position_fkey','f'),
+             ('staff_info','staff_info_education_code_check','c'),
+             ('staff_info','staff_info_academic_rank_check','c'),
+             ('staff_info','staff_info_major_text_check','c'),
+             ('staff_info','staff_info_university_text_check','c'),
+             ('staff_job_positions','staff_job_positions_pkey','p'),
+             ('staff_job_positions','staff_job_positions_code_key','u'),
+             ('staff_job_positions','staff_job_positions_selection_check','c')
+          ) required(table_name,constraint_name,kind)
+           WHERE (required.constraint_name<>'staff_info_job_position_fkey' OR $1)
+             AND NOT EXISTS (SELECT 1 FROM pg_constraint c
+             WHERE c.conrelid=to_regclass(current_schema() || '.' || required.table_name)
+               AND c.conname=required.constraint_name AND c.contype::text=required.kind AND c.convalidated))
+          + CASE WHEN NOT $1 OR EXISTS (SELECT 1 FROM pg_constraint c
+              WHERE c.conrelid=to_regclass(current_schema() || '.staff_info') AND c.conname='staff_info_job_position_fkey'
+                AND c.confrelid=to_regclass(current_schema() || '.staff_job_positions')
+                AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='job_position_id')]::smallint[]
+                AND c.confkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.confrelid AND attname='id')]::smallint[])
+            THEN 0 ELSE 1 END"#)
+        .bind(completed).fetch_one(pool).await?)
+}
+
 pub(super) async fn read_audit(
     pool: &PgPool,
     version: i64,
@@ -92,6 +137,10 @@ pub(super) async fn read_audit(
     }
     if expanded {
         checks.push(source_check(pool).await?);
+        checks.push(zero_check(
+            "PERSONNEL_SIMPLIFICATION_CANONICAL_SCHEMA_VALID",
+            canonical_schema_errors(pool, false).await?,
+        ));
         let fresh: bool = sqlx::query_scalar(
             "SELECT source_fingerprint=staff_personnel_simplification_source_fingerprint()
                 AND target_fingerprint=md5(staff_personnel_simplification_snapshot(false)::text)
@@ -106,53 +155,16 @@ pub(super) async fn read_audit(
         ));
         return Ok(report(PERSONNEL_MIGRATION_VERSION, checks));
     }
-    let (schema_errors,retired_owners,failed_history): (i64,i64,i64) = sqlx::query_as(
+    let schema_errors = canonical_schema_errors(pool, true).await?;
+    let (retired_owners,failed_history): (i64,i64) = sqlx::query_as(
         r#"SELECT
-          (SELECT count(*) FROM (VALUES
-             ('staff_info','job_position_id','uuid',NULL::integer,true),
-             ('staff_info','academic_rank','varchar',32,true),
-             ('staff_info','education_level','varchar',100,true),
-             ('staff_info','major','varchar',200,true),
-             ('staff_info','university','varchar',200,true),
-             ('staff_job_positions','id','uuid',NULL::integer,false),
-             ('staff_job_positions','code','varchar',64,false),
-             ('staff_job_positions','name','varchar',200,false),
-             ('staff_job_positions','is_active','bool',NULL::integer,false),
-             ('staff_job_positions','is_selectable','bool',NULL::integer,false),
-             ('staff_job_positions','display_order','int4',NULL::integer,false),
-             ('staff_job_positions','created_at','timestamptz',NULL::integer,false),
-             ('staff_job_positions','updated_at','timestamptz',NULL::integer,false)
-          ) required(table_name,column_name,udt_name,max_length,nullable)
-           WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c
-             WHERE c.table_schema=current_schema() AND c.table_name=required.table_name
-               AND c.column_name=required.column_name AND c.udt_name=required.udt_name
-               AND c.character_maximum_length IS NOT DISTINCT FROM required.max_length
-               AND (c.is_nullable='YES')=required.nullable))
-          + (SELECT count(*) FROM (VALUES
-             ('staff_info','staff_info_job_position_fkey','f'),
-             ('staff_info','staff_info_education_code_check','c'),
-             ('staff_info','staff_info_academic_rank_check','c'),
-             ('staff_info','staff_info_major_text_check','c'),
-             ('staff_info','staff_info_university_text_check','c'),
-             ('staff_job_positions','staff_job_positions_pkey','p'),
-             ('staff_job_positions','staff_job_positions_code_key','u'),
-             ('staff_job_positions','staff_job_positions_selection_check','c')
-          ) required(table_name,constraint_name,kind)
-           WHERE NOT EXISTS (SELECT 1 FROM pg_constraint c
-             WHERE c.conrelid=to_regclass(current_schema() || '.' || required.table_name)
-               AND c.conname=required.constraint_name AND c.contype::text=required.kind AND c.convalidated))
-          + CASE WHEN EXISTS (SELECT 1 FROM pg_constraint c
-              WHERE c.conrelid=to_regclass(current_schema() || '.staff_info') AND c.conname='staff_info_job_position_fkey'
-                AND c.confrelid=to_regclass(current_schema() || '.staff_job_positions')
-                AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='job_position_id')]::smallint[]
-                AND c.confkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.confrelid AND attname='id')]::smallint[])
-            THEN 0 ELSE 1 END,
           (SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='staff_info'
              AND column_name IN ('major_id','university_id','job_position_kind','major_kind','university_kind'))
           + CASE WHEN to_regclass(current_schema() || '.staff_reference_items') IS NULL THEN 0 ELSE 1 END
           + CASE WHEN to_regprocedure(current_schema() || '.staff_reference_display_name(text)') IS NULL THEN 0 ELSE 1 END
           + CASE WHEN to_regprocedure(current_schema() || '.staff_personnel_simplification_snapshot(boolean)') IS NULL THEN 0 ELSE 1 END
-          + CASE WHEN to_regprocedure(current_schema() || '.staff_personnel_simplification_source_fingerprint()') IS NULL THEN 0 ELSE 1 END,
+          + CASE WHEN to_regprocedure(current_schema() || '.staff_personnel_simplification_source_fingerprint()') IS NULL THEN 0 ELSE 1 END
+          + CASE WHEN to_regprocedure(current_schema() || '.staff_personnel_simplification_schema_errors(boolean)') IS NULL THEN 0 ELSE 1 END,
           (SELECT count(*) FROM _sqlx_migrations WHERE NOT success)"#,
     ).fetch_one(pool).await?;
     checks.extend([

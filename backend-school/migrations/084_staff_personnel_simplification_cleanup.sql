@@ -4,6 +4,9 @@ LOCK TABLE staff_info, staff_reference_items, staff_job_positions, staff_personn
 DO $$
 DECLARE audit staff_personnel_simplification_audit%ROWTYPE; required text[]; bad_count bigint;
 BEGIN
+    IF staff_personnel_simplification_schema_errors(false)<>0 THEN
+        RAISE EXCEPTION 'PERSONNEL_SIMPLIFICATION_CANONICAL_SCHEMA_INVALID';
+    END IF;
     SELECT * INTO audit FROM staff_personnel_simplification_audit WHERE migration_version=84;
     required := ARRAY['PERSONNEL_SIMPLIFICATION_STAFF_PRESERVED','PERSONNEL_SIMPLIFICATION_POSITIONS_PRESERVED',
         'PERSONNEL_SIMPLIFICATION_EDUCATION_TEXT_PRESERVED','PERSONNEL_SIMPLIFICATION_UNRELATED_FIELDS_PRESERVED'];
@@ -46,6 +49,14 @@ ALTER TABLE staff_info
     DROP COLUMN university_id,
     ADD CONSTRAINT staff_info_job_position_fkey FOREIGN KEY(job_position_id) REFERENCES staff_job_positions(id);
 
+DO $$
+BEGIN
+    IF staff_personnel_simplification_schema_errors(true)<>0 THEN
+        RAISE EXCEPTION 'PERSONNEL_SIMPLIFICATION_CANONICAL_SCHEMA_INVALID';
+    END IF;
+END $$;
+
+DROP FUNCTION staff_personnel_simplification_schema_errors(boolean);
 DROP FUNCTION staff_personnel_simplification_snapshot(boolean);
 DROP FUNCTION staff_personnel_simplification_source_fingerprint();
 DROP TABLE staff_reference_items;

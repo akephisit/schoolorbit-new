@@ -54,6 +54,51 @@ WHERE i.id=source.id;
 ALTER TABLE staff_info ENABLE TRIGGER update_staff_info_updated_at;
 
 -- These functions are temporary migration gates and are removed by 084.
+CREATE FUNCTION staff_personnel_simplification_schema_errors(completed boolean) RETURNS bigint
+LANGUAGE sql AS $$
+    SELECT
+          (SELECT count(*) FROM (VALUES
+             ('staff_info','job_position_id','uuid',NULL::integer,true),
+             ('staff_info','academic_rank','varchar',32,true),
+             ('staff_info','education_level','varchar',100,true),
+             ('staff_info','major','varchar',200,true),
+             ('staff_info','university','varchar',200,true),
+             ('staff_job_positions','id','uuid',NULL::integer,false),
+             ('staff_job_positions','code','varchar',64,false),
+             ('staff_job_positions','name','varchar',200,false),
+             ('staff_job_positions','is_active','bool',NULL::integer,false),
+             ('staff_job_positions','is_selectable','bool',NULL::integer,false),
+             ('staff_job_positions','display_order','int4',NULL::integer,false),
+             ('staff_job_positions','created_at','timestamptz',NULL::integer,false),
+             ('staff_job_positions','updated_at','timestamptz',NULL::integer,false)
+          ) required(table_name,column_name,udt_name,max_length,nullable)
+           WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns c
+             WHERE c.table_schema=current_schema() AND c.table_name=required.table_name
+               AND c.column_name=required.column_name AND c.udt_name=required.udt_name
+               AND c.character_maximum_length IS NOT DISTINCT FROM required.max_length
+               AND (c.is_nullable='YES')=required.nullable))
+          + (SELECT count(*) FROM (VALUES
+             ('staff_info','staff_info_job_position_fkey','f'),
+             ('staff_info','staff_info_education_code_check','c'),
+             ('staff_info','staff_info_academic_rank_check','c'),
+             ('staff_info','staff_info_major_text_check','c'),
+             ('staff_info','staff_info_university_text_check','c'),
+             ('staff_job_positions','staff_job_positions_pkey','p'),
+             ('staff_job_positions','staff_job_positions_code_key','u'),
+             ('staff_job_positions','staff_job_positions_selection_check','c')
+          ) required(table_name,constraint_name,kind)
+           WHERE (required.constraint_name<>'staff_info_job_position_fkey' OR completed)
+             AND NOT EXISTS (SELECT 1 FROM pg_constraint c
+             WHERE c.conrelid=to_regclass(current_schema() || '.' || required.table_name)
+               AND c.conname=required.constraint_name AND c.contype::text=required.kind AND c.convalidated))
+          + CASE WHEN NOT completed OR EXISTS (SELECT 1 FROM pg_constraint c
+              WHERE c.conrelid=to_regclass(current_schema() || '.staff_info') AND c.conname='staff_info_job_position_fkey'
+                AND c.confrelid=to_regclass(current_schema() || '.staff_job_positions')
+                AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='job_position_id')]::smallint[]
+                AND c.confkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.confrelid AND attname='id')]::smallint[])
+            THEN 0 ELSE 1 END
+$$;
+
 CREATE FUNCTION staff_personnel_simplification_snapshot(source boolean) RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE staff_rows jsonb; position_rows jsonb;
@@ -104,6 +149,9 @@ CREATE TABLE staff_personnel_simplification_audit (
 DO $$
 DECLARE staff_count bigint; position_count bigint; unused_count bigint;
 BEGIN
+    IF staff_personnel_simplification_schema_errors(false)<>0 THEN
+        RAISE EXCEPTION 'PERSONNEL_SIMPLIFICATION_CANONICAL_SCHEMA_INVALID';
+    END IF;
     IF staff_personnel_simplification_snapshot(true) IS DISTINCT FROM staff_personnel_simplification_snapshot(false) THEN
         RAISE EXCEPTION 'PERSONNEL_SIMPLIFICATION_PRESERVATION_FAILED';
     END IF;

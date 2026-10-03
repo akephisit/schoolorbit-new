@@ -6415,7 +6415,8 @@ fn scheduled_jobs_never_trigger_lazy_tenant_migrations() {
 
 #[test]
 fn coordinated_school_release_keeps_maintenance_until_acceptance() {
-    let deploy = read_source(repo_root().join(".github/workflows/deploy-school-release.yml"));
+    let deploy = read_source(repo_root().join(".github/workflows/deploy-school-release.yml"))
+        .replace(r#"\""#, "\"");
 
     assert!(deploy
         .contains("School API remains in maintenance until the authenticated smoke completes"));

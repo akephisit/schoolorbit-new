@@ -157,6 +157,8 @@ async fn personnel_simplification_blocks_stale_or_partial_audit() {
         "UPDATE staff_personnel_simplification_audit SET source_fingerprint='stale'",
         "UPDATE staff_info SET major='changed target'",
         "UPDATE staff_reference_items SET name='changed source' WHERE kind='major'",
+        "ALTER TABLE staff_job_positions ALTER COLUMN name TYPE varchar(201)",
+        "ALTER TABLE staff_info DROP CONSTRAINT staff_info_major_text_check",
     ];
     for (index, mutation) in mutations.iter().enumerate() {
         let pool = source_pool(&format!("personnel_simplification_stale_{index}")).await;
