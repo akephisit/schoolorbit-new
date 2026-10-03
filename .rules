@@ -276,6 +276,43 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - Authenticated users who lack route access go to `/403` with the requested path.
 - Long-lived workflows that need deep links, browser history, or independent lazy loading should be separate routes, not in-memory tabs.
 
+### UI Design System
+
+These rules own the shared UI standard. Theme values and component defaults remain executable sources of truth; link to their owners instead of maintaining a second value inventory or a separate design guide. Apply this standard when creating or changing UI, and migrate existing pages by coherent workflow rather than combining unrelated visual rewrites.
+
+#### Design tokens and component ownership
+
+- Use the theme tokens in [frontend-school/src/routes/layout.css](frontend-school/src/routes/layout.css) for school-app colors, typography, and radii, including light and dark modes. Use semantic utilities such as `bg-card`, `text-muted-foreground`, and `border-border`; do not hardcode brand or status colors independently in each route.
+- Shared primitives in [frontend-school/src/lib/components/ui/](frontend-school/src/lib/components/ui/) own button/input sizes, variants, borders, radii, and focus styles. Select an existing variant before adding page-local overrides; make a new reusable variant in the owning component when a repeated need warrants it.
+- Keep text hierarchy consistent through `PageHeader`, shared form labels, and component defaults. Use the configured app font and Tailwind spacing scale; change app-wide density or typography at its shared owner rather than compensating with route-local font sizes, heights, or arbitrary spacing.
+- Reuse a shared component for repeated filter bars, form sections, action groups, and status presentations when their visual and interaction requirements match. Keep domain data and permissions with the feature owner; do not build a universal page component with unrelated workflow flags.
+
+#### Page patterns
+
+Pages serving the same kind of task use the same visual order and action placement. Keep only regions that the workflow needs; domain-specific boards and dense editors may use their appropriate pattern while retaining the shared header, controls, and state conventions.
+
+| Page type | Standard order and placement |
+| --- | --- |
+| List/search | Page header with the primary create action when permitted → compact search/filter surface → results table or list → pagination when needed. |
+| Create/edit | Page header → clearly labeled form sections with a constrained inner width → a consistent trailing action group with cancel before save. |
+| Detail | Page header with resource actions → summary/status → related detail sections or independently navigable workflows. |
+| Dashboard | Page header → summary regions → detailed regions; each independent region follows the route-loading policy. |
+| Board/timetable | Page header → context selectors and tools → the scrollable workspace, following the full-height layout rules below. |
+
+#### Interaction, states, and responsive behavior
+
+- Use a consistent primary-action variant and action placement within each page pattern. Use destructive variants for destructive actions and consistent confirmation for irreversible actions. Permission-controlled actions continue to follow the exact capability checks above.
+- Forms use visible associated labels, consistent required-field indicators, and field-local validation messages. Preserve entered values after a failed save; make success and failure feedback actionable and consistent with the shared app-state components.
+- Use [frontend-school/src/lib/components/app-state/](frontend-school/src/lib/components/app-state/) for loading, empty, error, and mutation states. Match skeleton structure to the pending region to reduce layout shifts, and follow the existing first-paint and background-refresh rules; distinguish an empty dataset from no matching filter results and from a failed read.
+- Use mobile-first responsive layouts with the project's Tailwind breakpoints. Keep control order and labels consistent as actions wrap or stack; dense tables and fixed-format workspaces scroll horizontally instead of shrinking below readable widths.
+- Preserve keyboard access, visible focus, accessible names for icon-only actions, and readable contrast in both themes. Communicate status and errors with text or icons as well as color.
+
+#### UI review and verification
+
+- Review changed UI against its page pattern and the shared token/component owners. Explain a necessary pattern exception in the change's review context, including the workflow need; do not silently introduce a new local visual convention.
+- For visual or interaction changes, inspect the affected workflow on a narrow mobile viewport and a desktop viewport, including light/dark themes and relevant loading, empty, error, validation, and pending-action states. Use sanitized fixtures for any captured screenshots, and record what was actually inspected rather than claiming visual coverage from static checks.
+- Run the applicable frontend and browser checks from section 11 and [docs/TESTING.md](docs/TESTING.md). Reuse the existing layout guards in [frontend-school/tests/static/frontend-layout-components.test.mjs](frontend-school/tests/static/frontend-layout-components.test.mjs); add a focused guard for a durable UI boundary only when meaningful coverage or repeated regression justifies it.
+
 ### Shared Page Layout UI
 
 - App pages use `frontend-school/src/lib/components/app-layout/PageShell.svelte` or `PageHeader.svelte`.
