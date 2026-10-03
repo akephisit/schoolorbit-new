@@ -299,7 +299,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn personnel_preflight_prevents_any_tenant_migration_on_failure() {
+    async fn personnel_simplification_prevents_any_tenant_migration_on_failure() {
         let report = PersonnelTenantPreflight {
             total_schools: 1,
             passed: false,
@@ -314,25 +314,34 @@ mod tests {
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
     #[tokio::test]
-    async fn personnel_preflight_reads_actual_version() {
+    async fn personnel_simplification_preflight_reads_actual_version() {
         let pool = school_test_db::create_named_test_pool("personnel_preflight_version").await;
         school_test_db::run_test_migrations(&pool).await;
         let report = read_personnel_preflight(&pool).await.unwrap();
-        assert_eq!(report.migration_version, 82);
-        let status = personnel_cutover_status(Some(&pool), 82).await;
+        assert_eq!(report.migration_version, PERSONNEL_MIGRATION_VERSION);
+        let status =
+            personnel_cutover_status(Some(&pool), PERSONNEL_MIGRATION_VERSION as i32).await;
         assert!(status.passed);
+        assert_eq!(status.migration_version, PERSONNEL_MIGRATION_VERSION);
+        assert_eq!(status.checks.len(), 7);
     }
     #[tokio::test]
-    async fn personnel_status_requires_current_audit() {
+    async fn personnel_simplification_status_requires_current_audit() {
         let pool = school_test_db::create_named_test_pool("personnel_status_audit").await;
         school_test_db::run_test_migrations(&pool).await;
-        sqlx::query("DELETE FROM staff_personnel_cutover_audit")
+        sqlx::query("DELETE FROM staff_personnel_simplification_audit")
             .execute(&pool)
             .await
             .unwrap();
-        let status = personnel_cutover_status(Some(&pool), 82).await;
+        let status =
+            personnel_cutover_status(Some(&pool), PERSONNEL_MIGRATION_VERSION as i32).await;
         assert!(!status.passed);
         assert!(!status.checks.is_empty());
-        assert!(!personnel_cutover_status(None, 82).await.passed);
+        assert!(
+            !personnel_cutover_status(None, PERSONNEL_MIGRATION_VERSION as i32)
+                .await
+                .passed
+        );
+        assert!(!personnel_cutover_status(Some(&pool), 83).await.passed);
     }
 }

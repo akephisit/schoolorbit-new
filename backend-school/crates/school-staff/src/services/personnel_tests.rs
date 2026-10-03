@@ -137,7 +137,10 @@ async fn reference_deactivation_race_rejects_new_assignment() {
     ));
 }
 
-async fn migrate_through(pool: &PgPool, version: i64) -> Result<(), sqlx::migrate::MigrateError> {
+pub(super) async fn migrate_through(
+    pool: &PgPool,
+    version: i64,
+) -> Result<(), sqlx::migrate::MigrateError> {
     let source = sqlx::migrate!("../../migrations");
     let migrator = Migrator {
         migrations: Cow::Owned(

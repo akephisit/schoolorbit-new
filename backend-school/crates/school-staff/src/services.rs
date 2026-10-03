@@ -5,6 +5,7 @@ pub mod organization_permission_service;
 pub mod organization_unit_service;
 pub mod permission_service;
 pub mod personnel_cutover_service;
+mod personnel_simplification_service;
 pub mod role_service;
 pub mod staff_info_service;
 pub mod staff_service;
@@ -27,6 +28,9 @@ mod status_tests;
 
 #[cfg(test)]
 mod personnel_tests;
+
+#[cfg(test)]
+mod personnel_simplification_tests;
 
 #[cfg(test)]
 mod tests {
