@@ -101,7 +101,6 @@ async function mockWorkspace(
 	permissions: string[],
 	options: {
 		changeSets?: ReturnType<typeof changeSet>[];
-		latestChangeSet?: Record<string, unknown>;
 		preview?: Record<string, unknown>;
 		publishedRosterDetail?: boolean;
 		publishConflict?: boolean;
@@ -317,8 +316,7 @@ async function mockWorkspace(
 				return;
 			}
 			if (url.pathname === changeSetPath && route.request().method() === 'GET') {
-				if (options.latestChangeSet) currentChangeSets = [options.latestChangeSet];
-				await fulfill(route, options.latestChangeSet ?? currentChangeSets[0]);
+				await fulfill(route, currentChangeSets[0]);
 				return;
 			}
 			if (url.pathname === `${changeSetPath}/preview` && route.request().method() === 'GET') {
@@ -478,15 +476,18 @@ test('publish conflict invalidates the preview and requires a new readiness chec
 test('readiness refreshes a stale draft before requesting a preview', async ({ page }) => {
 	const initial = changeSet('2026-09-01');
 	const mocked = await mockWorkspace(page, ['*'], {
-		changeSets: [initial],
-		latestChangeSet: {
+		changeSets: [initial]
+	});
+	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
+	await expect(page.getByText(initial.reason, { exact: true })).toBeVisible();
+	await page.route(`**/api/academic/term-change-sets/${ids.changeSet}`, (route) =>
+		fulfill(route, {
 			...initial,
 			rowVersion: 2,
 			reason: 'เหตุผลล่าสุดจากผู้ใช้อีกคน',
 			updatedAt: '2026-08-30T05:00:00Z'
-		}
-	});
-	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
+		})
+	);
 
 	await page.getByRole('button', { name: 'ตรวจความพร้อม' }).click();
 	await expect(page.getByText('เหตุผลล่าสุดจากผู้ใช้อีกคน')).toBeVisible();

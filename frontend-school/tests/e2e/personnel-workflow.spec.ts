@@ -399,28 +399,64 @@ test('retired reference management route is absent and read-only directory keeps
 	await expect(page.getByText('404', { exact: true })).toBeVisible();
 });
 
-test('personnel text fields remain readable on mobile and desktop in both themes', async ({
+test('personnel fields and expanded dates remain readable on mobile and desktop in both themes', async ({
 	page
-}) => {
+}, testInfo) => {
 	await setup(page);
-	for (const width of [390, 1440]) {
+	for (const width of [390, 768, 1440]) {
 		await page.setViewportSize({ width, height: 1000 });
 		await page.goto(staffPath(undefined, '/edit') + '?section=education');
 		const fields = page.getByTestId('staff-personnel-fields');
 		await expect(fields).toBeVisible();
 		await page.getByLabel('สาขาวิชา', { exact: true }).fill('คณิตศาสตร์  ประยุกต์');
 		await page.getByLabel('สถาบันการศึกษา', { exact: true }).fill('มหาวิทยาลัยทดสอบ');
+		for (const kind of ['ประเภทบุคลากร', 'ตำแหน่ง', 'วิทยฐานะ']) {
+			await fields.getByRole('button', { name: `วันที่และคำสั่ง · ${kind}`, exact: true }).click();
+		}
+		await expect(fields.getByRole('button', { name: /^วันที่(มีผล|ออกคำสั่ง)$/ })).toHaveCount(6);
 		for (const theme of ['light', 'dark']) {
 			await page.evaluate(
 				(dark) => document.documentElement.classList.toggle('dark', dark),
 				theme === 'dark'
 			);
-			await fields.screenshot({
-				path: `../.superpowers/sdd/2026-10-03-personnel-data-simplification/personnel-fields-${width}-${theme}.png`
-			});
+			for (const picker of await fields
+				.getByRole('button', { name: /^วันที่(มีผล|ออกคำสั่ง)$/ })
+				.all()) {
+				const layout = await picker.evaluate((button) => {
+					const parent = button.parentElement!;
+					const others = [...parent.children].filter((child) => child !== button);
+					const gap = Number.parseFloat(getComputedStyle(parent).columnGap);
+					const available =
+						parent.getBoundingClientRect().width -
+						others.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0) -
+						gap * others.length;
+					const text = button.querySelector('span')!;
+					return {
+						width: button.getBoundingClientRect().width,
+						available,
+						textFits: text.scrollWidth <= text.clientWidth
+					};
+				});
+				expect(Math.abs(layout.width - layout.available)).toBeLessThan(1);
+				expect(layout.textFits).toBe(true);
+			}
+			for (const [index, panel] of (
+				await fields.locator('[data-slot="collapsible"]').all()
+			).entries()) {
+				await panel.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+				await panel.screenshot({
+					path: testInfo.outputPath(`personnel-dates-${index}-${width}-${theme}.png`)
+				});
+			}
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
 			);
 		}
+		const picker = fields.getByRole('button', { name: 'วันที่มีผล', exact: true }).first();
+		await picker.focus();
+		await page.keyboard.press('Enter');
+		await expect(picker).toHaveAttribute('aria-expanded', 'true');
+		await page.keyboard.press('Escape');
+		await expect(picker).toHaveAttribute('aria-expanded', 'false');
 	}
 });
