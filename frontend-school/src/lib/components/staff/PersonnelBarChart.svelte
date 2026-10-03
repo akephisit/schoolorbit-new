@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { ChevronRight } from '@lucide/svelte';
 	import { personnelDrilldownHref } from '$lib/forms/staff-personnel';
 	import type {
 		PersonnelBucket,
@@ -27,19 +28,25 @@
 		<h2 class="font-semibold">{title}</h2>
 		{#if note}<p class="mt-1 text-xs leading-relaxed text-muted-foreground">{note}</p>{/if}
 	</div>
-	<ul class="space-y-4">
+	<ul class="space-y-1">
 		{#each buckets as bucket (bucket.key)}<li>
 				<a
 					href={resolve(personnelDrilldownHref(dimension, bucket, status) as '/staff/manage')}
 					data-sveltekit-preload-data="tap"
 					aria-label={`${bucket.label} ${bucket.count} คน`}
-					class="block rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring group"
+					class="group block rounded-lg p-3 text-foreground no-underline transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 					><div class="mb-1.5 flex items-start justify-between gap-3 text-sm">
-						<span class="min-w-0 break-words group-hover:text-primary">{bucket.label}</span><span
-							class="shrink-0 font-semibold tabular-nums"
-							>{bucket.count.toLocaleString('th-TH')}
-							<span class="font-normal text-xs text-muted-foreground">คน</span></span
-						>
+						<span class="min-w-0 break-words font-medium">{bucket.label}</span>
+						<span class="flex shrink-0 items-center gap-2">
+							<span class="rounded-md bg-muted px-2 py-0.5 font-semibold tabular-nums">
+								{bucket.count.toLocaleString('th-TH')}
+								<span class="text-xs font-normal text-muted-foreground">คน</span>
+							</span>
+							<ChevronRight
+								class="size-4 text-muted-foreground group-hover:text-primary group-focus-visible:text-primary"
+								aria-hidden="true"
+							/>
+						</span>
 					</div>
 					<div class="h-2 rounded-full bg-muted" aria-hidden="true">
 						<div

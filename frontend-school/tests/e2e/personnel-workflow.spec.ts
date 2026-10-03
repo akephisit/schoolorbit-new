@@ -80,6 +80,16 @@ test('personnel dashboard exposes accessible drilldown and a mobile layout', asy
 	});
 	await page.setViewportSize({ width: 390, height: 844 });
 	await expect(page.getByTestId('personnel-overview')).toContainText('ไม่มีวิทยฐานะ');
+	const statusLabel = page
+		.getByRole('region', { name: 'สถานะบุคลากรทั้งหมด', exact: true })
+		.getByText('ปฏิบัติงาน', { exact: true });
+	// Keep status labels readable beside counts instead of wrapping into a narrow column.
+	expect(
+		await statusLabel.evaluate(
+			(element) =>
+				element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight)
+		)
+	).toBeLessThanOrEqual(2);
 	await page
 		.getByRole('heading', { name: 'บุคลากรตามกลุ่มสาระ', exact: true })
 		.scrollIntoViewIfNeeded();

@@ -1,5 +1,12 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import {
+		ArrowUpRight,
+		RefreshCw,
+		UserRoundCheck,
+		UserRoundMinus,
+		UsersRound
+	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { PageShell } from '$lib/components/app-layout';
@@ -93,10 +100,19 @@
 	title="ภาพรวมงานบุคคล"
 	description="สรุปจำนวนบุคลากรตามข้อมูลและสังกัดปัจจุบันในขอบเขตที่คุณมีสิทธิ์ดู"
 >
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<a href={resolve('/staff/manage')} class="text-sm text-primary underline">ดูรายชื่อบุคลากร</a
-		><Button variant="outline" onclick={refresh} disabled={loading}>รีเฟรชข้อมูล</Button>
-	</div>
+	{#snippet actions()}
+		<Button href="/staff/manage" data-sveltekit-preload-data="tap">
+			<UsersRound class="size-4" aria-hidden="true" />
+			ดูรายชื่อบุคลากร
+		</Button>
+		<Button variant="outline" onclick={refresh} disabled={loading}>
+			<RefreshCw
+				class={loading ? 'size-4 motion-safe:animate-spin' : 'size-4'}
+				aria-hidden="true"
+			/>
+			รีเฟรชข้อมูล
+		</Button>
+	{/snippet}
 	<section data-testid="personnel-overview" aria-busy={loading} class="space-y-5">
 		{#if error}<PageState
 				variant="error"
@@ -112,20 +128,43 @@
 				rows={4}
 			/>{:else if overview}
 			<div class="grid gap-4 sm:grid-cols-3">
-				{#each [{ label: 'บุคลากรทั้งหมด', count: overview.total, status: 'all' }, { label: 'ปฏิบัติงาน', count: overview.active, status: 'active' }, { label: 'สถานะอื่น', count: overview.otherStatuses, status: null }] as card (card.label)}
-					<div class="rounded-xl border bg-card p-5">
-						<p class="text-sm text-muted-foreground">{card.label}</p>
-						<p class="mt-2 text-3xl font-semibold tabular-nums">
-							{card.count.toLocaleString('th-TH')}
-							<span class="text-sm font-normal text-muted-foreground">คน</span>
-						</p>
-						{#if card.status}<a
-								class="mt-3 inline-block text-xs text-primary underline"
-								href={resolve(`/staff/manage?status=${card.status}`)}
-								data-sveltekit-preload-data="tap">ดูรายชื่อ</a
-							>{:else}<p class="mt-3 text-xs text-muted-foreground">
-								รวมปิดใช้งาน ระงับ ลาออก และเกษียณ
-							</p>{/if}
+				{#each [{ label: 'บุคลากรทั้งหมด', count: overview.total, status: 'all', icon: UsersRound, iconClass: 'bg-primary/10 text-primary' }, { label: 'ปฏิบัติงาน', count: overview.active, status: 'active', icon: UserRoundCheck, iconClass: 'bg-chart-2/10 text-chart-2' }, { label: 'สถานะอื่น', count: overview.otherStatuses, status: null, icon: UserRoundMinus, iconClass: 'bg-muted text-muted-foreground' }] as card (card.label)}
+					<div class="flex flex-col gap-4 rounded-xl border bg-card p-5">
+						<div class="flex flex-1 items-start justify-between gap-4">
+							<div class="space-y-2">
+								<p class="text-sm font-medium text-muted-foreground">{card.label}</p>
+								<p
+									class="flex items-baseline gap-2 text-3xl font-semibold tracking-tight tabular-nums"
+								>
+									{card.count.toLocaleString('th-TH')}
+									<span class="text-sm font-normal text-muted-foreground">คน</span>
+								</p>
+							</div>
+							<div
+								class={`flex size-11 shrink-0 items-center justify-center rounded-xl ${card.iconClass}`}
+								aria-hidden="true"
+							>
+								<card.icon class="size-5" />
+							</div>
+						</div>
+						<div class="flex min-h-12 items-center border-t pt-4">
+							{#if card.status}
+								<Button
+									variant="secondary"
+									size="sm"
+									href={`/staff/manage?status=${card.status}`}
+									aria-label={`ดูรายชื่อ${card.label}`}
+									data-sveltekit-preload-data="tap"
+								>
+									ดูรายชื่อ
+									<ArrowUpRight class="size-4" aria-hidden="true" />
+								</Button>
+							{:else}
+								<p class="text-xs leading-relaxed text-muted-foreground">
+									รวมปิดใช้งาน ระงับ ลาออก และเกษียณ
+								</p>
+							{/if}
+						</div>
 					</div>
 				{/each}
 			</div>

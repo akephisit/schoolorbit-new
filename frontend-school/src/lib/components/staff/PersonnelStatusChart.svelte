@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { ChevronRight } from '@lucide/svelte';
 	import { personnelDrilldownHref } from '$lib/forms/staff-personnel';
 	import type { PersonnelBucket } from '$lib/api/personnel';
 	let { buckets, total }: { buckets: PersonnelBucket[]; total: number } = $props();
@@ -23,8 +24,8 @@
 
 <section class="rounded-xl border bg-card p-5 space-y-4" aria-label="สถานะบุคลากรทั้งหมด">
 	<h2 class="font-semibold">สถานะบุคลากรทั้งหมด</h2>
-	<div class="flex flex-wrap items-center gap-6">
-		<svg viewBox="0 0 42 42" class="h-40 w-40 shrink-0" aria-hidden="true"
+	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+		<svg viewBox="0 0 42 42" class="h-40 w-40 shrink-0 self-center" aria-hidden="true"
 			><circle
 				cx="21"
 				cy="21"
@@ -54,25 +55,30 @@
 			><text x="21" y="28" text-anchor="middle" fill="currentColor" font-size="3">คนทั้งหมด</text
 			></svg
 		>
-		<ul class="min-w-0 flex-1 space-y-3">
+		<ul class="w-full min-w-0 flex-1 space-y-1 sm:w-auto">
 			{#each segments as segment (segment.bucket.key)}<li>
 					<a
 						href={resolve(
 							personnelDrilldownHref('status', segment.bucket, 'all') as '/staff/manage'
 						)}
 						data-sveltekit-preload-data="tap"
-						class="flex items-center gap-3 rounded text-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+						class="group flex items-center gap-3 rounded-lg p-3 text-sm text-foreground no-underline transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 						><span
 							class="h-2.5 w-2.5 shrink-0 rounded-full"
 							style:background={segment.color}
 							aria-hidden="true"
-						></span><span class="min-w-0 break-words">{segment.bucket.label}</span><span
-							class="ml-auto shrink-0 tabular-nums"
+						></span><span class="min-w-0 break-words font-medium">{segment.bucket.label}</span><span
+							class="ml-auto shrink-0 text-right font-semibold tabular-nums"
 							>{segment.bucket.count} คน
-							<span class="text-xs text-muted-foreground">({segment.percentage.toFixed(1)}%)</span
+							<span class="text-xs font-normal text-muted-foreground"
+								>({segment.percentage.toFixed(1)}%)</span
 							></span
-						></a
-					>
+						>
+						<ChevronRight
+							class="size-4 shrink-0 text-muted-foreground group-hover:text-primary group-focus-visible:text-primary"
+							aria-hidden="true"
+						/>
+					</a>
 				</li>{:else}<li class="text-sm text-muted-foreground">
 					ยังไม่มีบุคลากรในขอบเขตที่ดูได้
 				</li>{/each}
