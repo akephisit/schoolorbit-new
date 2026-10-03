@@ -429,6 +429,32 @@ test('personnel fields and expanded dates remain readable on mobile and desktop 
 			);
 			expect(Math.abs(controls[0].height - controls[1].height)).toBeLessThan(1);
 			if (width >= 768) expect(Math.abs(controls[0].top - controls[1].top)).toBeLessThan(1);
+			const education = await fields.evaluate((element) =>
+				['[aria-label="วุฒิการศึกษาสูงสุด"]', '#staff-major', '#staff-university'].map(
+					(selector) => {
+						const control = element.querySelector(selector)!;
+						const rect = control.getBoundingClientRect();
+						const label = control.parentElement!.querySelector('label, p')!;
+						return {
+							top: rect.top,
+							height: rect.height,
+							labelHeight: label.getBoundingClientRect().height
+						};
+					}
+				)
+			);
+			for (const control of education) {
+				expect(Math.abs(control.height - education[0].height)).toBeLessThan(1);
+				expect(Math.abs(control.labelHeight - education[0].labelHeight)).toBeLessThan(1);
+			}
+			if (width >= 768) expect(Math.abs(education[0].top - education[1].top)).toBeLessThan(1);
+			await fields
+				.locator(':scope > div')
+				.last()
+				.screenshot({
+					path: testInfo.outputPath(`personnel-education-${width}-${theme}.png`)
+				});
+
 			await fields
 				.locator(':scope > div')
 				.first()

@@ -158,7 +158,7 @@
 	{#if errors.career}<p class="text-sm text-destructive" role="alert">{errors.career}</p>{/if}
 	<div class="grid min-w-0 gap-5 sm:grid-cols-2">
 		<div class="space-y-2">
-			<p class="text-sm font-medium">วุฒิการศึกษาสูงสุด</p>
+			<Label for="staff-education-level">วุฒิการศึกษาสูงสุด</Label>
 			<Select.Root
 				type="single"
 				value={value.education_level ?? 'unspecified'}
@@ -168,7 +168,7 @@
 				}}
 				{disabled}
 			>
-				<Select.Trigger class="w-full" aria-label="วุฒิการศึกษาสูงสุด"
+				<Select.Trigger id="staff-education-level" class="w-full" aria-label="วุฒิการศึกษาสูงสุด"
 					>{value.education_level
 						? EDUCATION_LEVEL_LABELS[value.education_level]
 						: 'ยังไม่ระบุ'}</Select.Trigger
@@ -183,7 +183,7 @@
 		</div>
 		{#each [{ key: 'major', label: 'สาขาวิชา' }, { key: 'university', label: 'สถาบันการศึกษา' }] as field (field.key)}
 			<div class="space-y-2">
-				<label for={`staff-${field.key}`} class="text-sm font-medium">{field.label}</label>
+				<Label for={`staff-${field.key}`}>{field.label}</Label>
 				<Input
 					id={`staff-${field.key}`}
 					value={value[field.key as 'major' | 'university'] ?? ''}
