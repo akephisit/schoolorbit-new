@@ -26,7 +26,7 @@ export type StaffPersonnelDraft = Pick<
 >;
 export function normalizeStaffEducationText(value: string | null | undefined): string | null {
 	if (value == null) return null;
-	if (/[\u0000-\u001f\u007f-\u009f]/u.test(value)) throw new Error('ต้องไม่มีอักขระควบคุม');
+	if (/\p{Cc}/u.test(value)) throw new Error('ต้องไม่มีอักขระควบคุม');
 	const normalized = value.trim();
 	if (Array.from(normalized).length > 200) throw new Error('ต้องยาวไม่เกิน 200 ตัวอักษร');
 	return normalized || null;

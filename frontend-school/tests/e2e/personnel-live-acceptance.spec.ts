@@ -19,13 +19,19 @@ test('deployed personnel overview and drilldown are consistent through the proxy
 	).replace(/\/$/, '');
 	if (!username || !password || !base || new URL(base).protocol !== 'https:')
 		throw new Error('PERSONNEL_LIVE_CONFIGURATION_REQUIRED');
+	let phase = 'login';
+	let csrf: string | undefined;
+	let failedPhase: string | null = null;
+	let cleanupFailed = false;
 	try {
 		await page.goto('/login');
 		await page.getByLabel('ชื่อผู้ใช้งาน (Username)').fill(username);
 		await page.getByLabel('รหัสผ่าน', { exact: true }).fill(password);
 		const login = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/auth/login');
 		await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
-		if (!(await login).ok()) throw new Error('LOGIN_FAILED');
+		const loginResponse = await login;
+		if (!loginResponse.ok()) throw new Error('LOGIN_FAILED');
+		csrf = loginResponse.headers()['x-csrf-token'];
 		const headers = {
 			Origin: new URL(base).origin,
 			'X-School-Subdomain': new URL(base).hostname.split('.')[0]
@@ -38,6 +44,7 @@ test('deployed personnel overview and drilldown are consistent through the proxy
 			return reply.data;
 		}
 		type Schemas = components['schemas'];
+		phase = 'overview_api';
 		const overview = await read<Schemas['PersonnelOverview']>(
 			'/api/staff/personnel-overview?status=active'
 		);
@@ -45,6 +52,7 @@ test('deployed personnel overview and drilldown are consistent through the proxy
 		expect(overview.statuses.reduce((n, b) => n + b.count, 0)).toBe(overview.total);
 		for (const buckets of [overview.jobPositions, overview.academicRanks, overview.educationLevels])
 			expect(buckets.reduce((n, b) => n + b.count, 0)).toBe(overview.filteredTotal);
+		phase = 'overview_ui';
 		await page.goto('/staff/manage/overview');
 		const region = page.getByTestId('personnel-overview');
 		await expect(region).toHaveAttribute('aria-busy', 'false');
@@ -64,17 +72,45 @@ test('deployed personnel overview and drilldown are consistent through the proxy
 			await expect(page.getByTestId('staff-directory')).toHaveAttribute('aria-busy', 'false');
 			expect(new URL(page.url()).searchParams.get('job_position_id')).toBe(bucket.key);
 		}
+		phase = 'positions_api';
 		const positions = await read<Schemas['JobPositionPage']>(
 			'/api/staff/job-positions?selectableOnly=true'
 		);
 		expect(positions.items.every((p) => p.isActive && p.isSelectable)).toBe(true);
+		phase = 'retired_api';
 		const retired = await context.request.get(api + '/api/staff/reference-items', { headers });
-		expect(retired.status()).toBe(404);
+		// The removed collection slug now matches the UUID profile route and is rejected.
+		expect(retired.status()).toBe(400);
+		const retiredItem = await context.request.get(
+			api + '/api/staff/reference-items/00000000-0000-0000-0000-000000000000',
+			{ headers }
+		);
+		expect(retiredItem.status()).toBe(404);
+		phase = 'directory_ui';
 		await page.goto('/staff/manage');
 		await expect(page.getByRole('link', { name: 'จัดการรายการกลาง', exact: true })).toHaveCount(0);
+		phase = 'retired_ui';
 		await page.goto('/staff/manage/reference-data');
 		await expect(page.getByText('404', { exact: true })).toBeVisible();
 	} catch {
-		throw new Error('PERSONNEL_LIVE_ACCEPTANCE_FAILED');
+		failedPhase = phase;
+	} finally {
+		if (csrf) {
+			try {
+				const logout = await context.request.post(api + '/api/auth/logout', {
+					headers: { Origin: new URL(base).origin, 'X-CSRF-Token': csrf },
+					data: {}
+				});
+				cleanupFailed = !logout.ok();
+			} catch {
+				cleanupFailed = true;
+			}
+		}
 	}
+	if (failedPhase || cleanupFailed)
+		throw new Error(
+			'PERSONNEL_LIVE_ACCEPTANCE_FAILED_' +
+				(failedPhase ?? 'session_cleanup') +
+				(cleanupFailed ? '_SESSION_CLEANUP_FAILED' : '')
+		);
 });

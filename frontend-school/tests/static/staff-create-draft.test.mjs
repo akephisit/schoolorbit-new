@@ -35,7 +35,7 @@ test('draft persists allowed fields and excludes credentials and national ID', (
 	const encoded = [...store.values.values()].join('');
 	assert.ok(!encoded.includes('synthetic-private-password'));
 	assert.ok(!encoded.includes('synthetic-private-identifier'));
-	assert.equal(readStaffCreateDraft(store, owner, 101).draft?.first_name, 'ร่าง');
+	assert.equal(readStaffCreateDraft(store, owner, 101)?.first_name, 'ร่าง');
 });
 test('draft is tenant/user scoped, expires, and removes ownerless legacy storage', () => {
 	const store = storage();
@@ -43,16 +43,14 @@ test('draft is tenant/user scoped, expires, and removes ownerless legacy storage
 	saveStaffCreateDraft(store, owner, { first_name: 'เจ้าของ' }, 100);
 	assert.equal(store.getItem('staff-create-draft'), null);
 	assert.equal(
-		readStaffCreateDraft(store, { ...owner, origin: 'https://another.schoolorbit.invalid' }, 101)
-			.draft,
+		readStaffCreateDraft(store, { ...owner, origin: 'https://another.schoolorbit.invalid' }, 101),
 		null
 	);
 	assert.equal(
-		readStaffCreateDraft(store, { ...owner, userId: '55000000-0000-4000-8000-000000000002' }, 101)
-			.draft,
+		readStaffCreateDraft(store, { ...owner, userId: '55000000-0000-4000-8000-000000000002' }, 101),
 		null
 	);
-	assert.equal(readStaffCreateDraft(store, owner, 100 + 31 * 60 * 1000).draft, null);
+	assert.equal(readStaffCreateDraft(store, owner, 100 + 31 * 60 * 1000), null);
 	assert.equal(store.values.size, 0);
 });
 test('invalid storage is removed and a completed draft clears only its owner', () => {
@@ -64,14 +62,14 @@ test('invalid storage is removed and a completed draft clears only its owner', (
 	saveStaffCreateDraft(store, another, {}, 100);
 	saveStaffCreateDraft(store, owner, {}, 100);
 	clearStaffCreateDraft(store, owner);
-	assert.ok(readStaffCreateDraft(store, another, 101).draft);
+	assert.ok(readStaffCreateDraft(store, another, 101));
 	const key = [...store.values.keys()][0];
 	store.setItem(key, 'invalid-json');
-	assert.equal(readStaffCreateDraft(store, another, 101).draft, null);
+	assert.equal(readStaffCreateDraft(store, another, 101), null);
 	assert.equal(store.values.size, 0);
 });
 
-test('canonical v3 drafts retain text and do not renew imported expiry', () => {
+test('canonical v3 drafts retain text without renewing expiry', () => {
 	const store = storage();
 	saveStaffCreateDraft(
 		store,
@@ -79,47 +77,89 @@ test('canonical v3 drafts retain text and do not renew imported expiry', () => {
 		{ personnel: { major: 'คณิตศาสตร์', university: 'สถาบันทดสอบ' } },
 		100
 	);
-	assert.equal(readStaffCreateDraft(store, owner, 101).draft.personnel.major, 'คณิตศาสตร์');
+	assert.equal(readStaffCreateDraft(store, owner, 101).personnel.major, 'คณิตศาสตร์');
 	assert.ok([...store.values.keys()].every((key) => key.startsWith('staff-create-draft:v3:')));
 });
+
 const oldKey = `staff-create-draft:v2:${owner.origin}:${owner.userId}`;
-const referenceId = '55000000-0000-4000-8000-000000000090';
-function oldDraft(store, summaryId = referenceId) {
+test('obsolete owner-qualified drafts are removed without reading or importing them', () => {
+	const store = storage();
 	store.setItem(
 		oldKey,
+		JSON.stringify({ version: 2, expiresAt: 1000, fields: { first_name: 'obsolete' } })
+	);
+	store.setItem('staff-create-draft', 'obsolete-ownerless');
+	const currentRead = store.getItem;
+	store.getItem = (key) => {
+		assert.notEqual(key, oldKey, 'obsolete draft contents must never be read');
+		assert.notEqual(key, 'staff-create-draft', 'ownerless contents must never be read');
+		return currentRead(key);
+	};
+	assert.equal(readStaffCreateDraft(store, owner, 101), null);
+	assert.equal(store.values.size, 0);
+	saveStaffCreateDraft(store, owner, { first_name: 'current' }, 100);
+	store.setItem(oldKey, 'obsolete-unparseable');
+	assert.equal(readStaffCreateDraft(store, owner, 101).first_name, 'current');
+	assert.equal(store.values.size, 1);
+});
+test('canonical draft rejects retired education IDs and discards invalid v3 storage', () => {
+	const store = storage();
+	assert.throws(() =>
+		saveStaffCreateDraft(
+			store,
+			owner,
+			{ personnel: { major_id: '55000000-0000-4000-8000-000000000090' } },
+			100
+		)
+	);
+	assert.equal(store.values.size, 0);
+	const currentKey = `staff-create-draft:v3:${owner.origin}:${owner.userId}`;
+	store.setItem(
+		currentKey,
 		JSON.stringify({
-			version: 2,
+			version: 3,
 			expiresAt: 1000,
-			fields: {
-				first_name: 'ร่างเดิม',
-				personnel: { major_id: referenceId, university_id: null },
-				personnel_references: {
-					job_position: null,
-					major: { id: summaryId, code: 'fixture', name: 'คณิตศาสตร์', isActive: false },
-					university: null
-				}
-			}
+			fields: { personnel: { university_id: '55000000-0000-4000-8000-000000000090' } }
 		})
 	);
-}
-test('v2 import requires exact matching IDs and removes source only after preservation', () => {
-	const store = storage();
-	oldDraft(store);
-	assert.equal(readStaffCreateDraft(store, owner, 101).draft.personnel.major, 'คณิตศาสตร์');
-	assert.equal(store.getItem(oldKey), null);
-	const envelope = JSON.parse([...store.values.values()][0]);
-	assert.equal(envelope.version, 3);
-	assert.equal(envelope.expiresAt, 1000);
-	assert.equal(readStaffCreateDraft(store, owner, 1000).draft, null);
+	assert.equal(readStaffCreateDraft(store, owner, 101), null);
+	assert.equal(store.values.size, 0);
 });
-test('v2 mismatch refuses the complete import visibly and retains source until expiry', () => {
+test('reading a canonical draft retains its original expiry and refuses unbounded lifetimes', () => {
 	const store = storage();
-	oldDraft(store, '55000000-0000-4000-8000-000000000091');
-	assert.deepEqual(readStaffCreateDraft(store, owner, 101), { draft: null, migrationFailed: true });
-	assert.ok(store.getItem(oldKey));
-	assert.deepEqual(readStaffCreateDraft(store, owner, 1000), {
-		draft: null,
-		migrationFailed: false
-	});
+	saveStaffCreateDraft(store, owner, { first_name: 'current' }, 100);
+	const currentKey = [...store.values.keys()][0];
+	const before = store.getItem(currentKey);
+	assert.equal(readStaffCreateDraft(store, owner, 101).first_name, 'current');
+	assert.equal(store.getItem(currentKey), before);
+	store.setItem(
+		currentKey,
+		JSON.stringify({
+			version: 3,
+			expiresAt: 31 * 60 * 1000,
+			fields: { first_name: 'invalid-future' }
+		})
+	);
+	assert.equal(readStaffCreateDraft(store, owner, 101), null);
+	assert.equal(store.values.size, 0);
+});
+
+test('invalid new draft fields preserve the previous canonical draft before storage cleanup', () => {
+	const store = storage();
+	saveStaffCreateDraft(store, owner, { personnel: { major: 'คณิตศาสตร์' } }, 100);
+	const currentKey = [...store.values.keys()][0];
+	const before = store.getItem(currentKey);
+	store.setItem(oldKey, 'obsolete-private-input');
+	assert.throws(() =>
+		saveStaffCreateDraft(
+			store,
+			owner,
+			{ personnel: { university_id: '55000000-0000-4000-8000-000000000090' } },
+			101
+		)
+	);
+	assert.equal(store.getItem(currentKey), before);
+	assert.equal(store.getItem(oldKey), 'obsolete-private-input');
+	assert.equal(readStaffCreateDraft(store, owner, 102).personnel.major, 'คณิตศาสตร์');
 	assert.equal(store.getItem(oldKey), null);
 });

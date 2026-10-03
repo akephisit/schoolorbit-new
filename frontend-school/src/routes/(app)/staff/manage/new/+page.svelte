@@ -193,12 +193,10 @@
 			organizationsLoaded = false;
 			formData = createForm();
 			try {
-				const { draft, migrationFailed } = readStaffCreateDraft(localStorage, {
+				const draft = readStaffCreateDraft(localStorage, {
 					origin: window.location.origin,
 					userId: ownerId
 				});
-				if (migrationFailed)
-					toast.error('ร่างเดิมมีข้อมูลสาขาหรือสถาบันที่ตรวจสอบไม่ได้ กรุณาตรวจข้อมูลก่อนกรอกใหม่');
 				if (draft) {
 					Object.assign(formData, draft);
 					formData.personnel = { ...staffPersonnelDraft(null), ...draft.personnel };
