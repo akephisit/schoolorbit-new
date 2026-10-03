@@ -16,7 +16,7 @@ jobs:
   compatibility:
     if: ${{ inputs.confirm_disposable_branch }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
