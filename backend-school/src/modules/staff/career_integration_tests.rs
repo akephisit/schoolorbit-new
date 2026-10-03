@@ -182,6 +182,10 @@ impl Fixture {
         );
         Router::new()
             .route(
+                "/api/staff/personnel-rank-milestones",
+                get(super::handlers::personnel::get_rank_milestone_overview),
+            )
+            .route(
                 "/api/staff/{id}/career-history",
                 get(career::list_career_history).post(career::append_career_history),
             )
@@ -443,6 +447,7 @@ async fn career_routes_require_authentication_through_production_router() {
         .insert_test_pool("career-auth-test-pool", fixture.pool.clone())
         .await;
     for (method, path) in [
+        ("GET", "/api/staff/personnel-rank-milestones".into()),
         (
             "GET",
             format!("/api/staff/{}/career-history", fixture.actor),
@@ -480,4 +485,79 @@ async fn career_routes_require_authentication_through_production_router() {
         assert_eq!(body["success"], false);
     }
     server.abort();
+}
+
+#[tokio::test]
+async fn rank_milestone_overview_preserves_profile_scopes_status_and_missing_info() {
+    let f = Fixture::new("rank_milestone_scopes").await;
+    for (permission, count) in [
+        (codes::STAFF_PROFILE_READ_OWN, 1),
+        (codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT, 2),
+        (codes::STAFF_PROFILE_READ_ORGANIZATION_TREE, 3),
+        (codes::STAFF_PROFILE_READ_SCHOOL, 4),
+    ] {
+        let (status, body) = f
+            .request(
+                &[permission],
+                "GET",
+                "/api/staff/personnel-rank-milestones?bucket=incomplete",
+                serde_json::json!({}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["data"]["filteredTotal"], count);
+        assert_eq!(body["data"]["counts"]["incomplete"], count);
+        assert_eq!(
+            body["data"]["items"].as_array().unwrap().len(),
+            count as usize
+        );
+        assert!(body["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["milestone"]["ordinaryDate"].is_null()));
+    }
+    let (status, _) = f
+        .request(
+            &[],
+            "GET",
+            "/api/staff/personnel-rank-milestones",
+            serde_json::json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(f.outside)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let (_, body) = f
+        .request(
+            &[codes::STAFF_PROFILE_READ_SCHOOL],
+            "GET",
+            "/api/staff/personnel-rank-milestones?bucket=incomplete",
+            serde_json::json!({}),
+        )
+        .await;
+    assert_eq!(body["data"]["total"], 3);
+    let (_, body) = f
+        .request(
+            &[codes::STAFF_PROFILE_READ_SCHOOL],
+            "GET",
+            "/api/staff/personnel-rank-milestones?status=all&bucket=incomplete",
+            serde_json::json!({}),
+        )
+        .await;
+    assert_eq!(body["data"]["total"], 4);
+    for query in ["page=0", "page=10001", "bucket=eligible", "status=invalid"] {
+        let (status, _) = f
+            .request(
+                &[codes::STAFF_PROFILE_READ_SCHOOL],
+                "GET",
+                &format!("/api/staff/personnel-rank-milestones?{query}"),
+                serde_json::json!({}),
+            )
+            .await;
+        assert!(status.is_client_error());
+    }
 }

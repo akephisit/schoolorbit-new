@@ -40,3 +40,22 @@ export async function listStaffJobPositions(
 		'โหลดรายการตำแหน่งไม่สำเร็จ'
 	);
 }
+
+export type RankMilestone = Schemas['RankMilestone'];
+export type RankMilestoneStatus = Schemas['RankMilestoneStatus'];
+export type RankMilestoneOverview = Schemas['RankMilestoneOverview'];
+export type RankMilestoneOverviewQuery = NonNullable<
+	operations['getRankMilestoneOverview']['parameters']['query']
+>;
+export async function getRankMilestoneOverview(
+	query: RankMilestoneOverviewQuery = {},
+	options: ApiRequestOptions = {}
+): Promise<RankMilestoneOverview> {
+	return requireApiData(
+		await apiClient.get<RankMilestoneOverview>(
+			`/api/staff/personnel-rank-milestones?${queryString(query)}`,
+			options
+		),
+		'โหลดกำหนดเวลาวิทยฐานะไม่สำเร็จ'
+	);
+}

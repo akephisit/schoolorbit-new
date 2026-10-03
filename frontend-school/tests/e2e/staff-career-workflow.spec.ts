@@ -8,7 +8,7 @@ import {
 	firstStaff
 } from './fixtures/staff-directory-route-data';
 import { mockStaffHome, id, actor } from './fixtures/staff-home-route-data';
-import { careerEntry, personnelInfo } from './fixtures/staff-career-route-data';
+import { careerEntry, personnelInfo, rankMilestone } from './fixtures/staff-career-route-data';
 type Schemas = components['schemas'];
 test.use({ serviceWorkers: 'block' });
 const region = (page: Page) =>
@@ -99,6 +99,7 @@ async function setup(
 					json: {
 						success: true,
 						data: {
+							rankMilestone: rankMilestone(),
 							current: options.empty
 								? { personnelType: null, jobPosition: null, academicRank: null }
 								: info.current_career,
@@ -306,6 +307,7 @@ test('empty history uses an empty state and own profile respects exact history c
 						jobPosition: null,
 						academicRank: careerEntry({ staffId: actor })
 					},
+					rankMilestone: rankMilestone(),
 					nextCursor: null
 				}
 			}
@@ -376,6 +378,7 @@ test('a late history read cannot paint the next persons region', async ({ page }
 					data: {
 						items: [],
 						current: { personnelType: null, jobPosition: null, academicRank: null },
+						rankMilestone: rankMilestone(),
 						nextCursor: null
 					}
 				}

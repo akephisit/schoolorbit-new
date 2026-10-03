@@ -5440,6 +5440,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff/personnel-rank-milestones': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getRankMilestoneOverview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/student/profile': {
 		parameters: {
 			query?: never;
@@ -9131,6 +9147,25 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_RankMilestoneOverview: {
+			data: {
+				/** Format: date */
+				asOf: string;
+				bucket: components['schemas']['RankMilestoneStatus'];
+				counts: components['schemas']['RankMilestoneCounts'];
+				/** Format: int64 */
+				filteredTotal: number;
+				items: components['schemas']['RankMilestonePerson'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_ResultReadiness: {
 			data: {
 				activities: components['schemas']['GroupResultReadiness'][];
@@ -9277,6 +9312,7 @@ export interface components {
 				items: components['schemas']['StaffCareerEntry'][];
 				/** Format: uuid */
 				nextCursor: string | null;
+				rankMilestone: components['schemas']['RankMilestone'];
 			};
 			message?: string;
 			success: boolean;
@@ -16859,6 +16895,20 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		RankCriteriaSource: {
+			title: string;
+			url: string;
+		};
+		RankCriteriaVersion: {
+			/** Format: int32 */
+			conditionalReducedYears: number;
+			effectiveFrom: string;
+			/** Format: int32 */
+			ordinaryYears: number;
+			reviewedOn: string;
+			sources: components['schemas']['RankCriteriaSource'][];
+			version: string;
+		};
 		RankingRoomSummary: {
 			/** Format: int32 */
 			capacity: number;
@@ -16871,6 +16921,84 @@ export interface components {
 			/** Format: int64 */
 			studentCount: number;
 		};
+		RankMilestone: {
+			/** Format: date */
+			asOf: string;
+			/**
+			 * Format: date
+			 * @description Comparison only: reduction evidence and all other qualifications are unverified.
+			 */
+			conditionalReducedDate: string | null;
+			criteria: null | components['schemas']['RankCriteriaVersion'];
+			/** Format: int64 */
+			daysUntilOrdinaryDate: number | null;
+			nextRank: null | components['schemas']['StaffAcademicRank'];
+			/** Format: date */
+			ordinaryDate: string | null;
+			reasonLabels: string[];
+			reasons: components['schemas']['RankMilestoneReason'][];
+			/** Format: date */
+			recordedStartDate: string | null;
+			status: components['schemas']['RankMilestoneStatus'];
+		};
+		RankMilestoneCounts: {
+			/** Format: int64 */
+			dueSoon: number;
+			/** Format: int64 */
+			future: number;
+			/** Format: int64 */
+			incomplete: number;
+			/** Format: int64 */
+			noNextRank: number;
+			/** Format: int64 */
+			timeReachedPendingReview: number;
+			/** Format: int64 */
+			unsupported: number;
+		};
+		RankMilestoneOverview: {
+			/** Format: date */
+			asOf: string;
+			bucket: components['schemas']['RankMilestoneStatus'];
+			counts: components['schemas']['RankMilestoneCounts'];
+			/** Format: int64 */
+			filteredTotal: number;
+			items: components['schemas']['RankMilestonePerson'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
+			/** Format: int64 */
+			total: number;
+		};
+		RankMilestonePerson: {
+			displayName: string;
+			milestone: components['schemas']['RankMilestone'];
+			/** Format: uuid */
+			staffId: string;
+		};
+		/** @enum {string} */
+		RankMilestoneReason:
+			| 'missing_personnel_type'
+			| 'missing_position'
+			| 'missing_rank'
+			| 'missing_personnel_type_date'
+			| 'missing_position_date'
+			| 'missing_rank_date'
+			| 'future_effective_date'
+			| 'unsupported_personnel_type'
+			| 'unsupported_position'
+			| 'not_applicable_rank'
+			| 'highest_rank'
+			| 'no_reviewed_criteria'
+			| 'calendar_overflow';
+		/** @enum {string} */
+		RankMilestoneStatus:
+			| 'future'
+			| 'due_soon'
+			| 'time_reached_pending_review'
+			| 'incomplete'
+			| 'unsupported'
+			| 'no_next_rank';
 		/** @enum {string} */
 		RecipientType: 'student' | 'staff' | 'external';
 		RemoveDatedRosterMembershipRequest: {
@@ -17526,6 +17654,7 @@ export interface components {
 			items: components['schemas']['StaffCareerEntry'][];
 			/** Format: uuid */
 			nextCursor: string | null;
+			rankMilestone: components['schemas']['RankMilestone'];
 		};
 		/** @enum {string} */
 		StaffCareerKind: 'personnel_type' | 'job_position' | 'academic_rank';
@@ -43898,6 +44027,57 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_PersonnelOverview'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getRankMilestoneOverview: {
+		parameters: {
+			query?: {
+				bucket?: components['schemas']['RankMilestoneStatus'];
+				page?: number;
+				status?: components['schemas']['PersonnelStatusFilter'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scoped rank tenure planning milestones */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_RankMilestoneOverview'];
+				};
+			};
+			/** @description Invalid status, bucket or page */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 			/** @description Authentication required */

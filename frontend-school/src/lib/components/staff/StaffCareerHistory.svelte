@@ -17,6 +17,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import { Plus, Pencil, RefreshCw, CalendarDays, History, LoaderCircle } from '@lucide/svelte';
+	import StaffRankMilestoneCard from './StaffRankMilestoneCard.svelte';
 	import StaffCareerEntryDialog from './StaffCareerEntryDialog.svelte';
 	let {
 		staffId,
@@ -185,6 +186,7 @@
 				onaction={() => load()}
 			/>{/if}
 		{#if data}
+			<StaffRankMilestoneCard milestone={data.rankMilestone} />
 			<div class="grid min-w-0 gap-3 md:grid-cols-3" aria-label="ข้อมูลบุคลากรปัจจุบัน">
 				{#each currentFacts as fact (fact.kind)}<div
 						class="min-w-0 space-y-3 rounded-xl border bg-muted/25 p-4"

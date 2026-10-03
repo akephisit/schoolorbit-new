@@ -86,6 +86,8 @@ dev-only database and test-support edges. The application package retains Axum h
 cookie/CSRF and origin adapters, File Platform profile-image orchestration, and deliberate
 cross-domain tests such as staff soft-delete followed by session invalidation.
 
+Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh modules::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
+
 The six `school-academic-*` crates own Core, Delivery, Timetable, Assessment, Results, and
 Lifecycle respectively. Lifecycle and Supervision expose dev-only integration-support features
 only for root tests that intentionally span domain owners; the normal release graph must keep

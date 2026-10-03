@@ -34,3 +34,55 @@ export function personnelInfo(
 		...overrides
 	};
 }
+export function rankMilestone(
+	overrides: Partial<Schemas['RankMilestone']> = {}
+): Schemas['RankMilestone'] {
+	return {
+		asOf: '2026-10-03',
+		status: 'incomplete',
+		reasons: ['missing_position_date'],
+		reasonLabels: ['ยังไม่ระบุวันที่มีผลของตำแหน่งครู'],
+		nextRank: 'senior_proficient',
+		recordedStartDate: null,
+		ordinaryDate: null,
+		conditionalReducedDate: null,
+		daysUntilOrdinaryDate: null,
+		criteria: {
+			version: 'teacher-ordinary-2026-10-03',
+			effectiveFrom: '2026-10-03',
+			reviewedOn: '2026-10-03',
+			ordinaryYears: 4,
+			conditionalReducedYears: 3,
+			sources: [
+				{
+					title: '1932/2567',
+					url: 'https://otepc.go.th/th/content_page/item/5169-2024-11-22-11-47-11.html'
+				}
+			]
+		},
+		...overrides
+	};
+}
+
+export function rankOverview(
+	overrides: Partial<Schemas['RankMilestoneOverview']> = {}
+): Schemas['RankMilestoneOverview'] {
+	return {
+		asOf: '2026-10-03',
+		bucket: 'due_soon',
+		counts: {
+			dueSoon: 0,
+			future: 0,
+			timeReachedPendingReview: 0,
+			incomplete: 2,
+			unsupported: 0,
+			noNextRank: 0
+		},
+		filteredTotal: 2,
+		items: [],
+		total: 0,
+		page: 1,
+		pageSize: 50,
+		...overrides
+	};
+}

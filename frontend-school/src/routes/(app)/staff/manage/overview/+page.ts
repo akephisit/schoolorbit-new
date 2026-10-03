@@ -3,7 +3,11 @@ import { can } from '$lib/stores/permissions';
 import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
 import { captureRouteLoad } from '$lib/navigation/route-load';
-import { getPersonnelOverview, type PersonnelStatusFilter } from '$lib/api/personnel';
+import {
+	getPersonnelOverview,
+	getRankMilestoneOverview,
+	type PersonnelStatusFilter
+} from '$lib/api/personnel';
 import type { PageLoad } from './$types';
 export const _meta = {
 	academicContext: 'none' as const,
@@ -43,5 +47,19 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		),
 		'โหลดภาพรวมงานบุคคลไม่สำเร็จ'
 	);
-	return { title: _meta.menu.title, status, overview };
+	const rankMilestones = captureRouteLoad(
+		waitForAuthenticatedUser().then((user) =>
+			user?.user_type === 'staff' &&
+			get(can).hasAny(
+				PERMISSIONS.STAFF_PROFILE_READ_OWN,
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE,
+				PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
+			)
+				? getRankMilestoneOverview({ status }, { requestFetch: fetch })
+				: null
+		),
+		'โหลดกำหนดเวลาวิทยฐานะไม่สำเร็จ'
+	);
+	return { title: _meta.menu.title, status, overview, rankMilestones };
 };

@@ -178,6 +178,7 @@ pub struct StaffCareerHistoryQuery {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StaffCareerHistoryPage {
+    pub rank_milestone: crate::rank_milestones::RankMilestone,
     pub items: Vec<StaffCareerEntry>,
     pub current: StaffCareerCurrent,
     #[schema(required = true)]

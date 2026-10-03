@@ -143,9 +143,11 @@ use school_staff::models::{
     UserRoleAssignmentResponse,
 };
 use school_staff::personnel::*;
+use school_staff::rank_milestones::*;
 use school_staff::services::dashboard_service::StaffDashboardOverview;
 use school_staff::services::organization_delegation_service::DelegatablePermission;
 use school_staff::services::organization_permission_service::OrganizationPermissionGrant;
+use school_staff::services::rank_milestone_service::*;
 use school_staff::services::staff_service::{
     PublicStaffOrganizationUnit, PublicStaffProfile, PublicStaffRole,
 };
@@ -237,6 +239,7 @@ use utoipa::OpenApi;
         crate::modules::staff::handlers::career::append_career_history,
         crate::modules::staff::handlers::career::correct_career_history,
         crate::modules::staff::handlers::personnel::get_personnel_overview,
+        crate::modules::staff::handlers::personnel::get_rank_milestone_overview,
         crate::modules::staff::handlers::personnel::list_job_positions,
         crate::modules::staff::handlers::staff::list_staff,
         crate::modules::staff::handlers::staff::get_staff_dashboard,
@@ -935,6 +938,7 @@ struct SchoolApiDoc;
         UpdateStaffInfoRequest, JobPositionPage,
         ApiResponse<JobPositionPage>,
         StaffPersonnelType,StaffCareerKind,StaffCareerSource,StaffCareerFact,StaffCareerEntryInput,StaffCareerReference,StaffCareerCurrent,StaffCareerEntry,CreateStaffCareerRequest,StaffCareerCurrentChange,UpdateStaffCareerRequest,CreateStaffCareerHistoryRequest,CorrectStaffCareerHistoryRequest,StaffCareerHistoryPage,StaffCareerMutationAck,ApiResponse<StaffCareerHistoryPage>,ApiResponse<StaffCareerMutationAck>,
+        RankMilestone,RankMilestoneStatus,RankMilestoneReason,RankCriteriaVersion,RankCriteriaSource,RankMilestoneOverview,RankMilestonePerson,RankMilestoneCounts,ApiResponse<RankMilestoneOverview>,
         StaffInfoResponse,
         StaffProfileResponse,
         CreateStaffInfoRequest,

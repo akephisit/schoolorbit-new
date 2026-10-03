@@ -502,6 +502,7 @@ pub async fn list_staff_career_history(
         None
     };
     Ok(StaffCareerHistoryPage {
+        rank_milestone: crate::rank_milestones::calculate_rank_milestone(&data.current, today()),
         items: data.items,
         current: data.current,
         next_cursor,

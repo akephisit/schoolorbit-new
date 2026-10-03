@@ -9,7 +9,13 @@ use axum::{
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_http::{ApiErrorResponse, ApiResponse, HttpError as AppError};
-use school_staff::{personnel::*, services::job_position_service};
+use school_staff::{
+    personnel::*,
+    services::{
+        job_position_service,
+        rank_milestone_service::{RankMilestoneOverview, RankMilestoneOverviewQuery},
+    },
+};
 
 #[utoipa::path(get, path="/api/staff/job-positions", operation_id="listStaffJobPositions", tag="staff", params(JobPositionListQuery), responses((status=200, description="Reference catalog", body=ApiResponse<JobPositionPage>),(status=401, description="Authentication required", body=ApiErrorResponse),(status=403, description="Permission denied", body=ApiErrorResponse)))]
 pub async fn list_job_positions(
@@ -35,6 +41,28 @@ pub async fn get_personnel_overview(
     );
     Ok(Json(ApiResponse::ok(
         school_staff::services::personnel_overview_service::get_personnel_overview(
+            &context.tenant.pool,
+            query,
+            access,
+        )
+        .await?,
+    )))
+}
+
+#[utoipa::path(get,path="/api/staff/personnel-rank-milestones",operation_id="getRankMilestoneOverview",tag="staff",params(RankMilestoneOverviewQuery),responses((status=200,description="Scoped rank tenure planning milestones",body=ApiResponse<RankMilestoneOverview>),(status=400,description="Invalid status, bucket or page",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse)))]
+pub async fn get_rank_milestone_overview(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    query: Result<Query<RankMilestoneOverviewQuery>, axum::extract::rejection::QueryRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let access = super::staff::staff_list_access(
+        staff_access_policy::resolve_staff_profile_list_access(&context.actor)?,
+    );
+    let Query(query) =
+        query.map_err(|_| AppError::BadRequest("ตัวกรองกำหนดเวลาวิทยฐานะไม่ถูกต้อง".into()))?;
+    Ok(Json(ApiResponse::ok(
+        school_staff::services::rank_milestone_service::get_rank_milestone_overview(
             &context.tenant.pool,
             query,
             access,

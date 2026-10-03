@@ -11487,6 +11487,68 @@
         ],
         "type": "object"
       },
+      "ApiResponse_RankMilestoneOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "asOf": {
+                "format": "date",
+                "type": "string"
+              },
+              "bucket": {
+                "$ref": "#/components/schemas/RankMilestoneStatus"
+              },
+              "counts": {
+                "$ref": "#/components/schemas/RankMilestoneCounts"
+              },
+              "filteredTotal": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/RankMilestonePerson"
+                },
+                "type": "array"
+              },
+              "page": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "pageSize": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "asOf",
+              "counts",
+              "filteredTotal",
+              "bucket",
+              "items",
+              "total",
+              "page",
+              "pageSize"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ResultReadiness": {
         "properties": {
           "data": {
@@ -12053,9 +12115,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "rankMilestone": {
+                "$ref": "#/components/schemas/RankMilestone"
               }
             },
             "required": [
+              "rankMilestone",
               "items",
               "current",
               "nextCursor"
@@ -39899,6 +39965,59 @@
         ],
         "type": "object"
       },
+      "RankCriteriaSource": {
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url"
+        ],
+        "type": "object"
+      },
+      "RankCriteriaVersion": {
+        "properties": {
+          "conditionalReducedYears": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "ordinaryYears": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reviewedOn": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/RankCriteriaSource"
+            },
+            "type": "array"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "effectiveFrom",
+          "reviewedOn",
+          "ordinaryYears",
+          "conditionalReducedYears",
+          "sources"
+        ],
+        "type": "object"
+      },
       "RankingRoomSummary": {
         "properties": {
           "capacity": {
@@ -39933,6 +40052,224 @@
           "femaleCount"
         ],
         "type": "object"
+      },
+      "RankMilestone": {
+        "properties": {
+          "asOf": {
+            "format": "date",
+            "type": "string"
+          },
+          "conditionalReducedDate": {
+            "description": "Comparison only: reduction evidence and all other qualifications are unverified.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "criteria": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RankCriteriaVersion"
+              }
+            ]
+          },
+          "daysUntilOrdinaryDate": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "nextRank": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffAcademicRank"
+              }
+            ]
+          },
+          "ordinaryDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasonLabels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/RankMilestoneReason"
+            },
+            "type": "array"
+          },
+          "recordedStartDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/RankMilestoneStatus"
+          }
+        },
+        "required": [
+          "asOf",
+          "status",
+          "reasons",
+          "reasonLabels",
+          "nextRank",
+          "recordedStartDate",
+          "ordinaryDate",
+          "conditionalReducedDate",
+          "daysUntilOrdinaryDate",
+          "criteria"
+        ],
+        "type": "object"
+      },
+      "RankMilestoneCounts": {
+        "properties": {
+          "dueSoon": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "future": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "incomplete": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "noNextRank": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "timeReachedPendingReview": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unsupported": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "future",
+          "dueSoon",
+          "timeReachedPendingReview",
+          "incomplete",
+          "unsupported",
+          "noNextRank"
+        ],
+        "type": "object"
+      },
+      "RankMilestoneOverview": {
+        "properties": {
+          "asOf": {
+            "format": "date",
+            "type": "string"
+          },
+          "bucket": {
+            "$ref": "#/components/schemas/RankMilestoneStatus"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/RankMilestoneCounts"
+          },
+          "filteredTotal": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RankMilestonePerson"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pageSize": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asOf",
+          "counts",
+          "filteredTotal",
+          "bucket",
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "type": "object"
+      },
+      "RankMilestonePerson": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "milestone": {
+            "$ref": "#/components/schemas/RankMilestone"
+          },
+          "staffId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "staffId",
+          "displayName",
+          "milestone"
+        ],
+        "type": "object"
+      },
+      "RankMilestoneReason": {
+        "enum": [
+          "missing_personnel_type",
+          "missing_position",
+          "missing_rank",
+          "missing_personnel_type_date",
+          "missing_position_date",
+          "missing_rank_date",
+          "future_effective_date",
+          "unsupported_personnel_type",
+          "unsupported_position",
+          "not_applicable_rank",
+          "highest_rank",
+          "no_reviewed_criteria",
+          "calendar_overflow"
+        ],
+        "type": "string"
+      },
+      "RankMilestoneStatus": {
+        "enum": [
+          "future",
+          "due_soon",
+          "time_reached_pending_review",
+          "incomplete",
+          "unsupported",
+          "no_next_rank"
+        ],
+        "type": "string"
       },
       "RecipientType": {
         "enum": [
@@ -42315,9 +42652,13 @@
               "string",
               "null"
             ]
+          },
+          "rankMilestone": {
+            "$ref": "#/components/schemas/RankMilestone"
           }
         },
         "required": [
+          "rankMilestone",
           "items",
           "current",
           "nextCursor"
@@ -83186,6 +83527,83 @@
               }
             },
             "description": "Scoped personnel counts"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/staff/personnel-rank-milestones": {
+      "get": {
+        "operationId": "getRankMilestoneOverview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PersonnelStatusFilter"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RankMilestoneStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RankMilestoneOverview"
+                }
+              }
+            },
+            "description": "Scoped rank tenure planning milestones"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid status, bucket or page"
           },
           "401": {
             "content": {

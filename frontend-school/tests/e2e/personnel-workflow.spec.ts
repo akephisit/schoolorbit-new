@@ -1,4 +1,4 @@
-import { careerEntry, personnelInfo } from './fixtures/staff-career-route-data';
+import { careerEntry, personnelInfo, rankOverview } from './fixtures/staff-career-route-data';
 import { expect, test, type Page } from '@playwright/test';
 import { mockStaffDirectory, staffPath } from './fixtures/staff-directory-route-data';
 import { navigate } from './fixtures/supervision-route-data';
@@ -26,6 +26,9 @@ async function setup(page: Page, permissions?: string[]) {
 						: item
 			}
 		})
+	);
+	await page.route('**/api/staff/personnel-rank-milestones**', (route) =>
+		route.fulfill({ json: { success: true, data: rankOverview() } })
 	);
 	await page.route('**/api/staff/personnel-overview**', (route) =>
 		route.fulfill({

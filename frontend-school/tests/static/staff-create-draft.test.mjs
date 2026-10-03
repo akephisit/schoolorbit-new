@@ -166,75 +166,51 @@ test('invalid new draft fields preserve the previous canonical draft before stor
 
 const legacyKey = `staff-create-draft:v3:${owner.origin}:${owner.userId}`;
 const currentKey = `staff-create-draft:v4:${owner.origin}:${owner.userId}`;
-test('v3 migration preserves original expiry, valid fields, and explicit current values without guessed dates', () => {
+test('retired v3 drafts are discarded unread without conversion writes', () => {
 	const store = storage();
-	const original = {
-		version: 3,
-		expiresAt: 1000,
-		fields: {
-			first_name: 'ร่าง',
-			hired_date: '2010-01-01',
-			role_ids: ['fixture-role'],
-			personnel: {
-				job_position_id: '55000000-0000-4000-8000-000000000099',
-				academic_rank: 'proficient',
-				education_level: 'master',
-				major: 'คณิตศาสตร์',
-				university: 'สถาบันทดสอบ'
-			}
-		}
-	};
-	store.setItem(legacyKey, JSON.stringify(original));
-	const migrated = readStaffCreateDraft(store, owner, 101);
-	assert.equal(migrated.first_name, original.fields.first_name);
-	assert.deepEqual(migrated.role_ids, original.fields.role_ids);
-	assert.equal(migrated.personnel.career.academicRank.value, 'proficient');
-	assert.equal(
-		migrated.personnel.career.jobPosition.value,
-		original.fields.personnel.job_position_id
+	const another = `${legacyKey}:another-owner`;
+	store.setItem(
+		legacyKey,
+		JSON.stringify({
+			version: 3,
+			expiresAt: 1000,
+			fields: { first_name: 'obsolete', personnel: { academic_rank: 'proficient' } }
+		})
 	);
-	assert.equal(migrated.personnel.career.personnelType.value, null);
-	for (const fact of Object.values(migrated.personnel.career)) {
-		assert.equal(fact.effectiveDate, '');
-		assert.equal(fact.orderDate, '');
-		assert.equal(fact.reference, null);
-	}
-	assert.equal(migrated.personnel.university, original.fields.personnel.university);
-	assert.equal(JSON.parse(store.getItem(currentKey)).expiresAt, original.expiresAt);
-	assert.equal(store.getItem(legacyKey), null);
+	store.setItem(another, 'another-owner');
+	const read = store.getItem;
+	store.getItem = (key) => {
+		assert.notEqual(key, legacyKey);
+		return read(key);
+	};
+	store.setItem = () => {
+		throw new Error('read must not write a converted draft');
+	};
+	assert.equal(readStaffCreateDraft(store, owner, 101), null);
+	assert.equal(read(currentKey), null);
+	assert.equal(read(legacyKey), null);
+	assert.equal(read(another), 'another-owner');
 });
-test('failed v4 storage write retains the valid v3 draft for retry', () => {
+test('canonical career survives storage failure and rejects retired career fields', () => {
 	const store = storage();
-	const original = JSON.stringify({ version: 3, expiresAt: 1000, fields: { first_name: 'ร่าง' } });
-	store.setItem(legacyKey, original);
-	const write = store.setItem;
+	const details = { effectiveDate: '', orderDate: '', orderNumber: '', note: '', reference: null };
+	const career = {
+		personnelType: { value: 'civil_servant', ...details },
+		jobPosition: { value: null, ...details },
+		academicRank: { value: 'proficient', ...details, effectiveDate: '2022-02-28' }
+	};
+	saveStaffCreateDraft(store, owner, { personnel: { career } }, 100);
+	const before = store.getItem(currentKey);
+	assert.deepEqual(readStaffCreateDraft(store, owner, 101).personnel.career, career);
+	for (const field of ['academic_rank', 'job_position_id']) {
+		assert.throws(() => saveStaffCreateDraft(store, owner, { personnel: { [field]: null } }, 102));
+	}
 	store.setItem = () => {
 		throw new Error('storage unavailable');
 	};
-	assert.throws(() => readStaffCreateDraft(store, owner, 101), /บันทึกร่าง/);
-	assert.equal(store.getItem(legacyKey), original);
-	assert.equal(store.getItem(currentKey), null);
-	store.setItem = write;
-	assert.equal(readStaffCreateDraft(store, owner, 102).first_name, 'ร่าง');
-});
-test('v3 migration refuses expired, corrupt, and cross-owner input', () => {
-	for (const value of [
-		'invalid-json',
-		JSON.stringify({ version: 3, expiresAt: 100, fields: { first_name: 'หมดอายุ' } })
-	]) {
-		const store = storage();
-		store.setItem(legacyKey, value);
-		assert.equal(readStaffCreateDraft(store, owner, 101), null);
-		assert.equal(store.getItem(legacyKey), null);
-	}
-	const store = storage();
-	store.setItem(
-		legacyKey,
-		JSON.stringify({ version: 3, expiresAt: 1000, fields: { first_name: 'ร่าง' } })
+	assert.throws(
+		() => saveStaffCreateDraft(store, owner, { first_name: 'replacement' }, 103),
+		/storage unavailable/
 	);
-	assert.equal(
-		readStaffCreateDraft(store, { ...owner, userId: '55000000-0000-4000-8000-000000000002' }, 101),
-		null
-	);
-	assert.ok(store.getItem(legacyKey));
+	assert.equal(store.getItem(currentKey), before);
 });

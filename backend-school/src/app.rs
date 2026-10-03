@@ -164,6 +164,10 @@ fn protected_routes() -> Router<AppState> {
             get(modules::staff::handlers::staff::get_staff_dashboard),
         )
         .route(
+            "/api/staff/personnel-rank-milestones",
+            get(modules::staff::handlers::personnel::get_rank_milestone_overview),
+        )
+        .route(
             "/api/staff/personnel-overview",
             get(modules::staff::handlers::personnel::get_personnel_overview),
         )

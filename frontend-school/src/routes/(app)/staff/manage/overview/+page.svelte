@@ -16,6 +16,7 @@
 	import { getPersonnelOverview, type PersonnelOverview } from '$lib/api/personnel';
 	import { LatestRequest } from '$lib/async/latest-request';
 	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import RankMilestoneOverview from '$lib/components/staff/RankMilestoneOverview.svelte';
 	import PersonnelBarChart from '$lib/components/staff/PersonnelBarChart.svelte';
 	import PersonnelStatusChart from '$lib/components/staff/PersonnelStatusChart.svelte';
 	import { PERMISSIONS } from '$lib/permissions/registry';
@@ -222,4 +223,9 @@
 			</p>
 		{/if}
 	</section>
+	{#if allowed}<RankMilestoneOverview
+			initial={data.rankMilestones}
+			status={data.status}
+			ownerKey={identityKey}
+		/>{/if}
 </PageShell>

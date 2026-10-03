@@ -53,3 +53,5 @@ mod tests {
 pub mod job_position_service;
 pub mod personnel_overview_service;
 mod staff_directory_query;
+
+pub mod rank_milestone_service;
