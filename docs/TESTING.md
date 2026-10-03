@@ -412,11 +412,13 @@ Run the canonical personnel owner and explicit all-tenant boundary against fresh
 ./scripts/test_backend_school.sh policies::staff_access_policy::tests -- --test-threads=1
 ```
 
-The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-source drift, retry, identity/license/employment preservation, catalog normalization and deactivation races, nullable patches, scoped directory/aggregate equivalence, current group deduplication and missing-value buckets. Root tests verify no migration future runs after failed preflight and require current nonempty audit evidence.
+The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-source drift, retry, identity/license/employment preservation, person-owned text validation, preserved custom/inactive positions and deactivation races, nullable patches, scoped directory/aggregate equivalence, current group deduplication and missing-value buckets. Root tests verify no migration future runs after failed preflight and require current nonempty audit evidence.
 
-For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual version and bounded `staff_personnel_cutover_audit` checks afterward. Do not emit credentials, names, source values or national IDs.
+For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual version and bounded `staff_personnel_simplification_audit` checks afterward. Do not emit credentials, names, source values or national IDs.
 
 Also supply `PERSONNEL_PREFLIGHT_NEON_DATABASE_URL` and its exact disposable host as `PERSONNEL_PREFLIGHT_NEON_ENDPOINT` through the private test environment, then run `cargo test --manifest-path backend-school/Cargo.toml personnel_preflight_neon_connection --bin backend-school -- --ignored`. This read-only test exercises both direct and pooled registry URL shapes through the actual preflight owner, verifies startup settings and blocked writes, and never invokes migrations. Local `personnel_` tests independently verify host-only normalization and write rejection on rootless PostgreSQL.
+
+The new 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The manual `backend-school-neon-compatibility.yml` workflow runs these fixtures and root personnel tests against a fresh disposable direct-endpoint child; cleanup and expiry stay with that workflow. Run `node --test scripts/tests/personnel-cutover-gate.test.mjs` to exercise the exact sourced release filter through its native Podman jq image, including all-tenant coverage and unrelated audit failures.
 
 Against a production build running in local preview:
 
@@ -427,7 +429,7 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
   tests/e2e/staff-directory-region-loading.spec.ts --project=chromium
 ```
 
-These synthetic browser fixtures block service workers and exercise dropdown payloads, lazy options, create/edit draft ownership, retry/refresh, chart drilldown and mobile layout. Run deployed read-only acceptance separately with existing runtime credentials and tracing, screenshots and video disabled.
+These synthetic browser fixtures block service workers and exercise position UUIDs, direct education-text payloads, lazy options, create/edit draft ownership, retry/refresh, chart drilldown and mobile layout. Run deployed read-only acceptance separately with existing runtime credentials and tracing, screenshots and video disabled.
 
 ### Academic Core migration rehearsal
 

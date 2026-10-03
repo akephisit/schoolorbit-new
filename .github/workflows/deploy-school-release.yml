@@ -22,6 +22,7 @@ on:
       - "scripts/reconcile_r2_cors.sh"
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
       - "scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh"
+      - "scripts/verify_personnel_cutover.sh"
       - ".github/workflows/deploy-school-release.yml"
   workflow_dispatch:
     inputs:
@@ -762,7 +763,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
+          source: podman-compose.yml,scripts/verify_personnel_cutover.sh,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/install_origin_root.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,scripts/lib/schoolorbit-installer/remote/personnel_preflight.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template
           target: /opt/stack/deployment
 
       - name: Deploy to Server via SSH
@@ -820,6 +821,7 @@ jobs:
 
             . "$timing_helper_source"
             . "$personnel_helper"
+            . "$deployment_root/scripts/verify_personnel_cutover.sh"
 
             runtime_env_value() {
               local key=$1 line value decoded char
@@ -1258,32 +1260,31 @@ jobs:
               echo "Tenant migration status request failed; maintenance remains enabled"
               exit 1
             fi
-            if ! podman run --rm -i "$jq_image" -e '
-                .latest_version as $latest
-                | $latest >= 45
+            personnel_cutover_filter="$(schoolorbit_personnel_cutover_filter)"
+            migration_completion_filter="
+                .latest_version as \$latest
+                | \$latest >= 84
                 and .total_schools > 0
+                and (.schools | length) == .total_schools
                 and .migrated == .total_schools
                 and .pending == 0 and .failed == 0 and .outdated == 0
                 and all(
                   .schools[];
-                  .migration_version == $latest
-                  and .migration_status == "migrated"
+                  .migration_version == \$latest
+                  and .migration_status == \"migrated\"
                   and .migration_error == null
                   and .academicCoreCutover.migrationVersion == 45
-                  and .academicCoreCutover.status == "cleanupCompleted"
+                  and .academicCoreCutover.status == \"cleanupCompleted\"
                   and .academicCoreCutover.passed == true
                   and all(.academicCoreCutover.checks[]; .passed == true)
                   and .gradebookResultsCutover.migrationVersion == 60
-                  and .gradebookResultsCutover.status == "cutoverCompleted"
+                  and .gradebookResultsCutover.status == \"cutoverCompleted\"
                   and .gradebookResultsCutover.passed == true
                   and all(.gradebookResultsCutover.checks[]; .passed == true)
-                  and .personnelCutover.migrationVersion == 81
-                  and .personnelCutover.status == "cutoverCompleted"
-                  and .personnelCutover.passed == true
-                  and (.personnelCutover.checks | length) > 0
-                  and all(.personnelCutover.checks[]; .passed == true and .count >= 0)
+                  and $personnel_cutover_filter
                 )
-              ' < "$migration_response" >/dev/null
+              "
+            if ! podman run --rm -i "$jq_image" -e "$migration_completion_filter" < "$migration_response" >/dev/null
             then
               echo "Tenant migration or cutover audit verification failed; maintenance remains enabled"
               exit 1

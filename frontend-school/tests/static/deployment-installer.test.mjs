@@ -432,10 +432,12 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 	assert.match(cutoverAudit, /GRADEBOOK_RESULTS_REQUIRED_TABLES_PRESENT/);
 	assert.match(cutoverAudit, /GRADEBOOK_RESULTS_PERMISSION_DEFINITIONS_PRESENT/);
 
-	const verification = deployment.slice(
-		deployment.indexOf('migration_status_started='),
-		deployment.indexOf('unset internal_api_secret')
-	);
+	const verification = deployment
+		.slice(
+			deployment.indexOf('migration_status_started='),
+			deployment.indexOf('unset internal_api_secret')
+		)
+		.replace(/\\(?=")/g, '');
 	assert.match(verification, /\.gradebookResultsCutover\.migrationVersion == 60/);
 	assert.match(verification, /\.gradebookResultsCutover\.status == "cutoverCompleted"/);
 	assert.match(verification, /\.gradebookResultsCutover\.passed == true/);
@@ -1315,9 +1317,12 @@ test('personnel release preflights every tenant before migration and audits befo
 	assert.match(release, /\. "\$personnel_helper"/);
 	assert.match(helper, /\/internal\/personnel-preflight/);
 	assert.match(helper, /\.data\.passed == true/);
-	assert.match(verification, /\.personnelCutover\.migrationVersion == 81/);
-	assert.match(verification, /\.personnelCutover\.passed == true/);
-	assert.match(verification, /\.personnelCutover\.checks \| length/);
+	const gate = await readRepo('scripts/verify_personnel_cutover.sh');
+	assert.match(gate, /\$p\.migrationVersion == 84/);
+	assert.match(verification, /\$personnel_cutover_filter/);
+	assert.match(release, /source: [^\n]*scripts\/verify_personnel_cutover\.sh/);
+	assert.match(gate, /\$p\.passed == true/);
+	assert.match(gate, /PERSONNEL_SIMPLIFICATION_STAFF_PRESERVED/);
 	const handler = await readRepo('backend-school/src/modules/system/handlers/migration.rs');
 	assert.ok(
 		handler.indexOf('preflight_personnel_tenants(&schools)') <
