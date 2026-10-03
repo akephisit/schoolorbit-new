@@ -42,11 +42,14 @@
 	const showsTerm = $derived(
 		contextState.requirement === 'term_required' || contextState.requirement === 'term_optional'
 	);
+	const contextLabel = $derived(showsTerm ? 'ปีการศึกษาและภาคเรียน' : 'ปีการศึกษา');
 	const mobileSummary = $derived(
-		`${selectedYear?.year ?? 'เลือกปี'} · ${
-			selectedTerm?.name ??
-			(contextState.requirement === 'term_optional' ? 'ทั้งปี' : 'เลือกภาคเรียน')
-		}`
+		showsTerm
+			? `${selectedYear?.year ?? 'เลือกปี'} · ${
+					selectedTerm?.name ??
+					(contextState.requirement === 'term_optional' ? 'ทั้งปี' : 'เลือกภาคเรียน')
+				}`
+			: `${selectedYear?.year ?? 'เลือกปี'}`
 	);
 
 	let mobileOpen = $state(false);
@@ -172,8 +175,8 @@
 			<div
 				class="hidden h-11 items-center gap-2 rounded-xl border border-border/70 bg-card px-2 shadow-xs lg:flex"
 				title={contextState.status === 'unavailable'
-					? 'กรุณาเลือกปีการศึกษาและภาคเรียนที่ใช้ได้'
-					: 'ปีการศึกษาและภาคเรียนที่เลือก'}
+					? `กรุณาเลือก${contextLabel}ที่ใช้ได้`
+					: `${contextLabel}ที่เลือก`}
 			>
 				<div class="flex items-center px-1">
 					<div
@@ -257,7 +260,7 @@
 							size="sm"
 							class="max-w-32 gap-2 sm:max-w-40 lg:hidden"
 							data-testid="academic-context-mobile-trigger"
-							aria-label={`ปีการศึกษาและภาคเรียน ${mobileSummary}`}
+							aria-label={`${contextLabel} ${mobileSummary}`}
 						>
 							<CalendarRange class="size-4 shrink-0 text-primary" />
 							<span class="truncate">{mobileSummary}</span>
