@@ -82,7 +82,6 @@
 		<Popover.Trigger>
 			{#snippet child({ props })}
 				<Button
-					{...props}
 					type="button"
 					variant="outline"
 					class={cn(
@@ -90,6 +89,7 @@
 						!dateValue && 'text-muted-foreground',
 						className
 					)}
+					{...props}
 					{id}
 					{disabled}
 					aria-label={ariaLabel}

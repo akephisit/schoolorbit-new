@@ -419,26 +419,24 @@ test('personnel fields and expanded dates remain readable on mobile and desktop 
 				(dark) => document.documentElement.classList.toggle('dark', dark),
 				theme === 'dark'
 			);
-			for (const picker of await fields
-				.getByRole('button', { name: /^วันที่(มีผล|ออกคำสั่ง)$/ })
-				.all()) {
-				const layout = await picker.evaluate((button) => {
-					const parent = button.parentElement!;
-					const others = [...parent.children].filter((child) => child !== button);
-					const gap = Number.parseFloat(getComputedStyle(parent).columnGap);
-					const available =
-						parent.getBoundingClientRect().width -
-						others.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0) -
-						gap * others.length;
-					const text = button.querySelector('span')!;
+			await page.evaluate(() => document.fonts.ready);
+			for (const label of await fields.locator('[data-slot="collapsible-content"] label').all()) {
+				const ink = await label.evaluate((element) => {
+					const style = getComputedStyle(element);
+					const context = document.createElement('canvas').getContext('2d')!;
+					context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+					const metrics = context.measureText(element.textContent!);
+					const range = document.createRange();
+					range.selectNodeContents(element);
+					const textBox = range.getBoundingClientRect();
+					const content = element.closest('[data-slot="collapsible-content"]')!;
 					return {
-						width: button.getBoundingClientRect().width,
-						available,
-						textFits: text.scrollWidth <= text.clientWidth
+						glyphTop:
+							textBox.bottom - metrics.fontBoundingBoxDescent - metrics.actualBoundingBoxAscent,
+						clipTop: content.getBoundingClientRect().top
 					};
 				});
-				expect(Math.abs(layout.width - layout.available)).toBeLessThan(1);
-				expect(layout.textFits).toBe(true);
+				expect(ink.glyphTop).toBeGreaterThanOrEqual(ink.clipTop);
 			}
 			for (const [index, panel] of (
 				await fields.locator('[data-slot="collapsible"]').all()

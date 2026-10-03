@@ -127,7 +127,7 @@
 							><ChevronDown class="size-4 shrink-0" /></Button
 						>{/snippet}</Collapsible.Trigger
 				>
-				<Collapsible.Content class="px-4 pb-4">
+				<Collapsible.Content class="p-4">
 					<StaffCareerDates
 						bind:value={value.career[fact.key]}
 						prefix={fact.kind}
