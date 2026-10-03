@@ -4,6 +4,8 @@
 	import { listStaffJobPositions, type StaffJobPositionSummary } from '$lib/api/personnel';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import { PageSkeleton, PageState } from '$lib/components/app-state';
 	import * as Popover from '$lib/components/ui/popover';
 	let {
@@ -25,6 +27,7 @@
 		missingToken?: string;
 		onValueChange?: (value: string | null) => void;
 	} = $props();
+	const triggerId = $props.id();
 	let open = $state(false),
 		search = $state(''),
 		loading = $state(false),
@@ -80,21 +83,31 @@
 </script>
 
 <div class="space-y-2 min-w-0">
-	<p class="text-sm font-medium">{label}</p>
+	<Label for={triggerId}>{label}</Label>
 	<Popover.Root bind:open>
-		<Popover.Trigger
-			class="w-full rounded-md border px-3 py-2 text-left text-sm disabled:opacity-50"
-			aria-label={label}
-			{disabled}
-		>
-			{selected?.id === value
-				? selected.name
-				: value === missingToken
-					? 'ยังไม่ระบุ'
-					: value
-						? 'รายการที่เลือก'
-						: emptyLabel}{#if selected?.id === value && !selected.isActive}
-				(ปิดใช้งาน){:else if selected?.id === value && !selected.isSelectable}(ตำแหน่งเดิม){/if}
+		<Popover.Trigger>
+			{#snippet child({ props })}
+				<Button
+					{...props}
+					id={triggerId}
+					variant="outline"
+					class="w-full min-w-0 justify-between border-input px-3 text-left font-normal"
+					aria-label={label}
+					{disabled}
+				>
+					<span class="truncate">
+						{selected?.id === value
+							? selected.name
+							: value === missingToken
+								? 'ยังไม่ระบุ'
+								: value
+									? 'รายการที่เลือก'
+									: emptyLabel}{#if selected?.id === value && !selected.isActive}
+							(ปิดใช้งาน){:else if selected?.id === value && !selected.isSelectable}(ตำแหน่งเดิม){/if}
+					</span>
+					<ChevronDown class="size-4 text-muted-foreground opacity-50" />
+				</Button>
+			{/snippet}
 		</Popover.Trigger>
 		<Popover.Content class="w-[min(22rem,calc(100vw-2rem))] space-y-3" align="start">
 			<Input aria-label={`ค้นหา${label}`} placeholder={`ค้นหา${label}`} bind:value={search} />

@@ -420,6 +420,22 @@ test('personnel fields and expanded dates remain readable on mobile and desktop 
 				theme === 'dark'
 			);
 			await page.evaluate(() => document.fonts.ready);
+			const controls = await fields.evaluate((element) =>
+				['ประเภทบุคลากร', 'ตำแหน่งงาน'].map((name) => {
+					const control = element.querySelector(`[aria-label="${name}"]`)!;
+					const rect = control.getBoundingClientRect();
+					return { top: rect.top, height: rect.height };
+				})
+			);
+			expect(Math.abs(controls[0].height - controls[1].height)).toBeLessThan(1);
+			if (width >= 768) expect(Math.abs(controls[0].top - controls[1].top)).toBeLessThan(1);
+			await fields
+				.locator(':scope > div')
+				.first()
+				.screenshot({
+					path: testInfo.outputPath(`personnel-fields-${width}-${theme}.png`)
+				});
+
 			for (const label of await fields.locator('[data-slot="collapsible-content"] label').all()) {
 				const ink = await label.evaluate((element) => {
 					const style = getComputedStyle(element);
