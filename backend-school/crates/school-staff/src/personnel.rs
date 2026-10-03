@@ -40,19 +40,14 @@ personnel_enum!(StaffEducationLevel {
     Doctorate => ("doctorate", "ปริญญาเอก"),
     Other => ("other", "อื่น ๆ"),
 });
-personnel_enum!(StaffReferenceKind {
-    JobPosition => ("job_position", "ตำแหน่งงาน"),
-    Major => ("major", "สาขาวิชา"),
-    University => ("university", "สถาบันการศึกษา"),
-});
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct StaffReferenceSummary {
+pub struct StaffJobPositionSummary {
     pub id: Uuid,
     pub code: String,
     pub name: String,
     pub is_active: bool,
+    pub is_selectable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -61,8 +56,8 @@ pub struct CreateStaffInfoRequest {
     pub job_position_id: Option<Uuid>,
     pub academic_rank: Option<StaffAcademicRank>,
     pub education_level: Option<StaffEducationLevel>,
-    pub major_id: Option<Uuid>,
-    pub university_id: Option<Uuid>,
+    pub major: Option<String>,
+    pub university: Option<String>,
     pub teaching_license_number: Option<String>,
     pub teaching_license_expiry: Option<NaiveDate>,
 }
@@ -101,13 +96,13 @@ pub struct UpdateStaffInfoRequest {
         deserialize_with = "deserialize_nullable",
         skip_serializing_if = "Option::is_none"
     )]
-    pub major_id: Option<Option<Uuid>>,
+    pub major: Option<Option<String>>,
     #[serde(
         default,
         deserialize_with = "deserialize_nullable",
         skip_serializing_if = "Option::is_none"
     )]
-    pub university_id: Option<Option<Uuid>>,
+    pub university: Option<Option<String>>,
     #[serde(
         default,
         deserialize_with = "deserialize_nullable",
@@ -127,8 +122,8 @@ impl UpdateStaffInfoRequest {
         self.job_position_id.is_none()
             && self.academic_rank.is_none()
             && self.education_level.is_none()
-            && self.major_id.is_none()
-            && self.university_id.is_none()
+            && self.major.is_none()
+            && self.university.is_none()
             && self.teaching_license_number.is_none()
             && self.teaching_license_expiry.is_none()
     }
@@ -137,15 +132,15 @@ impl UpdateStaffInfoRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StaffInfoResponse {
     #[schema(required = true)]
-    pub job_position: Option<StaffReferenceSummary>,
+    pub job_position: Option<StaffJobPositionSummary>,
     #[schema(required = true)]
     pub academic_rank: Option<StaffAcademicRank>,
     #[schema(required = true)]
     pub education_level: Option<StaffEducationLevel>,
     #[schema(required = true)]
-    pub major: Option<StaffReferenceSummary>,
+    pub major: Option<String>,
     #[schema(required = true)]
-    pub university: Option<StaffReferenceSummary>,
+    pub university: Option<String>,
 }
 
 #[cfg(test)]
@@ -183,54 +178,19 @@ mod tests {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ReferenceStatusFilter {
-    Active,
-    Inactive,
-    All,
-}
-
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[into_params(parameter_in = Query)]
-pub struct ReferenceListQuery {
-    pub kind: StaffReferenceKind,
+pub struct JobPositionListQuery {
     pub search: Option<String>,
-    pub status: Option<ReferenceStatusFilter>,
+    pub selectable_only: Option<bool>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CreateReferenceRequest {
-    pub kind: StaffReferenceKind,
-    pub name: String,
-    pub display_order: Option<i32>,
-}
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct UpdateReferenceRequest {
-    pub name: Option<String>,
-    pub is_active: Option<bool>,
-    pub display_order: Option<i32>,
-}
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StaffReferenceItem {
-    pub id: Uuid,
-    pub kind: StaffReferenceKind,
-    pub code: String,
-    pub name: String,
-    pub is_active: bool,
-    pub display_order: i32,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ReferencePage {
-    pub items: Vec<StaffReferenceItem>,
+pub struct JobPositionPage {
+    pub items: Vec<StaffJobPositionSummary>,
     pub total: i64,
     pub page: i64,
     pub page_size: i64,

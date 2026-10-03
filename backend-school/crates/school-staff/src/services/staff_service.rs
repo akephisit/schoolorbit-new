@@ -357,10 +357,10 @@ pub async fn list_staff(
     let search_pattern = staff_search_pattern(filter.search.clone());
     let mut query = QueryBuilder::<Postgres>::new(
         "SELECT DISTINCT u.id, u.username, u.title, u.first_name, u.last_name, u.status,
-         CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id',position.id,'code',position.code,'name',position.name,'isActive',position.is_active) END,
+         CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id',position.id,'code',position.code,'name',position.name,'isActive',position.is_active,'isSelectable',position.is_selectable) END,
          info.academic_rank FROM users u
          LEFT JOIN staff_info info ON info.user_id=u.id
-         LEFT JOIN staff_reference_items position ON position.id=info.job_position_id
+         LEFT JOIN staff_job_positions position ON position.id=info.job_position_id
          WHERE u.user_type = 'staff'",
     );
     push_staff_list_filters(&mut query, &filter, search_pattern.as_deref(), access);
@@ -378,7 +378,7 @@ pub async fn list_staff(
             String,
             String,
             String,
-            Option<sqlx::types::Json<StaffReferenceSummary>>,
+            Option<sqlx::types::Json<StaffJobPositionSummary>>,
             Option<String>,
         )>()
         .fetch_all(pool)

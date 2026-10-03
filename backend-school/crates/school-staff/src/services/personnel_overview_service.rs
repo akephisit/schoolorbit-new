@@ -17,7 +17,7 @@ pub async fn get_personnel_overview(
     }
     sql.push("), groups AS (").push(CURRENT_SUBJECT_GROUPS).push(r#"), buckets AS (
       SELECT 'status' AS dimension,status AS key,status AS label,count(*) AS count FROM matched GROUP BY status
-      UNION ALL SELECT 'job_position',coalesce(position.id::text,'unspecified'),coalesce(position.name,'ยังไม่ระบุตำแหน่ง'),count(*) FROM filtered f LEFT JOIN staff_reference_items position ON position.id=f.job_position_id GROUP BY position.id,position.name
+      UNION ALL SELECT 'job_position',coalesce(position.id::text,'unspecified'),coalesce(position.name,'ยังไม่ระบุตำแหน่ง'),count(*) FROM filtered f LEFT JOIN staff_job_positions position ON position.id=f.job_position_id GROUP BY position.id,position.name
       UNION ALL SELECT 'academic_rank',coalesce(academic_rank,'unspecified'),coalesce(academic_rank,'ยังไม่ระบุวิทยฐานะ'),count(*) FROM filtered GROUP BY academic_rank
       UNION ALL SELECT 'education_level',coalesce(education_level,'unspecified'),coalesce(education_level,'ยังไม่ระบุวุฒิ'),count(*) FROM filtered GROUP BY education_level
       UNION ALL SELECT 'subject_group',coalesce(g.id::text,'unassigned'),coalesce(g.name,'ยังไม่มีสังกัดกลุ่มสาระ'),count(*) FROM filtered f LEFT JOIN groups g ON g.user_id=f.id GROUP BY g.id,g.name

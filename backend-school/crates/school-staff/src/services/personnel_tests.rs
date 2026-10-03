@@ -5,113 +5,66 @@ use std::borrow::Cow;
 use uuid::Uuid;
 
 #[tokio::test]
-async fn reference_catalog_is_bounded_searchable_and_unique() {
-    use super::reference_service::*;
-    use crate::personnel::*;
-    let pool = legacy_pool("reference_catalog").await;
-    migrate_through(&pool, 81).await.unwrap();
-    let created = create_reference_item(
+async fn personnel_job_positions_are_searchable_bounded_and_read_only() {
+    use super::job_position_service::list_job_positions;
+    use crate::personnel::JobPositionListQuery;
+    let pool = legacy_pool("personnel_job_catalog").await;
+    migrate_through(&pool, 84).await.unwrap();
+    sqlx::query("INSERT INTO staff_job_positions(code,name,is_active,is_selectable,display_order,created_at,updated_at) VALUES ('custom','ตำแหน่งเดิม',false,false,99,now(),now())").execute(&pool).await.unwrap();
+    let page = list_job_positions(
         &pool,
-        CreateReferenceRequest {
-            kind: StaffReferenceKind::Major,
-            name: "  วิทยาศาสตร์   Science  ".into(),
-            display_order: None,
+        JobPositionListQuery {
+            search: None,
+            selectable_only: None,
+            page: Some(2),
+            page_size: Some(500),
         },
     )
     .await
     .unwrap();
-    assert_eq!(created.name, "วิทยาศาสตร์ Science");
-    assert!(matches!(
-        create_reference_item(
-            &pool,
-            CreateReferenceRequest {
-                kind: StaffReferenceKind::Major,
-                name: "วิทยาศาสตร์ science".into(),
-                display_order: None
-            }
-        )
-        .await,
-        Err(school_errors::AppError::Conflict(_))
-    ));
-    for name in [" ".to_string(), "ก".repeat(201), "Bad\nName".into()] {
-        assert!(matches!(
-            create_reference_item(
-                &pool,
-                CreateReferenceRequest {
-                    kind: StaffReferenceKind::Major,
-                    name,
-                    display_order: None
-                }
-            )
-            .await,
-            Err(school_errors::AppError::BadRequest(_))
-        ));
-    }
-    let query = ReferenceListQuery {
-        kind: StaffReferenceKind::Major,
-        search: Some("Science".into()),
-        status: None,
-        page: None,
-        page_size: Some(500),
-    };
-    let page = list_reference_items(&pool, query).await.unwrap();
-    assert_eq!(page.page_size, 50);
+    assert_eq!((page.page_size, page.total, page.items.len()), (50, 8, 0));
+    let page = list_job_positions(
+        &pool,
+        JobPositionListQuery {
+            search: Some("ตำแหน่งเดิม".into()),
+            selectable_only: None,
+            page: None,
+            page_size: None,
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(page.total, 1);
-    assert_eq!(page.items[0].id, created.id);
-    update_reference_item(
+    assert!(!page.items[0].is_selectable);
+    let page = list_job_positions(
         &pool,
-        created.id,
-        UpdateReferenceRequest {
-            name: None,
-            is_active: Some(false),
-            display_order: None,
-        },
-    )
-    .await
-    .unwrap();
-    let active = list_reference_items(
-        &pool,
-        ReferenceListQuery {
-            kind: StaffReferenceKind::Major,
+        JobPositionListQuery {
             search: None,
-            status: None,
+            selectable_only: Some(true),
             page: None,
             page_size: None,
         },
     )
     .await
     .unwrap();
-    assert_eq!(active.total, 0);
-    let inactive = list_reference_items(
-        &pool,
-        ReferenceListQuery {
-            kind: StaffReferenceKind::Major,
-            search: None,
-            status: Some(ReferenceStatusFilter::Inactive),
-            page: None,
-            page_size: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(inactive.items[0].id, created.id);
-    assert_eq!(inactive.items[0].code, created.code);
+    assert_eq!(page.total, 7);
+    assert!(page.items.iter().all(|p| p.is_active && p.is_selectable));
 }
 
 #[tokio::test]
-async fn reference_deactivation_race_rejects_new_assignment() {
+async fn personnel_position_deactivation_race_rejects_new_assignment() {
     use super::staff_info_service::patch_staff_info;
     use crate::personnel::*;
-    let pool = legacy_pool("reference_deactivation_race").await;
-    migrate_through(&pool, 81).await.unwrap();
+    let pool = legacy_pool("personnel_position_deactivation_race").await;
+    migrate_through(&pool, 84).await.unwrap();
     let user = canonical_person(&pool).await;
     let position: Uuid =
-        sqlx::query_scalar("SELECT id FROM staff_reference_items WHERE code='teacher'")
+        sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
             .fetch_one(&pool)
             .await
             .unwrap();
     let mut deactivation = pool.begin().await.unwrap();
-    sqlx::query("UPDATE staff_reference_items SET is_active=false WHERE id=$1")
+    sqlx::query("UPDATE staff_job_positions SET is_active=false,is_selectable=false WHERE id=$1")
         .bind(position)
         .execute(&mut *deactivation)
         .await
@@ -449,7 +402,7 @@ async fn canonical_person(pool: &PgPool) -> Uuid {
 async fn personnel_patch_distinguishes_missing_null_value() {
     let pool = legacy_pool("personnel_patch_states").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 81).await.unwrap();
+    migrate_through(&pool, 84).await.unwrap();
     let no_change = serde_json::from_value(serde_json::json!({"staff_info":{}})).unwrap();
     super::staff_service::update_staff(&pool, user, no_change)
         .await
@@ -462,14 +415,14 @@ async fn personnel_patch_distinguishes_missing_null_value() {
             .unwrap();
     assert_eq!(degree.as_deref(), Some("bachelor"));
     let clear = serde_json::from_value(
-        serde_json::json!({"staff_info":{"education_level":null,"major_id":null}}),
+        serde_json::json!({"staff_info":{"education_level":null,"major":null}}),
     )
     .unwrap();
     super::staff_service::update_staff(&pool, user, clear)
         .await
         .unwrap();
-    let cleared: (Option<String>, Option<Uuid>) =
-        sqlx::query_as("SELECT education_level, major_id FROM staff_info WHERE user_id=$1")
+    let cleared: (Option<String>, Option<String>) =
+        sqlx::query_as("SELECT education_level, major FROM staff_info WHERE user_id=$1")
             .bind(user)
             .fetch_one(&pool)
             .await
@@ -496,7 +449,7 @@ fn personnel_rejects_unknown_enum() {
     for invalid in [
         serde_json::json!({"academic_rank":"unverified"}),
         serde_json::json!({"education_level":"free text"}),
-        serde_json::json!({"major":"free text"}),
+        serde_json::json!({"major_id":Uuid::new_v4()}),
     ] {
         let result = serde_json::from_value::<crate::models::UpdateStaffRequest>(
             serde_json::json!({"staff_info":invalid}),
@@ -512,10 +465,10 @@ fn personnel_rejects_unknown_enum() {
 async fn personnel_patch_preserves_license_and_employment() {
     let pool = legacy_pool("personnel_patch_preserve").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 81).await.unwrap();
+    migrate_through(&pool, 84).await.unwrap();
     let before = preservation_snapshot(&pool).await;
     let teacher: Uuid =
-        sqlx::query_scalar("SELECT id FROM staff_reference_items WHERE code='teacher'")
+        sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -537,7 +490,7 @@ async fn personnel_patch_preserves_license_and_employment() {
 #[tokio::test]
 async fn personnel_patch_creates_missing_info_row() {
     let pool = legacy_pool("personnel_patch_missing").await;
-    migrate_through(&pool, 81).await.unwrap();
+    migrate_through(&pool, 84).await.unwrap();
     let user = canonical_person(&pool).await;
     let request = serde_json::from_value(serde_json::json!({"staff_info":{"academic_rank":"not_applicable","education_level":"bachelor"}})).unwrap();
     super::staff_service::update_staff(&pool, user, request)
@@ -554,73 +507,147 @@ async fn personnel_patch_creates_missing_info_row() {
 }
 
 #[tokio::test]
-async fn personnel_patch_rejects_wrong_kind_and_missing_reference() {
-    let pool = legacy_pool("personnel_patch_refs").await;
+async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
+    let pool = legacy_pool("personnel_custom_position").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 81).await.unwrap();
-    let major: Uuid = sqlx::query_scalar("SELECT major_id FROM staff_info WHERE user_id=$1")
+    migrate_through(&pool, 84).await.unwrap();
+    let custom = Uuid::new_v4();
+    sqlx::query("INSERT INTO staff_job_positions(id,code,name,is_active,is_selectable,display_order,created_at,updated_at) VALUES ($1,'custom','ตำแหน่งเดิม',false,false,99,now(),now())").bind(custom).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE staff_info SET job_position_id=$1 WHERE user_id=$2")
+        .bind(custom)
         .bind(user)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    for reference in [major, Uuid::new_v4()] {
-        let request =
-            serde_json::from_value(serde_json::json!({"staff_info":{"job_position_id":reference}}))
-                .unwrap();
-        let outcome = super::staff_service::update_staff(&pool, user, request).await;
-        assert!(matches!(
-            outcome,
-            Err(school_errors::AppError::BadRequest(_))
-        ));
-    }
-}
-
-#[tokio::test]
-async fn personnel_patch_keeps_existing_inactive_reference() {
-    let pool = legacy_pool("personnel_patch_inactive").await;
-    let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 81).await.unwrap();
-    let major: Uuid = sqlx::query_scalar("SELECT major_id FROM staff_info WHERE user_id=$1")
-        .bind(user)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE staff_reference_items SET is_active=false WHERE id=$1")
-        .bind(major)
         .execute(&pool)
         .await
         .unwrap();
-    let keep =
-        serde_json::from_value(serde_json::json!({"staff_info":{"major_id":major}})).unwrap();
+    let keep = serde_json::from_value(
+        serde_json::json!({"staff_info":{"job_position_id":custom,"major":"  คณิตศาสตร์  ประยุกต์  "}}),
+    )
+    .unwrap();
     super::staff_service::update_staff(&pool, user, keep)
         .await
         .unwrap();
+    let info = super::staff_info_service::read_staff_info(&pool, user)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(info.major.as_deref(), Some("คณิตศาสตร์  ประยุกต์"));
+    assert_eq!(info.job_position.unwrap().id, custom);
     let other = canonical_person(&pool).await;
-    let new_assignment =
-        serde_json::from_value(serde_json::json!({"staff_info":{"major_id":major}})).unwrap();
-    assert!(matches!(
-        super::staff_service::update_staff(&pool, other, new_assignment).await,
-        Err(school_errors::AppError::BadRequest(_))
-    ));
+    for id in [custom, Uuid::new_v4()] {
+        let request = serde_json::from_value(
+            serde_json::json!({"first_name":"Must rollback","staff_info":{"job_position_id":id}}),
+        )
+        .unwrap();
+        assert!(matches!(
+            super::staff_service::update_staff(&pool, other, request).await,
+            Err(school_errors::AppError::BadRequest(_))
+        ));
+        let name: String = sqlx::query_scalar("SELECT first_name FROM users WHERE id=$1")
+            .bind(other)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(name, "Fixture");
+    }
+    let teacher: Uuid =
+        sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let replace =
+        serde_json::from_value(serde_json::json!({"staff_info":{"job_position_id":teacher}}))
+            .unwrap();
+    super::staff_service::update_staff(&pool, user, replace)
+        .await
+        .unwrap();
+    assert!(
+        super::staff_info_service::read_staff_info(&pool, user)
+            .await
+            .unwrap()
+            .unwrap()
+            .job_position
+            .unwrap()
+            .is_selectable
+    );
+}
+
+#[tokio::test]
+async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_invalid() {
+    let pool = legacy_pool("personnel_text_patch").await;
+    let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
+    migrate_through(&pool, 84).await.unwrap();
+    for (patch, major, university) in [
+        (
+            serde_json::json!({"major":"  ศิลปะ  ประยุกต์  "}),
+            Some("ศิลปะ  ประยุกต์"),
+            Some("Fixture University"),
+        ),
+        (
+            serde_json::json!({"major":null,"university":"   "}),
+            None,
+            None,
+        ),
+        (
+            serde_json::json!({"major":"😀".repeat(200),"university":"สถาบันทดสอบ"}),
+            Some(""),
+            Some("สถาบันทดสอบ"),
+        ),
+    ] {
+        let request = serde_json::from_value(serde_json::json!({"staff_info":patch})).unwrap();
+        super::staff_service::update_staff(&pool, user, request)
+            .await
+            .unwrap();
+        let info = super::staff_info_service::read_staff_info(&pool, user)
+            .await
+            .unwrap()
+            .unwrap();
+        if major == Some("") {
+            assert_eq!(info.major.unwrap(), "😀".repeat(200));
+        } else {
+            assert_eq!(info.major.as_deref(), major);
+        }
+        assert_eq!(info.university.as_deref(), university);
+    }
+    for invalid in ["ก".repeat(201), "text\n".into()] {
+        let request = serde_json::from_value(
+            serde_json::json!({"first_name":"Must rollback","staff_info":{"major":invalid}}),
+        )
+        .unwrap();
+        assert!(super::staff_service::update_staff(&pool, user, request)
+            .await
+            .is_err());
+        let name: String = sqlx::query_scalar("SELECT first_name FROM users WHERE id=$1")
+            .bind(user)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(name, "Fixture");
+    }
 }
 
 #[tokio::test]
 async fn personnel_create_persists_canonical_fields_and_license() {
     let pool = legacy_pool("personnel_create").await;
-    migrate_through(&pool, 81).await.unwrap();
+    migrate_through(&pool, 84).await.unwrap();
     let teacher: Uuid =
-        sqlx::query_scalar("SELECT id FROM staff_reference_items WHERE code='teacher'")
+        sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
             .fetch_one(&pool)
             .await
             .unwrap();
     let request = serde_json::from_value(serde_json::json!({
         "username":"personnel-create-fixture", "password":"Synthetic-test-123!",
         "first_name":"Fixture", "last_name":"Person", "role_ids":[],
-        "staff_info":{"job_position_id":teacher,"academic_rank":"none","education_level":"bachelor", "teaching_license_number":"synthetic-license", "teaching_license_expiry":"2030-01-01"}
+        "staff_info":{"job_position_id":teacher,"academic_rank":"none","education_level":"bachelor","major":"  คณิตศาสตร์  ประยุกต์  ","university":"สถาบันทดสอบ", "teaching_license_number":"synthetic-license", "teaching_license_expiry":"2030-01-01"}
     })).unwrap();
     let user = super::staff_service::create_staff(&pool, request)
         .await
         .unwrap();
+    let info = super::staff_info_service::read_staff_info(&pool, user)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(info.major.as_deref(), Some("คณิตศาสตร์  ประยุกต์"));
+    assert_eq!(info.university.as_deref(), Some("สถาบันทดสอบ"));
     let row: (Uuid, String, String, String) = sqlx::query_as("SELECT job_position_id, academic_rank, education_level, teaching_license_number FROM staff_info WHERE user_id=$1").bind(user).fetch_one(&pool).await.unwrap();
     assert_eq!(
         row,
@@ -638,10 +665,10 @@ async fn personnel_directory_filters_match_missing_values() {
     use super::staff_service::list_staff;
     use crate::models::*;
     let pool = legacy_pool("personnel_directory_filters").await;
-    migrate_through(&pool, 81).await.unwrap();
+    migrate_through(&pool, 84).await.unwrap();
     let first = canonical_person(&pool).await;
     let second = canonical_person(&pool).await;
-    sqlx::query("INSERT INTO staff_info (user_id, job_position_id, academic_rank, education_level) SELECT $1,id,'none','bachelor' FROM staff_reference_items WHERE code='teacher'").bind(first).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO staff_info (user_id, job_position_id, academic_rank, education_level) SELECT $1,id,'none','bachelor' FROM staff_job_positions WHERE code='teacher'").bind(first).execute(&pool).await.unwrap();
     for (field, value, expected) in [
         ("job_position_id", "unspecified", second),
         ("academic_rank", "unspecified", second),
@@ -718,7 +745,7 @@ async fn personnel_groups_deduplicate_current_membership() {
     use super::staff_service::{get_staff_profile, list_staff};
     use crate::models::*;
     let pool = legacy_pool("personnel_groups_current").await;
-    migrate_through(&pool, 81).await.unwrap();
+    migrate_through(&pool, 84).await.unwrap();
     let person = canonical_person(&pool).await;
     let empty = canonical_person(&pool).await;
     let math = personnel_group(&pool, "Fixture Math", true).await;
@@ -768,7 +795,7 @@ async fn personnel_overview_matches_directory_counts() {
     use super::{personnel_overview_service::get_personnel_overview, staff_service::list_staff};
     use crate::models::*;
     let pool = legacy_pool("personnel_overview_counts").await;
-    migrate_through(&pool, 82).await.unwrap();
+    migrate_through(&pool, 84).await.unwrap();
     let a = canonical_person(&pool).await;
     let b = canonical_person(&pool).await;
     let c = canonical_person(&pool).await;
@@ -781,8 +808,16 @@ async fn personnel_overview_matches_directory_counts() {
         (a, "teacher", "proficient", "bachelor"),
         (b, "assistant_teacher", "none", "master"),
     ] {
-        sqlx::query("INSERT INTO staff_info(user_id,job_position_id,academic_rank,education_level) SELECT $1,id,$3,$4 FROM staff_reference_items WHERE code=$2").bind(user).bind(position).bind(rank).bind(degree).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO staff_info(user_id,job_position_id,academic_rank,education_level) SELECT $1,id,$3,$4 FROM staff_job_positions WHERE code=$2").bind(user).bind(position).bind(rank).bind(degree).execute(&pool).await.unwrap();
     }
+    let custom = Uuid::new_v4();
+    sqlx::query("INSERT INTO staff_job_positions(id,code,name,is_active,is_selectable,display_order,created_at,updated_at) VALUES ($1,'custom','ตำแหน่งเดิม',false,false,99,now(),now())").bind(custom).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE staff_info SET job_position_id=$1 WHERE user_id=$2")
+        .bind(custom)
+        .bind(b)
+        .execute(&pool)
+        .await
+        .unwrap();
     let math = personnel_group(&pool, "Fixture Math", true).await;
     let science = personnel_group(&pool, "Fixture Science", true).await;
     for (user, group, start) in [
@@ -824,6 +859,20 @@ async fn personnel_overview_matches_directory_counts() {
         .unwrap();
         assert_eq!(overview.total, total);
         assert_eq!(overview.total, directory_total);
+        for bucket in &overview.job_positions {
+            let (_, count, _, _) = list_staff(
+                &pool,
+                StaffListFilter {
+                    status: Some("all".into()),
+                    job_position_id: Some(bucket.key.clone()),
+                    ..Default::default()
+                },
+                scope,
+            )
+            .await
+            .unwrap();
+            assert_eq!(count, bucket.count);
+        }
     }
     for status in [PersonnelStatusFilter::Active, PersonnelStatusFilter::All] {
         let overview = get_personnel_overview(
@@ -884,6 +933,15 @@ async fn personnel_overview_matches_directory_counts() {
             }
         }
     }
+    let own_custom = get_personnel_overview(
+        &pool,
+        PersonnelOverviewQuery { status: None },
+        StaffListAccess::Own(b),
+    )
+    .await
+    .unwrap();
+    assert_eq!(own_custom.job_positions[0].key, custom.to_string());
+    assert_eq!(own_custom.job_positions[0].count, 1);
     let own = get_personnel_overview(
         &pool,
         PersonnelOverviewQuery { status: None },

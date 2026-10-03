@@ -372,7 +372,7 @@ pub struct StaffListItem {
     pub organization_units: Vec<String>,
     pub status: String,
     #[schema(required = true)]
-    pub job_position: Option<StaffReferenceSummary>,
+    pub job_position: Option<StaffJobPositionSummary>,
     #[schema(required = true)]
     pub academic_rank: Option<StaffAcademicRank>,
 }

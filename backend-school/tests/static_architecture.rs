@@ -5030,7 +5030,7 @@ fn read_oriented_handlers_are_registered_in_the_openapi_document() {
         !handlers.is_empty(),
         "the router-derived inventory must be nonempty"
     );
-    for handler in ["get_personnel_overview", "list_reference_items"] {
+    for handler in ["get_personnel_overview", "list_job_positions"] {
         assert!(
             handlers.iter().any(|path| path.ends_with(handler)),
             "missing personnel read route: {handler}"
@@ -8200,5 +8200,21 @@ fn admission_enrollment_and_room_sort_fail_closed_on_sql_errors() {
         assert!(!segment.contains(".unwrap_or_default()"));
         assert!(!segment.contains(".unwrap_or(0)"));
         assert!(segment.contains(".map_err("));
+    }
+}
+
+#[test]
+fn personnel_catalog_is_read_only() {
+    let router = read_source(manifest_dir().join("src/app.rs"));
+    assert!(router.contains("/api/staff/job-positions"));
+    assert!(!router.contains("/api/staff/reference-items"));
+    let contract = read_source(manifest_dir().join("src/api_contract.rs"));
+    for retired in [
+        "create_reference_item",
+        "update_reference_item",
+        "StaffReferenceSummary",
+        "CreateReferenceRequest",
+    ] {
+        assert!(!contract.contains(retired));
     }
 }

@@ -44,6 +44,6 @@ mod tests {
     }
 }
 
+pub mod job_position_service;
 pub mod personnel_overview_service;
-pub mod reference_service;
 mod staff_directory_query;

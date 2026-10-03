@@ -52,7 +52,7 @@ pub fn can_read_staff_pii(actor: &ActorContext, target_user_id: Uuid) -> bool {
     resource_access_policy::can_access_direct_resource(actor, STAFF_PII_ACCESS, &target).is_some()
 }
 
-pub fn require_reference_read(actor: &ActorContext) -> Result<(), AppError> {
+pub fn require_job_position_read(actor: &ActorContext) -> Result<(), AppError> {
     actor.require_any_permission(&[
         codes::STAFF_PROFILE_READ_OWN,
         codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
@@ -61,10 +61,6 @@ pub fn require_reference_read(actor: &ActorContext) -> Result<(), AppError> {
         codes::STAFF_CREATE_ALL,
         codes::STAFF_UPDATE_ALL,
     ])
-}
-
-pub fn require_reference_write(actor: &ActorContext) -> Result<(), AppError> {
-    actor.require_permission(codes::STAFF_UPDATE_ALL)
 }
 
 #[cfg(test)]
@@ -101,23 +97,23 @@ mod tests {
     }
 
     #[test]
-    fn reference_mutation_requires_staff_update() {
-        assert!(require_reference_write(&actor(
+    fn job_position_catalog_uses_existing_capabilities() {
+        for code in [
+            codes::STAFF_PROFILE_READ_OWN,
+            codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+            codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
+            codes::STAFF_PROFILE_READ_SCHOOL,
+            codes::STAFF_CREATE_ALL,
+            codes::STAFF_UPDATE_ALL,
+        ] {
+            assert!(require_job_position_read(&actor(Uuid::new_v4(), &[code])).is_ok());
+        }
+        assert!(require_job_position_read(&actor(Uuid::new_v4(), &[])).is_err());
+        assert!(resolve_staff_profile_list_access(&actor(
             Uuid::new_v4(),
-            &[codes::STAFF_PROFILE_READ_SCHOOL]
+            &[codes::STAFF_CREATE_ALL]
         ))
         .is_err());
-        assert!(
-            require_reference_write(&actor(Uuid::new_v4(), &[codes::STAFF_CREATE_ALL])).is_err()
-        );
-        assert!(
-            require_reference_write(&actor(Uuid::new_v4(), &[codes::STAFF_UPDATE_ALL])).is_ok()
-        );
-        assert!(
-            require_reference_read(&actor(Uuid::new_v4(), &[codes::STAFF_PROFILE_READ_OWN]))
-                .is_ok()
-        );
-        assert!(require_reference_read(&actor(Uuid::new_v4(), &[])).is_err());
     }
 
     #[test]
