@@ -434,11 +434,11 @@
 							</div>
 							<div>
 								<dt class="text-muted-foreground">สาขาวิชา</dt>
-								<dd>{staff.staff_info?.major?.name ?? 'ยังไม่ระบุ'}</dd>
+								<dd>{staff.staff_info?.major ?? 'ยังไม่ระบุ'}</dd>
 							</div>
 							<div>
 								<dt class="text-muted-foreground">สถาบันการศึกษา</dt>
-								<dd>{staff.staff_info?.university?.name ?? 'ยังไม่ระบุ'}</dd>
+								<dd>{staff.staff_info?.university ?? 'ยังไม่ระบุ'}</dd>
 							</div>
 							<div>
 								<dt class="text-muted-foreground">กลุ่มสาระจากสังกัดปัจจุบัน</dt>

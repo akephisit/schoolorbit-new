@@ -1,5 +1,5 @@
 <script lang="ts">
-	import StaffReferencePicker from '$lib/components/staff/StaffReferencePicker.svelte';
+	import StaffJobPositionPicker from '$lib/components/staff/StaffJobPositionPicker.svelte';
 	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '$lib/forms/staff-personnel';
 	import { getPersonnelOverview, type PersonnelBucket } from '$lib/api/personnel';
 	import { onDestroy, untrack } from 'svelte';
@@ -60,7 +60,6 @@
 		Pencil,
 		Plus,
 		Search,
-		Settings2,
 		Trash2
 	} from '@lucide/svelte';
 
@@ -331,16 +330,6 @@
 			<ChartNoAxesCombined class="size-4" aria-hidden="true" />
 			ภาพรวมงานบุคคล
 		</Button>
-		{#if $can.has(PERMISSIONS.STAFF_UPDATE_ALL)}
-			<Button
-				href="/staff/manage/reference-data"
-				variant="outline"
-				data-sveltekit-preload-data="tap"
-			>
-				<Settings2 class="size-4" aria-hidden="true" />
-				จัดการรายการกลาง
-			</Button>
-		{/if}
 	</nav>
 	{#snippet actions()}
 		<Button variant="outline" onclick={loadStaff} disabled={loading || deleting || !canReadStaff}
@@ -461,8 +450,8 @@
 								>{/if}
 						</section>
 						<section>
-							<StaffReferencePicker
-								kind="job_position"
+							<StaffJobPositionPicker
+								selectableOnly={false}
 								label="กรองตำแหน่งงาน"
 								emptyLabel="ทุกตำแหน่ง"
 								missingToken="unspecified"

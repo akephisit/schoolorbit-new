@@ -854,16 +854,6 @@
 			"notes": "Scoped loader owns one coherent personnel region; local retries, retained refresh and supersession. Catalog workflows are permission-gated and lazy."
 		},
 		{
-			"route": "staff/manage/reference-data",
-			"wave": "staff-management",
-			"dataOwner": "route",
-			"preload": "hover",
-			"context": "none",
-			"status": "complete",
-			"backendOwner": "school-staff",
-			"notes": "Scoped loader owns one coherent personnel region; local retries, retained refresh and supersession. Catalog workflows are permission-gated and lazy."
-		},
-		{
 			"route": "staff/menu",
 			"wave": "staff",
 			"dataOwner": "route",

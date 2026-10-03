@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
 import type { components } from '../../src/lib/api/generated/school-api';
-import { PERMISSIONS } from '../../src/lib/permissions/registry';
 test.use({ trace: 'off', screenshot: 'off', video: 'off' });
 process.env.PLAYWRIGHT_NO_COPY_PROMPT = '1';
 const enabled = process.env.E2E_PERSONNEL_LIVE === '1';
@@ -65,14 +64,16 @@ test('deployed personnel overview and drilldown are consistent through the proxy
 			await expect(page.getByTestId('staff-directory')).toHaveAttribute('aria-busy', 'false');
 			expect(new URL(page.url()).searchParams.get('job_position_id')).toBe(bucket.key);
 		}
-		const actor = await read<Schemas['CurrentUserResponse']>('/api/auth/me');
-		if (actor.permissions.includes(PERMISSIONS.STAFF_UPDATE_ALL)) {
-			await page.goto('/staff/manage/reference-data');
-			await expect(page.getByTestId('staff-reference-catalog')).toHaveAttribute(
-				'aria-busy',
-				'false'
-			);
-		}
+		const positions = await read<Schemas['JobPositionPage']>(
+			'/api/staff/job-positions?selectableOnly=true'
+		);
+		expect(positions.items.every((p) => p.isActive && p.isSelectable)).toBe(true);
+		const retired = await context.request.get(api + '/api/staff/reference-items', { headers });
+		expect(retired.status()).toBe(404);
+		await page.goto('/staff/manage');
+		await expect(page.getByRole('link', { name: 'จัดการรายการกลาง', exact: true })).toHaveCount(0);
+		await page.goto('/staff/manage/reference-data');
+		await expect(page.getByText('404', { exact: true })).toBeVisible();
 	} catch {
 		throw new Error('PERSONNEL_LIVE_ACCEPTANCE_FAILED');
 	}

@@ -1,32 +1,31 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { Input } from '$lib/components/ui/input';
+	import type { StaffJobPositionSummary } from '$lib/api/personnel';
 	import * as Select from '$lib/components/ui/select';
-	import StaffReferencePicker from './StaffReferencePicker.svelte';
+	import StaffJobPositionPicker from './StaffJobPositionPicker.svelte';
 	import {
 		ACADEMIC_RANK_LABELS,
 		EDUCATION_LEVEL_LABELS,
 		type StaffPersonnelDraft
 	} from '$lib/forms/staff-personnel';
-	import type { StaffInfoResponse } from '$lib/api/staff';
 	let {
 		value = $bindable(),
-		references = $bindable({ job_position: null, major: null, university: null }),
+		selectedPosition = $bindable(null),
+		errors = {},
 		disabled = false
 	}: {
 		value: StaffPersonnelDraft;
-		references?: Pick<StaffInfoResponse, 'job_position' | 'major' | 'university'>;
+		selectedPosition?: StaffJobPositionSummary | null;
+		errors?: Record<string, string>;
 		disabled?: boolean;
 	} = $props();
 </script>
 
 <div class="grid min-w-0 gap-5 sm:grid-cols-2" data-testid="staff-personnel-fields">
-	<StaffReferencePicker
-		kind="job_position"
+	<StaffJobPositionPicker
 		label="ตำแหน่งงาน"
 		bind:value={value.job_position_id}
-		bind:selected={references.job_position}
+		bind:selected={selectedPosition}
 		{disabled}
 	/>
 	<div class="space-y-2">
@@ -76,28 +75,30 @@
 			>
 		</Select.Root>
 	</div>
-	<StaffReferencePicker
-		kind="major"
-		label="สาขาวิชา"
-		bind:value={value.major_id}
-		bind:selected={references.major}
-		{disabled}
-	/>
-	<StaffReferencePicker
-		kind="university"
-		label="สถาบันการศึกษา"
-		bind:value={value.university_id}
-		bind:selected={references.university}
-		{disabled}
-	/>
-	<div class="space-y-2 text-sm text-muted-foreground sm:col-span-2">
-		<p>กลุ่มสาระใช้สังกัดปัจจุบันในระบบโดยอัตโนมัติ จัดการได้ในส่วนสังกัดหน่วยงาน</p>
-		{#if $can.has(PERMISSIONS.STAFF_UPDATE_ALL)}<a
-				href={resolve('/staff/manage/reference-data')}
-				target="_blank"
-				rel="noopener"
-				class="text-primary underline">จัดการรายการตำแหน่ง สาขา และสถาบัน (เปิดหน้าใหม่)</a
-			>
-			<p class="text-xs">เมื่อเพิ่มรายการแล้ว เปิดตัวเลือกอีกครั้งเพื่อโหลดข้อมูลล่าสุด</p>{/if}
-	</div>
+	{#each [{ key: 'major', label: 'สาขาวิชา' }, { key: 'university', label: 'สถาบันการศึกษา' }] as field (field.key)}
+		<div class="space-y-2">
+			<label for={`staff-${field.key}`} class="text-sm font-medium">{field.label}</label>
+			<Input
+				id={`staff-${field.key}`}
+				value={value[field.key as 'major' | 'university'] ?? ''}
+				oninput={(event) => {
+					value[field.key as 'major' | 'university'] = event.currentTarget.value;
+				}}
+				{disabled}
+				aria-invalid={Boolean(errors[field.key])}
+				aria-describedby={errors[field.key] ? `staff-${field.key}-error` : undefined}
+				placeholder={`พิมพ์${field.label}`}
+			/>
+			{#if errors[field.key]}<p
+					id={`staff-${field.key}-error`}
+					class="text-sm text-destructive"
+					role="alert"
+				>
+					{errors[field.key]}
+				</p>{/if}
+		</div>
+	{/each}
+	<p class="text-sm text-muted-foreground sm:col-span-2">
+		กลุ่มสาระใช้สังกัดปัจจุบันในระบบโดยอัตโนมัติ จัดการได้ในส่วนสังกัดหน่วยงาน
+	</p>
 </div>
