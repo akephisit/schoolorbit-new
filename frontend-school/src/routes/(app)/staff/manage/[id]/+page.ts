@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit';
 import { get } from 'svelte/store';
 import { can } from '$lib/stores/permissions';
 import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
@@ -15,6 +16,8 @@ export const load: PageLoad = ({ fetch, params, depends }) => {
 	depends('school:app-identity');
 	depends(`school:staff-profile:${params.id}`);
 	const staffId = params.id;
+	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId))
+		error(404, 'ไม่พบหน้านี้');
 	const userRead = waitForAuthenticatedUser();
 	const staff = captureRouteLoad(
 		userRead.then(async (user) =>

@@ -3,7 +3,9 @@ use school_errors::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::{types::Json, PgPool};
 
-pub const PERSONNEL_MIGRATION_VERSION: i64 = 81;
+pub const PERSONNEL_REFERENCE_MIGRATION_VERSION: i64 = 81;
+pub const PERSONNEL_SIMPLIFICATION_EXPAND_VERSION: i64 = 83;
+pub const PERSONNEL_MIGRATION_VERSION: i64 = 84;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +25,10 @@ pub struct PersonnelPreflightReport {
 
 pub type PersonnelCutoverAudit = PersonnelPreflightReport;
 
-fn report(migration_version: i64, checks: Vec<PersonnelCheck>) -> PersonnelPreflightReport {
+pub(super) fn report(
+    migration_version: i64,
+    checks: Vec<PersonnelCheck>,
+) -> PersonnelPreflightReport {
     PersonnelPreflightReport {
         migration_version,
         passed: !checks.is_empty() && checks.iter().all(|check| check.passed && check.count >= 0),
@@ -31,7 +36,7 @@ fn report(migration_version: i64, checks: Vec<PersonnelCheck>) -> PersonnelPrefl
     }
 }
 
-fn zero_check(code: &str, count: i64) -> PersonnelCheck {
+pub(super) fn zero_check(code: &str, count: i64) -> PersonnelCheck {
     PersonnelCheck {
         code: code.to_string(),
         passed: count == 0,
@@ -94,10 +99,18 @@ pub async fn read_personnel_preflight(pool: &PgPool) -> Result<PersonnelPrefligh
     let (version, failed): (i64, i64) = sqlx::query_as(
         "SELECT coalesce(max(version) FILTER (WHERE success), 0)::bigint, count(*) FILTER (WHERE NOT success) FROM _sqlx_migrations",
     ).fetch_one(pool).await?;
-    if version >= PERSONNEL_MIGRATION_VERSION {
+    if version >= PERSONNEL_REFERENCE_MIGRATION_VERSION {
         let audit = read_personnel_cutover_audit(pool).await?;
         let mut checks = audit.checks;
-        checks.push(zero_check("PERSONNEL_MIGRATION_HISTORY_VALID", failed));
+        if version < PERSONNEL_SIMPLIFICATION_EXPAND_VERSION {
+            checks.push(super::personnel_simplification_service::source_check(pool).await?);
+        }
+        if !checks
+            .iter()
+            .any(|check| check.code == "PERSONNEL_MIGRATION_HISTORY_VALID")
+        {
+            checks.push(zero_check("PERSONNEL_MIGRATION_HISTORY_VALID", failed));
+        }
         return Ok(report(version, checks));
     }
     if !has_info {
@@ -128,25 +141,37 @@ pub async fn read_personnel_preflight(pool: &PgPool) -> Result<PersonnelPrefligh
 pub async fn read_personnel_cutover_audit(
     pool: &PgPool,
 ) -> Result<PersonnelCutoverAudit, AppError> {
+    let version: i64 = sqlx::query_scalar(
+        "SELECT coalesce(max(version) FILTER (WHERE success),0)::bigint FROM _sqlx_migrations",
+    )
+    .fetch_one(pool)
+    .await?;
+    if version >= PERSONNEL_SIMPLIFICATION_EXPAND_VERSION {
+        return super::personnel_simplification_service::read_audit(pool, version).await;
+    }
+    read_reference_cutover_audit(pool).await
+}
+
+async fn read_reference_cutover_audit(pool: &PgPool) -> Result<PersonnelCutoverAudit, AppError> {
     let has_audit: bool =
         sqlx::query_scalar("SELECT to_regclass('staff_personnel_cutover_audit') IS NOT NULL")
             .fetch_one(pool)
             .await?;
     if !has_audit {
         return Ok(report(
-            PERSONNEL_MIGRATION_VERSION,
+            PERSONNEL_REFERENCE_MIGRATION_VERSION,
             vec![zero_check("PERSONNEL_AUDIT_UNAVAILABLE", 1)],
         ));
     }
     let stored: Option<(bool, Json<Vec<PersonnelCheck>>)> = sqlx::query_as(
         "SELECT passed, checks FROM staff_personnel_cutover_audit WHERE migration_version = $1",
     )
-    .bind(PERSONNEL_MIGRATION_VERSION)
+    .bind(PERSONNEL_REFERENCE_MIGRATION_VERSION)
     .fetch_optional(pool)
     .await?;
     let Some((passed, Json(mut checks))) = stored else {
         return Ok(report(
-            PERSONNEL_MIGRATION_VERSION,
+            PERSONNEL_REFERENCE_MIGRATION_VERSION,
             vec![zero_check("PERSONNEL_AUDIT_UNAVAILABLE", 1)],
         ));
     };
@@ -181,7 +206,7 @@ pub async fn read_personnel_cutover_audit(
             missing_constraints,
         ),
     ]);
-    Ok(report(PERSONNEL_MIGRATION_VERSION, checks))
+    Ok(report(PERSONNEL_REFERENCE_MIGRATION_VERSION, checks))
 }
 
 #[cfg(test)]

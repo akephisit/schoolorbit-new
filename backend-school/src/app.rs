@@ -3,7 +3,7 @@ use axum::{
     http::{header::CACHE_CONTROL, HeaderName, HeaderValue},
     middleware::{from_fn, from_fn_with_state, Next},
     response::Response,
-    routing::{delete, get, patch, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde_json::json;
@@ -172,13 +172,8 @@ fn protected_routes() -> Router<AppState> {
             get(modules::staff::handlers::personnel::get_personnel_overview),
         )
         .route(
-            "/api/staff/reference-items",
-            get(modules::staff::handlers::personnel::list_reference_items)
-                .post(modules::staff::handlers::personnel::create_reference_item),
-        )
-        .route(
-            "/api/staff/reference-items/{id}",
-            patch(modules::staff::handlers::personnel::update_reference_item),
+            "/api/staff/job-positions",
+            get(modules::staff::handlers::personnel::list_job_positions),
         )
         .route(
             "/api/staff/{id}",

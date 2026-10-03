@@ -7,6 +7,7 @@
 	import {
 		buildStaffPersonnelPatch,
 		staffPersonnelDraft,
+		normalizeStaffEducationText,
 		type StaffPersonnelDraft
 	} from '$lib/forms/staff-personnel';
 	import { staffStatusLabel } from '$lib/forms/staff-status';
@@ -122,9 +123,8 @@
 		}>
 	});
 
-	let personnelReferences = $state<
-		Pick<NonNullable<StaffProfileResponse['staff_info']>, 'job_position' | 'major' | 'university'>
-	>({ job_position: null, major: null, university: null });
+	let selectedPosition =
+		$state<NonNullable<StaffProfileResponse['staff_info']>['job_position']>(null);
 	let originalForm: typeof formData | null = $state(null);
 	const dirty = $derived(
 		originalForm !== null && JSON.stringify(formData) !== JSON.stringify(originalForm)
@@ -184,11 +184,7 @@
 		const initial = staff === null;
 		staff = result.data;
 		if (initial) {
-			personnelReferences = {
-				job_position: staff.staff_info?.job_position ?? null,
-				major: staff.staff_info?.major ?? null,
-				university: staff.staff_info?.university ?? null
-			};
+			selectedPosition = staff.staff_info?.job_position ?? null;
 			// Populate form
 			formData = {
 				profile_image_file_id: staff.profile_image_file_id || '',
@@ -282,6 +278,13 @@
 			errors.phone = 'หมายเลขโทรศัพท์ไม่ถูกต้อง';
 		}
 
+		for (const key of ['major', 'university'] as const) {
+			try {
+				normalizeStaffEducationText(formData.personnel[key]);
+			} catch (error) {
+				errors[key] = error instanceof Error ? error.message : 'ข้อมูลไม่ถูกต้อง';
+			}
+		}
 		return Object.keys(errors).length === 0;
 	}
 
@@ -334,7 +337,10 @@
 	async function handleSubmit() {
 		if (!canMutateStaff || saving || !staff || !originalForm || !dirty) return;
 		if (!validateStep1()) {
-			await goto(sectionHref('personal'), { keepFocus: true, noScroll: true });
+			await goto(sectionHref(errors.major || errors.university ? 'education' : 'personal'), {
+				keepFocus: true,
+				noScroll: true
+			});
 			return;
 		}
 		const organizationsChanged =
@@ -731,7 +737,8 @@
 						<h2 class="text-xl font-semibold mb-6">ตำแหน่งและการศึกษา</h2>
 						<StaffPersonnelFields
 							bind:value={formData.personnel}
-							bind:references={personnelReferences}
+							bind:selectedPosition
+							{errors}
 							disabled={saving || !canMutateStaff}
 						/>
 					{:else if currentStep === 3}

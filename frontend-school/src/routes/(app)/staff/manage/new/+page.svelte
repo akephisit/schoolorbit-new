@@ -3,7 +3,8 @@
 	import {
 		ACADEMIC_RANK_LABELS,
 		EDUCATION_LEVEL_LABELS,
-		staffPersonnelDraft
+		staffPersonnelDraft,
+		normalizeStaffEducationText
 	} from '$lib/forms/staff-personnel';
 	import type { StaffInfoResponse } from '$lib/api/staff';
 	import { goto } from '$app/navigation';
@@ -82,10 +83,7 @@
 	function createForm() {
 		return {
 			personnel: staffPersonnelDraft(null),
-			personnel_references: { job_position: null, major: null, university: null } as Pick<
-				StaffInfoResponse,
-				'job_position' | 'major' | 'university'
-			>,
+			selected_position: null as StaffInfoResponse['job_position'],
 			// Step 1: Personal Information
 			username: '',
 			national_id: '',
@@ -195,10 +193,12 @@
 			organizationsLoaded = false;
 			formData = createForm();
 			try {
-				const draft = readStaffCreateDraft(localStorage, {
+				const { draft, migrationFailed } = readStaffCreateDraft(localStorage, {
 					origin: window.location.origin,
 					userId: ownerId
 				});
+				if (migrationFailed)
+					toast.error('ร่างเดิมมีข้อมูลสาขาหรือสถาบันที่ตรวจสอบไม่ได้ กรุณาตรวจข้อมูลก่อนกรอกใหม่');
 				if (draft) {
 					Object.assign(formData, draft);
 					formData.personnel = { ...staffPersonnelDraft(null), ...draft.personnel };
@@ -264,6 +264,13 @@
 			errors.phone = 'หมายเลขโทรศัพท์ไม่ถูกต้อง';
 		}
 
+		for (const key of ['major', 'university'] as const) {
+			try {
+				normalizeStaffEducationText(formData.personnel[key]);
+			} catch (error) {
+				errors[key] = error instanceof Error ? error.message : 'ข้อมูลไม่ถูกต้อง';
+			}
+		}
 		return Object.keys(errors).length === 0;
 	}
 
@@ -425,7 +432,11 @@
 				gender: payloadData.gender || undefined,
 				address: payloadData.address || undefined,
 				hired_date: payloadData.hired_date || undefined,
-				staff_info: formData.personnel,
+				staff_info: {
+					...formData.personnel,
+					major: normalizeStaffEducationText(formData.personnel.major),
+					university: normalizeStaffEducationText(formData.personnel.university)
+				},
 				role_ids: formData.role_ids,
 				primary_role_id: formData.primary_role_id || formData.role_ids[0],
 				organization_assignments: formData.organization_assignments.filter(
@@ -791,7 +802,8 @@
 						<h2 class="font-semibold">ตำแหน่งและการศึกษา</h2>
 						<StaffPersonnelFields
 							bind:value={formData.personnel}
-							bind:references={formData.personnel_references}
+							bind:selectedPosition={formData.selected_position}
+							{errors}
 							disabled={loading || !canMutateStaff}
 						/>
 					</section>
@@ -1055,7 +1067,7 @@
 						</div>
 						<div class="rounded-xl border p-4 space-y-2">
 							<h3 class="font-medium">ตำแหน่งและการศึกษา</h3>
-							<p>ตำแหน่ง: {formData.personnel_references.job_position?.name ?? 'ยังไม่ระบุ'}</p>
+							<p>ตำแหน่ง: {formData.selected_position?.name ?? 'ยังไม่ระบุ'}</p>
 							<p>
 								วิทยฐานะ: {formData.personnel.academic_rank
 									? ACADEMIC_RANK_LABELS[formData.personnel.academic_rank]
@@ -1066,8 +1078,8 @@
 									? EDUCATION_LEVEL_LABELS[formData.personnel.education_level]
 									: 'ยังไม่ระบุ'}
 							</p>
-							<p>สาขา: {formData.personnel_references.major?.name ?? 'ยังไม่ระบุ'}</p>
-							<p>สถาบัน: {formData.personnel_references.university?.name ?? 'ยังไม่ระบุ'}</p>
+							<p>สาขา: {formData.personnel.major ?? 'ยังไม่ระบุ'}</p>
+							<p>สถาบัน: {formData.personnel.university ?? 'ยังไม่ระบุ'}</p>
 						</div>
 						<div class="rounded-xl border p-4">
 							<div class="flex items-center justify-between gap-3">

@@ -5376,6 +5376,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff/job-positions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffJobPositions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/staff/personnel-overview': {
 		parameters: {
 			query?: never;
@@ -5390,38 +5406,6 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch?: never;
-		trace?: never;
-	};
-	'/api/staff/reference-items': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get: operations['listStaffReferenceItems'];
-		put?: never;
-		post: operations['createStaffReferenceItem'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/staff/reference-items/{id}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch: operations['updateStaffReferenceItem'];
 		trace?: never;
 	};
 	'/api/student/profile': {
@@ -8516,6 +8500,19 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_JobPositionPage: {
+			data: {
+				items: components['schemas']['StaffJobPositionSummary'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_LearningDeliveryOverview: {
 			data: {
 				/** Format: uuid */
@@ -9102,19 +9099,6 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
-		ApiResponse_ReferencePage: {
-			data: {
-				items: components['schemas']['StaffReferenceItem'][];
-				/** Format: int64 */
-				page: number;
-				/** Format: int64 */
-				pageSize: number;
-				/** Format: int64 */
-				total: number;
-			};
-			message?: string;
-			success: boolean;
-		};
 		ApiResponse_ResultReadiness: {
 			data: {
 				activities: components['schemas']['GroupResultReadiness'][];
@@ -9311,24 +9295,6 @@ export interface components {
 				title: string | null;
 				user_type: string;
 				username: string;
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_StaffReferenceItem: {
-			data: {
-				code: string;
-				/** Format: date-time */
-				createdAt: string;
-				/** Format: int32 */
-				displayOrder: number;
-				/** Format: uuid */
-				id: string;
-				isActive: boolean;
-				kind: components['schemas']['StaffReferenceKind'];
-				name: string;
-				/** Format: date-time */
-				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
@@ -13638,12 +13604,6 @@ export interface components {
 			/** Format: uuid */
 			targetYearId: string;
 		};
-		CreateReferenceRequest: {
-			/** Format: int32 */
-			displayOrder?: number | null;
-			kind: components['schemas']['StaffReferenceKind'];
-			name: string;
-		};
 		CreateRoleRequest: {
 			code: string;
 			description?: string | null;
@@ -13673,13 +13633,11 @@ export interface components {
 			education_level?: null | components['schemas']['StaffEducationLevel'];
 			/** Format: uuid */
 			job_position_id?: string | null;
-			/** Format: uuid */
-			major_id?: string | null;
+			major?: string | null;
 			/** Format: date */
 			teaching_license_expiry?: string | null;
 			teaching_license_number?: string | null;
-			/** Format: uuid */
-			university_id?: string | null;
+			university?: string | null;
 		};
 		CreateStaffRequest: {
 			address?: string | null;
@@ -15614,6 +15572,15 @@ export interface components {
 				startTime: string;
 			}[];
 		};
+		JobPositionPage: {
+			items: components['schemas']['StaffJobPositionSummary'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
+			/** Format: int64 */
+			total: number;
+		};
 		/** @enum {string} */
 		LearnerEvaluationDomain: 'desirable_characteristic' | 'reading_thinking_writing';
 		LearnerEvaluationGroupLockReadiness: {
@@ -16841,17 +16808,6 @@ export interface components {
 		};
 		/** @enum {string} */
 		RecipientType: 'student' | 'staff' | 'external';
-		ReferencePage: {
-			items: components['schemas']['StaffReferenceItem'][];
-			/** Format: int64 */
-			page: number;
-			/** Format: int64 */
-			pageSize: number;
-			/** Format: int64 */
-			total: number;
-		};
-		/** @enum {string} */
-		ReferenceStatusFilter: 'active' | 'inactive' | 'all';
 		RemoveDatedRosterMembershipRequest: {
 			/** Format: int64 */
 			groupRowVersion: number;
@@ -17470,9 +17426,17 @@ export interface components {
 		StaffInfoResponse: {
 			academic_rank: null | components['schemas']['StaffAcademicRank'];
 			education_level: null | components['schemas']['StaffEducationLevel'];
-			job_position: null | components['schemas']['StaffReferenceSummary'];
-			major: null | components['schemas']['StaffReferenceSummary'];
-			university: null | components['schemas']['StaffReferenceSummary'];
+			job_position: null | components['schemas']['StaffJobPositionSummary'];
+			major: string | null;
+			university: string | null;
+		};
+		StaffJobPositionSummary: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			isActive: boolean;
+			isSelectable: boolean;
+			name: string;
 		};
 		StaffListData: {
 			items: components['schemas']['StaffListItem'][];
@@ -17490,7 +17454,7 @@ export interface components {
 			first_name: string;
 			/** Format: uuid */
 			id: string;
-			job_position: null | components['schemas']['StaffReferenceSummary'];
+			job_position: null | components['schemas']['StaffJobPositionSummary'];
 			last_name: string;
 			organization_units: string[];
 			roles: string[];
@@ -17605,29 +17569,6 @@ export interface components {
 			/** Format: uuid */
 			subjectId: string;
 			subjectName: string;
-		};
-		StaffReferenceItem: {
-			code: string;
-			/** Format: date-time */
-			createdAt: string;
-			/** Format: int32 */
-			displayOrder: number;
-			/** Format: uuid */
-			id: string;
-			isActive: boolean;
-			kind: components['schemas']['StaffReferenceKind'];
-			name: string;
-			/** Format: date-time */
-			updatedAt: string;
-		};
-		/** @enum {string} */
-		StaffReferenceKind: 'job_position' | 'major' | 'university';
-		StaffReferenceSummary: {
-			code: string;
-			/** Format: uuid */
-			id: string;
-			isActive: boolean;
-			name: string;
 		};
 		StaffSubjectGroupSummary: {
 			/** Format: uuid */
@@ -19392,12 +19333,6 @@ export interface components {
 			profileImageFileId?: string | null;
 			title?: string | null;
 		};
-		UpdateReferenceRequest: {
-			/** Format: int32 */
-			displayOrder?: number | null;
-			isActive?: boolean | null;
-			name?: string | null;
-		};
 		UpdateRequestedObservationRequest: {
 			manualLesson?: null | components['schemas']['ManualLessonInput'];
 			/** Format: date-time */
@@ -19434,13 +19369,11 @@ export interface components {
 			education_level?: null | components['schemas']['StaffEducationLevel'];
 			/** Format: uuid */
 			job_position_id?: string | null;
-			/** Format: uuid */
-			major_id?: string | null;
+			major?: string | null;
 			/** Format: date */
 			teaching_license_expiry?: string | null;
 			teaching_license_number?: string | null;
-			/** Format: uuid */
-			university_id?: string | null;
+			university?: string | null;
 		};
 		UpdateStaffRequest: {
 			address?: string | null;
@@ -43533,6 +43466,49 @@ export interface operations {
 			};
 		};
 	};
+	listStaffJobPositions: {
+		parameters: {
+			query?: {
+				page?: number;
+				pageSize?: number;
+				search?: string;
+				selectableOnly?: boolean;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Reference catalog */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_JobPositionPage'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getPersonnelOverview: {
 		parameters: {
 			query?: {
@@ -43564,182 +43540,6 @@ export interface operations {
 			};
 			/** @description Permission denied */
 			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	listStaffReferenceItems: {
-		parameters: {
-			query: {
-				kind: components['schemas']['StaffReferenceKind'];
-				page?: number;
-				pageSize?: number;
-				search?: string;
-				status?: components['schemas']['ReferenceStatusFilter'];
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Reference catalog */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ReferencePage'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	createStaffReferenceItem: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CreateReferenceRequest'];
-			};
-		};
-		responses: {
-			/** @description Reference created */
-			201: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StaffReferenceItem'];
-				};
-			};
-			/** @description Invalid name */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Duplicate name */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	updateStaffReferenceItem: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Reference ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['UpdateReferenceRequest'];
-			};
-		};
-		responses: {
-			/** @description Reference updated */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_StaffReferenceItem'];
-				};
-			};
-			/** @description Invalid name */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Missing reference */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Duplicate name */
-			409: {
 				headers: {
 					[name: string]: unknown;
 				};

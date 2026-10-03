@@ -1,6 +1,4 @@
-use crate::personnel::{
-    CreateStaffInfoRequest, StaffInfoResponse, StaffReferenceKind, UpdateStaffInfoRequest,
-};
+use crate::personnel::{CreateStaffInfoRequest, StaffInfoResponse, UpdateStaffInfoRequest};
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -11,39 +9,45 @@ pub async fn read_staff_info(
 ) -> Result<Option<StaffInfoResponse>, AppError> {
     let row: Option<Json<StaffInfoResponse>> = sqlx::query_scalar(
         r#"SELECT jsonb_build_object(
-          'job_position', CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id', position.id, 'code', position.code, 'name', position.name, 'isActive', position.is_active) END,
+          'job_position', CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id', position.id, 'code', position.code, 'name', position.name, 'isActive', position.is_active, 'isSelectable', position.is_selectable) END,
           'academic_rank', info.academic_rank, 'education_level', info.education_level,
-          'major', CASE WHEN major.id IS NOT NULL THEN jsonb_build_object('id', major.id, 'code', major.code, 'name', major.name, 'isActive', major.is_active) END,
-          'university', CASE WHEN university.id IS NOT NULL THEN jsonb_build_object('id', university.id, 'code', university.code, 'name', university.name, 'isActive', university.is_active) END
+          'major', info.major, 'university', info.university
         ) FROM staff_info info
-        LEFT JOIN staff_reference_items position ON position.id = info.job_position_id
-        LEFT JOIN staff_reference_items major ON major.id = info.major_id
-        LEFT JOIN staff_reference_items university ON university.id = info.university_id
+        LEFT JOIN staff_job_positions position ON position.id = info.job_position_id
         WHERE info.user_id = $1"#,
     ).bind(user_id).fetch_optional(pool).await?;
     Ok(row.map(|Json(info)| info))
 }
 
-async fn validate_references(
-    tx: &mut Transaction<'_, Postgres>,
-    selections: &[(Uuid, StaffReferenceKind, Option<Uuid>)],
-) -> Result<(), AppError> {
-    if selections.is_empty() {
-        return Ok(());
+pub fn normalize_education_text(value: &str) -> Result<Option<String>, AppError> {
+    if value.chars().any(char::is_control) {
+        return Err(AppError::BadRequest("สาขาและสถาบันต้องไม่มีอักขระควบคุม".into()));
     }
-    let ids: Vec<Uuid> = selections.iter().map(|(id, _, _)| *id).collect();
-    let rows: Vec<(Uuid, String, bool)> = sqlx::query_as(
-        "SELECT id, kind, is_active FROM staff_reference_items WHERE id = ANY($1) ORDER BY id FOR SHARE",
-    ).bind(ids).fetch_all(&mut **tx).await?;
-    for (id, kind, existing_id) in selections {
-        let valid = rows.iter().any(|(row_id, row_kind, active)| {
-            row_id == id && row_kind == kind.as_str() && (*active || *existing_id == Some(*id))
-        });
-        if !valid {
-            return Err(AppError::BadRequest(format!(
-                "{}ที่เลือกไม่พร้อมใช้งาน กรุณาเลือกใหม่",
-                kind.label()
-            )));
+    let value = value.trim();
+    if value.chars().count() > 200 {
+        return Err(AppError::BadRequest(
+            "สาขาและสถาบันต้องยาวไม่เกิน 200 ตัวอักษร".into(),
+        ));
+    }
+    Ok((!value.is_empty()).then(|| value.to_owned()))
+}
+
+async fn validate_position(
+    tx: &mut Transaction<'_, Postgres>,
+    selected: Option<Uuid>,
+    existing: Option<Uuid>,
+) -> Result<(), AppError> {
+    if let Some(id) = selected {
+        let row: Option<(bool, bool)> = sqlx::query_as(
+            "SELECT is_active,is_selectable FROM staff_job_positions WHERE id=$1 FOR SHARE",
+        )
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if !row.is_some_and(|(active, selectable)| (active && selectable) || existing == Some(id)) {
+            return Err(AppError::BadRequest(
+                "ตำแหน่งที่เลือกไม่พร้อมใช้งาน กรุณาเลือกใหม่".into(),
+            ));
         }
     }
     Ok(())
@@ -54,18 +58,22 @@ pub async fn create_staff_info(
     user_id: Uuid,
     input: &CreateStaffInfoRequest,
 ) -> Result<(), AppError> {
-    let selections: Vec<_> = [
-        (input.job_position_id, StaffReferenceKind::JobPosition),
-        (input.major_id, StaffReferenceKind::Major),
-        (input.university_id, StaffReferenceKind::University),
-    ]
-    .into_iter()
-    .filter_map(|(id, kind)| id.map(|id| (id, kind, None)))
-    .collect();
-    validate_references(tx, &selections).await?;
-    sqlx::query("INSERT INTO staff_info (user_id, job_position_id, academic_rank, education_level, major_id, university_id, teaching_license_number, teaching_license_expiry) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
+    let major = input
+        .major
+        .as_deref()
+        .map(normalize_education_text)
+        .transpose()?
+        .flatten();
+    let university = input
+        .university
+        .as_deref()
+        .map(normalize_education_text)
+        .transpose()?
+        .flatten();
+    validate_position(tx, input.job_position_id, None).await?;
+    sqlx::query("INSERT INTO staff_info (user_id, job_position_id, academic_rank, education_level, major, university, teaching_license_number, teaching_license_expiry) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(user_id).bind(input.job_position_id).bind(input.academic_rank.map(|v| v.as_str()))
-        .bind(input.education_level.map(|v| v.as_str())).bind(input.major_id).bind(input.university_id)
+        .bind(input.education_level.map(|v| v.as_str())).bind(major).bind(university)
         .bind(&input.teaching_license_number).bind(input.teaching_license_expiry).execute(&mut **tx).await?;
     Ok(())
 }
@@ -79,27 +87,31 @@ pub async fn patch_staff_info(
     if patch.is_empty() {
         return Ok(());
     }
-    let prior: Option<(Option<Uuid>, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
-        "SELECT job_position_id, major_id, university_id FROM staff_info WHERE user_id=$1 FOR UPDATE",
-    ).bind(user_id).fetch_optional(&mut **tx).await?;
-    let (position, major, university) = prior.unwrap_or((None, None, None));
-    let selections: Vec<_> = [
-        (
-            patch.job_position_id.flatten(),
-            StaffReferenceKind::JobPosition,
-            position,
-        ),
-        (patch.major_id.flatten(), StaffReferenceKind::Major, major),
-        (
-            patch.university_id.flatten(),
-            StaffReferenceKind::University,
-            university,
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(id, kind, prior)| id.map(|id| (id, kind, prior)))
-    .collect();
-    validate_references(tx, &selections).await?;
+    let major = patch
+        .major
+        .as_ref()
+        .and_then(|v| v.as_deref())
+        .map(normalize_education_text)
+        .transpose()?
+        .flatten();
+    let university = patch
+        .university
+        .as_ref()
+        .and_then(|v| v.as_deref())
+        .map(normalize_education_text)
+        .transpose()?
+        .flatten();
+    let prior: Option<(Option<Uuid>,)> =
+        sqlx::query_as("SELECT job_position_id FROM staff_info WHERE user_id=$1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    validate_position(
+        tx,
+        patch.job_position_id.flatten(),
+        prior.and_then(|(id,)| id),
+    )
+    .await?;
     sqlx::query("INSERT INTO staff_info (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING")
         .bind(user_id)
         .execute(&mut **tx)
@@ -109,8 +121,8 @@ pub async fn patch_staff_info(
       job_position_id = CASE WHEN $2 THEN $3 ELSE job_position_id END,
       academic_rank = CASE WHEN $4 THEN $5 ELSE academic_rank END,
       education_level = CASE WHEN $6 THEN $7 ELSE education_level END,
-      major_id = CASE WHEN $8 THEN $9 ELSE major_id END,
-      university_id = CASE WHEN $10 THEN $11 ELSE university_id END,
+      major = CASE WHEN $8 THEN $9 ELSE major END,
+      university = CASE WHEN $10 THEN $11 ELSE university END,
       teaching_license_number = CASE WHEN $12 THEN $13 ELSE teaching_license_number END,
       teaching_license_expiry = CASE WHEN $14 THEN $15 ELSE teaching_license_expiry END,
       updated_at=NOW() WHERE user_id=$1"#,
@@ -122,10 +134,10 @@ pub async fn patch_staff_info(
     .bind(patch.academic_rank.flatten().map(|v| v.as_str()))
     .bind(patch.education_level.is_some())
     .bind(patch.education_level.flatten().map(|v| v.as_str()))
-    .bind(patch.major_id.is_some())
-    .bind(patch.major_id.flatten())
-    .bind(patch.university_id.is_some())
-    .bind(patch.university_id.flatten())
+    .bind(patch.major.is_some())
+    .bind(major)
+    .bind(patch.university.is_some())
+    .bind(university)
     .bind(patch.teaching_license_number.is_some())
     .bind(
         patch
@@ -143,6 +155,27 @@ pub async fn patch_staff_info(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn personnel_education_text_preserves_spelling_and_validates_scalars() {
+        assert_eq!(
+            normalize_education_text("  คณิตศาสตร์  ประยุกต์  ").unwrap(),
+            Some("คณิตศาสตร์  ประยุกต์".into())
+        );
+        assert_eq!(normalize_education_text("   ").unwrap(), None);
+        for valid in ["ก".repeat(200), "😀".repeat(200)] {
+            assert_eq!(normalize_education_text(&valid).unwrap(), Some(valid));
+        }
+        for invalid in [
+            "ก".repeat(201),
+            "😀".repeat(201),
+            "คณิตศาสตร์\n".into(),
+            "\tA".into(),
+            "A\u{0085}B".into(),
+        ] {
+            assert!(normalize_education_text(&invalid).is_err());
+        }
+    }
 
     #[tokio::test]
     async fn personnel_empty_patch_preserves_absent_info_row() {
