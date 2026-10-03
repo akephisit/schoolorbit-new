@@ -7,15 +7,28 @@ pub async fn read_staff_info(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Option<StaffInfoResponse>, AppError> {
-    let row: Option<Json<StaffInfoResponse>> = sqlx::query_scalar(
+    let type_entry = super::staff_career_service::career_json_sql("career_type", None, "true");
+    let position_entry =
+        super::staff_career_service::career_json_sql("career_position", Some("position"), "true");
+    let rank_entry = super::staff_career_service::career_json_sql("career_rank", None, "true");
+    let sql = format!(
         r#"SELECT jsonb_build_object(
           'job_position', CASE WHEN position.id IS NOT NULL THEN jsonb_build_object('id', position.id, 'code', position.code, 'name', position.name, 'isActive', position.is_active, 'isSelectable', position.is_selectable) END,
           'academic_rank', info.academic_rank, 'education_level', info.education_level,
-          'major', info.major, 'university', info.university
+          'major', info.major, 'university', info.university,
+          'current_career',jsonb_build_object('personnelType',{type_entry},'jobPosition',{position_entry},'academicRank',{rank_entry})
         ) FROM staff_info info
         LEFT JOIN staff_job_positions position ON position.id = info.job_position_id
-        WHERE info.user_id = $1"#,
-    ).bind(user_id).fetch_optional(pool).await?;
+        LEFT JOIN staff_career_history career_type ON career_type.id=info.current_personnel_type_history_id
+        LEFT JOIN staff_career_history career_position ON career_position.id=info.current_job_position_history_id
+        LEFT JOIN staff_career_history career_rank ON career_rank.id=info.current_academic_rank_history_id
+        WHERE info.user_id = $1"#
+    );
+    let row: Option<Json<StaffInfoResponse>> =
+        sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.map(|Json(info)| info))
 }
 
@@ -32,7 +45,7 @@ pub fn normalize_education_text(value: &str) -> Result<Option<String>, AppError>
     Ok((!value.is_empty()).then(|| value.to_owned()))
 }
 
-async fn validate_position(
+pub(crate) async fn validate_position(
     tx: &mut Transaction<'_, Postgres>,
     selected: Option<Uuid>,
     existing: Option<Uuid>,
@@ -57,6 +70,7 @@ pub async fn create_staff_info(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     input: &CreateStaffInfoRequest,
+    actor_id: Uuid,
 ) -> Result<(), AppError> {
     let major = input
         .major
@@ -70,11 +84,12 @@ pub async fn create_staff_info(
         .map(normalize_education_text)
         .transpose()?
         .flatten();
-    validate_position(tx, input.job_position_id, None).await?;
-    sqlx::query("INSERT INTO staff_info (user_id, job_position_id, academic_rank, education_level, major, university, teaching_license_number, teaching_license_expiry) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
-        .bind(user_id).bind(input.job_position_id).bind(input.academic_rank.map(|v| v.as_str()))
-        .bind(input.education_level.map(|v| v.as_str())).bind(major).bind(university)
+    sqlx::query("INSERT INTO staff_info(user_id,education_level,major,university,teaching_license_number,teaching_license_expiry) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(user_id).bind(input.education_level.map(|value| value.as_str())).bind(major).bind(university)
         .bind(&input.teaching_license_number).bind(input.teaching_license_expiry).execute(&mut **tx).await?;
+    if let Some(career) = &input.career {
+        super::staff_career_service::create_current_career(tx, user_id, actor_id, career).await?;
+    }
     Ok(())
 }
 
@@ -83,6 +98,7 @@ pub async fn patch_staff_info(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     patch: &UpdateStaffInfoRequest,
+    actor_id: Uuid,
 ) -> Result<(), AppError> {
     if patch.is_empty() {
         return Ok(());
@@ -101,39 +117,22 @@ pub async fn patch_staff_info(
         .map(normalize_education_text)
         .transpose()?
         .flatten();
-    let prior: Option<(Option<Uuid>,)> =
-        sqlx::query_as("SELECT job_position_id FROM staff_info WHERE user_id=$1 FOR UPDATE")
-            .bind(user_id)
-            .fetch_optional(&mut **tx)
-            .await?;
-    validate_position(
-        tx,
-        patch.job_position_id.flatten(),
-        prior.and_then(|(id,)| id),
-    )
-    .await?;
     sqlx::query("INSERT INTO staff_info (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING")
         .bind(user_id)
         .execute(&mut **tx)
         .await?;
     sqlx::query(
         r#"UPDATE staff_info SET
-      job_position_id = CASE WHEN $2 THEN $3 ELSE job_position_id END,
-      academic_rank = CASE WHEN $4 THEN $5 ELSE academic_rank END,
-      education_level = CASE WHEN $6 THEN $7 ELSE education_level END,
-      major = CASE WHEN $8 THEN $9 ELSE major END,
-      university = CASE WHEN $10 THEN $11 ELSE university END,
-      teaching_license_number = CASE WHEN $12 THEN $13 ELSE teaching_license_number END,
-      teaching_license_expiry = CASE WHEN $14 THEN $15 ELSE teaching_license_expiry END,
-      updated_at=NOW() WHERE user_id=$1"#,
+        education_level=CASE WHEN $2 THEN $3 ELSE education_level END,
+        major=CASE WHEN $4 THEN $5 ELSE major END,
+        university=CASE WHEN $6 THEN $7 ELSE university END,
+        teaching_license_number=CASE WHEN $8 THEN $9 ELSE teaching_license_number END,
+        teaching_license_expiry=CASE WHEN $10 THEN $11 ELSE teaching_license_expiry END,
+        updated_at=NOW() WHERE user_id=$1"#,
     )
     .bind(user_id)
-    .bind(patch.job_position_id.is_some())
-    .bind(patch.job_position_id.flatten())
-    .bind(patch.academic_rank.is_some())
-    .bind(patch.academic_rank.flatten().map(|v| v.as_str()))
     .bind(patch.education_level.is_some())
-    .bind(patch.education_level.flatten().map(|v| v.as_str()))
+    .bind(patch.education_level.flatten().map(|value| value.as_str()))
     .bind(patch.major.is_some())
     .bind(major)
     .bind(patch.university.is_some())
@@ -143,12 +142,15 @@ pub async fn patch_staff_info(
         patch
             .teaching_license_number
             .as_ref()
-            .and_then(|v| v.as_deref()),
+            .and_then(|value| value.as_deref()),
     )
     .bind(patch.teaching_license_expiry.is_some())
     .bind(patch.teaching_license_expiry.flatten())
     .execute(&mut **tx)
     .await?;
+    if let Some(career) = &patch.career {
+        super::staff_career_service::patch_current_career(tx, user_id, actor_id, career).await?;
+    }
     Ok(())
 }
 
@@ -186,7 +188,7 @@ mod tests {
             .bind(user).bind(user.to_string()).execute(&pool).await.unwrap();
         let patch = UpdateStaffInfoRequest::default();
         let mut tx = pool.begin().await.unwrap();
-        patch_staff_info(&mut tx, user, &patch).await.unwrap();
+        patch_staff_info(&mut tx, user, &patch, user).await.unwrap();
         tx.commit().await.unwrap();
         assert!(read_staff_info(&pool, user).await.unwrap().is_none());
     }

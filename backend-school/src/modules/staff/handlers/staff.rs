@@ -164,7 +164,7 @@ pub async fn create_staff(
     let actor = context.actor;
     actor.require_permission(codes::STAFF_CREATE_ALL)?;
 
-    let user_id = staff_service::create_staff(&pool, payload).await?;
+    let user_id = staff_service::create_staff(&pool, payload, actor.user_id).await?;
     Ok((
         StatusCode::CREATED,
         Json(ApiResponse::with_message(
@@ -187,7 +187,8 @@ pub async fn create_staff(
         (status = 400, description = "Invalid staff data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Staff update permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Staff member not found", body = ApiErrorResponse)
+        (status = 404, description = "Staff member not found", body = ApiErrorResponse),
+        (status = 409, description = "Career reference changed", body = ApiErrorResponse)
     )
 )]
 pub async fn update_staff(
@@ -202,7 +203,8 @@ pub async fn update_staff(
     let actor = context.actor;
     actor.require_permission(codes::STAFF_UPDATE_ALL)?;
 
-    let replaced_file_id = staff_service::update_staff(&pool, staff_id, payload).await?;
+    let replaced_file_id =
+        staff_service::update_staff(&pool, staff_id, payload, actor.user_id).await?;
     // Status/roles are already committed; invalidate identity before fallible cleanup.
     state.invalidate_permission_user(&tenant, staff_id);
     state.notify_permission_changed(&tenant, staff_id);

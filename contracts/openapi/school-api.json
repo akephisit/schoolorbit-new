@@ -12034,6 +12034,79 @@
         ],
         "type": "object"
       },
+      "ApiResponse_StaffCareerHistoryPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "current": {
+                "$ref": "#/components/schemas/StaffCareerCurrent"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/StaffCareerEntry"
+                },
+                "type": "array"
+              },
+              "nextCursor": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "items",
+              "current",
+              "nextCursor"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_StaffCareerMutationAck": {
+        "properties": {
+          "data": {
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "revision"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_StaffDashboardOverview": {
         "properties": {
           "data": {
@@ -26723,6 +26796,31 @@
         ],
         "type": "object"
       },
+      "CorrectStaffCareerHistoryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/StaffCareerEntryInput"
+          },
+          "expectedIsCurrent": {
+            "type": "boolean"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "expectedIsCurrent",
+          "entry",
+          "reason"
+        ],
+        "type": "object"
+      },
       "CourseAggregateInput": {
         "additionalProperties": false,
         "description": "One expected subject in one student's term, including an absent locked result.",
@@ -28314,16 +28412,48 @@
         ],
         "type": "object"
       },
+      "CreateStaffCareerHistoryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/StaffCareerEntryInput"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entry"
+        ],
+        "type": "object"
+      },
+      "CreateStaffCareerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/StaffCareerEntryInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
       "CreateStaffInfoRequest": {
         "additionalProperties": false,
         "properties": {
-          "academic_rank": {
+          "career": {
             "oneOf": [
               {
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/StaffAcademicRank"
+                "$ref": "#/components/schemas/CreateStaffCareerRequest"
               }
             ]
           },
@@ -28335,13 +28465,6 @@
               {
                 "$ref": "#/components/schemas/StaffEducationLevel"
               }
-            ]
-          },
-          "job_position_id": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
             ]
           },
           "major": {
@@ -41907,6 +42030,350 @@
         ],
         "type": "string"
       },
+      "StaffCareerCurrent": {
+        "properties": {
+          "academicRank": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffCareerEntry"
+              }
+            ]
+          },
+          "jobPosition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffCareerEntry"
+              }
+            ]
+          },
+          "personnelType": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffCareerEntry"
+              }
+            ]
+          }
+        },
+        "required": [
+          "personnelType",
+          "jobPosition",
+          "academicRank"
+        ],
+        "type": "object"
+      },
+      "StaffCareerCurrentChange": {
+        "additionalProperties": false,
+        "properties": {
+          "correctionReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entry": {
+            "$ref": "#/components/schemas/StaffCareerEntryInput"
+          },
+          "expectedCurrent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffCareerReference"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expectedCurrent",
+          "entry"
+        ],
+        "type": "object"
+      },
+      "StaffCareerEntry": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "effectiveDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fact": {
+            "$ref": "#/components/schemas/StaffCareerFact"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "jobPosition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaffJobPositionSummary"
+              }
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StaffCareerSource"
+          },
+          "staffId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "staffId",
+          "fact",
+          "jobPosition",
+          "effectiveDate",
+          "orderDate",
+          "orderNumber",
+          "note",
+          "source",
+          "revision",
+          "isCurrent",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StaffCareerEntryInput": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fact": {
+            "$ref": "#/components/schemas/StaffCareerFact"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "fact"
+        ],
+        "type": "object"
+      },
+      "StaffCareerFact": {
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "personnel_type"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StaffPersonnelType"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "job_position"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "academic_rank"
+                ],
+                "type": "string"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StaffAcademicRank"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "StaffCareerHistoryPage": {
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/StaffCareerCurrent"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StaffCareerEntry"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "current",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "StaffCareerKind": {
+        "enum": [
+          "personnel_type",
+          "job_position",
+          "academic_rank"
+        ],
+        "type": "string"
+      },
+      "StaffCareerMutationAck": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "StaffCareerReference": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "StaffCareerSource": {
+        "enum": [
+          "existing_record",
+          "staff_entry"
+        ],
+        "type": "string"
+      },
       "StaffDashboardOverview": {
         "properties": {
           "activeHomerooms": {
@@ -41972,6 +42439,9 @@
               }
             ]
           },
+          "current_career": {
+            "$ref": "#/components/schemas/StaffCareerCurrent"
+          },
           "education_level": {
             "oneOf": [
               {
@@ -42006,6 +42476,7 @@
           }
         },
         "required": [
+          "current_career",
           "job_position",
           "academic_rank",
           "education_level",
@@ -42163,6 +42634,16 @@
           "name"
         ],
         "type": "object"
+      },
+      "StaffPersonnelType": {
+        "enum": [
+          "civil_servant",
+          "government_employee",
+          "contract_employee",
+          "permanent_employee",
+          "other"
+        ],
+        "type": "string"
       },
       "StaffProfileResponse": {
         "properties": {
@@ -49160,16 +49641,31 @@
         },
         "type": "object"
       },
+      "UpdateStaffCareerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/StaffCareerCurrentChange"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "type": "object"
+      },
       "UpdateStaffInfoRequest": {
         "additionalProperties": false,
         "properties": {
-          "academic_rank": {
+          "career": {
             "oneOf": [
               {
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/StaffAcademicRank"
+                "$ref": "#/components/schemas/UpdateStaffCareerRequest"
               }
             ]
           },
@@ -49181,13 +49677,6 @@
               {
                 "$ref": "#/components/schemas/StaffEducationLevel"
               }
-            ]
-          },
-          "job_position_id": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
             ]
           },
           "major": {
@@ -82143,6 +82632,298 @@
               }
             },
             "description": "Staff member not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Career reference changed"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/staff/{id}/career-history": {
+      "get": {
+        "operationId": "listStaffCareerHistory",
+        "parameters": [
+          {
+            "description": "Staff user ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StaffCareerHistoryPage"
+                }
+              }
+            },
+            "description": "Scoped history and current entries"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid cursor or page size"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Profile read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff member not found"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      },
+      "post": {
+        "operationId": "appendStaffCareerHistory",
+        "parameters": [
+          {
+            "description": "Staff user ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStaffCareerHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StaffCareerMutationAck"
+                }
+              }
+            },
+            "description": "Entry acknowledgement, including safe retries"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid historical entry"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff member not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "ID or payload conflict"
+          }
+        },
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/staff/{id}/career-history/{entryId}": {
+      "patch": {
+        "operationId": "correctStaffCareerHistory",
+        "parameters": [
+          {
+            "description": "Staff user ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "History entry ID",
+            "in": "path",
+            "name": "entryId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectStaffCareerHistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StaffCareerMutationAck"
+                }
+              }
+            },
+            "description": "Correction acknowledgement"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid correction or missing reason"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff update permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff member or entry not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or current status changed"
           }
         },
         "tags": [

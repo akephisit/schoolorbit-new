@@ -58,7 +58,7 @@ async fn personnel_position_deactivation_race_rejects_new_assignment() {
     use super::staff_info_service::patch_staff_info;
     use crate::personnel::*;
     let pool = legacy_pool("personnel_position_deactivation_race").await;
-    migrate_through(&pool, 84).await.unwrap();
+    migrate_through(&pool, 85).await.unwrap();
     let user = canonical_person(&pool).await;
     let position: Uuid =
         sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
@@ -78,9 +78,24 @@ async fn personnel_position_deactivation_race_rejects_new_assignment() {
             &mut tx,
             user,
             &UpdateStaffInfoRequest {
-                job_position_id: Some(Some(position)),
+                career: Some(crate::career::UpdateStaffCareerRequest {
+                    changes: vec![crate::career::StaffCareerCurrentChange {
+                        expected_current: None,
+                        entry: crate::career::StaffCareerEntryInput {
+                            fact: crate::career::StaffCareerFact::JobPosition {
+                                value: Some(position),
+                            },
+                            effective_date: None,
+                            order_date: None,
+                            order_number: None,
+                            note: None,
+                        },
+                        correction_reason: None,
+                    }],
+                }),
                 ..Default::default()
             },
+            user,
         )
         .await
     });
@@ -400,13 +415,40 @@ async fn canonical_person(pool: &PgPool) -> Uuid {
     user_id
 }
 
+async fn current_patch(
+    pool: &PgPool,
+    user: Uuid,
+    mut fields: serde_json::Value,
+) -> crate::models::UpdateStaffRequest {
+    let current =
+        super::staff_career_service::list_staff_career_history(pool, user, Default::default())
+            .await
+            .unwrap()
+            .current;
+    let mut changes = Vec::new();
+    for (key, kind, previous) in [
+        ("job_position_id", "job_position", current.job_position),
+        ("academic_rank", "academic_rank", current.academic_rank),
+    ] {
+        if let Some(value) = fields.as_object_mut().unwrap().remove(key) {
+            let expected =
+                previous.map(|entry| serde_json::json!({"id":entry.id,"revision":entry.revision}));
+            changes.push(serde_json::json!({"expectedCurrent":expected,"entry":{"fact":{"kind":kind,"value":value},"effectiveDate":null,"orderDate":null,"orderNumber":null,"note":null}}));
+        }
+    }
+    if !changes.is_empty() {
+        fields["career"] = serde_json::json!({"changes":changes});
+    }
+    serde_json::from_value(serde_json::json!({"staff_info":fields})).unwrap()
+}
+
 #[tokio::test]
 async fn personnel_patch_distinguishes_missing_null_value() {
     let pool = legacy_pool("personnel_patch_states").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 84).await.unwrap();
+    migrate_through(&pool, 85).await.unwrap();
     let no_change = serde_json::from_value(serde_json::json!({"staff_info":{}})).unwrap();
-    super::staff_service::update_staff(&pool, user, no_change)
+    super::staff_service::update_staff(&pool, user, no_change, user)
         .await
         .unwrap();
     let degree: Option<String> =
@@ -420,7 +462,7 @@ async fn personnel_patch_distinguishes_missing_null_value() {
         serde_json::json!({"staff_info":{"education_level":null,"major":null}}),
     )
     .unwrap();
-    super::staff_service::update_staff(&pool, user, clear)
+    super::staff_service::update_staff(&pool, user, clear, user)
         .await
         .unwrap();
     let cleared: (Option<String>, Option<String>) =
@@ -430,11 +472,13 @@ async fn personnel_patch_distinguishes_missing_null_value() {
             .await
             .unwrap();
     assert_eq!(cleared, (None, None));
-    let explicit = serde_json::from_value(
-        serde_json::json!({"staff_info":{"academic_rank":"none","education_level":"master"}}),
+    let explicit = current_patch(
+        &pool,
+        user,
+        serde_json::json!({"academic_rank":"none","education_level":"master"}),
     )
-    .unwrap();
-    super::staff_service::update_staff(&pool, user, explicit)
+    .await;
+    super::staff_service::update_staff(&pool, user, explicit, user)
         .await
         .unwrap();
     let values: (Option<String>, Option<String>) =
@@ -467,15 +511,15 @@ fn personnel_rejects_unknown_enum() {
 async fn personnel_patch_preserves_license_and_employment() {
     let pool = legacy_pool("personnel_patch_preserve").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 84).await.unwrap();
+    migrate_through(&pool, 85).await.unwrap();
     let before = preservation_snapshot(&pool).await;
     let teacher: Uuid =
         sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
             .fetch_one(&pool)
             .await
             .unwrap();
-    let request = serde_json::from_value(serde_json::json!({"staff_info":{"job_position_id":teacher,"academic_rank":"proficient","education_level":"doctorate"}})).unwrap();
-    super::staff_service::update_staff(&pool, user, request)
+    let request = current_patch(&pool, user, serde_json::json!({"job_position_id":teacher,"academic_rank":"proficient","education_level":"doctorate"})).await;
+    super::staff_service::update_staff(&pool, user, request, user)
         .await
         .unwrap();
     assert_eq!(before, preservation_snapshot(&pool).await);
@@ -492,10 +536,15 @@ async fn personnel_patch_preserves_license_and_employment() {
 #[tokio::test]
 async fn personnel_patch_creates_missing_info_row() {
     let pool = legacy_pool("personnel_patch_missing").await;
-    migrate_through(&pool, 84).await.unwrap();
+    migrate_through(&pool, 85).await.unwrap();
     let user = canonical_person(&pool).await;
-    let request = serde_json::from_value(serde_json::json!({"staff_info":{"academic_rank":"not_applicable","education_level":"bachelor"}})).unwrap();
-    super::staff_service::update_staff(&pool, user, request)
+    let request = current_patch(
+        &pool,
+        user,
+        serde_json::json!({"academic_rank":"not_applicable","education_level":"bachelor"}),
+    )
+    .await;
+    super::staff_service::update_staff(&pool, user, request, user)
         .await
         .unwrap();
     let values: (Uuid, String, String) = sqlx::query_as(
@@ -521,11 +570,14 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
         .execute(&pool)
         .await
         .unwrap();
-    let keep = serde_json::from_value(
-        serde_json::json!({"staff_info":{"job_position_id":custom,"major":"  คณิตศาสตร์  ประยุกต์  "}}),
+    migrate_through(&pool, 85).await.unwrap();
+    let keep = current_patch(
+        &pool,
+        user,
+        serde_json::json!({"job_position_id":custom,"major":"  คณิตศาสตร์  ประยุกต์  "}),
     )
-    .unwrap();
-    super::staff_service::update_staff(&pool, user, keep)
+    .await;
+    super::staff_service::update_staff(&pool, user, keep, user)
         .await
         .unwrap();
     let info = super::staff_info_service::read_staff_info(&pool, user)
@@ -536,12 +588,11 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
     assert_eq!(info.job_position.unwrap().id, custom);
     let other = canonical_person(&pool).await;
     for id in [custom, Uuid::new_v4()] {
-        let request = serde_json::from_value(
-            serde_json::json!({"first_name":"Must rollback","staff_info":{"job_position_id":id}}),
-        )
-        .unwrap();
+        let mut request =
+            current_patch(&pool, other, serde_json::json!({"job_position_id":id})).await;
+        request.first_name = Some("Must rollback".into());
         assert!(matches!(
-            super::staff_service::update_staff(&pool, other, request).await,
+            super::staff_service::update_staff(&pool, other, request, user).await,
             Err(school_errors::AppError::BadRequest(_))
         ));
         let name: String = sqlx::query_scalar("SELECT first_name FROM users WHERE id=$1")
@@ -556,10 +607,8 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    let replace =
-        serde_json::from_value(serde_json::json!({"staff_info":{"job_position_id":teacher}}))
-            .unwrap();
-    super::staff_service::update_staff(&pool, user, replace)
+    let replace = current_patch(&pool, user, serde_json::json!({"job_position_id":teacher})).await;
+    super::staff_service::update_staff(&pool, user, replace, user)
         .await
         .unwrap();
     assert!(
@@ -577,7 +626,7 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
 async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_invalid() {
     let pool = legacy_pool("personnel_text_patch").await;
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
-    migrate_through(&pool, 84).await.unwrap();
+    migrate_through(&pool, 85).await.unwrap();
     for (patch, major, university) in [
         (
             serde_json::json!({"major":"  ศิลปะ  ประยุกต์  "}),
@@ -596,7 +645,7 @@ async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_inval
         ),
     ] {
         let request = serde_json::from_value(serde_json::json!({"staff_info":patch})).unwrap();
-        super::staff_service::update_staff(&pool, user, request)
+        super::staff_service::update_staff(&pool, user, request, user)
             .await
             .unwrap();
         let info = super::staff_info_service::read_staff_info(&pool, user)
@@ -615,9 +664,11 @@ async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_inval
             serde_json::json!({"first_name":"Must rollback","staff_info":{"major":invalid}}),
         )
         .unwrap();
-        assert!(super::staff_service::update_staff(&pool, user, request)
-            .await
-            .is_err());
+        assert!(
+            super::staff_service::update_staff(&pool, user, request, user)
+                .await
+                .is_err()
+        );
         let name: String = sqlx::query_scalar("SELECT first_name FROM users WHERE id=$1")
             .bind(user)
             .fetch_one(&pool)
@@ -630,7 +681,7 @@ async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_inval
 #[tokio::test]
 async fn personnel_create_persists_canonical_fields_and_license() {
     let pool = legacy_pool("personnel_create").await;
-    migrate_through(&pool, 84).await.unwrap();
+    migrate_through(&pool, 85).await.unwrap();
     let teacher: Uuid =
         sqlx::query_scalar("SELECT id FROM staff_job_positions WHERE code='teacher'")
             .fetch_one(&pool)
@@ -639,9 +690,10 @@ async fn personnel_create_persists_canonical_fields_and_license() {
     let request = serde_json::from_value(serde_json::json!({
         "username":"personnel-create-fixture", "password":"Synthetic-test-123!",
         "first_name":"Fixture", "last_name":"Person", "role_ids":[],
-        "staff_info":{"job_position_id":teacher,"academic_rank":"none","education_level":"bachelor","major":"  คณิตศาสตร์  ประยุกต์  ","university":"สถาบันทดสอบ", "teaching_license_number":"synthetic-license", "teaching_license_expiry":"2030-01-01"}
+        "staff_info":{"career":{"entries":[{"fact":{"kind":"job_position","value":teacher}},{"fact":{"kind":"academic_rank","value":"none"}}]},"education_level":"bachelor","major":"  คณิตศาสตร์  ประยุกต์  ","university":"สถาบันทดสอบ", "teaching_license_number":"synthetic-license", "teaching_license_expiry":"2030-01-01"}
     })).unwrap();
-    let user = super::staff_service::create_staff(&pool, request)
+    let actor = canonical_person(&pool).await;
+    let user = super::staff_service::create_staff(&pool, request, actor)
         .await
         .unwrap();
     let info = super::staff_info_service::read_staff_info(&pool, user)
@@ -747,7 +799,7 @@ async fn personnel_groups_deduplicate_current_membership() {
     use super::staff_service::{get_staff_profile, list_staff};
     use crate::models::*;
     let pool = legacy_pool("personnel_groups_current").await;
-    migrate_through(&pool, 84).await.unwrap();
+    migrate_through(&pool, 85).await.unwrap();
     let person = canonical_person(&pool).await;
     let empty = canonical_person(&pool).await;
     let math = personnel_group(&pool, "Fixture Math", true).await;

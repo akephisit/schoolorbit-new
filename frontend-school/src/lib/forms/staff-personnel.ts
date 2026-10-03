@@ -1,3 +1,10 @@
+import {
+	staffCareerDraft,
+	PERSONNEL_TYPE_LABELS,
+	buildUpdateStaffCareer,
+	type StaffCareerDraft,
+	type StaffCareerCorrectionReasons
+} from './staff-career.ts';
 import type { components } from '$lib/api/generated/school-api';
 type Schemas = components['schemas'];
 export const ACADEMIC_RANK_LABELS = {
@@ -22,8 +29,8 @@ export const EDUCATION_LEVEL_LABELS = {
 } satisfies Record<Schemas['StaffEducationLevel'], string>;
 export type StaffPersonnelDraft = Pick<
 	Schemas['UpdateStaffInfoRequest'],
-	'job_position_id' | 'academic_rank' | 'education_level' | 'major' | 'university'
->;
+	'education_level' | 'major' | 'university'
+> & { career: StaffCareerDraft };
 export function normalizeStaffEducationText(value: string | null | undefined): string | null {
 	if (value == null) return null;
 	if (/\p{Cc}/u.test(value)) throw new Error('ต้องไม่มีอักขระควบคุม');
@@ -33,13 +40,12 @@ export function normalizeStaffEducationText(value: string | null | undefined): s
 }
 export function buildStaffPersonnelPatch(
 	before: StaffPersonnelDraft,
-	after: StaffPersonnelDraft
+	after: StaffPersonnelDraft,
+	reasons: StaffCareerCorrectionReasons = {}
 ): Schemas['UpdateStaffInfoRequest'] | undefined {
 	const patch: Schemas['UpdateStaffInfoRequest'] = {};
-	if ((before.job_position_id ?? null) !== (after.job_position_id ?? null))
-		patch.job_position_id = after.job_position_id ?? null;
-	if ((before.academic_rank ?? null) !== (after.academic_rank ?? null))
-		patch.academic_rank = after.academic_rank ?? null;
+	const career = buildUpdateStaffCareer(before.career, after.career, reasons);
+	if (career) patch.career = career;
 	if ((before.education_level ?? null) !== (after.education_level ?? null))
 		patch.education_level = after.education_level ?? null;
 	if (normalizeStaffEducationText(before.major) !== normalizeStaffEducationText(after.major))
@@ -54,8 +60,7 @@ export function staffPersonnelDraft(
 	info: Schemas['StaffInfoResponse'] | null | undefined
 ): StaffPersonnelDraft {
 	return {
-		job_position_id: info?.job_position?.id ?? null,
-		academic_rank: info?.academic_rank ?? null,
+		career: staffCareerDraft(info?.current_career ?? null),
 		education_level: info?.education_level ?? null,
 		major: info?.major ?? null,
 		university: info?.university ?? null
@@ -76,4 +81,12 @@ export function personnelDrilldownHref(
 	const query = new URLSearchParams({ status: dimension === 'status' ? bucket.key : status });
 	if (dimension !== 'status') query.set(parameters[dimension], bucket.key);
 	return `/staff/manage?${query}`;
+}
+
+export function staffCareerEntryLabel(entry: import('./staff-career.ts').StaffCareerEntry): string {
+	const fact = entry.fact;
+	if (fact.value === null) return 'ยังไม่ระบุ';
+	if (fact.kind === 'academic_rank') return ACADEMIC_RANK_LABELS[fact.value];
+	if (fact.kind === 'personnel_type') return PERSONNEL_TYPE_LABELS[fact.value];
+	return entry.jobPosition?.name ?? 'ตำแหน่งที่ยังไม่มีรายละเอียด';
 }

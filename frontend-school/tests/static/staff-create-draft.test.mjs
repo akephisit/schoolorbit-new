@@ -69,7 +69,7 @@ test('invalid storage is removed and a completed draft clears only its owner', (
 	assert.equal(store.values.size, 0);
 });
 
-test('canonical v3 drafts retain text without renewing expiry', () => {
+test('canonical v4 drafts retain text without renewing expiry', () => {
 	const store = storage();
 	saveStaffCreateDraft(
 		store,
@@ -78,7 +78,7 @@ test('canonical v3 drafts retain text without renewing expiry', () => {
 		100
 	);
 	assert.equal(readStaffCreateDraft(store, owner, 101).personnel.major, 'คณิตศาสตร์');
-	assert.ok([...store.values.keys()].every((key) => key.startsWith('staff-create-draft:v3:')));
+	assert.ok([...store.values.keys()].every((key) => key.startsWith('staff-create-draft:v4:')));
 });
 
 const oldKey = `staff-create-draft:v2:${owner.origin}:${owner.userId}`;
@@ -135,7 +135,7 @@ test('reading a canonical draft retains its original expiry and refuses unbounde
 	store.setItem(
 		currentKey,
 		JSON.stringify({
-			version: 3,
+			version: 4,
 			expiresAt: 31 * 60 * 1000,
 			fields: { first_name: 'invalid-future' }
 		})
@@ -162,4 +162,79 @@ test('invalid new draft fields preserve the previous canonical draft before stor
 	assert.equal(store.getItem(oldKey), 'obsolete-private-input');
 	assert.equal(readStaffCreateDraft(store, owner, 102).personnel.major, 'คณิตศาสตร์');
 	assert.equal(store.getItem(oldKey), null);
+});
+
+const legacyKey = `staff-create-draft:v3:${owner.origin}:${owner.userId}`;
+const currentKey = `staff-create-draft:v4:${owner.origin}:${owner.userId}`;
+test('v3 migration preserves original expiry, valid fields, and explicit current values without guessed dates', () => {
+	const store = storage();
+	const original = {
+		version: 3,
+		expiresAt: 1000,
+		fields: {
+			first_name: 'ร่าง',
+			hired_date: '2010-01-01',
+			role_ids: ['fixture-role'],
+			personnel: {
+				job_position_id: '55000000-0000-4000-8000-000000000099',
+				academic_rank: 'proficient',
+				education_level: 'master',
+				major: 'คณิตศาสตร์',
+				university: 'สถาบันทดสอบ'
+			}
+		}
+	};
+	store.setItem(legacyKey, JSON.stringify(original));
+	const migrated = readStaffCreateDraft(store, owner, 101);
+	assert.equal(migrated.first_name, original.fields.first_name);
+	assert.deepEqual(migrated.role_ids, original.fields.role_ids);
+	assert.equal(migrated.personnel.career.academicRank.value, 'proficient');
+	assert.equal(
+		migrated.personnel.career.jobPosition.value,
+		original.fields.personnel.job_position_id
+	);
+	assert.equal(migrated.personnel.career.personnelType.value, null);
+	for (const fact of Object.values(migrated.personnel.career)) {
+		assert.equal(fact.effectiveDate, '');
+		assert.equal(fact.orderDate, '');
+		assert.equal(fact.reference, null);
+	}
+	assert.equal(migrated.personnel.university, original.fields.personnel.university);
+	assert.equal(JSON.parse(store.getItem(currentKey)).expiresAt, original.expiresAt);
+	assert.equal(store.getItem(legacyKey), null);
+});
+test('failed v4 storage write retains the valid v3 draft for retry', () => {
+	const store = storage();
+	const original = JSON.stringify({ version: 3, expiresAt: 1000, fields: { first_name: 'ร่าง' } });
+	store.setItem(legacyKey, original);
+	const write = store.setItem;
+	store.setItem = () => {
+		throw new Error('storage unavailable');
+	};
+	assert.throws(() => readStaffCreateDraft(store, owner, 101), /บันทึกร่าง/);
+	assert.equal(store.getItem(legacyKey), original);
+	assert.equal(store.getItem(currentKey), null);
+	store.setItem = write;
+	assert.equal(readStaffCreateDraft(store, owner, 102).first_name, 'ร่าง');
+});
+test('v3 migration refuses expired, corrupt, and cross-owner input', () => {
+	for (const value of [
+		'invalid-json',
+		JSON.stringify({ version: 3, expiresAt: 100, fields: { first_name: 'หมดอายุ' } })
+	]) {
+		const store = storage();
+		store.setItem(legacyKey, value);
+		assert.equal(readStaffCreateDraft(store, owner, 101), null);
+		assert.equal(store.getItem(legacyKey), null);
+	}
+	const store = storage();
+	store.setItem(
+		legacyKey,
+		JSON.stringify({ version: 3, expiresAt: 1000, fields: { first_name: 'ร่าง' } })
+	);
+	assert.equal(
+		readStaffCreateDraft(store, { ...owner, userId: '55000000-0000-4000-8000-000000000002' }, 101),
+		null
+	);
+	assert.ok(store.getItem(legacyKey));
 });

@@ -1,3 +1,4 @@
+use crate::career::{CreateStaffCareerRequest, StaffCareerCurrent, UpdateStaffCareerRequest};
 use chrono::NaiveDate;
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
@@ -53,8 +54,7 @@ pub struct StaffJobPositionSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateStaffInfoRequest {
-    pub job_position_id: Option<Uuid>,
-    pub academic_rank: Option<StaffAcademicRank>,
+    pub career: Option<CreateStaffCareerRequest>,
     pub education_level: Option<StaffEducationLevel>,
     pub major: Option<String>,
     pub university: Option<String>,
@@ -73,18 +73,8 @@ where
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateStaffInfoRequest {
-    #[serde(
-        default,
-        deserialize_with = "deserialize_nullable",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub job_position_id: Option<Option<Uuid>>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_nullable",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub academic_rank: Option<Option<StaffAcademicRank>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub career: Option<UpdateStaffCareerRequest>,
     #[serde(
         default,
         deserialize_with = "deserialize_nullable",
@@ -119,8 +109,9 @@ pub struct UpdateStaffInfoRequest {
 
 impl UpdateStaffInfoRequest {
     pub fn is_empty(&self) -> bool {
-        self.job_position_id.is_none()
-            && self.academic_rank.is_none()
+        self.career
+            .as_ref()
+            .is_none_or(|career| career.changes.is_empty())
             && self.education_level.is_none()
             && self.major.is_none()
             && self.university.is_none()
@@ -131,6 +122,7 @@ impl UpdateStaffInfoRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StaffInfoResponse {
+    pub current_career: StaffCareerCurrent,
     #[schema(required = true)]
     pub job_position: Option<StaffJobPositionSummary>,
     #[schema(required = true)]
@@ -162,16 +154,19 @@ mod tests {
     fn personnel_patch_serialization_preserves_explicit_null() {
         let omitted: UpdateStaffInfoRequest = serde_json::from_str("{}").unwrap();
         let cleared: UpdateStaffInfoRequest =
-            serde_json::from_str(r#"{"academic_rank":null}"#).unwrap();
+            serde_json::from_str(r#"{"education_level":null}"#).unwrap();
         let explicit: UpdateStaffInfoRequest =
-            serde_json::from_str(r#"{"academic_rank":"none"}"#).unwrap();
+            serde_json::from_str(r#"{"education_level":"bachelor"}"#).unwrap();
         assert!(omitted.is_empty());
-        assert_eq!(omitted.academic_rank, None);
-        assert_eq!(cleared.academic_rank, Some(None));
-        assert_eq!(explicit.academic_rank, Some(Some(StaffAcademicRank::None)));
+        assert_eq!(omitted.education_level, None);
+        assert_eq!(cleared.education_level, Some(None));
+        assert_eq!(
+            explicit.education_level,
+            Some(Some(StaffEducationLevel::Bachelor))
+        );
         assert_eq!(
             serde_json::to_string(&cleared).unwrap(),
-            r#"{"academic_rank":null}"#
+            r#"{"education_level":null}"#
         );
         assert_eq!(StaffAcademicRank::None.label(), "ไม่มีวิทยฐานะ");
         assert_eq!(StaffEducationLevel::Bachelor.as_str(), "bachelor");

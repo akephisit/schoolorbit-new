@@ -6,3 +6,5 @@ pub mod personnel;
 pub mod roles;
 pub mod staff;
 pub mod user_roles;
+
+pub mod career;

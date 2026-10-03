@@ -5326,6 +5326,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff/{id}/career-history': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffCareerHistory'];
+		put?: never;
+		post: operations['appendStaffCareerHistory'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff/{id}/career-history/{entryId}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['correctStaffCareerHistory'];
+		trace?: never;
+	};
 	'/api/staff/{id}/public-profile': {
 		parameters: {
 			query?: never;
@@ -9235,6 +9267,26 @@ export interface components {
 		ApiResponse_SessionListData: {
 			data: {
 				sessions: components['schemas']['SessionResponse'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StaffCareerHistoryPage: {
+			data: {
+				current: components['schemas']['StaffCareerCurrent'];
+				items: components['schemas']['StaffCareerEntry'][];
+				/** Format: uuid */
+				nextCursor: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_StaffCareerMutationAck: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				revision: number;
 			};
 			message?: string;
 			success: boolean;
@@ -13219,6 +13271,13 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		CorrectStaffCareerHistoryRequest: {
+			entry: components['schemas']['StaffCareerEntryInput'];
+			expectedIsCurrent: boolean;
+			/** Format: int64 */
+			expectedRevision: number;
+			reason: string;
+		};
 		/** @description One expected subject in one student's term, including an absent locked result. */
 		CourseAggregateInput: {
 			credits: string;
@@ -13628,11 +13687,17 @@ export interface components {
 			room_type: string;
 			status?: string | null;
 		};
-		CreateStaffInfoRequest: {
-			academic_rank?: null | components['schemas']['StaffAcademicRank'];
-			education_level?: null | components['schemas']['StaffEducationLevel'];
+		CreateStaffCareerHistoryRequest: {
+			entry: components['schemas']['StaffCareerEntryInput'];
 			/** Format: uuid */
-			job_position_id?: string | null;
+			id: string;
+		};
+		CreateStaffCareerRequest: {
+			entries: components['schemas']['StaffCareerEntryInput'][];
+		};
+		CreateStaffInfoRequest: {
+			career?: null | components['schemas']['CreateStaffCareerRequest'];
+			education_level?: null | components['schemas']['StaffEducationLevel'];
 			major?: string | null;
 			/** Format: date */
 			teaching_license_expiry?: string | null;
@@ -17398,6 +17463,86 @@ export interface components {
 		/** @enum {string} */
 		StaffAcademicRank:
 			'none' | 'not_applicable' | 'proficient' | 'senior_proficient' | 'expert' | 'senior_expert';
+		StaffCareerCurrent: {
+			academicRank: null | components['schemas']['StaffCareerEntry'];
+			jobPosition: null | components['schemas']['StaffCareerEntry'];
+			personnelType: null | components['schemas']['StaffCareerEntry'];
+		};
+		StaffCareerCurrentChange: {
+			correctionReason?: string | null;
+			entry: components['schemas']['StaffCareerEntryInput'];
+			expectedCurrent: null | components['schemas']['StaffCareerReference'];
+		};
+		StaffCareerEntry: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: date */
+			effectiveDate: string | null;
+			fact: components['schemas']['StaffCareerFact'];
+			/** Format: uuid */
+			id: string;
+			isCurrent: boolean;
+			jobPosition: null | components['schemas']['StaffJobPositionSummary'];
+			note: string | null;
+			/** Format: date */
+			orderDate: string | null;
+			orderNumber: string | null;
+			/** Format: int64 */
+			revision: number;
+			source: components['schemas']['StaffCareerSource'];
+			/** Format: uuid */
+			staffId: string;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		StaffCareerEntryInput: {
+			/** Format: date */
+			effectiveDate?: string | null;
+			fact: components['schemas']['StaffCareerFact'];
+			note?: string | null;
+			/** Format: date */
+			orderDate?: string | null;
+			orderNumber?: string | null;
+		};
+		StaffCareerFact:
+			| {
+					/** @enum {string} */
+					kind: 'personnel_type';
+					value: null | components['schemas']['StaffPersonnelType'];
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'job_position';
+					/** Format: uuid */
+					value: string | null;
+			  }
+			| {
+					/** @enum {string} */
+					kind: 'academic_rank';
+					value: null | components['schemas']['StaffAcademicRank'];
+			  };
+		StaffCareerHistoryPage: {
+			current: components['schemas']['StaffCareerCurrent'];
+			items: components['schemas']['StaffCareerEntry'][];
+			/** Format: uuid */
+			nextCursor: string | null;
+		};
+		/** @enum {string} */
+		StaffCareerKind: 'personnel_type' | 'job_position' | 'academic_rank';
+		StaffCareerMutationAck: {
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			revision: number;
+		};
+		StaffCareerReference: {
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			revision: number;
+		};
+		/** @enum {string} */
+		StaffCareerSource: 'existing_record' | 'staff_entry';
 		StaffDashboardOverview: {
 			/** Format: int64 */
 			activeHomerooms: number;
@@ -17425,6 +17570,7 @@ export interface components {
 			| 'other';
 		StaffInfoResponse: {
 			academic_rank: null | components['schemas']['StaffAcademicRank'];
+			current_career: components['schemas']['StaffCareerCurrent'];
 			education_level: null | components['schemas']['StaffEducationLevel'];
 			job_position: null | components['schemas']['StaffJobPositionSummary'];
 			major: string | null;
@@ -17469,6 +17615,13 @@ export interface components {
 			name: string;
 			title?: string;
 		};
+		/** @enum {string} */
+		StaffPersonnelType:
+			| 'civil_servant'
+			| 'government_employee'
+			| 'contract_employee'
+			| 'permanent_employee'
+			| 'other';
 		StaffProfileResponse: {
 			address: string | null;
 			advisor_homerooms: components['schemas']['AdvisorHomeroomItem'][];
@@ -19364,11 +19517,12 @@ export interface components {
 			room_type?: string | null;
 			status?: string | null;
 		};
+		UpdateStaffCareerRequest: {
+			changes: components['schemas']['StaffCareerCurrentChange'][];
+		};
 		UpdateStaffInfoRequest: {
-			academic_rank?: null | components['schemas']['StaffAcademicRank'];
+			career?: null | components['schemas']['UpdateStaffCareerRequest'];
 			education_level?: null | components['schemas']['StaffEducationLevel'];
-			/** Format: uuid */
-			job_position_id?: string | null;
 			major?: string | null;
 			/** Format: date */
 			teaching_license_expiry?: string | null;
@@ -43293,6 +43447,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Career reference changed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	deleteStaff: {
@@ -43336,6 +43499,214 @@ export interface operations {
 			};
 			/** @description Staff member not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaffCareerHistory: {
+		parameters: {
+			query?: {
+				cursor?: string;
+				pageSize?: number;
+			};
+			header?: never;
+			path: {
+				/** @description Staff user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Scoped history and current entries */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StaffCareerHistoryPage'];
+				};
+			};
+			/** @description Invalid cursor or page size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Profile read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	appendStaffCareerHistory: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateStaffCareerHistoryRequest'];
+			};
+		};
+		responses: {
+			/** @description Entry acknowledgement, including safe retries */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StaffCareerMutationAck'];
+				};
+			};
+			/** @description Invalid historical entry */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff member not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description ID or payload conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	correctStaffCareerHistory: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description History entry ID */
+				entryId: string;
+				/** @description Staff user ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CorrectStaffCareerHistoryRequest'];
+			};
+		};
+		responses: {
+			/** @description Correction acknowledgement */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_StaffCareerMutationAck'];
+				};
+			};
+			/** @description Invalid correction or missing reason */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff update permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff member or entry not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Revision or current status changed */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

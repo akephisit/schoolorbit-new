@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { careerFieldErrors, type StaffCareerCorrectionReasons } from '$lib/forms/staff-career';
 	import { beforeNavigate, goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
@@ -7,8 +8,7 @@
 	import {
 		buildStaffPersonnelPatch,
 		staffPersonnelDraft,
-		normalizeStaffEducationText,
-		type StaffPersonnelDraft
+		normalizeStaffEducationText
 	} from '$lib/forms/staff-personnel';
 	import { staffStatusLabel } from '$lib/forms/staff-status';
 	import { resolve } from '$app/paths';
@@ -112,7 +112,7 @@
 		status: 'active',
 
 		// Staff Info
-		personnel: {} as StaffPersonnelDraft,
+		personnel: staffPersonnelDraft(null),
 
 		// Organization Units
 		organization_assignments: [] as Array<{
@@ -141,6 +141,8 @@
 	}
 	// Validation errors
 	let errors = $state<Record<string, string>>({});
+	let correctionReasons = $state<StaffCareerCorrectionReasons>({});
+	let careerConflict = $state(false);
 
 	$effect.pre(() => {
 		const id = staffId,
@@ -285,6 +287,14 @@
 				errors[key] = error instanceof Error ? error.message : 'ข้อมูลไม่ถูกต้อง';
 			}
 		}
+		Object.assign(errors, careerFieldErrors(formData.personnel.career));
+		if (originalForm) {
+			try {
+				buildStaffPersonnelPatch(originalForm.personnel, formData.personnel, correctionReasons);
+			} catch (error) {
+				errors.career = error instanceof Error ? error.message : 'ข้อมูลไม่ถูกต้อง';
+			}
+		}
 		return Object.keys(errors).length === 0;
 	}
 
@@ -335,12 +345,21 @@
 
 	// Submit form
 	async function handleSubmit() {
-		if (!canMutateStaff || saving || !staff || !originalForm || !dirty) return;
+		if (!canMutateStaff || saving || careerConflict || !staff || !originalForm || !dirty) return;
 		if (!validateStep1()) {
-			await goto(sectionHref(errors.major || errors.university ? 'education' : 'personal'), {
-				keepFocus: true,
-				noScroll: true
-			});
+			await goto(
+				sectionHref(
+					errors.major ||
+						errors.university ||
+						Object.keys(errors).some((key) => key === 'career' || key.includes('.'))
+						? 'education'
+						: 'personal'
+				),
+				{
+					keepFocus: true,
+					noScroll: true
+				}
+			);
 			return;
 		}
 		const organizationsChanged =
@@ -386,7 +405,11 @@
 					payload[field] = value || undefined;
 				}
 			}
-			const hrPatch = buildStaffPersonnelPatch(originalForm.personnel, formData.personnel);
+			const hrPatch = buildStaffPersonnelPatch(
+				originalForm.personnel,
+				formData.personnel,
+				correctionReasons
+			);
 			if (hrPatch) payload.staff_info = hrPatch;
 			if (organizationsChanged)
 				payload.organization_assignments = formData.organization_assignments;
@@ -405,6 +428,7 @@
 					)
 				);
 			} else {
+				careerConflict = result.status === 409;
 				toast.error(result.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 			}
 		} catch (e) {
@@ -412,6 +436,43 @@
 				toast.error(e instanceof Error ? e.message : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 		} finally {
 			if (current()) saving = false;
+		}
+	}
+
+	async function reconcileCareerDraft() {
+		if (saving || !originalForm) return;
+		const owner = staffId,
+			ticket = staffRequest.begin();
+		saving = true;
+		try {
+			const latest = await getStaffProfile(owner, { signal: ticket.signal });
+			if (disposed || owner !== staffId || !staffRequest.isCurrent(ticket.revision)) return;
+			const updated = staffPersonnelDraft(
+				requireApiData(latest, 'โหลดข้อมูลล่าสุดไม่สำเร็จ').staff_info
+			).career;
+			const previous = originalForm.personnel.career;
+			for (const key of ['personnelType', 'jobPosition', 'academicRank'] as const) {
+				const draft = formData.personnel.career[key];
+				const fresh = updated[key];
+				if (draft.value === previous[key].value) {
+					if (key === 'personnelType')
+						formData.personnel.career.personnelType.value = updated.personnelType.value;
+					else if (key === 'academicRank')
+						formData.personnel.career.academicRank.value = updated.academicRank.value;
+					else formData.personnel.career.jobPosition.value = updated.jobPosition.value;
+				}
+				for (const field of ['effectiveDate', 'orderDate', 'orderNumber', 'note'] as const)
+					if (draft[field] === previous[key][field]) draft[field] = fresh[field];
+				draft.reference = fresh.reference;
+			}
+			originalForm.personnel.career = updated;
+			careerConflict = false;
+			toast.success('โหลดข้อมูลล่าสุดแล้ว กรุณาตรวจสอบร่างก่อนบันทึก');
+		} catch (error) {
+			if (!disposed && owner === staffId)
+				toast.error(error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ');
+		} finally {
+			if (!disposed && owner === staffId) saving = false;
 		}
 	}
 
@@ -735,8 +796,26 @@
 						</div>
 					{:else if currentStep === 2}
 						<h2 class="text-xl font-semibold mb-6">ตำแหน่งและการศึกษา</h2>
+						{#if careerConflict}<div
+								class="mb-4 space-y-3 rounded-xl border bg-muted/40 p-4"
+								role="alert"
+							>
+								<p class="text-sm">
+									ข้อมูลบุคลากรเปลี่ยนไปแล้ว ร่างของคุณยังอยู่
+									กรุณาโหลดข้อมูลล่าสุดและตรวจสอบก่อนบันทึก
+								</p>
+								<Button
+									type="button"
+									variant="outline"
+									disabled={saving}
+									onclick={reconcileCareerDraft}>โหลดข้อมูลล่าสุดและตรวจสอบร่าง</Button
+								>
+							</div>{/if}
+
 						<StaffPersonnelFields
 							bind:value={formData.personnel}
+							originalCareer={originalForm?.personnel.career}
+							bind:correctionReasons
 							bind:selectedPosition
 							{errors}
 							disabled={saving || !canMutateStaff}
@@ -917,7 +996,10 @@
 							onclick={discardChanges}
 							disabled={saving || !dirty}>ยกเลิกการแก้ไข</Button
 						>
-						<Button type="submit" disabled={saving || !canMutateStaff || !dirty} class="gap-2"
+						<Button
+							type="submit"
+							disabled={saving || careerConflict || !canMutateStaff || !dirty}
+							class="gap-2"
 							>{#if saving}<LoaderCircle class="size-4 animate-spin" />กำลังบันทึก...{:else}<Save
 									class="size-4"
 								/>บันทึกการเปลี่ยนแปลง{/if}</Button

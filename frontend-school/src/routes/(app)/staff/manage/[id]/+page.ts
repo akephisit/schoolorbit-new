@@ -5,6 +5,7 @@ import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
 import { captureRouteLoad } from '$lib/navigation/route-load';
 import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
 import type { PageLoad } from './$types';
+import { listStaffCareerHistory } from '$lib/api/staff-career';
 import { getStaffProfile } from '$lib/api/staff';
 import { requireApiData } from '$lib/api/client';
 import { getAchievements } from '$lib/api/achievement';
@@ -36,6 +37,20 @@ export const load: PageLoad = ({ fetch, params, depends }) => {
 		),
 		'โหลดข้อมูลบุคลากรไม่สำเร็จ'
 	);
+	const careerHistory = captureRouteLoad(
+		userRead.then(async (user) =>
+			user?.user_type === 'staff' &&
+			(get(can).hasAny(
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+				PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE,
+				PERMISSIONS.STAFF_PROFILE_READ_SCHOOL
+			) ||
+				(user.id === staffId && get(can).has(PERMISSIONS.STAFF_PROFILE_READ_OWN)))
+				? listStaffCareerHistory(staffId, {}, { requestFetch: fetch })
+				: null
+		),
+		'โหลดประวัติไม่สำเร็จ'
+	);
 	const achievements = captureRouteLoad(
 		userRead.then(async (user) =>
 			user?.user_type === 'staff' &&
@@ -49,5 +64,5 @@ export const load: PageLoad = ({ fetch, params, depends }) => {
 		),
 		'โหลดผลงานไม่สำเร็จ'
 	);
-	return { title: 'รายละเอียดบุคลากร', staffId, staff, achievements };
+	return { title: 'รายละเอียดบุคลากร', staffId, staff, achievements, careerHistory };
 };

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import StaffCareerHistory from '$lib/components/staff/StaffCareerHistory.svelte';
+	import { can } from '$lib/stores/permissions';
+	import { PERMISSIONS } from '$lib/permissions/registry';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import { LatestRequest } from '$lib/async/latest-request';
@@ -514,4 +517,10 @@
 			</form>
 		{/if}
 	</div>
+	{#if user?.id && $can.hasAny(PERMISSIONS.STAFF_PROFILE_READ_OWN, PERMISSIONS.STAFF_PROFILE_READ_SCHOOL, PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_UNIT, PERMISSIONS.STAFF_PROFILE_READ_ORGANIZATION_TREE)}<StaffCareerHistory
+			staffId={user.id}
+			initial={data.careerHistory}
+			canEdit={$can.has(PERMISSIONS.STAFF_UPDATE_ALL)}
+			onCurrentChanged={() => Promise.resolve()}
+		/>{/if}
 </PageShell>

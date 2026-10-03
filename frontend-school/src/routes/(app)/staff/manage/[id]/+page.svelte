@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StaffCareerHistory from '$lib/components/staff/StaffCareerHistory.svelte';
 	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '$lib/forms/staff-personnel';
 	import { onDestroy, untrack } from 'svelte';
 	import { LatestRequest } from '$lib/async/latest-request';
@@ -742,6 +743,12 @@
 		/>
 	{/if}
 
+	{#if canReadStaff}<StaffCareerHistory
+			{staffId}
+			initial={data.careerHistory}
+			canEdit={canUpdateStaff}
+			onCurrentChanged={loadStaffProfile}
+		/>{/if}
 	<!-- Delete Confirmation Dialog -->
 	<Dialog.Root bind:open={showDeleteDialog}>
 		<Dialog.Content class="sm:max-w-[425px]">

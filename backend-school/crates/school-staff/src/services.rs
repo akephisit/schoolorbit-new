@@ -9,6 +9,7 @@ mod personnel_migration_test_support;
 #[cfg(test)]
 mod personnel_simplification_test_support;
 pub mod role_service;
+pub mod staff_career_service;
 pub mod staff_info_service;
 pub mod staff_service;
 pub mod user_role_service;
@@ -33,6 +34,9 @@ mod personnel_tests;
 
 #[cfg(test)]
 mod personnel_simplification_tests;
+
+#[cfg(test)]
+mod staff_career_tests;
 
 #[cfg(test)]
 mod tests {

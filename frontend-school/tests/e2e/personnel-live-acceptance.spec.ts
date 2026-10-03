@@ -72,6 +72,45 @@ test('deployed personnel overview and drilldown are consistent through the proxy
 			await expect(page.getByTestId('staff-directory')).toHaveAttribute('aria-busy', 'false');
 			expect(new URL(page.url()).searchParams.get('job_position_id')).toBe(bucket.key);
 		}
+		phase = 'career_detail';
+		const directory = await read<Schemas['StaffListData']>('/api/staff?status=active&page_size=1');
+		if (directory.items[0]) {
+			const personId = directory.items[0].id;
+			const profile = await read<Schemas['StaffProfileResponse']>(`/api/staff/${personId}`);
+			const history = await read<Schemas['StaffCareerHistoryPage']>(
+				`/api/staff/${personId}/career-history`
+			);
+			if (profile.staff_info) expect(history.current).toEqual(profile.staff_info.current_career);
+			for (const entry of history.items) {
+				expect(entry.staffId).toBe(personId);
+				if (entry.source === 'existing_record' && entry.revision === 1) {
+					expect(entry.effectiveDate).toBeNull();
+					expect(entry.orderDate).toBeNull();
+					expect(entry.orderNumber).toBeNull();
+				}
+			}
+			await page.goto(`/staff/manage/${personId}`);
+			const career = page.getByRole('region', { name: 'ประวัติตำแหน่งและวิทยฐานะ', exact: true });
+			await expect(career).toHaveAttribute('aria-busy', 'false');
+			await expect(career.getByTestId('career-current-academic_rank')).toBeVisible();
+		}
+		phase = 'career_own';
+		const me = await read<Schemas['CurrentUserResponse']>('/api/auth/me');
+		const ownReadable = me.permissions.some((code) =>
+			[
+				'staff_profile.read.own',
+				'staff_profile.read.school',
+				'staff_profile.read.organization_unit',
+				'staff_profile.read.organization_tree'
+			].includes(code)
+		);
+		await page.goto('/staff/profile');
+		const ownHistory = page.getByRole('region', { name: 'ประวัติตำแหน่งและวิทยฐานะ', exact: true });
+		if (ownReadable) {
+			await read<Schemas['StaffCareerHistoryPage']>(`/api/staff/${me.id}/career-history`);
+			await expect(ownHistory).toHaveAttribute('aria-busy', 'false');
+			await expect(ownHistory.getByTestId('career-current-academic_rank')).toBeVisible();
+		} else await expect(ownHistory).toHaveCount(0);
 		phase = 'positions_api';
 		const positions = await read<Schemas['JobPositionPage']>(
 			'/api/staff/job-positions?selectableOnly=true'

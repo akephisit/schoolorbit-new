@@ -13,7 +13,8 @@
 		selected = $bindable(null),
 		disabled = false,
 		emptyLabel = 'ยังไม่ระบุ',
-		missingToken
+		missingToken,
+		onValueChange
 	}: {
 		selectableOnly?: boolean;
 		label: string;
@@ -22,6 +23,7 @@
 		disabled?: boolean;
 		emptyLabel?: string;
 		missingToken?: string;
+		onValueChange?: (value: string | null) => void;
 	} = $props();
 	let open = $state(false),
 		search = $state(''),
@@ -69,7 +71,8 @@
 	});
 	onDestroy(() => request.abort());
 	function choose(item: StaffJobPositionSummary | null) {
-		value = item?.id ?? null;
+		if (onValueChange) onValueChange(item?.id ?? null);
+		else value = item?.id ?? null;
 		selected = item;
 		open = false;
 		search = '';

@@ -4441,6 +4441,7 @@ version = "0.1.0"
 dependencies = [
  "bcrypt",
  "chrono",
+ "chrono-tz",
  "school-authorization",
  "school-crypto",
  "school-errors",

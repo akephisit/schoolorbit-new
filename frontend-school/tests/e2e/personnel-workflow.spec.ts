@@ -1,3 +1,4 @@
+import { careerEntry, personnelInfo } from './fixtures/staff-career-route-data';
 import { expect, test, type Page } from '@playwright/test';
 import { mockStaffDirectory, staffPath } from './fixtures/staff-directory-route-data';
 import { navigate } from './fixtures/supervision-route-data';
@@ -64,18 +65,20 @@ test('personnel editor selects standardized degree and sends an HR-only patch', 
 	expect(payload).not.toHaveProperty('role_ids');
 	expect(payload).not.toHaveProperty('organization_assignments');
 });
-test('personnel dashboard exposes accessible drilldown and a mobile layout', async ({ page }) => {
+test('personnel dashboard exposes accessible drilldown and a mobile layout', async ({
+	page
+}, testInfo) => {
 	await setup(page);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/staff/manage/overview');
 	await expect(page.getByRole('heading', { name: 'ภาพรวมงานบุคคล', exact: true })).toBeVisible();
 	await page.screenshot({
-		path: '../.superpowers/sdd/2026-10-03-personnel-data-simplification/dashboard-mobile.png',
+		path: testInfo.outputPath('dashboard-mobile.png'),
 		fullPage: true
 	});
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.screenshot({
-		path: '../.superpowers/sdd/2026-10-03-personnel-data-simplification/dashboard-desktop.png',
+		path: testInfo.outputPath('dashboard-desktop.png'),
 		fullPage: true
 	});
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -94,7 +97,7 @@ test('personnel dashboard exposes accessible drilldown and a mobile layout', asy
 		.getByRole('heading', { name: 'บุคลากรตามกลุ่มสาระ', exact: true })
 		.scrollIntoViewIfNeeded();
 	await page.screenshot({
-		path: '../.superpowers/sdd/2026-10-03-personnel-data-simplification/dashboard-mobile-charts.png'
+		path: testInfo.outputPath('dashboard-mobile-charts.png')
 	});
 	await expect(page.getByTestId('personnel-overview')).toContainText('หนึ่งคนอาจอยู่หลายกลุ่มสาระ');
 	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -108,7 +111,7 @@ test('existing inactive position remains readable and clearing sends explicit nu
 	page
 }) => {
 	await mockStaffDirectory(page, {
-		staffInfo: {
+		staffInfo: personnelInfo({
 			job_position: {
 				id: ref,
 				code: 'teacher',
@@ -116,11 +119,26 @@ test('existing inactive position remains readable and clearing sends explicit nu
 				isActive: false,
 				isSelectable: false
 			},
+			current_career: {
+				personnelType: null,
+				jobPosition: careerEntry({
+					id: ref,
+					fact: { kind: 'job_position', value: ref },
+					jobPosition: {
+						id: ref,
+						code: 'teacher',
+						name: 'ครูเดิม',
+						isActive: false,
+						isSelectable: false
+					}
+				}),
+				academicRank: careerEntry()
+			},
 			academic_rank: 'none',
 			education_level: 'bachelor',
 			major: null,
 			university: null
-		}
+		})
 	});
 	let reads = 0;
 	await page.route('**/api/staff/job-positions**', (route) => {
@@ -138,7 +156,24 @@ test('existing inactive position remains readable and clearing sends explicit nu
 	await page.getByRole('button', { name: 'ยังไม่ระบุ', exact: true }).click();
 	const saved = page.waitForRequest((r) => r.method() === 'PUT' && r.url().includes('/api/staff/'));
 	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
-	expect((await saved).postDataJSON()).toEqual({ staff_info: { job_position_id: null } });
+	expect((await saved).postDataJSON()).toEqual({
+		staff_info: {
+			career: {
+				changes: [
+					{
+						expectedCurrent: { id: ref, revision: 1 },
+						entry: {
+							fact: { kind: 'job_position', value: null },
+							effectiveDate: null,
+							orderDate: null,
+							orderNumber: null,
+							note: null
+						}
+					}
+				]
+			}
+		}
+	});
 });
 
 test('new personnel selection survives draft reload and appears in review and creation', async ({
@@ -178,8 +213,24 @@ test('new personnel selection survives draft reload and appears in review and cr
 	);
 	await page.getByRole('button', { name: 'สร้างบุคลากร', exact: true }).click();
 	expect((await saved).postDataJSON().staff_info).toMatchObject({
-		job_position_id: ref,
-		academic_rank: 'none',
+		career: {
+			entries: [
+				{
+					fact: { kind: 'job_position', value: ref },
+					effectiveDate: null,
+					orderDate: null,
+					orderNumber: null,
+					note: null
+				},
+				{
+					fact: { kind: 'academic_rank', value: 'none' },
+					effectiveDate: null,
+					orderDate: null,
+					orderNumber: null,
+					note: null
+				}
+			]
+		},
 		education_level: 'bachelor',
 		major: 'วิทยาศาสตร์',
 		university: 'มหาวิทยาลัยทดสอบ'

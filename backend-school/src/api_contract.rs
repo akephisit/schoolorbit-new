@@ -132,6 +132,7 @@ use school_question_bank::models::{
     RichBlockNode, RichContent, RichDocument, RichInlineNode, RichTextMark,
     UpsertQuestionChoiceRequest, UpsertQuestionRequest,
 };
+use school_staff::career::*;
 use school_staff::models::{
     AdvisorHomeroomItem, AssignRoleRequest, CreateOrganizationUnitRequest, CreateRoleRequest,
     CreateStaffInfoRequest, CreateStaffRequest, DelegationItem, OrganizationAssignment,
@@ -232,6 +233,9 @@ use utoipa::OpenApi;
         crate::modules::lookup::handlers::lookup_homerooms,
         crate::modules::lookup::handlers::lookup_academic_years,
         crate::modules::lookup::handlers::lookup_subjects,
+        crate::modules::staff::handlers::career::list_career_history,
+        crate::modules::staff::handlers::career::append_career_history,
+        crate::modules::staff::handlers::career::correct_career_history,
         crate::modules::staff::handlers::personnel::get_personnel_overview,
         crate::modules::staff::handlers::personnel::list_job_positions,
         crate::modules::staff::handlers::staff::list_staff,
@@ -930,6 +934,7 @@ struct SchoolApiDoc;
         StaffSubjectGroupSummary, StaffAcademicRank, StaffEducationLevel, StaffJobPositionSummary,
         UpdateStaffInfoRequest, JobPositionPage,
         ApiResponse<JobPositionPage>,
+        StaffPersonnelType,StaffCareerKind,StaffCareerSource,StaffCareerFact,StaffCareerEntryInput,StaffCareerReference,StaffCareerCurrent,StaffCareerEntry,CreateStaffCareerRequest,StaffCareerCurrentChange,UpdateStaffCareerRequest,CreateStaffCareerHistoryRequest,CorrectStaffCareerHistoryRequest,StaffCareerHistoryPage,StaffCareerMutationAck,ApiResponse<StaffCareerHistoryPage>,ApiResponse<StaffCareerMutationAck>,
         StaffInfoResponse,
         StaffProfileResponse,
         CreateStaffInfoRequest,

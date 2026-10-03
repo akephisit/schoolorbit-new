@@ -1,4 +1,11 @@
 <script lang="ts">
+	import {
+		buildCreateStaffCareer,
+		careerFieldErrors,
+		formatCareerDate,
+		PERSONNEL_TYPE_LABELS,
+		CAREER_KIND_LABELS
+	} from '$lib/forms/staff-career';
 	import StaffPersonnelFields from '$lib/components/staff/StaffPersonnelFields.svelte';
 	import {
 		ACADEMIC_RANK_LABELS,
@@ -269,6 +276,7 @@
 				errors[key] = error instanceof Error ? error.message : 'ข้อมูลไม่ถูกต้อง';
 			}
 		}
+		Object.assign(errors, careerFieldErrors(formData.personnel.career));
 		return Object.keys(errors).length === 0;
 	}
 
@@ -431,7 +439,8 @@
 				address: payloadData.address || undefined,
 				hired_date: payloadData.hired_date || undefined,
 				staff_info: {
-					...formData.personnel,
+					career: buildCreateStaffCareer(formData.personnel.career),
+					education_level: formData.personnel.education_level,
 					major: normalizeStaffEducationText(formData.personnel.major),
 					university: normalizeStaffEducationText(formData.personnel.university)
 				},
@@ -1067,8 +1076,8 @@
 							<h3 class="font-medium">ตำแหน่งและการศึกษา</h3>
 							<p>ตำแหน่ง: {formData.selected_position?.name ?? 'ยังไม่ระบุ'}</p>
 							<p>
-								วิทยฐานะ: {formData.personnel.academic_rank
-									? ACADEMIC_RANK_LABELS[formData.personnel.academic_rank]
+								วิทยฐานะ: {formData.personnel.career.academicRank.value
+									? ACADEMIC_RANK_LABELS[formData.personnel.career.academicRank.value]
 									: 'ยังไม่ระบุ'}
 							</p>
 							<p>
@@ -1076,6 +1085,32 @@
 									? EDUCATION_LEVEL_LABELS[formData.personnel.education_level]
 									: 'ยังไม่ระบุ'}
 							</p>
+							<p>
+								ประเภทบุคลากร: {formData.personnel.career.personnelType.value
+									? PERSONNEL_TYPE_LABELS[formData.personnel.career.personnelType.value]
+									: 'ยังไม่ระบุ'}
+							</p>
+							{#each [{ key: 'personnelType', kind: 'personnel_type' }, { key: 'jobPosition', kind: 'job_position' }, { key: 'academicRank', kind: 'academic_rank' }] as fact (fact.kind)}
+								<div class="rounded-lg border p-3">
+									<p class="font-medium">
+										{CAREER_KIND_LABELS[fact.kind as keyof typeof CAREER_KIND_LABELS]}
+									</p>
+									<p>
+										มีผล: {formatCareerDate(
+											formData.personnel.career[fact.key as keyof typeof formData.personnel.career]
+												.effectiveDate || null
+										)}
+									</p>
+									<p>
+										คำสั่ง: {formData.personnel.career[
+											fact.key as keyof typeof formData.personnel.career
+										].orderNumber || 'ยังไม่ระบุ'} · {formatCareerDate(
+											formData.personnel.career[fact.key as keyof typeof formData.personnel.career]
+												.orderDate || null
+										)}
+									</p>
+								</div>
+							{/each}
 							<p>สาขา: {formData.personnel.major ?? 'ยังไม่ระบุ'}</p>
 							<p>สถาบัน: {formData.personnel.university ?? 'ยังไม่ระบุ'}</p>
 						</div>

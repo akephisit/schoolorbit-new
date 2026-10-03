@@ -178,6 +178,15 @@ fn protected_routes() -> Router<AppState> {
                 .delete(modules::staff::handlers::staff::delete_staff),
         )
         .route(
+            "/api/staff/{id}/career-history",
+            get(modules::staff::handlers::career::list_career_history)
+                .post(modules::staff::handlers::career::append_career_history),
+        )
+        .route(
+            "/api/staff/{id}/career-history/{entryId}",
+            axum::routing::patch(modules::staff::handlers::career::correct_career_history),
+        )
+        .route(
             "/api/staff/{id}/public-profile",
             get(modules::staff::handlers::staff::get_public_staff_profile),
         )

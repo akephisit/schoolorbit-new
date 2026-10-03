@@ -13,6 +13,7 @@ async fn public_profile_does_not_hide_failed_role_or_organization_reads() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 85).await.unwrap();
     let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     assert!(
         school_staff::services::staff_service::get_public_staff_profile(&pool, staff_id)
@@ -50,6 +51,7 @@ async fn staff_profile_reads_canonical_teaching_and_homeroom_assignments() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 85).await.unwrap();
 
     let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let homeroom_id: Uuid = sqlx::query_scalar(
@@ -91,6 +93,7 @@ async fn private_profile_does_not_turn_failed_relations_into_empty_success() {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
+    apply_migrations_through(&pool, 85).await.unwrap();
     let staff_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     assert!(
         school_staff::services::staff_service::get_staff_profile(&pool, staff_id, false)

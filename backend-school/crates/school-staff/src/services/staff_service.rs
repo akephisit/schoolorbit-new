@@ -705,7 +705,11 @@ pub async fn get_staff_profile(
 }
 
 /// Create staff — encrypt national_id, insert user + staff_info + roles + organization memberships in transaction
-pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<Uuid, AppError> {
+pub async fn create_staff(
+    pool: &PgPool,
+    payload: CreateStaffRequest,
+    actor_id: Uuid,
+) -> Result<Uuid, AppError> {
     if payload.profile_image_file_id.is_some() {
         return Err(AppError::ValidationError(
             "กรุณาสร้างบุคลากรก่อนอัปโหลดรูปโปรไฟล์".to_string(),
@@ -806,7 +810,7 @@ pub async fn create_staff(pool: &PgPool, payload: CreateStaffRequest) -> Result<
     })?;
 
     if let Some(staff_info) = &payload.staff_info {
-        staff_info_service::create_staff_info(&mut tx, user_id, staff_info).await?;
+        staff_info_service::create_staff_info(&mut tx, user_id, staff_info, actor_id).await?;
     }
 
     let role_rows = user_role_bulk_rows(&payload.role_ids, payload.primary_role_id);
@@ -831,6 +835,7 @@ pub async fn update_staff(
     pool: &PgPool,
     staff_id: Uuid,
     payload: UpdateStaffRequest,
+    actor_id: Uuid,
 ) -> Result<Option<Uuid>, AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("❌ Failed to start transaction: {}", e);
@@ -944,7 +949,7 @@ SELECT EXISTS(
     }
 
     if let Some(staff_info) = &payload.staff_info {
-        staff_info_service::patch_staff_info(&mut tx, staff_id, staff_info).await?;
+        staff_info_service::patch_staff_info(&mut tx, staff_id, staff_info, actor_id).await?;
     }
 
     if let Some(role_ids) = &payload.role_ids {
