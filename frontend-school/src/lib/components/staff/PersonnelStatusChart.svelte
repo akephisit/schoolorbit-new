@@ -25,36 +25,35 @@
 <section class="rounded-xl border bg-card p-5 space-y-4" aria-label="สถานะบุคลากรทั้งหมด">
 	<h2 class="font-semibold">สถานะบุคลากรทั้งหมด</h2>
 	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-		<svg viewBox="0 0 42 42" class="h-40 w-40 shrink-0 self-center" aria-hidden="true"
-			><circle
-				cx="21"
-				cy="21"
-				r="16"
-				fill="none"
-				stroke="var(--muted)"
-				stroke-width="5"
-			/>{#each segments as segment (segment.bucket.key)}{#if segment.percentage > 0}<circle
-						cx="21"
-						cy="21"
-						r="16"
-						fill="none"
-						stroke={segment.color}
-						stroke-width="5"
-						pathLength="100"
-						stroke-dasharray={`${segment.percentage} ${100 - segment.percentage}`}
-						stroke-dashoffset={-segment.offset}
-						transform="rotate(-90 21 21)"
-					/>{/if}{/each}<text
-				x="21"
-				y="21"
-				dominant-baseline="central"
-				text-anchor="middle"
-				fill="currentColor"
-				font-size="6"
-				font-weight="600">{total.toLocaleString('th-TH')}</text
-			><text x="21" y="28" text-anchor="middle" fill="currentColor" font-size="3">คนทั้งหมด</text
-			></svg
-		>
+		<div class="relative h-40 w-40 shrink-0 self-center" aria-hidden="true">
+			<svg viewBox="0 0 42 42" class="h-full w-full"
+				><circle
+					cx="21"
+					cy="21"
+					r="16"
+					fill="none"
+					stroke="var(--muted)"
+					stroke-width="5"
+				/>{#each segments as segment (segment.bucket.key)}{#if segment.percentage > 0}<circle
+							cx="21"
+							cy="21"
+							r="16"
+							fill="none"
+							stroke={segment.color}
+							stroke-width="5"
+							pathLength="100"
+							stroke-dasharray={`${segment.percentage} ${100 - segment.percentage}`}
+							stroke-dashoffset={-segment.offset}
+							transform="rotate(-90 21 21)"
+						/>{/if}{/each}</svg
+			>
+			<div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+				<span class="text-2xl font-semibold leading-tight tabular-nums"
+					>{total.toLocaleString('th-TH')}</span
+				>
+				<span class="text-xs leading-relaxed">คนทั้งหมด</span>
+			</div>
+		</div>
 		<ul class="w-full min-w-0 flex-1 space-y-1 sm:w-auto">
 			{#each segments as segment (segment.bucket.key)}<li>
 					<a
