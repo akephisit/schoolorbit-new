@@ -37,7 +37,25 @@ export function publicPositionLabel(code: string): string {
 		director: 'ผู้อำนวยการ',
 		deputy_director: 'รองผู้อำนวยการ',
 		head: 'หัวหน้า',
-		deputy_head: 'รองหัวหน้า'
+		deputy_head: 'รองหัวหน้า',
+		coordinator: 'ผู้ประสานงาน',
+		member: 'สมาชิก'
 	};
-	return titles[code] ?? 'ผู้บริหาร';
+	return titles[code] ?? code;
+}
+
+export function groupPublicOrganizationMembers(members: Unit['members']) {
+	const order = ['director', 'deputy_director', 'head', 'deputy_head', 'coordinator', 'member'];
+	const grouped = new Map<string, Unit['members']>();
+	for (const member of members) {
+		const group = grouped.get(member.positionCode) ?? [];
+		group.push(member);
+		grouped.set(member.positionCode, group);
+	}
+	return [...grouped]
+		.sort(([left], [right]) => {
+			const rank = (code: string) => (order.includes(code) ? order.indexOf(code) : order.length);
+			return rank(left) - rank(right);
+		})
+		.map(([code, members]) => ({ code, label: publicPositionLabel(code), members }));
 }

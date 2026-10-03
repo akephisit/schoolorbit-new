@@ -64,11 +64,11 @@ accepted SHA instead of only the immediately preceding push. A missing or diverg
 any later failed, cancelled, or incomplete release attempt, forces a full release. Scope detection
 then selects one of these paths:
 
-| Changed area | Scope | Release behavior |
-| --- | --- | --- |
-| `frontend-school` only | frontend-only | Build and stage every tenant Worker, synchronize menus through the VPS loopback, then promote every staged version. The school API stays available. |
-| `backend-school` only | backend-only | Build the immutable backend image first, enable maintenance, replace the backend, migrate and audit every tenant, pass readiness and authenticated smoke, then reopen the API. The existing frontend remains active. |
-| Both, or a shared school runtime file | full release | Build the backend and stage every tenant Worker before maintenance, deploy and verify the backend, synchronize menus, promote every tenant, then reopen the API only after all tenant promotions pass. |
+| Changed area                          | Scope         | Release behavior                                                                                                                                                                                                     |
+| ------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend-school` only                | frontend-only | Build and stage every tenant Worker, synchronize menus through the VPS loopback, then promote every staged version. The school API stays available.                                                                  |
+| `backend-school` only                 | backend-only  | Build the immutable backend image first, enable maintenance, replace the backend, migrate and audit every tenant, pass readiness and authenticated smoke, then reopen the API. The existing frontend remains active. |
+| Both, or a shared school runtime file | full release  | Build the backend and stage every tenant Worker before maintenance, deploy and verify the backend, synchronize menus, promote every tenant, then reopen the API only after all tenant promotions pass.               |
 
 A manual dispatch may choose `frontend`, `backend`, or `full`; `auto` applies the same path-based
 classification as a push. `deploy-school-tenant.yml` remains a provisioning-only manual workflow
@@ -118,6 +118,8 @@ when any tenant promotion fails; the operator fixes forward and reruns the revie
 mutable registry `latest` tag and bounded local image cleanup move only after release acceptance.
 
 After deployment, verify readiness first, then run the smoke test and the relevant browser workflow with runtime credentials.
+
+The public organization response uses `members` for every current staff member, including coordinators and ordinary members, rather than the former leadership-only `leaders` field. Deploy this contract and its frontend consumer as a coordinated full school release; retain maintenance until both components are accepted. There is no database migration. A rollback must restore matching backend and frontend contracts together.
 
 ### Build, deployment timing, and image retention
 
@@ -487,7 +489,6 @@ Migrations 083/084 retain their own locked-source checks, fingerprints, exact pr
 The initial matched frontend preserved verifiable owner-qualified v2 drafts through a bounded migration-only importer with their original 30-minute expiry. After both target frontends accepted the canonical release and that lifetime elapsed, the verified frontend cleanup retired the importer and v2 schema. The career release writes only owner-qualified v4 drafts. Both target frontends accepted the career release and the full original 30-minute lifetime elapsed before retirement of the v3 importer and schema. Obsolete ownerless and current-owner v2/v3 keys are now removed without reading or importing their contents. Invalid saves preserve the existing canonical draft, and reading never renews its expiry. Focused tests enforce scoped cleanup, canonical career preservation, refusal of retired fields, and absence of migration writes. No legacy API lookup or runtime schema fallback is allowed.
 
 Rank milestone reads use the canonical current history and existing profile scopes. The versioned system policy is owned by [the staff calculator](../backend-school/crates/school-staff/src/rank_milestones.rs); a policy amendment requires a new reviewed version and calendar/state tests. The ordinary date is a planning milestone, and the conditional reduced date never confirms a reduction right or submission eligibility. No schema migration, persisted eligibility, review approval, notification scheduler or new permission is introduced. Deploy the backend before the matched frontend so the independent overview endpoint and history response are available; earlier frontends can ignore the additional history field. Verify the scoped endpoint and both tenant frontends after the matched release.
-
 
 [Migration 085](../backend-school/migrations/085_staff_career_history.sql) establishes the canonical career-history owner and deferred current-projection guards. Import preserves existing position/rank values, UUID relationships and unrelated staff fields; effective dates, order dates/numbers and import actors remain unknown. Personnel type stays unspecified until explicitly recorded. Current changes and reasoned corrections run through `StaffCareerService` in one transaction with optimistic revision/current-reference checks and audit records. Historical append never advances the current pointer. Public profiles do not expose history or these dates.
 

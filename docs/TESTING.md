@@ -177,7 +177,7 @@ npm run test:route-loading
 npm run test:static
 ```
 
-The public school homepage uses disposable API fixtures, including streamed loading, regional retries, empty academic context, and mobile/desktop organization disclosures. Its Rust tests use isolated tenant schemas and the real router to verify anonymous access, tenant isolation, current enrollment/room movement, staff position counts, and current leaders. Run:
+The public school homepage uses disposable API fixtures, including streamed loading, regional retries, empty academic context, and mobile/desktop organization disclosures. Its Rust tests use isolated tenant schemas and the real router to verify anonymous access, tenant isolation, current enrollment/room movement, staff position counts, and current members of every position. Run:
 
 ```bash
 # Repository root

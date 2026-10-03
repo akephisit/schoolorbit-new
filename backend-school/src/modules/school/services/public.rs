@@ -147,7 +147,7 @@ struct OrganizationRow {
     parent_id: Option<Uuid>,
     name: String,
     unit_type: String,
-    leader_name: Option<String>,
+    member_name: Option<String>,
     position_code: Option<String>,
     position_title: Option<String>,
 }
@@ -162,12 +162,12 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
                 parent_id: row.parent_id,
                 name: row.name,
                 unit_type: row.unit_type,
-                leaders: Vec::new(),
+                members: Vec::new(),
             });
             units.len() - 1
         });
-        if let Some((name, position_code)) = row.leader_name.zip(row.position_code) {
-            units[index].leaders.push(PublicOrganizationLeader {
+        if let Some((name, position_code)) = row.member_name.zip(row.position_code) {
+            units[index].members.push(PublicOrganizationMember {
                 name,
                 position_code,
                 position_title: row.position_title,
@@ -180,16 +180,15 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
 pub async fn get_organization(pool: &PgPool) -> Result<PublicSchoolOrganization, AppError> {
     let rows = sqlx::query_as::<_, OrganizationRow>(r#"
 SELECT o.id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
-    CASE WHEN u.id IS NOT NULL THEN CONCAT(u.title, u.first_name, ' ', u.last_name) END AS leader_name,
+    CASE WHEN u.id IS NOT NULL THEN CONCAT(u.title, u.first_name, ' ', u.last_name) END AS member_name,
     CASE WHEN u.id IS NOT NULL THEN m.position_code END AS position_code, m.position_title
 FROM organization_units o
 LEFT JOIN organization_members m ON m.organization_unit_id = o.id
-    AND m.position_code IN ('director', 'deputy_director', 'head', 'deputy_head')
     AND m.started_at <= CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
 LEFT JOIN users u ON u.id = m.user_id AND u.user_type = 'staff' AND u.status = 'active'
 WHERE o.is_active IS TRUE
 ORDER BY o.display_order, o.name, o.id,
-    CASE m.position_code WHEN 'director' THEN 1 WHEN 'deputy_director' THEN 2 WHEN 'head' THEN 3 ELSE 4 END,
+    CASE m.position_code WHEN 'director' THEN 1 WHEN 'deputy_director' THEN 2 WHEN 'head' THEN 3 WHEN 'deputy_head' THEN 4 WHEN 'coordinator' THEN 5 ELSE 6 END,
     u.first_name, u.last_name, m.id
 "#).fetch_all(pool).await.map_err(database_error)?;
     Ok(organization_from_rows(rows))
@@ -236,18 +235,18 @@ mod tests {
     }
 
     #[test]
-    fn organization_keeps_vacant_units_and_multiple_leaders_without_exposing_user_ids() {
+    fn organization_keeps_vacant_units_and_multiple_members_without_exposing_user_ids() {
         let id = Uuid::new_v4();
         let result = organization_from_rows(vec![OrganizationRow {
             id,
             parent_id: None,
             name: "โรงเรียนทดสอบ".into(),
             unit_type: "school".into(),
-            leader_name: None,
+            member_name: None,
             position_code: None,
             position_title: None,
         }]);
-        assert!(result.units[0].leaders.is_empty());
+        assert!(result.units[0].members.is_empty());
         let serialized = serde_json::to_string(&result).unwrap();
         assert!(!serialized.contains("userId"));
         assert!(!serialized.contains("email"));

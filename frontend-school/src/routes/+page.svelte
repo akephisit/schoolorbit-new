@@ -1,4 +1,7 @@
 <script lang="ts">
+	import type { PublicSchoolInfo } from '$lib/api/school';
+	import type { RouteLoadResult } from '$lib/navigation/route-load';
+	import PublicSchoolBrand from '$lib/components/school-public/PublicSchoolBrand.svelte';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
@@ -22,11 +25,12 @@
 		GraduationCap,
 		Menu,
 		X,
-		School,
 		Orbit
 	} from '@lucide/svelte';
 	let { data }: PageProps = $props();
 	let menuOpen = $state(false);
+	let identityRetry = $state<Promise<RouteLoadResult<PublicSchoolInfo>> | null>(null);
+	const identityOperation = $derived(identityRetry ?? data.identity);
 	const services = [
 		{
 			title: 'ปฏิทินโรงเรียน',
@@ -63,16 +67,19 @@
 	<a href="#main-content" class="skip-link rounded-lg bg-card px-4 py-3 text-primary shadow-lg"
 		>ข้ามไปเนื้อหาหลัก</a
 	>
-	<header class="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
+	<header
+		class="public-header sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-xl"
+	>
 		<div
 			class="relative mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6"
 		>
-			<a href={resolve('/')} class="flex min-w-0 items-center gap-2.5 font-medium"
-				><span
-					class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
-					><School class="size-6" /></span
-				><span class="text-sm sm:text-base">เว็บไซต์โรงเรียน</span></a
+			<a
+				href={resolve('/')}
+				class="school-brand flex min-w-0 flex-1 items-center gap-2.5 font-medium"
+				data-testid="school-brand"
 			>
+				<PublicSchoolBrand operation={identityOperation} />
+			</a>
 			<nav
 				id="school-navigation"
 				aria-label="เมนูหลัก"
@@ -100,19 +107,20 @@
 	</header>
 	<main id="main-content" tabindex="-1">
 		<section
-			class="relative isolate overflow-hidden border-b border-border bg-gradient-to-br from-primary/5 via-background to-accent px-4 py-14 sm:px-6 sm:py-20"
+			class="public-hero relative isolate overflow-hidden border-b border-border bg-gradient-to-br from-primary/5 via-background to-accent px-4 py-14 sm:px-6 sm:py-20"
 		>
 			<Orbit
-				class="pointer-events-none absolute -right-24 -bottom-24 -z-10 size-96 text-primary/5"
+				class="hero-orbit pointer-events-none absolute -right-24 -bottom-24 -z-10 size-96 text-primary/5"
 				strokeWidth={0.7}
 				aria-hidden="true"
 			/>
-			<div class="mx-auto max-w-6xl">
+			<div class="relative mx-auto max-w-6xl">
 				<p class="mb-6 text-xs font-medium tracking-widest text-primary">
 					ข้อมูลและบริการสาธารณะของโรงเรียน
 				</p>
 				<PublicSchoolRegion
 					source={data.identity}
+					bind:retryResult={identityRetry}
 					label="ข้อมูลโรงเรียน"
 					retry={(signal) => getRequiredPublicSchoolInfo({ signal })}
 				>
@@ -125,7 +133,7 @@
 						<PublicSchoolIdentity {info} />
 					{/snippet}
 				</PublicSchoolRegion>
-				<div class="mt-8 flex flex-wrap gap-3">
+				<div class="public-enter mt-8 flex flex-wrap gap-3">
 					<Button href="/#statistics" size="lg"
 						>ดูข้อมูลโรงเรียน <ArrowDown class="size-4" /></Button
 					><Button href="/#services" size="lg" variant="outline"
@@ -137,7 +145,7 @@
 		<section
 			id="statistics"
 			aria-labelledby="statistics-heading"
-			class="section-anchor mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16"
+			class="section-anchor public-enter mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16"
 		>
 			<div class="mb-6">
 				<p class="text-xs font-medium tracking-widest text-primary">ภาพรวมโรงเรียน</p>
@@ -161,7 +169,7 @@
 		<section
 			id="organization"
 			aria-labelledby="organization-heading"
-			class="section-anchor border-y border-border bg-muted/30 px-4 py-12 sm:px-6 sm:py-16"
+			class="section-anchor public-enter border-y border-border bg-muted/30 px-4 py-12 sm:px-6 sm:py-16"
 		>
 			<div class="mx-auto max-w-6xl">
 				<div class="mb-6">
@@ -170,7 +178,7 @@
 						แผนผังการบริหาร
 					</h2>
 					<p class="mt-3 text-sm leading-relaxed text-muted-foreground">
-						หน่วยงานและผู้ดำรงตำแหน่งปัจจุบัน · กดชื่อหน่วยงานเพื่อกางหรือย่อข้อมูล
+						หน่วยงานและบุคลากรปัจจุบันทุกตำแหน่ง · กดชื่อหน่วยงานเพื่อกางหรือย่อข้อมูล
 					</p>
 				</div>
 				<PublicSchoolRegion
@@ -191,7 +199,7 @@
 		<section
 			id="services"
 			aria-labelledby="services-heading"
-			class="section-anchor mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16"
+			class="section-anchor public-enter mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16"
 		>
 			<p class="text-xs font-medium tracking-widest text-primary">บริการของโรงเรียน</p>
 			<h2 id="services-heading" class="mt-3 text-2xl font-medium sm:text-3xl">
@@ -201,7 +209,7 @@
 				{#each services as service (service.href)}
 					<a
 						href={service.href}
-						class="group flex flex-col rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-accent/40"
+						class="public-surface public-service group flex flex-col rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-accent/40"
 						><span
 							class="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary"
 							><service.icon class="size-6" strokeWidth={1.5} /></span
@@ -237,6 +245,98 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 4px;
 	}
+	.school-brand {
+		max-width: 42%;
+	}
+	.public-header {
+		box-shadow: 0 4px 24px color-mix(in oklab, var(--primary) 5%, transparent);
+	}
+	.public-hero::before,
+	.public-hero::after {
+		content: '';
+		position: absolute;
+		z-index: -1;
+		pointer-events: none;
+		width: 32rem;
+		height: 32rem;
+		border-radius: 50%;
+		filter: blur(48px);
+		background: radial-gradient(
+			circle,
+			color-mix(in oklab, var(--primary) 12%, transparent),
+			transparent 70%
+		);
+	}
+	.public-hero::before {
+		top: -22rem;
+		left: -8rem;
+	}
+	.public-hero::after {
+		right: -10rem;
+		bottom: -18rem;
+	}
+	:global(.school-public .public-surface) {
+		box-shadow: 0 4px 20px color-mix(in oklab, var(--primary) 5%, transparent);
+		transition:
+			box-shadow 220ms ease,
+			border-color 220ms ease,
+			transform 220ms ease;
+	}
+	.public-service:focus-visible {
+		box-shadow: 0 12px 32px color-mix(in oklab, var(--primary) 12%, transparent);
+	}
+	@media (hover: hover) {
+		:global(.school-public .public-surface:hover) {
+			border-color: color-mix(in oklab, var(--primary) 25%, var(--border));
+			box-shadow: 0 10px 30px color-mix(in oklab, var(--primary) 9%, transparent);
+		}
+		.public-service:hover {
+			transform: translateY(-4px);
+		}
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		:global(.school-public .public-enter) {
+			animation: public-enter 480ms ease-out both;
+		}
+		:global(.school-public .hero-orbit) {
+			animation: orbit-drift 24s ease-in-out infinite alternate;
+		}
+		.public-hero::after {
+			animation: glow-drift 18s ease-in-out infinite alternate;
+		}
+	}
+	@keyframes public-enter {
+		from {
+			opacity: 0;
+			transform: translateY(12px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+	@keyframes orbit-drift {
+		to {
+			transform: translate(-12px, -8px) rotate(8deg);
+		}
+	}
+	@keyframes glow-drift {
+		to {
+			transform: translate(-20px, -12px);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		:global(.school-public *),
+		:global(.school-public *::before),
+		:global(.school-public *::after) {
+			animation: none !important;
+			transition: none !important;
+			scroll-behavior: auto !important;
+		}
+		.public-service:hover {
+			transform: none;
+		}
+	}
 	.skip-link {
 		position: fixed;
 		top: 1rem;
@@ -261,6 +361,9 @@
 		color: var(--primary);
 	}
 	@media (max-width: 767px) {
+		.school-brand {
+			max-width: none;
+		}
 		.school-navigation {
 			display: none;
 			position: absolute;

@@ -158,7 +158,7 @@ async fn public_statistics_use_active_year_and_current_placements_with_complete_
 }
 
 #[tokio::test]
-async fn public_organization_only_exposes_active_units_and_current_leaders() {
+async fn public_organization_only_exposes_active_units_and_current_members() {
     let pool = create_named_test_pool("public_school_organization").await;
     run_test_migrations(&pool).await;
     let root = Uuid::new_v4();
@@ -171,6 +171,7 @@ async fn public_organization_only_exposes_active_units_and_current_leaders() {
         ("head", -1, None, "active"),
         ("deputy_head", -1, None, "active"),
         ("member", -1, None, "active"),
+        ("coordinator", -1, None, "active"),
         ("head", 1, None, "active"),
         ("head", -2, Some(0), "active"),
         ("head", -1, None, "resigned"),
@@ -188,20 +189,33 @@ async fn public_organization_only_exposes_active_units_and_current_leaders() {
         .iter()
         .find(|u| u.id == root)
         .unwrap()
-        .leaders
+        .members
         .is_empty());
     let unit = org.units.iter().find(|u| u.id == child).unwrap();
     assert_eq!(unit.parent_id, Some(root));
-    assert_eq!(unit.leaders.len(), 4);
+    assert_eq!(unit.members.len(), 6);
+    assert_eq!(
+        unit.members
+            .iter()
+            .map(|m| m.position_code.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "director",
+            "deputy_director",
+            "head",
+            "deputy_head",
+            "coordinator",
+            "member"
+        ]
+    );
     let data = serde_json::to_string(&org).unwrap();
     for forbidden in [
         "userId",
         "email",
         "nationalId",
-        "leader-4",
-        "leader-5",
         "leader-6",
         "leader-7",
+        "leader-8",
     ] {
         assert!(!data.contains(forbidden));
     }

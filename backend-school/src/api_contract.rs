@@ -1661,7 +1661,7 @@ struct SchoolApiDoc;
         PublicGradeStatistics,
         PublicAcademicYear,
         PublicSchoolStatistics,
-        PublicOrganizationLeader,
+        PublicOrganizationMember,
         PublicOrganizationUnit,
         PublicSchoolOrganization,
         ApiResponse<PublicSchoolStatistics>,
@@ -4241,13 +4241,13 @@ mod tests {
                 format!("#/components/schemas/{schema}")
             );
         }
-        let leader_fields = document["components"]["schemas"]["PublicOrganizationLeader"]
+        let member_fields = document["components"]["schemas"]["PublicOrganizationMember"]
             ["properties"]
             .as_object()
-            .expect("public leader schema must exist");
-        assert_eq!(leader_fields.len(), 3);
+            .expect("public member schema must exist");
+        assert_eq!(member_fields.len(), 3);
         for field in ["name", "positionCode", "positionTitle"] {
-            assert!(leader_fields.contains_key(field));
+            assert!(member_fields.contains_key(field));
         }
 
         let calendar_parameters = document["paths"]["/api/calendar/events"]["get"]["parameters"]

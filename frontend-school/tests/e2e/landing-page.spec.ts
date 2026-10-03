@@ -11,6 +11,8 @@ let baseUrl: string;
 let failStatistics = false;
 let failedRegion: string | undefined;
 let empty = false;
+let logoAvailable = true;
+let brokenLogo = false;
 let statisticsGate: Promise<void> | undefined;
 let releaseStatistics: (() => void) | undefined;
 const requests: { path: string; cookie?: string; origin?: string }[] = [];
@@ -58,21 +60,27 @@ const organization = {
 			parentId: null,
 			name: 'โรงเรียนสาธิตทดสอบ',
 			unitType: 'school',
-			leaders: [{ name: 'ผู้บริหาร ทดสอบ', positionCode: 'director', positionTitle: null }]
+			members: [{ name: 'ผู้บริหาร ทดสอบ', positionCode: 'director', positionTitle: null }]
 		},
 		{
 			id: 'academic',
 			parentId: 'root',
 			name: 'กลุ่มบริหารวิชาการ',
 			unitType: 'management_group',
-			leaders: [{ name: 'หัวหน้า ทดสอบ', positionCode: 'head', positionTitle: null }]
+			members: [
+				{ name: 'หัวหน้า ทดสอบ', positionCode: 'head', positionTitle: null },
+				{ name: 'รองหัวหน้า ทดสอบ', positionCode: 'deputy_head', positionTitle: null },
+				{ name: 'ผู้ประสานงาน ทดสอบ', positionCode: 'coordinator', positionTitle: null },
+				{ name: 'สมาชิก หนึ่ง', positionCode: 'member', positionTitle: 'ครูฝ่ายวิชาการ' },
+				{ name: 'สมาชิก สอง', positionCode: 'member', positionTitle: null }
+			]
 		},
 		{
 			id: 'empty',
 			parentId: 'root',
 			name: 'กลุ่มบริหารทั่วไป',
 			unitType: 'management_group',
-			leaders: []
+			members: []
 		}
 	]
 };
@@ -88,6 +96,17 @@ test.beforeAll(async () => {
 		res.setHeader('content-type', 'application/json');
 		if (req.method === 'OPTIONS') {
 			res.writeHead(204).end();
+			return;
+		}
+		if (endpoint.startsWith('/api/public/files/')) {
+			if (brokenLogo) {
+				res.writeHead(404).end();
+				return;
+			}
+			res.setHeader('content-type', 'image/svg+xml');
+			res.end(
+				'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="104" viewBox="0 0 80 104"><path fill="#2563eb" d="M40 3 75 23V60Q70 90 40 101 10 90 5 60V23Z"/></svg>'
+			);
 			return;
 		}
 		if (endpoint === '/deployment-status') {
@@ -116,7 +135,10 @@ test.beforeAll(async () => {
 				? empty
 					? { units: [] }
 					: organization
-				: { schoolName: 'โรงเรียนสาธิตทดสอบ', logoFileId: null };
+				: {
+						schoolName: 'โรงเรียนสาธิตทดสอบ',
+						logoFileId: logoAvailable ? '11111111-1111-4111-8111-111111111111' : null
+					};
 		res.end(JSON.stringify({ success: true, data }));
 	});
 	await new Promise<void>((done) => apiServer.listen(0, '127.0.0.1', done));
@@ -139,6 +161,8 @@ test.beforeEach(() => {
 	failStatistics = false;
 	failedRegion = undefined;
 	empty = false;
+	logoAvailable = true;
+	brokenLogo = false;
 	statisticsGate = undefined;
 	releaseStatistics = undefined;
 });
@@ -156,6 +180,7 @@ test('anonymous visitors see real school regions and existing services', async (
 		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true })
 	).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
+	await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
 	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
 	await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).toBeVisible();
 	await page.getByRole('link', { name: 'สำรวจบริการ' }).click();
@@ -199,7 +224,11 @@ test('a failed statistics read can retry without refetching identity or organiza
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
 	const after = requests.filter((r) => r.path.startsWith('/api/school/public')).map((r) => r.path);
 	expect(after.slice(before.length)).toEqual(['/api/school/public/statistics']);
-	await page.screenshot({ path: '/tmp/schoolorbit-public-retry-desktop.png', fullPage: true });
+	await page.screenshot({
+		path: '/tmp/schoolorbit-public-retry-desktop.png',
+		fullPage: true,
+		animations: 'disabled'
+	});
 });
 
 for (const [endpoint, label] of [
@@ -218,6 +247,7 @@ for (const [endpoint, label] of [
 			page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true })
 		).toBeVisible();
 		await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
 		expect(
 			requests
 				.filter((r) => r.path.startsWith('/api/school/public'))
@@ -226,6 +256,79 @@ for (const [endpoint, label] of [
 		).toEqual([endpoint]);
 	});
 }
+
+test('all current positions are grouped and retain custom position titles', async ({ page }) => {
+	await page.goto(baseUrl);
+	for (const name of [
+		'หัวหน้า ทดสอบ',
+		'รองหัวหน้า ทดสอบ',
+		'ผู้ประสานงาน ทดสอบ',
+		'สมาชิก หนึ่ง',
+		'สมาชิก สอง'
+	]) {
+		await expect(page.getByText(name, { exact: true })).toBeVisible();
+	}
+	await expect(page.getByRole('region', { name: 'สมาชิก', exact: true })).toContainText('2 คน');
+	await expect(page.getByText('ครูฝ่ายวิชาการ', { exact: true })).toBeVisible();
+});
+
+test('branding shares one read, and the hero crest follows text height without a frame', async ({
+	page
+}) => {
+	await page.goto(baseUrl);
+	await expect(
+		page.getByTestId('school-brand').getByRole('img', { name: 'ตราโรงเรียน' })
+	).toBeVisible();
+	const crest = page.getByTestId('hero-school-crest');
+	await expect(crest.getByRole('img', { name: 'ตราโรงเรียน' })).toBeVisible();
+	const geometry = await crest.evaluate((node) => ({
+		height: node.getBoundingClientRect().height,
+		textHeight: node.nextElementSibling?.getBoundingClientRect().height,
+		border: getComputedStyle(node).borderTopWidth,
+		background: getComputedStyle(node).backgroundColor
+	}));
+	expect(geometry.height).toBe(geometry.textHeight);
+	expect(geometry.border).toBe('0px');
+	expect(geometry.background).toBe('rgba(0, 0, 0, 0)');
+	expect(requests.filter((r) => r.path === '/api/school/public')).toHaveLength(1);
+});
+
+for (const unavailable of ['not configured', 'broken']) {
+	test(`school identity remains usable when the crest is ${unavailable}`, async ({ page }) => {
+		logoAvailable = unavailable !== 'not configured';
+		brokenLogo = unavailable === 'broken';
+		await page.goto(baseUrl);
+		await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
+		await expect(page.getByTestId('school-brand').locator('img')).toHaveCount(0);
+		await expect(page.getByTestId('hero-school-crest').locator('img')).toHaveCount(0);
+	});
+}
+
+test('ordinary motion enables the subtle decorative animation', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.goto(baseUrl);
+	await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
+	expect(
+		await page.locator('.hero-orbit').evaluate((node) => getComputedStyle(node).animationName)
+	).toMatch(/(?:^|-)orbit-drift$/);
+});
+
+test('reduced motion keeps the modern surfaces steady and fully usable', async ({ page }) => {
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.goto(baseUrl);
+	await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
+	const motion = await page
+		.locator('.hero-orbit')
+		.evaluate((node) => getComputedStyle(node).animationName);
+	expect(motion).toBe('none');
+	await page.getByRole('link', { name: /ปฏิทินโรงเรียน.*ดูปฏิทิน/ }).hover();
+	expect(
+		await page
+			.locator('.public-service')
+			.first()
+			.evaluate((node) => getComputedStyle(node).transform)
+	).toBe('none');
+});
 
 test('slow statistics do not block successful sibling regions', async ({ page }) => {
 	statisticsGate = new Promise<void>((done) => (releaseStatistics = done));
@@ -247,7 +350,11 @@ test('missing academic context and organization show honest empty states', async
 	).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'ยังไม่มีข้อมูลโครงสร้างบริหาร' })).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('—');
-	await page.screenshot({ path: '/tmp/schoolorbit-public-empty-desktop.png', fullPage: true });
+	await page.screenshot({
+		path: '/tmp/schoolorbit-public-empty-desktop.png',
+		fullPage: true,
+		animations: 'disabled'
+	});
 });
 
 for (const width of [375, 1280]) {
@@ -278,8 +385,16 @@ for (const width of [375, 1280]) {
 		await page.locator('#organization summary').first().click();
 		await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).toBeVisible();
 		await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-		await page.screenshot({ path: `/tmp/schoolorbit-public-${width}-light.png`, fullPage: true });
+		await page.screenshot({
+			path: `/tmp/schoolorbit-public-${width}-light.png`,
+			fullPage: true,
+			animations: 'disabled'
+		});
 		await page.evaluate(() => document.documentElement.classList.add('dark'));
-		await page.screenshot({ path: `/tmp/schoolorbit-public-${width}-dark.png`, fullPage: true });
+		await page.screenshot({
+			path: `/tmp/schoolorbit-public-${width}-dark.png`,
+			fullPage: true,
+			animations: 'disabled'
+		});
 	});
 }

@@ -8,22 +8,23 @@
 		retry,
 		label,
 		children,
-		skeleton
+		skeleton,
+		retryResult = $bindable<Promise<RouteLoadResult<T>> | null>(null)
 	}: {
 		source: Promise<RouteLoadResult<T>>;
 		retry: (signal: AbortSignal) => Promise<T>;
 		label: string;
 		children: Snippet<[T]>;
 		skeleton: Snippet;
+		retryResult?: Promise<RouteLoadResult<T>> | null;
 	} = $props();
-	let replacement = $state<Promise<RouteLoadResult<T>> | null>(null);
 	let controller: AbortController | undefined;
-	const operation = $derived(replacement ?? source);
+	const operation = $derived(retryResult ?? source);
 
 	$effect.pre(() => {
 		const _source = source;
 		untrack(() => {
-			replacement = null;
+			retryResult = null;
 		});
 		return () => controller?.abort();
 	});
@@ -31,7 +32,7 @@
 	function retryRegion() {
 		controller?.abort();
 		controller = new AbortController();
-		replacement = captureRouteLoad(retry(controller.signal), `โหลด${label}ไม่สำเร็จ`);
+		retryResult = captureRouteLoad(retry(controller.signal), `โหลด${label}ไม่สำเร็จ`);
 	}
 </script>
 

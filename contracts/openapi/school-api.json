@@ -39435,7 +39435,7 @@
         ],
         "type": "object"
       },
-      "PublicOrganizationLeader": {
+      "PublicOrganizationMember": {
         "properties": {
           "name": {
             "type": "string"
@@ -39463,9 +39463,9 @@
             "format": "uuid",
             "type": "string"
           },
-          "leaders": {
+          "members": {
             "items": {
-              "$ref": "#/components/schemas/PublicOrganizationLeader"
+              "$ref": "#/components/schemas/PublicOrganizationMember"
             },
             "type": "array"
           },
@@ -39488,7 +39488,7 @@
           "parentId",
           "name",
           "unitType",
-          "leaders"
+          "members"
         ],
         "type": "object"
       },
@@ -82867,7 +82867,7 @@
                 }
               }
             },
-            "description": "Active organization units and current leaders"
+            "description": "Active organization units and all current members"
           },
           "400": {
             "content": {

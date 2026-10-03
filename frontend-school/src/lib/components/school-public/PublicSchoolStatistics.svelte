@@ -42,7 +42,7 @@
 
 <div class="grid grid-cols-2 gap-3 lg:grid-cols-4 sm:gap-4" data-testid="school-statistics">
 	{#each cards as card (card.label)}
-		<div class="rounded-2xl border border-border bg-card p-4 sm:p-6">
+		<div class="public-surface rounded-2xl border border-border bg-card p-4 sm:p-6">
 			<div class="flex items-center justify-between gap-2">
 				<p class="text-sm text-muted-foreground">{card.label}</p>
 				<card.icon class="size-5 shrink-0 text-primary" />
@@ -96,7 +96,7 @@
 	</div>
 	<div class="mt-5 space-y-3">
 		{#each statistics.grades as grade (`${grade.levelType}-${grade.year}`)}
-			<details class="group overflow-hidden rounded-xl border border-border bg-card">
+			<details class="public-surface group overflow-hidden rounded-xl border border-border bg-card">
 				<summary
 					class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-4 sm:p-5"
 				>

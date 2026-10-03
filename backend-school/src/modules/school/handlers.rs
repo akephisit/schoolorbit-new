@@ -49,7 +49,7 @@ pub async fn get_public_statistics(
 #[utoipa::path(
     get, path = "/api/school/public/organization", operation_id = "getPublicSchoolOrganization", tag = "school",
     responses(
-        (status = 200, description = "Active organization units and current leaders", body = ApiResponse<super::models::PublicSchoolOrganization>),
+        (status = 200, description = "Active organization units and all current members", body = ApiResponse<super::models::PublicSchoolOrganization>),
         (status = 400, description = "Invalid tenant context", body = ApiErrorResponse),
         (status = 404, description = "School not found", body = ApiErrorResponse)
     )

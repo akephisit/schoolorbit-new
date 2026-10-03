@@ -16789,7 +16789,7 @@ export interface components {
 			name: string;
 			students: components['schemas']['PublicStudentCounts'];
 		};
-		PublicOrganizationLeader: {
+		PublicOrganizationMember: {
 			name: string;
 			positionCode: string;
 			positionTitle: string | null;
@@ -16797,7 +16797,7 @@ export interface components {
 		PublicOrganizationUnit: {
 			/** Format: uuid */
 			id: string;
-			leaders: components['schemas']['PublicOrganizationLeader'][];
+			members: components['schemas']['PublicOrganizationMember'][];
 			name: string;
 			/** Format: uuid */
 			parentId: string | null;
@@ -43450,7 +43450,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Active organization units and current leaders */
+			/** @description Active organization units and all current members */
 			200: {
 				headers: {
 					[name: string]: unknown;

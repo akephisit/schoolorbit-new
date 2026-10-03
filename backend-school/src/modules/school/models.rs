@@ -70,7 +70,7 @@ pub struct PublicSchoolStatistics {
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PublicOrganizationLeader {
+pub struct PublicOrganizationMember {
     pub name: String,
     pub position_code: String,
     #[schema(required = true)]
@@ -85,7 +85,7 @@ pub struct PublicOrganizationUnit {
     pub parent_id: Option<Uuid>,
     pub name: String,
     pub unit_type: String,
-    pub leaders: Vec<PublicOrganizationLeader>,
+    pub members: Vec<PublicOrganizationMember>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
