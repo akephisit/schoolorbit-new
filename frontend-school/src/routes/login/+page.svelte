@@ -138,7 +138,7 @@
 			<div class="bg-card border border-border rounded-xl shadow-sm p-5 sm:p-8">
 				<!-- Logo & Title -->
 				<div class="text-center mb-4 sm:mb-6">
-					<div class="mx-auto mb-2 h-14 w-20 sm:mb-3 sm:h-16" data-testid="login-school-crest">
+					<div class="mx-auto mb-2 h-28 w-40 sm:mb-3 sm:h-32" data-testid="login-school-crest">
 						{#await data.identity}
 							<Skeleton class="size-full" />
 						{:then result}

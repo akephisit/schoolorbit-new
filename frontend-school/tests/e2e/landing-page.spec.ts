@@ -358,24 +358,16 @@ test('missing academic context and organization show honest empty states', async
 });
 
 for (const width of [375, 1280]) {
-	test(`navigation, disclosures and layout are usable at ${width}px`, async ({ page }) => {
+	test(`header, disclosures and layout are usable at ${width}px`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		await page.goto(baseUrl);
 		await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
 		await expect(page.getByTestId('school-statistics')).toContainText('124');
-		if (width < 768) {
-			const menu = page.getByRole('button', { name: 'เปิดเมนู' });
-			await menu.click();
-			await expect(page.getByRole('button', { name: 'ปิดเมนู' })).toHaveAttribute(
-				'aria-expanded',
-				'true'
-			);
-			await page
-				.getByRole('navigation', { name: 'เมนูหลัก' })
-				.getByRole('link', { name: 'บริการ' })
-				.click();
-			await expect(menu).toHaveAttribute('aria-expanded', 'false');
-		}
+		await expect(page.locator('header').getByRole('link')).toHaveCount(2);
+		await expect(page.getByTestId('school-brand')).toBeVisible();
+		await expect(page.locator('header').getByRole('link', { name: 'เข้าสู่ระบบ' })).toBeVisible();
+		await page.getByRole('link', { name: 'สำรวจบริการ' }).click();
+		await expect(page).toHaveURL(/#services$/);
 		await page.locator('#statistics summary').first().click();
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)

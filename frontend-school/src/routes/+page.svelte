@@ -23,12 +23,9 @@
 		BadgeCheck,
 		CalendarDays,
 		GraduationCap,
-		Menu,
-		X,
 		Orbit
 	} from '@lucide/svelte';
 	let { data }: PageProps = $props();
-	let menuOpen = $state(false);
 	let identityRetry = $state<Promise<RouteLoadResult<PublicSchoolInfo>> | null>(null);
 	const identityOperation = $derived(identityRetry ?? data.identity);
 	const services = [
@@ -75,33 +72,13 @@
 		>
 			<a
 				href={resolve('/')}
-				class="school-brand flex min-w-0 flex-1 items-center gap-2.5 font-medium"
+				class="flex min-w-0 flex-1 items-center gap-2.5 font-medium"
 				data-testid="school-brand"
 			>
 				<PublicSchoolBrand operation={identityOperation} />
 			</a>
-			<nav
-				id="school-navigation"
-				aria-label="เมนูหลัก"
-				class="school-navigation"
-				class:mobile-open={menuOpen}
-			>
-				<a href="#statistics" onclick={() => (menuOpen = false)}>ข้อมูลโรงเรียน</a>
-				<a href="#organization" onclick={() => (menuOpen = false)}>โครงสร้างบริหาร</a>
-				<a href="#services" onclick={() => (menuOpen = false)}>บริการ</a>
-			</nav>
-			<div class="flex shrink-0 items-center gap-1.5">
+			<div class="shrink-0">
 				<Button href="/login">เข้าสู่ระบบ <ArrowUpRight class="hidden size-4 sm:block" /></Button>
-				<Button
-					variant="ghost"
-					size="icon"
-					class="md:hidden"
-					aria-label={menuOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
-					aria-expanded={menuOpen}
-					aria-controls="school-navigation"
-					onclick={() => (menuOpen = !menuOpen)}
-					>{#if menuOpen}<X class="size-5" />{:else}<Menu class="size-5" />{/if}</Button
-				>
 			</div>
 		</div>
 	</header>
@@ -245,9 +222,6 @@
 		outline: 2px solid var(--ring);
 		outline-offset: 4px;
 	}
-	.school-brand {
-		max-width: 42%;
-	}
 	.public-header {
 		box-shadow: 0 4px 24px color-mix(in oklab, var(--primary) 5%, transparent);
 	}
@@ -349,44 +323,5 @@
 	}
 	.section-anchor {
 		scroll-margin-top: 6rem;
-	}
-	.school-navigation {
-		display: flex;
-		align-items: center;
-		gap: 1.5rem;
-		font-size: 0.875rem;
-		color: var(--muted-foreground);
-	}
-	.school-navigation a:hover {
-		color: var(--primary);
-	}
-	@media (max-width: 767px) {
-		.school-brand {
-			max-width: none;
-		}
-		.school-navigation {
-			display: none;
-			position: absolute;
-			top: calc(100% + 0.5rem);
-			left: 1rem;
-			right: 1rem;
-			border: 1px solid var(--border);
-			border-radius: 1rem;
-			padding: 0.5rem;
-			background: var(--card);
-		}
-		.school-navigation.mobile-open {
-			display: flex;
-			align-items: stretch;
-			flex-direction: column;
-			gap: 0;
-		}
-		.school-navigation a {
-			padding: 0.875rem 1rem;
-			border-radius: 0.5rem;
-		}
-		.school-navigation a:hover {
-			background: var(--accent);
-		}
 	}
 </style>
