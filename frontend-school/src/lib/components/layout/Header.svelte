@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Search, Menu, Sun, Moon } from '@lucide/svelte';
+	import { Menu, Sun, Moon } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import AcademicContextSwitcher from './AcademicContextSwitcher.svelte';
 	import ProfileMenu from './ProfileMenu.svelte';
@@ -54,7 +54,7 @@
 >
 	<div class="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
 		<!-- Left Section -->
-		<div class="flex shrink-0 items-center gap-3">
+		<div class="flex shrink-0 items-center gap-3 lg:hidden">
 			<!-- Mobile Menu Button -->
 			<Button
 				variant="ghost"
@@ -65,18 +65,6 @@
 			>
 				<Menu class="w-5 h-5" />
 			</Button>
-
-			<!-- Search -->
-			<div
-				class="hidden min-w-64 max-w-80 items-center gap-2 rounded-lg bg-accent px-3 py-2 2xl:flex"
-			>
-				<Search class="w-4 h-4 text-muted-foreground" />
-				<input
-					type="text"
-					placeholder="ค้นหานักเรียน, ครู, รายวิชา..."
-					class="bg-transparent border-none outline-none text-sm w-full text-foreground placeholder:text-muted-foreground"
-				/>
-			</div>
 		</div>
 
 		<div class="ml-auto min-w-0">
@@ -85,11 +73,6 @@
 
 		<!-- Right Section -->
 		<div class="flex shrink-0 items-center gap-1 sm:gap-2">
-			<!-- Search Button - Mobile Only -->
-			<Button variant="ghost" size="icon" class="2xl:hidden" aria-label="Search">
-				<Search class="w-5 h-5" />
-			</Button>
-
 			<!-- Dark Mode Toggle -->
 			<Button variant="ghost" size="icon" onclick={toggleDarkMode} aria-label="Toggle Dark Mode">
 				{#if isDarkMode}

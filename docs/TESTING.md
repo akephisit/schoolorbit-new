@@ -187,6 +187,12 @@ node --experimental-strip-types --test tests/runtime/public-school-organization.
 npx playwright test tests/e2e/landing-page.spec.ts tests/e2e/admin-landing-page.spec.ts --project=chromium --workers=1
 ```
 
+Login and app-header layout fixtures also start their own local servers. They cover small and short viewports, optional school branding failures, pending/rejected login, and the remaining header controls:
+
+```bash
+npx playwright test tests/e2e/login-layout.spec.ts tests/e2e/header-layout.spec.ts --project=chromium --workers=1
+```
+
 During implementation, run the relevant static file directly:
 
 ```bash

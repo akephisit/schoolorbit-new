@@ -5,7 +5,7 @@
 </script>
 
 <div
-	class="flex min-h-screen items-center justify-center bg-background p-4"
+	class="flex min-h-dvh items-center justify-center bg-background p-4"
 	role="status"
 	aria-live="polite"
 	aria-atomic="true"

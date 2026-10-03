@@ -1,10 +1,13 @@
 <script lang="ts">
+	import type { PageProps } from './$types';
+	import PublicSchoolLogo from '$lib/components/school-public/PublicSchoolLogo.svelte';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { AuthCheckingState } from '$lib/components/app-state';
-	import { GraduationCap, ArrowLeft } from '@lucide/svelte';
+	import { ArrowLeft } from '@lucide/svelte';
 	import { authAPI } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -12,6 +15,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import { authStore } from '$lib/stores/auth';
+	let { data }: PageProps = $props();
 
 	let username = $state('');
 	let password = $state('');
@@ -113,10 +117,6 @@
 			isLoading = false;
 		}
 	}
-
-	function goBack() {
-		window.location.href = '/';
-	}
 </script>
 
 <svelte:head>
@@ -126,29 +126,42 @@
 {#if isCheckingAuth}
 	<AuthCheckingState message="กำลังตรวจสอบสิทธิ์..." />
 {:else}
-	<div class="min-h-screen bg-background flex items-center justify-center p-4">
-		<div class="w-full max-w-md">
+	<main class="login-page min-h-dvh bg-background flex flex-col items-center p-4">
+		<div class="my-auto w-full max-w-md">
 			<!-- Back Button -->
-			<Button variant="ghost" onclick={goBack} class="mb-6">
+			<Button variant="ghost" href="/" class="mb-3 text-foreground sm:mb-6">
 				<ArrowLeft class="w-4 h-4 mr-2" />
 				กลับหน้าหลัก
 			</Button>
 
 			<!-- Card -->
-			<div class="bg-card border rounded-lg shadow-sm p-8">
+			<div class="bg-card border border-border rounded-xl shadow-sm p-5 sm:p-8">
 				<!-- Logo & Title -->
-				<div class="text-center mb-8">
-					<div
-						class="w-16 h-16 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4"
-					>
-						<GraduationCap class="w-8 h-8 text-primary-foreground" />
+				<div class="text-center mb-4 sm:mb-6">
+					<div class="mx-auto mb-2 h-14 w-20 sm:mb-3 sm:h-16" data-testid="login-school-crest">
+						{#await data.identity}
+							<Skeleton class="size-full" />
+						{:then result}
+							<PublicSchoolLogo
+								fileId={result.ok ? result.data.logoFileId : null}
+								class="size-full object-contain"
+							/>
+						{/await}
 					</div>
-					<h1 class="text-2xl font-bold text-foreground mb-2">เข้าสู่ระบบ</h1>
-					<p class="text-sm text-muted-foreground">SchoolOrbit - ระบบบริหารจัดการโรงเรียน</p>
+					<h1 class="text-2xl font-bold text-foreground mb-1">เข้าสู่ระบบ</h1>
+					{#await data.identity}
+						<Skeleton class="mx-auto h-5 w-48 max-w-full" />
+					{:then result}
+						<p class="break-words text-sm text-muted-foreground">
+							{result.ok && result.data.schoolName
+								? result.data.schoolName
+								: 'SchoolOrbit - ระบบบริหารจัดการโรงเรียน'}
+						</p>
+					{/await}
 				</div>
 
 				<!-- Login Form -->
-				<form onsubmit={handleSubmit} class="space-y-6">
+				<form onsubmit={handleSubmit} class="space-y-4 sm:space-y-6">
 					<!-- Username Input -->
 					<div class="space-y-2">
 						<Label for="username">ชื่อผู้ใช้งาน (Username)</Label>
@@ -160,7 +173,6 @@
 							autocomplete="username"
 							required
 						/>
-						<p class="text-xs text-muted-foreground">กรอกชื่อผู้ใช้งานของคุณ</p>
 					</div>
 
 					<!-- Password Input -->
@@ -177,13 +189,16 @@
 					</div>
 
 					<!-- Remember & Forgot -->
-					<div class="flex items-center justify-between text-sm">
+					<div class="flex flex-wrap items-center justify-between gap-3 text-sm">
 						<div class="flex items-center gap-2 cursor-pointer">
 							<Checkbox
+								id="remember-me"
 								checked={rememberMe}
 								onCheckedChange={(checked) => (rememberMe = checked ?? false)}
 							/>
-							<span class="text-muted-foreground">จดจำฉันไว้</span>
+							<Label for="remember-me" class="cursor-pointer font-normal text-muted-foreground"
+								>จดจำฉันไว้</Label
+							>
 						</div>
 						<Button type="button" variant="link" class="p-0 h-auto text-sm"
 							>ติดต่อผู้ดูแลระบบ</Button
@@ -197,13 +212,13 @@
 				</form>
 
 				<!-- Info Section -->
-				<div class="mt-6 pt-6 border-t border-border">
-					<div class="text-center space-y-2">
-						<p class="text-sm text-muted-foreground">ไม่มีการลงทะเบียนด้วยตนเอง</p>
+				<div class="mt-4 pt-4 border-t border-border sm:mt-6 sm:pt-6">
+					<div class="text-center space-y-1">
+						<p class="text-xs text-muted-foreground">ไม่มีการลงทะเบียนด้วยตนเอง</p>
 						<p class="text-xs text-muted-foreground">บัญชีผู้ใช้จะถูกสร้างโดยผู้ดูแลระบบเท่านั้น</p>
 					</div>
 				</div>
 			</div>
 		</div>
-	</div>
+	</main>
 {/if}
