@@ -68,8 +68,8 @@ test('all backend fetches share capture and feature modules cannot set security 
 	);
 	assert.equal(
 		[...client.matchAll(/\brequestFetch\s*\(/g)].length,
-		2,
-		'only fetchBackend and isolated getExternalBlob may call the selected fetch transport'
+		3,
+		'only fetchBackend, the public SSR origin decorator and isolated getExternalBlob may call the selected fetch transport'
 	);
 	assert.equal(
 		[...client.matchAll(/\bfetch\s*\(/g)].length,

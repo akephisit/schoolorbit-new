@@ -72,6 +72,14 @@ fn public_routes() -> Router<AppState> {
             get(modules::school::handlers::get_public_info),
         )
         .route(
+            "/api/school/public/statistics",
+            get(modules::school::handlers::get_public_statistics),
+        )
+        .route(
+            "/api/school/public/organization",
+            get(modules::school::handlers::get_public_organization),
+        )
+        .route(
             "/api/admin/routes/sync",
             post(modules::system::handlers::register_routes::register_routes),
         )

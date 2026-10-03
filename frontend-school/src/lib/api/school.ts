@@ -6,11 +6,31 @@ type OptionalNonNull<T> = { [Key in keyof T]?: Exclude<T[Key], null> };
 
 export type SchoolSettingsDto = Schemas['SchoolSettingsResponse'];
 export type PublicSchoolInfoDto = Schemas['PublicSchoolInfoData'];
+export type PublicSchoolStatistics = Schemas['PublicSchoolStatistics'];
+export type PublicSchoolOrganization = Schemas['PublicSchoolOrganization'];
 export type SchoolSettings = OptionalNonNull<SchoolSettingsDto>;
 export type PublicSchoolInfo = OptionalNonNull<PublicSchoolInfoDto>;
 
 export interface UpdateSchoolSettingsRequest {
 	logoFileId?: string | null;
+}
+
+export async function getPublicSchoolStatistics(
+	options: ApiRequestOptions = {}
+): Promise<PublicSchoolStatistics> {
+	return requireApiData(
+		await apiClient.getPublic<PublicSchoolStatistics>('/api/school/public/statistics', options),
+		'โหลดสถิติโรงเรียนไม่สำเร็จ'
+	);
+}
+
+export async function getPublicSchoolOrganization(
+	options: ApiRequestOptions = {}
+): Promise<PublicSchoolOrganization> {
+	return requireApiData(
+		await apiClient.getPublic<PublicSchoolOrganization>('/api/school/public/organization', options),
+		'โหลดโครงสร้างบริหารไม่สำเร็จ'
+	);
 }
 
 function schoolSettingsFromDto(dto: SchoolSettingsDto): SchoolSettings {
@@ -41,10 +61,12 @@ export async function deleteSchoolLogo(): Promise<void> {
 	if (!res.success) throw new Error(res.error);
 }
 
-async function loadPublicSchoolInfo(): Promise<
+async function loadPublicSchoolInfo(
+	options: ApiRequestOptions = {}
+): Promise<
 	{ info: PublicSchoolInfo; error?: undefined } | { info: PublicSchoolInfo; error: string }
 > {
-	const res = await apiClient.get<PublicSchoolInfoDto>('/api/school/public');
+	const res = await apiClient.getPublic<PublicSchoolInfoDto>('/api/school/public', options);
 	if (!res.success) return { info: {}, error: res.error };
 	return { info: res.data ? publicSchoolInfoFromDto(res.data) : {} };
 }
@@ -53,8 +75,10 @@ export async function getPublicSchoolInfo(): Promise<PublicSchoolInfo> {
 	return (await loadPublicSchoolInfo()).info;
 }
 
-export async function getRequiredPublicSchoolInfo(): Promise<PublicSchoolInfo> {
-	const result = await loadPublicSchoolInfo();
+export async function getRequiredPublicSchoolInfo(
+	options: ApiRequestOptions = {}
+): Promise<PublicSchoolInfo> {
+	const result = await loadPublicSchoolInfo(options);
 	if (result.error) throw new Error(result.error);
 	return result.info;
 }

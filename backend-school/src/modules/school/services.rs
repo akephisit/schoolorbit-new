@@ -1,3 +1,5 @@
+pub mod public;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 

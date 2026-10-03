@@ -4,6 +4,8 @@
 
 The tenant-facing web application provides staff, student, and parent workflows against backend-school.
 
+Its homepage is an anonymous school website using existing branding, current-year student and homeroom aggregates, staff totals, and active organization units with current leaders. The three public reads load independently and can retry separately. School management continues through the existing login and authenticated routes; no separate content store or manually entered public totals are required.
+
 ## Stack
 
 - SvelteKit 5 and Svelte 5

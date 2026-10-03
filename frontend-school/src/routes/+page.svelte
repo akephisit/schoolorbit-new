@@ -1,372 +1,241 @@
 <script lang="ts">
-	import { asset, resolve } from '$app/paths';
+	import type { PageProps } from './$types';
+	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import {
+		getRequiredPublicSchoolInfo,
+		getPublicSchoolStatistics,
+		getPublicSchoolOrganization
+	} from '$lib/api/school';
+	import { buildPublicOrganizationTree } from '$lib/school-public/organization';
+	import PublicSchoolIdentity from '$lib/components/school-public/PublicSchoolIdentity.svelte';
+	import PublicSchoolRegion from '$lib/components/school-public/PublicSchoolRegion.svelte';
+	import PublicSchoolStatistics from '$lib/components/school-public/PublicSchoolStatistics.svelte';
+	import PublicOrganizationTree from '$lib/components/school-public/PublicOrganizationTree.svelte';
 	import {
 		ArrowDown,
-		ArrowRight,
 		ArrowUpRight,
 		BadgeCheck,
-		BookOpen,
 		CalendarDays,
-		Check,
-		ClipboardList,
 		GraduationCap,
 		Menu,
-		Orbit,
-		ShieldCheck,
-		Sparkles,
-		UsersRound,
-		X
+		X,
+		School,
+		Orbit
 	} from '@lucide/svelte';
-
+	let { data }: PageProps = $props();
 	let menuOpen = $state(false);
-
 	const services = [
 		{
 			title: 'ปฏิทินโรงเรียน',
-			description: 'ติดตามกิจกรรมและกำหนดการสำคัญ วางแผนทุกวันของการเรียนรู้ได้ง่ายขึ้น',
-			label: 'ดูปฏิทิน',
+			description: 'ติดตามกิจกรรมและกำหนดการที่โรงเรียนเปิดเผยให้ทุกคนดูได้',
 			href: resolve('/calendar'),
 			icon: CalendarDays,
-			tone: 'blue'
+			label: 'ดูปฏิทิน'
 		},
 		{
 			title: 'รับสมัครนักเรียน',
-			description: 'ดูรอบการรับสมัคร กรอกใบสมัครออนไลน์ และติดตามสถานะได้ในที่เดียว',
-			label: 'ดูการรับสมัคร',
+			description: 'ดูรอบการรับสมัคร สมัครเรียน และติดตามสถานะการสมัคร',
 			href: resolve('/apply'),
 			icon: GraduationCap,
-			tone: 'green'
+			label: 'ดูการรับสมัคร'
 		},
 		{
 			title: 'ตรวจสอบเกียรติบัตร',
-			description: 'ค้นหาและตรวจสอบความถูกต้องของเกียรติบัตรที่ออกผ่านระบบของโรงเรียน',
-			label: 'ตรวจสอบเอกสาร',
+			description: 'ตรวจสอบความถูกต้องของเกียรติบัตรที่ออกโดยโรงเรียน',
 			href: resolve('/verify/certificate'),
 			icon: BadgeCheck,
-			tone: 'sand'
+			label: 'ตรวจสอบเอกสาร'
 		}
-	];
-
-	const audiences = [
-		{ icon: BookOpen, title: 'ครูและบุคลากร', description: 'จัดการงาน เชื่อมต่อการสอน' },
-		{ icon: GraduationCap, title: 'นักเรียน', description: 'เข้าถึงทุกเรื่องของการเรียน' },
-		{ icon: UsersRound, title: 'ผู้ปกครอง', description: 'ติดตามและดูแลไปด้วยกัน' }
 	];
 </script>
 
 <svelte:head>
-	<title>SchoolOrbit — เชื่อมทุกเรื่องของโรงเรียนไว้ในที่เดียว</title>
+	<title>เว็บไซต์โรงเรียน — ข้อมูลและบริการสาธารณะ</title>
 	<meta
 		name="description"
-		content="SchoolOrbit พื้นที่ดิจิทัลสำหรับครู นักเรียน และผู้ปกครอง เข้าถึงปฏิทินโรงเรียน การรับสมัคร เกียรติบัตร และระบบบริหารโรงเรียนได้ในที่เดียว"
+		content="รู้จักโรงเรียน ดูสถิตินักเรียน ครู ห้องเรียน และโครงสร้างบริหาร พร้อมเข้าถึงบริการสาธารณะ"
 	/>
 </svelte:head>
-
-<div class="landing-page bg-[#f8fbfc] text-[#163441]">
-	<a href="#main-content" class="skip-link">ข้ามไปเนื้อหาหลัก</a>
-	<main id="main-content" tabindex="-1">
-		<section class="landing-hero relative isolate flex min-h-screen flex-col overflow-hidden">
-			<div class="hero-glow" aria-hidden="true"></div>
-			<header
-				class="site-header relative z-30 mx-auto mt-5 w-[calc(100%-2rem)] max-w-[1200px] sm:mt-7"
+<div class="school-public min-h-screen bg-background text-foreground">
+	<a href="#main-content" class="skip-link rounded-lg bg-card px-4 py-3 text-primary shadow-lg"
+		>ข้ามไปเนื้อหาหลัก</a
+	>
+	<header class="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
+		<div
+			class="relative mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6"
+		>
+			<a href={resolve('/')} class="flex min-w-0 items-center gap-2.5 font-medium"
+				><span
+					class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
+					><School class="size-6" /></span
+				><span class="text-sm sm:text-base">เว็บไซต์โรงเรียน</span></a
 			>
-				<div
-					class="header-bar flex items-center justify-between gap-3 rounded-full px-4 py-3 sm:px-6"
+			<nav
+				id="school-navigation"
+				aria-label="เมนูหลัก"
+				class="school-navigation"
+				class:mobile-open={menuOpen}
+			>
+				<a href="#statistics" onclick={() => (menuOpen = false)}>ข้อมูลโรงเรียน</a>
+				<a href="#organization" onclick={() => (menuOpen = false)}>โครงสร้างบริหาร</a>
+				<a href="#services" onclick={() => (menuOpen = false)}>บริการ</a>
+			</nav>
+			<div class="flex shrink-0 items-center gap-1.5">
+				<Button href="/login">เข้าสู่ระบบ <ArrowUpRight class="hidden size-4 sm:block" /></Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					class="md:hidden"
+					aria-label={menuOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
+					aria-expanded={menuOpen}
+					aria-controls="school-navigation"
+					onclick={() => (menuOpen = !menuOpen)}
+					>{#if menuOpen}<X class="size-5" />{:else}<Menu class="size-5" />{/if}</Button
 				>
-					<a
-						href={resolve('/')}
-						aria-label="SchoolOrbit หน้าหลัก"
-						class="brand flex items-center gap-2.5"
-					>
-						<span
-							class="flex size-10 items-center justify-center rounded-full bg-[#237c9b] text-white"
-						>
-							<Orbit class="size-6" strokeWidth={1.6} />
-						</span>
-						<span class="text-xl font-semibold tracking-tight"
-							>School<span class="text-[#237c9b]">Orbit</span></span
-						>
-					</a>
-					<nav id="main-navigation" aria-label="เมนูหลัก" class:mobile-open={menuOpen}>
-						<a href="#services" onclick={() => (menuOpen = false)}>บริการ</a>
-						<a href="#about" onclick={() => (menuOpen = false)}>รู้จัก SchoolOrbit</a>
-						<a href="#get-started" onclick={() => (menuOpen = false)}>เริ่มต้นใช้งาน</a>
-					</nav>
-					<div class="flex items-center gap-1 sm:gap-3">
-						<Button href="/login" class="login-button h-10 rounded-full px-4 sm:px-5">
-							เข้าสู่ระบบ <ArrowUpRight class="hidden size-4 sm:block" />
-						</Button>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="rounded-full md:hidden"
-							aria-label={menuOpen ? 'ปิดเมนู' : 'เปิดเมนู'}
-							aria-expanded={menuOpen}
-							aria-controls="main-navigation"
-							onclick={() => (menuOpen = !menuOpen)}
-						>
-							{#if menuOpen}<X class="size-5" />{:else}<Menu class="size-5" />{/if}
-						</Button>
-					</div>
-				</div>
-			</header>
-
-			<div
-				class="hero-content relative mx-auto flex w-full max-w-[1200px] flex-1 items-center px-6"
-			>
-				<div class="hero-copy relative z-10 w-full max-w-[620px] py-16 lg:py-20">
-					<div
-						class="mb-7 inline-flex items-center gap-2.5 rounded-full border border-white/80 bg-white/65 px-4 py-2 text-sm text-[#466772]"
-					>
-						<span class="size-2 rounded-full bg-[#46a68a]"></span>
-						พื้นที่ดิจิทัลสำหรับทุกคนในโรงเรียน
-					</div>
-					<h1 class="hero-title font-semibold tracking-tight">
-						ทุกเรื่องของโรงเรียน<br />
-						<span class="relative inline-block text-[#237c9b]"
-							>เชื่อมถึงกัน<svg
-								class="title-underline"
-								viewBox="0 0 300 16"
-								fill="none"
-								aria-hidden="true"
-								><path
-									d="M3 11C75 1 177 0 297 8"
-									stroke="currentColor"
-									stroke-width="5"
-									stroke-linecap="round"
-								/></svg
-							></span
-						> ในที่เดียว
-					</h1>
-					<p class="mt-7 max-w-[470px] text-lg leading-relaxed text-[#54717e] sm:text-xl">
-						ให้การเรียนรู้และการดูแลเดินไปด้วยกัน<br class="hidden sm:block" />
-						เชื่อมงานของครู ชีวิตของนักเรียน และความใส่ใจของผู้ปกครอง ผ่าน SchoolOrbit
-					</p>
-					<div class="mt-9 flex flex-wrap items-center gap-4">
-						<Button
-							href="/login"
-							size="lg"
-							class="login-button hero-login h-14 rounded-full px-7 text-base"
-						>
-							เข้าสู่ระบบ <span
-								class="ml-2 flex size-8 items-center justify-center rounded-full bg-white/15"
-								><ArrowUpRight class="size-5" /></span
-							>
-						</Button>
-						<Button
-							href="/#services"
-							variant="ghost"
-							size="lg"
-							class="h-14 rounded-full px-4 text-base text-[#355a6b] hover:bg-white/60"
-						>
-							สำรวจบริการ <ArrowDown class="size-4" />
-						</Button>
-					</div>
-					<div class="mt-8 flex items-center gap-2 text-sm text-[#647f89]">
-						<ShieldCheck class="size-4 text-[#518e82]" /> เข้าถึงข้อมูลตามสิทธิ์ของแต่ละผู้ใช้งาน
-					</div>
-				</div>
-
-				<div class="campus-scene" aria-hidden="true">
-					<div class="scene-orbit"></div>
-					<img
-						src={asset('/illustrations/school-campus.svg')}
-						alt=""
-						width="960"
-						height="620"
-						fetchpriority="high"
-						class="campus-image"
-					/>
-					<div class="scene-card calendar-card">
-						<span class="scene-icon bg-[#e5f1f6] text-[#237c9b]"
-							><CalendarDays class="size-5" /></span
-						>
-						<div>
-							<p class="text-xs text-[#6c8790]">ไม่พลาดวันสำคัญ</p>
-							<p class="mt-1 font-medium">ปฏิทินโรงเรียน</p>
-						</div>
-						<span class="ml-3 size-2 rounded-full bg-[#66b297]"></span>
-					</div>
-					<div class="scene-card learning-card">
-						<span class="scene-icon bg-[#edf2e6] text-[#7d9360]"><BookOpen class="size-5" /></span>
-						<div>
-							<p class="text-xs text-[#6c8790]">พร้อมสำหรับทุกวัน</p>
-							<p class="mt-1 font-medium">ตารางเรียนและผลการเรียน</p>
-						</div>
-					</div>
-					<div class="scene-card connected-card">
-						<span
-							class="flex size-7 items-center justify-center rounded-full bg-[#e4f2ec] text-[#4c9b80]"
-							><Check class="size-4" /></span
-						>
-						<span class="text-sm">โรงเรียนที่เชื่อมถึงกัน</span>
-					</div>
-					<span class="scene-caption">A LITTLE MORE CONNECTED. A LOT MORE POSSIBLE.</span>
-				</div>
 			</div>
-
-			<div
-				class="relative z-10 mx-auto mb-8 grid w-[calc(100%-3rem)] max-w-[1152px] gap-5 rounded-2xl border border-white/90 bg-white/55 px-6 py-5 backdrop-blur-sm sm:grid-cols-3 sm:gap-8 sm:px-8"
-			>
-				{#each audiences as audience (audience.title)}
-					<div class="flex items-center gap-4">
-						<audience.icon class="size-7 shrink-0 text-[#5f8b9d]" strokeWidth={1.5} />
-						<div>
-							<p class="font-medium">{audience.title}</p>
-							<p class="mt-1 text-sm text-[#66818b]">{audience.description}</p>
-						</div>
-					</div>
-				{/each}
+		</div>
+	</header>
+	<main id="main-content" tabindex="-1">
+		<section
+			class="relative isolate overflow-hidden border-b border-border bg-gradient-to-br from-primary/5 via-background to-accent px-4 py-14 sm:px-6 sm:py-20"
+		>
+			<Orbit
+				class="pointer-events-none absolute -right-24 -bottom-24 -z-10 size-96 text-primary/5"
+				strokeWidth={0.7}
+				aria-hidden="true"
+			/>
+			<div class="mx-auto max-w-6xl">
+				<p class="mb-6 text-xs font-medium tracking-widest text-primary">
+					ข้อมูลและบริการสาธารณะของโรงเรียน
+				</p>
+				<PublicSchoolRegion
+					source={data.identity}
+					label="ข้อมูลโรงเรียน"
+					retry={(signal) => getRequiredPublicSchoolInfo({ signal })}
+				>
+					{#snippet skeleton()}<div class="space-y-4">
+							<Skeleton class="h-16 w-16 rounded-2xl" /><Skeleton
+								class="h-10 w-3/4 max-w-lg"
+							/><Skeleton class="h-5 w-1/2" />
+						</div>{/snippet}
+					{#snippet children(info)}
+						<PublicSchoolIdentity {info} />
+					{/snippet}
+				</PublicSchoolRegion>
+				<div class="mt-8 flex flex-wrap gap-3">
+					<Button href="/#statistics" size="lg"
+						>ดูข้อมูลโรงเรียน <ArrowDown class="size-4" /></Button
+					><Button href="/#services" size="lg" variant="outline"
+						>สำรวจบริการ <ArrowUpRight class="size-4" /></Button
+					>
+				</div>
 			</div>
 		</section>
-
+		<section
+			id="statistics"
+			aria-labelledby="statistics-heading"
+			class="section-anchor mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16"
+		>
+			<div class="mb-6">
+				<p class="text-xs font-medium tracking-widest text-primary">ภาพรวมโรงเรียน</p>
+				<h2 id="statistics-heading" class="mt-3 text-2xl font-medium sm:text-3xl">
+					โรงเรียนของเราในวันนี้
+				</h2>
+				<p class="mt-3 text-sm leading-relaxed text-muted-foreground">
+					ข้อมูลนักเรียน ห้องเรียน และบุคลากรจากระบบของโรงเรียน
+				</p>
+			</div>
+			<PublicSchoolRegion
+				source={data.statistics}
+				label="สถิติโรงเรียน"
+				retry={(signal) => getPublicSchoolStatistics({ signal })}
+			>
+				{#snippet skeleton()}<PageSkeleton variant="cards" rows={4} />
+					<div class="mt-8"><PageSkeleton variant="table" rows={3} columns={5} /></div>{/snippet}
+				{#snippet children(statistics)}<PublicSchoolStatistics {statistics} />{/snippet}
+			</PublicSchoolRegion>
+		</section>
+		<section
+			id="organization"
+			aria-labelledby="organization-heading"
+			class="section-anchor border-y border-border bg-muted/30 px-4 py-12 sm:px-6 sm:py-16"
+		>
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-6">
+					<p class="text-xs font-medium tracking-widest text-primary">โครงสร้างองค์กร</p>
+					<h2 id="organization-heading" class="mt-3 text-2xl font-medium sm:text-3xl">
+						แผนผังการบริหาร
+					</h2>
+					<p class="mt-3 text-sm leading-relaxed text-muted-foreground">
+						หน่วยงานและผู้ดำรงตำแหน่งปัจจุบัน · กดชื่อหน่วยงานเพื่อกางหรือย่อข้อมูล
+					</p>
+				</div>
+				<PublicSchoolRegion
+					source={data.organization}
+					label="โครงสร้างบริหาร"
+					retry={(signal) => getPublicSchoolOrganization({ signal })}
+				>
+					{#snippet skeleton()}<PageSkeleton variant="cards" rows={3} />{/snippet}
+					{#snippet children(organization)}{#if organization.units.length}<PublicOrganizationTree
+								nodes={buildPublicOrganizationTree(organization.units)}
+							/>{:else}<PageState
+								title="ยังไม่มีข้อมูลโครงสร้างบริหาร"
+								description="ข้อมูลจะแสดงเมื่อโรงเรียนตั้งค่าโครงสร้างองค์กร"
+							/>{/if}{/snippet}
+				</PublicSchoolRegion>
+			</div>
+		</section>
 		<section
 			id="services"
 			aria-labelledby="services-heading"
-			class="section-anchor mx-auto max-w-[1200px] px-6 py-20 sm:py-24"
+			class="section-anchor mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16"
 		>
-			<div class="flex flex-wrap items-end justify-between gap-5">
-				<div>
-					<p class="eyebrow">EXPLORE OUR SERVICES</p>
-					<h2 id="services-heading" class="mt-4 text-3xl font-medium leading-snug sm:text-4xl">
-						เรื่องของโรงเรียน เริ่มต้นได้ที่นี่
-					</h2>
-				</div>
-				<p class="max-w-[300px] text-base leading-relaxed text-[#6a818b]">
-					เข้าถึงบริการสาธารณะของโรงเรียน<br />ได้สะดวกจากทุกที่
-				</p>
-			</div>
-			<div class="mt-10 grid gap-5 md:grid-cols-3">
-				{#each services as service, index (service.href)}
-					<a href={service.href} class="service-card group" data-tone={service.tone}>
-						<div class="flex items-start justify-between">
-							<span class="service-icon"><service.icon class="size-7" strokeWidth={1.6} /></span>
-							<span class="text-sm text-[#8ba0a9]">0{index + 1}</span>
-						</div>
-						<h3 class="mt-8 text-2xl font-medium">{service.title}</h3>
-						<p class="mt-3 flex-1 text-base leading-relaxed text-[#6a818b]">
+			<p class="text-xs font-medium tracking-widest text-primary">บริการของโรงเรียน</p>
+			<h2 id="services-heading" class="mt-3 text-2xl font-medium sm:text-3xl">
+				เรื่องของโรงเรียน เริ่มต้นได้ที่นี่
+			</h2>
+			<div class="mt-7 grid gap-4 md:grid-cols-3">
+				{#each services as service (service.href)}
+					<a
+						href={service.href}
+						class="group flex flex-col rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary/40 hover:bg-accent/40"
+						><span
+							class="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary"
+							><service.icon class="size-6" strokeWidth={1.5} /></span
+						>
+						<h3 class="mt-5 text-xl font-medium">{service.title}</h3>
+						<p class="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground">
 							{service.description}
 						</p>
-						<div
-							class="mt-8 flex items-center justify-between border-t border-[#dde7eb] pt-5 font-medium text-[#356b82]"
-						>
-							{service.label}<ArrowUpRight
-								class="size-5 transition-transform group-hover:translate-x-1 group-hover:-translate-y-1"
-							/>
-						</div>
-					</a>
+						<span
+							class="mt-6 flex items-center justify-between border-t border-border pt-4 text-sm font-medium text-primary"
+							>{service.label}<ArrowUpRight class="size-4" /></span
+						></a
+					>
 				{/each}
 			</div>
 		</section>
-
-		<section
-			id="about"
-			aria-labelledby="about-heading"
-			class="section-anchor border-y border-[#e0ebef] bg-[#edf5f7]"
-		>
-			<div
-				class="mx-auto grid max-w-[1200px] gap-12 px-6 py-20 sm:py-24 lg:grid-cols-[1fr_1.1fr] lg:gap-24"
-			>
-				<div>
-					<p class="eyebrow">ONE SCHOOL. ONE ORBIT.</p>
-					<h2 id="about-heading" class="mt-4 text-4xl font-medium leading-snug sm:text-5xl">
-						ใกล้กันมากขึ้น<br /><span class="text-[#237c9b]">ในทุกวันของโรงเรียน</span>
-					</h2>
-					<p class="mt-6 max-w-[410px] text-lg leading-relaxed text-[#64808b]">
-						เพราะโรงเรียนเป็นมากกว่าห้องเรียน SchoolOrbit จึงรวมงานและข้อมูลที่สำคัญ
-						ให้ทุกคนใช้เวลาร่วมกันได้อย่างมีความหมาย
-					</p>
-					<div
-						class="mt-9 inline-flex items-center gap-3 rounded-full border border-[#d1e3e8] px-4 py-2.5 text-sm text-[#4f7484]"
-					>
-						<Orbit class="size-5" /> เชื่อมคน เชื่อมงาน เชื่อมการเรียนรู้
-					</div>
-				</div>
-				<div class="divide-y divide-[#d6e5ea]">
-					<div class="about-feature">
-						<span class="feature-icon"><ClipboardList class="size-6" strokeWidth={1.6} /></span>
-						<div>
-							<h3 class="text-xl font-medium">งานโรงเรียน เป็นระบบมากขึ้น</h3>
-							<p class="mt-2 leading-relaxed text-[#64808b]">
-								จัดการข้อมูลนักเรียน งานวิชาการ ตารางสอน และผลการเรียน ผ่านพื้นที่ทำงานเดียวกัน
-							</p>
-						</div>
-					</div>
-					<div class="about-feature">
-						<span class="feature-icon"><UsersRound class="size-6" strokeWidth={1.6} /></span>
-						<div>
-							<h3 class="text-xl font-medium">ทุกคน มีพื้นที่ของตัวเอง</h3>
-							<p class="mt-2 leading-relaxed text-[#64808b]">
-								ครู นักเรียน และผู้ปกครอง เข้าถึงข้อมูลและบริการที่เกี่ยวข้องกับตัวเองได้ตามบทบาท
-							</p>
-						</div>
-					</div>
-					<div class="about-feature">
-						<span class="feature-icon"><Sparkles class="size-6" strokeWidth={1.6} /></span>
-						<div>
-							<h3 class="text-xl font-medium">เรื่องสำคัญ อยู่ใกล้แค่ปลายนิ้ว</h3>
-							<p class="mt-2 leading-relaxed text-[#64808b]">
-								ติดตามกิจกรรม ตารางเรียน และเกียรติบัตร พร้อมใช้งานบนคอมพิวเตอร์และมือถือ
-							</p>
-						</div>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<section
-			id="get-started"
-			aria-labelledby="get-started-heading"
-			class="section-anchor mx-auto max-w-[1200px] px-6 py-16 sm:py-20"
-		>
-			<div
-				class="start-panel relative isolate overflow-hidden rounded-[2rem] px-7 py-12 text-white sm:px-12 sm:py-14"
-			>
-				<Orbit
-					class="pointer-events-none absolute -top-16 -right-14 -z-10 size-[360px] text-white/8"
-					strokeWidth={0.6}
-				/>
-				<div class="flex flex-wrap items-center justify-between gap-8">
-					<div>
-						<p class="text-sm tracking-[0.12em] text-[#b9dce8]">YOUR SCHOOL, CONNECTED.</p>
-						<h2 id="get-started-heading" class="mt-3 text-3xl font-medium sm:text-4xl">
-							พร้อมเริ่มวันใหม่ไปด้วยกัน?
-						</h2>
-						<p class="mt-4 text-base text-[#c4dfe9]">
-							เข้าสู่ระบบด้วยบัญชีที่ได้รับจากโรงเรียนของคุณ
-						</p>
-					</div>
-					<Button
-						href="/login"
-						size="lg"
-						class="h-14 rounded-full bg-white px-7 text-base text-[#236581] hover:bg-[#e8f3f7]"
-						>เข้าสู่ระบบ SchoolOrbit <ArrowRight class="ml-2 size-5" /></Button
-					>
-				</div>
-			</div>
-		</section>
 	</main>
-	<footer
-		class="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-5 border-t border-[#e0ebef] px-6 py-8 text-sm text-[#6a818b]"
-	>
-		<a
-			href={resolve('/')}
-			class="brand flex items-center gap-2 text-base font-medium text-[#355967]"
-			><Orbit class="size-5 text-[#237c9b]" /> SchoolOrbit</a
+	<footer class="border-t border-border">
+		<div
+			class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-7 text-sm text-muted-foreground sm:px-6"
 		>
-		<p>เชื่อมทุกเรื่องของโรงเรียนไว้ในที่เดียว</p>
-		<a href={resolve('/privacy-policy')} class="transition-colors hover:text-[#237c9b]"
-			>นโยบายความเป็นส่วนตัว <ArrowUpRight class="ml-1 inline size-3.5" /></a
-		>
+			<span class="flex items-center gap-2"
+				><Orbit class="size-4" /> ขับเคลื่อนด้วย SchoolOrbit</span
+			><a href={resolve('/privacy-policy')} class="hover:text-primary">นโยบายความเป็นส่วนตัว</a>
+		</div>
 	</footer>
 </div>
 
 <style>
-	.landing-page :global(a:focus-visible),
-	.landing-page :global(button:focus-visible) {
-		outline: 3px solid #237c9b;
-		outline-offset: 5px;
+	.school-public :global(a:focus-visible),
+	.school-public :global(button:focus-visible),
+	.school-public :global(summary:focus-visible) {
+		outline: 2px solid var(--ring);
+		outline-offset: 4px;
 	}
 	.skip-link {
 		position: fixed;
@@ -374,368 +243,47 @@
 		left: 1rem;
 		z-index: 50;
 		transform: translateY(-200%);
-		border-radius: 0.75rem;
-		background: white;
-		padding: 0.75rem 1rem;
 	}
 	.skip-link:focus {
 		transform: translateY(0);
 	}
-	.landing-hero {
-		background: linear-gradient(115deg, #f1f6f7 0%, #e7f2f7 48%, #cde6ed 100%);
-	}
-	.hero-glow {
-		position: absolute;
-		inset: 0;
-		z-index: -1;
-		background:
-			radial-gradient(ellipse at 90% 10%, #faf3dba8, transparent 35%),
-			radial-gradient(ellipse at 20% 80%, #ffffff80, transparent 55%);
-	}
-	.header-bar {
-		border: 1px solid #ffffffe6;
-		background: #ffffffa8;
-		box-shadow: 0 8px 40px #537d8e0a;
-		backdrop-filter: blur(20px);
-	}
-	.brand {
-		white-space: nowrap;
-	}
-	.site-header nav {
-		display: flex;
-		align-items: center;
-		gap: 2rem;
-		color: #54717e;
-		font-size: 1rem;
-	}
-	.site-header nav a {
-		transition: color 160ms;
-	}
-	.site-header nav a:hover {
-		color: #237c9b;
-	}
-	.landing-page :global(.login-button) {
-		background: #237c9b;
-		color: white;
-	}
-	.landing-page :global(.login-button:hover) {
-		background: #1a6683;
-	}
-	.landing-page :global(.hero-login) {
-		box-shadow: 0 8px 24px #237c9b26;
-	}
-	.hero-title {
-		font-size: clamp(2.8rem, 4.2vw, 4.55rem);
-		line-height: 1.3;
-		letter-spacing: -0.045em;
-	}
-	.title-underline {
-		position: absolute;
-		right: 0;
-		bottom: -0.12em;
-		left: 0;
-		width: 100%;
-		height: 0.23em;
-		color: #8fc5d6;
-	}
-	.campus-scene {
-		position: absolute;
-		right: -150px;
-		bottom: 0;
-		width: 780px;
-		height: 560px;
-		pointer-events: none;
-	}
-	.campus-image {
-		position: absolute;
-		right: -60px;
-		bottom: -15px;
-		width: 900px;
-		max-width: none;
-		height: auto;
-	}
-	.scene-orbit {
-		position: absolute;
-		top: 6%;
-		left: 14%;
-		width: 70%;
-		aspect-ratio: 1;
-		border: 1px solid #ffffff60;
-		border-radius: 50%;
-		transform: rotate(-20deg) scaleX(1.2);
-	}
-	.scene-orbit::after {
-		position: absolute;
-		top: 18%;
-		left: 4%;
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: #97c4d2;
-		content: '';
-	}
-	.scene-card {
-		position: absolute;
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		border: 1px solid #ffffffc9;
-		border-radius: 16px;
-		background: #ffffffbf;
-		padding: 14px 17px;
-		box-shadow: 0 12px 40px #44788f0f;
-		backdrop-filter: blur(12px);
-	}
-	.scene-icon {
-		display: flex;
-		width: 42px;
-		height: 42px;
-		align-items: center;
-		justify-content: center;
-		border-radius: 12px;
-	}
-	.calendar-card {
-		top: 77px;
-		left: 68px;
-		transform: rotate(-4deg);
-		animation: float 7s ease-in-out infinite;
-	}
-	.learning-card {
-		top: 242px;
-		right: 115px;
-		transform: rotate(3deg);
-		animation: float 8s ease-in-out 1s infinite;
-	}
-	.connected-card {
-		bottom: 58px;
-		left: 167px;
-		border-radius: 50px;
-		padding: 9px 17px 9px 9px;
-	}
-	.scene-caption {
-		position: absolute;
-		right: 104px;
-		bottom: 8px;
-		color: #658c9a;
-		font-size: 9px;
-		letter-spacing: 0.16em;
-	}
-	.eyebrow {
-		color: #6a8c9b;
-		font-size: 0.8rem;
-		font-weight: 500;
-		letter-spacing: 0.16em;
-	}
 	.section-anchor {
-		scroll-margin-top: 2rem;
+		scroll-margin-top: 6rem;
 	}
-	.service-card {
+	.school-navigation {
 		display: flex;
-		flex-direction: column;
-		border: 1px solid #e0e9ed;
-		border-radius: 22px;
-		background: white;
-		padding: 28px;
-		transition:
-			transform 200ms,
-			border-color 200ms,
-			box-shadow 200ms;
-	}
-	.service-card:hover {
-		transform: translateY(-5px);
-		border-color: #b4d5e0;
-		box-shadow: 0 14px 40px #3c718a0b;
-	}
-	.service-icon {
-		display: flex;
-		width: 58px;
-		height: 58px;
 		align-items: center;
-		justify-content: center;
-		border-radius: 18px;
-		background: #e9f3f8;
-		color: #4388a5;
+		gap: 1.5rem;
+		font-size: 0.875rem;
+		color: var(--muted-foreground);
 	}
-	.service-card[data-tone='green'] .service-icon {
-		background: #e9f3ed;
-		color: #6d9b80;
-	}
-	.service-card[data-tone='sand'] .service-icon {
-		background: #f7f1e5;
-		color: #b99a5e;
-	}
-	.about-feature {
-		display: flex;
-		gap: 22px;
-		padding: 26px 0;
-	}
-	.about-feature:first-child {
-		padding-top: 0;
-	}
-	.about-feature:last-child {
-		padding-bottom: 0;
-	}
-	.feature-icon {
-		display: flex;
-		width: 48px;
-		height: 48px;
-		flex-shrink: 0;
-		align-items: center;
-		justify-content: center;
-		border: 1px solid #d4e5eb;
-		border-radius: 15px;
-		color: #578b9f;
-	}
-	.start-panel {
-		background: radial-gradient(ellipse at 90% 100%, #348cab, transparent 70%), #235e77;
-	}
-	@keyframes float {
-		0%,
-		100% {
-			translate: 0 0;
-		}
-		50% {
-			translate: 0 -8px;
-		}
-	}
-	@media (min-width: 1600px) {
-		.campus-scene {
-			right: -220px;
-			width: 900px;
-			height: 610px;
-		}
-		.campus-image {
-			width: 1020px;
-		}
-		.calendar-card {
-			top: 90px;
-			left: 90px;
-		}
-		.learning-card {
-			right: 100px;
-		}
-	}
-	@media (max-width: 1100px) and (min-width: 768px) {
-		.hero-copy {
-			max-width: 540px;
-		}
-		.hero-title {
-			font-size: 3.65rem;
-		}
-		.campus-scene {
-			right: -270px;
-			opacity: 0.75;
-		}
-		.scene-card {
-			display: none;
-		}
-		.hero-copy::before {
-			position: absolute;
-			inset: 0 -50px 0 -24px;
-			z-index: -1;
-			background: linear-gradient(90deg, #eaf3f7 65%, transparent);
-			content: '';
-		}
+	.school-navigation a:hover {
+		color: var(--primary);
 	}
 	@media (max-width: 767px) {
-		.site-header nav {
+		.school-navigation {
+			display: none;
 			position: absolute;
-			top: calc(100% + 10px);
-			right: 0;
-			left: 0;
-			display: none;
-			align-items: stretch;
-			gap: 0;
-			border: 1px solid #dce9ee;
-			border-radius: 20px;
-			background: #f8fcfd;
-			padding: 10px;
-			box-shadow: 0 12px 30px #355b701a;
+			top: calc(100% + 0.5rem);
+			left: 1rem;
+			right: 1rem;
+			border: 1px solid var(--border);
+			border-radius: 1rem;
+			padding: 0.5rem;
+			background: var(--card);
 		}
-		.site-header nav.mobile-open {
+		.school-navigation.mobile-open {
 			display: flex;
-			flex-direction: column;
-		}
-		.site-header nav a {
-			border-radius: 12px;
-			padding: 12px 16px;
-		}
-		.site-header nav a:hover {
-			background: #eaf4f8;
-		}
-		.hero-content {
-			flex-direction: column;
 			align-items: stretch;
+			flex-direction: column;
+			gap: 0;
 		}
-		.hero-copy {
-			max-width: none;
-			padding-top: 55px;
-			padding-bottom: 0;
+		.school-navigation a {
+			padding: 0.875rem 1rem;
+			border-radius: 0.5rem;
 		}
-		.hero-title {
-			font-size: clamp(2.65rem, 7.8vw, 4rem);
-		}
-		.campus-scene {
-			position: relative;
-			right: auto;
-			bottom: auto;
-			left: 50%;
-			width: 500px;
-			height: 330px;
-			margin-top: 28px;
-			margin-bottom: 12px;
-			transform: translateX(-50%);
-		}
-		.campus-image {
-			right: -25px;
-			bottom: -22px;
-			width: 555px;
-		}
-		.scene-orbit {
-			top: 0;
-		}
-		.scene-card {
-			gap: 8px;
-			border-radius: 12px;
-			padding: 10px 12px;
-		}
-		.scene-icon {
-			width: 34px;
-			height: 34px;
-			border-radius: 9px;
-		}
-		.calendar-card {
-			top: 12px;
-			left: 74px;
-		}
-		.learning-card {
-			top: 132px;
-			right: 85px;
-			font-size: 12px;
-		}
-		.connected-card {
-			bottom: 19px;
-			left: 100px;
-			border-radius: 50px;
-			padding: 7px 12px 7px 7px;
-		}
-		.scene-caption {
-			display: none;
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.scene-card {
-			animation: none;
-		}
-		.service-card,
-		.site-header nav a {
-			transition: none;
-		}
-		.service-card:hover {
-			transform: none;
-		}
-		.landing-page :global(.transition-transform) {
-			transition: none;
+		.school-navigation a:hover {
+			background: var(--accent);
 		}
 	}
 </style>

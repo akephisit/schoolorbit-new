@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The administration web application supports school provisioning and control-plane operations through backend-admin and selected server-side backend-school calls.
+The administration web application supports school provisioning and control-plane operations through backend-admin and selected server-side backend-school calls. Its public homepage introduces SchoolOrbit; authenticated administrators continue to the existing dashboard. School-specific public information and services remain on each school’s website.
 
 ## Stack
 

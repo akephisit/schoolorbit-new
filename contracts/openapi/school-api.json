@@ -11257,6 +11257,103 @@
         ],
         "type": "object"
       },
+      "ApiResponse_PublicSchoolOrganization": {
+        "properties": {
+          "data": {
+            "properties": {
+              "units": {
+                "items": {
+                  "$ref": "#/components/schemas/PublicOrganizationUnit"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "units"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_PublicSchoolStatistics": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicYear": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PublicAcademicYear"
+                  }
+                ]
+              },
+              "asOf": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "grades": {
+                "items": {
+                  "$ref": "#/components/schemas/PublicGradeStatistics"
+                },
+                "type": "array"
+              },
+              "students": {
+                "$ref": "#/components/schemas/PublicStudentCounts"
+              },
+              "totalHomerooms": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totalStaff": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totalTeachers": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "unassignedStudents": {
+                "$ref": "#/components/schemas/PublicStudentCounts"
+              }
+            },
+            "required": [
+              "academicYear",
+              "students",
+              "unassignedStudents",
+              "totalTeachers",
+              "totalStaff",
+              "totalHomerooms",
+              "grades",
+              "asOf"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_PublicStaffProfile": {
         "properties": {
           "data": {
@@ -39165,6 +39262,22 @@
         ],
         "type": "string"
       },
+      "PublicAcademicYear": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "name"
+        ],
+        "type": "object"
+      },
       "PublicCertificateRenderRequest": {
         "additionalProperties": false,
         "properties": {
@@ -39276,6 +39389,109 @@
         ],
         "type": "object"
       },
+      "PublicGradeStatistics": {
+        "properties": {
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/PublicHomeroomStatistics"
+            },
+            "type": "array"
+          },
+          "levelType": {
+            "type": "string"
+          },
+          "students": {
+            "$ref": "#/components/schemas/PublicStudentCounts"
+          },
+          "unassignedStudents": {
+            "$ref": "#/components/schemas/PublicStudentCounts"
+          },
+          "year": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "levelType",
+          "year",
+          "students",
+          "unassignedStudents",
+          "homerooms"
+        ],
+        "type": "object"
+      },
+      "PublicHomeroomStatistics": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "students": {
+            "$ref": "#/components/schemas/PublicStudentCounts"
+          }
+        },
+        "required": [
+          "name",
+          "students"
+        ],
+        "type": "object"
+      },
+      "PublicOrganizationLeader": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "positionCode": {
+            "type": "string"
+          },
+          "positionTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "positionCode",
+          "positionTitle"
+        ],
+        "type": "object"
+      },
+      "PublicOrganizationUnit": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "leaders": {
+            "items": {
+              "$ref": "#/components/schemas/PublicOrganizationLeader"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "parentId",
+          "name",
+          "unitType",
+          "leaders"
+        ],
+        "type": "object"
+      },
       "PublicSchoolInfoData": {
         "properties": {
           "logoFileId": {
@@ -39295,6 +39511,73 @@
         "required": [
           "logoFileId",
           "schoolName"
+        ],
+        "type": "object"
+      },
+      "PublicSchoolOrganization": {
+        "properties": {
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/PublicOrganizationUnit"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "units"
+        ],
+        "type": "object"
+      },
+      "PublicSchoolStatistics": {
+        "properties": {
+          "academicYear": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PublicAcademicYear"
+              }
+            ]
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "grades": {
+            "items": {
+              "$ref": "#/components/schemas/PublicGradeStatistics"
+            },
+            "type": "array"
+          },
+          "students": {
+            "$ref": "#/components/schemas/PublicStudentCounts"
+          },
+          "totalHomerooms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalStaff": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalTeachers": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unassignedStudents": {
+            "$ref": "#/components/schemas/PublicStudentCounts"
+          }
+        },
+        "required": [
+          "academicYear",
+          "students",
+          "unassignedStudents",
+          "totalTeachers",
+          "totalStaff",
+          "totalHomerooms",
+          "grades",
+          "asOf"
         ],
         "type": "object"
       },
@@ -39444,6 +39727,33 @@
           "code",
           "name",
           "level"
+        ],
+        "type": "object"
+      },
+      "PublicStudentCounts": {
+        "properties": {
+          "female": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "male": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "otherOrUnspecified": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "male",
+          "female",
+          "otherOrUnspecified"
         ],
         "type": "object"
       },
@@ -82540,6 +82850,86 @@
           }
         },
         "summary": "GET /api/school/public — no auth required\nReturns the public File Platform identity + schoolName (from backend-admin)",
+        "tags": [
+          "school"
+        ]
+      }
+    },
+    "/api/school/public/organization": {
+      "get": {
+        "operationId": "getPublicSchoolOrganization",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublicSchoolOrganization"
+                }
+              }
+            },
+            "description": "Active organization units and current leaders"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid tenant context"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School not found"
+          }
+        },
+        "tags": [
+          "school"
+        ]
+      }
+    },
+    "/api/school/public/statistics": {
+      "get": {
+        "operationId": "getPublicSchoolStatistics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublicSchoolStatistics"
+                }
+              }
+            },
+            "description": "Public school statistics for the active academic year"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid tenant context"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School not found"
+          }
+        },
         "tags": [
           "school"
         ]

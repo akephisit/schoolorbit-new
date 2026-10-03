@@ -26,6 +26,46 @@ pub struct PublicSchoolInfoData {
     pub school_name: Option<String>,
 }
 
+#[utoipa::path(
+    get, path = "/api/school/public/statistics", operation_id = "getPublicSchoolStatistics", tag = "school",
+    responses(
+        (status = 200, description = "Public school statistics for the active academic year", body = ApiResponse<super::models::PublicSchoolStatistics>),
+        (status = 400, description = "Invalid tenant context", body = ApiErrorResponse),
+        (status = 404, description = "School not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_public_statistics(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    let data = school_service::public::get_statistics(&tenant.pool).await?;
+    Ok((
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(ApiResponse::ok(data)),
+    ))
+}
+
+#[utoipa::path(
+    get, path = "/api/school/public/organization", operation_id = "getPublicSchoolOrganization", tag = "school",
+    responses(
+        (status = 200, description = "Active organization units and current leaders", body = ApiResponse<super::models::PublicSchoolOrganization>),
+        (status = 400, description = "Invalid tenant context", body = ApiErrorResponse),
+        (status = 404, description = "School not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_public_organization(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    let data = school_service::public::get_organization(&tenant.pool).await?;
+    Ok((
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(ApiResponse::ok(data)),
+    ))
+}
+
 /// GET /api/school/settings — staff only (SETTINGS_READ_ALL)
 #[utoipa::path(
     get,

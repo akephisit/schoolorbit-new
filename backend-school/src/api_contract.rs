@@ -34,7 +34,7 @@ use crate::modules::menu::models::{
 use crate::modules::notification::models::{ListNotificationsResponse, Notification};
 use crate::modules::parents::models::{ChildDto, ParentProfile};
 use crate::modules::school::handlers::PublicSchoolInfoData;
-use crate::modules::school::models::SchoolSettingsResponse;
+use crate::modules::school::models::*;
 use crate::modules::staff::handlers::organization_delegations::{
     CreateDelegationRequest, DelegationIdData,
 };
@@ -623,6 +623,8 @@ use utoipa::OpenApi;
         crate::modules::calendar::handlers::list_calendar_categories,
         crate::modules::calendar::handlers::list_calendar_tags,
         crate::modules::school::handlers::get_public_info,
+        crate::modules::school::handlers::get_public_statistics,
+        crate::modules::school::handlers::get_public_organization,
         crate::modules::school::handlers::get_settings,
         crate::modules::notification::handlers::list_notifications,
         crate::modules::staff::handlers::roles::list_roles,
@@ -1654,6 +1656,16 @@ struct SchoolApiDoc;
         PublicSchoolInfoData,
         ApiResponse<SchoolSettingsResponse>,
         ApiResponse<PublicSchoolInfoData>,
+        PublicStudentCounts,
+        PublicHomeroomStatistics,
+        PublicGradeStatistics,
+        PublicAcademicYear,
+        PublicSchoolStatistics,
+        PublicOrganizationLeader,
+        PublicOrganizationUnit,
+        PublicSchoolOrganization,
+        ApiResponse<PublicSchoolStatistics>,
+        ApiResponse<PublicSchoolOrganization>,
         FilePurpose,
         FileLifecycleStatus,
         FileUploadMultipart,
@@ -4187,6 +4199,16 @@ mod tests {
                 ("/api/calendar/categories", "get", "listCalendarCategories"),
                 ("/api/calendar/tags", "get", "listCalendarTags"),
                 ("/api/school/public", "get", "getPublicSchoolInfo"),
+                (
+                    "/api/school/public/statistics",
+                    "get",
+                    "getPublicSchoolStatistics",
+                ),
+                (
+                    "/api/school/public/organization",
+                    "get",
+                    "getPublicSchoolOrganization",
+                ),
                 ("/api/school/settings", "get", "getSchoolSettings"),
                 ("/api/notifications", "get", "listNotifications"),
             ],
@@ -4202,6 +4224,31 @@ mod tests {
                 ["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_ListNotificationsResponse"
         );
+
+        for (path, schema) in [
+            (
+                "/api/school/public/statistics",
+                "ApiResponse_PublicSchoolStatistics",
+            ),
+            (
+                "/api/school/public/organization",
+                "ApiResponse_PublicSchoolOrganization",
+            ),
+        ] {
+            assert_eq!(
+                document["paths"][path]["get"]["responses"]["200"]["content"]["application/json"]
+                    ["schema"]["$ref"],
+                format!("#/components/schemas/{schema}")
+            );
+        }
+        let leader_fields = document["components"]["schemas"]["PublicOrganizationLeader"]
+            ["properties"]
+            .as_object()
+            .expect("public leader schema must exist");
+        assert_eq!(leader_fields.len(), 3);
+        for field in ["name", "positionCode", "positionTitle"] {
+            assert!(leader_fields.contains_key(field));
+        }
 
         let calendar_parameters = document["paths"]["/api/calendar/events"]["get"]["parameters"]
             .as_array()

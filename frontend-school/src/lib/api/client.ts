@@ -35,6 +35,20 @@ export interface ApiRequestOptions {
 	requestFetch?: typeof globalThis.fetch;
 }
 
+/** Supply the browser site's tenant origin to a server-side public transport. */
+export function publicRequestFromOrigin(
+	requestFetch: typeof globalThis.fetch,
+	origin: string
+): ApiRequestOptions {
+	return {
+		requestFetch: (input, init) => {
+			const headers = new Headers(init?.headers);
+			headers.set('Origin', origin);
+			return requestFetch(input, { ...init, headers });
+		}
+	};
+}
+
 type ApiTransport = 'session' | 'public';
 
 export class ApiClientError<E = never> extends Error {
@@ -307,6 +321,15 @@ class APIClient {
 				signal: options.signal
 			},
 			'session',
+			options.requestFetch
+		);
+	}
+
+	async getPublic<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<ApiResponse<T>> {
+		return this.request<T>(
+			appendApiQuery(endpoint, options.query),
+			{ method: 'GET', signal: options.signal },
+			'public',
 			options.requestFetch
 		);
 	}

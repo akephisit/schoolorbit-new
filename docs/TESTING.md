@@ -177,6 +177,16 @@ npm run test:route-loading
 npm run test:static
 ```
 
+The public school homepage uses disposable API fixtures, including streamed loading, regional retries, empty academic context, and mobile/desktop organization disclosures. Its Rust tests use isolated tenant schemas and the real router to verify anonymous access, tenant isolation, current enrollment/room movement, staff position counts, and current leaders. Run:
+
+```bash
+# Repository root
+./scripts/test_backend_school.sh modules::school -- --nocapture
+# frontend-school (the browser specs start their own local servers)
+node --experimental-strip-types --test tests/runtime/public-school-organization.test.ts
+npx playwright test tests/e2e/landing-page.spec.ts tests/e2e/admin-landing-page.spec.ts --project=chromium --workers=1
+```
+
 During implementation, run the relevant static file directly:
 
 ```bash

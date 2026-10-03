@@ -5277,6 +5277,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/school/public/organization': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicSchoolOrganization'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/school/public/statistics': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicSchoolStatistics'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/school/settings': {
 		parameters: {
 			query?: never;
@@ -9089,6 +9121,31 @@ export interface components {
 				/** Format: uuid */
 				logoFileId: string | null;
 				schoolName: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PublicSchoolOrganization: {
+			data: {
+				units: components['schemas']['PublicOrganizationUnit'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PublicSchoolStatistics: {
+			data: {
+				academicYear: null | components['schemas']['PublicAcademicYear'];
+				/** Format: date-time */
+				asOf: string;
+				grades: components['schemas']['PublicGradeStatistics'][];
+				students: components['schemas']['PublicStudentCounts'];
+				/** Format: int64 */
+				totalHomerooms: number;
+				/** Format: int64 */
+				totalStaff: number;
+				/** Format: int64 */
+				totalTeachers: number;
+				unassignedStudents: components['schemas']['PublicStudentCounts'];
 			};
 			message?: string;
 			success: boolean;
@@ -16689,6 +16746,11 @@ export interface components {
 		};
 		/** @enum {string} */
 		PromotionSuccessOutcome: 'promote' | 'graduate';
+		PublicAcademicYear: {
+			name: string;
+			/** Format: int32 */
+			year: number;
+		};
 		PublicCertificateRenderRequest: {
 			receipt: string;
 		};
@@ -16715,10 +16777,53 @@ export interface components {
 		PublicFileDeliveryResponse: {
 			url: string;
 		};
+		PublicGradeStatistics: {
+			homerooms: components['schemas']['PublicHomeroomStatistics'][];
+			levelType: string;
+			students: components['schemas']['PublicStudentCounts'];
+			unassignedStudents: components['schemas']['PublicStudentCounts'];
+			/** Format: int32 */
+			year: number;
+		};
+		PublicHomeroomStatistics: {
+			name: string;
+			students: components['schemas']['PublicStudentCounts'];
+		};
+		PublicOrganizationLeader: {
+			name: string;
+			positionCode: string;
+			positionTitle: string | null;
+		};
+		PublicOrganizationUnit: {
+			/** Format: uuid */
+			id: string;
+			leaders: components['schemas']['PublicOrganizationLeader'][];
+			name: string;
+			/** Format: uuid */
+			parentId: string | null;
+			unitType: string;
+		};
 		PublicSchoolInfoData: {
 			/** Format: uuid */
 			logoFileId: string | null;
 			schoolName: string | null;
+		};
+		PublicSchoolOrganization: {
+			units: components['schemas']['PublicOrganizationUnit'][];
+		};
+		PublicSchoolStatistics: {
+			academicYear: null | components['schemas']['PublicAcademicYear'];
+			/** Format: date-time */
+			asOf: string;
+			grades: components['schemas']['PublicGradeStatistics'][];
+			students: components['schemas']['PublicStudentCounts'];
+			/** Format: int64 */
+			totalHomerooms: number;
+			/** Format: int64 */
+			totalStaff: number;
+			/** Format: int64 */
+			totalTeachers: number;
+			unassignedStudents: components['schemas']['PublicStudentCounts'];
 		};
 		PublicStaffOrganizationUnit: {
 			code: string;
@@ -16754,6 +16859,16 @@ export interface components {
 			/** Format: int32 */
 			level: number | null;
 			name: string;
+		};
+		PublicStudentCounts: {
+			/** Format: int64 */
+			female: number;
+			/** Format: int64 */
+			male: number;
+			/** Format: int64 */
+			otherOrUnspecified: number;
+			/** Format: int64 */
+			total: number;
 		};
 		PublishAcademicTermChangeSetRequest: {
 			acknowledgedWarningCodes?: components['schemas']['AcademicChangeFindingCode'][];
@@ -43322,6 +43437,82 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_PublicSchoolInfoData'];
+				};
+			};
+		};
+	};
+	getPublicSchoolOrganization: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Active organization units and current leaders */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PublicSchoolOrganization'];
+				};
+			};
+			/** @description Invalid tenant context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicSchoolStatistics: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Public school statistics for the active academic year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PublicSchoolStatistics'];
+				};
+			};
+			/** @description Invalid tenant context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 		};
