@@ -182,6 +182,15 @@ npm run test:static
 npx tsc --project src/service-worker/tsconfig.json
 ```
 
+Spreadsheet fixtures cover displayed values, zero-padded IDs, literal formula text, CSV quoting, template widths, and multi-sheet rejection. From `frontend-school`:
+
+```bash
+node --test tests/static/spreadsheet.test.mjs tests/static/certificate-importer.test.mjs
+PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npx playwright test tests/e2e/certificate-import-review.spec.ts --project=chromium --workers=1
+```
+
+Against the production preview described below, run `admission-final-region-loading.spec.ts` and `admission-exam-room-region-loading.spec.ts` for student-ID import, template downloads, and room exports. These use disposable mocked data and do not mutate a tenant.
+
 The public school homepage uses disposable API fixtures, including streamed loading, regional retries, empty academic context, and mobile/desktop organization disclosures. Its Rust tests use isolated tenant schemas and the real router to verify anonymous access, tenant isolation, current enrollment/room movement, staff position counts, and current members of every position. Run:
 
 ```bash

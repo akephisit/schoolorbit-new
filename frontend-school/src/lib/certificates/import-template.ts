@@ -1,3 +1,4 @@
+import { buildXlsxWorkbook } from '../utils/spreadsheet.ts';
 import { CERTIFICATE_IMPORT_HEADERS } from './importer.ts';
 
 const FICTIONAL_ROW = [
@@ -24,14 +25,15 @@ export function buildCertificateCsvTemplate(): Uint8Array {
 }
 
 export async function buildCertificateXlsxTemplate(): Promise<Uint8Array> {
-	const XLSX = await import('xlsx');
-	const workbook = XLSX.utils.book_new();
-	const sheet = XLSX.utils.aoa_to_sheet([Array.from(CERTIFICATE_IMPORT_HEADERS), FICTIONAL_ROW]);
-	sheet['!cols'] = CERTIFICATE_IMPORT_HEADERS.map((header) => ({
-		wch: Math.max(16, Array.from(header).length + 4)
-	}));
-	XLSX.utils.book_append_sheet(workbook, sheet, 'รายชื่อผู้รับ');
-	return new Uint8Array(XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }));
+	return buildXlsxWorkbook([
+		{
+			name: 'รายชื่อผู้รับ',
+			rows: [Array.from(CERTIFICATE_IMPORT_HEADERS), FICTIONAL_ROW],
+			widths: CERTIFICATE_IMPORT_HEADERS.map((header) =>
+				Math.max(16, Array.from(header).length + 4)
+			)
+		}
+	]);
 }
 
 function downloadBytes(bytes: Uint8Array, filename: string, type: string): void {

@@ -13,7 +13,6 @@ utoipa = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-http-body-util = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 

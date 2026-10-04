@@ -44,14 +44,18 @@ test('dynamic icon consumers use the public Lucide component type', async () => 
 	}
 });
 
-test('SheetJS resolves from the immutable approved artifact', async () => {
+test('ExcelJS is the sole spreadsheet file reader and writer', async () => {
 	const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
 	const packageLock = JSON.parse(
 		await readFile(path.join(projectRoot, 'package-lock.json'), 'utf8')
 	);
-	const artifactUrl = 'https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz';
-	assert.equal(packageJson.dependencies?.xlsx, artifactUrl);
-	assert.equal(packageLock.packages?.['node_modules/xlsx']?.version, '0.20.3');
-	assert.equal(packageLock.packages?.['node_modules/xlsx']?.resolved, artifactUrl);
-	assert.match(packageLock.packages?.['node_modules/xlsx']?.integrity ?? '', /^sha512-/);
+	assert.ok(packageJson.dependencies?.exceljs);
+	assert.equal(packageJson.dependencies?.xlsx, undefined);
+	assert.equal(packageLock.packages?.['node_modules/xlsx'], undefined);
+	for (const file of await sourceFiles('src')) {
+		assert.doesNotMatch(
+			await readFile(file, 'utf8'),
+			/(?:from\s+|import\s*\(\s*)['"]xlsx(?:\/[^'"]*)?['"]/
+		);
+	}
 });

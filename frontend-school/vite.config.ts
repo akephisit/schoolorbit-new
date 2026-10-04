@@ -27,7 +27,7 @@ const browserOnlyHeavyDependencies = new Set([
 	'pdfjs-dist',
 	'pdfmake/build/pdfmake',
 	'qrcode',
-	'xlsx'
+	'ssf'
 ]);
 
 function clientOnlyWordExporterPlugin(): Plugin {
@@ -88,12 +88,6 @@ export default defineConfig({
 			version: { pollInterval: 0 }
 		})
 	],
-	optimizeDeps: {
-		include: ['html2pdf.js']
-	},
-	ssr: {
-		external: ['html2pdf.js']
-	},
 	build: {
 		target: 'esnext',
 		sourcemap: false,

@@ -24,7 +24,7 @@ test('large browser-only libraries resolve to an SSR stub', async () => {
 		'pdfjs-dist',
 		'pdfmake/build/pdfmake',
 		'qrcode',
-		'xlsx'
+		'ssf'
 	]) {
 		assert.match(viteConfig, new RegExp(`['"]${dependency.replace('/', '\\/')}['"]`));
 		assert.doesNotMatch(serverStub, new RegExp(`from ['"]${dependency.replace('/', '\\/')}['"]`));

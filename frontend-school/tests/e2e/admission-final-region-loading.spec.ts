@@ -235,6 +235,83 @@ test('student-ID list is independent and save updates only changed IDs', async (
 	).toHaveLength(1);
 });
 
+for (const format of ['xlsx', 'csv']) {
+	test(`student IDs import ${format}, preserve leading zeros and export the edited values`, async ({
+		page
+	}) => {
+		const { default: ExcelJS } = await import('exceljs');
+		const { readFile } = await import('node:fs/promises');
+		const api = await mock(page);
+		const pageErrors: string[] = [];
+		page.on('pageerror', (error) => pageErrors.push(error.message));
+		await page.goto(path(roundId, 'student-ids'));
+		const row = page.getByRole('row').filter({ hasText: 'นักเรียน กำหนดเลข' });
+		await expect(row).toBeVisible();
+		const workbook = new ExcelJS.Workbook();
+		const sheet = workbook.addWorksheet('รายชื่อ');
+		sheet.addRows([
+			['เลขประจำตัว', 'ชื่อ', 'นามสกุล'],
+			[69, 'นักเรียน', 'กำหนดเลข']
+		]);
+		sheet.getCell('A2').numFmt = '0000';
+		const buffer =
+			format === 'xlsx'
+				? Buffer.from(await workbook.xlsx.writeBuffer())
+				: Buffer.from('\uFEFFเลขประจำตัว,ชื่อ,นามสกุล\r\n0069,นักเรียน,กำหนดเลข\r\n');
+		await expect(page.locator('input[type=file]')).toHaveAttribute('accept', '.xlsx,.csv');
+		await page.locator('input[type=file]').setInputFiles({
+			name: `names.${format}`,
+			mimeType:
+				format === 'csv'
+					? 'text/csv'
+					: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+			buffer
+		});
+		await expect(page.getByRole('heading', { name: 'สรุปผลการนำเข้า' })).toBeVisible();
+		await page.getByRole('button', { name: 'ยืนยันการกรอก 1 คน' }).click();
+		await expect(row.getByPlaceholder('กรอกเลข...')).toHaveValue('0069');
+		expect(api.writes).toEqual([]);
+		const downloadPromise = page.waitForEvent('download');
+		await page.getByTitle('ดาวน์โหลด XLSX').click();
+		const download = await downloadPromise;
+		const filePath = await download.path();
+		if (!filePath) throw new Error('Excel download is missing');
+		const exported = new ExcelJS.Workbook();
+		await exported.xlsx.load(Uint8Array.from(await readFile(filePath)).buffer);
+		expect(exported.worksheets[0].name).toBe('เลขประจำตัว');
+		expect(exported.worksheets[0].getCell('B2').value).toBe('0069');
+		expect(pageErrors).toEqual([]);
+	});
+}
+
+test('student-ID template keeps widths and legacy XLS shows a conversion error', async ({
+	page
+}) => {
+	const { default: ExcelJS } = await import('exceljs');
+	const { readFile } = await import('node:fs/promises');
+	await mock(page);
+	await page.goto(path(roundId, 'student-ids'));
+	await expect(page.getByText('นักเรียน กำหนดเลข')).toBeVisible();
+	const downloadPromise = page.waitForEvent('download');
+	await page.getByRole('button', { name: /Template/ }).click();
+	const download = await downloadPromise;
+	const filePath = await download.path();
+	if (!filePath) throw new Error('Template download is missing');
+	const workbook = new ExcelJS.Workbook();
+	await workbook.xlsx.load(Uint8Array.from(await readFile(filePath)).buffer);
+	expect(workbook.worksheets[0].name).toBe('รายชื่อ');
+	expect(workbook.worksheets[0].columns.map((column) => column.width)).toEqual([
+		14.83203125, 12.83203125, 20.83203125, 20.83203125
+	]);
+	await page.locator('input[type=file]').setInputFiles({
+		name: 'old.xls',
+		mimeType: 'application/vnd.ms-excel',
+		buffer: Buffer.from('legacy file')
+	});
+	await expect(page.getByText(/กรุณาแปลงไฟล์ .xls ก่อนนำเข้า/)).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'สรุปผลการนำเข้า' })).toHaveCount(0);
+});
+
 test('sorting student IDs rereads only its list', async ({ page }) => {
 	const api = await mock(page);
 	await page.goto(path(roundId, 'student-ids'));

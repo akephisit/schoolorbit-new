@@ -1,3 +1,4 @@
+import { parseUtf8Csv, readXlsxSheets } from '../utils/spreadsheet.ts';
 import type { CertificateImportRequest } from '#lib/api/certificates.js';
 
 export const CERTIFICATE_IMPORT_HEADERS = [
@@ -108,93 +109,21 @@ function rowsToRequest(
 	return { source, headers, rows };
 }
 
-function parseCsvGrid(content: string): string[][] {
-	const rows: string[][] = [];
-	let row: string[] = [];
-	let field = '';
-	let inQuotes = false;
-	let closedQuote = false;
-	const pushField = () => {
-		row.push(field);
-		field = '';
-		closedQuote = false;
-	};
-	const pushRow = () => {
-		pushField();
-		rows.push(row);
-		row = [];
-	};
-
-	for (let index = 0; index < content.length; index += 1) {
-		const character = content[index];
-		if (inQuotes) {
-			if (character === '"') {
-				if (content[index + 1] === '"') {
-					field += '"';
-					index += 1;
-				} else {
-					inQuotes = false;
-					closedQuote = true;
-				}
-			} else {
-				field += character;
-			}
-			continue;
-		}
-		if (closedQuote && ![',', '\r', '\n'].includes(character)) {
-			throw new Error('มีอักขระหลังเครื่องหมายคำพูดปิดในไฟล์ CSV');
-		}
-		if (character === '"') {
-			if (field) throw new Error('ใช้เครื่องหมายคำพูดในไฟล์ CSV ไม่ถูกต้อง');
-			inQuotes = true;
-		} else if (character === ',') {
-			pushField();
-		} else if (character === '\r' || character === '\n') {
-			if (character === '\r' && content[index + 1] === '\n') index += 1;
-			pushRow();
-		} else {
-			field += character;
-		}
-	}
-	if (inQuotes) throw new Error('ปิดเครื่องหมายคำพูดในไฟล์ CSV ไม่ครบ');
-	if (field || row.length > 0 || closedQuote) pushRow();
-	return rows;
-}
-
 export function parseCertificateCsv(bytes: Uint8Array): ParsedCertificateImport {
-	let content: string;
-	try {
-		content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-	} catch {
-		throw new Error('ไฟล์ CSV ต้องเข้ารหัสเป็น UTF-8');
-	}
-	return rowsToRequest('csv', parseCsvGrid(content.replace(/^\uFEFF/u, '')));
+	return rowsToRequest('csv', parseUtf8Csv(bytes));
 }
 
 export async function parseCertificateXlsx(
 	bytes: ArrayBuffer | Uint8Array
 ): Promise<ParsedCertificateImport> {
-	const XLSX = await import('xlsx');
-	const workbook = XLSX.read(bytes, {
-		type: 'array',
-		cellFormula: false,
-		cellText: true,
-		cellNF: true
-	});
-	const populatedSheets = workbook.SheetNames.map((name) => {
-		const grid = XLSX.utils.sheet_to_json<Array<string | number | boolean>>(workbook.Sheets[name], {
-			header: 1,
-			raw: false,
-			defval: '',
-			blankrows: false
-		});
-		return { name, grid };
-	}).filter(({ grid }) => grid.some((row) => row.some((cell) => normalizeCell(cell))));
+	const populatedSheets = (await readXlsxSheets(bytes)).filter(({ rows }) =>
+		rows.some((row) => row.some((cell) => normalizeCell(cell)))
+	);
 	if (populatedSheets.length === 0) throw new Error('ไฟล์ Excel ไม่มีข้อมูล');
 	if (populatedSheets.length > 1) {
 		throw new Error('ไฟล์ Excel มีข้อมูลมากกว่าหนึ่งชีต กรุณาเหลือชีตเดียวก่อนนำเข้า');
 	}
-	return rowsToRequest('xlsx', populatedSheets[0].grid);
+	return rowsToRequest('xlsx', populatedSheets[0].rows);
 }
 
 export async function parseCertificateImport(file: File): Promise<ParsedCertificateImport> {

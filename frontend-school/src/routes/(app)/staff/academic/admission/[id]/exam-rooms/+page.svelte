@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { downloadXlsxWorkbook } from '#lib/utils/spreadsheet.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import {
@@ -482,7 +483,6 @@
 	}
 
 	async function downloadRoomXlsx(group: ExamRoomGroup) {
-		const XLSX = await import('xlsx');
 		const data = [
 			['เลขประจำตัวสอบ', 'ที่นั่ง', 'ชื่อ-นามสกุล', 'เลขบัตรประชาชน', 'สาย'],
 			...group.seats.map((s) => [
@@ -493,10 +493,10 @@
 				s.trackName ?? ''
 			])
 		];
-		const ws = XLSX.utils.aoa_to_sheet(data);
-		const wb = XLSX.utils.book_new();
-		XLSX.utils.book_append_sheet(wb, ws, group.roomName.slice(0, 31));
-		XLSX.writeFile(wb, `ห้องสอบ-${group.roomName}.xlsx`);
+		await downloadXlsxWorkbook(
+			[{ name: group.roomName.slice(0, 31), rows: data }],
+			`ห้องสอบ-${group.roomName}.xlsx`
+		);
 	}
 
 	function printAllAdmitCards() {
@@ -537,7 +537,6 @@
 	}
 
 	async function downloadAllXlsx() {
-		const XLSX = await import('xlsx');
 		const data = [
 			['ห้องสอบ', 'เลขที่นั่ง', 'เลขประจำตัวสอบ', 'ชื่อ-นามสกุล', 'เลขบัตรประชาชน', 'สาย'],
 			...seatGroups.flatMap((g) =>
@@ -551,10 +550,10 @@
 				])
 			)
 		];
-		const ws = XLSX.utils.aoa_to_sheet(data);
-		const wb = XLSX.utils.book_new();
-		XLSX.utils.book_append_sheet(wb, ws, 'ที่นั่งสอบทั้งหมด');
-		XLSX.writeFile(wb, `ที่นั่งสอบ-${round?.name ?? ''}.xlsx`);
+		await downloadXlsxWorkbook(
+			[{ name: 'ที่นั่งสอบทั้งหมด', rows: data }],
+			`ที่นั่งสอบ-${round?.name ?? ''}.xlsx`
+		);
 	}
 
 	const examIdTypeLabel: Record<string, string> = {

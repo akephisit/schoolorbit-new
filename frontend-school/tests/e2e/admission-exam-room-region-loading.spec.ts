@@ -447,3 +447,34 @@ test('without manage permission, no exam room data is requested', async ({ page 
 		.poll(() => state.reads.filter((path) => path.startsWith('/api/admission/')).length)
 		.toBe(0);
 });
+
+test('room and combined XLSX downloads keep sheet names, headers and numeric seats', async ({
+	page
+}) => {
+	const { default: ExcelJS } = await import('exceljs');
+	const { readFile } = await import('node:fs/promises');
+	const state = await mock(page);
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.goto(`/staff/academic/admission/${roundId}/exam-rooms`);
+	await page.getByRole('button', { name: 'ผลจัดที่นั่ง' }).click();
+	await expect(page.getByRole('button', { name: 'XLSX ทุกห้อง' })).toBeVisible();
+	for (const combined of [false, true]) {
+		const downloadPromise = page.waitForEvent('download');
+		await page
+			.getByRole('button', { name: combined ? 'XLSX ทุกห้อง' : 'XLSX', exact: true })
+			.click();
+		const download = await downloadPromise;
+		const filePath = await download.path();
+		if (!filePath) throw new Error('Room workbook is missing');
+		const workbook = new ExcelJS.Workbook();
+		await workbook.xlsx.load(Uint8Array.from(await readFile(filePath)).buffer);
+		const sheet = workbook.worksheets[0];
+		expect(sheet.name).toBe(combined ? 'ที่นั่งสอบทั้งหมด' : 'ห้องสอบ A');
+		expect(sheet.getCell('A1').value).toBe(combined ? 'ห้องสอบ' : 'เลขประจำตัวสอบ');
+		expect(sheet.getCell('B2').value).toBe(1);
+		expect(sheet.getCell('A2').font.size).toBe(12);
+	}
+	expect(errors).toEqual([]);
+	expect(state.writes).toEqual([]);
+});

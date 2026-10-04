@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { downloadXlsxWorkbook, readSpreadsheetFile } from '#lib/utils/spreadsheet.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import {
@@ -324,7 +325,6 @@
 
 	async function downloadXlsx() {
 		if (!canManageAdmission) return;
-		const XLSX = await import('xlsx');
 		const rankColLabel = assignmentMode === 'global' ? 'อันดับรวม' : 'อันดับในสาย';
 		const header = [
 			'ลำดับ',
@@ -360,21 +360,24 @@
 				e.rankInTrack ?? ''
 			];
 		});
-		const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-		const wb = XLSX.utils.book_new();
-		XLSX.utils.book_append_sheet(wb, ws, 'เลขประจำตัว');
-		XLSX.writeFile(wb, `เลขประจำตัว-${roundName || id}.xlsx`);
+		await downloadXlsxWorkbook(
+			[{ name: 'เลขประจำตัว', rows: [header, ...rows] }],
+			`เลขประจำตัว-${roundName || id}.xlsx`
+		);
 	}
 
 	async function downloadTemplate() {
 		if (!canManageAdmission) return;
-		const XLSX = await import('xlsx');
-		const ws = XLSX.utils.aoa_to_sheet([['เลขประจำตัว', 'คำนำหน้า', 'ชื่อ', 'นามสกุล']]);
-		// set column widths
-		ws['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 20 }, { wch: 20 }];
-		const wb = XLSX.utils.book_new();
-		XLSX.utils.book_append_sheet(wb, ws, 'รายชื่อ');
-		XLSX.writeFile(wb, 'template-เลขประจำตัว.xlsx');
+		await downloadXlsxWorkbook(
+			[
+				{
+					name: 'รายชื่อ',
+					rows: [['เลขประจำตัว', 'คำนำหน้า', 'ชื่อ', 'นามสกุล']],
+					widths: [14, 12, 20, 20]
+				}
+			],
+			'template-เลขประจำตัว.xlsx'
+		);
 	}
 
 	function normalize(s: string) {
@@ -385,19 +388,13 @@
 		if (!canManageAdmission) return;
 		importing = true;
 		try {
-			const XLSX = await import('xlsx');
-			const buf = await file.arrayBuffer();
-			const wb = XLSX.read(buf, { type: 'array' });
-			const ws = wb.Sheets[wb.SheetNames[0]];
-			const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
-
+			const [headers = [], ...rows] = await readSpreadsheetFile(file);
 			if (rows.length === 0) {
 				toast.error('ไม่พบข้อมูลในไฟล์');
 				return;
 			}
 
 			// Detect columns
-			const headers = Object.keys(rows[0]);
 			const idCol = headers.find((h) => /เลข|id|รหัส/i.test(h) && !/นามสกุล|สกุล/i.test(h));
 			const firstCol = headers.find(
 				(h) =>
@@ -432,9 +429,9 @@
 			let notFound = 0;
 
 			for (const row of rows) {
-				const studentId = String(row[idCol]).trim();
-				const firstName = normalize(String(row[firstCol]));
-				const lastName = normalize(String(row[lastCol]));
+				const studentId = String(row[headers.indexOf(idCol)] ?? '').trim();
+				const firstName = normalize(String(row[headers.indexOf(firstCol)] ?? ''));
+				const lastName = normalize(String(row[headers.indexOf(lastCol)] ?? ''));
 				if (!studentId || !firstName || !lastName) continue;
 
 				const key = normalize(`${firstName} ${lastName}`);
@@ -590,7 +587,7 @@
 					class="gap-1.5 h-8 shrink-0"
 					disabled={importing || loading || entries.length === 0}
 					onclick={() => fileInput?.click()}
-					title="นำเข้าเลขประจำตัวจากไฟล์ Excel"
+					title="นำเข้าเลขประจำตัวจากไฟล์ .xlsx หรือ .csv"
 				>
 					{#if importing}
 						<LoaderCircle class="w-3.5 h-3.5 animate-spin" />
@@ -602,7 +599,7 @@
 				<input
 					bind:this={fileInput}
 					type="file"
-					accept=".xlsx,.xls,.csv"
+					accept=".xlsx,.csv"
 					class="hidden"
 					onchange={(e) => {
 						const file = (e.target as HTMLInputElement).files?.[0];

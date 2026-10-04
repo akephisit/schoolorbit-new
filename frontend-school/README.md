@@ -6,6 +6,8 @@ The tenant-facing web application provides staff, student, and parent workflows 
 
 Its homepage is an anonymous school website using existing branding, current-year student and homeroom aggregates, staff totals, and active organization units with all current members. The three public reads load independently and can retry separately. School management continues through the existing login and authenticated routes; no separate content store or manually entered public totals are required.
 
+Spreadsheet import accepts `.xlsx` and UTF-8 `.csv`. Convert legacy `.xls` files before importing student IDs. ExcelJS owns Excel file reading and writing; SSF preserves displayed cell values such as zero-padded IDs during import.
+
 ## Stack
 
 - SvelteKit 3 and Svelte 5

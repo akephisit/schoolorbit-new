@@ -110,10 +110,11 @@ function harnessPlugin(): Plugin {
 		resolveId(id) {
 			if (id === virtualModuleId) return resolvedVirtualModuleId;
 			const stubId = findStubModule(id);
-			if (stubId) return `${stubPrefix}${stubId}`;
+			if (stubId) return `${stubPrefix}${encodeURIComponent(stubId)}`;
 		},
 		load(id) {
-			if (id.startsWith(stubPrefix)) return stubModules.get(id.slice(stubPrefix.length));
+			if (id.startsWith(stubPrefix))
+				return stubModules.get(decodeURIComponent(id.slice(stubPrefix.length)));
 			const stub = findStubModule(id);
 			if (stub) return stubModules.get(stub);
 			if (id !== resolvedVirtualModuleId) return;
@@ -485,6 +486,41 @@ test('reviews imported recipients without sending source files to the backend', 
 	});
 	expect(importPayload).not.toHaveProperty('file');
 	expect(importPayload).not.toHaveProperty('fileName');
+});
+
+test('imports an XLSX template in the browser and rejects a second populated sheet', async ({
+	page
+}) => {
+	const { default: ExcelJS } = await import('exceljs');
+	const { buildCertificateXlsxTemplate } =
+		await import('../../src/lib/certificates/import-template');
+	const bytes = await buildCertificateXlsxTemplate();
+	await page.goto(`${baseUrl}${harnessPath}`);
+	await page.getByRole('button', { name: 'นำเข้า Excel/CSV' }).click();
+	await page.getByLabel('เลือกไฟล์รายชื่อ').setInputFiles({
+		name: 'recipients.xlsx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		buffer: Buffer.from(bytes)
+	});
+	await expect(page.getByText('พร้อมนำเข้า 1 รายการ')).toBeVisible();
+	await page.getByRole('button', { name: 'นำเข้า 1 รายการ' }).click();
+	await expect
+		.poll(() => page.evaluate(() => window.certificateRecipientHarness.importPayloads().at(-1)))
+		.toMatchObject({
+			source: 'xlsx',
+			rows: [{ firstName: 'กมลชนก', lastName: 'ใจดี', recipientType: 'external' }]
+		});
+	await page.getByRole('button', { name: 'นำเข้า Excel/CSV' }).click();
+	const workbook = new ExcelJS.Workbook();
+	await workbook.xlsx.load(Uint8Array.from(bytes).buffer);
+	workbook.addWorksheet('รายชื่อเพิ่มเติม').addRows([['ชื่อ'], ['ตัวอย่าง']]);
+	await page.getByLabel('เลือกไฟล์รายชื่อ').setInputFiles({
+		name: 'multiple.xlsx',
+		mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		buffer: Buffer.from(await workbook.xlsx.writeBuffer())
+	});
+	await expect(page.getByText(/มีข้อมูลมากกว่าหนึ่งชีต/)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'นำเข้ารายชื่อ', exact: true })).toBeDisabled();
 });
 
 test('account search ignores a stale recipient-type response', async ({ page }) => {
