@@ -5,7 +5,6 @@
 	} from '#lib/api/learning-delivery.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -22,10 +21,11 @@
 	} = $props();
 
 	let open = $state(false);
-	let effectiveFrom = $state('');
 	let reason = $state('');
 	let saving = $state(false);
 	let errorMessage = $state('');
+	let creationKey = '';
+	let submittedReason = '';
 
 	export function openDialog() {
 		errorMessage = '';
@@ -34,18 +34,20 @@
 
 	async function createDraft(event: SubmitEvent) {
 		event.preventDefault();
-		if (!effectiveFrom.trim() || !reason.trim()) return;
+		if (!reason.trim()) return;
 		saving = true;
 		errorMessage = '';
+		if (submittedReason !== reason.trim() || !creationKey) {
+			submittedReason = reason.trim();
+			creationKey = crypto.randomUUID();
+		}
 		try {
 			const changeSet = await createAcademicTermChangeSet({
 				academicTermId,
-				effectiveFrom,
 				reason: reason.trim(),
-				idempotencyKey: crypto.randomUUID()
+				idempotencyKey: creationKey
 			});
 			await onCreated(changeSet);
-			effectiveFrom = '';
 			reason = '';
 			open = false;
 		} catch (error) {
@@ -61,7 +63,12 @@
 	>{/if}
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="sm:max-w-xl">
+	<Dialog.Content
+		showCloseButton={!saving}
+		escapeKeydownBehavior={saving ? 'ignore' : 'close'}
+		interactOutsideBehavior={saving ? 'ignore' : 'close'}
+		class="sm:max-w-xl"
+	>
 		<Dialog.Header
 			><Dialog.Title>สร้างรุ่นเปิดสอน</Dialog.Title><Dialog.Description
 				>กำหนดรายวิชา กลุ่ม ครู และจำนวนคาบของภาคเรียน ก่อนเผยแพร่ข้อมูลให้ใช้จัดตาราง</Dialog.Description
@@ -77,31 +84,25 @@
 
 		<form class="space-y-4" onsubmit={createDraft}>
 			<div class="space-y-2">
-				<Label for="academic-change-effective-date">วันที่เริ่มใช้รุ่นเปิดสอน</Label><DatePicker
-					id="academic-change-effective-date"
-					bind:value={effectiveFrom}
-					placeholder="เลือกวันที่เริ่มใช้จริง"
-					ariaLabel="เลือกวันที่เริ่มใช้รุ่นเปิดสอน"
-					required
-				/>
-			</div>
-			<div class="space-y-2">
 				<Label for="academic-change-reason">ชื่อหรือเหตุผลของรุ่น</Label><Textarea
 					id="academic-change-reason"
 					bind:value={reason}
 					rows={3}
+					disabled={saving}
 					placeholder="เช่น เปลี่ยนครูหรือปรับจำนวนคาบตามมติฝ่ายวิชาการ"
 					required
 				/>
 			</div>
 			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 			<Dialog.Footer>
-				<Button type="button" variant="outline" onclick={() => (open = false)}>ยกเลิก</Button>
+				<Button type="button" variant="outline" disabled={saving} onclick={() => (open = false)}
+					>กลับ</Button
+				>
 				<LoadingButton
 					type="submit"
 					loading={saving}
 					loadingLabel="กำลังสร้างแบบร่าง"
-					disabled={!effectiveFrom.trim() || !reason.trim()}
+					disabled={!reason.trim()}
 				>
 					สร้างแบบร่าง
 				</LoadingButton>

@@ -7614,7 +7614,7 @@ fn operational_academic_changes_register_authorized_contract_routes() {
     for required in [
         "\"/term-change-sets\"",
         "\"/term-change-sets/{id}\"",
-        "\"/term-change-sets/{id}/cancel\"",
+        "\"/delivery-versions/{id}\"",
         "\"/term-change-sets/{id}/items\"",
         "\"/term-change-sets/{id}/items/{itemId}\"",
         "\"/term-change-sets/{id}/preview\"",
@@ -7628,6 +7628,13 @@ fn operational_academic_changes_register_authorized_contract_routes() {
         );
     }
 
+    assert!(!routes.contains("/term-change-sets/{id}/cancel"));
+    let version_handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/delivery/version_handlers.rs"),
+    ));
+    let delete = extract_braced_block(&version_handlers, "pub async fn delete_version", false);
+    assert!(delete.contains("OfferingAction::Manage"));
+    assert!(delete.contains("require_learning_offering_batch_access"));
     for handler_name in [
         "list_term_change_sets",
         "get_term_change_set",
@@ -7645,7 +7652,6 @@ fn operational_academic_changes_register_authorized_contract_routes() {
     for handler_name in [
         "create_term_change_set",
         "update_term_change_set",
-        "cancel_term_change_set",
         "upsert_term_change_item",
         "delete_term_change_item",
         "publish_term_change_set",

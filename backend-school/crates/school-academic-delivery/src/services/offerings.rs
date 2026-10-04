@@ -555,7 +555,6 @@ pub async fn apply_term_preparation(
         actor,
         crate::models::CreateAcademicTermChangeSetRequest {
             academic_term_id: term.id,
-            effective_from: term.start_date,
             reason: "เตรียมเปิดสอนตามโครงสร้างหลักสูตร".into(),
             idempotency_key: Uuid::new_v4(),
         },

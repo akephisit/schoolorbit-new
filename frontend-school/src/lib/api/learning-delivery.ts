@@ -64,7 +64,8 @@ export type AcademicChangeFinding = Schemas['AcademicChangeFinding'];
 export type AcademicChangeFindingCode = Schemas['AcademicChangeFindingCode'];
 export type CreateAcademicTermChangeSetRequest = Schemas['CreateAcademicTermChangeSetRequest'];
 export type UpdateAcademicTermChangeSetRequest = Schemas['UpdateAcademicTermChangeSetRequest'];
-export type CancelAcademicTermChangeSetRequest = Schemas['CancelAcademicTermChangeSetRequest'];
+export type DeleteDeliveryVersionRequest = Schemas['DeleteDeliveryVersionRequest'];
+export type DeletedDeliveryVersion = Schemas['DeletedDeliveryVersion'];
 export type UpsertAcademicTermChangeItemRequest = Schemas['UpsertAcademicTermChangeItemRequest'];
 export type DeleteAcademicTermChangeItemRequest = Schemas['DeleteAcademicTermChangeItemRequest'];
 export type PublishAcademicTermChangeSetRequest = Schemas['PublishAcademicTermChangeSetRequest'];
@@ -121,7 +122,6 @@ type ListAcademicTermChangeSetsQuery = NonNullable<
 type CreateAcademicTermChangeSetOperation = operations['createAcademicTermChangeSet'];
 type GetAcademicTermChangeSetOperation = operations['getAcademicTermChangeSet'];
 type UpdateAcademicTermChangeSetOperation = operations['updateAcademicTermChangeSet'];
-type CancelAcademicTermChangeSetOperation = operations['cancelAcademicTermChangeSet'];
 type UpsertAcademicTermChangeItemOperation = operations['upsertAcademicTermChangeItem'];
 type DeleteAcademicTermChangeItemOperation = operations['deleteAcademicTermChangeItem'];
 type PreviewAcademicTermChangeSetOperation = operations['previewAcademicTermChangeSet'];
@@ -354,14 +354,17 @@ export const updateAcademicTermChangeSet = (
 		'แก้ไขแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
 	);
 
-export const cancelAcademicTermChangeSet = (
-	id: OperationPath<CancelAcademicTermChangeSetOperation>['id'],
-	body: CancelAcademicTermChangeSetRequest &
-		CancelAcademicTermChangeSetOperation['requestBody']['content']['application/json']
+export const deleteDeliveryVersion = (
+	id: string,
+	body: DeleteDeliveryVersionRequest &
+		operations['deleteDeliveryVersion']['requestBody']['content']['application/json']
 ) =>
 	deliveryData(
-		apiClient.post<AcademicTermChangeSet>(`${changeSetPath(id)}/cancel`, body),
-		'ยกเลิกแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
+		apiClient.deleteWithBody<DeletedDeliveryVersion>(
+			`/api/academic/delivery-versions/${encodeURIComponent(id)}`,
+			body
+		),
+		'ลบแบบร่างรุ่นเปิดสอนไม่สำเร็จ'
 	);
 
 export const upsertAcademicTermChangeItem = (
@@ -387,10 +390,14 @@ export const deleteAcademicTermChangeItem = (
 
 export const previewAcademicTermChangeSet = (
 	id: OperationPath<PreviewAcademicTermChangeSetOperation>['id'],
-	options: ApiRequestOptions = {}
+	options: ApiRequestOptions = {},
+	effectiveFrom?: string
 ) =>
 	deliveryData(
-		apiClient.get<AcademicTermChangeSetPreview>(`${changeSetPath(id)}/preview`, options),
+		apiClient.get<AcademicTermChangeSetPreview>(`${changeSetPath(id)}/preview`, {
+			...options,
+			query: effectiveFrom ? { effectiveFrom } : {}
+		}),
 		'ตรวจความพร้อมของการเปลี่ยนแปลงไม่สำเร็จ'
 	);
 

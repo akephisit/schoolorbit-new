@@ -70,7 +70,9 @@ pub struct DeliveryVersion {
     pub academic_year_id: Uuid,
     #[schema(required = true)]
     pub source_version_id: Option<Uuid>,
-    pub effective_from: NaiveDate,
+    #[schema(required = true)]
+    pub effective_from: Option<NaiveDate>,
+    pub reference_date: NaiveDate,
     #[schema(required = true)]
     pub effective_until: Option<NaiveDate>,
     pub status: DeliveryVersionStatus,
@@ -93,7 +95,9 @@ pub struct DeliveryVersionSummary {
     pub source_version_id: Option<Uuid>,
     #[schema(required = true)]
     pub change_set_id: Option<Uuid>,
-    pub effective_from: NaiveDate,
+    #[schema(required = true)]
+    pub effective_from: Option<NaiveDate>,
+    pub reference_date: NaiveDate,
     #[schema(required = true)]
     pub effective_until: Option<NaiveDate>,
     pub status: DeliveryVersionStatus,
@@ -130,4 +134,53 @@ pub struct DeliveryReadinessFinding {
     pub code: DeliveryReadinessCode,
     pub learning_offering_id: Uuid,
     pub learning_group_id: Option<Uuid>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryChangeKind {
+    Added,
+    Removed,
+    Changed,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryVersionChange {
+    pub kind: DeliveryChangeKind,
+    pub learning_offering_id: Uuid,
+    pub resource_id: Uuid,
+    pub label: String,
+    pub field: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryResourceLabel {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteDeliveryVersionRequest {
+    pub row_version: i64,
+    pub change_set_row_version: i64,
+    pub expected_item_count: i64,
+    pub expected_offering_count: i64,
+    pub expected_group_count: i64,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedDeliveryVersion {
+    pub id: Uuid,
+    pub change_set_id: Uuid,
+    pub source_version_id: Option<Uuid>,
+    pub deleted_item_count: i64,
+    pub deleted_offering_count: i64,
+    pub deleted_group_count: i64,
 }

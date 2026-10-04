@@ -100,7 +100,10 @@ test('delivery workspace is homeroom-first, loads offering overview lazily, and 
 	assert.match(loader, /captureRouteLoad/);
 	assert.doesNotMatch(loader, /await\s+captureRouteLoad/);
 	assert.doesNotMatch(loader, /getLearningDeliveryWorkspace|getLearningDeliveryPageView/);
-	assert.doesNotMatch(page, /getAcademicContextStore|\bonMount\b/);
+	assert.doesNotMatch(page, /getAcademicContextStore/);
+	assert.match(page, /onMount\(\(\) => \{/);
+	assert.match(page, /reconcileOpenDraft/);
+	assert.match(page, /if \(initial\) \{/);
 	assert.doesNotMatch(page, /LEARNING_DELIVERY_PAGE_DEPENDENCY|data\.pageView/);
 	assert.doesNotMatch(page, /\binvalidateAll\s*\(/);
 	assert.match(page, /data\.homerooms/);

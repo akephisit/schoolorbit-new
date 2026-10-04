@@ -614,7 +614,7 @@ mod tests {
         );
         let pool = create_named_test_pool("migration_status_delivery_cutover").await;
         seed_release_two_predecessor(&pool).await.unwrap();
-        apply_migrations_through(&pool, 88).await.unwrap();
+        apply_migrations_through(&pool, 89).await.unwrap();
         let complete = delivery_timetable_cutover_status(Some(&pool), 88).await;
         assert_eq!(complete.status, "cutoverCompleted");
         assert_eq!(complete.passed, Some(true));

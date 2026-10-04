@@ -3,7 +3,16 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { untrack } from 'svelte';
+	import { untrack, onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
+	import { registerDeliveryDraftReconcile } from '#lib/academic/delivery-draft-reconcile.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import {
+		connectTimetableSocket,
+		disconnectTimetableSocket,
+		refreshTrigger
+	} from '#lib/stores/timetable-socket.js';
 	import {
 		selectAcademicTermChangeSetSummary,
 		summarizeAcademicTermChangeSet,
@@ -75,7 +84,7 @@
 		}
 	}
 	function deliveryVersionLabel(version: DeliveryVersionSummary): string {
-		return `${version.status === 'draft' ? 'แบบร่าง' : version.status === 'published' ? 'เผยแพร่แล้ว' : 'ยกเลิก'} · เริ่มใช้ ${formatDate(version.effectiveFrom)} · ${version.offeringCount} รายการ`;
+		return `${version.status === 'draft' ? 'แบบร่าง' : version.status === 'published' ? 'เผยแพร่แล้ว' : 'ยกเลิก'} · เริ่มใช้ ${version.effectiveFrom ? formatDate(version.effectiveFrom) : 'เลือกวันตอนเผยแพร่'} · ${version.offeringCount} รายการ`;
 	}
 	function selectDeliveryVersion(id: string): void {
 		const url = new URL(page.url.href);
@@ -265,6 +274,19 @@
 		}
 	}
 
+	async function handleDraftDeleted(sourceVersionId: string | null) {
+		activeChangeSet = null;
+		selectedChangeSetId = '';
+		const url = new URL(page.url.href);
+		url.searchParams.delete('changeSetId');
+		if (sourceVersionId) url.searchParams.set('deliveryVersionId', sourceVersionId);
+		else url.searchParams.delete('deliveryVersionId');
+		await goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`), {
+			replace: true
+		});
+		await Promise.all([refreshDeliveryVersions(), loadChangeSetSummaries(), loadHomerooms()]);
+	}
+
 	async function loadOverview(termId: string) {
 		const { revision, signal } = overviewRequest.begin();
 		overviewLoading = true;
@@ -398,6 +420,63 @@
 		}
 		return () => {
 			if (homeroomRequest.isCurrent(revision)) homeroomRequest.abort();
+		};
+	});
+
+	let reconcilingDraft = false;
+	async function reconcileOpenDraft() {
+		const selected = activeChangeSet;
+		if (!selected || selected.status === 'published' || reconcilingDraft || document.hidden) return;
+		reconcilingDraft = true;
+		try {
+			const current = await getAcademicTermChangeSet(selected.id);
+			if (activeChangeSet?.id === selected.id && current.rowVersion !== selected.rowVersion) {
+				await updateChangeSet(current);
+				toast.info('ร่างเปิดสอนเปลี่ยนแล้ว โหลดข้อมูลล่าสุดให้แล้ว');
+			}
+		} catch (error) {
+			if (activeChangeSet?.id !== selected.id) return;
+			if (error instanceof ApiClientError && error.status === 404) {
+				toast.info('ร่างเปิดสอนนี้ถูกลบแล้ว กลับไปดูรุ่นต้นทาง');
+				await handleDraftDeleted(selected.baseDeliveryVersionId ?? null);
+			} else {
+				changeSetError = error instanceof Error ? error.message : 'โหลดร่างล่าสุดไม่สำเร็จ';
+			}
+		} finally {
+			reconcilingDraft = false;
+		}
+	}
+	$effect(() => {
+		const term = academicTermId;
+		const userId = $authStore.user?.id;
+		const allowed = $can.hasAny(
+			PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL
+		);
+		if (!term || !userId || !allowed) return;
+		connectTimetableSocket({ academicTermId: term, currentUserId: userId });
+		return () => disconnectTimetableSocket();
+	});
+	onMount(() => {
+		let initial = true;
+		const unsubscribe = refreshTrigger.subscribe(() => {
+			if (initial) {
+				initial = false;
+				return;
+			}
+			void reconcileOpenDraft();
+		});
+		const unregister = registerDeliveryDraftReconcile(
+			reconcileOpenDraft,
+			() =>
+				!$can.hasAny(
+					PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL,
+					PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL
+				)
+		);
+		return () => {
+			unsubscribe();
+			unregister();
 		};
 	});
 
@@ -597,6 +676,7 @@
 								ensureOfferings={ensureOverview}
 								initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
 								onChanged={updateChangeSet}
+								onDeleted={handleDraftDeleted}
 							/>
 						{/key}
 					{:else if canManage}

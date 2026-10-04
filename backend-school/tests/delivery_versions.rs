@@ -59,6 +59,7 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
             .fetch_one(&pool)
             .await
             .unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let deliveries = versions::list_versions(
         &pool,
         term_id,
@@ -110,7 +111,7 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
     assert!(immutable
         .to_string()
         .contains("ACADEMIC_DELIVERY_VERSION_IMMUTABLE"));
-    apply_migrations_through(&pool, 88)
+    apply_migrations_through(&pool, 89)
         .await
         .expect("canonical cleanup has fresh evidence");
     let canonical: bool=sqlx::query_scalar("SELECT cutover_completed AND to_regclass('academic_timetable_version_targets') IS NULL FROM academic_delivery_version_migration_audit WHERE migration_version=87")
@@ -248,7 +249,7 @@ async fn independent_timetable_clone_reuses_source_and_deletes_only_draft_childr
         timetable_lifecycle, timetable_version_service as tables,
     };
     let pool = predecessor("independent_table_delete").await;
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT id,published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
@@ -413,7 +414,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         timetable_lifecycle, timetable_version_service as tables,
     };
     let pool = predecessor("independent_delivery_publish").await;
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
@@ -442,7 +443,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
     // Publication dates follow the current clock rather than a stale fixture date.
     let publish_date = std::cmp::max(
         chrono::Utc::now().date_naive(),
-        base.effective_from + Duration::days(1),
+        base.effective_from.unwrap() + Duration::days(1),
     );
     sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
         .bind(source.academic_year_id)
@@ -455,7 +456,6 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         actor,
         CreateAcademicTermChangeSetRequest {
             academic_term_id: source.academic_term_id,
-            effective_from: publish_date,
             reason: "ปรับจำนวนคาบ โดยยังไม่จัดตารางใหม่".into(),
             idempotency_key: Uuid::new_v4(),
         },
@@ -476,9 +476,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
     )
     .await
     .unwrap();
-    let preview = change_sets::preview_change_set(&pool, revision.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, revision.id).await.unwrap();
     assert!(
         preview.findings.iter().all(|finding| finding.severity
             != school_academic_delivery::models::AcademicChangeFindingSeverity::Blocking),
@@ -490,6 +488,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         actor,
         updated.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
             row_version: preview.change_set_row_version,
             target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
@@ -559,7 +558,7 @@ async fn changed_delivery_graphs_preserve_dated_source_chain_including_a_b_a() {
     sqlx::query("UPDATE academic_timetable_versions SET status='published',published_by=created_by,published_at=now() WHERE id=$1").bind(middle).execute(&pool).await.unwrap();
     let last = add_placement_version(&pool, false, true).await;
     sqlx::query("UPDATE academic_timetable_versions SET effective_from=effective_from+7,status='published',published_by=created_by,published_at=now() WHERE id=$1").bind(last).execute(&pool).await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let term: Uuid =
         sqlx::query_scalar("SELECT academic_term_id FROM academic_timetable_versions WHERE id=$1")
             .bind(last)
@@ -596,8 +595,8 @@ async fn migration_refuses_changed_pure_draft_targets_then_retries_after_evidenc
     assert_eq!(count, 0);
     // Repair from the explicitly recorded source; no name-based matching.
     sqlx::query("UPDATE academic_timetable_version_targets target SET weekly_period_target=original.weekly_period_target FROM academic_timetable_versions draft,academic_timetable_version_targets original WHERE draft.id=$1 AND target.timetable_version_id=draft.id AND original.timetable_version_id=draft.source_version_id AND original.learning_offering_id=target.learning_offering_id").bind(draft).execute(&pool).await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let audits:i64=sqlx::query_scalar("SELECT count(*) FROM academic_delivery_version_migration_audit WHERE passed AND cutover_completed").fetch_one(&pool).await.unwrap();
     assert_eq!(audits, 2);
 }
@@ -660,7 +659,7 @@ async fn mixed_legacy_revision_preserves_opening_commands_and_its_placed_draft()
     .fetch_all(&pool)
     .await
     .unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let (pinned,opening_draft,status):(Uuid,Uuid,String)=sqlx::query_as("SELECT timetable.delivery_version_id,revision.target_delivery_version_id,opening.status FROM academic_timetable_versions timetable JOIN academic_term_change_sets revision ON revision.id=$2 JOIN academic_delivery_versions opening ON opening.id=revision.target_delivery_version_id WHERE timetable.id=$1").bind(draft).bind(revision).fetch_one(&pool).await.unwrap();
     assert_eq!(status, "draft");
     assert_ne!(pinned, opening_draft);
@@ -732,7 +731,7 @@ async fn explicit_legacy_target_inclusions_become_opening_commands_without_rewri
             .fetch_all(&pool)
             .await
             .unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let (pinned,pending):(Uuid,Uuid)=sqlx::query_as("SELECT timetable.delivery_version_id,revision.target_delivery_version_id FROM academic_timetable_versions timetable JOIN academic_term_change_sets revision ON revision.id=$2 WHERE timetable.id=$1")
         .bind(draft).bind(revision).fetch_one(&pool).await.unwrap();
     assert_ne!(pinned, pending);
@@ -774,7 +773,7 @@ async fn explicit_legacy_target_inclusions_become_opening_commands_without_rewri
             .await
             .unwrap()
     );
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     assert!(versions::read_cutover_audit(&pool).await.unwrap().completed);
 }
 
@@ -791,7 +790,7 @@ async fn pre_effective_groups_are_preserved_when_a_timetable_was_published_early
         .bind(table).bind(group).execute(&mut *tx).await.unwrap();
     sqlx::query("ALTER TABLE academic_timetable_versions ENABLE TRIGGER academic_timetable_versions_published_immutable").execute(&mut *tx).await.unwrap();
     tx.commit().await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let source: Uuid = sqlx::query_scalar(
         "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
     )
@@ -825,7 +824,7 @@ async fn late_imported_groups_use_exact_dated_placement_evidence_and_preserve_id
         .bind(group).fetch_all(&pool).await.unwrap();
     sqlx::query("UPDATE learning_groups SET created_at=(SELECT (effective_from+30)::timestamp AT TIME ZONE 'Asia/Bangkok' FROM academic_timetable_versions WHERE id=$1) WHERE id=$2")
         .bind(table).bind(group).execute(&pool).await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let source: Uuid = sqlx::query_scalar(
         "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
     )
@@ -910,4 +909,19 @@ async fn historical_instructors_require_exact_roles_and_unambiguous_dated_episod
         .unwrap();
         assert!(legacy);
     }
+}
+
+async fn publication_preview(
+    pool: &sqlx::PgPool,
+    id: uuid::Uuid,
+) -> Result<school_academic_delivery::models::AcademicTermChangeSetPreview, school_errors::AppError>
+{
+    let revision =
+        school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
+    school_academic_delivery::services::change_sets::preview_change_set_at(
+        pool,
+        id,
+        Some(revision.reference_date),
+    )
+    .await
 }

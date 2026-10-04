@@ -37,7 +37,7 @@ mod tests {
             .unwrap();
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
         apply_migrations_through(&pool, 58).await.unwrap();
-        apply_migrations_through(&pool, 88).await.unwrap();
+        apply_migrations_through(&pool, 89).await.unwrap();
         let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
         let (source_id, source_row_version, term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
             r#"SELECT version.id, version.row_version, term.start_date

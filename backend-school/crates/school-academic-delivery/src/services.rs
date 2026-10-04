@@ -13,6 +13,7 @@ pub mod groups;
 pub mod offerings;
 pub mod opening;
 pub mod roster_memberships;
+pub mod version_changes;
 pub mod versions;
 pub mod workspaces;
 

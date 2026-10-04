@@ -1,411 +1,394 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
-		cancelAcademicTermChangeSet,
+		deleteDeliveryVersion,
+		getDeliveryVersion,
 		getAcademicTermChangeSet,
 		previewAcademicTermChangeSet,
 		publishAcademicTermChangeSet,
-		type AcademicChangeFinding,
-		type AcademicChangeFindingCode,
 		type AcademicTermChangeSet,
-		type AcademicTermChangeSetPreview
+		type AcademicTermChangeSetPreview,
+		type AcademicChangeFindingCode,
+		type DeleteDeliveryVersionRequest
 	} from '#lib/api/learning-delivery.js';
 	import { ApiClientError } from '#lib/api/client.js';
-	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import {
+		LoadingButton,
+		PageState,
+		RegionUpdatingState
+	} from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import {
-		CheckCircle2,
-		CircleAlert,
-		Clock3,
-		ExternalLink,
 		RefreshCw,
 		Send,
+		Trash2,
+		ExternalLink,
+		CircleAlert,
 		TriangleAlert,
-		UsersRound
+		CheckCircle2
 	} from '@lucide/svelte';
 
 	let {
 		changeSet,
 		canManage,
-		onChanged
+		onChanged,
+		onDeleted
 	}: {
 		changeSet: AcademicTermChangeSet;
 		canManage: boolean;
 		onChanged: (
 			changeSet: AcademicTermChangeSet,
-			refreshScope?: LearningDeliveryRefreshScope
+			scope?: LearningDeliveryRefreshScope
 		) => void | Promise<void>;
+		onDeleted: (sourceVersionId: string | null) => Promise<void>;
 	} = $props();
-
 	let preview = $state.raw<AcademicTermChangeSetPreview | null>(null);
 	let loadingPreview = $state(false);
 	let publishing = $state(false);
-	let cancelling = $state(false);
-	let acknowledgedWarnings = $state<AcademicChangeFindingCode[]>([]);
+	let deleting = $state(false);
+	let preparingDelete = $state(false);
+	let publishOpen = $state(false);
+	let deleteOpen = $state(false);
+	let selectedDate = $state('');
+	let publicationKey = $state('');
 	let errorMessage = $state('');
+	let deleteRequest = $state.raw<DeleteDeliveryVersionRequest | null>(null);
+	let acknowledgedWarnings = $state<AcademicChangeFindingCode[]>([]);
+	let blocking = $derived(preview?.findings.filter((f) => f.severity === 'blocking') ?? []);
+	let warnings = $derived(preview?.findings.filter((f) => f.severity === 'warning') ?? []);
+	let canPublish = $derived(
+		Boolean(
+			preview &&
+			!preview.preliminary &&
+			preview.effectiveFrom === selectedDate &&
+			blocking.length === 0 &&
+			warnings.every((f) => acknowledgedWarnings.includes(f.code))
+		)
+	);
+	let requestRevision = 0;
 
-	let blockingFindings = $derived(
-		preview?.findings.filter((finding) => finding.severity === 'blocking') ?? []
-	);
-	const teacherFindingCodes = new Set<AcademicChangeFindingCode>([
-		'missing_effective_teacher',
-		'missing_primary_teacher'
-	]);
-	let teacherFindings = $derived(
-		blockingFindings.filter((finding) => teacherFindingCodes.has(finding.code))
-	);
-	let otherBlockingFindings = $derived(
-		blockingFindings.filter((finding) => !teacherFindingCodes.has(finding.code))
-	);
-	let warningFindings = $derived.by(() => {
-		return (preview?.findings ?? [])
-			.filter((finding) => finding.severity === 'warning')
-			.reduce<AcademicChangeFinding[]>((findings, finding) => {
-				const existingIndex = findings.findIndex((existing) => existing.code === finding.code);
-				if (existingIndex === -1) return [...findings, finding];
-				return findings.map((existing, index) =>
-					index === existingIndex
-						? { ...existing, affectedCount: existing.affectedCount + finding.affectedCount }
-						: existing
-				);
-			}, []);
+	let knownRevision: number | undefined;
+	$effect(() => {
+		const revision = changeSet.rowVersion;
+		untrack(() => {
+			if (knownRevision !== undefined && knownRevision !== revision) clearPreview();
+			knownRevision = revision;
+		});
 	});
-	let warningsAcknowledged = $derived(
-		warningFindings.every((finding) => acknowledgedWarnings.includes(finding.code))
-	);
-	const impactItems = $derived(
-		preview
-			? ([
-					['กลุ่มเรียน', preview.impactCounts.groups],
-					['ห้องประจำชั้น', preview.impactCounts.homerooms],
-					['รายชื่อนักเรียน', preview.impactCounts.membershipIntervals],
-					['ครูผู้สอน', preview.impactCounts.teacherAssignments],
-					['คาบในตารางที่อ้างอิง', preview.impactCounts.targetTimetableEntries],
-					['แผนโครงสร้างคะแนน', preview.impactCounts.courseAssessmentPlans],
-					['ช่วงคะแนน', preview.impactCounts.courseAssessmentPhases],
-					['รายการคะแนนรายกลุ่ม', preview.impactCounts.learningGroupScoreItems],
-					['คะแนนนักเรียน', preview.impactCounts.studentScores],
-					['การเลือกผลการเรียน', preview.impactCounts.resultSelections],
-					['รายการยืนยันผล', preview.impactCounts.resultConfirmations],
-					['ผลกิจกรรมที่บันทึก', preview.impactCounts.activityEvaluations],
-					['ผลประเมินผู้เรียน', preview.impactCounts.learnerEvaluations],
-					['ชุดล็อกผลทางการ', preview.impactCounts.officialResultLocks],
-					['ผลการเรียนทางการ', preview.impactCounts.officialResults],
-					['ประวัติแก้ผลการเรียน', preview.impactCounts.resultCorrections],
-					['ตารางสอบ', preview.impactCounts.examScheduleItems],
-					['นิเทศการสอน', preview.impactCounts.supervisionObservations]
-				] as const)
-			: []
-	);
 
-	function formatDate(value: string): string {
-		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
-			new Date(`${value}T00:00:00`)
-		);
-	}
-
-	function formatDateTime(value: string): string {
-		return new Intl.DateTimeFormat('th-TH', {
-			dateStyle: 'medium',
-			timeStyle: 'short'
-		}).format(new Date(value));
-	}
-
-	async function syncCurrentChangeSet() {
-		const current = await getAcademicTermChangeSet(changeSet.id);
-		await onChanged(current);
-	}
-
-	async function recoverFromConflict(message: string) {
+	function clearPreview() {
+		requestRevision++;
+		loadingPreview = false;
 		preview = null;
 		acknowledgedWarnings = [];
+		errorMessage = '';
+		publicationKey = '';
+	}
+	function dateChanged(value: string | undefined) {
+		selectedDate = value ?? '';
+		clearPreview();
+	}
+	function openPublication() {
+		clearPreview();
+		const today = new Intl.DateTimeFormat('en-CA', {
+			timeZone: 'Asia/Bangkok',
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit'
+		}).format(new Date());
+		selectedDate = changeSet.referenceDate > today ? changeSet.referenceDate : today;
+		publishOpen = true;
+	}
+	async function recover(message: string) {
+		clearPreview();
 		errorMessage = message;
 		try {
-			await syncCurrentChangeSet();
+			await onChanged(await getAcademicTermChangeSet(changeSet.id));
 		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? `${message} (${error.message})`
-					: `${message} และโหลดข้อมูลล่าสุดไม่สำเร็จ`;
+			errorMessage = error instanceof Error ? `${message} (${error.message})` : message;
 		}
 	}
-
 	async function refreshPreview() {
+		const revision = ++requestRevision;
 		loadingPreview = true;
 		preview = null;
 		acknowledgedWarnings = [];
 		errorMessage = '';
+		publicationKey = '';
 		try {
 			const current = await getAcademicTermChangeSet(changeSet.id);
+			if (revision !== requestRevision) return;
 			if (current.rowVersion !== changeSet.rowVersion) {
 				await onChanged(current);
+				errorMessage = 'ข้อมูลเปลี่ยน กรุณาตรวจความพร้อมอีกครั้ง';
 				return;
 			}
-			const loadedPreview = await previewAcademicTermChangeSet(changeSet.id);
-			if (loadedPreview.changeSetRowVersion !== current.rowVersion) {
-				await syncCurrentChangeSet();
+			const loaded = await previewAcademicTermChangeSet(
+				changeSet.id,
+				{},
+				publishOpen ? selectedDate : undefined
+			);
+			if (revision !== requestRevision) return;
+			if (loaded.changeSetRowVersion !== current.rowVersion) {
+				await recover('ข้อมูลเปลี่ยนระหว่างตรวจ กรุณาตรวจใหม่');
 				return;
 			}
-			preview = loadedPreview;
+			preview = loaded;
 		} catch (error) {
-			if (error instanceof ApiClientError && error.status === 409) {
-				await recoverFromConflict('ข้อมูลเปลี่ยนระหว่างตรวจ กรุณาตรวจความพร้อมใหม่อีกครั้ง');
-				return;
-			}
-			errorMessage = error instanceof Error ? error.message : 'ตรวจความพร้อมไม่สำเร็จ';
+			if (revision !== requestRevision) return;
+			if (error instanceof ApiClientError && error.status === 409) await recover(error.message);
+			else errorMessage = error instanceof Error ? error.message : 'ตรวจความพร้อมไม่สำเร็จ';
 		} finally {
-			loadingPreview = false;
+			if (revision === requestRevision) loadingPreview = false;
 		}
 	}
-
-	function setWarningAcknowledgement(code: AcademicChangeFindingCode, checked: boolean) {
-		acknowledgedWarnings = checked
-			? [...new Set([...acknowledgedWarnings, code])]
-			: acknowledgedWarnings.filter((item) => item !== code);
-	}
-
-	async function publishChangeSet() {
-		if (!canManage || !preview || blockingFindings.length > 0 || !warningsAcknowledged) return;
+	async function publish() {
+		if (!canManage || !canPublish || !preview) return;
 		publishing = true;
 		errorMessage = '';
+		publicationKey ||= crypto.randomUUID();
 		try {
 			const updated = await publishAcademicTermChangeSet(changeSet.id, {
+				effectiveFrom: selectedDate,
 				rowVersion: preview.changeSetRowVersion,
 				targetDeliveryVersionRowVersion: preview.targetDeliveryVersionRowVersion,
 				previewHash: preview.previewHash,
-				acknowledgedWarningCodes: [...new Set(warningFindings.map((finding) => finding.code))],
-				idempotencyKey: crypto.randomUUID()
+				acknowledgedWarningCodes: [...new Set(warnings.map((f) => f.code))],
+				idempotencyKey: publicationKey
 			});
 			await onChanged(updated, 'homerooms');
-			preview = null;
+			publishOpen = false;
+			clearPreview();
 		} catch (error) {
-			if (error instanceof ApiClientError && error.status === 409) {
-				await recoverFromConflict(
-					'ข้อมูลเปลี่ยนหลังตรวจความพร้อม กรุณาตรวจความพร้อมใหม่ก่อนเผยแพร่'
-				);
-				return;
-			}
-			errorMessage = error instanceof Error ? error.message : 'เผยแพร่การเปลี่ยนแปลงไม่สำเร็จ';
+			if (error instanceof ApiClientError && error.status === 409) await recover(error.message);
+			else errorMessage = error instanceof Error ? error.message : 'เผยแพร่รุ่นเปิดสอนไม่สำเร็จ';
 		} finally {
 			publishing = false;
 		}
 	}
-
-	async function cancelDraft() {
-		if (!canManage) return;
-		cancelling = true;
+	async function prepareDeletion() {
+		preparingDelete = true;
 		errorMessage = '';
+		deleteRequest = null;
 		try {
-			const updated = await cancelAcademicTermChangeSet(changeSet.id, {
-				rowVersion: changeSet.rowVersion
-			});
-			await onChanged(updated);
-			preview = null;
-		} catch (error) {
-			if (error instanceof ApiClientError && error.status === 409) {
-				await recoverFromConflict('แบบร่างถูกแก้ไขจากที่อื่น กรุณาตรวจรายการล่าสุดแล้วลองใหม่');
+			const [current, version] = await Promise.all([
+				getAcademicTermChangeSet(changeSet.id),
+				getDeliveryVersion(changeSet.targetDeliveryVersionId)
+			]);
+			if (current.rowVersion !== changeSet.rowVersion) {
+				await onChanged(current);
+				errorMessage = 'ข้อมูลเปลี่ยน กรุณาตรวจรายการล่าสุดก่อนลบ';
 				return;
 			}
-			errorMessage = error instanceof Error ? error.message : 'ยกเลิกแบบร่างไม่สำเร็จ';
+			deleteRequest = {
+				rowVersion: version.rowVersion,
+				changeSetRowVersion: current.rowVersion,
+				expectedItemCount: current.items.length,
+				expectedOfferingCount: version.snapshot.offerings.length,
+				expectedGroupCount: version.snapshot.offerings.reduce((n, o) => n + o.groups.length, 0)
+			};
+			deleteOpen = true;
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลก่อนลบไม่สำเร็จ';
 		} finally {
-			cancelling = false;
+			preparingDelete = false;
 		}
 	}
-
-	function findingRoute(finding: AcademicChangeFinding): string | null {
-		return finding.route ?? null;
+	async function deleteDraft() {
+		if (!canManage || !deleteRequest) return;
+		deleting = true;
+		errorMessage = '';
+		try {
+			const result = await deleteDeliveryVersion(changeSet.targetDeliveryVersionId, deleteRequest);
+			deleteOpen = false;
+			await onDeleted(result.sourceVersionId ?? null);
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'ลบแบบร่างไม่สำเร็จ';
+			if (error instanceof ApiClientError && error.status === 409) deleteRequest = null;
+		} finally {
+			deleting = false;
+		}
 	}
 </script>
 
-<div class="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-	<div class="min-w-0">
-		{#if changeSet.status === 'draft'}
-			<section class="space-y-3">
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<div>
-						<h3 class="font-medium">ตรวจผลกระทบและความพร้อม</h3>
-						<p class="text-xs text-muted-foreground">ตรวจจากข้อมูลล่าสุดทุกครั้งก่อนเผยแพร่</p>
-					</div>
-					<Button variant="outline" size="sm" onclick={refreshPreview} disabled={loadingPreview}>
-						<RefreshCw class={loadingPreview ? 'size-4 animate-spin' : 'size-4'} /> ตรวจความพร้อม
-					</Button>
+{#snippet result()}
+	{#if loadingPreview}
+		<div class="relative min-h-24"><RegionUpdatingState label="กำลังตรวจความพร้อม" /></div>
+	{:else if preview}
+		{#if preview.preliminary}<p class="text-sm text-muted-foreground">
+				ผลตรวจเบื้องต้น ต้องเลือกวันเริ่มใช้และตรวจอีกครั้งตอนเผยแพร่
+			</p>{/if}
+		<div class="space-y-3" aria-label="ผลตรวจความพร้อม">
+			{#each blocking as finding, index (`${finding.code}:${finding.learningOfferingId ?? ''}:${finding.learningGroupId ?? ''}:${finding.resourceId ?? ''}:${index}`)}
+				<div class="rounded-xl border border-destructive/25 bg-destructive/5 p-3">
+					<p class="flex items-start gap-2 font-medium text-destructive">
+						<CircleAlert class="size-4 shrink-0" />{finding.title}
+					</p>
+					<p class="mt-1 text-sm text-muted-foreground">{finding.guidance}</p>
+					{#if finding.route}<Button href={finding.route} variant="link" size="sm"
+							>ไปแก้ไข <ExternalLink class="size-3" /></Button
+						>{/if}
 				</div>
-
-				{#if preview}
-					<div class="grid gap-3 lg:grid-cols-3">
-						<div class="rounded-xl border border-sky-500/25 bg-sky-500/5 p-3">
-							<p class="flex items-center gap-2 font-medium text-sky-900">
-								<UsersRound class="size-4" /> ครูผู้สอน {teacherFindings.length}
-							</p>
-							<div class="mt-2 space-y-2">
-								{#each teacherFindings as finding (`teacher:${finding.code}:${finding.resourceId ?? ''}:${finding.learningGroupId ?? ''}`)}
-									<div class="rounded-lg bg-background/80 p-2 text-sm">
-										<p class="font-medium">{finding.title}</p>
-										<p class="text-xs text-muted-foreground">{finding.guidance}</p>
-										{#if findingRoute(finding)}
-											<Button
-												href={findingRoute(finding) ?? undefined}
-												size="sm"
-												variant="link"
-												class="h-auto px-0 py-1"
-											>
-												ไปแก้ไข
-												<ExternalLink class="size-3" />
-											</Button>
-										{/if}
-									</div>
-								{:else}
-									<p class="text-sm text-emerald-700">ครูพร้อมตามวันที่เริ่มใช้</p>
-								{/each}
-							</div>
-						</div>
-						<div class="rounded-xl border border-destructive/25 bg-destructive/5 p-3">
-							<p class="flex items-center gap-2 font-medium text-destructive">
-								<CircleAlert class="size-4" /> ข้อมูลเปิดสอน {otherBlockingFindings.length}
-							</p>
-							<div class="mt-2 space-y-2">
-								{#each otherBlockingFindings as finding (`${finding.code}:${finding.resourceId ?? ''}:${finding.learningGroupId ?? ''}`)}
-									<div class="rounded-lg bg-background/80 p-2 text-sm">
-										<p class="font-medium">{finding.title}</p>
-										<p class="text-xs text-muted-foreground">{finding.guidance}</p>
-										{#if findingRoute(finding)}
-											<Button
-												href={findingRoute(finding) ?? undefined}
-												size="sm"
-												variant="link"
-												class="h-auto px-0 py-1"
-											>
-												ไปแก้ไข <ExternalLink class="size-3" />
-											</Button>
-										{/if}
-									</div>
-								{:else}
-									<p class="text-sm text-emerald-700">ไม่มีจุดบล็อกการเผยแพร่</p>
-								{/each}
-							</div>
-						</div>
-						<div class="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
-							<p class="flex items-center gap-2 font-medium text-amber-900">
-								<TriangleAlert class="size-4" /> คำเตือน {warningFindings.length}
-							</p>
-							<div class="mt-2 space-y-2">
-								{#each warningFindings as finding (finding.code)}
-									<label
-										class="flex cursor-pointer items-start gap-2 rounded-lg bg-background/80 p-2 text-sm"
-									>
-										<Checkbox
-											checked={acknowledgedWarnings.includes(finding.code)}
-											onCheckedChange={(checked) =>
-												setWarningAcknowledgement(finding.code, checked)}
-											aria-label={`รับทราบ ${finding.title}`}
-										/>
-										<span>
-											<span class="font-medium">{finding.title}</span>
-											<span class="block text-xs text-muted-foreground">{finding.guidance}</span>
-										</span>
-									</label>
-								{:else}
-									<p class="text-sm text-muted-foreground">ไม่มีคำเตือนที่ต้องรับทราบ</p>
-								{/each}
-							</div>
-						</div>
-					</div>
-				{:else if loadingPreview}
-					<div class="h-32 animate-pulse rounded-xl bg-muted"></div>
-				{:else}
-					<PageState
-						variant="empty"
-						title="ยังไม่ได้ตรวจความพร้อม"
-						description="บันทึกสิ่งที่ต้องการ แล้วตรวจข้อมูลเปิดสอนก่อนเผยแพร่"
+			{:else}<p class="flex items-center gap-2 text-sm">
+					<CheckCircle2 class="size-4 text-primary" />ไม่มีจุดบล็อกการเผยแพร่
+				</p>{/each}
+			{#each warnings as finding, index (`${finding.code}:${finding.learningOfferingId ?? ''}:${finding.learningGroupId ?? ''}:${finding.resourceId ?? ''}:${index}`)}
+				<label class="flex items-start gap-2 rounded-xl border p-3">
+					<Checkbox
+						checked={acknowledgedWarnings.includes(finding.code)}
+						onCheckedChange={(checked) =>
+							(acknowledgedWarnings = checked
+								? [...new Set([...acknowledgedWarnings, finding.code])]
+								: acknowledgedWarnings.filter((c) => c !== finding.code))}
+						aria-label={`รับทราบ ${finding.title}`}
 					/>
-				{/if}
-			</section>
-		{/if}
-	</div>
+					<span
+						><span class="flex items-center gap-1 font-medium"
+							><TriangleAlert class="size-4" />{finding.title}</span
+						><span class="block text-sm text-muted-foreground">{finding.guidance}</span></span
+					>
+				</label>
+			{/each}
+		</div>
+		{#if !preview.preliminary}<div class="space-y-2" aria-label="การเปลี่ยนแปลงตามวันเริ่มใช้">
+				<p class="font-medium">ข้อมูลที่จะเผยแพร่ตามวันที่เลือก</p>
+				{#each preview.changes as change, index (`${change.resourceId}:${change.field}:${index}`)}<p
+						class="text-sm"
+					>
+						{change.label} · {change.field}: {change.before ?? 'ยังไม่มี'} → {change.after ??
+							'ไม่ใช้ในรุ่นใหม่'}
+					</p>{/each}
+			</div>{/if}
+	{:else}<PageState
+			variant="empty"
+			title="ยังไม่ได้ตรวจความพร้อม"
+			description="ตรวจข้อมูลรายวิชา กลุ่ม และครูก่อนเผยแพร่"
+		/>{/if}
+{/snippet}
 
-	<aside class="space-y-4 xl:sticky xl:top-4 xl:self-start">
-		{#if changeSet.status === 'published'}<div class="rounded-xl border p-4">
-				<h3 class="font-medium">รุ่นเปิดสอนนี้เผยแพร่แล้ว</h3>
-				<p class="mt-1 text-sm text-muted-foreground">
-					เริ่มใช้ {formatDate(changeSet.effectiveFrom)}{changeSet.publishedAt
-						? ` · เผยแพร่ ${formatDateTime(changeSet.publishedAt)}`
-						: ''}
-				</p>
-				<p class="mt-2 text-sm">
-					นำข้อมูลรุ่นนี้ไปจัดตารางสอนได้ ตารางเดิมยังคงข้อมูลของรุ่นที่อ้างอิง
-				</p>
+<section class="space-y-4" aria-label="ตรวจและเผยแพร่รุ่นเปิดสอน">
+	{#if changeSet.status === 'draft'}
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div>
+				<h3 class="font-medium">ตรวจผลกระทบและความพร้อม</h3>
+				<p class="text-xs text-muted-foreground">ผลเบื้องต้นก่อนเลือกวันเริ่มใช้</p>
 			</div>
-		{:else if changeSet.status === 'cancelled'}
-			<div class="rounded-xl border p-4">
-				<h3 class="font-medium">แบบร่างนี้ยกเลิกแล้ว</h3>
-				<p class="mt-1 text-sm text-muted-foreground">
-					รุ่นเปิดสอนที่เผยแพร่แล้วและตารางสอนเดิมยังใช้งานได้
-				</p>
-			</div>
-		{/if}
-
-		{#if preview}
-			<div class="rounded-xl border p-4">
-				<h3 class="font-medium">ข้อมูลที่เกี่ยวข้อง</h3>
-				<p class="mt-1 text-xs text-muted-foreground">
-					จำนวนอ้างอิงเพื่อประเมินผลกระทบ ไม่ได้ลบข้อมูลเดิม
-				</p>
-				<dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-					{#each impactItems as [label, value] (label)}
-						<div class="rounded-lg bg-muted/40 px-2.5 py-2">
-							<dt class="text-[11px] text-muted-foreground">{label}</dt>
-							<dd class="font-mono font-semibold tabular-nums">{value}</dd>
-						</div>
-					{/each}
-				</dl>
-				<p class="mt-3 text-xs leading-relaxed text-muted-foreground">
-					ข้อมูลเดิมยังคงอยู่ รวมถึงโครงสร้างคะแนน ผลการเรียน ตารางสอบ และประวัตินิเทศ
-				</p>
-			</div>
-		{/if}
-
-		{#if canManage && changeSet.status === 'draft'}
-			<div class="space-y-2 rounded-xl border border-primary/20 bg-primary/[0.025] p-4">
-				<div class="flex items-center gap-2">
-					{#if preview && blockingFindings.length === 0 && warningsAcknowledged}
-						<CheckCircle2 class="size-4 text-emerald-600" />
-					{:else}
-						<Clock3 class="size-4 text-muted-foreground" />
-					{/if}
-					<h3 class="font-medium">เผยแพร่รุ่นเปิดสอน</h3>
-				</div>
-				<p class="text-xs text-muted-foreground">
-					ต้องไม่มีจุดบล็อก และรับทราบคำเตือนปัจจุบันทุกข้อ
-				</p>
-				<LoadingButton
-					class="w-full"
-					loading={publishing}
-					loadingLabel="กำลังเผยแพร่"
-					disabled={!preview || blockingFindings.length > 0 || !warningsAcknowledged}
-					onclick={publishChangeSet}
-				>
-					<Send class="size-4" /> เผยแพร่ตั้งแต่ {formatDate(changeSet.effectiveFrom)}
-				</LoadingButton>
-				<LoadingButton
-					class="w-full"
-					variant="ghost"
-					loading={cancelling}
-					loadingLabel="กำลังยกเลิก"
-					onclick={cancelDraft}
-				>
-					ยกเลิกแบบร่าง
-				</LoadingButton>
-			</div>
-		{/if}
-
-		{#if errorMessage}
-			<p
-				role="alert"
-				class="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+			<LoadingButton
+				variant="outline"
+				size="sm"
+				loading={loadingPreview}
+				loadingLabel="กำลังตรวจ"
+				disabled={publishing || deleting}
+				onclick={refreshPreview}><RefreshCw class="size-4" />ตรวจความพร้อม</LoadingButton
 			>
-				{errorMessage}
-			</p>
-		{/if}
-	</aside>
-</div>
+		</div>
+		{#if !publishOpen}{@render result()}{/if}
+	{:else if changeSet.status === 'published'}<p class="text-sm">
+			เผยแพร่แล้ว เริ่มใช้ {changeSet.effectiveFrom} · ตารางเดิมยังคงข้อมูลของรุ่นที่อ้างอิง
+		</p>{/if}
+	{#if canManage && changeSet.status !== 'published'}
+		<div class="flex flex-wrap gap-2">
+			{#if changeSet.status === 'draft'}<Button
+					onclick={openPublication}
+					disabled={loadingPreview || preparingDelete || deleting}
+					><Send class="size-4" />เผยแพร่รุ่นเปิดสอน</Button
+				>{/if}
+			<LoadingButton
+				variant="destructive"
+				loading={preparingDelete}
+				loadingLabel="กำลังตรวจข้อมูล"
+				disabled={loadingPreview || publishing || deleting}
+				onclick={prepareDeletion}
+				><Trash2 class="size-4" />{changeSet.status === 'draft'
+					? 'ลบแบบร่าง'
+					: 'ลบรุ่นที่ยกเลิก'}</LoadingButton
+			>
+		</div>
+	{/if}
+	{#if errorMessage && !publishOpen && !deleteOpen}<p role="alert" class="text-sm text-destructive">
+			{errorMessage}
+		</p>{/if}
+</section>
+
+<Dialog.Root bind:open={publishOpen}>
+	<Dialog.Content
+		showCloseButton={!publishing}
+		escapeKeydownBehavior={publishing ? 'ignore' : 'close'}
+		interactOutsideBehavior={publishing ? 'ignore' : 'close'}
+		class="max-h-[85dvh] overflow-y-auto sm:max-w-2xl"
+	>
+		<Dialog.Header
+			><Dialog.Title>เผยแพร่รุ่นเปิดสอน</Dialog.Title><Dialog.Description
+				>เลือกวันเริ่มใช้ ตรวจข้อมูลตามวันนั้น และรับทราบคำเตือนก่อนยืนยัน</Dialog.Description
+			></Dialog.Header
+		>
+		<div class="space-y-2">
+			<Label for="delivery-publication-date">วันที่เริ่มใช้</Label><DatePicker
+				id="delivery-publication-date"
+				value={selectedDate}
+				onValueChange={dateChanged}
+				ariaLabel="วันที่เริ่มใช้รุ่นเปิดสอน"
+				disabled={publishing}
+			/>
+		</div>
+		<LoadingButton
+			variant="outline"
+			loading={loadingPreview}
+			loadingLabel="กำลังตรวจ"
+			disabled={!selectedDate || publishing}
+			onclick={refreshPreview}>ตรวจความพร้อมตามวันที่เลือก</LoadingButton
+		>
+		{@render result()}
+		{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+		<Dialog.Footer
+			><Button
+				variant="outline"
+				disabled={publishing}
+				onclick={() => {
+					publishOpen = false;
+					clearPreview();
+				}}>กลับไปแก้ไข</Button
+			><LoadingButton
+				loading={publishing}
+				loadingLabel="กำลังเผยแพร่"
+				disabled={!canPublish || loadingPreview}
+				onclick={publish}>ยืนยันเผยแพร่</LoadingButton
+			></Dialog.Footer
+		>
+	</Dialog.Content>
+</Dialog.Root>
+<Dialog.Root bind:open={deleteOpen}>
+	<Dialog.Content
+		showCloseButton={!deleting}
+		escapeKeydownBehavior={deleting ? 'ignore' : 'close'}
+		interactOutsideBehavior={deleting ? 'ignore' : 'close'}
+		><Dialog.Header
+			><Dialog.Title>ลบแบบร่างถาวร</Dialog.Title><Dialog.Description
+				>“{changeSet.reason}” มี {deleteRequest?.expectedItemCount ?? changeSet.items.length} รายการเปลี่ยนแปลง
+				· {deleteRequest?.expectedOfferingCount ?? 0} รายการเปิดสอน · {deleteRequest?.expectedGroupCount ??
+					0} กลุ่ม รุ่นนี้จะถูกลบออกจากฐานข้อมูลและกู้คืนผ่านหน้านี้ไม่ได้</Dialog.Description
+			></Dialog.Header
+		>
+		<p class="text-sm text-muted-foreground">
+			ลบข้อมูลลูกที่ร่างสร้างและยังไม่มีผู้อื่นใช้งาน รุ่นต้นทางที่เผยแพร่แล้วจะยังอยู่
+			หากมีข้อมูลอ้างอิงระบบจะปฏิเสธการลบทั้งหมด
+		</p>
+		{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
+		<Dialog.Footer
+			><Button variant="outline" disabled={deleting} onclick={() => (deleteOpen = false)}
+				>กลับ</Button
+			><LoadingButton
+				variant="destructive"
+				loading={deleting}
+				loadingLabel="กำลังลบ"
+				disabled={!deleteRequest}
+				onclick={deleteDraft}>ยืนยันลบถาวร</LoadingButton
+			></Dialog.Footer
+		>
+	</Dialog.Content>
+</Dialog.Root>

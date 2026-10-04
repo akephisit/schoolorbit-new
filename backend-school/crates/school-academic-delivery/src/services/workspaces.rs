@@ -232,10 +232,10 @@ pub async fn homeroom_delivery_workspace_with_timing(
                   term.type_occurrence,
                   version.id AS delivery_version_id,
                   version.status AS delivery_version_status,
-                  version.effective_from AS delivery_version_effective_from
+                  COALESCE(version.effective_from,version.reference_date) AS delivery_version_effective_from
            FROM selected_term term
            LEFT JOIN LATERAL (
-               SELECT candidate.id, candidate.status, candidate.effective_from
+               SELECT candidate.id, candidate.status, candidate.effective_from,candidate.reference_date
                FROM academic_delivery_versions candidate
                WHERE candidate.academic_term_id = term.id
                  AND candidate.academic_year_id = term.academic_year_id
@@ -311,9 +311,10 @@ pub async fn homeroom_delivery_workspace_with_timing(
     let term_type = context.term_type;
     let type_occurrence = context.type_occurrence;
     let delivery_version_id = delivery_version.as_ref().map(|version| version.id);
-    let delivery_version_effective_from = delivery_version
-        .as_ref()
-        .map(|version| version.effective_from);
+    let delivery_version_effective_from = delivery_version.as_ref().and_then(|version| {
+        (version.status == crate::models::versions::DeliveryVersionStatus::Published)
+            .then_some(version.effective_from)
+    });
 
     ensure_option_size(
         homeroom_rows.len(),
@@ -437,7 +438,7 @@ pub async fn homeroom_delivery_workspace_with_timing(
                     code: offering.code.clone(),
                     name: offering.name.clone(),
                     weekly_period_target: Some(offering.weekly_period_target),
-                    starts_on: Some(source.effective_from),
+                    starts_on: source.effective_from,
                     ends_on: source.effective_until,
                     target_kind: match target.target_kind {
                         super::super::models::OfferingTargetKind::Homeroom => "homeroom",

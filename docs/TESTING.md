@@ -93,6 +93,7 @@ migration and concurrent writers against disposable PostgreSQL using:
 
 ```bash
 ./scripts/test_backend_school.sh --integration delivery_versions -- --nocapture
+./scripts/test_backend_school.sh --integration delivery_draft_lifecycle -- --nocapture
 ./scripts/test_backend_school.sh modules::academic::delivery::services_tests -- --nocapture
 ./scripts/test_backend_school.sh modules::academic::services::timetable_ -- --nocapture
 ./scripts/test_backend_school.sh modules::academic::lifecycle::services::term_preparation_tests -- --nocapture
@@ -121,6 +122,15 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
   tests/e2e/timetable-whole-school-overview.spec.ts \
   tests/e2e/timetable-dense-board-layout.spec.ts --project=chromium --workers=2
 ```
+
+The draft-lifecycle fixtures also verify migration 088→089 with unchanged published facts,
+nullable draft dates, DELETE-only cancelled guards, optimistic counts/revisions, protected references,
+and whole-batch rollback, including an unknown downstream foreign key. Delivery service tests cover
+candidate-date hashes, fresh references, dated instructors, idempotency and concurrent writers.
+The opening workspace browser fixture exercises repeated finding keys, eager names and before/after
+differences, scoped retry, date-change invalidation, deletion refusal/success, read-only controls,
+keyboard confirmation and mobile/desktop in both themes. Use protected tenant copies for operational
+rehearsal, and keep production cleanup separate from routine disposable-schema tests.
 
 Fixtures use synthetic staff/resources and generated API shapes. A published opening never
 implicitly creates or publishes a timetable or student roster. Opening snapshots retain their

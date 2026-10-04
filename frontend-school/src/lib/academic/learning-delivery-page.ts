@@ -47,6 +47,7 @@ export function summarizeAcademicTermChangeSet(
 		academicTermId: detail.academicTermId,
 		academicYearId: detail.academicYearId,
 		effectiveFrom: detail.effectiveFrom,
+		referenceDate: detail.referenceDate,
 		reason: detail.reason,
 		status: detail.status,
 		targetDeliveryVersionId: detail.targetDeliveryVersionId,

@@ -237,7 +237,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,
@@ -292,16 +292,19 @@ async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, version_id: Uuid
         actor,
         CreateAcademicTermChangeSetRequest {
             academic_term_id: table.academic_term_id,
-            effective_from: source.effective_from + chrono::Duration::days(1),
             reason: "เตรียมกลุ่มและครูสำหรับทดสอบคาบ".into(),
             idempotency_key: Uuid::new_v4(),
         },
     )
     .await
     .unwrap();
-    let preview = change_sets::preview_change_set(pool, revision.id)
-        .await
-        .unwrap();
+    let preview = change_sets::preview_change_set_at(
+        pool,
+        revision.id,
+        Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
+    )
+    .await
+    .unwrap();
     assert!(
         !preview
             .findings
@@ -315,6 +318,7 @@ async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, version_id: Uuid
         actor,
         revision.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
             row_version: preview.change_set_row_version,
             target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
@@ -525,9 +529,21 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         actor_id,
         CreateAcademicTermChangeSetRequest {
             academic_term_id: term_id,
-            effective_from: source.effective_from + chrono::Duration::days(1),
             reason: "เปิดกิจกรรมก่อนจัดคาบ".into(),
             idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    // Prepare this historical fixture's teachers on the intended publication day.
+    let revision = change_sets::update_change_set(
+        &pool,
+        actor_id,
+        revision.id,
+        UpdateAcademicTermChangeSetRequest {
+            row_version: revision.row_version,
+            reference_date: source.effective_from.unwrap() + chrono::Duration::days(1),
+            reason: revision.reason.clone(),
         },
     )
     .await
@@ -595,9 +611,13 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .await
         .unwrap();
     }
-    let preview = change_sets::preview_change_set(&pool, revision.id)
-        .await
-        .unwrap();
+    let preview = change_sets::preview_change_set_at(
+        &pool,
+        revision.id,
+        Some(source.effective_from.unwrap() + chrono::Duration::days(1)),
+    )
+    .await
+    .unwrap();
     assert!(
         !preview
             .findings
@@ -611,6 +631,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         actor_id,
         revision.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
             row_version: preview.change_set_row_version,
             target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
@@ -805,7 +826,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         .homerooms
         .iter()
         .any(|target| target.id == removed.id));
-    let date = opening.effective_from + chrono::Duration::days(1);
+    let date = opening.effective_from.unwrap() + chrono::Duration::days(1);
     sqlx::query("UPDATE academic_timetable_versions SET status='published',effective_from=$3,published_by=$2,published_at=now(),publication_idempotency_key=gen_random_uuid(),publication_request_hash=repeat('a',64) WHERE id=$1").bind(version_id).bind(actor_id).bind(date).execute(&pool).await.unwrap();
     let mut timetable_date = date;
     while daily_teaching_service::day_code_from_date(timetable_date) != "WED" {

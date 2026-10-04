@@ -571,10 +571,10 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::list_term_change_sets,
         crate::modules::academic::delivery::version_handlers::list_versions,
         crate::modules::academic::delivery::version_handlers::get_version,
+        crate::modules::academic::delivery::version_handlers::delete_version,
         crate::modules::academic::delivery::handlers::create_term_change_set,
         crate::modules::academic::delivery::handlers::get_term_change_set,
         crate::modules::academic::delivery::handlers::update_term_change_set,
-        crate::modules::academic::delivery::handlers::cancel_term_change_set,
         crate::modules::academic::delivery::handlers::upsert_term_change_item,
         crate::modules::academic::delivery::handlers::delete_term_change_item,
         crate::modules::academic::delivery::handlers::preview_term_change_set,
@@ -1478,7 +1478,7 @@ struct SchoolApiDoc;
         AcademicTermChangeSetSummary,
         CreateAcademicTermChangeSetRequest,
         UpdateAcademicTermChangeSetRequest,
-        CancelAcademicTermChangeSetRequest,
+        DeliveryPublicationPreviewQuery,
         AcademicTermChangeSetQuery,
         UpsertAcademicTermChangeItemRequest,
         DeleteAcademicTermChangeItemRequest,
@@ -1846,9 +1846,27 @@ pub fn render_school_api() -> Result<String, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{render_school_api, school_api_value};
     use serde_json::Value;
     use std::collections::{BTreeSet, HashSet};
+
+    // Generated schema construction uses the exporter's normal main-thread stack size.
+    // Rust test workers default to 2 MiB, so keep the same construction capacity in CI.
+    fn on_export_stack<T: Send + 'static>(operation: fn() -> T) -> T {
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(operation)
+            .expect("API export worker starts")
+            .join()
+            .expect("API export worker completes")
+    }
+
+    fn school_api_value() -> Result<Value, serde_json::Error> {
+        on_export_stack(super::school_api_value)
+    }
+
+    fn render_school_api() -> Result<String, serde_json::Error> {
+        on_export_stack(super::render_school_api)
+    }
 
     fn required(schema: &Value) -> Vec<&str> {
         let mut fields = schema["required"]
@@ -2692,9 +2710,9 @@ mod tests {
                 "updateAcademicTermChangeSet",
             ),
             (
-                "/api/academic/term-change-sets/{id}/cancel",
-                "post",
-                "cancelAcademicTermChangeSet",
+                "/api/academic/delivery-versions/{id}",
+                "delete",
+                "deleteDeliveryVersion",
             ),
             (
                 "/api/academic/term-change-sets/{id}/items",
@@ -2782,6 +2800,7 @@ mod tests {
                 "effectiveFrom",
                 "id",
                 "reason",
+                "referenceDate",
                 "status",
                 "targetDeliveryVersionId",
                 "updatedAt",
@@ -2802,7 +2821,7 @@ mod tests {
         for schema_name in [
             "CreateAcademicTermChangeSetRequest",
             "UpdateAcademicTermChangeSetRequest",
-            "CancelAcademicTermChangeSetRequest",
+            "DeleteDeliveryVersionRequest",
             "DeleteAcademicTermChangeItemRequest",
             "PublishAcademicTermChangeSetRequest",
             "AddDatedRosterMembershipRequest",

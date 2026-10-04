@@ -47,6 +47,7 @@
 		canManage,
 		initialTeacherChangeItemId = '',
 		onChanged,
+		onDeleted,
 		ensureOfferings
 	}: {
 		changeSet: AcademicTermChangeSet;
@@ -57,6 +58,7 @@
 			changeSet: AcademicTermChangeSet,
 			refreshScope?: LearningDeliveryRefreshScope
 		) => void | Promise<void>;
+		onDeleted: (sourceVersionId: string | null) => Promise<void>;
 		ensureOfferings: () => Promise<void>;
 	} = $props();
 
@@ -115,7 +117,8 @@
 		) ?? null
 	);
 
-	function formatDate(value: string): string {
+	function formatDate(value: string | null): string {
+		if (!value) return 'เลือกวันเริ่มใช้ตอนเผยแพร่';
 		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
 			new Date(`${value}T00:00:00`)
 		);
@@ -206,12 +209,12 @@
 				item.actionKind === 'stop_group_teacher' ? '' : ` · ${teacherRoleLabel(item.teacherRole)}`;
 			return `${item.learningGroupLabel} · ${item.teacherLabel}${role}`;
 		}
-		const offering = offerings.find((entry) => entry.id === item.learningOfferingId);
+		const offering = changeSet.offeringLabels.find((entry) => entry.id === item.learningOfferingId);
 		const periods =
 			item.actionKind === 'add_offering' || item.actionKind === 'adjust_weekly_period_target'
 				? ` · ${item.weeklyPeriodTarget} คาบ/สัปดาห์`
 				: '';
-		return `${offering?.name ?? item.learningOfferingId}${periods}`;
+		return `${offering ? `${offering.code} — ${offering.name}` : 'ชื่อรายการไม่พร้อม กรุณาโหลดล่าสุด'}${periods}`;
 	}
 
 	async function teacherItemSaved(updated: AcademicTermChangeSet) {
@@ -375,7 +378,7 @@
 				</div>
 				<div class="min-w-0">
 					<div class="flex flex-wrap items-center gap-2">
-						<h2 class="font-semibold">การเปลี่ยนแปลงกลางภาค</h2>
+						<h2 class="font-semibold">รุ่นเปิดสอน</h2>
 						<Badge variant="outline" class="border-amber-500/40 bg-background">
 							{changeSet.status === 'draft'
 								? 'แบบร่าง'
@@ -391,15 +394,6 @@
 				<p class="text-xs text-muted-foreground">หลังเผยแพร่ เริ่มมีผล</p>
 				<p class="font-medium text-amber-900">{formatDate(changeSet.effectiveFrom)}</p>
 			</div>
-		</div>
-		<div class="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-			<span class="size-2 rounded-full bg-muted-foreground/40"></span><span>ข้อมูลเดิม</span>
-			<div class="h-px flex-1 bg-amber-500/30"></div>
-			<span class="rounded-full bg-amber-500/15 px-2 py-1 font-medium text-amber-900">
-				ตั้งแต่ {formatDate(changeSet.effectiveFrom)}
-			</span>
-			<div class="h-px flex-1 bg-primary/25"></div>
-			<span class="size-2 rounded-full bg-primary"></span><span>ชุดใหม่</span>
 		</div>
 	</header>
 
@@ -424,6 +418,22 @@
 				{/if}
 			</div>
 
+			<div class="space-y-3" aria-label="ความเปลี่ยนแปลงจากรุ่นต้นทาง">
+				{#each changeSet.changes as change, index (`${change.learningOfferingId}:${change.resourceId}:${change.field}:${index}`)}
+					<div class="rounded-xl border p-3">
+						<p class="font-medium">
+							{change.kind === 'added' ? 'เพิ่ม' : change.kind === 'removed' ? 'หยุด' : 'เปลี่ยน'}
+							{change.label}
+						</p>
+						<p class="text-sm text-muted-foreground">
+							{change.field}: {change.before ?? 'ยังไม่มี'} → {change.after ?? 'ไม่ใช้ในรุ่นใหม่'}
+						</p>
+					</div>
+				{:else}<p class="text-sm text-muted-foreground">
+						ยังไม่มีข้อมูลที่ต่างจากรุ่นต้นทาง
+					</p>{/each}
+			</div>
+			<p class="text-xs text-muted-foreground">รายการคำสั่งที่บันทึกไว้</p>
 			{#if changeSet.items.length === 0}
 				<div class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
 					ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู
@@ -659,7 +669,8 @@
 						<p
 							class="rounded-lg border border-rose-500/25 bg-rose-500/5 px-3 py-2 text-sm text-rose-800"
 						>
-							หยุดสอนตั้งแต่ {formatDate(changeSet.effectiveFrom)} โดยข้อมูลคะแนน ผลการเรียน และประวัติเดิมยังคงอยู่
+							หยุดสอนตามวันเริ่มใช้ที่เลือกตอนเผยแพร่ โดยข้อมูลคะแนน ผลการเรียน
+							และประวัติเดิมยังคงอยู่
 						</p>
 					{/if}
 				{/if}
@@ -691,7 +702,7 @@
 		{/if}
 
 		{#key `${changeSet.id}:${readinessRevision}`}
-			<AcademicChangeReadiness {changeSet} {canManage} {onChanged} />
+			<AcademicChangeReadiness {changeSet} {canManage} {onChanged} {onDeleted} />
 		{/key}
 	</div>
 </section>

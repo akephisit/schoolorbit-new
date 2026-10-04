@@ -291,7 +291,9 @@ pub struct AcademicTermChangeSet {
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    pub effective_from: NaiveDate,
+    #[schema(required = true)]
+    pub effective_from: Option<NaiveDate>,
+    pub reference_date: NaiveDate,
     pub reason: String,
     pub status: AcademicTermChangeSetStatus,
     pub base_delivery_version_id: Option<Uuid>,
@@ -305,6 +307,8 @@ pub struct AcademicTermChangeSet {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub items: Vec<AcademicTermChangeItem>,
+    pub changes: Vec<versions::DeliveryVersionChange>,
+    pub offering_labels: Vec<versions::DeliveryResourceLabel>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -313,7 +317,9 @@ pub struct AcademicTermChangeSetSummary {
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    pub effective_from: NaiveDate,
+    #[schema(required = true)]
+    pub effective_from: Option<NaiveDate>,
+    pub reference_date: NaiveDate,
     pub reason: String,
     pub status: AcademicTermChangeSetStatus,
     pub target_delivery_version_id: Uuid,
@@ -324,7 +330,6 @@ pub struct AcademicTermChangeSetSummary {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateAcademicTermChangeSetRequest {
     pub academic_term_id: Uuid,
-    pub effective_from: NaiveDate,
     pub reason: String,
     pub idempotency_key: Uuid,
 }
@@ -333,14 +338,8 @@ pub struct CreateAcademicTermChangeSetRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateAcademicTermChangeSetRequest {
     pub row_version: i64,
-    pub effective_from: NaiveDate,
+    pub reference_date: NaiveDate,
     pub reason: String,
-}
-
-#[derive(Clone, Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CancelAcademicTermChangeSetRequest {
-    pub row_version: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
@@ -572,6 +571,8 @@ pub struct AcademicChangeImpactCounts {
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSetPreview {
+    pub preliminary: bool,
+    pub changes: Vec<versions::DeliveryVersionChange>,
     pub change_set_id: Uuid,
     pub change_set_row_version: i64,
     pub target_delivery_version_id: Uuid,
@@ -585,6 +586,7 @@ pub struct AcademicTermChangeSetPreview {
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishAcademicTermChangeSetRequest {
+    pub effective_from: NaiveDate,
     pub row_version: i64,
     pub target_delivery_version_row_version: i64,
     pub preview_hash: String,
@@ -1451,4 +1453,11 @@ impl From<LearningGroupStudentRow> for LearningGroupStudent {
             row_version: row.row_version,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeliveryPublicationPreviewQuery {
+    pub effective_from: Option<NaiveDate>,
 }

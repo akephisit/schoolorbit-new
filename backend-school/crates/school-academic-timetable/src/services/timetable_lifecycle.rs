@@ -81,13 +81,40 @@ pub async fn delete_draft(
     request: DeleteTimetableDraftRequest,
 ) -> Result<DeletedTimetableDraft, AppError> {
     let mut tx = pool.begin().await?;
-    let context = lock_draft(&mut tx, id, request.row_version).await?;
+    let result = delete_in_transaction(&mut tx, actor, id, &request, true).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub async fn delete_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    request: &DeleteTimetableDraftRequest,
+    apply: bool,
+) -> Result<DeletedTimetableDraft, AppError> {
+    if request.row_version <= 0 {
+        return Err(AppError::ValidationError("rowVersion ต้องมากกว่าศูนย์".into()));
+    }
+    timetable_version_service::require_version_term_write(tx, id).await?;
+    let context:DraftContext=sqlx::query_as("SELECT academic_year_id,academic_term_id,delivery_version_id,source_version_id,row_version,status FROM academic_timetable_versions WHERE id=$1 FOR UPDATE").bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::NotFound("รุ่นตารางถูกลบแล้ว".into()))?;
+    if !matches!(
+        context.status,
+        TimetableVersionStatus::Draft | TimetableVersionStatus::Cancelled
+    ) {
+        return Err(AppError::Conflict("ลบได้เฉพาะแบบร่างหรือรุ่นที่ยกเลิก".into()));
+    }
+    if context.row_version != request.row_version {
+        return Err(AppError::Conflict(
+            "แบบร่างเปลี่ยนไป กรุณาโหลดข้อมูลล่าสุดก่อนลบ".into(),
+        ));
+    }
     let (supervision,handoff,preparation,dependent_version): (bool,bool,bool,bool)=sqlx::query_as("SELECT
         EXISTS(SELECT 1 FROM supervision_observations observation JOIN academic_timetable_block_groups target ON target.id=observation.timetable_block_group_id JOIN academic_timetable_blocks block ON block.id=target.block_id WHERE block.timetable_version_id=$1),
         EXISTS(SELECT 1 FROM academic_teacher_handoff_runs WHERE timetable_version_id=$1),
         EXISTS(SELECT 1 FROM academic_term_preparation_runs run,jsonb_array_elements(run.outcome) outcome WHERE outcome->'targetIds' @> jsonb_build_array($1::text)),
         EXISTS(SELECT 1 FROM academic_timetable_versions WHERE source_version_id=$1)")
-        .bind(id).fetch_one(&mut *tx).await?;
+        .bind(id).fetch_one(&mut **tx).await?;
     let reason = if supervision {
         Some("มีประวัตินิเทศอ้างอิงคาบในร่างนี้")
     } else if handoff {
@@ -106,31 +133,32 @@ pub async fn delete_draft(
         "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
     )
     .bind(id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
     if request.expected_block_count < 0 || count != request.expected_block_count {
         return Err(AppError::Conflict(
             "จำนวนคาบในร่างเปลี่ยนไป กรุณาโหลดข้อมูลและยืนยันการลบอีกครั้ง".into(),
         ));
     }
-    sqlx::query("DELETE FROM academic_timetable_block_group_sync sync USING academic_timetable_blocks block WHERE sync.block_id=block.id AND block.timetable_version_id=$1")
-        .bind(id).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM academic_timetable_blocks WHERE timetable_version_id=$1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(delete_error)?;
-    let deleted =
-        sqlx::query("DELETE FROM academic_timetable_versions WHERE id=$1 AND status='draft'")
+    if apply {
+        sqlx::query("DELETE FROM academic_timetable_block_group_sync sync USING academic_timetable_blocks block WHERE sync.block_id=block.id AND block.timetable_version_id=$1")
+        .bind(id).execute(&mut **tx).await?;
+        sqlx::query("DELETE FROM academic_timetable_blocks WHERE timetable_version_id=$1")
             .bind(id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(delete_error)?;
-    if deleted.rows_affected() != 1 {
-        return Err(AppError::Conflict("แบบร่างเปลี่ยนไป กรุณาโหลดข้อมูลใหม่".into()));
+        let deleted =
+        sqlx::query("DELETE FROM academic_timetable_versions WHERE id=$1 AND status IN('draft','cancelled')")
+            .bind(id)
+            .execute(&mut **tx)
+            .await
+            .map_err(delete_error)?;
+        if deleted.rows_affected() != 1 {
+            return Err(AppError::Conflict("แบบร่างเปลี่ยนไป กรุณาโหลดข้อมูลใหม่".into()));
+        }
+        audit(tx,actor,id,&context,"academic_timetable_version.draft_deleted",serde_json::json!({"sourceVersionId":context.source_version_id,"deliveryVersionId":context.delivery_version_id,"deletedBlockCount":count})).await?;
     }
-    audit(&mut tx,actor,id,&context,"academic_timetable_version.draft_deleted",serde_json::json!({"sourceVersionId":context.source_version_id,"deliveryVersionId":context.delivery_version_id,"deletedBlockCount":count})).await?;
-    tx.commit().await?;
     Ok(DeletedTimetableDraft {
         id,
         source_version_id: context.source_version_id,

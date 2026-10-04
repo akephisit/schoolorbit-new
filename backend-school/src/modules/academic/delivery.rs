@@ -19,7 +19,7 @@ pub fn routes() -> Router<AppState> {
         .route("/delivery-versions", get(version_handlers::list_versions))
         .route(
             "/delivery-versions/{id}",
-            get(version_handlers::get_version),
+            get(version_handlers::get_version).delete(version_handlers::delete_version),
         )
         .route("/delivery/workspace", get(handlers::get_delivery_overview))
         .route(
@@ -79,10 +79,6 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/term-change-sets/{id}",
             get(handlers::get_term_change_set).patch(handlers::update_term_change_set),
-        )
-        .route(
-            "/term-change-sets/{id}/cancel",
-            post(handlers::cancel_term_change_set),
         )
         .route(
             "/term-change-sets/{id}/items",

@@ -1200,40 +1200,6 @@ pub async fn update_term_change_set(
 }
 
 #[utoipa::path(
-    post,
-    path = "/api/academic/term-change-sets/{id}/cancel",
-    operation_id = "cancelAcademicTermChangeSet",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
-    request_body = CancelAcademicTermChangeSetRequest,
-    responses(
-        (status = 200, description = "Operational academic change cancelled", body = ApiResponse<AcademicTermChangeSet>),
-        (status = 400, description = "Invalid cancellation request", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
-        (status = 409, description = "Operational change cancellation conflict", body = ApiErrorResponse)
-    )
-)]
-pub async fn cancel_term_change_set(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<CancelAcademicTermChangeSetRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    let offering_ids = require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
-    let prior_descriptors =
-        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
-    let change_set =
-        change_sets::cancel_change_set(&context.tenant.pool, context.actor.user_id, id, request)
-            .await?;
-    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
-        .await?;
-    Ok(ok(change_set))
-}
-
-#[utoipa::path(
     put,
     path = "/api/academic/term-change-sets/{id}/items",
     operation_id = "upsertAcademicTermChangeItem",
@@ -1360,7 +1326,7 @@ pub async fn delete_term_change_item(
     path = "/api/academic/term-change-sets/{id}/preview",
     operation_id = "previewAcademicTermChangeSet",
     tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
+    params(("id" = Uuid, Path, description = "Operational change set ID"), DeliveryPublicationPreviewQuery),
     responses(
         (status = 200, description = "Operational change readiness preview", body = ApiResponse<AcademicTermChangeSetPreview>),
         (status = 400, description = "Invalid preview request", body = ApiErrorResponse),
@@ -1374,12 +1340,14 @@ pub async fn preview_term_change_set(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    Query(query): Query<DeliveryPublicationPreviewQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     require_term_change_set_access(&context, id, OfferingAction::Read).await?;
-    Ok(ok(change_sets::preview_change_set(
+    Ok(ok(change_sets::preview_change_set_at(
         &context.tenant.pool,
         id,
+        query.effective_from,
     )
     .await?))
 }

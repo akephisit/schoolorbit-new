@@ -9,10 +9,10 @@ use crate::models::{
     AcademicChangeFinding, AcademicChangeFindingCode, AcademicChangeFindingSeverity,
     AcademicChangeImpactCounts, AcademicTermChangeActionKind, AcademicTermChangeItem,
     AcademicTermChangeSet, AcademicTermChangeSetPreview, AcademicTermChangeSetStatus,
-    AcademicTermChangeSetSummary, CancelAcademicTermChangeSetRequest,
-    CreateAcademicTermChangeSetRequest, DeleteAcademicTermChangeItemRequest,
-    LearningOfferingStatus, LearningTeacherRole, PublishAcademicTermChangeSetRequest,
-    UpdateAcademicTermChangeSetRequest, UpsertAcademicTermChangeItemRequest,
+    AcademicTermChangeSetSummary, CreateAcademicTermChangeSetRequest,
+    DeleteAcademicTermChangeItemRequest, LearningOfferingStatus, LearningTeacherRole,
+    PublishAcademicTermChangeSetRequest, UpdateAcademicTermChangeSetRequest,
+    UpsertAcademicTermChangeItemRequest,
 };
 use school_academic_core::{
     models::{AcademicTermStatus, AcademicYearStatus},
@@ -31,6 +31,7 @@ struct ChangeSetRow {
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     effective_from: NaiveDate,
+    publication_effective_from: Option<NaiveDate>,
     reason: String,
     status: AcademicTermChangeSetStatus,
     base_delivery_version_id: Option<Uuid>,
@@ -51,6 +52,7 @@ struct ChangeSetSummaryRow {
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     effective_from: NaiveDate,
+    publication_effective_from: Option<NaiveDate>,
     reason: String,
     status: AcademicTermChangeSetStatus,
     target_delivery_version_id: Option<Uuid>,
@@ -99,12 +101,11 @@ struct TeacherEpisodeAuditChange {
 #[serde(rename_all = "camelCase")]
 struct NormalizedCreateRequest<'a> {
     academic_term_id: Uuid,
-    effective_from: NaiveDate,
     reason: &'a str,
 }
 
 const CHANGE_SET_COLUMNS: &str = r#"
-    id, academic_term_id, academic_year_id, effective_from, reason, status,
+    id, academic_term_id, academic_year_id, COALESCE(effective_from,reference_date) AS effective_from, effective_from AS publication_effective_from, reason, status,
     base_delivery_version_id, target_delivery_version_id, row_version,
     created_by, published_by, published_at, cancelled_by, cancelled_at,
     created_at, updated_at
@@ -115,7 +116,7 @@ pub async fn list_change_set_summaries(
     academic_term_id: Uuid,
 ) -> Result<Vec<AcademicTermChangeSetSummary>, AppError> {
     let rows = sqlx::query_as::<_, ChangeSetSummaryRow>(
-        r#"SELECT id, academic_term_id, academic_year_id, effective_from, reason, status,
+        r#"SELECT id, academic_term_id, academic_year_id, COALESCE(effective_from,reference_date) AS effective_from, effective_from AS publication_effective_from, reason, status,
                   target_delivery_version_id, updated_at
            FROM academic_term_change_sets
            WHERE academic_term_id = $1 AND target_delivery_version_id IS NOT NULL
@@ -131,7 +132,8 @@ pub async fn list_change_set_summaries(
                 id: row.id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,
-                effective_from: row.effective_from,
+                effective_from: row.publication_effective_from,
+                reference_date: row.effective_from,
                 reason: row.reason,
                 status: row.status,
                 target_delivery_version_id: required_version_id(
@@ -162,9 +164,20 @@ pub async fn preview_change_set(
     id: Uuid,
 ) -> Result<AcademicTermChangeSetPreview, AppError> {
     let mut transaction = pool.begin().await?;
-    let preview = build_preview_in_transaction(&mut transaction, id, false).await?;
+    let preview = build_preview_in_transaction(&mut transaction, id, false, None).await?;
     transaction.rollback().await?;
     Ok(preview)
+}
+
+pub async fn preview_change_set_at(
+    pool: &PgPool,
+    id: Uuid,
+    date: Option<NaiveDate>,
+) -> Result<AcademicTermChangeSetPreview, AppError> {
+    let mut tx = pool.begin().await?;
+    let result = build_preview_in_transaction(&mut tx, id, false, date).await?;
+    tx.commit().await?;
+    Ok(result)
 }
 
 pub async fn publish_change_set(
@@ -197,6 +210,7 @@ pub async fn publish_change_set(
         id,
         request.row_version,
         request.target_delivery_version_row_version,
+        request.effective_from,
         &request.preview_hash,
         &acknowledged_warning_codes,
         request.idempotency_key,
@@ -234,7 +248,9 @@ pub async fn publish_change_set(
 
     let mut transaction = pool.begin().await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
-    let preview = build_preview_in_transaction(&mut transaction, id, true).await?;
+    let preview =
+        build_preview_in_transaction(&mut transaction, id, true, Some(request.effective_from))
+            .await?;
     if preview.change_set_row_version != request.row_version {
         return Err(AppError::Conflict(
             "ชุดการเปลี่ยนแปลงถูกแก้ไขหลังการตรวจ กรุณาตรวจความพร้อมใหม่".to_string(),
@@ -274,6 +290,16 @@ pub async fn publish_change_set(
         ));
     }
 
+    // Candidate preview is read-only. Only this locked transaction changes the draft reference.
+    sqlx::query(
+        "UPDATE academic_term_change_sets SET reference_date=$2 WHERE id=$1 AND status='draft'",
+    )
+    .bind(id)
+    .bind(request.effective_from)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query("UPDATE academic_delivery_versions SET reference_date=$2,snapshot=academic_delivery_revision_snapshot($3,$2) WHERE id=$1 AND status='draft'")
+        .bind(preview.target_delivery_version_id).bind(request.effective_from).bind(id).execute(&mut *transaction).await?;
     let change_set = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(format!(
         "SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1"
     )))
@@ -330,7 +356,7 @@ pub async fn publish_change_set(
         }
         sqlx::query(
             r#"UPDATE learning_offerings
-               SET status = 'published', published_at = now(),
+               SET status = 'published', starts_on=$3, published_at = now(),
                    publish_idempotency_key = uuid_generate_v5(
                        $2, 'change-set-offering:' || id::text
                    ),
@@ -339,6 +365,7 @@ pub async fn publish_change_set(
         )
         .bind(&add_offering_ids)
         .bind(request.idempotency_key)
+        .bind(request.effective_from)
         .execute(&mut *transaction)
         .await?;
         let all_published: bool = sqlx::query_scalar(
@@ -392,7 +419,7 @@ pub async fn publish_change_set(
 
     let published_version = sqlx::query(
         r#"UPDATE academic_delivery_versions
-           SET status = 'published', published_by = $1, published_at = now(),
+           SET status = 'published', effective_from=$6, published_by = $1, published_at = now(),
                publication_idempotency_key=$4,publication_request_hash=$5,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $2 AND status = 'draft' AND row_version = $3"#,
@@ -402,6 +429,7 @@ pub async fn publish_change_set(
     .bind(request.target_delivery_version_row_version)
     .bind(request.idempotency_key)
     .bind(&publication_request_hash)
+    .bind(request.effective_from)
     .execute(&mut *transaction)
     .await?;
     if published_version.rows_affected() != 1 {
@@ -415,7 +443,7 @@ pub async fn publish_change_set(
         .collect::<Vec<_>>();
     let published_change_set = sqlx::query(
         r#"UPDATE academic_term_change_sets
-           SET status = 'published', published_by = $1, published_at = now(),
+           SET status = 'published', effective_from=$7, published_by = $1, published_at = now(),
                publication_idempotency_key = $2, publication_request_hash = $3,
                acknowledged_warning_codes = $4,
                row_version = row_version + 1, updated_at = now()
@@ -427,6 +455,7 @@ pub async fn publish_change_set(
     .bind(&warning_code_values)
     .bind(change_set.id)
     .bind(request.row_version)
+    .bind(request.effective_from)
     .execute(&mut *transaction)
     .await?;
     if published_change_set.rows_affected() != 1 {
@@ -691,6 +720,7 @@ async fn build_preview_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
     id: Uuid,
     lock_for_publication: bool,
+    candidate_date: Option<NaiveDate>,
 ) -> Result<AcademicTermChangeSetPreview, AppError> {
     let lock = if lock_for_publication {
         "FOR UPDATE"
@@ -711,7 +741,7 @@ async fn build_preview_in_transaction(
     }
     let target_id =
         required_version_id(revision.target_delivery_version_id, "ไม่พบรุ่นเปิดสอนเป้าหมาย")?;
-    let query = format!("SELECT snapshot,row_version,effective_from,status,academic_term_id FROM academic_delivery_versions WHERE id=$1 {lock}");
+    let query = format!("SELECT snapshot,row_version,COALESCE(effective_from,reference_date),status,academic_term_id FROM academic_delivery_versions WHERE id=$1 {lock}");
     let (snapshot, target_row_version, effective_from, status, term_id): (
         sqlx::types::Json<crate::models::versions::DeliverySnapshot>,
         i64,
@@ -731,6 +761,19 @@ async fn build_preview_in_transaction(
             "ข้อมูลรุ่นเปิดสอนแบบร่างเปลี่ยนไป กรุณาโหลดใหม่".into(),
         ));
     }
+    let reference_snapshot = snapshot;
+    let evaluation_date = candidate_date.unwrap_or(effective_from);
+    let snapshot: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
+        if candidate_date.is_some() {
+            sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1,$2)")
+                .bind(id)
+                .bind(evaluation_date)
+                .fetch_one(&mut **transaction)
+                .await?
+        } else {
+            reference_snapshot.clone()
+        };
+    let effective_from = evaluation_date;
     let term = super::load_term_context(transaction, term_id).await?;
     let year_status: AcademicYearStatus =
         sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1")
@@ -762,7 +805,9 @@ async fn build_preview_in_transaction(
     }
     if effective_from < term.start_date
         || effective_from > term.academic_year_end_date
-        || (term_status == AcademicTermStatus::Active && effective_from < Utc::now().date_naive())
+        || (candidate_date.is_some()
+            && term_status == AcademicTermStatus::Active
+            && effective_from < bangkok_today())
     {
         findings.push(change_finding(
             AcademicChangeFindingCode::EffectiveDateInvalid,
@@ -796,7 +841,7 @@ async fn build_preview_in_transaction(
             .bind(id)
             .fetch_one(&mut **transaction)
             .await?;
-    if stable_hash(&snapshot.0)? != stable_hash(&fresh.0)? {
+    if stable_hash(&reference_snapshot.0)? != stable_hash(&fresh.0)? {
         findings.push(change_finding(
             AcademicChangeFindingCode::ResourceStale,
             AcademicChangeFindingSeverity::Blocking,
@@ -870,6 +915,26 @@ async fn build_preview_in_transaction(
             Some(target_id),
         ));
     }
+    // Pending commands must still refer to the same dated episode on the selected day.
+    let invalid_episodes: Vec<(Uuid,Uuid,Uuid)> = sqlx::query_as(
+        "SELECT item.learning_offering_id,item.learning_group_id,item.learning_group_teacher_id
+         FROM academic_term_change_items item LEFT JOIN learning_group_teachers episode ON episode.id=item.learning_group_teacher_id
+         WHERE item.change_set_id=$1 AND item.action_kind IN('adjust_group_teacher_role','stop_group_teacher')
+           AND (episode.id IS NULL OR episode.learning_group_id<>item.learning_group_id OR episode.teacher_id<>item.teacher_id
+                OR episode.academic_term_id<>$3 OR episode.starts_on>=$2 OR (episode.ends_on IS NOT NULL AND episode.ends_on<$2)) ORDER BY item.id")
+        .bind(id).bind(effective_from).bind(term_id).fetch_all(&mut **transaction).await?;
+    for (offering, group, episode) in invalid_episodes {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::MissingEffectiveTeacher,
+            AcademicChangeFindingSeverity::Blocking,
+            "ช่วงการสอนเดิมไม่ครอบคลุมวันที่เลือก",
+            "เลือกวันภายในช่วงครูเดิม หรือปรับรายการเปลี่ยนครูก่อนเผยแพร่",
+            1,
+            Some(offering),
+            Some(group),
+            Some(episode),
+        ));
+    }
     let teacher_ids = snapshot
         .0
         .offerings
@@ -906,7 +971,40 @@ async fn build_preview_in_transaction(
         &stop_ids,
     )
     .await?;
+    for finding in &mut findings {
+        if let Some(offering_id) = finding.learning_offering_id {
+            if let Some(offering) = snapshot.0.offerings.iter().find(|o| o.id == offering_id) {
+                let group = finding
+                    .learning_group_id
+                    .and_then(|id| offering.groups.iter().find(|g| g.id == id));
+                finding.title = format!(
+                    "{} — {}{}: {}",
+                    offering.code,
+                    offering.name,
+                    group.map_or(String::new(), |g| format!(" · {}", g.name)),
+                    finding.title
+                );
+                finding.route = Some(format!(
+                    "/staff/academic/delivery/{offering_id}?deliveryVersionId={target_id}"
+                ));
+            }
+        }
+    }
+    let base_graph: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
+        if let Some(base) = revision.base_delivery_version_id {
+            sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE id=$1")
+                .bind(base)
+                .fetch_one(&mut **transaction)
+                .await?
+        } else {
+            sqlx::types::Json(crate::models::versions::DeliverySnapshot { offerings: vec![] })
+        };
+    let labels =
+        super::version_changes::load_labels(&mut **transaction, &[&base_graph.0, &snapshot.0])
+            .await?;
+    let changes = super::version_changes::compare(&base_graph.0, &snapshot.0, &labels);
     let preview_hash = stable_hash(&(
+        candidate_date.is_some(),
         id,
         revision.row_version,
         target_id,
@@ -920,6 +1018,8 @@ async fn build_preview_in_transaction(
         &findings,
     ))?;
     Ok(AcademicTermChangeSetPreview {
+        preliminary: candidate_date.is_none(),
+        changes,
         change_set_id: id,
         change_set_row_version: revision.row_version,
         target_delivery_version_id: target_id,
@@ -1124,11 +1224,10 @@ pub async fn create_change_set_in_transaction(
     let reason = normalized_reason(&request.reason)?;
     let request_hash = stable_hash(&NormalizedCreateRequest {
         academic_term_id: request.academic_term_id,
-        effective_from: request.effective_from,
         reason: &reason,
     })?;
     let term = require_writable_term(transaction, request.academic_term_id, true).await?;
-    validate_effective_date(&term, request.effective_from)?;
+
     if let Some((existing_id,existing_hash)) = sqlx::query_as::<_, (Uuid,String)>(
         "SELECT id,creation_request_hash FROM academic_term_change_sets WHERE academic_term_id=$1 AND idempotency_key=$2"
     ).bind(term.id).bind(request.idempotency_key.to_string()).fetch_optional(&mut **transaction).await? {
@@ -1137,22 +1236,33 @@ pub async fn create_change_set_in_transaction(
     }
     let base_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1 FOR SHARE")
         .bind(term.id).fetch_optional(&mut **transaction).await?;
+    let latest_date: Option<NaiveDate>=sqlx::query_scalar("SELECT max(effective_from) FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published'")
+        .bind(term.id).fetch_one(&mut **transaction).await?;
+    let reference_date = term
+        .start_date
+        .max(bangkok_today())
+        .max(
+            latest_date
+                .and_then(|d| d.succ_opt())
+                .unwrap_or(term.start_date),
+        )
+        .min(term.academic_year_end_date);
     let revision_id = Uuid::new_v4();
     let target_id = Uuid::new_v4();
-    sqlx::query(r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,effective_from,snapshot,created_by)
+    sqlx::query(r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by)
         VALUES($1,$2,$3,$4,$5,'{"offerings":[]}'::jsonb,$6)"#)
-        .bind(target_id).bind(term.id).bind(term.academic_year_id).bind(base_id).bind(request.effective_from).bind(actor_user_id)
+        .bind(target_id).bind(term.id).bind(term.academic_year_id).bind(base_id).bind(reference_date).bind(actor_user_id)
         .execute(&mut **transaction).await?;
-    sqlx::query("INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,effective_from,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id)
+    sqlx::query("INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,reference_date,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
-        .bind(revision_id).bind(term.id).bind(term.academic_year_id).bind(request.effective_from).bind(&reason)
+        .bind(revision_id).bind(term.id).bind(term.academic_year_id).bind(reference_date).bind(&reason)
         .bind(request.idempotency_key.to_string()).bind(&request_hash).bind(actor_user_id).bind(base_id).bind(target_id)
         .execute(&mut **transaction).await?;
     versions::refresh_revision_snapshot(transaction, revision_id).await?;
     sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload)
         VALUES('academic_delivery_version.created','academic_delivery_version',$1,$2,$3,$4,$5)")
         .bind(target_id).bind(term.academic_year_id).bind(term.id).bind(actor_user_id)
-        .bind(sqlx::types::Json(serde_json::json!({"changeSetId":revision_id,"sourceVersionId":base_id,"effectiveFrom":request.effective_from,"requestHash":request_hash})))
+        .bind(sqlx::types::Json(serde_json::json!({"changeSetId":revision_id,"sourceVersionId":base_id,"referenceDate":reference_date,"requestHash":request_hash})))
         .execute(&mut **transaction).await?;
     Ok(revision_id)
 }
@@ -1173,7 +1283,7 @@ pub async fn update_change_set(
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
     let term = require_writable_term(&mut transaction, academic_term_id, true).await?;
-    validate_effective_date(&term, request.effective_from)?;
+    validate_effective_date(&term, request.reference_date)?;
     let row = require_draft_change_set_for_update(&mut transaction, id).await?;
     if row.row_version != request.row_version {
         return Err(AppError::Conflict(
@@ -1184,29 +1294,18 @@ pub async fn update_change_set(
         row.target_delivery_version_id,
         "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
     )?;
-    if request.effective_from != row.effective_from {
-        let has_items: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM academic_term_change_items WHERE change_set_id=$1)",
-        )
-        .bind(id)
-        .fetch_one(&mut *transaction)
-        .await?;
-        if has_items {
-            return Err(AppError::Conflict(
-                "ร่างนี้มีรายการเปลี่ยนแปลงแล้ว กรุณาสร้างร่างเปิดสอนใหม่หากต้องเปลี่ยนวันที่".into(),
-            ));
-        }
-        sqlx::query("UPDATE academic_delivery_versions SET effective_from=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 AND status='draft'")
-            .bind(request.effective_from).bind(target_version_id).execute(&mut *transaction).await?;
+    if request.reference_date != row.effective_from {
+        sqlx::query("UPDATE academic_delivery_versions SET reference_date=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 AND status='draft'")
+            .bind(request.reference_date).bind(target_version_id).execute(&mut *transaction).await?;
     }
 
     sqlx::query(
         r#"UPDATE academic_term_change_sets
-           SET effective_from = $1, reason = $2,
+           SET reference_date = $1, reason = $2,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $3"#,
     )
-    .bind(request.effective_from)
+    .bind(request.reference_date)
     .bind(&reason)
     .bind(id)
     .execute(&mut *transaction)
@@ -1223,7 +1322,7 @@ pub async fn update_change_set(
         row.academic_term_id,
         actor_user_id,
         serde_json::json!({
-            "effectiveFrom": request.effective_from,
+            "referenceDate": request.reference_date,
             "rowVersion": request.row_version,
         }),
     )
@@ -1231,78 +1330,152 @@ pub async fn update_change_set(
     get_change_set(pool, id).await
 }
 
-pub async fn cancel_change_set(
+pub async fn delete_version(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    actor: Uuid,
     id: Uuid,
-    request: CancelAcademicTermChangeSetRequest,
-) -> Result<AcademicTermChangeSet, AppError> {
+    request: crate::models::versions::DeleteDeliveryVersionRequest,
+) -> Result<crate::models::versions::DeletedDeliveryVersion, AppError> {
+    let mut tx = pool.begin().await?;
+    let result = delete_version_in_transaction(&mut tx, actor, id, &request, true).await?;
+    tx.commit().await?;
+    Ok(result)
+}
+
+/// Also used by the exact-scope operational cleanup; preflight is read-only and locks targets.
+pub async fn delete_version_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    id: Uuid,
+    request: &crate::models::versions::DeleteDeliveryVersionRequest,
+    apply: bool,
+) -> Result<crate::models::versions::DeletedDeliveryVersion, AppError> {
+    use crate::models::versions::DeletedDeliveryVersion;
     validate_row_version(request.row_version)?;
-    let mut transaction = pool.begin().await?;
-    let academic_term_id: Uuid =
-        sqlx::query_scalar("SELECT academic_term_id FROM academic_term_change_sets WHERE id = $1")
+    validate_row_version(request.change_set_row_version)?;
+    let term_id: Uuid =
+        sqlx::query_scalar("SELECT academic_term_id FROM academic_delivery_versions WHERE id=$1")
             .bind(id)
-            .fetch_optional(&mut *transaction)
+            .fetch_optional(&mut **tx)
             .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
-    require_writable_term(&mut transaction, academic_term_id, true).await?;
-    let row = require_draft_change_set_for_update(&mut transaction, id).await?;
-    if row.row_version != request.row_version {
+            .ok_or_else(|| AppError::NotFound("รุ่นเปิดสอนถูกลบแล้ว".into()))?;
+    require_writable_term(tx, term_id, true).await?;
+    let (status,revision,source,snapshot):(String,i64,Option<Uuid>,sqlx::types::Json<crate::models::versions::DeliverySnapshot>)=sqlx::query_as("SELECT status,row_version,source_version_id,snapshot FROM academic_delivery_versions WHERE id=$1 FOR UPDATE").bind(id).fetch_one(&mut **tx).await?;
+    if !matches!(status.as_str(), "draft" | "cancelled") {
         return Err(AppError::Conflict(
-            "ชุดการเปลี่ยนแปลงถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
+            "ลบได้เฉพาะรุ่นเปิดสอนแบบร่างหรือที่ยกเลิกแล้ว".into(),
         ));
     }
-    let target_version_id = required_version_id(
-        row.target_delivery_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
-    )?;
-
-    sqlx::query(
-        r#"UPDATE learning_offerings offering
-           SET status = 'cancelled', row_version = offering.row_version + 1,
-               updated_at = now()
-           FROM academic_term_change_items item
-           WHERE item.change_set_id = $1
-             AND item.action_kind = 'add_offering'
-             AND offering.id = item.learning_offering_id
-             AND offering.status = 'draft'"#,
+    if revision != request.row_version {
+        return Err(AppError::Conflict(
+            "รุ่นเปิดสอนเปลี่ยนไป กรุณาโหลดใหม่ก่อนลบ".into(),
+        ));
+    }
+    let row:ChangeSetRow=sqlx::query_as(sqlx::AssertSqlSafe(format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE target_delivery_version_id=$1 FOR UPDATE"))).bind(id).fetch_optional(&mut **tx).await?.ok_or_else(||AppError::Conflict("ไม่พบร่างคำสั่งที่ตรงกับรุ่นเปิดสอน".into()))?;
+    if (row.status == AcademicTermChangeSetStatus::Draft) != (status == "draft")
+        || row.status == AcademicTermChangeSetStatus::Published
+        || row.row_version != request.change_set_row_version
+    {
+        return Err(AppError::Conflict("ร่างคำสั่งเปลี่ยนไป กรุณาโหลดใหม่ก่อนลบ".into()));
+    }
+    let (dependent,history):(bool,bool)=sqlx::query_as("SELECT
+        EXISTS(SELECT 1 FROM academic_timetable_versions WHERE delivery_version_id=$1) OR EXISTS(SELECT 1 FROM academic_delivery_versions WHERE source_version_id=$1) OR EXISTS(SELECT 1 FROM academic_term_change_sets WHERE base_delivery_version_id=$1),
+        EXISTS(SELECT 1 FROM academic_teacher_handoff_runs WHERE change_set_id=$2) OR EXISTS(SELECT 1 FROM learning_group_teachers WHERE started_by_change_set_id=$2 OR ended_by_change_set_id=$2) OR EXISTS(SELECT 1 FROM learning_offerings WHERE stop_change_set_id=$2) OR EXISTS(SELECT 1 FROM academic_term_preparation_runs run,jsonb_array_elements(run.outcome) outcome WHERE outcome->'targetIds' @> jsonb_build_array($1::text) OR outcome->'targetIds' @> jsonb_build_array($2::text))")
+        .bind(id).bind(row.id).fetch_one(&mut **tx).await?;
+    if dependent || history {
+        return Err(AppError::Conflict(
+            "ลบรุ่นเปิดสอนไม่ได้: มีรุ่นอื่นหรือประวัติการทำงานอ้างอิง".into(),
+        ));
+    }
+    let item_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_term_change_items WHERE change_set_id=$1",
     )
-    .bind(id)
-    .execute(&mut *transaction)
+    .bind(row.id)
+    .fetch_one(&mut **tx)
     .await?;
-
-    sqlx::query(
-        r#"UPDATE academic_delivery_versions
-           SET status = 'cancelled', row_version = row_version + 1, updated_at = now()
-           WHERE id = $1 AND status = 'draft'"#,
+    let offering_count = snapshot.offerings.len() as i64;
+    let group_count = snapshot
+        .offerings
+        .iter()
+        .map(|o| o.groups.len() as i64)
+        .sum::<i64>();
+    if (item_count, offering_count, group_count)
+        != (
+            request.expected_item_count,
+            request.expected_offering_count,
+            request.expected_group_count,
+        )
+    {
+        return Err(AppError::Conflict(
+            "จำนวนรายการในร่างเปลี่ยนไป กรุณายืนยันการลบอีกครั้ง".into(),
+        ));
+    }
+    let exclusive:Vec<Uuid>=sqlx::query_scalar("SELECT offering.id FROM learning_offerings offering JOIN academic_term_change_items item ON item.learning_offering_id=offering.id WHERE item.change_set_id=$1 AND item.action_kind='add_offering' AND offering.status IN('draft','cancelled') ORDER BY offering.id FOR UPDATE OF offering").bind(row.id).fetch_all(&mut **tx).await?;
+    for offering in &exclusive {
+        require_unpublished_only_delete(tx, *offering).await?;
+        let shared:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_term_change_items WHERE learning_offering_id=$1 AND change_set_id<>$2) OR EXISTS(SELECT 1 FROM academic_delivery_versions version,jsonb_array_elements(version.snapshot->'offerings') o WHERE version.id<>$3 AND (o->>'id')::uuid=$1) OR EXISTS(SELECT 1 FROM learning_group_students member JOIN learning_groups g ON g.id=member.learning_group_id WHERE g.learning_offering_id=$1)").bind(offering).bind(row.id).bind(id).fetch_one(&mut **tx).await?;
+        if shared {
+            return Err(AppError::Conflict(
+                "ลบรุ่นเปิดสอนไม่ได้: รายวิชาหรือกลุ่มที่ร่างสร้างมีข้อมูลอื่นใช้อยู่".into(),
+            ));
+        }
+    }
+    let deleted_groups: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM learning_groups WHERE learning_offering_id=ANY($1)",
     )
-    .bind(target_version_id)
-    .execute(&mut *transaction)
+    .bind(&exclusive)
+    .fetch_one(&mut **tx)
     .await?;
-    sqlx::query(
-        r#"UPDATE academic_term_change_sets
-           SET status = 'cancelled', cancelled_by = $1, cancelled_at = now(),
-               row_version = row_version + 1, updated_at = now()
-           WHERE id = $2"#,
-    )
-    .bind(actor_user_id)
-    .bind(id)
-    .execute(&mut *transaction)
-    .await?;
-    transaction.commit().await?;
-
-    append_audit(
-        pool,
-        "academic_term_change_set.cancelled",
-        "academic_term_change_set",
+    if apply {
+        sqlx::query("DELETE FROM academic_term_change_items WHERE change_set_id=$1")
+            .bind(row.id)
+            .execute(&mut **tx)
+            .await
+            .map_err(deletion_error)?;
+        sqlx::query(
+            "DELETE FROM academic_term_change_sets WHERE id=$1 AND status IN('draft','cancelled')",
+        )
+        .bind(row.id)
+        .execute(&mut **tx)
+        .await
+        .map_err(deletion_error)?;
+        sqlx::query(
+            "DELETE FROM academic_delivery_versions WHERE id=$1 AND status IN('draft','cancelled')",
+        )
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(deletion_error)?;
+        sqlx::query("DELETE FROM learning_groups WHERE learning_offering_id=ANY($1)")
+            .bind(&exclusive)
+            .execute(&mut **tx)
+            .await
+            .map_err(deletion_error)?;
+        sqlx::query(
+            "DELETE FROM learning_offerings WHERE id=ANY($1) AND status IN('draft','cancelled')",
+        )
+        .bind(&exclusive)
+        .execute(&mut **tx)
+        .await
+        .map_err(deletion_error)?;
+        sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_delivery_version.deleted','academic_delivery_version',$1,$2,$3,$4,$5)").bind(id).bind(row.academic_year_id).bind(term_id).bind(actor).bind(sqlx::types::Json(serde_json::json!({"changeSetId":row.id,"sourceVersionId":source,"deletedItemCount":item_count,"deletedOfferingCount":exclusive.len(),"deletedGroupCount":deleted_groups,"previousStatus":status}))).execute(&mut **tx).await?;
+    }
+    Ok(DeletedDeliveryVersion {
         id,
-        row.academic_year_id,
-        row.academic_term_id,
-        actor_user_id,
-        serde_json::json!({ "rowVersion": request.row_version }),
-    )
-    .await?;
-    get_change_set(pool, id).await
+        change_set_id: row.id,
+        source_version_id: source,
+        deleted_item_count: item_count,
+        deleted_offering_count: exclusive.len() as i64,
+        deleted_group_count: deleted_groups,
+    })
+}
+fn deletion_error(error: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(db) = &error {
+        if db.code().as_deref() == Some("23503") {
+            return AppError::Conflict("ลบรุ่นเปิดสอนไม่ได้: มีข้อมูลอื่นอ้างอิง กรุณาโหลดล่าสุด".into());
+        }
+    }
+    AppError::DbError(error)
 }
 
 pub async fn upsert_change_item(
@@ -1798,7 +1971,7 @@ pub async fn delete_change_item(
             .fetch_one(&mut *transaction)
             .await?;
             if is_draft {
-                require_draft_only_delete(&mut transaction, offering_id).await?;
+                require_unpublished_only_delete(&mut transaction, offering_id).await?;
             }
             sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
                 .bind(item.id)
@@ -2323,7 +2496,7 @@ async fn increment_change_set_revision(
     Ok(())
 }
 
-async fn require_draft_only_delete(
+async fn require_unpublished_only_delete(
     transaction: &mut Transaction<'_, Postgres>,
     offering_id: Uuid,
 ) -> Result<(), AppError> {
@@ -2407,7 +2580,11 @@ async fn require_draft_only_delete(
     .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอนฉบับร่าง".to_string()))?;
-    if status != LearningOfferingStatus::Draft || downstream_count != 0 {
+    if !matches!(
+        status,
+        LearningOfferingStatus::Draft | LearningOfferingStatus::Cancelled
+    ) || downstream_count != 0
+    {
         return Err(AppError::Conflict(
             "ลบถาวรได้เฉพาะรายการฉบับร่างที่ยังไม่มีตาราง แผนคะแนน ผลการเรียน หรือข้อมูลปลายทาง".to_string(),
         ));
@@ -2467,7 +2644,7 @@ fn validate_effective_date(term: &TermContext, effective_from: NaiveDate) -> Res
             "วันที่เริ่มใช้ต้องอยู่ตั้งแต่วันเปิดภาคเรียนถึงวันสิ้นสุดปีการศึกษา".to_string(),
         ));
     }
-    if term.status == "active" && effective_from < Utc::now().date_naive() {
+    if term.status == "active" && effective_from < bangkok_today() {
         return Err(AppError::ValidationError(
             "ภาคเรียนที่เปิดใช้งานแล้วไม่สามารถกำหนดวันที่เริ่มใช้ย้อนหลังได้".to_string(),
         ));
@@ -2690,13 +2867,32 @@ async fn hydrate_many(
             .push(item);
     }
 
+    let graph_ids = rows
+        .iter()
+        .flat_map(|r| [r.base_delivery_version_id, r.target_delivery_version_id])
+        .flatten()
+        .collect::<Vec<_>>();
+    let graphs: Vec<(
+        Uuid,
+        sqlx::types::Json<crate::models::versions::DeliverySnapshot>,
+    )> = sqlx::query_as("SELECT id,snapshot FROM academic_delivery_versions WHERE id=ANY($1)")
+        .bind(&graph_ids)
+        .fetch_all(pool)
+        .await?;
+    let graphs = graphs
+        .into_iter()
+        .map(|(id, g)| (id, g.0))
+        .collect::<HashMap<_, _>>();
+    let labels =
+        super::version_changes::load_labels(pool, &graphs.values().collect::<Vec<_>>()).await?;
     rows.into_iter()
         .map(|row| {
             Ok(AcademicTermChangeSet {
                 id: row.id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,
-                effective_from: row.effective_from,
+                effective_from: row.publication_effective_from,
+                reference_date: row.effective_from,
                 reason: row.reason,
                 status: row.status,
                 base_delivery_version_id: row.base_delivery_version_id,
@@ -2712,6 +2908,29 @@ async fn hydrate_many(
                 cancelled_at: row.cancelled_at,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
+                changes: super::version_changes::compare(
+                    row.base_delivery_version_id
+                        .and_then(|id| graphs.get(&id))
+                        .unwrap_or(&crate::models::versions::DeliverySnapshot {
+                            offerings: vec![],
+                        }),
+                    row.target_delivery_version_id
+                        .and_then(|id| graphs.get(&id))
+                        .ok_or_else(|| AppError::Conflict("ไม่พบข้อมูลรุ่นเปิดสอน".into()))?,
+                    &labels,
+                ),
+                offering_labels: row
+                    .target_delivery_version_id
+                    .and_then(|id| graphs.get(&id))
+                    .into_iter()
+                    .chain(row.base_delivery_version_id.and_then(|id| graphs.get(&id)))
+                    .flat_map(|g| &g.offerings)
+                    .map(|o| crate::models::versions::DeliveryResourceLabel {
+                        id: o.id,
+                        code: o.code.clone(),
+                        name: o.name.clone(),
+                    })
+                    .collect(),
                 items: items_by_change_set.remove(&row.id).unwrap_or_default(),
             })
         })
@@ -2731,4 +2950,8 @@ fn required_change_item_label(
         .get(&id)
         .cloned()
         .ok_or_else(|| AppError::InternalServerError(message.to_string()))
+}
+
+fn bangkok_today() -> NaiveDate {
+    (Utc::now() + chrono::Duration::hours(7)).date_naive()
 }

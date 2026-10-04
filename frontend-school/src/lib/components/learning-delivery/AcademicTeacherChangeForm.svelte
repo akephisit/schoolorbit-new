@@ -1,4 +1,9 @@
 <script lang="ts">
+	function formatDate(value: string): string {
+		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
+			new Date(`${value}T00:00:00`)
+		);
+	}
 	import {
 		upsertAcademicTermChangeItem,
 		type AcademicTermChangeSet,
@@ -63,8 +68,8 @@
 	let effectiveAssignments = $derived(
 		(selectedGroup?.teacherAssignments ?? []).filter(
 			(assignment) =>
-				assignment.startsOn < changeSet.effectiveFrom &&
-				(!assignment.endsOn || assignment.endsOn >= changeSet.effectiveFrom) &&
+				assignment.startsOn < changeSet.referenceDate &&
+				(!assignment.endsOn || assignment.endsOn >= changeSet.referenceDate) &&
 				!pendingEpisodeIds.includes(assignment.id)
 		)
 	);
@@ -82,8 +87,8 @@
 		(selectedGroup?.teacherAssignments ?? [])
 			.filter(
 				(assignment) =>
-					assignment.startsOn <= changeSet.effectiveFrom &&
-					(!assignment.endsOn || assignment.endsOn >= changeSet.effectiveFrom)
+					assignment.startsOn <= changeSet.referenceDate &&
+					(!assignment.endsOn || assignment.endsOn >= changeSet.referenceDate)
 			)
 			.map((assignment) => assignment.teacherId)
 	);
@@ -118,12 +123,6 @@
 			: value === 'adjust_group_teacher_role'
 				? 'ปรับบทบาทความรับผิดชอบ'
 				: 'หยุดความรับผิดชอบของครู';
-	}
-
-	function formatDate(value: string): string {
-		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(
-			new Date(`${value}T00:00:00`)
-		);
 	}
 
 	function resetSelection(nextAction: TeacherAction = action) {
@@ -214,8 +213,7 @@
 			<div>
 				<h3 class="font-medium">เปลี่ยนครูผู้สอนกลางภาค</h3>
 				<p class="text-xs leading-5 text-muted-foreground">
-					บันทึกเป็นแบบร่างก่อน และเริ่มมีผลวันที่ {formatDate(changeSet.effectiveFrom)}
-					หลังเผยแพร่เท่านั้น
+					บันทึกเป็นแบบร่างก่อน แล้วเลือกวันเริ่มใช้ตอนเผยแพร่ หลังเผยแพร่เท่านั้น
 				</p>
 			</div>
 		</div>

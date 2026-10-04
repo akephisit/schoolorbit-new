@@ -20,7 +20,8 @@ struct VersionRow {
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     source_version_id: Option<Uuid>,
-    effective_from: NaiveDate,
+    effective_from: Option<NaiveDate>,
+    reference_date: NaiveDate,
     effective_until: Option<NaiveDate>,
     status: DeliveryVersionStatus,
     row_version: i64,
@@ -40,6 +41,7 @@ impl From<VersionRow> for DeliveryVersion {
             academic_year_id: row.academic_year_id,
             source_version_id: row.source_version_id,
             effective_from: row.effective_from,
+            reference_date: row.reference_date,
             effective_until: row.effective_until,
             status: row.status,
             row_version: row.row_version,
@@ -53,7 +55,7 @@ impl From<VersionRow> for DeliveryVersion {
     }
 }
 
-const VERSION_SELECT: &str = "SELECT version.*, (
+const VERSION_SELECT: &str = "SELECT version.id,version.academic_term_id,version.academic_year_id,version.source_version_id,version.effective_from,version.status,version.row_version,version.created_by,version.published_by,version.published_at,version.created_at,version.updated_at,version.snapshot, COALESCE(version.reference_date,version.effective_from) AS reference_date, (
     SELECT min(next.effective_from)-1 FROM academic_delivery_versions next
     WHERE next.academic_term_id=version.academic_term_id AND next.status='published'
       AND next.effective_from>version.effective_from
@@ -73,7 +75,7 @@ pub async fn list_versions(
         SELECT version.id,version.academic_term_id,version.academic_year_id,version.source_version_id,
         (SELECT revision.id FROM academic_term_change_sets revision WHERE revision.target_delivery_version_id=version.id
             ORDER BY revision.created_at DESC,revision.id LIMIT 1) AS change_set_id,
-        version.effective_from,(SELECT min(next.effective_from)-1 FROM academic_delivery_versions next
+        version.effective_from,COALESCE(version.reference_date,version.effective_from) AS reference_date,(SELECT min(next.effective_from)-1 FROM academic_delivery_versions next
             WHERE next.academic_term_id=version.academic_term_id AND next.status='published'
                 AND next.effective_from>version.effective_from) AS effective_until,
         version.status,version.row_version,version.updated_at,
@@ -158,7 +160,10 @@ pub async fn published_source(
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นเปิดสอน".into()))?
         .into();
-    if version.academic_term_id != term_id || version.status != DeliveryVersionStatus::Published {
+    if version.academic_term_id != term_id
+        || version.status != DeliveryVersionStatus::Published
+        || version.effective_from.is_none()
+    {
         return Err(AppError::ValidationError(
             "ตารางสอนต้องอ้างอิงรุ่นเปิดสอนที่เผยแพร่แล้วในภาคเรียนเดียวกัน".into(),
         ));
@@ -249,7 +254,7 @@ pub(super) async fn include_offering(
     actor_id: Uuid,
 ) -> Result<(), AppError> {
     let (revision_id, term_id, year_id, date, already_included): (Uuid, Uuid, Uuid, NaiveDate, bool) = sqlx::query_as(
-        "SELECT revision.id,version.academic_term_id,version.academic_year_id,version.effective_from,
+        "SELECT revision.id,version.academic_term_id,version.academic_year_id,COALESCE(version.effective_from,version.reference_date),
         EXISTS(SELECT 1 FROM jsonb_array_elements(version.snapshot->'offerings') offering WHERE (offering->>'id')::uuid=$2)
         FROM academic_delivery_versions version JOIN academic_term_change_sets revision ON revision.target_delivery_version_id=version.id
         WHERE version.id=$1 AND version.status='draft' AND revision.status='draft' FOR UPDATE OF version,revision",
@@ -296,7 +301,7 @@ pub async fn roster_statuses(
 
 pub fn contains_date(version: &DeliveryVersion, date: NaiveDate) -> bool {
     version.status == DeliveryVersionStatus::Published
-        && date >= version.effective_from
+        && version.effective_from.is_some_and(|start| date >= start)
         && version.effective_until.is_none_or(|last| date <= last)
 }
 

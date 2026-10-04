@@ -14,7 +14,7 @@ test('operational academic change API consumes generated contracts and camelCase
 		'createAcademicTermChangeSet',
 		'getAcademicTermChangeSet',
 		'updateAcademicTermChangeSet',
-		'cancelAcademicTermChangeSet',
+		'deleteDeliveryVersion',
 		'upsertAcademicTermChangeItem',
 		'deleteAcademicTermChangeItem',
 		'previewAcademicTermChangeSet',
@@ -61,12 +61,12 @@ test('change creation is explicit, exceptional, and keeps curriculum unchanged',
 		'src/lib/components/learning-delivery/AcademicChangeSetDialog.svelte'
 	);
 
-	assert.match(dialog, /DatePicker/);
-	assert.match(dialog, /effectiveFrom/);
+	assert.doesNotMatch(dialog, /DatePicker/);
+	assert.doesNotMatch(dialog, /effectiveFrom/);
 	assert.match(dialog, /reason/);
 	assert.match(dialog, /รายวิชา กลุ่ม ครู/);
 	assert.match(dialog, /รุ่นเปิดสอน/);
-	assert.match(dialog, /disabled={!effectiveFrom\.trim\(\) \|\| !reason\.trim\(\)/);
+	assert.match(dialog, /disabled={!reason\.trim\(\)/);
 });
 
 test('opening readiness is independent of timetable publication', async () => {
@@ -87,32 +87,21 @@ test('opening readiness is independent of timetable publication', async () => {
 		panel,
 		/previewAcademicTermChangeSet|publishAcademicTermChangeSet|cancelAcademicTermChangeSet/
 	);
-	assert.match(readiness, /blockingFindings/);
-	assert.match(readiness, /warningFindings/);
+	assert.match(readiness, /preview\?\.findings\.filter/);
 	assert.match(readiness, /acknowledgedWarnings/);
 	assert.match(readiness, /onCheckedChange/);
-	assert.doesNotMatch(readiness, /<Checkbox[\s\S]{0,300}\sonchange=/);
-	assert.match(readiness, /new Set\(warningFindings\.map\(\(finding\) => finding\.code\)\)/);
-	assert.doesNotMatch(readiness, /weekly_period_excess|stopped_teacher_still_scheduled/);
-	assert.match(
+	assert.match(readiness, /DatePicker/);
+	assert.match(readiness, /preview\.effectiveFrom === selectedDate/);
+	assert.match(readiness, /effectiveFrom: selectedDate/);
+	assert.match(readiness, /clearPreview/);
+	assert.match(readiness, /deleteDeliveryVersion/);
+	assert.doesNotMatch(
 		readiness,
-		/getAcademicTermChangeSet\(changeSet\.id\)[\s\S]*previewAcademicTermChangeSet\(changeSet\.id\)/
+		/cancelAcademicTermChangeSet|targetTimetableVersionId|weekly_period_excess|stopped_teacher_still_scheduled/
 	);
-	assert.match(readiness, /{#if changeSet\.status === 'draft'}[\s\S]*ตรวจผลกระทบและความพร้อม/);
-	assert.match(readiness, /รุ่นเปิดสอนนี้เผยแพร่แล้ว/);
-	assert.match(readiness, /แบบร่างนี้ยกเลิกแล้ว/);
-	assert.match(
-		readiness,
-		/recoverFromConflict[\s\S]*preview = null;[\s\S]*acknowledgedWarnings = \[\]/
-	);
-	assert.match(
-		readiness,
-		/ตาราง|กลุ่มเรียน|รายชื่อนักเรียน|ครูผู้สอน|โครงสร้างคะแนน|ผลการเรียน|ตารางสอบ|นิเทศ/
-	);
-	assert.match(readiness, /ไม่ได้ลบข้อมูลเดิม/);
-	assert.doesNotMatch(readiness, /targetTimetableVersionId/);
-	assert.match(readiness, /publishAcademicTermChangeSet/);
-	assert.match(readiness, /blockingFindings\.length > 0|warningsAcknowledged/);
+	assert.match(panel, /changeSet\.changes/);
+	assert.match(panel, /changeSet\.offeringLabels/);
+	assert.match(readiness, /blocking\.length === 0/);
 });
 
 test('post-publication roster uses dated interval history with inclusive end semantics', async () => {

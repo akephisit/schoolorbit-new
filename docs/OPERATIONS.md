@@ -537,6 +537,36 @@ autosave errors, standalone table publication, and deletion limited to an unrefe
 Check read-only and scoped users through the deployed proxy and retain the feature branch and
 recovery artifacts until migration, authenticated smoke, menu registration and acceptance pass.
 
+### Opening draft dates and permanent deletion
+
+[Migration 089](../backend-school/migrations/089_delivery_draft_publication_and_deletion.sql)
+separates a draft's internal reference date from its nullable publication date. Published graphs,
+identities and effective dates remain unchanged. The matched backend and frontend must deploy
+under the coordinated school release, with the centralized all-tenant runner and exact schema-head
+checks. Binaries expecting a non-null draft publication date are prohibited after 089. Rehearse on
+protected copies of every affected active tenant and retain the current recovery point for seven
+days; recover forward after cutover, accounting for subsequent writes.
+
+Ordinary DELETE operations require existing resource-management scopes, current revisions and
+confirmed child counts. Drafts and cancelled versions may be deleted together with exclusively owned,
+unreferenced children. Published versions and historical references are protected. A foreign-key
+conflict rolls back the whole operation; never detach references or disable immutability guards.
+
+The application-owned [cancelled-version cleanup CLI](../backend-school/src/bin/cleanup_cancelled_academic_versions/main.rs)
+is a separate, explicitly scoped operation after migration, authenticated smoke and browser acceptance.
+It resolves one school through backend-admin, verifies its stable tenant identity and term/year,
+requires an active staff actor with both school-wide management capabilities, and preflights every
+cancelled opening/table version before deleting anything. Active drafts are outside this operation.
+Set `ACADEMIC_CLEANUP_SUBDOMAIN`, `ACADEMIC_CLEANUP_TENANT_ID`,
+`ACADEMIC_CLEANUP_ACADEMIC_YEAR_ID`, `ACADEMIC_CLEANUP_ACADEMIC_TERM_ID` and
+`ACADEMIC_CLEANUP_ACTOR_ID` from the reviewed scope; supply `BACKEND_ADMIN_URL` and the existing
+caller secret through private environment configuration. Do not print connection URLs, secrets or
+staff records. Without `ACADEMIC_CLEANUP_PREVIEW_HASH` the CLI preflights and rolls back. Applying
+requires the exact returned hash; changed revisions/counts or any protected reference stop the
+entire batch. Audit entries and deletes commit together, and the report verifies that published
+fingerprints remain unchanged. Verify actual cancelled-row disappearance, active draft preservation,
+source selection and the deployed version lists afterward. Do not broaden a failed cleanup scope.
+
 ### Gradebook and results cutover
 
 Migration `060_gradebook_results_and_learner_evaluations.sql` is the Release 2 boundary for Gradebook,

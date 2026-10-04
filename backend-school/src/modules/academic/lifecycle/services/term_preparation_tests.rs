@@ -124,7 +124,7 @@ fn preparation_normalization_is_deterministic() {
 
 async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext, Uuid, Uuid) {
     let pool = core::services_tests::prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     let actor = ActorContext {
         user_id: sqlx::query_scalar(
             "SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1",
@@ -468,7 +468,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         .await
         .unwrap();
     }
-    let opening_readiness = change_sets::preview_change_set(&pool, opening_revision_id)
+    let opening_readiness = publication_preview(&pool, opening_revision_id)
         .await
         .unwrap();
     assert!(
@@ -485,6 +485,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         actor.user_id,
         opening_revision_id,
         delivery_models::PublishAcademicTermChangeSetRequest {
+            effective_from: opening_readiness.effective_from,
             row_version: opening_readiness.change_set_row_version,
             target_delivery_version_row_version: opening_readiness
                 .target_delivery_version_row_version,
@@ -759,4 +760,19 @@ async fn preparation_preview_requires_school_manage_permission() {
     )
     .await;
     assert!(matches!(denied, Err(school_errors::AppError::Forbidden(_))));
+}
+
+async fn publication_preview(
+    pool: &sqlx::PgPool,
+    id: uuid::Uuid,
+) -> Result<school_academic_delivery::models::AcademicTermChangeSetPreview, school_errors::AppError>
+{
+    let revision =
+        school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
+    school_academic_delivery::services::change_sets::preview_change_set_at(
+        pool,
+        id,
+        Some(revision.reference_date),
+    )
+    .await
 }

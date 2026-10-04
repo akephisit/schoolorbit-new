@@ -21,13 +21,13 @@ use super::{
         AcademicTermChangeSetStatus, ActivityAttendanceRequirement, ActivityPassCriteria,
         ActivityRegistrationType, ActivitySchedulingMode, AddDatedRosterMembershipRequest,
         ApplyCurriculumOfferingsRequest, ApplyRosterRequest, ApplyTeacherHandoffRequest,
-        CancelAcademicTermChangeSetRequest, CreateAcademicTermChangeSetRequest,
-        CreateActivityOfferingRequest, CreateCourseOfferingRequest, CreateLearningGroupRequest,
-        CreateLearningOfferingRequest, CurriculumDeliveryAlignmentState, CurriculumOfferingPreview,
-        CurriculumPreparationChoice, DeleteAcademicTermChangeItemRequest, LearningOfferingKind,
-        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
-        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind, PreparationAction,
-        PreparationGroupingState, PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
+        CreateAcademicTermChangeSetRequest, CreateActivityOfferingRequest,
+        CreateCourseOfferingRequest, CreateLearningGroupRequest, CreateLearningOfferingRequest,
+        CurriculumDeliveryAlignmentState, CurriculumOfferingPreview, CurriculumPreparationChoice,
+        DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingQuery,
+        LearningOfferingSnapshot, LearningOfferingStatus, LearningTeacherRole, OfferingTargetInput,
+        OfferingTargetKind, PreparationAction, PreparationGroupingState,
+        PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
         PublishAcademicTermChangeSetRequest, PublishLearningOfferingRequest, PublishRosterRequest,
         RemoveDatedRosterMembershipRequest, ReplaceLearningGroupHomeroomsRequest,
         ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 88).await.unwrap();
+    apply_migrations_through(&pool, 89).await.unwrap();
     pool
 }
 
@@ -1222,20 +1222,33 @@ async fn create_runtime_change_set(
             .fetch_one(pool)
             .await
             .unwrap();
-    change_sets::create_change_set(
+    let created = change_sets::create_change_set(
         pool,
         actor_id,
         CreateAcademicTermChangeSetRequest {
             academic_term_id: term_id,
-            effective_from: term_start
-                .checked_add_signed(chrono::Duration::days(offset_days))
-                .unwrap(),
             reason: "  ปรับการเปิดสอนระหว่างภาคเรียน  ".to_string(),
             idempotency_key: stable_uuid(idempotency_name),
         },
     )
     .await
-    .expect("a planning term must accept a draft operational change")
+    .expect("a planning term must accept a draft operational change");
+    let date = term_start + chrono::Duration::days(offset_days);
+    if created.reference_date == date {
+        return created;
+    }
+    change_sets::update_change_set(
+        pool,
+        actor_id,
+        created.id,
+        UpdateAcademicTermChangeSetRequest {
+            row_version: created.row_version,
+            reference_date: date,
+            reason: created.reason.clone(),
+        },
+    )
+    .await
+    .unwrap()
 }
 
 async fn independent_table_draft(
@@ -1273,7 +1286,7 @@ async fn table_preview(
             .await
             .unwrap();
     school_academic_timetable::services::timetable_lifecycle::preview(pool,draft_id,school_academic_timetable::models::timetable_publication::PreviewTimetablePublicationRequest {
-        row_version:table.row_version,effective_from:opening.effective_from.succ_opt().unwrap()
+        row_version:table.row_version,effective_from:opening.effective_from.unwrap().succ_opt().unwrap()
     }).await.unwrap()
 }
 
@@ -1387,7 +1400,7 @@ async fn teacher_change_items_support_add_adjust_stop_and_delete() {
            LIMIT 1"#,
     )
     .bind(context.term_id)
-    .bind(change_set.effective_from)
+    .bind(change_set.reference_date)
     .fetch_one(&pool)
     .await
     .expect("fixture must contain an effective teacher episode");
@@ -1650,14 +1663,13 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
             _ => None,
         })
         .unwrap();
-    let opening_preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
+    let opening_preview = publication_preview(&pool, changed.id).await.unwrap();
     let published = change_sets::publish_change_set(
         &pool,
         context.teacher_id,
         changed.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: opening_preview.effective_from,
             row_version: opening_preview.change_set_row_version,
             target_delivery_version_row_version: opening_preview
                 .target_delivery_version_row_version,
@@ -1906,7 +1918,8 @@ async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
     );
     assert!(created.items.is_empty());
     assert_eq!(created.reason, "ปรับการเปิดสอนระหว่างภาคเรียน");
-    assert_eq!(target.effective_from, created.effective_from);
+    assert_eq!(target.effective_from, None);
+    assert_eq!(target.reference_date, created.reference_date);
     let retried = create_runtime_change_set(
         &pool,
         context.teacher_id,
@@ -1921,7 +1934,6 @@ async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
         context.teacher_id,
         CreateAcademicTermChangeSetRequest {
             academic_term_id: context.term_id,
-            effective_from: created.effective_from,
             reason: "คนละเหตุผล".into(),
             idempotency_key: stable_uuid("opening:clone"),
         },
@@ -2001,6 +2013,7 @@ async fn academic_term_change_set_summary_omits_hydrated_detail() {
             "academicTermId".to_string(),
             "academicYearId".to_string(),
             "effectiveFrom".to_string(),
+            "referenceDate".to_string(),
             "id".to_string(),
             "reason".to_string(),
             "status".to_string(),
@@ -2027,7 +2040,7 @@ async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base
     )
     .await;
     let revised_effective_from = created
-        .effective_from
+        .reference_date
         .checked_add_signed(chrono::Duration::days(1))
         .unwrap();
 
@@ -2037,17 +2050,18 @@ async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base
         created.id,
         UpdateAcademicTermChangeSetRequest {
             row_version: created.row_version,
-            effective_from: revised_effective_from,
+            reference_date: revised_effective_from,
             reason: "เหตุผลที่ปรับแล้ว".to_string(),
         },
     )
     .await
     .expect("a draft reason must remain editable");
     assert_eq!(updated.reason, "เหตุผลที่ปรับแล้ว");
-    assert_eq!(updated.effective_from, revised_effective_from);
+    assert_eq!(updated.effective_from, None);
+    assert_eq!(updated.reference_date, revised_effective_from);
     assert_eq!(updated.row_version, created.row_version + 1);
     let target_effective_from: NaiveDate =
-        sqlx::query_scalar("SELECT effective_from FROM academic_delivery_versions WHERE id = $1")
+        sqlx::query_scalar("SELECT reference_date FROM academic_delivery_versions WHERE id = $1")
             .bind(created.target_delivery_version_id)
             .fetch_one(&pool)
             .await
@@ -2060,7 +2074,7 @@ async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base
         created.id,
         UpdateAcademicTermChangeSetRequest {
             row_version: created.row_version,
-            effective_from: created.effective_from,
+            reference_date: created.reference_date,
             reason: "ข้อมูลล้าสมัย".to_string(),
         },
     )
@@ -2068,45 +2082,39 @@ async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base
     .expect_err("a stale draft update must conflict");
     assert!(matches!(stale, AppError::Conflict(_)));
 
-    let cancelled = change_sets::cancel_change_set(
+    let version = school_academic_delivery::services::versions::get_version(
         &pool,
-        context.teacher_id,
-        created.id,
-        CancelAcademicTermChangeSetRequest {
-            row_version: updated.row_version,
-        },
+        created.target_delivery_version_id,
     )
-    .await
-    .expect("a draft change set must be cancellable");
-    assert_eq!(cancelled.status, AcademicTermChangeSetStatus::Cancelled);
-
-    let (target_status, base_status): (String, String) = sqlx::query_as(
-        r#"SELECT target.status, base.status
-           FROM academic_delivery_versions target
-           JOIN academic_delivery_versions base ON base.id = $2
-           WHERE target.id = $1"#,
-    )
-    .bind(created.target_delivery_version_id)
-    .bind(created.base_delivery_version_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(target_status, "cancelled");
-    assert_eq!(base_status, "published");
-
-    let immutable = change_sets::update_change_set(
+    let deleted = change_sets::delete_version(
         &pool,
         context.teacher_id,
-        created.id,
-        UpdateAcademicTermChangeSetRequest {
-            row_version: cancelled.row_version,
-            effective_from: cancelled.effective_from,
-            reason: "ห้ามแก้".to_string(),
-        },
+        version.id,
+        delete_opening_request(&updated, &version),
     )
     .await
-    .expect_err("a cancelled set must remain immutable");
-    assert!(matches!(immutable, AppError::Conflict(_)));
+    .unwrap();
+    assert_eq!(deleted.id, version.id);
+    assert!(matches!(
+        change_sets::get_change_set(&pool, created.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        school_academic_delivery::services::versions::get_version(&pool, version.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert_eq!(
+        school_academic_delivery::services::versions::get_version(
+            &pool,
+            created.base_delivery_version_id.unwrap()
+        )
+        .await
+        .unwrap()
+        .status,
+        school_academic_delivery::models::versions::DeliveryVersionStatus::Published
+    );
 }
 
 #[tokio::test]
@@ -2138,18 +2146,29 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
                 .unwrap(),
         ),
     ] {
-        let error = change_sets::create_change_set(
+        let created = change_sets::create_change_set(
             &pool,
             context.teacher_id,
             CreateAcademicTermChangeSetRequest {
                 academic_term_id: context.term_id,
-                effective_from: date,
-                reason: "วันที่ไม่ถูกต้อง".to_string(),
+                reason: "วันที่ไม่ถูกต้อง".into(),
                 idempotency_key: stable_uuid(name),
             },
         )
         .await
-        .expect_err("dates outside the term/year context must fail");
+        .unwrap();
+        let error = change_sets::update_change_set(
+            &pool,
+            context.teacher_id,
+            created.id,
+            UpdateAcademicTermChangeSetRequest {
+                row_version: created.row_version,
+                reference_date: date,
+                reason: created.reason,
+            },
+        )
+        .await
+        .expect_err("invalid reference date must fail");
         assert!(matches!(error, AppError::ValidationError(_)));
     }
 
@@ -2163,7 +2182,6 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
         context.teacher_id,
         CreateAcademicTermChangeSetRequest {
             academic_term_id: context.term_id,
-            effective_from: term_start.checked_add_signed(Duration::days(14)).unwrap(),
             reason: "ภาคเรียนกำลังปิด".to_string(),
             idempotency_key: stable_uuid("change-set:closing-term"),
         },
@@ -2185,7 +2203,6 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
             context.teacher_id,
             CreateAcademicTermChangeSetRequest {
                 academic_term_id: context.term_id,
-                effective_from: term_start,
                 reason: "Must not create".into(),
                 idempotency_key: Uuid::new_v4(),
             },
@@ -2198,22 +2215,26 @@ async fn change_set_creation_rejects_unwritable_terms_and_out_of_range_dates() {
             closing.id,
             UpdateAcademicTermChangeSetRequest {
                 row_version: closing.row_version,
-                effective_from: closing.effective_from,
+                reference_date: closing.reference_date,
                 reason: "Must not change".into(),
             },
         )
         .await;
         assert!(matches!(update, Err(AppError::Conflict(_))));
-        let cancel = change_sets::cancel_change_set(
+        let version = school_academic_delivery::services::versions::get_version(
+            &pool,
+            closing.target_delivery_version_id,
+        )
+        .await
+        .unwrap();
+        let deleted = change_sets::delete_version(
             &pool,
             context.teacher_id,
-            closing.id,
-            CancelAcademicTermChangeSetRequest {
-                row_version: closing.row_version,
-            },
+            version.id,
+            delete_opening_request(&closing, &version),
         )
         .await;
-        assert!(matches!(cancel, Err(AppError::Conflict(_))));
+        assert!(matches!(deleted, Err(AppError::Conflict(_))));
         assert_eq!(
             change_sets::get_change_set(&pool, closing.id)
                 .await
@@ -2274,7 +2295,7 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
             .await
             .unwrap();
     assert_eq!(course_status, "draft");
-    assert_eq!(starts_on, change_set.effective_from);
+    assert_eq!(starts_on, change_set.reference_date);
     let target = school_academic_delivery::services::versions::get_version(
         &pool,
         change_set.target_delivery_version_id,
@@ -2722,7 +2743,7 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
     )
     .await;
 
-    let preview = change_sets::preview_change_set(&pool, change_set.id)
+    let preview = publication_preview(&pool, change_set.id)
         .await
         .expect("a draft change set must return a typed preview");
 
@@ -2750,9 +2771,7 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
             .unwrap();
         sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
             .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
-        let state = change_sets::preview_change_set(&pool, change_set.id)
-            .await
-            .unwrap();
+        let state = publication_preview(&pool, change_set.id).await.unwrap();
         assert_eq!(
             state
                 .findings
@@ -2772,9 +2791,7 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
         .await
         .unwrap();
     assert_eq!(preview.impact_counts.groups, 0);
-    let repeated = change_sets::preview_change_set(&pool, change_set.id)
-        .await
-        .unwrap();
+    let repeated = publication_preview(&pool, change_set.id).await.unwrap();
     assert_eq!(repeated.preview_hash, preview.preview_hash);
 }
 
@@ -2880,13 +2897,13 @@ async fn change_set_preview_blocks_a_past_effective_date_after_the_term_becomes_
         "change-set:preview-past-date:idempotency",
     )
     .await;
-    sqlx::query("UPDATE academic_term_change_sets SET effective_from = $1 WHERE id = $2")
+    sqlx::query("UPDATE academic_term_change_sets SET reference_date = $1 WHERE id = $2")
         .bind(Utc::now().date_naive() - chrono::Duration::days(1))
         .bind(change_set.id)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE academic_delivery_versions SET effective_from=$1 WHERE id=$2")
+    sqlx::query("UPDATE academic_delivery_versions SET reference_date=$1 WHERE id=$2")
         .bind(Utc::now().date_naive() - Duration::days(1))
         .bind(change_set.target_delivery_version_id)
         .execute(&pool)
@@ -2898,9 +2915,7 @@ async fn change_set_preview_blocks_a_past_effective_date_after_the_term_becomes_
         .await
         .unwrap();
 
-    let preview = change_sets::preview_change_set(&pool, change_set.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, change_set.id).await.unwrap();
 
     assert!(preview.findings.iter().any(|finding| {
         finding.code == AcademicChangeFindingCode::EffectiveDateInvalid
@@ -3107,9 +3122,7 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
     )
     .await
     .unwrap();
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, changed.id).await.unwrap();
     assert_eq!(
         offerings::operational_change_offering_ids(&pool, changed.id)
             .await
@@ -3219,9 +3232,7 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     )
     .await
     .unwrap();
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, changed.id).await.unwrap();
     let blocking = preview
         .findings
         .iter()
@@ -3236,6 +3247,7 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
         .collect::<Vec<_>>();
     let idempotency_key = stable_uuid("change-set:publish-stop:publication");
     let request = PublishAcademicTermChangeSetRequest {
+        effective_from: preview.effective_from,
         row_version: preview.change_set_row_version,
         target_delivery_version_row_version: preview.target_delivery_version_row_version,
         preview_hash: preview.preview_hash.clone(),
@@ -3265,7 +3277,7 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
         ends_on,
         Some(
             changed
-                .effective_from
+                .reference_date
                 .checked_sub_signed(chrono::Duration::days(1))
                 .unwrap()
         )
@@ -3421,9 +3433,7 @@ async fn publication_rolls_back_every_write_when_the_final_change_set_write_fail
     )
     .await
     .unwrap();
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, changed.id).await.unwrap();
     assert!(!preview
         .findings
         .iter()
@@ -3456,6 +3466,7 @@ async fn publication_rolls_back_every_write_when_the_final_change_set_write_fail
         context.teacher_id,
         changed.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
             row_version: preview.change_set_row_version,
             target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
@@ -3566,9 +3577,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         prepared_group.roster_status,
         super::models::RosterStatus::Draft
     );
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, changed.id).await.unwrap();
     let blocking = preview
         .findings
         .iter()
@@ -3586,6 +3595,7 @@ async fn publishing_an_added_course_preserves_the_separate_roster_publication() 
         context.teacher_id,
         changed.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
             row_version: preview.change_set_row_version,
             target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
@@ -3672,9 +3682,7 @@ async fn publication_rejects_a_preview_after_a_resource_revision_changes() {
     )
     .await
     .unwrap();
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, changed.id).await.unwrap();
     assert!(!preview
         .findings
         .iter()
@@ -3695,6 +3703,7 @@ async fn publication_rejects_a_preview_after_a_resource_revision_changes() {
         context.teacher_id,
         changed.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
             row_version: preview.change_set_row_version,
             target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
@@ -5594,7 +5603,7 @@ async fn homeroom_alignment_uses_the_explicit_delivery_version_target() {
     assert_eq!(workspace.delivery_version_id, Some(opening.id));
     assert_eq!(
         workspace.delivery_version_effective_from,
-        Some(opening.effective_from)
+        opening.effective_from
     );
     let aligned = workspace
         .homerooms
@@ -6286,9 +6295,7 @@ async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial
     )
     .await
     .unwrap();
-    let preview = change_sets::preview_change_set(&pool, revision.id)
-        .await
-        .unwrap();
+    let preview = publication_preview(&pool, revision.id).await.unwrap();
     assert!(
         !preview
             .findings
@@ -6302,6 +6309,7 @@ async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial
         context.teacher_id,
         revision.id,
         PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
             row_version: preview.change_set_row_version,
             target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
@@ -6473,4 +6481,160 @@ async fn timetable_draft_deletion_serializes_with_publication() {
         assert_eq!(remaining, 0);
         assert!(matches!(published.unwrap_err(), AppError::NotFound(_)));
     }
+}
+
+fn delete_opening_request(
+    change: &super::models::AcademicTermChangeSet,
+    version: &school_academic_delivery::models::versions::DeliveryVersion,
+) -> school_academic_delivery::models::versions::DeleteDeliveryVersionRequest {
+    school_academic_delivery::models::versions::DeleteDeliveryVersionRequest {
+        row_version: version.row_version,
+        change_set_row_version: change.row_version,
+        expected_item_count: change.items.len() as i64,
+        expected_offering_count: version.snapshot.offerings.len() as i64,
+        expected_group_count: version
+            .snapshot
+            .offerings
+            .iter()
+            .map(|o| o.groups.len() as i64)
+            .sum(),
+    }
+}
+
+async fn publication_preview(
+    pool: &sqlx::PgPool,
+    id: uuid::Uuid,
+) -> Result<school_academic_delivery::models::AcademicTermChangeSetPreview, school_errors::AppError>
+{
+    let revision =
+        school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
+    school_academic_delivery::services::change_sets::preview_change_set_at(
+        pool,
+        id,
+        Some(revision.reference_date),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn opening_hard_delete_removes_exclusive_children_and_rejects_stale_counts() {
+    let pool = prepare_delivery_runtime_fixture("opening_hard_delete_children").await;
+    let context = planning_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "opening-hard-delete",
+    )
+    .await;
+    assert!(revision.effective_from.is_none());
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            name: "กลุ่มที่จะลบ".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let current = change_sets::get_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    let version = school_academic_delivery::services::versions::get_version(
+        &pool,
+        current.target_delivery_version_id,
+    )
+    .await
+    .unwrap();
+    let request = delete_opening_request(&current, &version);
+    let mut stale = request.clone();
+    stale.expected_group_count += 1;
+    assert!(matches!(
+        change_sets::delete_version(&pool, context.teacher_id, version.id, stale).await,
+        Err(AppError::Conflict(_))
+    ));
+    let deleted = change_sets::delete_version(&pool, context.teacher_id, version.id, request)
+        .await
+        .unwrap();
+    assert_eq!(deleted.deleted_offering_count, 1);
+    let remaining:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_delivery_versions WHERE id=$1) OR EXISTS(SELECT 1 FROM academic_term_change_sets WHERE id=$2) OR EXISTS(SELECT 1 FROM learning_offerings WHERE id=$3) OR EXISTS(SELECT 1 FROM learning_groups WHERE id=$4)").bind(version.id).bind(current.id).bind(offering.id).bind(group.id).fetch_one(&pool).await.unwrap();
+    assert!(!remaining);
+    let audit:i64=sqlx::query_scalar("SELECT count(*) FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_delivery_version.deleted'").bind(version.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(audit, 1);
+}
+
+#[tokio::test]
+async fn opening_preview_dates_are_read_only_bound_to_hash_and_validate_teacher_windows() {
+    let pool = prepare_delivery_runtime_fixture("opening_candidate_dates").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "opening-candidate-dates",
+    )
+    .await;
+    let before = school_academic_delivery::services::versions::get_version(
+        &pool,
+        revision.target_delivery_version_id,
+    )
+    .await
+    .unwrap();
+    let general = change_sets::preview_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    assert!(general.preliminary);
+    let chosen =
+        change_sets::preview_change_set_at(&pool, revision.id, Some(revision.reference_date))
+            .await
+            .unwrap();
+    assert!(!chosen.preliminary);
+    assert_ne!(general.preview_hash, chosen.preview_hash);
+    let next = change_sets::preview_change_set_at(
+        &pool,
+        revision.id,
+        Some(revision.reference_date + Duration::days(1)),
+    )
+    .await
+    .unwrap();
+    assert_ne!(chosen.preview_hash, next.preview_hash);
+    let after = school_academic_delivery::services::versions::get_version(
+        &pool,
+        revision.target_delivery_version_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(before.row_version, after.row_version);
+    assert!(after.effective_from.is_none());
+    assert_eq!(before.reference_date, after.reference_date);
+    let stale = change_sets::publish_change_set(
+        &pool,
+        context.teacher_id,
+        revision.id,
+        PublishAcademicTermChangeSetRequest {
+            effective_from: revision.reference_date + Duration::days(1),
+            row_version: chosen.change_set_row_version,
+            target_delivery_version_row_version: chosen.target_delivery_version_row_version,
+            preview_hash: chosen.preview_hash,
+            acknowledged_warning_codes: vec![],
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(stale, AppError::Conflict(_)));
 }

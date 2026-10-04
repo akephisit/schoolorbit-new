@@ -607,7 +607,7 @@ export interface paths {
 		get: operations['getDeliveryVersion'];
 		put?: never;
 		post?: never;
-		delete?: never;
+		delete: operations['deleteDeliveryVersion'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -2568,22 +2568,6 @@ export interface paths {
 		options?: never;
 		head?: never;
 		patch: operations['updateAcademicTermChangeSet'];
-		trace?: never;
-	};
-	'/api/academic/term-change-sets/{id}/cancel': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['cancelAcademicTermChangeSet'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
 		trace?: never;
 	};
 	'/api/academic/term-change-sets/{id}/items': {
@@ -6362,20 +6346,24 @@ export interface components {
 			cancelledAt?: string | null;
 			/** Format: uuid */
 			cancelledBy?: string | null;
+			changes: components['schemas']['DeliveryVersionChange'][];
 			/** Format: date-time */
 			createdAt: string;
 			/** Format: uuid */
 			createdBy: string;
 			/** Format: date */
-			effectiveFrom: string;
+			effectiveFrom: string | null;
 			/** Format: uuid */
 			id: string;
 			items: components['schemas']['AcademicTermChangeItem'][];
+			offeringLabels: components['schemas']['DeliveryResourceLabel'][];
 			/** Format: date-time */
 			publishedAt?: string | null;
 			/** Format: uuid */
 			publishedBy?: string | null;
 			reason: string;
+			/** Format: date */
+			referenceDate: string;
 			/** Format: int64 */
 			rowVersion: number;
 			status: components['schemas']['AcademicTermChangeSetStatus'];
@@ -6385,6 +6373,7 @@ export interface components {
 			updatedAt: string;
 		};
 		AcademicTermChangeSetPreview: {
+			changes: components['schemas']['DeliveryVersionChange'][];
 			/** Format: uuid */
 			changeSetId: string;
 			/** Format: int64 */
@@ -6393,6 +6382,7 @@ export interface components {
 			effectiveFrom: string;
 			findings: components['schemas']['AcademicChangeFinding'][];
 			impactCounts: components['schemas']['AcademicChangeImpactCounts'];
+			preliminary: boolean;
 			previewHash: string;
 			/** Format: uuid */
 			targetDeliveryVersionId: string;
@@ -6411,10 +6401,12 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: date */
-			effectiveFrom: string;
+			effectiveFrom: string | null;
 			/** Format: uuid */
 			id: string;
 			reason: string;
+			/** Format: date */
+			referenceDate: string;
 			status: components['schemas']['AcademicTermChangeSetStatus'];
 			/** Format: uuid */
 			targetDeliveryVersionId: string;
@@ -6966,20 +6958,24 @@ export interface components {
 				cancelledAt?: string | null;
 				/** Format: uuid */
 				cancelledBy?: string | null;
+				changes: components['schemas']['DeliveryVersionChange'][];
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy: string;
 				/** Format: date */
-				effectiveFrom: string;
+				effectiveFrom: string | null;
 				/** Format: uuid */
 				id: string;
 				items: components['schemas']['AcademicTermChangeItem'][];
+				offeringLabels: components['schemas']['DeliveryResourceLabel'][];
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: uuid */
 				publishedBy?: string | null;
 				reason: string;
+				/** Format: date */
+				referenceDate: string;
 				/** Format: int64 */
 				rowVersion: number;
 				status: components['schemas']['AcademicTermChangeSetStatus'];
@@ -6993,6 +6989,7 @@ export interface components {
 		};
 		ApiResponse_AcademicTermChangeSetPreview: {
 			data: {
+				changes: components['schemas']['DeliveryVersionChange'][];
 				/** Format: uuid */
 				changeSetId: string;
 				/** Format: int64 */
@@ -7001,6 +6998,7 @@ export interface components {
 				effectiveFrom: string;
 				findings: components['schemas']['AcademicChangeFinding'][];
 				impactCounts: components['schemas']['AcademicChangeImpactCounts'];
+				preliminary: boolean;
 				previewHash: string;
 				/** Format: uuid */
 				targetDeliveryVersionId: string;
@@ -7917,6 +7915,24 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_DeletedDeliveryVersion: {
+			data: {
+				/** Format: uuid */
+				changeSetId: string;
+				/** Format: int64 */
+				deletedGroupCount: number;
+				/** Format: int64 */
+				deletedItemCount: number;
+				/** Format: int64 */
+				deletedOfferingCount: number;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				sourceVersionId?: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_DeletedTimetableDraft: {
 			data: {
 				/** Format: int64 */
@@ -7957,7 +7973,7 @@ export interface components {
 				/** Format: uuid */
 				createdBy?: string | null;
 				/** Format: date */
-				effectiveFrom: string;
+				effectiveFrom: string | null;
 				/** Format: date */
 				effectiveUntil: string | null;
 				/** Format: uuid */
@@ -7966,6 +7982,8 @@ export interface components {
 				publishedAt?: string | null;
 				/** Format: uuid */
 				publishedBy?: string | null;
+				/** Format: date */
+				referenceDate: string;
 				/** Format: int64 */
 				rowVersion: number;
 				snapshot: components['schemas']['DeliverySnapshot'];
@@ -10291,20 +10309,24 @@ export interface components {
 				cancelledAt?: string | null;
 				/** Format: uuid */
 				cancelledBy?: string | null;
+				changes: components['schemas']['DeliveryVersionChange'][];
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy: string;
 				/** Format: date */
-				effectiveFrom: string;
+				effectiveFrom: string | null;
 				/** Format: uuid */
 				id: string;
 				items: components['schemas']['AcademicTermChangeItem'][];
+				offeringLabels: components['schemas']['DeliveryResourceLabel'][];
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: uuid */
 				publishedBy?: string | null;
 				reason: string;
+				/** Format: date */
+				referenceDate: string;
 				/** Format: int64 */
 				rowVersion: number;
 				status: components['schemas']['AcademicTermChangeSetStatus'];
@@ -10323,10 +10345,12 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: date */
-				effectiveFrom: string;
+				effectiveFrom: string | null;
 				/** Format: uuid */
 				id: string;
 				reason: string;
+				/** Format: date */
+				referenceDate: string;
 				status: components['schemas']['AcademicTermChangeSetStatus'];
 				/** Format: uuid */
 				targetDeliveryVersionId: string;
@@ -11123,7 +11147,7 @@ export interface components {
 				/** Format: uuid */
 				changeSetId: string | null;
 				/** Format: date */
-				effectiveFrom: string;
+				effectiveFrom: string | null;
 				/** Format: date */
 				effectiveUntil: string | null;
 				/** Format: int64 */
@@ -11132,6 +11156,8 @@ export interface components {
 				id: string;
 				/** Format: int64 */
 				offeringCount: number;
+				/** Format: date */
+				referenceDate: string;
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: uuid */
@@ -12655,10 +12681,6 @@ export interface components {
 		};
 		/** @enum {string} */
 		CalendarVisibility: 'public' | 'private';
-		CancelAcademicTermChangeSetRequest: {
-			/** Format: int64 */
-			rowVersion: number;
-		};
 		CancelObservationRequest: {
 			reason?: string | null;
 		};
@@ -13619,8 +13641,6 @@ export interface components {
 		CreateAcademicTermChangeSetRequest: {
 			/** Format: uuid */
 			academicTermId: string;
-			/** Format: date */
-			effectiveFrom: string;
 			/** Format: uuid */
 			idempotencyKey: string;
 			reason: string;
@@ -14546,6 +14566,32 @@ export interface components {
 			/** Format: int64 */
 			itemRowVersion: number;
 		};
+		DeletedDeliveryVersion: {
+			/** Format: uuid */
+			changeSetId: string;
+			/** Format: int64 */
+			deletedGroupCount: number;
+			/** Format: int64 */
+			deletedItemCount: number;
+			/** Format: int64 */
+			deletedOfferingCount: number;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			sourceVersionId?: string | null;
+		};
+		DeleteDeliveryVersionRequest: {
+			/** Format: int64 */
+			changeSetRowVersion: number;
+			/** Format: int64 */
+			expectedGroupCount: number;
+			/** Format: int64 */
+			expectedItemCount: number;
+			/** Format: int64 */
+			expectedOfferingCount: number;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		DeletedTimetableDraft: {
 			/** Format: int64 */
 			deletedBlockCount: number;
@@ -14572,6 +14618,8 @@ export interface components {
 			/** Format: int32 */
 			versionNo: number;
 		};
+		/** @enum {string} */
+		DeliveryChangeKind: 'added' | 'removed' | 'changed';
 		DeliveryManagementOptions: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -14590,6 +14638,10 @@ export interface components {
 			message: string;
 			recoveryPath: string;
 		};
+		DeliveryPublicationPreviewQuery: {
+			/** Format: date */
+			effectiveFrom?: string | null;
+		};
 		/** @enum {string} */
 		DeliveryReadinessCode:
 			| 'duplicate_offering'
@@ -14607,6 +14659,12 @@ export interface components {
 			/** Format: uuid */
 			learningOfferingId: string;
 		};
+		DeliveryResourceLabel: {
+			code: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
 		/** @description Published delivery graphs contain academic resource identities, never student rosters. */
 		DeliverySnapshot: {
 			offerings: components['schemas']['DeliveryVersionOffering'][];
@@ -14621,7 +14679,7 @@ export interface components {
 			/** Format: uuid */
 			createdBy?: string | null;
 			/** Format: date */
-			effectiveFrom: string;
+			effectiveFrom: string | null;
 			/** Format: date */
 			effectiveUntil: string | null;
 			/** Format: uuid */
@@ -14630,6 +14688,8 @@ export interface components {
 			publishedAt?: string | null;
 			/** Format: uuid */
 			publishedBy?: string | null;
+			/** Format: date */
+			referenceDate: string;
 			/** Format: int64 */
 			rowVersion: number;
 			snapshot: components['schemas']['DeliverySnapshot'];
@@ -14638,6 +14698,17 @@ export interface components {
 			status: components['schemas']['DeliveryVersionStatus'];
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		DeliveryVersionChange: {
+			after?: string | null;
+			before?: string | null;
+			field: string;
+			kind: components['schemas']['DeliveryChangeKind'];
+			label: string;
+			/** Format: uuid */
+			learningOfferingId: string;
+			/** Format: uuid */
+			resourceId: string;
 		};
 		DeliveryVersionGroup: {
 			/** Format: int32 */
@@ -14683,7 +14754,7 @@ export interface components {
 			/** Format: uuid */
 			changeSetId: string | null;
 			/** Format: date */
-			effectiveFrom: string;
+			effectiveFrom: string | null;
 			/** Format: date */
 			effectiveUntil: string | null;
 			/** Format: int64 */
@@ -14692,6 +14763,8 @@ export interface components {
 			id: string;
 			/** Format: int64 */
 			offeringCount: number;
+			/** Format: date */
+			referenceDate: string;
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: uuid */
@@ -17168,6 +17241,8 @@ export interface components {
 		};
 		PublishAcademicTermChangeSetRequest: {
 			acknowledgedWarningCodes?: components['schemas']['AcademicChangeFindingCode'][];
+			/** Format: date */
+			effectiveFrom: string;
 			/** Format: uuid */
 			idempotencyKey: string;
 			previewHash: string;
@@ -19824,9 +19899,9 @@ export interface components {
 			reason: string;
 		};
 		UpdateAcademicTermChangeSetRequest: {
-			/** Format: date */
-			effectiveFrom: string;
 			reason: string;
+			/** Format: date */
+			referenceDate: string;
 			/** Format: int64 */
 			rowVersion: number;
 		};
@@ -24001,6 +24076,69 @@ export interface operations {
 			};
 			/** @description Opening version not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteDeliveryVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Unpublished opening version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DeleteDeliveryVersionRequest'];
+			};
+		};
+		responses: {
+			/** @description Permanently deleted opening version */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DeletedDeliveryVersion'];
+				};
+			};
+			/** @description Invalid deletion request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Management scope denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Deleted or missing version */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Published, referenced or stale version */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -33035,78 +33173,6 @@ export interface operations {
 			};
 		};
 	};
-	cancelAcademicTermChangeSet: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Operational change set ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['CancelAcademicTermChangeSetRequest'];
-			};
-		};
-		responses: {
-			/** @description Operational academic change cancelled */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_AcademicTermChangeSet'];
-				};
-			};
-			/** @description Invalid cancellation request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Learning offering management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Operational change not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Operational change cancellation conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	upsertAcademicTermChangeItem: {
 		parameters: {
 			query?: never;
@@ -33255,7 +33321,9 @@ export interface operations {
 	};
 	previewAcademicTermChangeSet: {
 		parameters: {
-			query?: never;
+			query?: {
+				effectiveFrom?: string;
+			};
 			header?: never;
 			path: {
 				/** @description Operational change set ID */

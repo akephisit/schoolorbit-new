@@ -109,7 +109,8 @@ function changeSetSummary() {
 		id: ids.changeSet,
 		academicTermId: ids.term,
 		academicYearId: ids.year,
-		effectiveFrom: '2027-08-01',
+		effectiveFrom: null,
+		referenceDate: '2027-08-01',
 		reason: 'ปรับการเปิดสอนทดสอบ',
 		status: 'draft',
 		targetDeliveryVersionId: ids.version,
@@ -128,7 +129,9 @@ function changeSetDetail() {
 		cancelledBy: null,
 		cancelledAt: null,
 		createdAt: '2027-07-01T00:00:00Z',
-		items: []
+		items: [],
+		changes: [],
+		offeringLabels: []
 	};
 }
 
@@ -272,7 +275,8 @@ async function mockDelivery(
 						academicTermId: ids.term,
 						changeSetId: ids.changeSet,
 						sourceVersionId: null,
-						effectiveFrom: '2027-08-01',
+						effectiveFrom: null,
+						referenceDate: '2027-08-01',
 						effectiveUntil: null,
 						status: options.deliveryVersionStatus ?? 'draft',
 						rowVersion: 1,
@@ -646,4 +650,258 @@ test('retries only the failed homeroom region', async ({ page }) => {
 	expect(homeroomRequestCount()).toBe(2);
 	expect(changeSetSummaryRequestCount()).toBe(1);
 	expect(changeSetDetailRequestCount()).toBe(1);
+});
+
+const secondOffering = '80000000-0000-4000-8000-000000000002';
+async function mockDraftLifecycle(
+	page: Page,
+	options: { failPreview?: boolean; failDelete?: boolean; readOnly?: boolean } = {}
+) {
+	await mockDelivery(page, undefined, undefined, { deliveryVersionStatus: 'draft' });
+	let previewCalls = 0,
+		deleted = false;
+	let publication: Record<string, unknown> | null = null;
+	const detail = {
+		...changeSetDetail(),
+		offeringLabels: [
+			{ id: ids.offering, code: 'ค21101', name: 'คณิตศาสตร์พื้นฐาน' },
+			{ id: secondOffering, code: 'ว21101', name: 'วิทยาศาสตร์' }
+		],
+		changes: [
+			{
+				kind: 'changed',
+				learningOfferingId: ids.offering,
+				resourceId: ids.offering,
+				label: 'ค21101 — คณิตศาสตร์พื้นฐาน',
+				field: 'รายการเปิดสอน',
+				before: 'เปิดสอน 3 คาบ/สัปดาห์',
+				after: 'เปิดสอน 4 คาบ/สัปดาห์'
+			}
+		],
+		items: [
+			{
+				actionKind: 'add_offering',
+				id: '84000000-0000-4000-8000-000000000001',
+				learningOfferingId: ids.offering,
+				weeklyPeriodTarget: 4,
+				rowVersion: 1
+			},
+			{
+				actionKind: 'add_offering',
+				id: '84000000-0000-4000-8000-000000000002',
+				learningOfferingId: secondOffering,
+				weeklyPeriodTarget: 3,
+				rowVersion: 1
+			}
+		]
+	};
+	await page.route('**/api/academic/term-change-sets/**', async (route) => {
+		const url = new URL(route.request().url());
+		if (url.pathname.endsWith('/preview')) {
+			previewCalls++;
+			if (options.failPreview && previewCalls === 1)
+				return void (await fulfill(route, 'ตรวจไม่สำเร็จ กรุณาลองใหม่', 503));
+			const date = url.searchParams.get('effectiveFrom');
+			return void (await fulfill(route, {
+				preliminary: !date,
+				changes: detail.changes,
+				changeSetId: ids.changeSet,
+				changeSetRowVersion: 1,
+				targetDeliveryVersionId: ids.version,
+				targetDeliveryVersionRowVersion: 2,
+				effectiveFrom: date ?? '2027-08-01',
+				previewHash: 'a'.repeat(64),
+				impacts: {},
+				findings: date
+					? []
+					: [ids.offering, secondOffering].map((offering, index) => ({
+							code: 'missing_delivery_group',
+							severity: 'blocking',
+							title: `${index === 0 ? 'ค21101 — คณิตศาสตร์พื้นฐาน' : 'ว21101 — วิทยาศาสตร์'}: ยังไม่มีกลุ่มเรียน`,
+							guidance: 'สร้างกลุ่มเรียนและเลือกครู',
+							affectedCount: 1,
+							learningOfferingId: offering,
+							learningGroupId: null,
+							resourceId: ids.version,
+							route: `/staff/academic/delivery/${offering}?deliveryVersionId=${ids.version}`
+						}))
+			}));
+		}
+		if (url.pathname.endsWith('/publish')) {
+			publication = route.request().postDataJSON();
+			return void (await fulfill(route, {
+				...detail,
+				status: 'published',
+				effectiveFrom: publication?.effectiveFrom,
+				rowVersion: 2
+			}));
+		}
+		if (deleted) return void (await fulfill(route, 'รุ่นนี้ถูกลบแล้ว', 404));
+		return void (await fulfill(route, detail));
+	});
+	await page.route(`**/api/academic/delivery-versions/${ids.version}`, async (route) => {
+		if (route.request().method() === 'DELETE') {
+			expect(route.request().postDataJSON()).toEqual({
+				rowVersion: 2,
+				changeSetRowVersion: 1,
+				expectedItemCount: 2,
+				expectedOfferingCount: 2,
+				expectedGroupCount: 1
+			});
+			if (options.failDelete)
+				return void (await fulfill(route, 'ลบไม่ได้: มีประวัติข้อมูลอื่นอ้างอิง', 409));
+			deleted = true;
+			return void (await fulfill(route, {
+				id: ids.version,
+				changeSetId: ids.changeSet,
+				sourceVersionId: null,
+				deletedItemCount: 2,
+				deletedOfferingCount: 2,
+				deletedGroupCount: 1
+			}));
+		}
+		return void (await fulfill(route, {
+			id: ids.version,
+			rowVersion: 2,
+			status: 'draft',
+			effectiveFrom: null,
+			referenceDate: '2027-08-01',
+			snapshot: {
+				offerings: [
+					{ id: ids.offering, groups: [{ id: ids.group }] },
+					{ id: secondOffering, groups: [] }
+				]
+			}
+		}));
+	});
+	await page.route('**/api/academic/term-change-sets?*', (route) =>
+		fulfill(route, deleted ? [] : [changeSetSummary()])
+	);
+	await page.route('**/api/academic/delivery-versions?*', (route) =>
+		fulfill(
+			route,
+			deleted
+				? []
+				: [
+						{
+							...changeSetSummary(),
+							id: ids.version,
+							changeSetId: ids.changeSet,
+							rowVersion: 2,
+							sourceVersionId: null,
+							effectiveUntil: null,
+							offeringCount: 2,
+							groupCount: 1,
+							teacherAssignmentCount: 0
+						}
+					]
+		)
+	);
+	if (options.readOnly)
+		await page.route('**/api/auth/me', (route) =>
+			fulfill(route, {
+				id: '90000000-0000-4000-8000-000000000001',
+				username: 'reader',
+				firstName: 'อ่าน',
+				lastName: 'อย่างเดียว',
+				userType: 'staff',
+				status: 'ACTIVE',
+				permissions: ['learning_offering.read.school']
+			})
+		);
+	await page.goto(
+		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}&changeSetId=${ids.changeSet}`
+	);
+	await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
+	return { published: () => publication, deleted: () => deleted };
+}
+for (const viewport of [
+	{ name: 'desktop-light', width: 1440, height: 950, dark: false },
+	{ name: 'mobile-dark', width: 390, height: 844, dark: true },
+	{ name: 'desktop-dark', width: 1440, height: 950, dark: true },
+	{ name: 'mobile-light', width: 390, height: 844, dark: false }
+]) {
+	test(`readiness renders repeated findings and named differences: ${viewport.name}`, async ({
+		page
+	}) => {
+		const errors: string[] = [];
+		page.on('pageerror', (e) => errors.push(e.message));
+		await page.setViewportSize(viewport);
+		await page.addInitScript((dark) => {
+			localStorage.setItem('ui-preferences', JSON.stringify({ theme: dark ? 'dark' : 'light' }));
+		}, viewport.dark);
+		await mockDraftLifecycle(page, { failPreview: true });
+		await expect(page.locator('html')).toHaveClass(viewport.dark ? /dark/ : /^(?!.*dark).*$/);
+		await expect(
+			page.getByText('รายการเปิดสอน: เปิดสอน 3 คาบ/สัปดาห์ → เปิดสอน 4 คาบ/สัปดาห์', {
+				exact: true
+			})
+		).toBeVisible();
+
+		await expect(page.getByText(`${ids.offering} · 4 คาบ/สัปดาห์`)).toHaveCount(0);
+		await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+		await expect(page.getByRole('alert')).toContainText('ตรวจไม่สำเร็จ');
+		await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
+		await expect(page.getByText('ค21101 — คณิตศาสตร์พื้นฐาน: ยังไม่มีกลุ่มเรียน')).toBeVisible();
+		await expect(page.getByText('ว21101 — วิทยาศาสตร์: ยังไม่มีกลุ่มเรียน')).toBeVisible();
+		await expect(page.getByRole('link', { name: 'ไปแก้ไข' })).toHaveCount(2);
+		expect(errors).toEqual([]);
+		expect(
+			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+		).toBe(true);
+		await page.screenshot({
+			path: `test-results/delivery-readiness-${viewport.name}.png`,
+			fullPage: true
+		});
+	});
+}
+test('publication selects a date and resets verification after changing it', async ({ page }) => {
+	const result = await mockDraftLifecycle(page);
+	await page.getByRole('button', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('button', { name: 'ยืนยันเผยแพร่' })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'ตรวจความพร้อมตามวันที่เลือก' }).click();
+	await expect(dialog.getByRole('button', { name: 'ยืนยันเผยแพร่' })).toBeEnabled();
+	await dialog.getByRole('button', { name: 'วันที่เริ่มใช้รุ่นเปิดสอน' }).click();
+	await page.getByRole('button', { name: 'วันอังคารที่ 3 สิงหาคม 2570', exact: true }).click();
+	await expect(dialog.getByRole('button', { name: 'ยืนยันเผยแพร่' })).toBeDisabled();
+	await dialog.getByRole('button', { name: 'ตรวจความพร้อมตามวันที่เลือก' }).click();
+	await dialog.getByRole('button', { name: 'ยืนยันเผยแพร่' }).click();
+	await expect(page.getByText(/เผยแพร่แล้ว เริ่มใช้/)).toBeVisible();
+	expect(result.published()?.effectiveFrom).toBe('2027-08-03');
+});
+test('draft deletion reports references and preserves the draft', async ({ page }) => {
+	const result = await mockDraftLifecycle(page, { failDelete: true });
+	await page.getByRole('button', { name: 'ลบแบบร่าง', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog).toContainText('2 รายการเปลี่ยนแปลง · 2 รายการเปิดสอน · 1 กลุ่ม');
+	await dialog.getByRole('button', { name: 'ยืนยันลบถาวร' }).click();
+	await expect(dialog.getByRole('alert')).toContainText('มีประวัติข้อมูลอื่นอ้างอิง');
+	expect(result.deleted()).toBe(false);
+	await dialog.getByRole('button', { name: 'กลับ', exact: true }).click();
+	await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
+});
+test('read-only staff can check readiness but cannot publish or delete', async ({ page }) => {
+	await mockDraftLifecycle(page, { readOnly: true });
+	await expect(page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true })).toHaveCount(
+		0
+	);
+	await expect(page.getByRole('button', { name: 'ลบแบบร่าง', exact: true })).toHaveCount(0);
+});
+
+test('draft deletion removes the version and returns to the viewing workspace', async ({
+	page
+}) => {
+	const result = await mockDraftLifecycle(page);
+	await page.getByRole('button', { name: 'ลบแบบร่าง', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	const confirm = dialog.getByRole('button', { name: 'ยืนยันลบถาวร' });
+	await expect(confirm).toBeEnabled();
+	await confirm.focus();
+	await page.keyboard.press('Enter');
+	await expect(dialog).toHaveCount(0);
+	expect(result.deleted()).toBe(true);
+	await expect(page).not.toHaveURL(/changeSetId=/);
+	await expect(page.getByRole('button', { name: 'ลบแบบร่าง', exact: true })).toHaveCount(0);
 });
