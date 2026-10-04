@@ -52,24 +52,27 @@ async function setup(page: Page, userType = 'staff') {
 	return api;
 }
 
-async function logoBytes(page: Page, type = 'image/png') {
+async function logoBytes(page: Page, type = 'image/png', size = [240, 120]) {
 	return Buffer.from(
-		await page.evaluate((mime) => {
-			const canvas = document.createElement('canvas');
-			canvas.width = 240;
-			canvas.height = 120;
-			const context = canvas.getContext('2d')!;
-			context.fillStyle = '#123c70';
-			context.fillRect(0, 0, 240, 120);
-			context.fillStyle = '#ffffff';
-			context.fillRect(90, 20, 60, 80);
-			return canvas.toDataURL(mime).split(',')[1];
-		}, type),
+		await page.evaluate(
+			({ mime, width, height }) => {
+				const canvas = document.createElement('canvas');
+				canvas.width = width;
+				canvas.height = height;
+				const context = canvas.getContext('2d')!;
+				context.fillStyle = '#123c70';
+				context.fillRect(0, 0, width, height);
+				context.fillStyle = '#ffffff';
+				context.fillRect(width * 0.375, height / 6, width / 4, (height * 2) / 3);
+				return canvas.toDataURL(mime).split(',')[1];
+			},
+			{ mime: type, width: size[0], height: size[1] }
+		),
 		'base64'
 	);
 }
 
-async function decodeDownload(page: Page, expected: string) {
+async function decodeDownload(page: Page, expected: string, pixelSize = 512) {
 	const pending = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'ดาวน์โหลด PNG', exact: true }).click();
 	const file = await pending;
@@ -78,36 +81,39 @@ async function decodeDownload(page: Page, expected: string) {
 	if (!filePath) throw new Error('Download file was not saved');
 	const bytes = await readFile(filePath);
 	expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
-	const decoded = await page.evaluate(async (base64) => {
-		const image = new Image();
-		image.src = `data:image/png;base64,${base64}`;
-		await image.decode();
-		const canvas = document.createElement('canvas');
-		canvas.width = canvas.height = 512;
-		const context = canvas.getContext('2d')!;
-		context.drawImage(image, 0, 0, 512, 512);
-		const pixels = context.getImageData(0, 0, 512, 512).data;
-		let binary = '';
-		for (let offset = 0; offset < pixels.length; offset += 8192)
-			binary += String.fromCharCode(...pixels.subarray(offset, offset + 8192));
-		const preview = document.querySelector<HTMLImageElement>('img[alt="QR Code ที่สร้าง"]')!;
-		const previewBytes = new Uint8Array(await (await fetch(preview.src)).arrayBuffer());
-		const source = atob(base64);
-		return {
-			width: image.naturalWidth,
-			height: image.naturalHeight,
-			pixels: btoa(binary),
-			identical:
-				previewBytes.length === source.length &&
-				previewBytes.every((byte, index) => byte === source.charCodeAt(index))
-		};
-	}, bytes.toString('base64'));
+	const decoded = await page.evaluate(
+		async ({ base64, pixelSize }) => {
+			const image = new Image();
+			image.src = `data:image/png;base64,${base64}`;
+			await image.decode();
+			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = pixelSize;
+			const context = canvas.getContext('2d')!;
+			context.drawImage(image, 0, 0, pixelSize, pixelSize);
+			const pixels = context.getImageData(0, 0, pixelSize, pixelSize).data;
+			let binary = '';
+			for (let offset = 0; offset < pixels.length; offset += 8192)
+				binary += String.fromCharCode(...pixels.subarray(offset, offset + 8192));
+			const preview = document.querySelector<HTMLImageElement>('img[alt="QR Code ที่สร้าง"]')!;
+			const previewBytes = new Uint8Array(await (await fetch(preview.src)).arrayBuffer());
+			const source = atob(base64);
+			return {
+				width: image.naturalWidth,
+				height: image.naturalHeight,
+				pixels: btoa(binary),
+				identical:
+					previewBytes.length === source.length &&
+					previewBytes.every((byte, index) => byte === source.charCodeAt(index))
+			};
+		},
+		{ base64: bytes.toString('base64'), pixelSize }
+	);
 	expect(decoded.width).toBe(1024);
 	expect(decoded.height).toBe(1024);
 	expect(decoded.identical).toBe(true);
-	expect(jsQR(new Uint8ClampedArray(Buffer.from(decoded.pixels, 'base64')), 512, 512)?.data).toBe(
-		expected
-	);
+	expect(
+		jsQR(new Uint8ClampedArray(Buffer.from(decoded.pixels, 'base64')), pixelSize, pixelSize)?.data
+	).toBe(expected);
 }
 
 test('staff without permissions generates locally and stale downloads are disabled', async ({
@@ -208,6 +214,32 @@ test('uploads validate size and decoding; PNG, JPEG and WebP produce scannable Q
 		await decodeDownload(page, payload);
 	}
 	expect(api.writes).toEqual([]);
+});
+
+test('larger portrait, square and landscape logos remain scannable across QR densities', async ({
+	page
+}) => {
+	await setup(page);
+	await page.goto(qrPath);
+	await page.getByRole('button', { name: 'เลือกภาพจากเครื่อง' }).click();
+	for (const { text, size } of [
+		{ text: 'เอก', size: [120, 240] },
+		{ text: 'https://www.google.com', size: [120, 240] },
+		{ text: 'กิจกรรมสำหรับครูและนักเรียน '.repeat(8), size: [160, 160] },
+		{ text: 'ก'.repeat(300), size: [240, 120] }
+	]) {
+		await page.getByLabel('ลิงก์หรือข้อความ').fill(text);
+		await page.getByLabel('ไฟล์โลโก้').setInputFiles({
+			name: 'logo.png',
+			mimeType: 'image/png',
+			buffer: await logoBytes(page, 'image/png', size)
+		});
+		await expect(page.getByAltText('โลโก้ที่เลือก')).toBeVisible();
+		await page.getByRole('button', { name: 'สร้าง QR Code', exact: true }).click();
+		await expect(page.getByRole('button', { name: 'ดาวน์โหลด PNG' })).toBeEnabled();
+		// Dense symbols need the exported resolution: downsampling blends adjacent modules.
+		await decodeDownload(page, text, 1024);
+	}
 });
 
 test('school logo handles missing logo, delivery failure and retry without settings permission', async ({

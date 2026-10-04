@@ -61,7 +61,7 @@ export async function createQrPng(text: string, logo: HTMLImageElement | null): 
 		Math.floor((QR_SIZE - symbol.height) / 2)
 	);
 	if (logo) {
-		const frame = Math.floor(QR_SIZE * 0.15);
+		const frame = Math.floor(QR_SIZE * 0.22);
 		const inset = 12;
 		const scale = (frame - inset * 2) / Math.max(logo.naturalWidth, logo.naturalHeight);
 		const width = logo.naturalWidth * scale;
