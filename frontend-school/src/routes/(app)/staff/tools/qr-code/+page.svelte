@@ -71,7 +71,13 @@
 			logoPreview = URL.createObjectURL(blob);
 		} catch (error) {
 			if (disposed || attempt !== logoAttempt) return;
-			logoError = error instanceof Error ? error.message : 'โหลดโลโก้ไม่สำเร็จ กรุณาลองใหม่';
+			logoError =
+				error instanceof TypeError ||
+				(error instanceof Error && error.message === 'Failed to fetch')
+					? 'โหลดโลโก้ไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่ หรือเลือกภาพจากเครื่อง'
+					: error instanceof Error
+						? error.message
+						: 'โหลดโลโก้ไม่สำเร็จ กรุณาลองใหม่';
 		} finally {
 			if (!disposed && attempt === logoAttempt) logoLoading = false;
 		}

@@ -353,6 +353,9 @@ class APIClient {
 		const response = await requestFetch(url, {
 			method: 'GET',
 			mode: 'cors',
+			// An earlier <img> response can be cached without CORS headers. Read fresh
+			// bytes for exports and keep downloaded private files out of the HTTP cache.
+			cache: 'no-store',
 			credentials: 'omit',
 			referrerPolicy: 'no-referrer',
 			signal: options.signal

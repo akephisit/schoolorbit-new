@@ -256,6 +256,39 @@ test('school logo handles missing logo, delivery failure and retry without setti
 	expect(reads).toBe(3);
 });
 
+test('failed asset fetch shows Thai guidance and retry retains the QR input', async ({ page }) => {
+	await setup(page);
+	await page.goto(qrPath);
+	await page.getByLabel('ลิงก์หรือข้อความ').fill(payload);
+	const bytes = await logoBytes(page);
+	await page.route('**/api/school/public', (route) =>
+		route.fulfill({ json: { success: true, data: { logoFileId: id(40) } } })
+	);
+	await page.route(`**/api/public/files/${id(40)}/delivery`, (route) =>
+		route.fulfill({
+			json: {
+				success: true,
+				data: { url: new URL('/test-network-logo.png', route.request().url()).href }
+			}
+		})
+	);
+	let attempts = 0;
+	await page.route('**/test-network-logo.png', (route) =>
+		++attempts === 1
+			? route.abort('failed')
+			: route.fulfill({ contentType: 'image/png', body: bytes })
+	);
+	await page.getByRole('button', { name: 'ใช้โลโก้โรงเรียน' }).click();
+	await expect(page.locator('#qr-logo-error')).toContainText('กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
+	await expect(page.locator('#qr-logo-error')).not.toContainText('Failed to fetch');
+	await expect(page.getByLabel('ลิงก์หรือข้อความ')).toHaveValue(payload);
+	await page.getByRole('button', { name: 'ลองโหลดโลโก้อีกครั้ง' }).click();
+	await expect(page.getByAltText('โลโก้ที่เลือก')).toBeVisible();
+	await page.getByRole('button', { name: 'สร้าง QR Code', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ดาวน์โหลด PNG' })).toBeEnabled();
+	await decodeDownload(page, payload);
+});
+
 test('switching source rejects a late school read and allows QR without logo', async ({ page }) => {
 	await setup(page);
 	await page.goto(qrPath);
