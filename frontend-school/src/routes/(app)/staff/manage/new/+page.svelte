@@ -5,19 +5,19 @@
 		formatCareerDate,
 		PERSONNEL_TYPE_LABELS,
 		CAREER_KIND_LABELS
-	} from '$lib/forms/staff-career';
-	import StaffPersonnelFields from '$lib/components/staff/StaffPersonnelFields.svelte';
+	} from '#lib/forms/staff-career.js';
+	import StaffPersonnelFields from '#lib/components/staff/StaffPersonnelFields.svelte';
 	import {
 		ACADEMIC_RANK_LABELS,
 		EDUCATION_LEVEL_LABELS,
 		staffPersonnelDraft,
 		normalizeStaffEducationText
-	} from '$lib/forms/staff-personnel';
-	import type { StaffInfoResponse } from '$lib/api/staff';
+	} from '#lib/forms/staff-personnel.js';
+	import type { StaffInfoResponse } from '#lib/api/staff.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
-	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
+	import { staffReturnHref, withStaffReturn } from '#lib/navigation/staff-management.js';
+	import StaffBreadcrumb from '#lib/components/staff/StaffBreadcrumb.svelte';
 	import { resolve } from '$app/paths';
 	import {
 		createStaff,
@@ -25,17 +25,17 @@
 		listOrganizationUnits,
 		type Role,
 		type OrganizationUnit
-	} from '$lib/api/staff';
+	} from '#lib/api/staff.js';
 	import { toast } from 'svelte-sonner';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as Select from '$lib/components/ui/select';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { DatePicker } from '$lib/components/ui/date-picker';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 
 	import {
 		User,
@@ -47,22 +47,22 @@
 		LoaderCircle
 	} from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { authStore } from '$lib/stores/auth';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import {
 		readStaffCreateDraft,
 		saveStaffCreateDraft,
 		clearStaffCreateDraft
-	} from '$lib/forms/staff-create-draft';
+	} from '#lib/forms/staff-create-draft.js';
 
 	// Form state
 	let currentStep = $state(1);
 	const totalSteps = 4;
-	const returnHref = $derived(staffReturnHref(page.url));
+	const returnHref = $derived(staffReturnHref(new URL(page.url.href)));
 
 	// Loading states
 	let loading = $state(false);
@@ -464,10 +464,9 @@
 				// Redirect to profile
 				await goto(
 					resolve(
-						withStaffReturn(
-							`/staff/manage/${result.data.id}`,
-							returnHref
-						) as `/staff/manage/${string}`
+						withStaffReturn(`/staff/manage/${result.data.id}`, returnHref).slice(
+							1
+						) as `staff/manage/${string}`
 					)
 				);
 			} else {

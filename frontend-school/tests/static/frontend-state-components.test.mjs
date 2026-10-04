@@ -13,7 +13,7 @@ async function readProjectFile(relativePath) {
 
 async function readPageStateContractSource(page) {
 	const pageSource = await readProjectFile(page);
-	if (!pageSource.includes("from '$lib/components/supervision/SupervisionWorkspace.svelte'")) {
+	if (!pageSource.includes("from '#lib/components/supervision/SupervisionWorkspace.svelte'")) {
 		return pageSource;
 	}
 
@@ -32,17 +32,17 @@ test('shared frontend state components use local shadcn-svelte primitives', asyn
 	const skeletonIndex = await readProjectFile('src/lib/components/ui/skeleton/index.ts');
 	const skeleton = await readProjectFile('src/lib/components/ui/skeleton/skeleton.svelte');
 
-	assert.match(pageState, /from '\$lib\/components\/ui\/alert'/);
-	assert.match(pageState, /from '\$lib\/components\/ui\/button'/);
-	assert.match(pageState, /from '\$lib\/components\/ui\/card'/);
+	assert.match(pageState, /from '#lib\/components\/ui\/alert\/index\.js'/);
+	assert.match(pageState, /from '#lib\/components\/ui\/button\/index\.js'/);
+	assert.match(pageState, /from '#lib\/components\/ui\/card\/index\.js'/);
 
-	assert.match(pageSkeleton, /from '\$lib\/components\/ui\/card'/);
-	assert.match(pageSkeleton, /from '\$lib\/components\/ui\/skeleton'/);
+	assert.match(pageSkeleton, /from '#lib\/components\/ui\/card\/index\.js'/);
+	assert.match(pageSkeleton, /from '#lib\/components\/ui\/skeleton\/index\.js'/);
 
-	assert.match(tableSkeleton, /from '\$lib\/components\/ui\/table'/);
-	assert.match(tableSkeleton, /from '\$lib\/components\/ui\/skeleton'/);
+	assert.match(tableSkeleton, /from '#lib\/components\/ui\/table\/index\.js'/);
+	assert.match(tableSkeleton, /from '#lib\/components\/ui\/skeleton\/index\.js'/);
 
-	assert.match(loadingButton, /from '\$lib\/components\/ui\/button'/);
+	assert.match(loadingButton, /from '#lib\/components\/ui\/button\/index\.js'/);
 	assert.match(loadingButton, /LoaderCircle/);
 
 	assert.match(appStateIndex, /PageState/);
@@ -66,7 +66,7 @@ test('staff and student list workspaces use shared frontend state components', a
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for initial loading`);
@@ -87,7 +87,7 @@ test('academic top-level workspaces use shared frontend state components', async
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -109,7 +109,7 @@ test('academic curriculum and planning workspaces use shared frontend state comp
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -128,7 +128,7 @@ test('academic large workspaces use shared frontend state components', async () 
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -142,7 +142,7 @@ test('academic timetable workspace uses shared frontend state components', async
 
 	assert.match(
 		source,
-		/from '\$lib\/components\/app-state'/,
+		/from '#lib\/components\/app-state\/index\.js'/,
 		`${page} should import shared app-state components`
 	);
 	assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -164,7 +164,7 @@ test('staff administration workspaces use shared frontend state components', asy
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -186,7 +186,7 @@ test('staff self-service workspaces use shared frontend state components', async
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -208,7 +208,7 @@ test('staff detail workspaces use shared frontend state components', async () =>
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -232,7 +232,7 @@ test('parent and student self-service workspaces use shared frontend state compo
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -259,7 +259,7 @@ test('admission workflow pages use shared frontend state components', async () =
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageSkeleton\b/, `${page} should use PageSkeleton for loading`);
@@ -288,7 +288,7 @@ test('remaining action and system pages use shared frontend state components', a
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<PageState\b/, `${page} should use PageState for system states`);
@@ -312,7 +312,7 @@ test('account settings action loading uses shared loading button', async () => {
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-state'/,
+			/from '#lib\/components\/app-state\/index\.js'/,
 			`${page} should import shared app-state components`
 		);
 		assert.match(source, /<LoadingButton\b/, `${page} should use LoadingButton for actions`);

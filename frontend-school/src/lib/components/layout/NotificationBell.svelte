@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { notificationStore } from '$lib/stores/notification';
+	import { notificationStore } from '#lib/stores/notification.js';
 	import { Bell, CheckCheck } from '@lucide/svelte';
 	import { fade } from 'svelte/transition';
-	import * as Popover from '$lib/components/ui/popover';
-	import { Button, buttonVariants } from '$lib/components/ui/button';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import { Button, buttonVariants } from '#lib/components/ui/button/index.js';
+	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
 
-	import { authStore } from '$lib/stores/auth';
+	import { authStore } from '#lib/stores/auth.js';
 	const isAuthenticated = $derived($authStore.isAuthenticated);
 
 	// Svelte 5 Effect Rune

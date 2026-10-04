@@ -233,9 +233,12 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
   compatibility runs only through the explicit disposable-branch gate and uses its direct
   endpoint, never a `-pooler` transaction endpoint.
 
-## 7. Frontend: SvelteKit 5
+## 7. Frontend: SvelteKit 3 / Svelte 5
 
 ### Data, state, and components
+
+- Configure SvelteKit through `sveltekit({...})` in `vite.config.ts`. Use package subpath imports (`#lib/*`) with explicit module extensions, `$app/env`, and `$app/state`; do not restore retired Kit 2 configuration or aliases.
+- UI primitives may use Runed's portable utilities. Do not import `runed/kit` while its Kit integration still depends on retired Kit 2 APIs; the scoped peer override does not make those utilities compatible.
 
 - Use TypeScript throughout and keep the API boundary strictly typed.
 - Prefer `+page.server.ts` loaders/actions where server-only credentials or server-side behavior are involved. Load route-specific data only.
@@ -262,7 +265,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - When hover or tap preload has already resolved a region before its first paint, render the data immediately; do not force a minimum skeleton duration or add artificial delay. During a background refresh with usable data, keep that data visible and expose a localized non-blocking updating status plus `aria-busy` instead of replacing it with a skeleton.
 - Do not create route-wide `/page-view` or equivalent generic batch endpoints. A cohesive typed domain endpoint remains valid when one independently renderable UI region needs all returned fields together and they share parameters, authorization, freshness, and invalidation.
 - Load optional data and data guarded by create, update, approve, export, or other exact permissions only after the relevant permission passes and the user opens that workflow.
-- After a typed mutation returns a resource, patch only the affected local state. Otherwise invalidate a named route dependency. Reserve `invalidateAll()` for deliberately session-wide dependencies or an explicit manual refresh.
+- After a typed mutation returns a resource, patch only the affected local state. Otherwise invalidate a named route dependency. Reserve `refreshAll()` for deliberately session-wide dependencies or an explicit manual refresh.
 - A client read cache must name its owner, tenant and route-context key, maximum age, mutation and realtime invalidation events, and logout/user-change cleanup. Do not add a generic cache for auth, permissions, or sensitive user data.
 
 ### Permissions and routing

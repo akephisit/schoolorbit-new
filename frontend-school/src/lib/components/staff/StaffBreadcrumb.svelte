@@ -18,14 +18,14 @@
 	class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
 >
 	<a
-		href={resolve(returnHref as '/staff/manage')}
-		data-sveltekit-preload-data="off"
+		href={resolve(returnHref.slice(1) as `staff/manage${'' | `?${string}`}`)}
+		data-sveltekit-preload-data={false}
 		class="hover:text-foreground">รายชื่อบุคลากร</a
 	>
 	{#if name}
 		<span aria-hidden="true">/</span>
 		{#if profileHref}<a
-				href={resolve(profileHref as `/staff/manage/${string}`)}
+				href={resolve(profileHref.slice(1) as `staff/manage/${string}`)}
 				data-sveltekit-preload-data="tap"
 				class="hover:text-foreground">{name}</a
 			>

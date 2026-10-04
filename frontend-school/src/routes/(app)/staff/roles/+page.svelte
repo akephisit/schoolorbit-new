@@ -1,25 +1,25 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { roleAPI, type Role } from '$lib/api/roles';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { roleAPI, type Role } from '#lib/api/roles.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
+	} from '#lib/components/ui/card/index.js';
 	import { Edit, Eye, Plus, Shield } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
@@ -93,7 +93,7 @@
 		<Button variant="outline" onclick={loadRoles} disabled={loading || !canReadRoles}>รีเฟรช</Button
 		>
 		{#if canCreateRoles}
-			<Button onclick={() => goto(resolve('/staff/roles/new'))} class="gap-2">
+			<Button onclick={() => goto(resolve('staff/roles/new'))} class="gap-2">
 				<Plus class="h-4 w-4" />
 				สร้างบทบาทใหม่
 			</Button>
@@ -129,7 +129,7 @@
 				title="ยังไม่มีบทบาท"
 				description="เริ่มต้นสร้างบทบาทแรกของคุณได้เมื่อมีสิทธิ์สร้างบทบาท"
 				actionLabel={canCreateRoles ? 'สร้างบทบาทใหม่' : undefined}
-				onaction={() => goto(resolve('/staff/roles/new'))}
+				onaction={() => goto(resolve('staff/roles/new'))}
 			/>
 		{:else}
 			<!-- Roles Grid -->
@@ -137,7 +137,7 @@
 				{#each roles as role (role.id)}
 					<Card
 						class={`cursor-pointer transition-shadow hover:shadow-lg ${role.is_active ? '' : 'opacity-70'}`}
-						onclick={() => goto(resolve(`/staff/roles/${role.id}`))}
+						onclick={() => goto(resolve(`staff/roles/${role.id}`))}
 					>
 						<CardHeader>
 							<div class="flex items-start justify-between gap-3">
@@ -190,7 +190,7 @@
 									size="sm"
 									onclick={(e: MouseEvent) => {
 										e.stopPropagation();
-										goto(resolve(`/staff/roles/${role.id}`));
+										goto(resolve(`staff/roles/${role.id}`));
 									}}
 									class="gap-1"
 								>

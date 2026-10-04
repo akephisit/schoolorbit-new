@@ -4,16 +4,16 @@
 	import {
 		listPublicAcademicContextOptions,
 		type AcademicContextOptionsResponse
-	} from '$lib/api/academic-context';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import CalendarColorKey from '$lib/components/calendar/CalendarColorKey.svelte';
-	import CalendarDayTimelineDialog from '$lib/components/calendar/CalendarDayTimelineDialog.svelte';
-	import CalendarMonthGrid from '$lib/components/calendar/CalendarMonthGrid.svelte';
-	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
-	import { type CalendarPublicEvent, listPublicCalendarEvents } from '$lib/api/calendar';
+	} from '#lib/api/academic-context.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
+	import CalendarDayTimelineDialog from '#lib/components/calendar/CalendarDayTimelineDialog.svelte';
+	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
+	import CalendarEventList from '#lib/components/calendar/CalendarEventList.svelte';
+	import { type CalendarPublicEvent, listPublicCalendarEvents } from '#lib/api/calendar.js';
 	import {
 		buildCalendarColorKey,
 		calendarGridRange,
@@ -22,7 +22,7 @@
 		formatCalendarMonth,
 		monthRange,
 		toIsoDate
-	} from '$lib/utils/calendar';
+	} from '#lib/utils/calendar.js';
 	import { CalendarDays, ChevronLeft, ChevronRight } from '@lucide/svelte';
 
 	const ALL_TERMS_VALUE = '__all_terms__';

@@ -63,7 +63,7 @@ async function importStaffApiWithRequestRecorder(requests) {
 	].join('\n');
 	const clientUrl = `data:text/javascript;base64,${Buffer.from(clientModule).toString('base64')}`;
 	const moduleUrl = `data:text/javascript;base64,${Buffer.from(
-		compiled.replace('$lib/api/client', clientUrl)
+		compiled.replace('#lib/api/client.js', clientUrl)
 	).toString('base64')}#${Date.now()}`;
 
 	try {
@@ -122,10 +122,13 @@ test('frontend API client preserves typed error data on thrown errors', async ()
 test('frontend auth consumes the shared envelope through apiClient', async () => {
 	const source = await readRepoFile('frontend-school/src/lib/api/auth.ts');
 
-	assert.match(source, /import\s+\{[^}]*\bapiClient\b[^}]*\}\s+from\s+['"]\$lib\/api\/client['"]/);
 	assert.match(
 		source,
-		/import\s+type\s+\{\s*components\s*\}\s+from\s+['"]\$lib\/api\/generated\/school-api['"]/
+		/import\s+\{[^}]*\bapiClient\b[^}]*\}\s+from\s+['"]#lib\/api\/client\.js['"]/
+	);
+	assert.match(
+		source,
+		/import\s+type\s+\{\s*components\s*\}\s+from\s+['"]#lib\/api\/generated\/school-api\.js['"]/
 	);
 	assert.match(
 		source,
@@ -859,7 +862,7 @@ test('parent self-service API uses typed student and timetable responses', async
 	assert.doesNotMatch(parentsApi, /apiClient\.get<unknown>/);
 	assert.doesNotMatch(parentsApi, /return response as/);
 
-	assert.match(childPage, /import type \{ Student \} from '\$lib\/api\/students'/);
+	assert.match(childPage, /import type \{ Student \} from '#lib\/api\/students\.js'/);
 	assert.match(childPage, /student = v\.data\.student/);
 	assert.doesNotMatch(childPage, /response\.data as/);
 	assert.match(timetablePage, /getChildProfile\(studentId, selectedYearId,/);
@@ -928,7 +931,7 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 
 	assert.match(sidebar, /workStore/);
 	assert.match(sidebar, /\/staff\/work/);
-	assert.match(workInboxPage, /from '\$lib\/stores\/permissions'/);
+	assert.match(workInboxPage, /from '#lib\/stores\/permissions\.js'/);
 	assert.match(workInboxPage, /\$can\.hasWorkflowManage\(\)/);
 	assert.match(workInboxPage, /\/staff\/work\/manage/);
 	assert.doesNotMatch(workInboxPage, /PERMISSION_MODULES\.ORGANIZATION_WORK/);
@@ -937,7 +940,7 @@ test('work inbox API uses typed envelope data and SSE only signals refresh', asy
 	assert.match(workManagePage, /createWorkItem/);
 	assert.match(workManagePage, /lookupStaff/);
 	assert.match(workManagePage, /lookupOrganizationUnits/);
-	assert.match(workManagePage, /from '\$lib\/components\/ui\/select'/);
+	assert.match(workManagePage, /from '#lib\/components\/ui\/select\/index\.js'/);
 	assert.match(workManagePage, /<Select\.Root/);
 	assert.doesNotMatch(workManagePage, /<select\b/);
 	assert.doesNotMatch(workManagePage, /\bfetch\s*\(/);

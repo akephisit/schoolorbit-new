@@ -1,18 +1,18 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
 	import {
 		selectAcademicTermChangeSetSummary,
 		summarizeAcademicTermChangeSet,
 		type LearningDeliveryRefreshScope
-	} from '$lib/academic/learning-delivery-page';
+	} from '#lib/academic/learning-delivery-page.js';
 	import {
 		buildSynchronizedActivityPreparationTarget,
 		type SynchronizedActivityPreparationTarget
-	} from '$lib/academic/synchronized-activity-delivery';
+	} from '#lib/academic/synchronized-activity-delivery.js';
 	import {
 		getAcademicTermChangeSet,
 		getHomeroomDeliveryWorkspace,
@@ -23,24 +23,24 @@
 		type HomeroomDeliveryWorkspace as HomeroomWorkspace,
 		type LearningDeliveryOverview,
 		type LearningOfferingOverviewItem
-	} from '$lib/api/learning-delivery';
-	import { includeTimetableVersionOffering } from '$lib/api/timetable';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
+	} from '#lib/api/learning-delivery.js';
+	import { includeTimetableVersionOffering } from '#lib/api/timetable.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
-	} from '$lib/components/academic-workflow';
-	import AcademicChangeSetDialog from '$lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
-	import AcademicChangeSetPanel from '$lib/components/learning-delivery/AcademicChangeSetPanel.svelte';
-	import HomeroomDeliveryWorkspace from '$lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
-	import OfferingCreateDialog from '$lib/components/learning-delivery/OfferingCreateDialog.svelte';
-	import OfferingOverviewTable from '$lib/components/learning-delivery/OfferingOverviewTable.svelte';
-	import * as Select from '$lib/components/ui/select';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/academic-workflow/index.js';
+	import AcademicChangeSetDialog from '#lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
+	import AcademicChangeSetPanel from '#lib/components/learning-delivery/AcademicChangeSetPanel.svelte';
+	import HomeroomDeliveryWorkspace from '#lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
+	import OfferingCreateDialog from '#lib/components/learning-delivery/OfferingCreateDialog.svelte';
+	import OfferingOverviewTable from '#lib/components/learning-delivery/OfferingOverviewTable.svelte';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let { data }: { data: PageData } = $props();
 	const academicYearId = $derived(data.context?.academicYearId ?? null);
@@ -137,10 +137,16 @@
 	}
 
 	function updateSelectedChangeSetUrl(id: string) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
+
 		if (id) url.searchParams.set('changeSetId', id);
 		else url.searchParams.delete('changeSetId');
-		replaceState(resolve(`/staff/academic/delivery?${url.searchParams.toString()}`), page.state);
+
+		goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	function applyChangeSetSummaries(loaded: AcademicTermChangeSetSummary[]) {
@@ -317,10 +323,14 @@
 		pendingTimetableAction = null;
 		addChangeSet(created);
 		if (!academicYearId || !academicTermId) return;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('timetableVersionId', created.targetTimetableVersionId);
 		url.searchParams.set('changeSetId', created.id);
-		replaceState(resolve(`/staff/academic/delivery?${url.searchParams.toString()}`), page.state);
+		goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 		await loadHomerooms();
 		if (pending?.kind !== 'activate' || !workspace || !offeringDialog) return;
 		const target = buildSynchronizedActivityPreparationTarget(workspace, pending.catalogVersionId);
@@ -343,9 +353,11 @@
 		selectedChangeSetId = updated.id;
 		activeChangeSet = updated;
 		const summary = summarizeAcademicTermChangeSet(updated);
+
 		changeSets = changeSets
 			.map((changeSet) => (changeSet.id === updated.id ? summary : changeSet))
 			.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
 		if (updated.items.length > 0 && !overview && academicTermId) {
 			await loadOverview(academicTermId);
 		}

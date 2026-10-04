@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Achievement } from '$lib/types/achievement';
+	import type { Achievement } from '#lib/types/achievement.js';
 	import { Calendar, Trash2, Pencil } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import {
 		Card,
 		CardContent,
@@ -10,7 +10,7 @@
 		CardFooter,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
+	} from '#lib/components/ui/card/index.js';
 
 	interface Props {
 		achievement: Achievement;

@@ -42,7 +42,7 @@ test('client tenant hint rejects values that cannot be a school subdomain', asyn
 	assert.match(client, /export function getSchoolSubdomainHint\(\):\s*string \| null/);
 	assert.match(
 		client,
-		/getSchoolSubdomainHint\(\)[\s\S]*normalizeSchoolSubdomain\(env\.PUBLIC_SCHOOL_SUBDOMAIN\)/
+		/getSchoolSubdomainHint\(\)[\s\S]*normalizeSchoolSubdomain\(PUBLIC_SCHOOL_SUBDOMAIN\)/
 	);
 
 	const { normalizeSchoolSubdomain } = await import('../../src/lib/api/school-subdomain.ts');

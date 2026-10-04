@@ -1,15 +1,16 @@
 <script lang="ts">
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import { aggregateCapabilities } from '$lib/academic/results/aggregate-access';
+	import { aggregateCapabilities } from '#lib/academic/results/aggregate-access.js';
 	import {
 		sortAssignedFirst,
 		type CourseOutcomeSelection
-	} from '$lib/academic/results/presentation';
+	} from '#lib/academic/results/presentation.js';
+
 	import {
 		confirmActivityGroupResults,
 		confirmCourseGroupResults,
@@ -24,7 +25,7 @@
 		type ActivityResultBatchInput,
 		type ActivityResultPreparationWorkspace,
 		type CourseResultPreparationWorkspace
-	} from '$lib/api/academicResults';
+	} from '#lib/api/academicResults.js';
 	import {
 		getLearnerEvaluationWorkspace,
 		getStudentLearnerEvaluationSummary,
@@ -33,22 +34,22 @@
 		type LearnerEvaluationSubject,
 		type LearnerEvaluationWorkspace,
 		type StudentLearnerEvaluationSummary
-	} from '$lib/api/academicLearnerEvaluations';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
-	import ActivityEvaluationTable from '$lib/components/academic/results/ActivityEvaluationTable.svelte';
-	import LearnerEvaluationSummary from '$lib/components/academic/results/LearnerEvaluationSummary.svelte';
-	import ResultPreparationTable from '$lib/components/academic/results/ResultPreparationTable.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/academicLearnerEvaluations.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import AcademicPrerequisiteNotice from '#lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
+	import ActivityEvaluationTable from '#lib/components/academic/results/ActivityEvaluationTable.svelte';
+	import LearnerEvaluationSummary from '#lib/components/academic/results/LearnerEvaluationSummary.svelte';
+	import ResultPreparationTable from '#lib/components/academic/results/ResultPreparationTable.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { BookOpenCheck, CheckCircle2, ClipboardCheck, Shapes, ShieldCheck } from '@lucide/svelte';
 
 	type ResultSection = 'course' | 'activity' | 'learner';
@@ -176,13 +177,19 @@
 	}
 
 	function syncUrl(): void {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('section', activeSection);
+
 		if (selectedGroupId) url.searchParams.set('learningGroupId', selectedGroupId);
 		else url.searchParams.delete('learningGroupId');
 		if (selectedStudentId) url.searchParams.set('studentAcademicYearId', selectedStudentId);
 		else url.searchParams.delete('studentAcademicYearId');
-		replaceState(resolve(`/staff/academic/results?${url.searchParams.toString()}`), page.state);
+
+		goto(resolve(`staff/academic/results?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	async function loadOverview(): Promise<void> {
@@ -638,7 +645,7 @@
 		{#if canReadAggregate && academicYearId && academicTermId}
 			<Button
 				variant="outline"
-				href={`/staff/academic/results/aggregates?academicYearId=${academicYearId}&academicTermId=${academicTermId}`}
+				href={`staff/academic/results/aggregates?academicYearId=${academicYearId}&academicTermId=${academicTermId}`}
 				>สรุปผลรายภาค</Button
 			>
 		{/if}

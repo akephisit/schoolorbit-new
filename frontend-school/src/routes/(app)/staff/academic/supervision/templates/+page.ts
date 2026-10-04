@@ -1,7 +1,7 @@
-import { listSupervisionTemplateSummaries } from '$lib/api/supervision';
-import { waitForSupervisionAccess } from '$lib/supervision/supervision-access';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { listSupervisionTemplateSummaries } from '#lib/api/supervision.js';
+import { waitForSupervisionAccess } from '#lib/supervision/supervision-access.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

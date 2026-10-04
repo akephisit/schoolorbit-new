@@ -1,19 +1,19 @@
 // API Client base
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { resolve } from '$app/paths';
-import { env } from '$env/dynamic/public';
-import { PUBLIC_BACKEND_URL } from '$env/static/public';
+import { PUBLIC_SCHOOL_SUBDOMAIN } from '$app/env/public';
+import { PUBLIC_BACKEND_URL } from '$app/env/public';
 import {
 	captureSessionSecurityHeaders,
 	clearSessionSecurity,
 	retryAfterSeconds as parseRetryAfterSeconds,
 	withSessionSecurityHeaders
-} from '$lib/api/session-security';
-import { appendApiQuery, type ApiQuery } from '$lib/api/query';
-import { normalizeSchoolSubdomain } from '$lib/api/school-subdomain';
-import { confirmMaintenance, probeDeploymentStatus } from '$lib/deployment/maintenance';
-import { isMaintenanceResponse } from '$lib/deployment/maintenance-controller';
-import { authStore } from '$lib/stores/auth';
+} from '#lib/api/session-security.js';
+import { appendApiQuery, type ApiQuery } from '#lib/api/query.js';
+import { normalizeSchoolSubdomain } from '#lib/api/school-subdomain.js';
+import { confirmMaintenance, probeDeploymentStatus } from '#lib/deployment/maintenance.js';
+import { isMaintenanceResponse } from '#lib/deployment/maintenance-controller.js';
+import { authStore } from '#lib/stores/auth.js';
 
 export const BACKEND_URL = PUBLIC_BACKEND_URL || 'https://school-api.schoolorbit.app';
 export const BACKEND_WS_URL = BACKEND_URL.replace(/^http/, 'ws');
@@ -96,6 +96,7 @@ function normalizeApiResponse<T, E = never>(
 			typeof payload.error === 'string' && payload.error
 				? payload.error
 				: (message ?? 'เกิดข้อผิดพลาด');
+
 		if ('data' in payload) {
 			return {
 				success: false,
@@ -129,7 +130,7 @@ function normalizeApiResponse<T, E = never>(
 }
 
 export function getSchoolSubdomainHint(): string | null {
-	return normalizeSchoolSubdomain(env.PUBLIC_SCHOOL_SUBDOMAIN);
+	return normalizeSchoolSubdomain(PUBLIC_SCHOOL_SUBDOMAIN);
 }
 
 export function requireApiData<T, E = never>(
@@ -186,7 +187,7 @@ class APIClient {
 		authStore.clearUser();
 		if (!browser) return;
 
-		const loginPath = resolve('/login');
+		const loginPath = resolve('login');
 		const currentUrl = new URL(window.location.href);
 		if (currentUrl.pathname === loginPath || currentUrl.pathname === `${loginPath}/`) return;
 

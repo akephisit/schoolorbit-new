@@ -4,13 +4,13 @@
 	import {
 		listStaffExamSchedules,
 		type StaffPublishedExamScheduleRound
-	} from '$lib/api/examSchedule';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import StaffExamScheduleDashboard from '$lib/components/academic/exam-schedule/StaffExamScheduleDashboard.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { authStore } from '$lib/stores/auth';
+	} from '#lib/api/examSchedule.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import StaffExamScheduleDashboard from '#lib/components/academic/exam-schedule/StaffExamScheduleDashboard.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import { RefreshCw } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();

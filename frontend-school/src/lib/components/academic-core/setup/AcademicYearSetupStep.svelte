@@ -3,19 +3,19 @@
 		AcademicYear,
 		CreateAcademicYearRequest,
 		UpdateAcademicYearRequest
-	} from '$lib/api/academic-core';
+	} from '#lib/api/academic-core.js';
 	import {
 		customNameFromStored,
 		normalizeSchoolDays,
 		standardAcademicYearName,
 		type AcademicWeekday
-	} from '$lib/academic-core/foundation-presentation';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Collapsible from '$lib/components/ui/collapsible';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/academic-core/foundation-presentation.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { ChevronDown, Save } from '@lucide/svelte';
 
 	const WEEKDAYS: Array<{ code: AcademicWeekday; label: string; short: string }> = [

@@ -5,11 +5,11 @@
 		ExamScheduleItem,
 		ExamScheduleReadiness,
 		ExamSession
-	} from '$lib/api/examSchedule';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Sheet from '$lib/components/ui/sheet';
-	import { examScheduleReadinessLabel } from '$lib/utils/exam-schedule-readiness';
+	} from '#lib/api/examSchedule.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
+	import { examScheduleReadinessLabel } from '#lib/utils/exam-schedule-readiness.js';
 	import { AlertTriangle, CheckCircle2 } from '@lucide/svelte';
 
 	let {

@@ -1,7 +1,10 @@
 <script lang="ts">
-	import type { PersonalExamScheduleRound, PersonalExamSessionView } from '$lib/api/examSchedule';
-	import { PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
+	import type {
+		PersonalExamScheduleRound,
+		PersonalExamSessionView
+	} from '#lib/api/examSchedule.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import {
 		Table,
 		TableBody,
@@ -9,7 +12,7 @@
 		TableHead,
 		TableHeader,
 		TableRow
-	} from '$lib/components/ui/table';
+	} from '#lib/components/ui/table/index.js';
 	import { SvelteMap } from 'svelte/reactivity';
 
 	interface SessionDateGroup {

@@ -1,29 +1,29 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
 	import {
 		PERMISSIONS,
 		PERMISSION_MODULES,
 		permissionActionLabel,
 		permissionScopeMeta
-	} from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { userRoleAPI, roleAPI, type UserRoleAssignment, type Role } from '$lib/api/roles';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
+	} from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { userRoleAPI, roleAPI, type UserRoleAssignment, type Role } from '#lib/api/roles.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
-	import { Label } from '$lib/components/ui/label';
-	import { Input } from '$lib/components/ui/input';
+	} from '#lib/components/ui/card/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import {
 		Dialog,
 		DialogContent,
@@ -31,8 +31,8 @@
 		DialogFooter,
 		DialogHeader,
 		DialogTitle
-	} from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { Shield, Plus, Trash2, Star } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

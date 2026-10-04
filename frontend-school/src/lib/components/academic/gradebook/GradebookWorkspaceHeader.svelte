@@ -10,8 +10,8 @@
 </script>
 
 <script lang="ts">
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 
 	let {
 		subjects,

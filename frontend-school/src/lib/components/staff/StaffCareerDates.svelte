@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Input } from '$lib/components/ui/input';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Label } from '$lib/components/ui/label';
-	import type { StaffCareerFactDraft } from '$lib/forms/staff-career';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import type { StaffCareerFactDraft } from '#lib/forms/staff-career.js';
 	let {
 		value = $bindable(),
 		prefix,

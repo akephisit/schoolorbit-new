@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Menu, Sun, Moon } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import AcademicContextSwitcher from './AcademicContextSwitcher.svelte';
 	import ProfileMenu from './ProfileMenu.svelte';
 	import NotificationBell from './NotificationBell.svelte';
-	import { uiPreferences } from '$lib/stores/ui-preferences';
+	import { uiPreferences } from '#lib/stores/ui-preferences.js';
 	import { onMount } from 'svelte';
 
 	interface Props {

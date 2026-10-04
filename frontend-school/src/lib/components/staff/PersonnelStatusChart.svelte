@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { ChevronRight } from '@lucide/svelte';
-	import { personnelDrilldownHref } from '$lib/forms/staff-personnel';
-	import type { PersonnelBucket } from '$lib/api/personnel';
+	import { personnelDrilldownHref } from '#lib/forms/staff-personnel.js';
+	import type { PersonnelBucket } from '#lib/api/personnel.js';
 	let { buckets, total }: { buckets: PersonnelBucket[]; total: number } = $props();
 	const colors = [
 		'var(--chart-1)',
@@ -58,7 +58,9 @@
 			{#each segments as segment (segment.bucket.key)}<li>
 					<a
 						href={resolve(
-							personnelDrilldownHref('status', segment.bucket, 'all') as '/staff/manage'
+							personnelDrilldownHref('status', segment.bucket, 'all').slice(
+								1
+							) as `staff/manage?${string}`
 						)}
 						data-sveltekit-preload-data="tap"
 						class="group flex items-center gap-3 rounded-lg p-3 text-sm text-foreground no-underline transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

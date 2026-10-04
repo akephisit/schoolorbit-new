@@ -5,7 +5,7 @@ import {
 	type StaffCareerDraft,
 	type StaffCareerCorrectionReasons
 } from './staff-career.ts';
-import type { components } from '$lib/api/generated/school-api';
+import type { components } from '#lib/api/generated/school-api.js';
 type Schemas = components['schemas'];
 export const ACADEMIC_RANK_LABELS = {
 	none: 'ไม่มีวิทยฐานะ',

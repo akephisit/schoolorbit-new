@@ -117,7 +117,7 @@ test('exam schedule detail confirms a populated round kind change with shadcn al
 		assert.match(alertDialogIndex, new RegExp(escapeRegExp(expectedExport)));
 	}
 
-	assert.match(page, /\$lib\/components\/ui\/alert-dialog/);
+	assert.match(page, /#lib\/components\/ui\/alert-dialog/);
 	assert.match(page, /let examKindDialogOpen = \$state\(false\)/);
 	assert.match(page, /<AlertDialog\.Root bind:open=\{examKindDialogOpen\}>/);
 	assert.match(page, /ยืนยันการเปลี่ยนชนิดรอบสอบ/);
@@ -460,7 +460,7 @@ test('exam room assignment panel is room and seat only with sheet editing', asyn
 		'src/lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte'
 	);
 
-	assert.match(panel, /\$lib\/components\/ui\/sheet/);
+	assert.match(panel, /#lib\/components\/ui\/sheet/);
 	assert.doesNotMatch(panel, /staffSearch/);
 	assert.doesNotMatch(panel, /selectedInvigilatorIds/);
 	assert.doesNotMatch(panel, /invigilatorStaffIds/);
@@ -1363,7 +1363,7 @@ test('exam day setup uses the shared shadcn date picker for exam date selection'
 		'utf8'
 	);
 
-	assert.match(dayPanel, /from '\$lib\/components\/ui\/date-picker'/);
+	assert.match(dayPanel, /from '#lib\/components\/ui\/date-picker\/index\.js'/);
 	assert.match(dayPanel, /<DatePicker[\s\S]*id="exam-day-date"[\s\S]*bind:value=\{examDate\}/);
 	assert.match(dayPanel, /placeholder="เลือกวันสอบ"/);
 	assert.doesNotMatch(dayPanel, /<Input[\s\S]*id="exam-day-date"[\s\S]*type="date"/);
@@ -1405,7 +1405,7 @@ test('exam schedule day selectors use the shared date ordering helper consistent
 		const component = readFileSync(projectPath(componentPath), 'utf8');
 		assert.match(
 			component,
-			/from '\$lib\/utils\/examScheduleDayOrder'/,
+			/from '#lib\/utils\/examScheduleDayOrder\.js'/,
 			`${componentPath} should import the shared exam day ordering helper`
 		);
 		assert.match(

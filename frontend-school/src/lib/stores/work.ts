@@ -1,6 +1,6 @@
-import { getMyWorkCounts, type WorkItemCounts } from '$lib/api/work';
+import { getMyWorkCounts, type WorkItemCounts } from '#lib/api/work.js';
 import { writable } from 'svelte/store';
-import type { RouteLoadResult } from '$lib/navigation/route-load';
+import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 
 interface WorkStoreState {
 	revision: number;

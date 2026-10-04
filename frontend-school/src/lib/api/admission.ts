@@ -1,6 +1,6 @@
 import { apiClient, requireApiData, type ApiRequestOptions } from './client';
 import { downloadGrantedFile, type FileDownloadGrantResponse } from './files';
-import type { components } from '$lib/api/generated/school-api';
+import type { components } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 type PortalCredentials = Schemas['PortalCredentials'];

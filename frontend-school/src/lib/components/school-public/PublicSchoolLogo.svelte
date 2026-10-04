@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { publicFileUrl } from '$lib/api/files';
+	import { publicFileUrl } from '#lib/api/files.js';
 	import { School } from '@lucide/svelte';
 	let { fileId, class: className = '' }: { fileId?: string | null; class?: string } = $props();
 	let failedLogo = $state<string | null>(null);

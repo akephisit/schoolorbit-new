@@ -55,7 +55,7 @@ test('HEIC conversion is loaded only when a browser user selects a HEIC file', a
 	]);
 
 	for (const component of components) {
-		assert.match(component, /import \{ browser \} from '\$app\/environment'/);
+		assert.match(component, /import \{ browser \} from '\$app\/env'/);
 		assert.match(component, /if \(!browser\) throw new Error/);
 		assert.match(component, /await import\('heic2any'\)/);
 		assert.doesNotMatch(component, /import heic2any from 'heic2any'/);

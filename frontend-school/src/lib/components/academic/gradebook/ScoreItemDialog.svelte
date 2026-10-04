@@ -4,13 +4,13 @@
 		GradebookItemInput,
 		GradebookScoreItem,
 		GroupPhaseWorkspace
-	} from '$lib/api/academicGradebook';
-	import { scoreItemBudget } from '$lib/academic/gradebook/item-budget';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/api/academicGradebook.js';
+	import { scoreItemBudget } from '#lib/academic/gradebook/item-budget.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { Trash2 } from '@lucide/svelte';
 
 	let {

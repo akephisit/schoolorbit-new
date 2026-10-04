@@ -1,7 +1,7 @@
 import type {
 	AcademicTermChangeSet,
 	AcademicTermChangeSetSummary
-} from '$lib/api/learning-delivery';
+} from '#lib/api/learning-delivery.js';
 
 export const LEARNING_DELIVERY_HOMEROOMS_DEPENDENCY = 'schoolorbit:learning-delivery-homerooms';
 export const LEARNING_DELIVERY_CHANGE_SETS_DEPENDENCY = 'schoolorbit:learning-delivery-change-sets';

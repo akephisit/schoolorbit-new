@@ -6,15 +6,15 @@
 		deleteSubjectGroup,
 		updateSubjectGroup,
 		type SubjectGroup
-	} from '$lib/api/academic-core';
-	import { CATALOG_SUBJECT_GROUPS_DEPENDENCY } from '$lib/academic-core/catalog-route';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/academic-core.js';
+	import { CATALOG_SUBJECT_GROUPS_DEPENDENCY } from '#lib/academic-core/catalog-route.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { Layers3, Plus, Save, Trash2 } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 

@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	menu: {
@@ -17,14 +17,14 @@ export const _meta = {
 };
 
 import type { PageLoad } from './$types';
-import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { can } from '$lib/stores/permissions';
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { can } from '#lib/stores/permissions.js';
 import { get } from 'svelte/store';
 import {
 	listCertificateIssueRequests,
 	type CertificateIssueRequestStatus
-} from '$lib/api/certificates';
+} from '#lib/api/certificates.js';
 export const load: PageLoad = ({ fetch, depends, url }) => {
 	depends('school:app-identity');
 	const raw = url.searchParams.get('status');

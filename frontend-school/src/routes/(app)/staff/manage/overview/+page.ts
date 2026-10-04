@@ -1,13 +1,13 @@
 import { get } from 'svelte/store';
-import { can } from '$lib/stores/permissions';
-import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { can } from '#lib/stores/permissions.js';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import {
 	getPersonnelOverview,
 	getRankMilestoneOverview,
 	type PersonnelStatusFilter
-} from '$lib/api/personnel';
+} from '#lib/api/personnel.js';
 import type { PageLoad } from './$types';
 export const _meta = {
 	academicContext: 'none' as const,

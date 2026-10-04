@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { CertificateTemplateDetail } from '$lib/api/certificates';
-	import { describePaper } from '$lib/certificates/paper';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
+	import type { CertificateTemplateDetail } from '#lib/api/certificates.js';
+	import { describePaper } from '#lib/certificates/paper.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import {
 		ChevronDown,
 		FileBadge2,
@@ -191,9 +191,7 @@
 								<Button
 									size="sm"
 									data-sveltekit-preload-data="tap"
-									href={resolve(
-										`/staff/certificates/${campaignId}/templates/${template.id}/editor` as '/staff/certificates'
-									)}
+									href={resolve(`staff/certificates/${campaignId}/templates/${template.id}/editor`)}
 									disabled={!template.capabilities.canUpdate ||
 										!template.isReady ||
 										hasPendingUpload(template.id)}
@@ -255,7 +253,7 @@
 											variant="outline"
 											data-sveltekit-preload-data="tap"
 											href={resolve(
-												`/staff/certificates/${campaignId}/templates/${template.id}/editor` as '/staff/certificates'
+												`staff/certificates/${campaignId}/templates/${template.id}/editor`
 											)}
 											disabled={!template.capabilities.canUpdate || !template.isReady}
 										>

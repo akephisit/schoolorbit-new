@@ -24,7 +24,7 @@ const apiClientStub = `
 `;
 
 const schoolFontApiStub = `
-	import { ApiClientError } from '$lib/api/client';
+	import { ApiClientError } from '#lib/api/client.js';
 	export async function listSchoolFonts() {
 		return window.__schoolFontHarnessApi.list();
 	}
@@ -49,16 +49,20 @@ const fileApiStub = `
 `;
 
 const stubModules = new Map([
-	['$lib/api/client', apiClientStub],
-	['$lib/api/school-fonts', schoolFontApiStub],
-	['$lib/api/files', fileApiStub]
+	['#lib/api/client.js', apiClientStub],
+	['#lib/api/school-fonts.js', schoolFontApiStub],
+	['#lib/api/files.js', fileApiStub]
 ]);
 
 function findStubModule(id: string): string | undefined {
 	if (stubModules.has(id)) return id;
 	for (const stubId of stubModules.keys()) {
-		if (!stubId.startsWith('$lib/')) continue;
-		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
+		if (!stubId.startsWith('#lib//index.js')) continue;
+		const resolvedPath = path.resolve(
+			frontendRoot,
+			'src/lib',
+			stubId.slice('#lib//index.js'.length)
+		);
 		if (id === resolvedPath || id === `${resolvedPath}.ts` || id === `${resolvedPath}.js`) {
 			return stubId;
 		}

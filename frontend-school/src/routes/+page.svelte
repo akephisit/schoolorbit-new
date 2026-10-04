@@ -1,22 +1,22 @@
 <script lang="ts">
-	import type { PublicSchoolInfo } from '$lib/api/school';
-	import type { RouteLoadResult } from '$lib/navigation/route-load';
-	import PublicSchoolBrand from '$lib/components/school-public/PublicSchoolBrand.svelte';
+	import type { PublicSchoolInfo } from '#lib/api/school.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
+	import PublicSchoolBrand from '#lib/components/school-public/PublicSchoolBrand.svelte';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		getRequiredPublicSchoolInfo,
 		getPublicSchoolStatistics,
 		getPublicSchoolOrganization
-	} from '$lib/api/school';
-	import { buildPublicOrganizationTree } from '$lib/school-public/organization';
-	import PublicSchoolIdentity from '$lib/components/school-public/PublicSchoolIdentity.svelte';
-	import PublicSchoolRegion from '$lib/components/school-public/PublicSchoolRegion.svelte';
-	import PublicSchoolStatistics from '$lib/components/school-public/PublicSchoolStatistics.svelte';
-	import PublicOrganizationTree from '$lib/components/school-public/PublicOrganizationTree.svelte';
+	} from '#lib/api/school.js';
+	import { buildPublicOrganizationTree } from '#lib/school-public/organization.js';
+	import PublicSchoolIdentity from '#lib/components/school-public/PublicSchoolIdentity.svelte';
+	import PublicSchoolRegion from '#lib/components/school-public/PublicSchoolRegion.svelte';
+	import PublicSchoolStatistics from '#lib/components/school-public/PublicSchoolStatistics.svelte';
+	import PublicOrganizationTree from '#lib/components/school-public/PublicOrganizationTree.svelte';
 	import {
 		ArrowDown,
 		ArrowUpRight,
@@ -32,21 +32,21 @@
 		{
 			title: 'ปฏิทินโรงเรียน',
 			description: 'ติดตามกิจกรรมและกำหนดการที่โรงเรียนเปิดเผยให้ทุกคนดูได้',
-			href: resolve('/calendar'),
+			href: resolve('calendar'),
 			icon: CalendarDays,
 			label: 'ดูปฏิทิน'
 		},
 		{
 			title: 'รับสมัครนักเรียน',
 			description: 'ดูรอบการรับสมัคร สมัครเรียน และติดตามสถานะการสมัคร',
-			href: resolve('/apply'),
+			href: resolve('apply'),
 			icon: GraduationCap,
 			label: 'ดูการรับสมัคร'
 		},
 		{
 			title: 'ตรวจสอบเกียรติบัตร',
 			description: 'ตรวจสอบความถูกต้องของเกียรติบัตรที่ออกโดยโรงเรียน',
-			href: resolve('/verify/certificate'),
+			href: resolve('verify/certificate'),
 			icon: BadgeCheck,
 			label: 'ตรวจสอบเอกสาร'
 		}
@@ -210,7 +210,7 @@
 		>
 			<span class="flex items-center gap-2"
 				><Orbit class="size-4" /> ขับเคลื่อนด้วย SchoolOrbit</span
-			><a href={resolve('/privacy-policy')} class="hover:text-primary">นโยบายความเป็นส่วนตัว</a>
+			><a href={resolve('privacy-policy')} class="hover:text-primary">นโยบายความเป็นส่วนตัว</a>
 		</div>
 	</footer>
 </div>

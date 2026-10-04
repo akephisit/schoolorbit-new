@@ -2,10 +2,10 @@
  * Create New Admission Round Page
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
-import { waitForAdmissionAccess } from '$lib/admission/admission-access';
-import { lookupAcademicYears, lookupGradeLevels } from '$lib/api/lookup';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { waitForAdmissionAccess } from '#lib/admission/admission-access.js';
+import { lookupAcademicYears, lookupGradeLevels } from '#lib/api/lookup.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

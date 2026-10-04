@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { PublicOrganizationNode } from '$lib/school-public/organization';
-	import { groupPublicOrganizationMembers } from '$lib/school-public/organization';
+	import type { PublicOrganizationNode } from '#lib/school-public/organization.js';
+	import { groupPublicOrganizationMembers } from '#lib/school-public/organization.js';
 	import { Building2, UserRound } from '@lucide/svelte';
 	let { nodes }: { nodes: PublicOrganizationNode[] } = $props();
 </script>

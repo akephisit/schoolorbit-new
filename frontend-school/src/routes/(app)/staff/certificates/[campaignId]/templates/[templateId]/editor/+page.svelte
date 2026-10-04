@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import {
 		createCertificateTemplatePreviewManifest,
 		getCertificateTemplate,
@@ -15,13 +15,13 @@
 		listCertificateSchoolFonts,
 		type CertificateTemplateDetail,
 		type CertificateRenderManifest
-	} from '$lib/api/certificates';
-	import type { SchoolFontSummary } from '$lib/api/school-fonts';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import CertificateEditor from '$lib/components/certificates/editor/CertificateEditor.svelte';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/certificates.js';
+	import type { SchoolFontSummary } from '#lib/api/school-fonts.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import CertificateEditor from '#lib/components/certificates/editor/CertificateEditor.svelte';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	let { data }: PageProps = $props();
 	const campaignId = $derived(page.params.campaignId ?? ''),
 		templateId = $derived(page.params.templateId ?? '');
@@ -197,7 +197,7 @@
 <PageShell
 	title={template ? `ออกแบบ · ${template.name}` : 'ออกแบบเกียรติบัตร'}
 	description="วางข้อความ ตัวแปร รูปภาพ และ QR Code บน PDF พื้นหลัง แล้วตรวจด้วย renderer เดียวกับไฟล์จริง"
-	backHref={resolve(`/staff/certificates/${campaignId}/templates` as '/staff/certificates')}
+	backHref={resolve(`staff/certificates/${campaignId}/templates`)}
 	backLabel="กลับไปแบบเกียรติบัตร"
 	contentClass="space-y-0 pb-3"
 >

@@ -3,27 +3,27 @@
 	import { get } from 'svelte/store';
 	import { resolve } from '$app/paths';
 	import { RefreshCw, ArrowRight } from '@lucide/svelte';
-	import { PageShell } from '$lib/components/app-layout';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import PromotionImpactsDialog from './PromotionImpactsDialog.svelte';
 	import {
 		PageState,
 		PageSkeleton,
 		LoadingButton,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Label } from '$lib/components/ui/label';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Table from '$lib/components/ui/table';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
-	import type { RouteLoadResult } from '$lib/navigation/route-load';
+	} from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		getPromotionRun,
 		getPromotionPolicyOptions,
@@ -37,8 +37,8 @@
 		type PromotionRunCalculateInput,
 		type PromotionRunApproveInput,
 		type PromotionRunExecuteInput
-	} from '$lib/api/academic-promotion';
-	import { lookupHomerooms, type HomeroomLookupItem } from '$lib/api/lookup';
+	} from '#lib/api/academic-promotion.js';
+	import { lookupHomerooms, type HomeroomLookupItem } from '#lib/api/lookup.js';
 	import {
 		initialDecision,
 		decisionError,
@@ -49,7 +49,7 @@
 		runStatusLabels,
 		findingLabels,
 		type DecisionDraft
-	} from '$lib/academic/lifecycle/promotion-presentation';
+	} from '#lib/academic/lifecycle/promotion-presentation.js';
 
 	let {
 		runId,
@@ -256,6 +256,7 @@
 			(action === 'execute' && (!execute || !canExecuteRun(workspace)))
 		)
 			return;
+
 		busy = action;
 		confirmation = null;
 		error = '';
@@ -379,7 +380,7 @@
 	description="ตรวจผลทีละคน อนุมัติทั้งรอบ แล้วจึงสร้างข้อมูลปีใหม่ โดยเก็บข้อมูลปีเดิมไว้"
 >
 	{#snippet actions()}
-		<Button variant="outline" href={resolve('/staff/academic/promotion')}>กลับรายการรอบ</Button>
+		<Button variant="outline" href={resolve('staff/academic/promotion')}>กลับรายการรอบ</Button>
 		<Button
 			variant="outline"
 			aria-label="โหลดข้อมูลรอบใหม่"

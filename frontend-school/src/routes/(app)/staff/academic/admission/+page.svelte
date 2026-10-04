@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		listRounds,
 		type AdmissionRound,
@@ -8,22 +8,22 @@
 		roundStatusColor,
 		updateRoundStatus,
 		deleteRound
-	} from '$lib/api/admission';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Badge } from '$lib/components/ui/badge';
+	} from '#lib/api/admission.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import {
 		LoadingButton,
 		PageSkeleton,
 		PageState,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import * as Card from '$lib/components/ui/card';
-	import * as Dialog from '$lib/components/ui/dialog';
+	} from '#lib/components/app-state/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { toast } from 'svelte-sonner';
 	import { Plus, Eye, Trash2, ToggleRight, Users, Calendar, RefreshCw } from '@lucide/svelte';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

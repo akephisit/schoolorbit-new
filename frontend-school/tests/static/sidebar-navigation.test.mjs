@@ -22,8 +22,8 @@ test('sidebar navigation follows the persisted management hierarchy', async () =
 	const preferences = await readProjectFile('src/lib/stores/ui-preferences.ts');
 	const rules = await readRepoFile('.rules');
 
-	assert.match(sidebar, /from '\$lib\/components\/ui\/dropdown-menu'/);
-	assert.match(sidebar, /from '\$lib\/components\/ui\/button'/);
+	assert.match(sidebar, /from '#lib\/components\/ui\/dropdown-menu\/index\.js'/);
+	assert.match(sidebar, /from '#lib\/components\/ui\/button\/index\.js'/);
 	assert.match(sidebar, /buildSidebarNavigation/);
 	assert.match(sidebar, /setSidebarGroupExpanded/);
 	assert.match(sidebar, /DropdownMenu\.Content/);

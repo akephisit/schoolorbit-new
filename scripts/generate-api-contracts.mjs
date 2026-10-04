@@ -9,6 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import os from "node:os";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -84,12 +85,12 @@ async function defaultGenerateSchoolTypes(repositoryRoot, document) {
     const outputPath = path.join(temporaryDirectory, "school-api.ts");
     await writeFile(inputPath, renderOpenApi(document));
 
+    const toolsRequire = createRequire(
+      path.join(repositoryRoot, "frontend-school/tools/api-contracts/package.json"),
+    );
     const executable = path.join(
-      repositoryRoot,
-      "frontend-school/node_modules/.bin",
-      process.platform === "win32"
-        ? "openapi-typescript.cmd"
-        : "openapi-typescript",
+      path.dirname(toolsRequire.resolve("openapi-typescript/package.json")),
+      "bin/cli.js",
     );
     const prettierExecutable = path.join(
       repositoryRoot,
@@ -97,8 +98,8 @@ async function defaultGenerateSchoolTypes(repositoryRoot, document) {
       process.platform === "win32" ? "prettier.cmd" : "prettier",
     );
     await execFileAsync(
-      executable,
-      [inputPath, "--output", outputPath, "--alphabetize"],
+      process.execPath,
+      [executable, inputPath, "--output", outputPath, "--alphabetize"],
       {
         cwd: path.join(repositoryRoot, "frontend-school"),
         maxBuffer: 16 * 1024 * 1024,

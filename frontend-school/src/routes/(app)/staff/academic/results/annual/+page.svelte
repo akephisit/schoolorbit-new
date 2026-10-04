@@ -1,17 +1,18 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
 	import { RefreshCw, ArrowUpRight } from '@lucide/svelte';
-	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
-	import { aggregateCapabilities } from '$lib/academic/results/aggregate-access';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
+	import { aggregateCapabilities } from '#lib/academic/results/aggregate-access.js';
 	import {
 		aggregateStatus,
 		aggregateStatusLabels
-	} from '$lib/academic/results/aggregate-presentation';
+	} from '#lib/academic/results/aggregate-presentation.js';
+
 	import {
 		listAnnualResultStudents,
 		previewAnnualResult,
@@ -21,23 +22,23 @@
 		type AnnualResultPreview,
 		type AnnualResultRevision,
 		type AnnualLockInput
-	} from '$lib/api/academicAggregates';
-	import { ApiClientError } from '$lib/api/client';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/academicAggregates.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		PageState,
 		PageSkeleton,
 		LoadingButton,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Table from '$lib/components/ui/table';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let { data }: PageProps = $props();
 	const rosterRequest = new LatestRequest();
@@ -89,13 +90,16 @@
 	const resultLink = $derived(`/staff/academic/results${year ? `?academicYearId=${year}` : ''}`);
 
 	function syncSelected(id: string): void {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
+
 		if (id) url.searchParams.set('studentAcademicYearId', id);
 		else url.searchParams.delete('studentAcademicYearId');
-		replaceState(
-			resolve(`/staff/academic/results/annual?${url.searchParams.toString()}`),
-			page.state
-		);
+
+		goto(resolve(`staff/academic/results/annual?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	async function loadRoster() {
@@ -478,7 +482,7 @@
 													><a
 														class="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
 														href={resolve(
-															`/staff/academic/results/aggregates?academicYearId=${year}&academicTermId=${source.academicTermId}&studentAcademicYearId=${selected}`
+															`staff/academic/results/aggregates?academicYearId=${year}&academicTermId=${source.academicTermId}&studentAcademicYearId=${selected}`
 														)}>{source.termName}<ArrowUpRight class="size-3" /></a
 													>
 													<p class="mt-1 text-xs text-muted-foreground">

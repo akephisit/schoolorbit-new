@@ -2,21 +2,21 @@
 	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { Plus, Trash2 } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import {
 		replacePromotionProgressions,
 		type GradeProgressionInput,
 		type GradeProgressionSet,
 		type PromotionPolicyOptions
-	} from '$lib/api/academic-promotion';
-	import { ApiClientError } from '$lib/api/client';
+	} from '#lib/api/academic-promotion.js';
+	import { ApiClientError } from '#lib/api/client.js';
 
 	type Choice = { value: string; label: string };
 	let {

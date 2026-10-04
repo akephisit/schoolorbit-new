@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { LogMessage, Progress } from '$lib/utils/sse';
+	import type { LogMessage, Progress } from '#lib/utils/sse.js';
 
 	interface Props {
 		logs?: LogMessage[];

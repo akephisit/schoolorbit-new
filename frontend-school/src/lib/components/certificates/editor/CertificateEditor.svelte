@@ -8,9 +8,9 @@
 		updateCertificateTemplate,
 		type CertificateRenderManifest,
 		type CertificateTemplateDetail
-	} from '$lib/api/certificates';
-	import { ApiClientError } from '$lib/api/client';
-	import type { SchoolFontSummary } from '$lib/api/school-fonts';
+	} from '#lib/api/certificates.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import type { SchoolFontSummary } from '#lib/api/school-fonts.js';
 	import {
 		alignElements,
 		cloneCertificateLayout,
@@ -27,12 +27,12 @@
 		type CertificateLayout,
 		type ElementAlignment,
 		type LayerDirection
-	} from '$lib/certificates/editor-state';
-	import { pointsToMillimetres, millimetresToPoints } from '$lib/certificates/layout';
-	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
-	import CertificatePreviewDialog from '$lib/components/certificates/CertificatePreviewDialog.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	} from '#lib/certificates/editor-state.js';
+	import { pointsToMillimetres, millimetresToPoints } from '#lib/certificates/layout.js';
+	import type { CertificatePreviewState } from '#lib/certificates/preview-fit.js';
+	import CertificatePreviewDialog from '#lib/components/certificates/CertificatePreviewDialog.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { AlertTriangle, RefreshCw, ShieldAlert } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -400,7 +400,8 @@
 		previewOpen = false;
 	}
 
-	beforeNavigate(({ cancel }) => {
+	beforeNavigate(({ cancel, shallow }) => {
+		if (shallow) return;
 		if (!dirty && !backgroundPending) return;
 		cancel();
 		toast.error(

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Component, Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils.js';
 	import PageHeader from './PageHeader.svelte';
 
 	let {
@@ -19,7 +19,7 @@
 		title: string;
 		description?: string;
 		backHref?: string;
-		backPreload?: 'hover' | 'tap' | 'off';
+		backPreload?: 'hover' | 'tap' | false;
 		backLabel?: string;
 		icon?: Component;
 		meta?: Snippet;

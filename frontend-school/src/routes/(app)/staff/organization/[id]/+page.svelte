@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import {
@@ -18,20 +18,20 @@
 		type DelegatablePermission,
 		type OrganizationMemberItem,
 		type CreateDelegationBody
-	} from '$lib/api/staff';
-	import OrganizationUnitDialog from '$lib/components/staff/OrganizationUnitDialog.svelte';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import OrganizationMembersSection from '$lib/components/staff/OrganizationMembersSection.svelte';
+	} from '#lib/api/staff.js';
+	import OrganizationUnitDialog from '#lib/components/staff/OrganizationUnitDialog.svelte';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import OrganizationMembersSection from '#lib/components/staff/OrganizationMembersSection.svelte';
 	import {
 		ArrowRight,
 		Phone,
@@ -48,7 +48,7 @@
 		Pencil,
 		Users
 	} from '@lucide/svelte';
-	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
+	import OrganizationPermissionDialog from '#lib/components/staff/OrganizationPermissionDialog.svelte';
 
 	let { data }: PageProps = $props();
 	const unitSource = $derived(data.unit),
@@ -768,7 +768,7 @@
 								<div class="grid gap-3 md:grid-cols-2">
 									{#each childDepts as child (child.id)}
 										<a
-											href={resolve(`/staff/organization/${child.id}`)}
+											href={resolve(`staff/organization/${child.id}`)}
 											data-sveltekit-preload-data="tap"
 											class="flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/30"
 										>
@@ -999,7 +999,7 @@
 							<div class="mt-4 space-y-2">
 								{#each childDepts.slice(0, 4) as child (child.id)}
 									<a
-										href={resolve(`/staff/organization/${child.id}`)}
+										href={resolve(`staff/organization/${child.id}`)}
 										data-sveltekit-preload-data="tap"
 										class="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted/30"
 									>

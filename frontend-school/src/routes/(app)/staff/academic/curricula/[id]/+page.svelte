@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { pushState, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { SvelteMap, SvelteURLSearchParams } from 'svelte/reactivity';
-	import { buildCurriculumValidationNoticeViews } from '$lib/academic/curriculum-structure';
+	import { buildCurriculumValidationNoticeViews } from '#lib/academic/curriculum-structure.js';
 	import {
 		curriculumAlignmentContextKey,
 		readCurriculumAlignmentContext
-	} from '$lib/academic-core/curriculum-detail-route';
+	} from '#lib/academic-core/curriculum-detail-route.js';
 	import {
 		cloneCurriculumVersionDraft,
 		createCurriculumVersion,
@@ -31,23 +31,23 @@
 		type CurriculumStructureWorkspace,
 		type CurriculumTermSlotInput,
 		type CurriculumVersionView
-	} from '$lib/api/academic-core';
+	} from '#lib/api/academic-core.js';
 	import {
 		getHomeroomDeliveryWorkspace,
 		type HomeroomDeliveryWorkspace
-	} from '$lib/api/learning-delivery';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import CurriculumProgramComparison from '$lib/components/academic-core/CurriculumProgramComparison.svelte';
-	import CurriculumDeliveryAlignmentPanel from '$lib/components/academic-core/CurriculumDeliveryAlignmentPanel.svelte';
-	import CurriculumStructureEditor from '$lib/components/academic-core/CurriculumStructureEditor.svelte';
-	import CurriculumStructureToolbar from '$lib/components/academic-core/CurriculumStructureToolbar.svelte';
-	import CurriculumTermDocument from '$lib/components/academic-core/CurriculumTermDocument.svelte';
-	import CurriculumVersionPanel from '$lib/components/academic-core/CurriculumVersionPanel.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/learning-delivery.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import CurriculumProgramComparison from '#lib/components/academic-core/CurriculumProgramComparison.svelte';
+	import CurriculumDeliveryAlignmentPanel from '#lib/components/academic-core/CurriculumDeliveryAlignmentPanel.svelte';
+	import CurriculumStructureEditor from '#lib/components/academic-core/CurriculumStructureEditor.svelte';
+	import CurriculumStructureToolbar from '#lib/components/academic-core/CurriculumStructureToolbar.svelte';
+	import CurriculumTermDocument from '#lib/components/academic-core/CurriculumTermDocument.svelte';
+	import CurriculumVersionPanel from '#lib/components/academic-core/CurriculumVersionPanel.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { ArrowLeft } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 
@@ -99,11 +99,11 @@
 
 	function curriculumVersionUrl(
 		versionId: string,
-		currentUrl: URL = page.url
-	): `/staff/academic/curricula/${string}?${string}` {
+		currentUrl: URL = new URL(page.url.href)
+	): `staff/academic/curricula/${string}?${string}` {
 		const query = new SvelteURLSearchParams(currentUrl.searchParams);
 		query.set('versionId', versionId);
-		return `/staff/academic/curricula/${encodeURIComponent(curriculumId)}?${query.toString()}`;
+		return `staff/academic/curricula/${encodeURIComponent(curriculumId)}?${query.toString()}`;
 	}
 
 	function applyWorkspace(value: CurriculumStructureWorkspace | null) {
@@ -181,11 +181,12 @@
 		activeStructureKey = `${curriculumId}:${version.version.id}`;
 		selectedVersion = version;
 		if (workspace?.curriculumVersion.id !== version.version.id) applyWorkspace(null);
-		if (updateUrl) pushState(resolve(curriculumVersionUrl(version.version.id)), page.state);
+		if (updateUrl)
+			goto(resolve(curriculumVersionUrl(version.version.id)), { shallow: true, state: page.state });
 		await retryStructure(version.version.id);
 	}
 
-	async function loadAlignment(url: URL = page.url) {
+	async function loadAlignment(url: URL = new URL(page.url.href)) {
 		const context = readCurriculumAlignmentContext(url);
 		if (!context) {
 			alignmentRequest.abort();
@@ -388,7 +389,11 @@
 					if (selected) {
 						activeStructureKey = `${id}:${selected.version.id}`;
 						if (selected.version.id !== currentVersionId) {
-							replaceState(resolve(curriculumVersionUrl(selected.version.id)), page.state);
+							goto(resolve(curriculumVersionUrl(selected.version.id)), {
+								shallow: true,
+								replace: true,
+								state: page.state
+							});
 							if (requestedVersionId) void loadVersion(selected, false);
 						}
 					}
@@ -512,7 +517,7 @@
 					title="โหลดข้อมูลเทียบหลักสูตรไม่สำเร็จ"
 					description={alignmentError}
 					actionLabel="ลองอีกครั้ง"
-					onaction={() => loadAlignment(page.url)}
+					onaction={() => loadAlignment(new URL(page.url.href))}
 				/>
 			{:else if alignmentWorkspace}
 				<div class="relative" aria-busy={alignmentLoading}>
@@ -529,8 +534,10 @@
 					{#if alignmentError && alignmentWorkspace}
 						<div role="alert" class="mt-2 flex items-center gap-2 text-sm text-destructive">
 							<span>{alignmentError}</span>
-							<Button size="sm" variant="outline" onclick={() => loadAlignment(page.url)}
-								>ลองอีกครั้ง</Button
+							<Button
+								size="sm"
+								variant="outline"
+								onclick={() => loadAlignment(new URL(page.url.href))}>ลองอีกครั้ง</Button
 							>
 						</div>
 					{/if}

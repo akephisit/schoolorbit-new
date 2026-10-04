@@ -3,9 +3,9 @@ import {
 	requireApiData,
 	type ApiRequestOptions,
 	type ApiResponse
-} from '$lib/api/client';
-import type { components, operations } from '$lib/api/generated/school-api';
-import type { AcademicResultContext } from '$lib/api/academicResults';
+} from '#lib/api/client.js';
+import type { components, operations } from '#lib/api/generated/school-api.js';
+import type { AcademicResultContext } from '#lib/api/academicResults.js';
 
 type Schemas = components['schemas'];
 type ContextQuery = NonNullable<operations['listTermAggregateRevisions']['parameters']['query']>;

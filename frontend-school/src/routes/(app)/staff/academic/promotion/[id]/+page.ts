@@ -1,8 +1,8 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
-import { getPromotionRun, getPromotionPolicyOptions } from '$lib/api/academic-promotion';
-import { waitForPromotionReadAccess } from '$lib/academic/lifecycle/promotion-access';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { getPromotionRun, getPromotionPolicyOptions } from '#lib/api/academic-promotion.js';
+import { waitForPromotionReadAccess } from '#lib/academic/lifecycle/promotion-access.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 export const _meta = {
 	academicContext: 'none' as const,
 	access: { user_type: 'staff', permission: PERMISSIONS.ACADEMIC_PROMOTION_READ_SCHOOL }

@@ -35,7 +35,7 @@ test('gradebook workspace keeps URL-backed subject, group, tab, and phase state'
 	for (const key of ['subjectId', 'learningGroupId', 'tab', 'phase']) {
 		assert.match(page, new RegExp(`searchParams\\.(?:get|set)\\('${key}'`));
 	}
-	assert.match(page, /replaceState\(/);
+	assert.match(page, /goto\([\s\S]*?shallow:\s*true/);
 	assert.match(page, /LatestRequest/);
 	assert.match(page, /\$state\.raw<GradebookSubject\[\]>/);
 	assert.match(page, /\$state\.raw<LearnerEvaluationSubject\[\]>/);

@@ -483,9 +483,9 @@ async function seedCreateDraft(page: Page) {
 	await page.addInitScript(
 		({ actor, roleId, organizationId }) =>
 			localStorage.setItem(
-				`staff-create-draft:v3:${location.origin}:${actor}`,
+				`staff-create-draft:v4:${location.origin}:${actor}`,
 				JSON.stringify({
-					version: 3,
+					version: 4,
 					expiresAt: Date.now() + 30 * 60 * 1000,
 					fields: {
 						role_ids: [roleId],
@@ -519,7 +519,7 @@ test('creation UUID reply clears its draft and loads only the new profile', asyn
 	expect(api.count('/api/menu/user')).toBe(1);
 	expect(
 		await page.evaluate(() =>
-			Object.keys(localStorage).some((key) => key.startsWith('staff-create-draft:v3:'))
+			Object.keys(localStorage).some((key) => key.startsWith('staff-create-draft:'))
 		)
 	).toBe(false);
 });

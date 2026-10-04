@@ -2,23 +2,23 @@
 	import { onMount } from 'svelte';
 	import { ArrowRight, RotateCcw } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import {
 		getYearReopeningWorkspace,
 		reopenAcademicYear,
 		type YearReopeningWorkspace,
 		type YearReopeningRequest,
 		type YearReopeningOutcome
-	} from '$lib/api/academic-lifecycle';
-	import { ApiClientError } from '$lib/api/client';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { LoadingButton, PageSkeleton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/academic-lifecycle.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { LoadingButton, PageSkeleton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let {
 		yearId,

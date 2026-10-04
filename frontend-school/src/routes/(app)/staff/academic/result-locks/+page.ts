@@ -1,11 +1,14 @@
 import type { PageLoad } from './$types';
-import { getAcademicResultReadiness, type AcademicResultReadiness } from '$lib/api/academicResults';
+import {
+	getAcademicResultReadiness,
+	type AcademicResultReadiness
+} from '#lib/api/academicResults.js';
 import {
 	getLearnerEvaluationLockReadiness,
 	type LearnerEvaluationSubjectLockReadiness
-} from '$lib/api/academicLearnerEvaluations';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+} from '#lib/api/academicLearnerEvaluations.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 type LockTab = 'course' | 'activity' | 'learner';
 type LockQueue =

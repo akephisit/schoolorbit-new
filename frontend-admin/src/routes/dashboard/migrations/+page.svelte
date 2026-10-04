@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { migrationAPI, type MigrationStatusResponse } from '$lib/api/migration';
+	import { migrationAPI, type MigrationStatusResponse } from '#lib/api/migration.js';
 	import { toast } from 'svelte-sonner';
 
 	let status = $state<MigrationStatusResponse | null>(null);

@@ -2,14 +2,14 @@
 	import { page } from '$app/state';
 	import { addMonths } from 'date-fns';
 	import { onDestroy, untrack } from 'svelte';
-	import { pushState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { calendarRouteFilters } from '$lib/utils/calendar-route-filters';
-	import { authStore } from '$lib/stores/auth';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { calendarRouteFilters } from '#lib/utils/calendar-route-filters.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -17,21 +17,21 @@
 		listHomerooms,
 		type GradeLevelOption,
 		type Homeroom
-	} from '$lib/api/academic-core';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import { Separator } from '$lib/components/ui/separator';
-	import CalendarMonthGrid from '$lib/components/calendar/CalendarMonthGrid.svelte';
-	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
-	import CalendarEventDialog from '$lib/components/calendar/CalendarEventDialog.svelte';
-	import CalendarCategoryDialog from '$lib/components/calendar/CalendarCategoryDialog.svelte';
-	import CalendarEmbedDialog from '$lib/components/calendar/CalendarEmbedDialog.svelte';
-	import CalendarColorKey from '$lib/components/calendar/CalendarColorKey.svelte';
+	} from '#lib/api/academic-core.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
+	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
+	import CalendarEventList from '#lib/components/calendar/CalendarEventList.svelte';
+	import CalendarEventDialog from '#lib/components/calendar/CalendarEventDialog.svelte';
+	import CalendarCategoryDialog from '#lib/components/calendar/CalendarCategoryDialog.svelte';
+	import CalendarEmbedDialog from '#lib/components/calendar/CalendarEmbedDialog.svelte';
+	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
 	import {
 		type CalendarAudienceType,
 		type CalendarCategory,
@@ -52,9 +52,9 @@
 		updateCalendarCategory,
 		updateCalendarEvent,
 		updateCalendarTag
-	} from '$lib/api/calendar';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/calendar.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		calendarGridRange,
 		eventOverlapsDate,
@@ -62,7 +62,7 @@
 		formatCalendarMonth,
 		monthRange,
 		toIsoDate
-	} from '$lib/utils/calendar';
+	} from '#lib/utils/calendar.js';
 	import {
 		CalendarDays,
 		ChevronLeft,
@@ -80,7 +80,9 @@
 	type AudienceFilter = '' | CalendarAudienceType;
 
 	const todayDate = toIsoDate(new Date());
-	const currentUrl = $derived(page.state.calendarUrl ? new URL(page.state.calendarUrl) : page.url);
+	const currentUrl = $derived(
+		page.state.calendarUrl ? new URL(page.state.calendarUrl) : new URL(page.url.href)
+	);
 	const committed = $derived(calendarRouteFilters(currentUrl));
 	const academicYearId = $derived(committed.academicYearId);
 	const academicTermId = $derived(committed.academicTermId);
@@ -255,9 +257,10 @@
 			if (value) url.searchParams.set(key, value);
 			else url.searchParams.delete(key);
 		}
-		pushState(resolve(`/staff/calendar?${url.searchParams.toString()}${url.hash}`), {
-			...page.state,
-			calendarUrl: url.href
+
+		goto(resolve(`staff/calendar?${url.searchParams.toString()}${url.hash}`), {
+			shallow: true,
+			state: { ...page.state, calendarUrl: url.href }
 		});
 	}
 	$effect.pre(() => {
@@ -625,9 +628,10 @@
 			if (committed.categoryId === category.id) {
 				const url = new URL(currentUrl);
 				url.searchParams.delete('categoryId');
-				pushState(resolve(`/staff/calendar?${url.searchParams.toString()}${url.hash}`), {
-					...page.state,
-					calendarUrl: url.href
+
+				goto(resolve(`staff/calendar?${url.searchParams.toString()}${url.hash}`), {
+					shallow: true,
+					state: { ...page.state, calendarUrl: url.href }
 				});
 			}
 			if (!eventsLoaded && academicYearId) await loadCalendar();
@@ -721,9 +725,10 @@
 			if (committed.tagId === tag.id) {
 				const url = new URL(currentUrl);
 				url.searchParams.delete('tagId');
-				pushState(resolve(`/staff/calendar?${url.searchParams.toString()}${url.hash}`), {
-					...page.state,
-					calendarUrl: url.href
+
+				goto(resolve(`staff/calendar?${url.searchParams.toString()}${url.hash}`), {
+					shallow: true,
+					state: { ...page.state, calendarUrl: url.href }
 				});
 			}
 			if (!eventsLoaded && academicYearId) await loadCalendar();
@@ -767,7 +772,9 @@
 	function openEventDialog(event: { id: string } | null = null) {
 		if (!canManageCalendar || !categoriesLoaded || !tagsLoaded || categoriesError || tagsError)
 			return;
+
 		editingEvent = event ? (events.find((item) => item.id === event.id) ?? null) : null;
+
 		eventDialogSession++;
 		eventDialogOpen = true;
 	}

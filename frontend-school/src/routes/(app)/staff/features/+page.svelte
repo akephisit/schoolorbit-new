@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { authStore } from '$lib/stores/auth';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { authStore } from '#lib/stores/auth.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	let { data }: PageProps = $props();
 	const source = $derived(data.features);
 	const request = new LatestRequest();
@@ -12,15 +12,15 @@
 		disposed = false;
 	let loaded = $state(false),
 		loadError = $state('');
-	import { listFeatures, toggleFeature, type FeatureToggle } from '$lib/api/feature-toggles';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Card } from '$lib/components/ui/card';
-	import { Switch } from '$lib/components/ui/switch';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { listFeatures, toggleFeature, type FeatureToggle } from '#lib/api/feature-toggles.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { LoaderCircle, Power } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

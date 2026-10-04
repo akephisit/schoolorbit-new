@@ -5,21 +5,21 @@
 		removeOrganizationMember,
 		type OrganizationMemberItem,
 		type OrganizationUnit
-	} from '$lib/api/staff';
-	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
+	} from '#lib/api/staff.js';
+	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import * as Popover from '$lib/components/ui/popover';
-	import * as Command from '$lib/components/ui/command';
-	import * as Select from '$lib/components/ui/select';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		Users,
 		Plus,

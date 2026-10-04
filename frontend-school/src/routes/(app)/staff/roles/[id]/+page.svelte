@@ -1,36 +1,37 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
 	import { goto } from '$app/navigation';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { roleAPI, permissionAPI, type Role, type PermissionsByModule } from '$lib/api/roles';
+	import { roleAPI, permissionAPI, type Role, type PermissionsByModule } from '#lib/api/roles.js';
 	import {
 		PERMISSIONS,
 		permissionActionLabel,
 		permissionScopeMeta,
 		permissionScopeToneClass
-	} from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Switch } from '$lib/components/ui/switch';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
+	} from '#lib/components/ui/card/index.js';
+
 	import {
 		Dialog,
 		DialogContent,
@@ -38,9 +39,9 @@
 		DialogFooter,
 		DialogHeader,
 		DialogTitle
-	} from '$lib/components/ui/dialog';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Badge } from '$lib/components/ui/badge';
+	} from '#lib/components/ui/dialog/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { AlertTriangle, Power, RotateCcw, Save, Shield } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -201,6 +202,7 @@
 
 	function isModuleFullySelected(module: string): boolean {
 		const modulePermissions = permissionsByModule[module] || [];
+
 		return (
 			modulePermissions.length > 0 &&
 			modulePermissions.every((p) => selectedPermissions.has(p.code))
@@ -246,7 +248,7 @@
 				if (sourceEpoch !== roleEpoch || !roleActive) return;
 				if (response.success) {
 					toast.success('สร้างบทบาทสำเร็จ');
-					goto(resolve('/staff/roles'));
+					goto(resolve('staff/roles'));
 				} else {
 					toast.error(response.error || 'ไม่สามารถสร้างบทบาทได้');
 				}
@@ -263,7 +265,7 @@
 				if (sourceEpoch !== roleEpoch || !roleActive) return;
 				if (response.success) {
 					toast.success('บันทึกข้อมูลสำเร็จ');
-					goto(resolve('/staff/roles'));
+					goto(resolve('staff/roles'));
 				} else {
 					toast.error(response.error || 'ไม่สามารถบันทึกข้อมูลได้');
 				}
@@ -297,7 +299,7 @@
 			if (response.success) {
 				toast.success('ปิดใช้งานบทบาทสำเร็จ');
 				showDeactivateDialog = false;
-				goto(resolve('/staff/roles'));
+				goto(resolve('staff/roles'));
 			} else {
 				toast.error(response.error || 'ไม่สามารถปิดใช้งานบทบาทได้');
 				showDeactivateDialog = false;
@@ -327,7 +329,7 @@
 			if (sourceEpoch !== roleEpoch || !roleActive) return;
 			if (response.success) {
 				toast.success('เปิดใช้งานบทบาทสำเร็จ');
-				goto(resolve('/staff/roles'));
+				goto(resolve('staff/roles'));
 			} else {
 				toast.error(response.error || 'ไม่สามารถเปิดใช้งานบทบาทได้');
 			}
@@ -351,7 +353,7 @@
 	title={isNew ? 'สร้างบทบาทใหม่' : canUpdateRoles ? 'แก้ไขบทบาท' : 'รายละเอียดบทบาท'}
 	description={canEditRole ? 'กำหนดข้อมูลและสิทธิ์การเข้าถึง' : 'ดูข้อมูลและสิทธิ์ของบทบาท'}
 	backHref="/staff/roles"
-	backPreload="off"
+	backPreload={false}
 >
 	{#snippet actions()}
 		<div class="flex gap-2">
@@ -625,7 +627,7 @@
 			</section>
 
 			<div class="flex justify-end gap-2">
-				<Button variant="outline" onclick={() => goto(resolve('/staff/roles'))}>ยกเลิก</Button>
+				<Button variant="outline" onclick={() => goto(resolve('staff/roles'))}>ยกเลิก</Button>
 				{#if !isNew}<Button variant="outline" onclick={loadRole} disabled={loading || mutationBusy}
 						>รีเฟรชบทบาท</Button
 					>{/if}

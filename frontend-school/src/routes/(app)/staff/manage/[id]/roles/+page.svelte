@@ -2,20 +2,20 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Button } from '$lib/components/ui/button';
-	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
-	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
-	import { requireApiData } from '$lib/api/client';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import UserRoleManager from '$lib/components/UserRoleManager.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import StaffBreadcrumb from '#lib/components/staff/StaffBreadcrumb.svelte';
+	import { staffReturnHref, withStaffReturn } from '#lib/navigation/staff-management.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { getStaffProfile, type StaffProfileResponse } from '#lib/api/staff.js';
+	import { requireApiData } from '#lib/api/client.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import UserRoleManager from '#lib/components/UserRoleManager.svelte';
 
 	let { data }: PageProps = $props();
 	const userId = $derived(data.userId);
-	const returnHref = $derived(staffReturnHref(page.url));
+	const returnHref = $derived(staffReturnHref(new URL(page.url.href)));
 	const profileHref = $derived(withStaffReturn(`/staff/manage/${userId}`, returnHref));
 	let staff: StaffProfileResponse | null = $state(null);
 	let identityError = $state('');
@@ -70,8 +70,10 @@
 			{profileHref}
 			current="บทบาทและสิทธิ์"
 		/>{/snippet}
-	{#snippet actions()}<Button href={returnHref} data-sveltekit-preload-data="off" variant="outline"
-			>กลับรายชื่อบุคลากร</Button
+	{#snippet actions()}<Button
+			href={returnHref}
+			data-sveltekit-preload-data={false}
+			variant="outline">กลับรายชื่อบุคลากร</Button
 		>{/snippet}
 	<div data-testid="staff-role-identity" aria-busy={identityLoading}>
 		{#if identityLoading}<Skeleton class="h-4 w-56" />

@@ -13,7 +13,7 @@ test('catalog version controls use typed shadcn inputs instead of UUID text fiel
 	const history = await readSource('src/lib/components/academic-core/CatalogVersionHistory.svelte');
 
 	assert.match(history, /GradeLevelMultiSelect/);
-	assert.match(history, /\* as Select from ['"]\$lib\/components\/ui\/select/);
+	assert.match(history, /\* as Select from ['"]#lib\/components\/ui\/select/);
 	assert.match(history, /DatePicker/);
 	assert.doesNotMatch(history, /รหัสระดับชั้น \(คั่นด้วยจุลภาค\)/);
 	assert.doesNotMatch(history, /type=["']date["']/);

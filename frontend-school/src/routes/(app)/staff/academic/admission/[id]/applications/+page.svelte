@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { afterNavigate, goto, invalidate, pushState } from '$app/navigation';
+	import { afterNavigate, goto, invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		containsProtectedIdentifier,
 		protectedIdentifierSearchCandidate
-	} from '$lib/admission/protected-identifier-search';
+	} from '#lib/admission/protected-identifier-search.js';
 	import {
 		listApplications,
 		searchApplicationsByIdentifier,
@@ -18,18 +18,18 @@
 		unverifyApplication,
 		type ApplicationListItem,
 		applicationStatusLabel
-	} from '$lib/api/admission';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import * as Card from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Table from '$lib/components/ui/table';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/api/admission.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		Search,
@@ -42,9 +42,9 @@
 		RotateCcw,
 		RefreshCw
 	} from '@lucide/svelte';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 	let { data }: PageProps = $props();
 
@@ -181,8 +181,8 @@
 		sourceKey: string,
 		sourceViewRevision: number
 	): boolean {
-		if (sourceLocationKey !== locationDataKey(page.url)) {
-			const listPath = resolve(`/staff/academic/admission/${sourceRoundId}/applications`);
+		if (sourceLocationKey !== locationDataKey(new URL(page.url.href))) {
+			const listPath = resolve(`staff/academic/admission/${sourceRoundId}/applications`);
 			if (page.url.pathname === listPath) void invalidate('schoolorbit:admission-applications');
 			return true;
 		}
@@ -218,17 +218,19 @@
 		if (next.href !== window.location.href) {
 			if (name === 'date') {
 				dateFilter = value;
-				pushState(
-					resolve(`/staff/academic/admission/${id}/applications${next.search}`),
-					page.state
-				);
+				goto(resolve(`staff/academic/admission/${id}/applications${next.search}`), {
+					shallow: true,
+					state: page.state
+				});
+
 				return;
 			}
+
 			if (name === 'status' && identifierSearch !== null)
 				toast.info('เปลี่ยนสถานะแล้ว การค้นหาเลขเดิมถูกยกเลิก');
-			void goto(resolve(`/staff/academic/admission/${id}/applications${next.search}`), {
-				keepFocus: true,
-				noScroll: true
+
+			void goto(resolve(`staff/academic/admission/${id}/applications${next.search}`), {
+				reset: false
 			});
 		}
 	}
@@ -237,7 +239,9 @@
 		dateFilter = new URL(window.location.href).searchParams.get('date') ?? '';
 	}
 
-	afterNavigate(syncDateFilterFromUrl);
+	afterNavigate(({ shallow }) => {
+		if (!shallow) syncDateFilterFromUrl();
+	});
 
 	function supersedeListRead() {
 		request.abort();
@@ -258,7 +262,7 @@
 			return;
 		}
 		const sourceRoundId = id;
-		const sourceLocationKey = locationDataKey(page.url);
+		const sourceLocationKey = locationDataKey(new URL(page.url.href));
 		const sourceKey = currentRouteKey();
 		const sourceViewRevision = viewRevision;
 		try {
@@ -288,7 +292,7 @@
 		const target = rejectingApp;
 		const reason = rejectReason;
 		const sourceRoundId = id;
-		const sourceLocationKey = locationDataKey(page.url);
+		const sourceLocationKey = locationDataKey(new URL(page.url.href));
 		const sourceKey = currentRouteKey();
 		const sourceViewRevision = viewRevision;
 		rejecting = true;
@@ -323,7 +327,7 @@
 		if (!deletingApp) return;
 		const target = deletingApp;
 		const sourceRoundId = id;
-		const sourceLocationKey = locationDataKey(page.url);
+		const sourceLocationKey = locationDataKey(new URL(page.url.href));
 		const sourceKey = currentRouteKey();
 		const sourceViewRevision = viewRevision;
 		deleting = true;
@@ -359,7 +363,7 @@
 		if (!unverifyingApp) return;
 		const target = unverifyingApp;
 		const sourceRoundId = id;
-		const sourceLocationKey = locationDataKey(page.url);
+		const sourceLocationKey = locationDataKey(new URL(page.url.href));
 		const sourceKey = currentRouteKey();
 		const sourceViewRevision = viewRevision;
 		unverifying = true;

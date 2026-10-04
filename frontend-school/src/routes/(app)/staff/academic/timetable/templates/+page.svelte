@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
-	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
-	import { selectPreferredTemplateVersion } from '$lib/academic/timetable/version-selection';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
+	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
+	import { selectPreferredTemplateVersion } from '#lib/academic/timetable/version-selection.js';
 	import {
 		applyTimetableTemplate,
 		clearTimetable,
@@ -16,23 +16,23 @@
 		listTimetableVersions,
 		type TimetableTemplate,
 		type TimetableVersion
-	} from '$lib/api/timetable';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/timetable.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		LoadingButton,
 		PageSkeleton,
 		PageState,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { Eraser, Play, Plus, Trash2 } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 
@@ -86,12 +86,13 @@
 
 	function syncVersionUrl(versionId: string): void {
 		if (page.url.searchParams.get('timetableVersionId') === versionId) return;
-		const nextUrl = new URL(page.url);
+		const nextUrl = new URL(page.url.href);
 		nextUrl.searchParams.set('timetableVersionId', versionId);
-		replaceState(
-			resolve(`/staff/academic/timetable/templates?${nextUrl.searchParams.toString()}`),
-			page.state
-		);
+		goto(resolve(`staff/academic/timetable/templates?${nextUrl.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	function changeVersion(versionId: string): void {

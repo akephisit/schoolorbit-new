@@ -5,16 +5,16 @@
 		CurriculumStructureRequirementInput,
 		CurriculumStructureWorkspace,
 		CurriculumTermSlotInput
-	} from '$lib/api/academic-core';
-	import { LoadingButton } from '$lib/components/app-state';
-	import CurriculumTermSlotEditor from '$lib/components/academic-core/CurriculumTermSlotEditor.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import * as Sheet from '$lib/components/ui/sheet';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/api/academic-core.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import CurriculumTermSlotEditor from '#lib/components/academic-core/CurriculumTermSlotEditor.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowDownToLine, RotateCcw, Save, Search, Trash2 } from '@lucide/svelte';
 
 	let {

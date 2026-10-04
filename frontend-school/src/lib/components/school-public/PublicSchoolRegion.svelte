@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
 	import { untrack, type Snippet } from 'svelte';
-	import { PageState } from '$lib/components/app-state';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 
 	let {
 		source,

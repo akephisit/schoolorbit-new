@@ -7,13 +7,13 @@
 		type ManualCertificateVerificationRequest,
 		type QrCertificateVerificationRequest,
 		type PublicCertificateVerificationData
-	} from '$lib/api/public-certificates';
-	import { ApiClientError } from '$lib/api/client';
-	import { downloadCertificatePdf } from '$lib/certificates/download';
-	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
-	import CertificatePreviewFullscreenDialog from '$lib/components/certificates/CertificatePreviewFullscreenDialog.svelte';
-	import CertificatePreviewSurface from '$lib/components/certificates/CertificatePreviewSurface.svelte';
+	} from '#lib/api/public-certificates.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { downloadCertificatePdf } from '#lib/certificates/download.js';
+	import type { CertificatePreviewState } from '#lib/certificates/preview-fit.js';
+	import { loadCertificateRenderer } from '#lib/certificates/renderer.js';
+	import CertificatePreviewFullscreenDialog from '#lib/components/certificates/CertificatePreviewFullscreenDialog.svelte';
+	import CertificatePreviewSurface from '#lib/components/certificates/CertificatePreviewSurface.svelte';
 	import {
 		Award,
 		Building2,

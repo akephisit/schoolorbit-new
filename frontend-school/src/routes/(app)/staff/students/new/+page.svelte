@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { Card } from '$lib/components/ui/card';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { toast } from 'svelte-sonner';
 	import { User, Save, GraduationCap } from '@lucide/svelte';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Switch } from '$lib/components/ui/switch';
-	import { createStudent } from '$lib/api/students';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { createStudent } from '#lib/api/students.js';
 	// Form data
 	let formData = $state({
 		national_id: '',
@@ -136,7 +136,7 @@
 			const result = await createStudent(cleanedPayload);
 
 			toast.success('เพิ่มนักเรียนสำเร็จ');
-			goto(resolve(`/staff/students/${result.id}/edit`));
+			goto(resolve(`staff/students/${result.id}/edit`));
 		} catch (error) {
 			console.error('Failed to create student:', error);
 			const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาด';
@@ -199,7 +199,7 @@
 					<div class="p-4 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
 						<strong>หมายเหตุ:</strong> หลังจากสร้างข้อมูลนักเรียนเสร็จแล้ว กรุณาไปที่เมนู
 						<a
-							href={resolve('/staff/academic/student-years')}
+							href={resolve('staff/academic/student-years')}
 							class="underline font-semibold hover:text-blue-900">ทะเบียนปีการศึกษาของนักเรียน</a
 						>
 						เพื่อเปิดทะเบียนในปีการศึกษาที่ต้องการและกำหนดห้องประจำ

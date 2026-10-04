@@ -1,10 +1,10 @@
 import { get } from 'svelte/store';
-import { roleAPI, permissionAPI } from '$lib/api/roles';
-import { can } from '$lib/stores/permissions';
-import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { requireApiData } from '$lib/api/client';
+import { roleAPI, permissionAPI } from '#lib/api/roles.js';
+import { can } from '#lib/stores/permissions.js';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { requireApiData } from '#lib/api/client.js';
 import type { PageLoad } from './$types';
 export const _meta = {
 	academicContext: 'none' as const,

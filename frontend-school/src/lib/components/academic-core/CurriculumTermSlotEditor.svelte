@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { CurriculumTermSlotInput } from '$lib/api/academic-core';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
+	import type { CurriculumTermSlotInput } from '#lib/api/academic-core.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { Plus, Trash2 } from '@lucide/svelte';
 
 	let {

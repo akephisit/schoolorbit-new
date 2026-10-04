@@ -2,10 +2,10 @@
 	import { beforeNavigate } from '$app/navigation';
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import { page } from '$app/state';
 	import {
 		deleteCertificateTemplate,
@@ -14,16 +14,16 @@
 		listCertificateTemplates,
 		type CertificateCampaignDetail,
 		type CertificateTemplateDetail
-	} from '$lib/api/certificates';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import CertificateTemplateForm from '$lib/components/certificates/CertificateTemplateForm.svelte';
-	import CertificateTemplateList from '$lib/components/certificates/CertificateTemplateList.svelte';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/certificates.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import CertificateTemplateForm from '#lib/components/certificates/CertificateTemplateForm.svelte';
+	import CertificateTemplateList from '#lib/components/certificates/CertificateTemplateList.svelte';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { FileBadge2, Plus, Trash2 } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -269,7 +269,8 @@
 		}
 	}
 
-	beforeNavigate(({ cancel }) => {
+	beforeNavigate(({ cancel, shallow }) => {
+		if (shallow) return;
 		if (!hasPendingUpload) return;
 		cancel();
 		toast.error('แนบหรือลบไฟล์ชั่วคราวให้เสร็จก่อนออกจากหน้านี้');

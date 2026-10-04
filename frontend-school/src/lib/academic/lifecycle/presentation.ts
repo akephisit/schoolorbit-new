@@ -1,4 +1,4 @@
-import type { components } from '$lib/api/generated/school-api';
+import type { components } from '#lib/api/generated/school-api.js';
 
 type Workspace = components['schemas']['TermLifecycleWorkspace'];
 type Action = components['schemas']['TermTransitionAction'];

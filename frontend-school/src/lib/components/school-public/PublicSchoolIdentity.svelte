@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PublicSchoolInfo } from '$lib/api/school';
+	import type { PublicSchoolInfo } from '#lib/api/school.js';
 	import PublicSchoolLogo from './PublicSchoolLogo.svelte';
 	let { info }: { info: PublicSchoolInfo } = $props();
 </script>

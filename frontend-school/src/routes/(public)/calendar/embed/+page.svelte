@@ -1,5 +1,5 @@
 <script lang="ts">
-	import PublicCalendarView from '$lib/components/calendar/PublicCalendarView.svelte';
+	import PublicCalendarView from '#lib/components/calendar/PublicCalendarView.svelte';
 
 	let { data } = $props();
 </script>

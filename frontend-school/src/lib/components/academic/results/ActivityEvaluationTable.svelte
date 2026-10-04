@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { activityOutcomeLabel, resultBlockerLabel } from '$lib/academic/results/presentation';
+	import { activityOutcomeLabel, resultBlockerLabel } from '#lib/academic/results/presentation.js';
 	import type {
 		ActivityResultPreparationWorkspace,
 		ActivityResultBatchInput
-	} from '$lib/api/academicResults';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/api/academicResults.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { CheckCircle2, CircleAlert, LockKeyhole } from '@lucide/svelte';
 
 	type ActivityOutcome = NonNullable<ActivityResultBatchInput['cells'][number]['outcome']>;

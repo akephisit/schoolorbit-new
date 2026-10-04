@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import * as Select from '$lib/components/ui/select';
-	import { apiClient } from '$lib/api/client';
-	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { apiClient } from '#lib/api/client.js';
+	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
 	import { toast } from 'svelte-sonner';
 	import { onMount } from 'svelte';
-	import { notificationStore } from '$lib/stores/notification';
+	import { notificationStore } from '#lib/stores/notification.js';
 
 	let title = $state('ทดสอบแจ้งเตือน');
 	let message = $state('ข้อความทดสอบแจ้งเตือน Real-time');

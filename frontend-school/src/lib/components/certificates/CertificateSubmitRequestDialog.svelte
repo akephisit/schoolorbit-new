@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { CertificateCandidateDetail } from '$lib/api/certificates';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
+	import type { CertificateCandidateDetail } from '#lib/api/certificates.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { AlertTriangle, FileBadge2, Send, UsersRound } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 
@@ -154,9 +154,7 @@
 					<p>{error}</p>
 					{#if lockedRequestId}
 						<a
-							href={resolve(
-								`/staff/certificates/${campaignId}/requests#request-${lockedRequestId}` as '/staff/certificates/[campaignId]/requests'
-							)}
+							href={resolve(`staff/certificates/${campaignId}/requests#request-${lockedRequestId}`)}
 							class="mt-2 inline-flex font-medium underline underline-offset-4"
 						>
 							เปิดคำขอที่ล็อกรายการนี้ในประวัติกิจกรรม

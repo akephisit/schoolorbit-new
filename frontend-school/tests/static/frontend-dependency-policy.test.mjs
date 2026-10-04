@@ -19,7 +19,7 @@ async function sourceFiles(relativeDirectory) {
 test('frontend sources use the canonical Lucide package owner', async () => {
 	const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
 	assert.equal(packageJson.dependencies?.['lucide-svelte'], undefined);
-	assert.match(packageJson.devDependencies?.['@lucide/svelte'] ?? '', /^\^1\.47\.0$/);
+	assert.match(packageJson.devDependencies?.['@lucide/svelte'] ?? '', /^\^1\.51\.0$/);
 
 	for (const file of await Promise.all([
 		sourceFiles('src'),

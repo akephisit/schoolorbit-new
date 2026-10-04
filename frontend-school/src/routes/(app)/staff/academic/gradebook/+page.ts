@@ -5,16 +5,16 @@ import {
 	type GradebookPhaseCode,
 	type GradebookSubject,
 	type GroupPhaseWorkspace
-} from '$lib/api/academicGradebook';
+} from '#lib/api/academicGradebook.js';
 import {
 	getLearnerEvaluationWorkspace,
 	listLearnerEvaluationSubjects,
 	type LearnerEvaluationDomain,
 	type LearnerEvaluationSubject,
 	type LearnerEvaluationWorkspace
-} from '$lib/api/academicLearnerEvaluations';
-import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+} from '#lib/api/academicLearnerEvaluations.js';
+import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 type GradebookTab = 'scores' | LearnerEvaluationDomain;
 type SubjectRegion =

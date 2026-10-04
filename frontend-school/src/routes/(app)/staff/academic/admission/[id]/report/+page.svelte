@@ -6,16 +6,16 @@
 		type AdmissionRound,
 		type ApplicationListItem,
 		applicationStatusLabel
-	} from '$lib/api/admission';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { RegionUpdatingState } from '$lib/components/app-state';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import * as Card from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/admission.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { Settings, ChevronDown } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 

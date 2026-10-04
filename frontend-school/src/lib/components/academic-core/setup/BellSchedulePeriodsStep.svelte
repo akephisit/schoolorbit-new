@@ -4,16 +4,16 @@
 		BellSchedule,
 		BellSchedulePeriod,
 		ReplaceBellSchedulePeriodsRequest
-	} from '$lib/api/academic-core';
+	} from '#lib/api/academic-core.js';
 	import {
 		normalizeSchoolDays,
 		type AcademicWeekday
-	} from '$lib/academic-core/foundation-presentation';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/academic-core/foundation-presentation.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { Plus, Save, Trash2 } from '@lucide/svelte';
 
 	type PeriodDraft = ReplaceBellSchedulePeriodsRequest['periods'][number];

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { LearningDeliveryRefreshScope } from '$lib/academic/learning-delivery-page';
+	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
 		applyTeacherHandoff,
 		getAcademicTermChangeSet,
@@ -11,14 +11,14 @@
 		type DeliveryManagementOptions,
 		type TeacherHandoffMode,
 		type TeacherHandoffPreview
-	} from '$lib/api/learning-delivery';
-	import { ApiClientError } from '$lib/api/client';
-	import { isAbortError } from '$lib/async/latest-request';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/learning-delivery.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { isAbortError } from '#lib/async/latest-request.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		AlertTriangle,
 		ArrowRight,

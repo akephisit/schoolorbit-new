@@ -2,7 +2,7 @@ import type {
 	ExamInvigilatorAssignmentSummary,
 	ExamInvigilatorStaffOption,
 	ExamInvigilatorStaffWorkload
-} from '$lib/api/examSchedule';
+} from '#lib/api/examSchedule.js';
 
 export const INVIGILATOR_STAFF_DRAG_TYPE = 'application/x-schoolorbit-exam-invigilator-staff-id';
 

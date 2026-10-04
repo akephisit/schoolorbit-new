@@ -1,31 +1,31 @@
 <script lang="ts">
-	import StaffJobPositionPicker from '$lib/components/staff/StaffJobPositionPicker.svelte';
-	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '$lib/forms/staff-personnel';
-	import { getPersonnelOverview, type PersonnelBucket } from '$lib/api/personnel';
+	import StaffJobPositionPicker from '#lib/components/staff/StaffJobPositionPicker.svelte';
+	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '#lib/forms/staff-personnel.js';
+	import { getPersonnelOverview, type PersonnelBucket } from '#lib/api/personnel.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { PageProps } from './$types';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { listStaff, deleteStaff, type StaffListItem } from '$lib/api/staff';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can, userPermissions } from '$lib/stores/permissions';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import { STAFF_STATUS_OPTIONS, staffStatusLabel } from '$lib/forms/staff-status';
-	import { withStaffReturn } from '$lib/navigation/staff-management';
+	import { listStaff, deleteStaff, type StaffListItem } from '#lib/api/staff.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can, userPermissions } from '#lib/stores/permissions.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { STAFF_STATUS_OPTIONS, staffStatusLabel } from '#lib/forms/staff-status.js';
+	import { withStaffReturn } from '#lib/navigation/staff-management.js';
 	import {
 		lookupRoles,
 		lookupOrganizationUnits,
 		type RoleLookupItem,
 		type OrganizationUnitLookupItem
-	} from '$lib/api/lookup';
+	} from '#lib/api/lookup.js';
 	import {
 		Dialog,
 		DialogContent,
@@ -33,7 +33,7 @@
 		DialogFooter,
 		DialogHeader,
 		DialogTitle
-	} from '$lib/components/ui/dialog';
+	} from '#lib/components/ui/dialog/index.js';
 	import {
 		Table,
 		TableBody,
@@ -41,17 +41,17 @@
 		TableHead,
 		TableHeader,
 		TableRow
-	} from '$lib/components/ui/table';
+	} from '#lib/components/ui/table/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	} from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		ChartNoAxesCombined,
 		ChevronLeft,
@@ -108,7 +108,7 @@
 		if (value && value !== 'all') query.set(field, value);
 		else query.delete(field);
 		query.delete('page');
-		void goto(resolve(`/staff/manage?${query}`));
+		void goto(resolve(`staff/manage?${query}`));
 	}
 	const directoryHref = $derived(`${page.url.pathname}${page.url.search}`);
 	let currentPage = $state(1);
@@ -297,6 +297,7 @@
 	) {
 		if (deleting || nextPage < 1) return;
 		const query = new SvelteURLSearchParams(page.url.search);
+
 		if (search) query.set('search', search);
 		else query.delete('search');
 		if (status !== 'active') query.set('status', status);
@@ -308,7 +309,7 @@
 		if (nextPage > 1) query.set('page', String(nextPage));
 		else query.delete('page');
 		if (query.toString() === page.url.searchParams.toString()) void loadStaff();
-		else void goto(resolve(`/staff/manage?${query}`));
+		else void goto(resolve(`staff/manage?${query}`));
 	}
 	function handleSearch() {
 		navigatePage(1, searchQuery);
@@ -534,7 +535,7 @@
 									></Select.Root
 								>{/if}
 						</section>
-						<a href={resolve('/staff/manage')} class="self-end text-sm text-primary underline"
+						<a href={resolve('staff/manage')} class="self-end text-sm text-primary underline"
 							>ล้างตัวกรองทั้งหมด</a
 						>
 					</div>{/if}
@@ -590,10 +591,9 @@
 										<TableCell>
 											<a
 												href={resolve(
-													withStaffReturn(
-														`/staff/manage/${staff.id}`,
-														directoryHref
-													) as `/staff/manage/${string}`
+													withStaffReturn(`/staff/manage/${staff.id}`, directoryHref).slice(
+														1
+													) as `staff/manage/${string}`
 												)}
 												data-sveltekit-preload-data="tap"
 												class="font-medium text-foreground hover:text-primary hover:underline"

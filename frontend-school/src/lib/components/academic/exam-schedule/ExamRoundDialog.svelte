@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { CreateExamRoundInput, ExamRoundKind } from '$lib/api/examSchedule';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import type { CreateExamRoundInput, ExamRoundKind } from '#lib/api/examSchedule.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
 	let {
 		open = $bindable(false),

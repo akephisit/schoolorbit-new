@@ -78,7 +78,7 @@ test('student certificate route is own-scoped and both portals share the read-on
 	assert.match(list, /certificate\.capabilities\.canDownload/);
 	assert.match(
 		list,
-		/\/verify\/certificate\/\$\{encodeURIComponent\(certificate\.certificateNumber\)\}/
+		/verify\/certificate\/\$\{encodeURIComponent\(certificate\.certificateNumber\)\}/
 	);
 	assert.doesNotMatch(list, /revokeOwnCertificate|canRevoke/);
 });

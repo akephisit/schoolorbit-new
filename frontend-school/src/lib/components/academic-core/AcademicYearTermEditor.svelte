@@ -11,13 +11,13 @@
 		UpdateAcademicTermRequest,
 		UpdateAcademicYearRequest,
 		UpdateBellScheduleRequest
-	} from '$lib/api/academic-core';
-	import AcademicTermSetupStep from '$lib/components/academic-core/setup/AcademicTermSetupStep.svelte';
-	import AcademicYearSetupStep from '$lib/components/academic-core/setup/AcademicYearSetupStep.svelte';
-	import BellSchedulePeriodsStep from '$lib/components/academic-core/setup/BellSchedulePeriodsStep.svelte';
-	import BellScheduleSetupStep from '$lib/components/academic-core/setup/BellScheduleSetupStep.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	} from '#lib/api/academic-core.js';
+	import AcademicTermSetupStep from '#lib/components/academic-core/setup/AcademicTermSetupStep.svelte';
+	import AcademicYearSetupStep from '#lib/components/academic-core/setup/AcademicYearSetupStep.svelte';
+	import BellSchedulePeriodsStep from '#lib/components/academic-core/setup/BellSchedulePeriodsStep.svelte';
+	import BellScheduleSetupStep from '#lib/components/academic-core/setup/BellScheduleSetupStep.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		BookOpenCheck,
 		CalendarDays,

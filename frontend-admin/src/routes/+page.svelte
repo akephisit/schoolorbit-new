@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { asset, resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
-	import { authStore } from '$lib/stores/auth.svelte';
+	import { authStore } from '#lib/stores/auth.svelte.js';
 	import {
 		ArrowDown,
 		ArrowRight,
@@ -22,7 +22,7 @@
 
 	let menuOpen = $state(false);
 	$effect(() => {
-		if (authStore.isAuthenticated) void goto(resolve('/dashboard'));
+		if (authStore.isAuthenticated) void goto(resolve('dashboard'));
 	});
 
 	const services = [
@@ -99,7 +99,7 @@
 					</nav>
 					<div class="flex items-center gap-1 sm:gap-3">
 						<a
-							href={resolve('/login')}
+							href={resolve('login')}
 							class="inline-flex items-center justify-center gap-2 login-button h-10 rounded-full px-4 sm:px-5"
 						>
 							เข้าสู่ระบบ <ArrowUpRight class="hidden size-4 sm:block" />
@@ -150,7 +150,7 @@
 					</p>
 					<div class="mt-9 flex flex-wrap items-center gap-4">
 						<a
-							href={resolve('/login')}
+							href={resolve('login')}
 							class="inline-flex items-center justify-center gap-2 login-button hero-login h-14 rounded-full px-7 text-base"
 						>
 							เข้าสู่ระบบผู้ดูแล <span
@@ -173,7 +173,7 @@
 				<div class="campus-scene" aria-hidden="true">
 					<div class="scene-orbit"></div>
 					<img
-						src={asset('/illustrations/school-campus.svg')}
+						src={asset('illustrations/school-campus.svg')}
 						alt=""
 						width="960"
 						height="620"
@@ -341,7 +341,7 @@
 						</p>
 					</div>
 					<a
-						href={resolve('/login')}
+						href={resolve('login')}
 						class="inline-flex items-center justify-center gap-2 h-14 rounded-full bg-white px-7 text-base text-[#236581] hover:bg-[#e8f3f7]"
 						>เข้าสู่ระบบผู้ดูแล <ArrowRight class="ml-2 size-5" /></a
 					>

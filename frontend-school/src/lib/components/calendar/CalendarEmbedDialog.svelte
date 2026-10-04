@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { buildCalendarEmbedCode, buildCalendarEmbedUrl } from '$lib/utils/calendar';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { buildCalendarEmbedCode, buildCalendarEmbedUrl } from '#lib/utils/calendar.js';
 	import { Copy } from '@lucide/svelte';
 
 	let {

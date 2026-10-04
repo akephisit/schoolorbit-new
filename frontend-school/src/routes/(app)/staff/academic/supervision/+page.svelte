@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	let { data }: PageProps = $props();
-	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
-	} from '$lib/components/academic-workflow';
-	import SupervisionWorkspace from '$lib/components/supervision/SupervisionWorkspace.svelte';
+	} from '#lib/components/academic-workflow/index.js';
+	import SupervisionWorkspace from '#lib/components/supervision/SupervisionWorkspace.svelte';
 
 	const academicContext = getAcademicContextStore();
 	const academicTermId = $derived($academicContext.selected.academicTermId);

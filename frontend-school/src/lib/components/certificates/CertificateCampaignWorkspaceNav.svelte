@@ -6,7 +6,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils.js';
 	import { Award, FileBadge2, LayoutDashboard, Send, UsersRound } from '@lucide/svelte';
 
 	let {
@@ -39,9 +39,7 @@
 			{@const ItemIcon = item.icon}
 			<a
 				data-sveltekit-preload-data="tap"
-				href={resolve(
-					`/staff/certificates/${campaignId}${item.sectionPath}` as '/staff/certificates'
-				)}
+				href={resolve(`staff/certificates/${campaignId}${item.sectionPath}`)}
 				aria-current={page.url.pathname === `/staff/certificates/${campaignId}${item.sectionPath}`
 					? 'page'
 					: undefined}

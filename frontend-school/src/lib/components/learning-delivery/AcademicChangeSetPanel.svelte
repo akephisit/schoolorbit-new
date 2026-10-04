@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { LearningDeliveryRefreshScope } from '$lib/academic/learning-delivery-page';
+	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
 		deleteAcademicTermChangeItem,
 		getAcademicTermChangeSet,
@@ -12,14 +12,14 @@
 		type LearningTeacherRole,
 		type LearningOfferingOverviewItem,
 		type UpsertAcademicTermChangeItemRequest
-	} from '$lib/api/learning-delivery';
-	import { ApiClientError } from '$lib/api/client';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/learning-delivery.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		ArrowRight,
 		CalendarClock,

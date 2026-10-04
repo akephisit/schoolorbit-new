@@ -119,7 +119,7 @@ test('settings and profile menu point to one shared account-security page', asyn
 	const studentSettings = await readFrontendFile('src/routes/(app)/student/settings/+page.svelte');
 
 	assert.match(profileMenu, /ความปลอดภัยของบัญชี/);
-	assert.match(profileMenu, /\/account\/security/);
+	assert.match(profileMenu, /account\/security/);
 	assert.doesNotMatch(profileMenu, /user\.email/);
 
 	for (const settings of [staffSettings, studentSettings]) {

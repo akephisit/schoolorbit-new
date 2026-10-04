@@ -9,17 +9,17 @@
 		portalUploadTempFile,
 		portalDeleteDocument,
 		DOC_TYPE_LABELS
-	} from '$lib/api/admission';
-	import type { AdmissionRound, AdmissionTrack, ApplicationDocument } from '$lib/api/admission';
+	} from '#lib/api/admission.js';
+	import type { AdmissionRound, AdmissionTrack, ApplicationDocument } from '#lib/api/admission.js';
 	import { toast } from 'svelte-sonner';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Card from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
-	import { Separator } from '$lib/components/ui/separator';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import SchoolCombobox from '$lib/components/ui/SchoolCombobox.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import SchoolCombobox from '#lib/components/ui/SchoolCombobox.svelte';
 	import {
 		GraduationCap,
 		CircleCheck,
@@ -33,8 +33,8 @@
 		ZoomIn,
 		ZoomOut
 	} from '@lucide/svelte';
-	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
-	import PortalFileImage from '$lib/components/files/PortalFileImage.svelte';
+	import DocumentCropperModal from '#lib/components/DocumentCropperModal.svelte';
+	import PortalFileImage from '#lib/components/files/PortalFileImage.svelte';
 
 	let round = $state<AdmissionRound | null>(null);
 	let tracks = $state<AdmissionTrack[]>([]);

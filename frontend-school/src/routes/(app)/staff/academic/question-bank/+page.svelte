@@ -3,7 +3,7 @@
 	import type { PageProps } from './$types';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import {
 		createQuestionBankQuestion,
 		deleteQuestionBankQuestion,
@@ -21,28 +21,28 @@
 		type QuestionType,
 		type RichContent,
 		type UpsertQuestionRequest
-	} from '$lib/api/questionBank';
-	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
-	import { deleteFile, uploadFile } from '$lib/api/files';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/questionBank.js';
+	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
+	import { deleteFile, uploadFile } from '#lib/api/files.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		LoadingButton,
 		PageSkeleton,
 		PageState,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import QuestionContent from '$lib/components/question-bank/QuestionContent.svelte';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { loadQuestionBankExportData } from '$lib/question-bank/export-data';
+	} from '#lib/components/app-state/index.js';
+	import QuestionContent from '#lib/components/question-bank/QuestionContent.svelte';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { loadQuestionBankExportData } from '#lib/question-bank/export-data.js';
 	import {
 		contentHasImage,
 		contentHasMath,
@@ -53,8 +53,8 @@
 		toPersistedRichContent,
 		type EditorRichContent,
 		type PendingImageReference
-	} from '$lib/question-bank/rich-document';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/question-bank/rich-document.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		ArrowDown,
 		ArrowUp,
@@ -125,7 +125,7 @@
 	const pageSize = 20;
 	const maxImageBytes = 10 * 1024 * 1024;
 	const loadWordExporter = browser
-		? () => import('$lib/question-bank/word-export')
+		? () => import('#lib/question-bank/word-export.js')
 		: () => Promise.reject(new Error('การส่งออก Word ใช้งานได้เฉพาะในเบราว์เซอร์'));
 
 	const canReadQuestionBank = $derived(
@@ -156,7 +156,7 @@
 	let loadingDetail = $state(false);
 	let editorLoadError = $state('');
 	let QuestionContentEditor = $state<
-		typeof import('$lib/components/question-bank/QuestionContentEditor.svelte').default | null
+		typeof import('#lib/components/question-bank/QuestionContentEditor.svelte').default | null
 	>(null);
 	let editorImport: Promise<void> | null = null;
 	let optionsRevision = 0;
@@ -593,7 +593,7 @@
 		if (QuestionContentEditor) return;
 		if (editorImport) return editorImport;
 		editorLoadError = '';
-		editorImport = import('$lib/components/question-bank/QuestionContentEditor.svelte')
+		editorImport = import('#lib/components/question-bank/QuestionContentEditor.svelte')
 			.then((module) => {
 				QuestionContentEditor = module.default;
 			})
@@ -1547,7 +1547,7 @@
 				'-mt-4 shrink-0 overflow-hidden transition-[height] duration-200',
 				mathVirtualKeyboardVisible ? 'h-[min(22rem,45vh)] border-t' : 'h-0'
 			]}
-			{@attach connectMathVirtualKeyboardContainer}
+			{@attach QuestionContentEditor ? connectMathVirtualKeyboardContainer : undefined}
 		></div>
 	</Dialog.Content>
 </Dialog.Root>

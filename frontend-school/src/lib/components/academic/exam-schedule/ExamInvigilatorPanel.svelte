@@ -4,10 +4,10 @@
 		ExamInvigilatorAssignmentSummary,
 		ExamInvigilatorStaffOption,
 		ExamInvigilatorWorkspace
-	} from '$lib/api/examSchedule';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as Select from '$lib/components/ui/select';
-	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
+	} from '#lib/api/examSchedule.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { compareExamDaysByDate } from '#lib/utils/examScheduleDayOrder.js';
 	import { RefreshCw } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import InvigilatorRoomBoard from './InvigilatorRoomBoard.svelte';

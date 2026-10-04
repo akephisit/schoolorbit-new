@@ -17,21 +17,21 @@
 		type ExamRoom,
 		type ExamRoomGroup,
 		type ExamConfig
-	} from '$lib/api/admission';
-	import { listRooms, type Room } from '$lib/api/facility';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { RegionUpdatingState } from '$lib/components/app-state';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import * as Card from '$lib/components/ui/card';
-	import * as Table from '$lib/components/ui/table';
-	import * as Select from '$lib/components/ui/select';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/admission.js';
+	import { listRooms, type Room } from '#lib/api/facility.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		Building2,

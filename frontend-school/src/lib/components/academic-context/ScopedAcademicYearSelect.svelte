@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { AcademicYearOption } from '$lib/api/academic-context';
-	import * as Select from '$lib/components/ui/select';
+	import type { AcademicYearOption } from '#lib/api/academic-context.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 
 	type Props = {
 		id: string;

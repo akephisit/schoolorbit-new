@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { pushState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { SupervisionWorkspaceRouteData } from '$lib/supervision/workspace-route-data';
+	import type { SupervisionWorkspaceRouteData } from '#lib/supervision/workspace-route-data.js';
 	import {
 		BarChart3,
 		BookOpenCheck,
@@ -21,10 +21,10 @@
 		UserCheck
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
-	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
-	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
-	import { currentLocalDate, getMyTimetable, type TimetableBlock } from '$lib/api/timetable';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
+	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
+	import { currentLocalDate, getMyTimetable, type TimetableBlock } from '#lib/api/timetable.js';
 	import {
 		acknowledgeSupervisionObservation,
 		approveSupervisionObservationRequest,
@@ -55,7 +55,7 @@
 		type SupervisionTeacherStatusRow,
 		type SupervisionTemplate,
 		type SupervisionTemplateStatus
-	} from '$lib/api/supervision';
+	} from '#lib/api/supervision.js';
 	import {
 		calculateRubricDraftSummary,
 		createBlankRubricItem,
@@ -65,33 +65,33 @@
 		type RubricFormSection,
 		type RubricItemType,
 		type RubricResponseDraft
-	} from '$lib/utils/supervision-rubric';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { cn } from '$lib/utils';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/utils/supervision-rubric.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { cn } from '#lib/utils.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		LoadingButton,
 		PageSkeleton,
 		PageState,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import * as Alert from '$lib/components/ui/alert';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import * as Command from '$lib/components/ui/command';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Popover from '$lib/components/ui/popover';
-	import { Progress } from '$lib/components/ui/progress';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/components/app-state/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import { Progress } from '#lib/components/ui/progress/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
 	export type SupervisionWorkspaceSection =
 		'mine' | 'evaluate' | 'requests' | 'cycles' | 'templates' | 'overview' | 'approvals';
@@ -418,10 +418,7 @@
 		)
 	);
 	const bookingWeekDays = $derived(
-		timetableSchoolDays.map((day) => ({
-			...day,
-			date: dateForTimetableDay(day.value)
-		}))
+		timetableSchoolDays.map((day) => ({ ...day, date: dateForTimetableDay(day.value) }))
 	);
 	const selectedTimetableBlockGroup = $derived(
 		timetableBlockGroups.find((entry) => entry.id === selectedTimetableBlockGroupId) ?? null
@@ -447,11 +444,13 @@
 	const selectedEvaluation = $derived(
 		observations.find((observation) => observation.id === evaluationObservationId) ?? null
 	);
+
 	const selectedEvaluationTemplate = $derived(
 		selectedEvaluation
 			? (templates.find((template) => template.id === selectedEvaluation.templateId) ?? null)
 			: null
 	);
+
 	const previewTemplate = $derived(
 		templates.find((template) => template.id === previewTemplateId) ?? null
 	);
@@ -465,16 +464,20 @@
 			selectedEvaluationTemplate?.ratingMax ?? 5
 		)
 	);
+
 	const certifiableObservations = $derived(
 		canManageRequests ? observations.filter((item) => item.status === 'evaluators_submitted') : []
 	);
+
 	const approvableObservations = $derived(
 		canApprove ? observations.filter((item) => item.status === 'approved') : []
 	);
+
 	const approvalWorkflowObservations = $derived([
 		...certifiableObservations,
 		...approvableObservations
 	]);
+
 	const progressPercent = $derived(
 		progress && progress.totalObservations > 0
 			? Math.round((progress.completedCount / progress.totalObservations) * 100)
@@ -568,9 +571,11 @@
 					selectedCycleId = cycles.some((item) => item.id === selectedCycleId)
 						? selectedCycleId
 						: (cycles.find((item) => item.status === 'open')?.id ?? cycles[0]?.id ?? '');
+
 					const selected = cycles.some((item) => item.id === source.cycleId)
 						? source.cycleId
 						: (cycles[0]?.id ?? '');
+
 					progressCycleId = selected;
 					if (section === 'overview' && source.cycleId && selected !== source.cycleId) {
 						teacherStatusRequest.abort();
@@ -636,13 +641,15 @@
 		}
 		observedCycleUrl = id;
 		progressCycleId = id;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
+
 		if (id) url.searchParams.set('cycleId', id);
 		else url.searchParams.delete('cycleId');
-		pushState(
-			resolve(`/staff/academic/supervision/overview?${url.searchParams.toString()}`),
-			page.state
-		);
+
+		goto(resolve(`staff/academic/supervision/overview?${url.searchParams.toString()}`), {
+			shallow: true,
+			state: page.state
+		});
 		void loadTeacherStatusOverview();
 	}
 
@@ -653,6 +660,7 @@
 			(section === 'evaluate' && !canReadObservations)
 		)
 			return;
+
 		const key = currentManagementContext();
 		const { revision, signal } = managementCyclesRequest.begin();
 		cyclesLoading = true;
@@ -779,6 +787,7 @@
 
 	function academicTermLabel(termId?: string | null): string {
 		if (!termId) return 'ทั้งปี';
+
 		return (
 			academicContextOptions?.terms.find((term) => term.id === termId)?.name ?? 'ไม่พบภาคเรียน'
 		);
@@ -797,10 +806,12 @@
 		const range = academicTermId
 			? academicContextOptions?.terms.find((term) => term.id === academicTermId)
 			: academicContextOptions?.years.find((year) => year.id === academicYearId);
+
 		const rangeEnd =
 			range && 'plannedEndDate' in range
 				? (range.closedOn ?? range.plannedEndDate ?? '')
 				: (range?.endDate ?? '');
+
 		cycleForm.startsDate ||= range?.startDate ?? '';
 		cycleForm.endsDate ||= rangeEnd;
 		cycleForm.bookingOpensDate ||= range?.startDate ?? '';
@@ -1276,6 +1287,7 @@
 				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
 				{ signal }
 			);
+
 			if (!observationRequest.isCurrent(revision)) return;
 			observations = items;
 			observationsReadable = true;
@@ -2253,7 +2265,7 @@
 		{#each sectionLinks as item (item.key)}
 			<Button
 				href={sectionRoute(item.key)}
-				data-sveltekit-preload-data={item.key !== 'overview' ? 'off' : 'tap'}
+				data-sveltekit-preload-data={item.key !== 'overview' ? false : 'tap'}
 				variant={section === item.key ? 'default' : 'outline'}
 				size="sm"
 			>

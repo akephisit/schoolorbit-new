@@ -83,7 +83,10 @@ test('question editor offers visual math controls without exposing a LaTeX input
 	assert.doesNotMatch(page, /event\s*\.composedPath\(\)/);
 	assert.match(page, /if \(fromMathKeyboard\) event\.preventDefault\(\)/);
 	assert.match(page, /keyboard\.container = node/);
-	assert.match(page, /\{@attach connectMathVirtualKeyboardContainer\}/);
+	assert.match(
+		page,
+		/\{@attach QuestionContentEditor \? connectMathVirtualKeyboardContainer : undefined\}/
+	);
 	assert.match(page, /keyboard\.container = document\.body/);
 	assert.doesNotMatch(page, /trapFocus=\{false\}/);
 	assert.match(extensions, /mathfieldConstructor\.soundsDirectory = null/);
@@ -207,7 +210,7 @@ test('question bank exports selected questions with editable native Word Math eq
 	assert.match(page, /ลากรายการหรือใช้ปุ่มขึ้นลงเพื่อจัดลำดับก่อนส่งออก/);
 	assert.match(page, /aria-label=\{`เลื่อนข้อ \$\{index \+ 1\} ขึ้น`\}/);
 	assert.match(page, /aria-label=\{`เลื่อนข้อ \$\{index \+ 1\} ลง`\}/);
-	assert.match(page, /import\('\$lib\/question-bank\/word-export'\)/);
+	assert.match(page, /import\('#lib\/question-bank\/word-export\.js'\)/);
 	assert.match(page, /const loadWordExporter = browser/);
 	assert.match(viteConfig, /client-only-word-exporter/);
 	assert.match(viteConfig, /this\.environment\.name === 'ssr'/);

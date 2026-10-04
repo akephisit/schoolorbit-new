@@ -1,13 +1,16 @@
 import type { PageLoad } from './$types';
-import { selectPreferredBoardVersion } from '$lib/academic/timetable/version-selection';
-import { getAcademicTermChangeSet, type AcademicTermChangeSet } from '$lib/api/learning-delivery';
+import { selectPreferredBoardVersion } from '#lib/academic/timetable/version-selection.js';
+import {
+	getAcademicTermChangeSet,
+	type AcademicTermChangeSet
+} from '#lib/api/learning-delivery.js';
 import {
 	getTimetableBlockWorkspace,
 	listTimetableVersions,
 	type TimetableBlockWorkspace
-} from '$lib/api/timetable';
-import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+} from '#lib/api/timetable.js';
+import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

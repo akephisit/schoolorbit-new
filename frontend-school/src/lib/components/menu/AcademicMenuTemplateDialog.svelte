@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { LatestRequest } from '$lib/async/latest-request';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
 	import {
 		applyRecommendedAcademicMenuTemplate,
 		previewRecommendedAcademicMenuTemplate,
 		type AcademicMenuTemplatePreview
-	} from '$lib/api/menu-admin';
-	import { ApiClientError } from '$lib/api/client';
-	import { LoadingButton } from '$lib/components/app-state';
-	import * as Alert from '$lib/components/ui/alert';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/api/menu-admin.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowRight, LayoutTemplate, RefreshCw, ShieldCheck } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

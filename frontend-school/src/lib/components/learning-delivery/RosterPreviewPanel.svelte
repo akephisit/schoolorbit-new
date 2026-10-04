@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { LearningGroup, RosterPreview } from '$lib/api/learning-delivery';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	import type { LearningGroup, RosterPreview } from '#lib/api/learning-delivery.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { AlertTriangle, CheckCircle2, RefreshCw, Send, UserRound } from '@lucide/svelte';
 
 	let {

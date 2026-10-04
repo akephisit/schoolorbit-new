@@ -37,8 +37,8 @@ test('notification hidden pause suppresses recovery and resumes authoritative st
 		}
 	}
 	const dependencies = {
-		'$env/static/public': { PUBLIC_VAPID_KEY: '' },
-		'$lib/api/client': {
+		'$app/env/public': { PUBLIC_VAPID_KEY: '' },
+		'#lib/api/client.js': {
 			BACKEND_URL: 'https://school.example',
 			getSchoolSubdomainHint: () => null,
 			apiClient: {
@@ -52,8 +52,8 @@ test('notification hidden pause suppresses recovery and resumes authoritative st
 				}
 			}
 		},
-		'$lib/realtime/auth-recovery': { realtimeAuthRecovery },
-		'$lib/realtime/visibility-idle': {
+		'#lib/realtime/auth-recovery.js': { realtimeAuthRecovery },
+		'#lib/realtime/visibility-idle.js': {
 			createVisibilityIdle,
 			browserVisibilityDependencies: () => ({
 				isHidden: () => hidden,
@@ -63,7 +63,7 @@ test('notification hidden pause suppresses recovery and resumes authoritative st
 				removeListener: (l) => listeners.delete(l)
 			})
 		},
-		'$lib/stores/work': {
+		'#lib/stores/work.js': {
 			workStore: {
 				refreshSilently: async () => {
 					workCalls++;
@@ -71,7 +71,7 @@ test('notification hidden pause suppresses recovery and resumes authoritative st
 				}
 			}
 		},
-		'$lib/api/auth': {
+		'#lib/api/auth.js': {
 			authAPI: {
 				refreshCurrentUser: async (options) => {
 					authOptions.push(options);

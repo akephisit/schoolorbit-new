@@ -1,31 +1,34 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import { formatEffectiveResultValue, resultKindLabel } from '$lib/academic/results/presentation';
+	import {
+		formatEffectiveResultValue,
+		resultKindLabel
+	} from '#lib/academic/results/presentation.js';
 	import {
 		correctEffectiveAcademicResult,
 		searchEffectiveAcademicResults,
 		type AcademicResultCorrectionInput,
 		type EffectiveResultKind,
 		type EffectiveResultSearchItem
-	} from '$lib/api/academicResults';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
-	import ResultCorrectionDialog from '$lib/components/academic/results/ResultCorrectionDialog.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/academicResults.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import AcademicPrerequisiteNotice from '#lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
+	import ResultCorrectionDialog from '#lib/components/academic/results/ResultCorrectionDialog.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { History, Search } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
@@ -61,16 +64,19 @@
 	}
 
 	function syncUrl(): void {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		const search = searchText.trim();
+
 		if (search) url.searchParams.set('search', search);
 		else url.searchParams.delete('search');
 		if (selectedKind === 'all') url.searchParams.delete('kind');
 		else url.searchParams.set('kind', selectedKind);
-		replaceState(
-			resolve(`/staff/academic/result-corrections?${url.searchParams.toString()}`),
-			page.state
-		);
+
+		goto(resolve(`staff/academic/result-corrections?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	async function searchResults(): Promise<boolean> {

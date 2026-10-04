@@ -5,7 +5,7 @@ import type {
 	ExamScheduleReadiness,
 	ExamScheduleWorkspace,
 	ExamSession
-} from '$lib/api/examSchedule';
+} from '#lib/api/examSchedule.js';
 import { examScheduleReadinessLabel } from './exam-schedule-readiness.ts';
 
 type WorksheetCell = string | number;

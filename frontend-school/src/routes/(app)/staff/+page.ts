@@ -1,7 +1,7 @@
-import { getStaffDashboard } from '$lib/api/staff';
-import { requireApiData } from '$lib/api/client';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { getStaffDashboard } from '#lib/api/staff.js';
+import { requireApiData } from '#lib/api/client.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 
 /**

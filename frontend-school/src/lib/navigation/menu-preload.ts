@@ -1,4 +1,4 @@
-export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | 'off' {
+export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | false {
 	const path = item.path.split('?')[0];
 	if (
 		path === '/staff/academic/exam-schedules' ||
@@ -13,7 +13,7 @@ export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | 'of
 		path === '/staff/academic/supervision/cycles' ||
 		path === '/staff/academic/supervision/templates'
 	)
-		return 'off';
+		return false;
 	return path.startsWith('/staff/achievements') ||
 		path.startsWith('/staff/certificates') ||
 		path.startsWith('/staff/certificate-requests') ||

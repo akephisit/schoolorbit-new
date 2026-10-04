@@ -10,13 +10,13 @@ export const _meta = {
 };
 
 import type { PageLoad } from './$types';
-import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { listMyAcademicContextOptions } from '$lib/api/academic-context';
-import { resolveScopedAcademicContextUrl } from '$lib/academic-context/scoped-year';
-import { listMyCalendarEvents } from '$lib/api/calendar';
-import { calendarRouteFilters } from '$lib/utils/calendar-route-filters';
-import { calendarGridRange } from '$lib/utils/calendar';
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { listMyAcademicContextOptions } from '#lib/api/academic-context.js';
+import { resolveScopedAcademicContextUrl } from '#lib/academic-context/scoped-year.js';
+import { listMyCalendarEvents } from '#lib/api/calendar.js';
+import { calendarRouteFilters } from '#lib/utils/calendar-route-filters.js';
+import { calendarGridRange } from '#lib/utils/calendar.js';
 export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity');
 	const requestKey = url.pathname + url.search;

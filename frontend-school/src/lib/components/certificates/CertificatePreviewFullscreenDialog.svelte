@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { CertificateRenderManifest } from '$lib/api/certificates';
-	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
+	import type { CertificateRenderManifest } from '#lib/api/certificates.js';
+	import type { CertificatePreviewState } from '#lib/certificates/preview-fit.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import CertificatePreviewSurface from './CertificatePreviewSurface.svelte';
 
 	type Props = {

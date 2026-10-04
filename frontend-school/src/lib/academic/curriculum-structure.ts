@@ -4,7 +4,7 @@ import type {
 	CurriculumStructureWorkspace,
 	CurriculumValidationNotice,
 	StudyProgram
-} from '$lib/api/academic-core';
+} from '#lib/api/academic-core.js';
 
 const sectionDefinitions: ReadonlyArray<{
 	id: CurriculumDocumentSection;

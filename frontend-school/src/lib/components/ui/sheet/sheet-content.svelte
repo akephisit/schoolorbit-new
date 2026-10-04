@@ -4,7 +4,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { ComponentProps, Snippet } from 'svelte';
 	import * as Sheet from './index.js';
-	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 
 	type SheetSide = 'top' | 'right' | 'bottom' | 'left';
 

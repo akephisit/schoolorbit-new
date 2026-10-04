@@ -3,9 +3,9 @@ import type {
 	CreateAchievementRequest,
 	UpdateAchievementRequest,
 	AchievementListFilter
-} from '$lib/types/achievement';
-import { apiClient, type ApiResponse, type ApiRequestOptions } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+} from '#lib/types/achievement.js';
+import { apiClient, type ApiResponse, type ApiRequestOptions } from '#lib/api/client.js';
+import type { components } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 type EmptyData = Schemas['EmptyData'];

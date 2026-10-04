@@ -3,8 +3,8 @@
 </script>
 
 <script lang="ts">
-	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Card, CardContent, CardHeader } from '#lib/components/ui/card/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import TableSkeleton from './TableSkeleton.svelte';
 
 	let {

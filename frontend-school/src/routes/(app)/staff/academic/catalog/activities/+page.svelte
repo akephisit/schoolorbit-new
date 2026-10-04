@@ -11,8 +11,8 @@
 		type CatalogActivityOverview,
 		type CatalogActivityOverviewItem,
 		type CatalogDisplayState
-	} from '$lib/api/academic-core';
-	import { CATALOG_ACTIVITY_OVERVIEW_DEPENDENCY } from '$lib/academic-core/catalog-route';
+	} from '#lib/api/academic-core.js';
+	import { CATALOG_ACTIVITY_OVERVIEW_DEPENDENCY } from '#lib/academic-core/catalog-route.js';
 	import {
 		ACTIVITY_TYPE_OPTIONS,
 		CATALOG_DISPLAY_STATE_OPTIONS,
@@ -23,19 +23,19 @@
 		gradeLevelSummary,
 		matchesCatalogSearch,
 		optionLabel
-	} from '$lib/academic-core/catalog-presentation';
-	import CatalogVersionHistory from '$lib/components/academic-core/CatalogVersionHistory.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Sheet from '$lib/components/ui/sheet';
-	import * as Table from '$lib/components/ui/table';
-	import { PERMISSION_MODULES } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/academic-core/catalog-presentation.js';
+	import CatalogVersionHistory from '#lib/components/academic-core/CatalogVersionHistory.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { ArrowUpRight, Plus, Search, SlidersHorizontal, Sparkles } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 

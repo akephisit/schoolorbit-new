@@ -1,23 +1,23 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
 	import { resolve } from '$app/paths';
 	import {
 		deleteOrganizationUnit,
 		listOrganizationMembers,
 		listOrganizationUnits,
 		updateOrganizationUnit
-	} from '$lib/api/staff';
-	import type { OrganizationMemberItem, OrganizationUnit } from '$lib/api/staff';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Input } from '$lib/components/ui/input';
-	import { Badge } from '$lib/components/ui/badge';
+	} from '#lib/api/staff.js';
+	import type { OrganizationMemberItem, OrganizationUnit } from '#lib/api/staff.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import {
 		Dialog,
 		DialogContent,
@@ -25,9 +25,9 @@
 		DialogFooter,
 		DialogHeader,
 		DialogTitle
-	} from '$lib/components/ui/dialog';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
+	} from '#lib/components/ui/dialog/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
 	import {
 		ArrowRight,
 		Building2,
@@ -43,8 +43,8 @@
 		School,
 		Users
 	} from '@lucide/svelte';
-	import OrganizationUnitDialog from '$lib/components/staff/OrganizationUnitDialog.svelte';
-	import OrganizationPermissionDialog from '$lib/components/staff/OrganizationPermissionDialog.svelte';
+	import OrganizationUnitDialog from '#lib/components/staff/OrganizationUnitDialog.svelte';
+	import OrganizationPermissionDialog from '#lib/components/staff/OrganizationPermissionDialog.svelte';
 	import { toast } from 'svelte-sonner';
 
 	type UnitTypeFilter = 'all' | 'management_group' | 'subject_group' | 'division' | 'other';
@@ -820,7 +820,7 @@
 
 							<div class="grid gap-2">
 								<Button
-									href={resolve(`/staff/organization/${selectedUnit.id}`)}
+									href={resolve(`staff/organization/${selectedUnit.id}`)}
 									data-sveltekit-preload-data="tap"
 									class="gap-2"
 								>
@@ -873,7 +873,7 @@
 										{#if canAssignOrganizationMembers}
 											<Button
 												variant="outline"
-												href={resolve(`/staff/organization/${selectedUnit.id}`)}
+												href={resolve(`staff/organization/${selectedUnit.id}`)}
 												data-sveltekit-preload-data="tap"
 												class="gap-2"
 											>

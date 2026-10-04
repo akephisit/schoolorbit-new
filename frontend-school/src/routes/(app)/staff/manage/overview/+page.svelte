@@ -9,21 +9,21 @@
 	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
-	import { getPersonnelOverview, type PersonnelOverview } from '$lib/api/personnel';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import RankMilestoneOverview from '$lib/components/staff/RankMilestoneOverview.svelte';
-	import PersonnelBarChart from '$lib/components/staff/PersonnelBarChart.svelte';
-	import PersonnelStatusChart from '$lib/components/staff/PersonnelStatusChart.svelte';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can, userPermissions } from '$lib/stores/permissions';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { STAFF_STATUS_OPTIONS, staffStatusLabel } from '$lib/forms/staff-status';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { getPersonnelOverview, type PersonnelOverview } from '#lib/api/personnel.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import RankMilestoneOverview from '#lib/components/staff/RankMilestoneOverview.svelte';
+	import PersonnelBarChart from '#lib/components/staff/PersonnelBarChart.svelte';
+	import PersonnelStatusChart from '#lib/components/staff/PersonnelStatusChart.svelte';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can, userPermissions } from '#lib/stores/permissions.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { STAFF_STATUS_OPTIONS, staffStatusLabel } from '#lib/forms/staff-status.js';
 	import type { PageProps } from './$types';
 	let { data }: PageProps = $props();
 	let overview = $state<PersonnelOverview | null>(null),
@@ -176,7 +176,7 @@
 					type="single"
 					value={data.status}
 					onValueChange={(value) => {
-						void goto(resolve(`/staff/manage/overview?status=${value}`));
+						void goto(resolve(`staff/manage/overview?status=${value}`));
 					}}
 					><Select.Trigger class="w-full sm:w-48" aria-label="สถานะสำหรับกราฟ"
 						>{data.status === 'all' ? 'ทุกสถานะ' : staffStatusLabel(data.status)}</Select.Trigger

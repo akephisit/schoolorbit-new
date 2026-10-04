@@ -1,27 +1,27 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
+	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
 	import {
 		getDailyTeachingOverview,
 		type DailyTeachingEntry,
 		type DailyTeachingOverview,
 		type DailyTeachingPeriod,
 		type DailyTeachingTeacher
-	} from '$lib/api/timetable';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Switch } from '$lib/components/ui/switch';
-	import * as Table from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/timetable.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH,
 		DAILY_TEACHING_TEACHER_COLUMN_WIDTH,
@@ -31,7 +31,7 @@
 		dailyTeachingEntryCardPresentation,
 		dailyTeachingTableMinWidth,
 		groupDailyTeachingEntries
-	} from '$lib/utils/daily-teaching-display';
+	} from '#lib/utils/daily-teaching-display.js';
 	import {
 		CalendarClock,
 		ChevronLeft,

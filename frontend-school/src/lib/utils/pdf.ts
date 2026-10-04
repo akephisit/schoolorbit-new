@@ -4,11 +4,11 @@ import type {
 	TableCell,
 	Content
 } from 'pdfmake/interfaces';
-import type { TimetableBlock } from '$lib/api/timetable';
-import { getRequiredPublicSchoolInfo } from '$lib/api/school';
-import { downloadPublicFile } from '$lib/api/files';
-import { resolveTimetablePdfDayValues } from '$lib/utils/timetable-pdf-days';
-import { blobToDataUrl, loadTimetablePdfLogoDataUrl } from '$lib/utils/timetable-pdf-logo';
+import type { TimetableBlock } from '#lib/api/timetable.js';
+import { getRequiredPublicSchoolInfo } from '#lib/api/school.js';
+import { downloadPublicFile } from '#lib/api/files.js';
+import { resolveTimetablePdfDayValues } from '#lib/utils/timetable-pdf-days.js';
+import { blobToDataUrl, loadTimetablePdfLogoDataUrl } from '#lib/utils/timetable-pdf-logo.js';
 
 interface PdfPeriod {
 	id: string;

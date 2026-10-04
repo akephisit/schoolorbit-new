@@ -1,18 +1,18 @@
 <script lang="ts">
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import type {
 		CalendarCategory,
 		CalendarTag,
 		UpsertCalendarCategoryRequest,
 		UpsertCalendarTagRequest
-	} from '$lib/api/calendar';
-	import { cn } from '$lib/utils';
+	} from '#lib/api/calendar.js';
+	import { cn } from '#lib/utils.js';
 	import { Plus, Tag, Trash2 } from '@lucide/svelte';
 
 	type DeleteCandidate =

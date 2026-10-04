@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { MenuGroup } from '$lib/api/menu-admin';
-	import { Card } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import type { MenuGroup } from '#lib/api/menu-admin.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { GripVertical, CircleAlert } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 

@@ -4,16 +4,16 @@
 		getCurriculumCreateOptions,
 		type CurriculumCreateOptions,
 		type CurriculumOverviewItem
-	} from '$lib/api/academic-core';
-	import { catalogOwnerValue } from '$lib/academic-core/catalog-presentation';
-	import { LoadingButton } from '$lib/components/app-state';
-	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
-	import type { AcademicPrerequisite } from '$lib/components/academic-workflow/prerequisite';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/academic-core.js';
+	import { catalogOwnerValue } from '#lib/academic-core/catalog-presentation.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import AcademicPrerequisiteNotice from '#lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
+	import type { AcademicPrerequisite } from '#lib/components/academic-workflow/prerequisite.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { Plus } from '@lucide/svelte';
 	import GradeLevelMultiSelect from './GradeLevelMultiSelect.svelte';
 

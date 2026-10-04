@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ValidationError } from '$lib/validation';
+	import type { ValidationError } from '#lib/validation/index.js';
 
 	interface Props {
 		label: string;

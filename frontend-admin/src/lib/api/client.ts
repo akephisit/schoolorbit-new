@@ -1,6 +1,6 @@
 // API Client for backend-admin
-import { PUBLIC_API_URL } from '$env/static/public';
-import { authStore } from '$lib/stores/auth.svelte';
+import { PUBLIC_API_URL } from '$app/env/public';
+import { authStore } from '#lib/stores/auth.svelte.js';
 
 const API_BASE_URL = PUBLIC_API_URL;
 
@@ -9,7 +9,6 @@ export interface ApiResponse<T> {
 	data?: T;
 	error?: string;
 }
-
 export interface LoginRequest {
 	nationalId: string;
 	password: string;

@@ -10,7 +10,7 @@
 		effectiveFrom: string;
 		effectiveUntil?: string | null;
 		classification?: string | null;
-		gradeLevels?: import('$lib/api/academic-core').GradeLevelOption[];
+		gradeLevels?: import('#lib/api/academic-core.js').GradeLevelOption[];
 		status: 'draft' | 'published' | 'archived';
 		rowVersion: number;
 	};
@@ -29,7 +29,7 @@
 </script>
 
 <script lang="ts">
-	import type { GradeLevelOption } from '$lib/api/academic-core';
+	import type { GradeLevelOption } from '#lib/api/academic-core.js';
 	import {
 		SCHEDULING_MODE_OPTIONS,
 		SUBJECT_TYPE_OPTIONS,
@@ -37,14 +37,14 @@
 		gradeLevelSummary,
 		optionLabel,
 		versionStatusLabel
-	} from '$lib/academic-core/catalog-presentation';
-	import GradeLevelMultiSelect from '$lib/components/academic-core/GradeLevelMultiSelect.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/academic-core/catalog-presentation.js';
+	import GradeLevelMultiSelect from '#lib/components/academic-core/GradeLevelMultiSelect.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { CheckCircle2, GitBranchPlus, History } from '@lucide/svelte';
 
 	let {

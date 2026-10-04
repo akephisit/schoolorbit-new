@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
-import { authStore, type User } from '$lib/stores/auth';
-import { userPermissions } from '$lib/stores/permissions';
+import { authStore, type User } from '#lib/stores/auth.js';
+import { userPermissions } from '#lib/stores/permissions.js';
 
 /** Reuse the layout's auth result; never start another current-user request. */
 export function waitForAuthenticatedUser(): Promise<User | null> {

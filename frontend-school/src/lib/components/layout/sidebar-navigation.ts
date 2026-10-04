@@ -1,4 +1,4 @@
-import type { MenuGroup, MenuItem } from '$lib/api/menu';
+import type { MenuGroup, MenuItem } from '#lib/api/menu.js';
 
 export type SidebarMenuItem = MenuItem & {
 	groupCode: string;

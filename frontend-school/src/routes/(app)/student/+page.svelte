@@ -1,27 +1,27 @@
 <script lang="ts">
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		listMyAcademicContextOptions,
 		type AcademicContextOptionsResponse
-	} from '$lib/api/academic-context';
-	import { Card } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Label } from '$lib/components/ui/label';
-	import ScopedAcademicYearSelect from '$lib/components/academic-context/ScopedAcademicYearSelect.svelte';
-	import { resolveScopedAcademicYearUrl } from '$lib/academic-context/scoped-year';
+	} from '#lib/api/academic-context.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import ScopedAcademicYearSelect from '#lib/components/academic-context/ScopedAcademicYearSelect.svelte';
+	import { resolveScopedAcademicYearUrl } from '#lib/academic-context/scoped-year.js';
 	import { User, Calendar, BookOpen, Award } from '@lucide/svelte';
-	import { getOwnProfile, type Student } from '$lib/api/students';
+	import { getOwnProfile, type Student } from '#lib/api/students.js';
 
 	let { data }: PageProps = $props();
 	const identityKey = $derived.by(() => {
@@ -49,8 +49,8 @@
 	const academicYearQuery = $derived(
 		selectedYearId ? `?academicYearId=${encodeURIComponent(selectedYearId)}` : ''
 	);
-	const profileHref = $derived(`${resolve('/student/profile')}${academicYearQuery}`);
-	const timetableHref = $derived(`${resolve('/student/timetable')}${academicYearQuery}`);
+	const profileHref = $derived(`${resolve('student/profile')}${academicYearQuery}`);
+	const timetableHref = $derived(`${resolve('student/timetable')}${academicYearQuery}`);
 	$effect.pre(() => {
 		const key = ownerKey,
 			a = data.context,
@@ -108,7 +108,11 @@
 		selectedYearId = v.data.academicYearId;
 		if (v.data.replaceHref) {
 			const url = new URL(v.data.replaceHref);
-			replaceState(resolve(`${url.pathname}${url.search}` as '/student'), page.state);
+			goto(resolve('student') + url.search, {
+				shallow: true,
+				replace: true,
+				state: page.state
+			});
 		}
 	}
 	function applyProfile(v: Awaited<typeof data.profile>, revision: number, key: string) {
@@ -163,9 +167,8 @@
 	}
 	async function changeAcademicYear(yearId: string) {
 		if (!contextOptions?.years.some((y) => y.id === yearId) || yearId === selectedYearId) return;
-		await goto(resolve(`/student?academicYearId=${encodeURIComponent(yearId)}` as '/student'), {
-			noScroll: true,
-			keepFocus: true
+		await goto(resolve(`student?academicYearId=${encodeURIComponent(yearId)}`), {
+			reset: false
 		});
 	}
 </script>

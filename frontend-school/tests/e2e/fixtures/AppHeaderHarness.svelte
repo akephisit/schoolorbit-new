@@ -1,7 +1,10 @@
 <script lang="ts">
-	import Header from '$lib/components/layout/Header.svelte';
-	import { createAcademicContextStore, setAcademicContextStore } from '$lib/academic-context/store';
-	import { authStore } from '$lib/stores/auth';
+	import Header from '#lib/components/layout/Header.svelte';
+	import {
+		createAcademicContextStore,
+		setAcademicContextStore
+	} from '#lib/academic-context/store.js';
+	import { authStore } from '#lib/stores/auth.js';
 	setAcademicContextStore(createAcademicContextStore({ navigate: async () => {} }));
 	authStore.clearUser();
 	let menuOpen = $state(false);

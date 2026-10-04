@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { learnerEvaluationLockBlockerLabel } from '$lib/academic/learner-evaluation/presentation';
-	import { isSubjectReady, resultBlockerLabel } from '$lib/academic/results/presentation';
-	import type { AcademicResultReadiness } from '$lib/api/academicResults';
+	import { learnerEvaluationLockBlockerLabel } from '#lib/academic/learner-evaluation/presentation.js';
+	import { isSubjectReady, resultBlockerLabel } from '#lib/academic/results/presentation.js';
+	import type { AcademicResultReadiness } from '#lib/api/academicResults.js';
 	import type {
 		LearnerEvaluationDomain,
 		LearnerEvaluationSubjectLockReadiness
-	} from '$lib/api/academicLearnerEvaluations';
-	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Card from '$lib/components/ui/card';
-	import * as Tabs from '$lib/components/ui/tabs';
+	} from '#lib/api/academicLearnerEvaluations.js';
+	import AcademicPrerequisiteNotice from '#lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { CheckCircle2, CircleAlert, LockKeyhole, ShieldCheck } from '@lucide/svelte';
 
 	let {

@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { isAbortError, LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
+	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
 	import {
 		waitForSupervisionAccess,
 		SUPERVISION_OBSERVATION_READ_PERMISSIONS
-	} from '$lib/supervision/supervision-access';
+	} from '#lib/supervision/supervision-access.js';
 	import {
 		ArrowLeft,
 		CalendarClock,
@@ -17,7 +17,7 @@
 		UserCheck
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import {
 		approveSupervisionObservation,
 		cancelRequestedSupervisionObservation,
@@ -44,31 +44,31 @@
 		type SupervisionTemplate,
 		type SupervisionTemplateSummary,
 		type SupervisionTimetableOption
-	} from '$lib/api/supervision';
+	} from '#lib/api/supervision.js';
 	import {
 		calculateRubricDraftSummary,
 		qualityLevelFromPercentage,
 		sectionRubricProgress,
 		type RubricFormSection,
 		type RubricResponseDraft
-	} from '$lib/utils/supervision-rubric';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { cn } from '$lib/utils';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import * as Command from '$lib/components/ui/command';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Popover from '$lib/components/ui/popover';
-	import * as Table from '$lib/components/ui/table';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/utils/supervision-rubric.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { cn } from '#lib/utils.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import type { PageData } from './$types';
 
 	type LessonEditForm = {
@@ -1100,7 +1100,7 @@
 	backLabel="กลับหน้านิเทศการสอน"
 >
 	{#snippet actions()}
-		<Button variant="outline" href={backHref} data-sveltekit-preload-data="off">
+		<Button variant="outline" href={backHref} data-sveltekit-preload-data={false}>
 			<ArrowLeft class="h-4 w-4" />
 			กลับ
 		</Button>

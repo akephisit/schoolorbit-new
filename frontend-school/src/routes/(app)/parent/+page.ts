@@ -10,11 +10,11 @@ export const _meta = {
 };
 
 import type { PageLoad } from './$types';
-import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { listParentAcademicContextOptions } from '$lib/api/academic-context';
-import { resolveScopedAcademicYearUrl } from '$lib/academic-context/scoped-year';
-import { getOwnParentProfile } from '$lib/api/parents';
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { listParentAcademicContextOptions } from '#lib/api/academic-context.js';
+import { resolveScopedAcademicYearUrl } from '#lib/academic-context/scoped-year.js';
+import { getOwnParentProfile } from '#lib/api/parents.js';
 export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity');
 	const requestKey = url.pathname + url.search;

@@ -25,7 +25,7 @@ const apiClientStub = `
 `;
 
 const certificateApiStub = `
-	import { ApiClientError } from '$lib/api/client';
+	import { ApiClientError } from '#lib/api/client.js';
 	export async function updateCertificateTemplate(id, payload) {
 		return window.__certificateEditorApi.update(id, payload, ApiClientError);
 	}
@@ -131,18 +131,22 @@ const stubModules = new Map([
 		"export const base = ''; export const assets = ''; export const resolve = (value) => value;"
 	],
 	['$env/dynamic/public', 'export const env = {};'],
-	['$env/static/public', "export const PUBLIC_BACKEND_URL = 'https://school-api.schoolorbit.app';"],
-	['$lib/api/client', apiClientStub],
-	['$lib/api/certificates', certificateApiStub],
-	['$lib/api/files', fileApiStub],
-	['$lib/certificates/renderer', rendererStub]
+	['$app/env/public', "export const PUBLIC_BACKEND_URL = 'https://school-api.schoolorbit.app';"],
+	['#lib/api/client.js', apiClientStub],
+	['#lib/api/certificates.js', certificateApiStub],
+	['#lib/api/files.js', fileApiStub],
+	['#lib/certificates/renderer.js', rendererStub]
 ]);
 
 function findStubModule(id: string): string | undefined {
 	if (stubModules.has(id)) return id;
 	for (const stubId of stubModules.keys()) {
-		if (!stubId.startsWith('$lib/')) continue;
-		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
+		if (!stubId.startsWith('#lib//index.js')) continue;
+		const resolvedPath = path.resolve(
+			frontendRoot,
+			'src/lib',
+			stubId.slice('#lib//index.js'.length)
+		);
 		if (
 			id === resolvedPath ||
 			id === `${resolvedPath}.ts` ||

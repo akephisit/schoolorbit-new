@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createServer, type ViteDevServer } from 'vite';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { ViteDevServer } from 'vite';
+import { createRequire } from 'node:module';
 
 const adminRoot = path.resolve(
 	path.dirname(fileURLToPath(import.meta.url)),
@@ -17,6 +18,10 @@ test.use({ ignoreHTTPSErrors: true, serviceWorkers: 'block' });
 test.beforeAll(async () => {
 	process.chdir(adminRoot);
 	process.env.PUBLIC_API_URL = 'http://127.0.0.1:9';
+	const adminRequire = createRequire(path.join(adminRoot, 'package.json'));
+	const { createServer } = (await import(
+		pathToFileURL(adminRequire.resolve('vite')).href
+	)) as typeof import('vite');
 	server = await createServer({
 		root: adminRoot,
 		logLevel: 'silent',

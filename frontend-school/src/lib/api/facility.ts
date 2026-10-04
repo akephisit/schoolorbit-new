@@ -1,6 +1,6 @@
-import { apiClient, type ApiResponse, type ApiRequestOptions } from '$lib/api/client';
+import { apiClient, type ApiResponse, type ApiRequestOptions } from '#lib/api/client.js';
 
-import type { components, operations } from '$lib/api/generated/school-api';
+import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 type EmptyResponseData = Schemas['EmptyData'];

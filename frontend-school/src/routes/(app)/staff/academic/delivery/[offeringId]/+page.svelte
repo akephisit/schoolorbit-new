@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { pushState, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onDestroy, untrack } from 'svelte';
-	import { ApiClientError } from '$lib/api/client';
+	import { ApiClientError } from '#lib/api/client.js';
 	import {
 		applyLearningGroupRoster,
 		createLearningGroup,
@@ -25,24 +25,24 @@
 		type ReplaceLearningGroupTeachersRequest,
 		type RosterPreview,
 		type UpdateLearningGroupRequest
-	} from '$lib/api/learning-delivery';
+	} from '#lib/api/learning-delivery.js';
 	import {
 		listTimetableVersions,
 		type TimetableVersion,
 		type TimetableVersionTarget
-	} from '$lib/api/timetable';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import LearningGroupEditor from '$lib/components/learning-delivery/LearningGroupEditor.svelte';
-	import LearningGroupList from '$lib/components/learning-delivery/LearningGroupList.svelte';
-	import DatedRosterMemberships from '$lib/components/learning-delivery/DatedRosterMemberships.svelte';
-	import RosterPreviewPanel from '$lib/components/learning-delivery/RosterPreviewPanel.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/timetable.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import LearningGroupEditor from '#lib/components/learning-delivery/LearningGroupEditor.svelte';
+	import LearningGroupList from '#lib/components/learning-delivery/LearningGroupList.svelte';
+	import DatedRosterMemberships from '#lib/components/learning-delivery/DatedRosterMemberships.svelte';
+	import RosterPreviewPanel from '#lib/components/learning-delivery/RosterPreviewPanel.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		ArrowLeft,
 		ArrowRight,
@@ -114,6 +114,7 @@
 
 	function preferredTimetableVersion(loadedVersions: TimetableVersion[]): TimetableVersion | null {
 		const requestedId = page.url.searchParams.get('timetableVersionId');
+
 		return (
 			loadedVersions.find((version) => version.id === requestedId) ??
 			loadedVersions.find(
@@ -137,8 +138,8 @@
 		return `${status} · เริ่ม ${version.effectiveFrom}`;
 	}
 
-	function deliveryDetailUrl(url: URL): `/staff/academic/delivery/${string}?${string}` {
-		return `/staff/academic/delivery/${encodeURIComponent(offeringId)}?${url.searchParams.toString()}`;
+	function deliveryDetailUrl(url: URL): `staff/academic/delivery/${string}?${string}` {
+		return `staff/academic/delivery/${encodeURIComponent(offeringId)}?${url.searchParams.toString()}`;
 	}
 
 	function selectTimetableVersion(versionId: string): void {
@@ -146,9 +147,9 @@
 		if (!version) return;
 		selectedTimetableVersion = version;
 		timetableVersionSelectValue = version.id;
-		const nextUrl = new URL(page.url);
+		const nextUrl = new URL(page.url.href);
 		nextUrl.searchParams.set('timetableVersionId', version.id);
-		replaceState(resolve(deliveryDetailUrl(nextUrl)), page.state);
+		goto(resolve(deliveryDetailUrl(nextUrl)), { shallow: true, replace: true, state: page.state });
 	}
 
 	function offeringKindLabel(kind: LearningOffering['kind']) {
@@ -190,11 +191,12 @@
 		groupLoading = false;
 		groupError = '';
 		resetSelectedWorkspace();
-		const nextUrl = new URL(page.url);
+		const nextUrl = new URL(page.url.href);
 		nextUrl.searchParams.set('groupId', group.id);
 		const destination = resolve(deliveryDetailUrl(nextUrl));
-		if (replace) replaceState(destination, page.state);
-		else pushState(destination, page.state);
+
+		if (replace) goto(destination, { shallow: true, replace: true, state: page.state });
+		else goto(destination, { shallow: true, state: page.state });
 	}
 
 	async function retryOffering() {
@@ -535,9 +537,13 @@
 						selectedGroup = result.data;
 						routeSelectedGroupId = result.data.id;
 						if (!requestedGroupId) {
-							const nextUrl = new URL(page.url);
+							const nextUrl = new URL(page.url.href);
 							nextUrl.searchParams.set('groupId', result.data.id);
-							replaceState(resolve(deliveryDetailUrl(nextUrl)), page.state);
+							goto(resolve(deliveryDetailUrl(nextUrl)), {
+								shallow: true,
+								replace: true,
+								state: page.state
+							});
 						}
 					} else if (!result.ok) groupError = result.error;
 				}
@@ -559,11 +565,13 @@
 		const selectedId = untrack(() => selectedGroup?.id);
 		const initialRouteGroupId = data.requestedGroupId;
 		const waitingForInitialGroup = untrack(() => groupLoading && !selectedGroup);
+
 		if (
 			requestedGroupId === selectedId ||
 			(requestedGroupId === initialRouteGroupId && waitingForInitialGroup)
 		)
 			return;
+
 		selectionRevision += 1;
 		groupRequest.abort();
 		routeSelectedGroupId = '';

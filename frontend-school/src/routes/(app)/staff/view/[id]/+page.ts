@@ -1,11 +1,11 @@
 import { get } from 'svelte/store';
-import { getPublicStaffProfile } from '$lib/api/staff';
-import { getAchievements } from '$lib/api/achievement';
-import { requireApiData } from '$lib/api/client';
-import { can } from '$lib/stores/permissions';
-import { PERMISSIONS } from '$lib/permissions/registry';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { getPublicStaffProfile } from '#lib/api/staff.js';
+import { getAchievements } from '#lib/api/achievement.js';
+import { requireApiData } from '#lib/api/client.js';
+import { can } from '#lib/stores/permissions.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 
 export const _meta = { academicContext: 'none' as const, access: { user_type: 'staff' } };

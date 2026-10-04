@@ -3,28 +3,28 @@
 	import { resolve } from '$app/paths';
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import {
 		createCertificateCampaign,
 		listCertificateOwnerOptions,
 		type CreateCertificateCampaignRequest
-	} from '$lib/api/certificates';
+	} from '#lib/api/certificates.js';
 	import {
 		lookupAcademicYears,
 		type AcademicYearLookupItem,
 		type OrganizationUnitLookupItem
-	} from '$lib/api/lookup';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	} from '#lib/api/lookup.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import CertificateCampaignForm, {
 		type CertificateCampaignFormValue
-	} from '$lib/components/certificates/CertificateCampaignForm.svelte';
-	import * as Card from '$lib/components/ui/card';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/certificates/CertificateCampaignForm.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { toast } from 'svelte-sonner';
 
 	const canCreateOrganizationCampaign = $derived(
@@ -170,7 +170,7 @@
 			const campaign = await createCertificateCampaign(payload);
 			if (!current()) return;
 			toast.success('สร้างกิจกรรมเกียรติบัตรแล้ว');
-			await goto(resolve(`/staff/certificates/${campaign.id}/overview`));
+			await goto(resolve(`staff/certificates/${campaign.id}/overview`));
 		} catch (createError) {
 			if (!current()) return;
 			toast.error(createError instanceof Error ? createError.message : 'ไม่สามารถสร้างกิจกรรมได้');
@@ -238,7 +238,7 @@
 						disabled={!academicYears.length}
 						{saving}
 						onsubmit={handleCreate}
-						oncancel={() => goto(resolve('/staff/certificates'))}
+						oncancel={() => goto(resolve('staff/certificates'))}
 					/>
 				</Card.Content>
 			</Card.Root>

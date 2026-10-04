@@ -71,16 +71,20 @@ const downloadStub = `
 `;
 
 const stubModules = new Map([
-	['$lib/api/client', apiClientStub],
-	['$lib/api/public-certificates', publicCertificateApiStub],
-	['$lib/certificates/renderer', rendererStub],
-	['$lib/certificates/download', downloadStub]
+	['#lib/api/client.js', apiClientStub],
+	['#lib/api/public-certificates.js', publicCertificateApiStub],
+	['#lib/certificates/renderer.js', rendererStub],
+	['#lib/certificates/download.js', downloadStub]
 ]);
 
 function findStubModule(id: string): string | undefined {
 	if (stubModules.has(id)) return id;
 	for (const stubId of stubModules.keys()) {
-		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
+		const resolvedPath = path.resolve(
+			frontendRoot,
+			'src/lib',
+			stubId.slice('#lib//index.js'.length)
+		);
 		if (id === resolvedPath || id === `${resolvedPath}.ts` || id === `${resolvedPath}.svelte`) {
 			return stubId;
 		}
@@ -101,7 +105,7 @@ function harnessPlugin(): Plugin {
 			if (id !== resolvedVirtualModuleId) return;
 			return `
 				import { mount } from 'svelte';
-				import { ApiClientError } from '$lib/api/client';
+				import { ApiClientError } from '#lib/api/client.js';
 				import '/src/routes/layout.css';
 				import PublicCertificateVerification from '/src/lib/components/certificates/PublicCertificateVerification.svelte';
 

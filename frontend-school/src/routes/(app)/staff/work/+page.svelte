@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { getMyWorkItems } from '$lib/api/work';
-	import { authStore } from '$lib/stores/auth';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
-	import { Separator } from '$lib/components/ui/separator';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { workStore } from '$lib/stores/work';
-	import { can } from '$lib/stores/permissions';
-	import type { WorkItem, WorkItemState } from '$lib/api/work';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { getMyWorkItems } from '#lib/api/work.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { workStore } from '#lib/stores/work.js';
+	import { can } from '#lib/stores/permissions.js';
+	import type { WorkItem, WorkItemState } from '#lib/api/work.js';
 	import {
 		AlertTriangle,
 		CheckCircle2,

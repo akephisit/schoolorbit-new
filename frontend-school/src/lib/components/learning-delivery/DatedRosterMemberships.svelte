@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { ApiClientError } from '$lib/api/client';
+	import { ApiClientError } from '#lib/api/client.js';
 	import {
 		addDatedRosterMembership,
 		endDatedRosterMembership,
@@ -9,15 +9,19 @@
 		type DatedRosterMembership,
 		type LearningGroup,
 		type RosterPreview
-	} from '$lib/api/learning-delivery';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { LoadingButton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/api/learning-delivery.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import {
+		LoadingButton,
+		PageState,
+		RegionUpdatingState
+	} from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { CalendarMinus, CalendarPlus, History, Plus, X } from '@lucide/svelte';
-	import type { RouteLoadResult } from '$lib/navigation/route-load';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	let {

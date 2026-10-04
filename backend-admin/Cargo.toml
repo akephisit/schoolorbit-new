@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 axum = "0.8.9"
-tokio = { version = "1.53.1", features = ["full"] }
+tokio = { version = "1.53.2", features = ["full"] }
 tokio-stream = "0.1.19"
 futures = "0.3.34"
 tower = "0.5.3"
@@ -17,7 +17,7 @@ jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust
 bcrypt = { version = "0.19.3", default-features = false, features = ["std", "zeroize"] }
 dotenv = "0.15"
 chrono = { version = "0.4.45", features = ["serde"] }
-uuid = { version = "1.26.1", features = ["serde", "v4"] }
+uuid = { version = "1.27.0", features = ["serde", "v4"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "query", "native-tls", "charset", "http2", "system-proxy"] }
 cookie = "0.18.2"
 tracing = "0.1.44"

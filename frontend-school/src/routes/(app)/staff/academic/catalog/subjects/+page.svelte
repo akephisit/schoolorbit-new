@@ -12,8 +12,8 @@
 		type CatalogSubjectOverview,
 		type CatalogSubjectOverviewItem,
 		type SubjectVersion
-	} from '$lib/api/academic-core';
-	import { CATALOG_SUBJECT_OVERVIEW_DEPENDENCY } from '$lib/academic-core/catalog-route';
+	} from '#lib/api/academic-core.js';
+	import { CATALOG_SUBJECT_OVERVIEW_DEPENDENCY } from '#lib/academic-core/catalog-route.js';
 	import {
 		CATALOG_DISPLAY_STATE_OPTIONS,
 		SUBJECT_TYPE_OPTIONS,
@@ -23,17 +23,17 @@
 		gradeLevelSummary,
 		matchesCatalogSearch,
 		optionLabel
-	} from '$lib/academic-core/catalog-presentation';
-	import CatalogVersionHistory from '$lib/components/academic-core/CatalogVersionHistory.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Sheet from '$lib/components/ui/sheet';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/academic-core/catalog-presentation.js';
+	import CatalogVersionHistory from '#lib/components/academic-core/CatalogVersionHistory.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowUpRight, BookOpen, Plus, Save, Search, SlidersHorizontal } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 

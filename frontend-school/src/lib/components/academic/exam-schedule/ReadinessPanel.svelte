@@ -5,9 +5,9 @@
 		ExamScheduleItem,
 		ExamScheduleReadiness,
 		ExamSession
-	} from '$lib/api/examSchedule';
-	import { Badge } from '$lib/components/ui/badge';
-	import { examScheduleReadinessLabel } from '$lib/utils/exam-schedule-readiness';
+	} from '#lib/api/examSchedule.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { examScheduleReadinessLabel } from '#lib/utils/exam-schedule-readiness.js';
 	import { AlertCircle, CheckCircle2, CircleDashed } from '@lucide/svelte';
 
 	let {

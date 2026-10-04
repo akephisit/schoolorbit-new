@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
-import { authStore } from '$lib/stores/auth';
-import { can } from '$lib/stores/permissions';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { authStore } from '#lib/stores/auth.js';
+import { can } from '#lib/stores/permissions.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 /** Wait for the app layout's current-user refresh before starting promotion reads. */
 export function waitForPromotionReadAccess(): Promise<boolean> {

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { PublicSchoolStatistics } from '$lib/api/school';
-	import { PageState } from '$lib/components/app-state';
+	import type { PublicSchoolStatistics } from '#lib/api/school.js';
+	import { PageState } from '#lib/components/app-state/index.js';
 	import { GraduationCap, BookOpen, UsersRound, DoorOpen, ChevronDown } from '@lucide/svelte';
 	let { statistics }: { statistics: PublicSchoolStatistics } = $props();
 	const number = new Intl.NumberFormat('th-TH');

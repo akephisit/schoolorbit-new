@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { ElementAlignment } from '$lib/certificates/editor-state';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
+	import type { ElementAlignment } from '#lib/certificates/editor-state.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		AlignCenterHorizontal,
 		AlignCenterVertical,

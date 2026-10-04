@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
 test.use({ serviceWorkers: 'block' });
+test.beforeEach(async ({ page }) => {
+	await page.route('https://fonts.googleapis.com/**', (route) =>
+		route.fulfill({ status: 200, contentType: 'text/css', body: '' })
+	);
+});
 import {
 	mockPreparation,
 	campaignPath,

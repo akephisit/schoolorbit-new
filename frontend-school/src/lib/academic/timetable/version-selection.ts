@@ -1,4 +1,4 @@
-import type { TimetableVersion } from '$lib/api/timetable';
+import type { TimetableVersion } from '#lib/api/timetable.js';
 
 export function selectPreferredBoardVersion(
 	versions: TimetableVersion[],

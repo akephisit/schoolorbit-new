@@ -3,15 +3,15 @@
 	import { Toaster } from 'svelte-sonner';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import InstallPrompt from '$lib/components/pwa/InstallPrompt.svelte';
-	import IOSInstallPrompt from '$lib/components/pwa/IOSInstallPrompt.svelte';
-	import MaintenancePage from '$lib/components/app-state/MaintenancePage.svelte';
+	import InstallPrompt from '#lib/components/pwa/InstallPrompt.svelte';
+	import IOSInstallPrompt from '#lib/components/pwa/IOSInstallPrompt.svelte';
+	import MaintenancePage from '#lib/components/app-state/MaintenancePage.svelte';
 	import {
 		deploymentState,
 		startDeploymentMonitor,
 		stopDeploymentMonitor
-	} from '$lib/deployment/maintenance';
-	import { initPWA } from '$lib/stores/pwa';
+	} from '#lib/deployment/maintenance.js';
+	import { initPWA } from '#lib/stores/pwa.js';
 
 	let { children } = $props();
 

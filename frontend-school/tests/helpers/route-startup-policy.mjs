@@ -14,7 +14,7 @@ export function mountApiCalls(svelteSource) {
 			continue;
 		const module = statement.moduleSpecifier.text;
 		const bindings = statement.importClause?.namedBindings;
-		if (module.startsWith('$lib/api/')) {
+		if (module.startsWith('#lib/api/')) {
 			if (statement.importClause?.name) apiNames.add(statement.importClause.name.text);
 			if (bindings && ts.isNamespaceImport(bindings)) apiNames.add(bindings.name.text);
 			if (bindings && ts.isNamedImports(bindings))

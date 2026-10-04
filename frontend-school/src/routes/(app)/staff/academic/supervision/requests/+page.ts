@@ -2,13 +2,13 @@ import {
 	listSupervisionCycles,
 	listSupervisionTemplateSummaries,
 	listSupervisionObservations
-} from '$lib/api/supervision';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+} from '#lib/api/supervision.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import {
 	waitForSupervisionAccess,
 	SUPERVISION_OBSERVATION_READ_PERMISSIONS
-} from '$lib/supervision/supervision-access';
-import { PERMISSIONS } from '$lib/permissions/registry';
+} from '#lib/supervision/supervision-access.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

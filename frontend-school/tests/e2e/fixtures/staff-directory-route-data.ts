@@ -99,6 +99,7 @@ export async function mockStaffDirectory(
 	await page.route(
 		(url) =>
 			url.pathname === '/api/staff' ||
+			url.pathname === '/api/staff/personnel-overview' ||
 			/^\/api\/staff\/[\da-f-]+$/.test(url.pathname) ||
 			url.pathname === '/api/roles' ||
 			url.pathname === '/api/lookup/roles' ||
@@ -133,6 +134,7 @@ export async function mockStaffDirectory(
 				reads.push(url);
 				counts.set(path, (counts.get(path) ?? 0) + 1);
 			} else writes.push({ method, path });
+			if (path === '/api/staff/personnel-overview') return reply(route, { subjectGroups: [] });
 			if (path === '/api/lookup/roles')
 				return reply(route, [{ id: roleId, name: role.name, code: role.code, user_type: 'staff' }]);
 			if (path === '/api/lookup/organization-units')

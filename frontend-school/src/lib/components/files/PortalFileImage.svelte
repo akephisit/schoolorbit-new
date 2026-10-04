@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { portalDownloadDocument } from '$lib/api/admission';
+	import { portalDownloadDocument } from '#lib/api/admission.js';
 	import type { Attachment } from 'svelte/attachments';
 
 	interface PortalImageParams {

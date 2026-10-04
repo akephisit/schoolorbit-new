@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { CalendarDays, CheckCircle2, Clock3, DoorOpen } from '@lucide/svelte';
-	import { PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Card from '$lib/components/ui/card';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import {
 		formatStaffExamDate,
 		formatStaffExamMinutes,
 		formatStaffExamTime,
 		type MyExamInvigilationItem,
 		type MyExamInvigilationSummary
-	} from '$lib/utils/staff-exam-schedule-view';
+	} from '#lib/utils/staff-exam-schedule-view.js';
 
 	interface Props {
 		summary: MyExamInvigilationSummary;

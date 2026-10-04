@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { authStore } from '$lib/stores/auth.svelte';
+	import { authStore } from '#lib/stores/auth.svelte.js';
 	import { resolve } from '$app/paths';
 </script>
 
@@ -36,7 +36,7 @@
 		<h2 class="text-xl font-semibold text-gray-900 mb-4">เมนูจัดการ</h2>
 		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			<a
-				href={resolve('/dashboard/schools')}
+				href={resolve('dashboard/schools')}
 				class="block p-6 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg shadow-lg hover:shadow-xl transition-shadow"
 			>
 				<div class="flex items-center justify-between">

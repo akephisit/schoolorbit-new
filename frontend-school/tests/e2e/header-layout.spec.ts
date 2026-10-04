@@ -14,11 +14,9 @@ function headerHarness(): Plugin {
 		name: 'app-header-layout-test',
 		enforce: 'pre',
 		resolveId(id) {
-			if (id === '$env/dynamic/public') return '\0header-env';
 			if (id === entry) return `\0${entry}`;
 		},
 		load(id) {
-			if (id === '\0header-env') return 'export const env = {};';
 			if (id !== `\0${entry}`) return;
 			return `import { mount } from 'svelte';
 			import '/src/routes/layout.css';
@@ -30,7 +28,7 @@ function headerHarness(): Plugin {
 				if (new URL(request.url ?? '/', 'http://test').pathname !== headerPath) return next();
 				response.setHeader('Content-Type', 'text/html; charset=utf-8');
 				response.end(
-					`<!doctype html><html lang="th"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/@id/${entry}"></script></body></html>`
+					`<!doctype html><html lang="th"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script>globalThis.__sveltekit_dev = { env: { PUBLIC_SCHOOL_SUBDOMAIN: "" } };</script><script type="module" src="/@id/${entry}"></script></body></html>`
 				);
 			});
 		}
@@ -40,6 +38,8 @@ function headerHarness(): Plugin {
 test.describe.configure({ mode: 'serial' });
 test.use({ serviceWorkers: 'block' });
 test.beforeAll(async () => {
+	process.env.PUBLIC_BACKEND_URL = 'http://127.0.0.1:9';
+	process.env.PUBLIC_VAPID_KEY = 'test';
 	devServer = await createServer({
 		root: frontendRoot,
 		cacheDir: path.resolve(frontendRoot, 'node_modules/.vite-header-layout-test'),

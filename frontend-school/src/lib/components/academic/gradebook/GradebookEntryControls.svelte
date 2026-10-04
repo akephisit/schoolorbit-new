@@ -1,15 +1,15 @@
 <script lang="ts">
-	import type { GradebookControl, GradebookPhaseCode } from '$lib/api/academicGradebook';
+	import type { GradebookControl, GradebookPhaseCode } from '#lib/api/academicGradebook.js';
 	import type {
 		LearnerEvaluationControl,
 		LearnerEvaluationDomain
-	} from '$lib/api/academicLearnerEvaluations';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import { Switch } from '$lib/components/ui/switch';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	} from '#lib/api/academicLearnerEvaluations.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { ClipboardCheck, ShieldCheck } from '@lucide/svelte';
 
 	let {

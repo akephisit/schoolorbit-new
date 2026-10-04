@@ -1,4 +1,4 @@
-import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const ssr = false;
 
@@ -10,11 +10,11 @@ export const _meta = {
 };
 
 import type { PageLoad } from './$types';
-import { getAchievements } from '$lib/api/achievement';
-import { requireApiData } from '$lib/api/client';
-import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { can } from '$lib/stores/permissions';
+import { getAchievements } from '#lib/api/achievement.js';
+import { requireApiData } from '#lib/api/client.js';
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { can } from '#lib/stores/permissions.js';
 import { get } from 'svelte/store';
 export const load: PageLoad = ({ fetch, depends }) => {
 	depends('school:app-identity');

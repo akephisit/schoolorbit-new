@@ -4,11 +4,11 @@
 		BellSchedule,
 		CreateBellScheduleRequest,
 		UpdateBellScheduleRequest
-	} from '$lib/api/academic-core';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/api/academic-core.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { Check, Clock3, Pencil, Plus, Save, X } from '@lucide/svelte';
 
 	let {

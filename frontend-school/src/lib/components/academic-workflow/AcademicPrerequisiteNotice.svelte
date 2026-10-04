@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { AcademicPrerequisite } from './prerequisite';
-	import * as Alert from '$lib/components/ui/alert';
-	import { Button } from '$lib/components/ui/button';
-	import { cn } from '$lib/utils';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { cn } from '#lib/utils.js';
 	import { CircleAlert, CircleDashed } from '@lucide/svelte';
 
 	let {

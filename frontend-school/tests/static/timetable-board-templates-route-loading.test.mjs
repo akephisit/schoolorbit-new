@@ -50,7 +50,7 @@ test('template list and versions are independently route-owned and export stays 
 		/\b(?:listTimetableTemplates|listTimetableVersions|loadTemplates|loadVersions)\s*\(/
 	);
 	assert.match(api, /listTimetableTemplates[\s\S]{0,100}ApiRequestOptions/);
-	assert.match(board, /await import\('\$lib\/utils\/timetable-teacher-load-workbook'\)/);
+	assert.match(board, /await import\('#lib\/utils\/timetable-teacher-load-workbook\.js'\)/);
 });
 
 test('direct timetable links carry the already-known academic context', async () => {

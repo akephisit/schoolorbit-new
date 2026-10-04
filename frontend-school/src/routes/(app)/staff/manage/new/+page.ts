@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	access: {

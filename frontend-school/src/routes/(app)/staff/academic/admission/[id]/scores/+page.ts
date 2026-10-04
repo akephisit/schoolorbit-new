@@ -2,16 +2,16 @@
  * Admission Scores Entry Page
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
-import { waitForAdmissionAccess } from '$lib/admission/admission-access';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { waitForAdmissionAccess } from '#lib/admission/admission-access.js';
 import {
 	getAllScores,
 	getRound,
 	getScoreRoomRoster,
 	listSubjects,
 	listTracks
-} from '$lib/api/admission';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+} from '#lib/api/admission.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

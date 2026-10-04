@@ -1,10 +1,10 @@
 export const _meta = { access: { user_type: 'parent' } };
 import type { PageLoad } from './$types';
-import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { listChildAcademicContextOptions } from '$lib/api/academic-context';
-import { resolveScopedAcademicContextUrl } from '$lib/academic-context/scoped-year';
-import { listChildExamSchedules } from '$lib/api/examSchedule';
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { listChildAcademicContextOptions } from '#lib/api/academic-context.js';
+import { resolveScopedAcademicContextUrl } from '#lib/academic-context/scoped-year.js';
+import { listChildExamSchedules } from '#lib/api/examSchedule.js';
 export const load: PageLoad = ({ fetch, url, depends, params }) => {
 	depends('school:app-identity');
 	const requestKey = url.pathname + url.search;

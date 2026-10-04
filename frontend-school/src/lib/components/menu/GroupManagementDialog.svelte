@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { appIdentityKey } from '$lib/auth/settled-user';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;
 	});
-	import type { MenuGroup, MenuWorkspace } from '$lib/api/menu-admin';
-	import { createMenuGroup, updateMenuGroup, deleteMenuGroup } from '$lib/api/menu-admin';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import type { MenuGroup, MenuWorkspace } from '#lib/api/menu-admin.js';
+	import { createMenuGroup, updateMenuGroup, deleteMenuGroup } from '#lib/api/menu-admin.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle } from '@lucide/svelte';
 

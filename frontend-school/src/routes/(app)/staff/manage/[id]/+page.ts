@@ -1,14 +1,14 @@
 import { error } from '@sveltejs/kit';
 import { get } from 'svelte/store';
-import { can } from '$lib/stores/permissions';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
+import { can } from '#lib/stores/permissions.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
-import { listStaffCareerHistory } from '$lib/api/staff-career';
-import { getStaffProfile } from '$lib/api/staff';
-import { requireApiData } from '$lib/api/client';
-import { getAchievements } from '$lib/api/achievement';
+import { listStaffCareerHistory } from '#lib/api/staff-career.js';
+import { getStaffProfile } from '#lib/api/staff.js';
+import { requireApiData } from '#lib/api/client.js';
+import { getAchievements } from '#lib/api/achievement.js';
 export const _meta = {
 	academicContext: 'none' as const,
 	access: { user_type: 'staff', permission: PERMISSION_MODULES.STAFF_PROFILE }

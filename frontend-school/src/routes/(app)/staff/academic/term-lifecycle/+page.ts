@@ -1,8 +1,8 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
-import { waitForLifecycleReadAccess } from '$lib/academic/lifecycle/lifecycle-access';
-import { getTermLifecycleWorkspace } from '$lib/api/academic-lifecycle';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { waitForLifecycleReadAccess } from '#lib/academic/lifecycle/lifecycle-access.js';
+import { getTermLifecycleWorkspace } from '#lib/api/academic-lifecycle.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

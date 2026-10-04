@@ -3,8 +3,8 @@
 	import { toast } from 'svelte-sonner';
 	import type { Alignment, Borders, Fill, Workbook, Worksheet } from 'exceljs';
 	import type { PageProps } from './$types';
-	import { listGradeLevelOptions, type GradeLevelOption } from '$lib/api/academic-core';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { listGradeLevelOptions, type GradeLevelOption } from '#lib/api/academic-core.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import {
 		assignExamAssignmentInvigilator,
 		deleteExamDay,
@@ -33,45 +33,45 @@
 		type PlaceExamSessionInput,
 		type UpsertDayRoomAssignmentInput,
 		type UpsertExamDayInput
-	} from '$lib/api/examSchedule';
+	} from '#lib/api/examSchedule.js';
 	import {
 		lookupHomerooms,
 		lookupRooms,
 		type HomeroomLookupItem,
 		type RoomLookupItem
-	} from '$lib/api/lookup';
-	import CompactExamScheduleStatus from '$lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte';
-	import ExamDaySetupPanel from '$lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
-	import ExamInvigilatorPanel from '$lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
-	import ExamRoomAssignmentPanel from '$lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
-	import ExamScheduleTimeline from '$lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
-	import ExamSourceSyncPanel from '$lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte';
-	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/lookup.js';
+	import CompactExamScheduleStatus from '#lib/components/academic/exam-schedule/CompactExamScheduleStatus.svelte';
+	import ExamDaySetupPanel from '#lib/components/academic/exam-schedule/ExamDaySetupPanel.svelte';
+	import ExamInvigilatorPanel from '#lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
+	import ExamRoomAssignmentPanel from '#lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
+	import ExamScheduleTimeline from '#lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
+	import ExamSourceSyncPanel from '#lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte';
+	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		LoadingButton,
 		PageSkeleton,
 		PageState,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
+	} from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
-	} from '$lib/components/academic-workflow';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Select from '$lib/components/ui/select';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/academic-workflow/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		buildExamScheduleExportWorkbook,
 		examScheduleExportFileName,
 		examScheduleReportColumnWidths,
 		type ExamScheduleReportSheet,
 		type ExamScheduleExportSheet
-	} from '$lib/utils/exam-schedule-export';
-	import { addMinutes } from '$lib/utils/examScheduleTime';
+	} from '#lib/utils/exam-schedule-export.js';
+	import { addMinutes } from '#lib/utils/examScheduleTime.js';
 	import { Download, RefreshCw, Send } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
@@ -1329,7 +1329,7 @@
 	title={pageTitle}
 	description={workspace?.round.description ?? termLabel ?? 'จัดตารางสอบประจำภาคเรียน'}
 	{backHref}
-	backPreload="off"
+	backPreload={false}
 	class="flex h-full min-h-0 flex-col"
 	contentClass="flex min-h-0 flex-1 flex-col"
 >

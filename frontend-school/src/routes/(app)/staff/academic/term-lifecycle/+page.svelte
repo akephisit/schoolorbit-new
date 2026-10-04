@@ -5,39 +5,39 @@
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
+	} from '#lib/academic-context/store.js';
 	import {
 		canConfirmTransition,
 		termStatusLabels,
 		transitionLabels
-	} from '$lib/academic/lifecycle/presentation';
+	} from '#lib/academic/lifecycle/presentation.js';
 	import {
 		getTermLifecycleWorkspace,
 		transitionAcademicTerm,
 		type TermLifecycleWorkspace,
 		type TermTransitionAction,
 		type TermTransitionRequest
-	} from '$lib/api/academic-lifecycle';
-	import { ApiClientError } from '$lib/api/client';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/academic-lifecycle.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		LoadingButton,
 		PageSkeleton,
 		PageState,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import OpeningPolicyDialog from '$lib/components/academic/lifecycle/OpeningPolicyDialog.svelte';
-	import TermActivationDialog from '$lib/components/academic/lifecycle/TermActivationDialog.svelte';
-	import TermPreparationDialog from '$lib/components/academic/lifecycle/TermPreparationDialog.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/app-state/index.js';
+	import OpeningPolicyDialog from '#lib/components/academic/lifecycle/OpeningPolicyDialog.svelte';
+	import TermActivationDialog from '#lib/components/academic/lifecycle/TermActivationDialog.svelte';
+	import TermPreparationDialog from '#lib/components/academic/lifecycle/TermPreparationDialog.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

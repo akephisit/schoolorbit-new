@@ -1,4 +1,4 @@
-import type { CertificateImportRequest } from '$lib/api/certificates';
+import type { CertificateImportRequest } from '#lib/api/certificates.js';
 
 export const CERTIFICATE_IMPORT_HEADERS = [
 	'ประเภทผู้รับ',

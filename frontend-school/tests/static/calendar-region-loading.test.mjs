@@ -17,6 +17,6 @@ test('calendar page separates catalog retries from event context and optional ta
 	assert.match(page, /categoriesRequest/);
 	assert.match(page, /tagsRequest/);
 	assert.match(page, /\$effect\.pre/);
-	assert.match(page, /pushState/);
+	assert.match(page, /shallow:\s*true/);
 	assert.match(page, /eventDialogOpen && canManageCalendar/);
 });

@@ -25,7 +25,7 @@ const apiClientStub = `
 `;
 
 const certificateApiStub = `
-	import { ApiClientError } from '$lib/api/client';
+	import { ApiClientError } from '#lib/api/client.js';
 
 	export async function getCertificateCampaign(id) {
 		return window.__certificateRecipientApi.getCampaign(id);
@@ -76,8 +76,8 @@ export function pushState(url,state){page.state=state;page.url.href=new URL(url,
 		'$app/state',
 		`import { SvelteURL } from 'svelte/reactivity';export const page={url:new SvelteURL('http://test/staff/certificates/10000000-0000-4000-8000-000000000001/recipients'),state:{}};`
 	],
-	['$lib/api/client', apiClientStub],
-	['$lib/api/certificates', certificateApiStub]
+	['#lib/api/client.js', apiClientStub],
+	['#lib/api/certificates.js', certificateApiStub]
 ]);
 
 function findStubModule(id: string): string | undefined {
@@ -86,8 +86,12 @@ function findStubModule(id: string): string | undefined {
 	if (id.endsWith('/@sveltejs/kit/src/runtime/app/state/index.js')) return '$app/state';
 	if (id.endsWith('/@sveltejs/kit/src/runtime/app/paths/index.js')) return '$app/paths';
 	for (const stubId of stubModules.keys()) {
-		if (!stubId.startsWith('$lib/')) continue;
-		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
+		if (!stubId.startsWith('#lib//index.js')) continue;
+		const resolvedPath = path.resolve(
+			frontendRoot,
+			'src/lib',
+			stubId.slice('#lib//index.js'.length)
+		);
 		if (
 			id === resolvedPath ||
 			id === `${resolvedPath}.ts` ||

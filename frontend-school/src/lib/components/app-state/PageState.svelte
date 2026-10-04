@@ -4,10 +4,10 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
-	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent } from '$lib/components/ui/card';
-	import { cn } from '$lib/utils';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Card, CardContent } from '#lib/components/ui/card/index.js';
+	import { cn } from '#lib/utils.js';
 	import { AlertTriangle, Inbox, ShieldAlert } from '@lucide/svelte';
 
 	let {

@@ -99,7 +99,7 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
         "hmac = { version = \"0.13.0\", default-features = false, features = [\"zeroize\"] }"
     ));
     assert!(manifest.contains(
-        "rand = { version = \"0.10.2\", default-features = false, features = [\"sys_rng\"] }"
+        "rand = { version = \"0.10.3\", default-features = false, features = [\"sys_rng\"] }"
     ));
     assert!(manifest.contains(
         "sha2 = { version = \"0.11.0\", default-features = false, features = [\"zeroize\"] }"

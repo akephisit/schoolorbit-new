@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { PageState } from '$lib/components/app-state';
-	import { cn } from '$lib/utils';
-	import { formatCalendarDate } from '$lib/utils/calendar';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { cn } from '#lib/utils.js';
+	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import { CalendarRange, Clock3, Globe2, MapPin, Pencil, Trash2, Users } from '@lucide/svelte';
 	import type { CalendarDisplayEvent } from './CalendarMonthGrid.svelte';
 

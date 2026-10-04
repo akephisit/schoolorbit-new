@@ -1,7 +1,7 @@
 import type { PageLoad } from './$types';
-import { listTimetableTemplates, listTimetableVersions } from '$lib/api/timetable';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { listTimetableTemplates, listTimetableVersions } from '#lib/api/timetable.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 // ไม่อยู่ใน menu — เข้าจากปุ่ม "Templates" ในหน้า /staff/academic/timetable
 const TITLE = 'Templates ตาราง';

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
@@ -11,19 +11,19 @@
 		lockAllReadyActivityResults,
 		lockCourseSubjectResults,
 		type AcademicResultReadiness
-	} from '$lib/api/academicResults';
+	} from '#lib/api/academicResults.js';
 	import {
 		getLearnerEvaluationLockReadiness,
 		lockLearnerEvaluationSubject,
 		type LearnerEvaluationDomain,
 		type LearnerEvaluationSubjectLockReadiness
-	} from '$lib/api/academicLearnerEvaluations';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import ResultLockQueue from '$lib/components/academic/results/ResultLockQueue.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageState } from '$lib/components/app-state';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/academicLearnerEvaluations.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import ResultLockQueue from '#lib/components/academic/results/ResultLockQueue.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let { data }: PageProps = $props();
 	const request = new LatestRequest();
@@ -50,12 +50,13 @@
 	}
 
 	function syncUrl(): void {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('tab', activeTab);
-		replaceState(
-			resolve(`/staff/academic/result-locks?${url.searchParams.toString()}`),
-			page.state
-		);
+		goto(resolve(`staff/academic/result-locks?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	function changeTab(value: 'course' | 'activity' | 'learner'): void {

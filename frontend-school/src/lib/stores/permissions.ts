@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import type { Writable, Readable } from 'svelte/store';
-import { PERMISSIONS, WILDCARD_PERMISSION } from '$lib/permissions/registry';
+import { PERMISSIONS, WILDCARD_PERMISSION } from '#lib/permissions/registry.js';
 
 export const userPermissions: Writable<string[]> = writable([]);
 

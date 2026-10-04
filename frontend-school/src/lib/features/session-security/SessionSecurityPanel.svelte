@@ -2,25 +2,25 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onDestroy, untrack } from 'svelte';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-	import { authAPI, type SessionDto } from '$lib/api/auth';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+	import { authAPI, type SessionDto } from '#lib/api/auth.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/components/ui/card/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { keepCurrentSession, passwordValidation, removeRevokedSession } from './session-state';
 	import { Clock3, KeyRound, Laptop, LogOut, ShieldCheck, Trash2 } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
@@ -188,7 +188,7 @@
 		}
 		if ($authStore.isAuthenticated || authStore.sessionEpoch !== epoch + 1) return;
 		sessionStorage.removeItem('redirectAfterLogin');
-		await goto(resolve('/login'), { invalidateAll: true });
+		await goto(resolve('login'), { refreshAll: true });
 	}
 	async function logoutAllSessions() {
 		if (!allowed || disposed || actionBusy) return;
@@ -206,7 +206,7 @@
 		}
 		if ($authStore.isAuthenticated || authStore.sessionEpoch !== epoch + 1) return;
 		sessionStorage.removeItem('redirectAfterLogin');
-		await goto(resolve('/login'), { invalidateAll: true });
+		await goto(resolve('login'), { refreshAll: true });
 	}
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();

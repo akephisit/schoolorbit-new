@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { authStore } from '$lib/stores/auth';
-	import { userPermissions } from '$lib/stores/permissions';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Button } from '$lib/components/ui/button';
-	import { authAPI } from '$lib/api/auth';
+	import { authStore } from '#lib/stores/auth.js';
+	import { userPermissions } from '#lib/stores/permissions.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { authAPI } from '#lib/api/auth.js';
 	import { toast } from 'svelte-sonner';
 
 	const authState = $derived($authStore);

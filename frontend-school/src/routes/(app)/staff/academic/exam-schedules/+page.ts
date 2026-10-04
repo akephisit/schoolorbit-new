@@ -1,7 +1,7 @@
 import type { PageLoad } from './$types';
-import { listExamRounds } from '$lib/api/examSchedule';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { listExamRounds } from '#lib/api/examSchedule.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

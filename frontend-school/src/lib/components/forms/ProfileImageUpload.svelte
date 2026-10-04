@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
+	import { browser } from '$app/env';
 	import { type Snippet } from 'svelte';
-	import { uploadProfileImage } from '$lib/api/files';
+	import { uploadProfileImage } from '#lib/api/files.js';
 	import { toast } from 'svelte-sonner';
 	import { Pencil, Camera, Trash2, UserCircle, LoaderCircle } from '@lucide/svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
-	import { cn } from '$lib/utils';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
+	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		currentFileId?: string | null;

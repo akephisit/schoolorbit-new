@@ -39,8 +39,8 @@ test('shared app layout components define consistent page header and shell', asy
 	const appLayout = await readProjectFile('src/routes/(app)/+layout.svelte');
 	const rules = await readRepoFile('.rules');
 
-	assert.match(pageHeader, /from '\$lib\/components\/ui\/button'/);
-	assert.match(pageHeader, /from '\$lib\/utils'/);
+	assert.match(pageHeader, /from '#lib\/components\/ui\/button\/index\.js'/);
+	assert.match(pageHeader, /from '#lib\/utils\.js'/);
 	assert.match(pageHeader, /ArrowLeft/);
 	assert.match(pageHeader, /text-2xl/);
 	assert.match(pageHeader, /tracking-tight/);
@@ -300,7 +300,7 @@ test('pilot workspaces use shared app page shell', async () => {
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -329,7 +329,7 @@ test('staff core pages use shared app page shell', async () => {
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -358,7 +358,7 @@ test('staff people detail and action pages use shared app page shell', async () 
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -386,7 +386,7 @@ test('staff operational pages use shared app page shell', async () => {
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -411,7 +411,7 @@ test('academic foundation workspace pages use shared app page shell', async () =
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -437,7 +437,7 @@ test('academic curriculum planning pages use shared app page shell', async () =>
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -460,7 +460,7 @@ test('academic timetable pages use shared app page shell', async () => {
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -491,7 +491,7 @@ test('academic admission workflow pages use shared app page shell', async () => 
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -514,7 +514,7 @@ test('academic supervision workspace uses shared app page shell', async () => {
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);
@@ -549,7 +549,7 @@ test('self-service and system pages use shared app page shell', async () => {
 
 		assert.match(
 			source,
-			/from '\$lib\/components\/app-layout'/,
+			/from '#lib\/components\/app-layout\/index\.js'/,
 			`${page} should import shared app-layout components`
 		);
 		assert.match(source, /<PageShell\b/, `${page} should use PageShell for page layout`);

@@ -2,12 +2,12 @@
  * Admission Applications List Page
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 import { redirect } from '@sveltejs/kit';
-import { waitForAdmissionAccess } from '$lib/admission/admission-access';
-import { containsProtectedIdentifier } from '$lib/admission/protected-identifier-search';
-import { listApplications } from '$lib/api/admission';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { waitForAdmissionAccess } from '#lib/admission/admission-access.js';
+import { containsProtectedIdentifier } from '#lib/admission/protected-identifier-search.js';
+import { listApplications } from '#lib/api/admission.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

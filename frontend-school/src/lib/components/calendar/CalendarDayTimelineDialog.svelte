@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { cn } from '$lib/utils';
-	import { formatCalendarDate } from '$lib/utils/calendar';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { cn } from '#lib/utils.js';
+	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import { CalendarRange, Clock3, MapPin } from '@lucide/svelte';
 	import type { CalendarDisplayEvent } from './CalendarMonthGrid.svelte';
 

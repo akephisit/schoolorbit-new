@@ -28,7 +28,7 @@ test('question bank starts independent default regions in its route loader', asy
 test('question bank keeps optional editor and detail off the primary loading path', async () => {
 	const page = await source(`${route}/+page.svelte`);
 	const api = await source('src/lib/api/questionBank.ts');
-	assert.match(page, /import\('\$lib\/components\/question-bank\/QuestionContentEditor\.svelte'\)/);
+	assert.match(page, /import\('#lib\/components\/question-bank\/QuestionContentEditor\.svelte'\)/);
 	assert.doesNotMatch(page, /import QuestionContentEditor from/);
 	assert.match(page, /const questionsRequest = new LatestRequest\(\)/);
 	assert.match(page, /const detailRequest = new LatestRequest\(\)/);

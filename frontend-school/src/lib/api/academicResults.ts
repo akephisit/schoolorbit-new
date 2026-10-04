@@ -3,8 +3,8 @@ import {
 	requireApiData,
 	type ApiRequestOptions,
 	type ApiResponse
-} from '$lib/api/client';
-import type { components, operations } from '$lib/api/generated/school-api';
+} from '#lib/api/client.js';
+import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 type ResultQuery = NonNullable<operations['listAcademicGradingPolicies']['parameters']['query']>;

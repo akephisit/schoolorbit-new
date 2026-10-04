@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onMount, untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
-	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import {
 		formatGradebookScore,
 		selectNewGradebookItem,
 		type GradebookCellPosition,
 		type ScorePasteMutation
-	} from '$lib/academic/gradebook/ledger';
+	} from '#lib/academic/gradebook/ledger.js';
 	import {
 		createGradebookSaveQueue,
 		type GradebookSaveQueue,
 		type GradebookSaveQueueSnapshot
-	} from '$lib/academic/gradebook/save-queue';
+	} from '#lib/academic/gradebook/save-queue.js';
 	import {
 		confirmGradebookPhase,
 		createGradebookItem,
@@ -34,7 +34,7 @@
 		type GradebookScoreItem,
 		type GradebookSubject,
 		type GroupPhaseWorkspace
-	} from '$lib/api/academicGradebook';
+	} from '#lib/api/academicGradebook.js';
 	import {
 		confirmLearnerEvaluationGroup,
 		createSubjectEvaluationCriterion,
@@ -53,26 +53,26 @@
 		type LearnerEvaluationResponseBatchInput,
 		type LearnerEvaluationSubject,
 		type LearnerEvaluationWorkspace
-	} from '$lib/api/academicLearnerEvaluations';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import AcademicPrerequisiteNotice from '$lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import GradebookEntryControls from '$lib/components/academic/gradebook/GradebookEntryControls.svelte';
-	import GradebookMobileEditor from '$lib/components/academic/gradebook/GradebookMobileEditor.svelte';
+	} from '#lib/api/academicLearnerEvaluations.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import AcademicPrerequisiteNotice from '#lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import GradebookEntryControls from '#lib/components/academic/gradebook/GradebookEntryControls.svelte';
+	import GradebookMobileEditor from '#lib/components/academic/gradebook/GradebookMobileEditor.svelte';
 	import GradebookWorkspaceHeader, {
 		type GradebookWorkspaceSubject
-	} from '$lib/components/academic/gradebook/GradebookWorkspaceHeader.svelte';
-	import LearnerEvaluationLedger from '$lib/components/academic/gradebook/LearnerEvaluationLedger.svelte';
-	import PhaseConfirmationDialog from '$lib/components/academic/gradebook/PhaseConfirmationDialog.svelte';
-	import ScoreItemDialog from '$lib/components/academic/gradebook/ScoreItemDialog.svelte';
-	import ScoreLedger from '$lib/components/academic/gradebook/ScoreLedger.svelte';
-	import SubjectCriteriaDialog from '$lib/components/academic/gradebook/SubjectCriteriaDialog.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/academic/gradebook/GradebookWorkspaceHeader.svelte';
+	import LearnerEvaluationLedger from '#lib/components/academic/gradebook/LearnerEvaluationLedger.svelte';
+	import PhaseConfirmationDialog from '#lib/components/academic/gradebook/PhaseConfirmationDialog.svelte';
+	import ScoreItemDialog from '#lib/components/academic/gradebook/ScoreItemDialog.svelte';
+	import ScoreLedger from '#lib/components/academic/gradebook/ScoreLedger.svelte';
+	import SubjectCriteriaDialog from '#lib/components/academic/gradebook/SubjectCriteriaDialog.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		AlertCircle,
 		BookOpenCheck,
@@ -207,9 +207,11 @@
 		}
 		return count;
 	});
+
 	const nextItemDisplayOrder = $derived(
 		Math.max(0, ...(scoreWorkspace?.items.map((item) => item.displayOrder) ?? [])) + 1
 	);
+
 	const mobileContext = $derived.by(() => {
 		if (!mobileCell) return null;
 		if (mobileCell.mode === 'score') {
@@ -264,6 +266,7 @@
 
 	function phaseFromUrl(): GradebookPhaseCode {
 		const value = page.url.searchParams.get('phase');
+
 		return phaseCodes.includes(value as GradebookPhaseCode)
 			? (value as GradebookPhaseCode)
 			: 'before_midterm';
@@ -305,14 +308,18 @@
 	}
 
 	function syncUrl(): void {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (selectedSubjectId) url.searchParams.set('subjectId', selectedSubjectId);
 		else url.searchParams.delete('subjectId');
 		if (selectedGroupId) url.searchParams.set('learningGroupId', selectedGroupId);
 		else url.searchParams.delete('learningGroupId');
 		url.searchParams.set('tab', activeTab);
 		url.searchParams.set('phase', activePhase);
-		replaceState(resolve(`/staff/academic/gradebook?${url.searchParams.toString()}`), page.state);
+		goto(resolve(`staff/academic/gradebook?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	function hydrateScoreWorkspaces(workspaces: GroupPhaseWorkspace[]): void {
@@ -1013,6 +1020,7 @@
 		const unregisterDirty = registerAcademicContextDirtySource('academic-gradebook-entry', () =>
 			[scoreQueue.status(), evaluationQueue.status()].some((snapshot) => snapshot.state !== 'saved')
 		);
+
 		return () => {
 			subjectsRequest.abort();
 			workspaceRequest.abort();

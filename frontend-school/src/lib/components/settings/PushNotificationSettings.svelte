@@ -2,17 +2,20 @@
 	import { onMount } from 'svelte';
 	import { AlertTriangle, BellRing, CheckCircle2, RefreshCw, XCircle } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
-	import { notificationStore, type PushNotificationDeviceStatus } from '$lib/stores/notification';
+	} from '#lib/components/ui/card/index.js';
+	import {
+		notificationStore,
+		type PushNotificationDeviceStatus
+	} from '#lib/stores/notification.js';
 
 	let status = $state<PushNotificationDeviceStatus | null>(null);
 	let loadingStatus = $state(true);

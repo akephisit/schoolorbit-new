@@ -3,8 +3,8 @@ import type {
 	SupervisionTemplateSummary,
 	SupervisionTeacherStatusRow,
 	SupervisionObservation
-} from '$lib/api/supervision';
-import type { RouteLoadResult } from '$lib/navigation/route-load';
+} from '#lib/api/supervision.js';
+import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 
 export type WorkspaceSection =
 	'overview' | 'cycles' | 'templates' | 'mine' | 'requests' | 'evaluate' | 'approvals';

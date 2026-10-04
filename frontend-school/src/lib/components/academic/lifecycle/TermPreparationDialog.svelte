@@ -5,7 +5,7 @@
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
+	} from '#lib/academic-context/store.js';
 	import {
 		applyAcademicTermPreparation,
 		previewAcademicTermPreparation,
@@ -14,18 +14,18 @@
 		type TermPreparationMappings,
 		type TermPreparationModule,
 		type TermPreparationWorkspace
-	} from '$lib/api/academic-lifecycle';
-	import { ApiClientError } from '$lib/api/client';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { LoadingButton, PageSkeleton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/academic-lifecycle.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { LoadingButton, PageSkeleton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let {
 		sourceTermId,

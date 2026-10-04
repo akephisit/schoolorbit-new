@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { authStore } from '$lib/stores/auth';
-	import { workStore } from '$lib/stores/work';
-	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { Separator } from '$lib/components/ui/separator';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { workStore } from '#lib/stores/work.js';
+	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		createWorkItem,
 		createWorkflowWindow,
@@ -22,14 +22,14 @@
 		type CreateWorkItemAssigneeTarget,
 		type WorkflowWindow,
 		type WorkflowWindowStatus
-	} from '$lib/api/work';
+	} from '#lib/api/work.js';
 	import {
 		lookupOrganizationUnits,
 		lookupStaff,
 		type OrganizationUnitLookupItem,
 		type StaffLookupItem
-	} from '$lib/api/lookup';
-	import { can, userPermissions, workflowManagePermissions } from '$lib/stores/permissions';
+	} from '#lib/api/lookup.js';
+	import { can, userPermissions, workflowManagePermissions } from '#lib/stores/permissions.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		CalendarClock,

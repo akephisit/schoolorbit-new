@@ -1,4 +1,4 @@
-import type { TimetableBlock, TimetableBlockInstructor } from '$lib/api/timetable';
+import type { TimetableBlock, TimetableBlockInstructor } from '#lib/api/timetable.js';
 
 export type TeacherLoadCategory =
 	'course' | 'independentActivity' | 'synchronizedActivity' | 'unspecifiedActivity';

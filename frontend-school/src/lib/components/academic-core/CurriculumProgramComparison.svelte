@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { CurriculumStructureWorkspace } from '$lib/api/academic-core';
-	import { buildProgramComparison } from '$lib/academic/curriculum-structure';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Table from '$lib/components/ui/table';
+	import type { CurriculumStructureWorkspace } from '#lib/api/academic-core.js';
+	import { buildProgramComparison } from '#lib/academic/curriculum-structure.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 
 	let {
 		workspace,

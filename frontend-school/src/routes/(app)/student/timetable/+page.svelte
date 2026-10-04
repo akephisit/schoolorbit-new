@@ -1,29 +1,29 @@
 <script lang="ts">
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { resolveScopedAcademicContextUrl } from '$lib/academic-context/scoped-year';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { resolveScopedAcademicContextUrl } from '#lib/academic-context/scoped-year.js';
 	import {
 		listMyAcademicContextOptions,
 		type AcademicContextOptionsResponse
-	} from '$lib/api/academic-context';
+	} from '#lib/api/academic-context.js';
 	import {
 		getMyTimetable,
 		periodsFromTimetableBlocks,
 		type TimetableBlock
-	} from '$lib/api/timetable';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/timetable.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { MapPin, School } from '@lucide/svelte';
 
 	const dayOptions = [
@@ -132,7 +132,11 @@
 		selectedTermId = v.data.academicTermId;
 		if (v.data.replaceHref) {
 			const url = new URL(v.data.replaceHref);
-			replaceState(resolve(`${url.pathname}${url.search}` as '/student/timetable'), page.state);
+			goto(resolve('student/timetable') + url.search, {
+				shallow: true,
+				replace: true,
+				state: page.state
+			});
 		}
 	}
 	function applyRecords(v: Awaited<typeof data.records>, revision: number, key: string) {
@@ -188,12 +192,12 @@
 	async function updateUrl(yearId: string, termId: string) {
 		const url = new URL(data.requestHref);
 		url.searchParams.set('academicYearId', yearId);
+
 		if (termId) url.searchParams.set('academicTermId', termId);
 		else url.searchParams.delete('academicTermId');
 
-		await goto(resolve(`${url.pathname}${url.search}` as '/student/timetable'), {
-			noScroll: true,
-			keepFocus: true
+		await goto(resolve('student/timetable') + url.search, {
+			reset: false
 		});
 	}
 	async function changeYear(yearId: string) {

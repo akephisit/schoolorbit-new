@@ -1,4 +1,4 @@
-import type { PublicSchoolOrganization } from '$lib/api/school';
+import type { PublicSchoolOrganization } from '#lib/api/school.js';
 
 type Unit = PublicSchoolOrganization['units'][number];
 export type PublicOrganizationNode = Unit & { children: PublicOrganizationNode[] };

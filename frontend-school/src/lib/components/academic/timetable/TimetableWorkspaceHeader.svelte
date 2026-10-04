@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { TimetableVersion } from '$lib/api/timetable';
-	import { Badge } from '$lib/components/ui/badge';
+	import type { TimetableVersion } from '#lib/api/timetable.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { CalendarRange, Check, CloudCog, LoaderCircle, RefreshCw } from '@lucide/svelte';
 
-	import type { TimetablePageView } from '$lib/academic/timetable/board-state';
+	import type { TimetablePageView } from '#lib/academic/timetable/board-state.js';
 	import TimetableViewSelector from './TimetableViewSelector.svelte';
 
 	let {

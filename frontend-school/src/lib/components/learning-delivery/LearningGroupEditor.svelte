@@ -6,14 +6,14 @@
 		ReplaceLearningGroupTeachersRequest,
 		TeacherAssignment,
 		UpdateLearningGroupRequest
-	} from '$lib/api/learning-delivery';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/api/learning-delivery.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Plus, X } from '@lucide/svelte';
 	import { untrack } from 'svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';

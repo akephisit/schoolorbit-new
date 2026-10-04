@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 const managementReadPermissions = [
 	PERMISSIONS.CERTIFICATE_READ_ORGANIZATION_UNIT,
@@ -25,11 +25,11 @@ export const _meta = {
 };
 
 import type { PageLoad } from './$types';
-import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { can } from '$lib/stores/permissions';
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { can } from '#lib/stores/permissions.js';
 import { get } from 'svelte/store';
-import { listCertificateCampaigns } from '$lib/api/certificates';
+import { listCertificateCampaigns } from '#lib/api/certificates.js';
 export const load: PageLoad = ({ fetch, depends }) => {
 	depends('school:app-identity');
 	return {

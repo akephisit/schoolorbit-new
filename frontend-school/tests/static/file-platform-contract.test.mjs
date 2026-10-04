@@ -122,7 +122,7 @@ test('typed file helper uses generated DTOs and file IDs as identity', async () 
 
 	assert.match(
 		source,
-		/import\s+type\s+\{\s*components\s*\}\s+from\s+['"]\$lib\/api\/generated\/school-api['"]/
+		/import\s+type\s+\{\s*components\s*\}\s+from\s+['"]#lib\/api\/generated\/school-api\.js['"]/
 	);
 	assert.match(source, /type\s+Schemas\s*=\s*components\['schemas'\]/);
 	assert.match(source, /export\s+type\s+FileMetadata\s*=\s*Schemas\['FileMetadata'\]/);

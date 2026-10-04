@@ -5,17 +5,17 @@
 		listCertificateIssueRequests,
 		type CertificateIssueRequestStatus,
 		type CertificateIssueRequestSummary
-	} from '$lib/api/certificates';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/api/certificates.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { AlertTriangle, ArrowRight, RefreshCw, ShieldCheck } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 
 	let {
 		canIssue,
@@ -126,11 +126,7 @@
 			value !== 'issued'
 		)
 			return;
-		void goto(
-			resolve(
-				`/staff/certificate-requests${value === 'all' ? '' : `?status=${value}`}` as '/staff/certificate-requests'
-			)
-		);
+		void goto(resolve('staff/certificate-requests') + (value === 'all' ? '' : `?status=${value}`));
 	}
 </script>
 
@@ -265,9 +261,7 @@
 										data-sveltekit-preload-data="tap"
 										size="icon-sm"
 										variant="ghost"
-										href={resolve(
-											`/staff/certificate-requests/${request.id}` as '/staff/certificate-requests/[requestId]'
-										)}
+										href={resolve(`staff/certificate-requests/${request.id}`)}
 										aria-label={`เปิดคำขอ ${request.campaignName}`}
 									>
 										<ArrowRight class="size-4" />

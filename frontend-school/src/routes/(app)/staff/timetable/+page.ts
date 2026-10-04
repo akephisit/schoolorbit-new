@@ -1,6 +1,6 @@
 import type { PageLoad } from './$types';
-import { currentLocalDate, getMyTimetable } from '$lib/api/timetable';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { currentLocalDate, getMyTimetable } from '#lib/api/timetable.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

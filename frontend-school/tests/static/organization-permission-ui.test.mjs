@@ -96,8 +96,8 @@ test('organization member picker is a searchable combobox with browsable initial
 		'src/lib/components/staff/OrganizationMembersSection.svelte'
 	);
 
-	assert.match(source, /from '\$lib\/components\/ui\/popover'/);
-	assert.match(source, /from '\$lib\/components\/ui\/command'/);
+	assert.match(source, /from '#lib\/components\/ui\/popover\/index\.js'/);
+	assert.match(source, /from '#lib\/components\/ui\/command\/index\.js'/);
 	assert.match(source, /role="combobox"/);
 	assert.match(source, /aria-expanded=\{staffPickerOpen\}/);
 	assert.match(source, /<Command\.Root shouldFilter=\{false\}>/);
@@ -178,9 +178,9 @@ test('organization member and delegation dialogs use shadcn-svelte primitives', 
 		assert.doesNotMatch(source, /fixed inset-0/);
 		assert.doesNotMatch(source, /<select\b/);
 		assert.doesNotMatch(source, /<input\b/);
-		assert.match(source, /from '\$lib\/components\/ui\/dialog'/);
-		assert.match(source, /from '\$lib\/components\/ui\/label'/);
-		assert.match(source, /from '\$lib\/components\/ui\/select'/);
+		assert.match(source, /from '#lib\/components\/ui\/dialog\/index\.js'/);
+		assert.match(source, /from '#lib\/components\/ui\/label\/index\.js'/);
+		assert.match(source, /from '#lib\/components\/ui\/select\/index\.js'/);
 		assert.match(source, /<Dialog\.Root/);
 		assert.match(source, /<Dialog\.Content/);
 		assert.match(source, /<Dialog\.Footer/);
@@ -189,19 +189,19 @@ test('organization member and delegation dialogs use shadcn-svelte primitives', 
 		assert.match(source, /<Select\.Item/);
 	}
 
-	assert.match(members, /from '\$lib\/components\/ui\/checkbox'/);
-	assert.match(members, /from '\$lib\/components\/ui\/command'/);
-	assert.match(members, /from '\$lib\/components\/ui\/popover'/);
+	assert.match(members, /from '#lib\/components\/ui\/checkbox\/index\.js'/);
+	assert.match(members, /from '#lib\/components\/ui\/command\/index\.js'/);
+	assert.match(members, /from '#lib\/components\/ui\/popover\/index\.js'/);
 	assert.match(members, /<Checkbox/);
 	assert.match(members, /<Command\.Input/);
 	assert.match(members, /<Popover\.Root/);
-	assert.match(detail, /from '\$lib\/components\/ui\/input'/);
+	assert.match(detail, /from '#lib\/components\/ui\/input\/index\.js'/);
 });
 
 test('organization delegation expiry uses the shared date picker', async () => {
 	const source = await readProjectFile('src/routes/(app)/staff/organization/[id]/+page.svelte');
 
-	assert.match(source, /from '\$lib\/components\/ui\/date-picker'/);
+	assert.match(source, /from '#lib\/components\/ui\/date-picker\/index\.js'/);
 	assert.match(source, /<DatePicker\s+bind:value=\{delegateForm\.expires_at\}/);
 	assert.match(source, /placeholder="เลือกวันหมดอายุ"/);
 	assert.doesNotMatch(source, /type="date"\s+bind:value=\{delegateForm\.expires_at\}/);

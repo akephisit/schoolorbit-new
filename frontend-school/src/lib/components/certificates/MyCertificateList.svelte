@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		Award,
@@ -15,16 +15,16 @@
 		ShieldCheck,
 		ShieldX
 	} from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageState } from '$lib/components/app-state';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageState } from '#lib/components/app-state/index.js';
 	import {
 		createOwnCertificateRenderManifest,
 		listOwnCertificates,
 		type IssuedCertificateSummary
-	} from '$lib/api/certificates';
-	import { downloadCertificatePdf } from '$lib/certificates/download';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
+	} from '#lib/api/certificates.js';
+	import { downloadCertificatePdf } from '#lib/certificates/download.js';
+	import { loadCertificateRenderer } from '#lib/certificates/renderer.js';
 
 	let {
 		initialCertificates,
@@ -234,7 +234,7 @@
 							<a
 								class="verify-link"
 								href={resolve(
-									`/verify/certificate/${encodeURIComponent(certificate.certificateNumber)}` as '/verify/certificate/[certificateNumber]'
+									`verify/certificate/${encodeURIComponent(certificate.certificateNumber)}`
 								)}
 								target="_blank"
 								rel="noopener noreferrer"

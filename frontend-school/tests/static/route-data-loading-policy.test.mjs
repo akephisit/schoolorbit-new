@@ -23,7 +23,7 @@ async function sourceFiles(directory) {
 	for (const entry of await readdir(directory, { withFileTypes: true })) {
 		const fullPath = path.join(directory, entry.name);
 		if (entry.isDirectory()) files.push(...(await sourceFiles(fullPath)));
-		else if (/\.(?:svelte|ts)$/.test(entry.name)) files.push(fullPath);
+		else if (/\.(?:svelte|ts|js)$/.test(entry.name)) files.push(fullPath);
 	}
 	return files;
 }
@@ -37,7 +37,7 @@ test('primary reads never start from page mount; browser subscriptions have revi
 		const record = records.get(route);
 		const calls = mountApiCalls(source);
 		const review = record?.browserMount;
-		if (/\bonMount\b/.test(source) && /\$lib\/api\//.test(source)) {
+		if (/\bonMount\b/.test(source) && /#lib\/api\//.test(source)) {
 			assert.ok(review?.reason?.trim(), `${route}: browser mount needs an explicit review reason`);
 			assert.ok(review?.tests?.length, `${route}: browser mount needs a focused test owner`);
 			for (const testFile of review.tests) await readFile(path.join(projectRoot, testFile), 'utf8');
@@ -61,7 +61,7 @@ test('primary reads never start from page mount; browser subscriptions have revi
 });
 
 test('startup inspection follows aliases and local helpers without banning interaction reads', () => {
-	const imports = `<script lang="ts">import {onMount as mounted} from 'svelte'; import {list as read} from '$lib/api/feature';`;
+	const imports = `<script lang="ts">import {onMount as mounted} from 'svelte'; import {list as read} from '#lib/api/feature';`;
 	assert.deepEqual(
 		mountApiCalls(`${imports} function primary(){return read()} mounted(primary);</script>`),
 		['read']
@@ -96,13 +96,34 @@ test('the application keeps safe hover data preload enabled', async () => {
 	assert.match(app, /<body[^>]*data-sveltekit-preload-data="hover"/);
 });
 
+test('portable UI utilities do not load the retired Runed Kit integration', async () => {
+	const roots = [
+		path.join(projectRoot, 'src'),
+		path.join(projectRoot, '../frontend-admin/src'),
+		path.join(projectRoot, 'node_modules/bits-ui/dist'),
+		path.join(projectRoot, 'node_modules/svelte-toolbelt/dist')
+	];
+	for (const root of roots) {
+		for (const file of await sourceFiles(root)) {
+			assert.doesNotMatch(
+				await readFile(file, 'utf8'),
+				/['"]runed\/kit(?:\/|['"])/,
+				path.relative(projectRoot, file)
+			);
+		}
+	}
+});
+
 test('route and component code uses focused invalidation', async () => {
 	const allowedInvalidateAllOwners = new Set([]);
 	const offenders = [];
 	for (const file of await sourceFiles(path.join(projectRoot, 'src'))) {
 		const relative = path.relative(projectRoot, file);
 		if (
-			/\binvalidateAll\s*\(/.test(await readFile(file, 'utf8')) &&
+			(/\binvalidateAll\s*\(/.test(await readFile(file, 'utf8')) ||
+				/import\s*\{[^}]*\brefreshAll\b[^}]*\}\s*from ['"]\$app\/navigation['"]/.test(
+					await readFile(file, 'utf8')
+				)) &&
 			!allowedInvalidateAllOwners.has(relative)
 		) {
 			offenders.push(relative);

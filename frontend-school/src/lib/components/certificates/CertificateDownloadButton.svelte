@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
+	import { LatestRequest } from '#lib/async/latest-request.js';
 	import {
 		createIssuedCertificateRenderManifest,
 		type IssuedCertificateSummary
-	} from '$lib/api/certificates';
-	import { downloadCertificatePdf } from '$lib/certificates/download';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
-	import { LoadingButton } from '$lib/components/app-state';
+	} from '#lib/api/certificates.js';
+	import { downloadCertificatePdf } from '#lib/certificates/download.js';
+	import { loadCertificateRenderer } from '#lib/certificates/renderer.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Download } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

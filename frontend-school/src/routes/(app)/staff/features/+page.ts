@@ -1,14 +1,14 @@
 import type { PageLoad } from './$types';
-import { listFeatures } from '$lib/api/feature-toggles';
+import { listFeatures } from '#lib/api/feature-toggles.js';
 import { get } from 'svelte/store';
-import { can } from '$lib/stores/permissions';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { can } from '#lib/stores/permissions.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 /**
  * Feature Toggles Management Page
  */
 
-import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	menu: {

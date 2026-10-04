@@ -1,5 +1,5 @@
 import { apiClient, requireApiData, type ApiRequestOptions } from './client';
-import type { components } from '$lib/api/generated/school-api';
+import type { components } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 type OptionalNonNull<T> = { [Key in keyof T]?: Exclude<T[Key], null> };

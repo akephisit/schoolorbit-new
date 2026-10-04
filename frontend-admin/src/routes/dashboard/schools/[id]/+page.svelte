@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { apiClient, type School } from '$lib/api/client';
+	import { page } from '$app/state';
+	import { apiClient, type School } from '#lib/api/client.js';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
-	let schoolId = $derived($page.params.id);
+	let schoolId = $derived(page.params.id);
 	let school = $state<School | null>(null);
 	let loading = $state(true);
 	let error = $state('');
@@ -81,14 +81,14 @@
 	<div class="error-container">
 		<h2>เกิดข้อผิดพลาด</h2>
 		<p>{error}</p>
-		<button onclick={() => goto(resolve('/dashboard/schools'))} class="btn-primary">
+		<button onclick={() => goto(resolve('dashboard/schools'))} class="btn-primary">
 			กลับไปหน้ารายการโรงเรียน
 		</button>
 	</div>
 {:else if school}
 	<div class="school-detail">
 		<div class="header">
-			<button onclick={() => goto(resolve('/dashboard/schools'))} class="back-button">
+			<button onclick={() => goto(resolve('dashboard/schools'))} class="back-button">
 				← กลับ
 			</button>
 			<h1>{school.name}</h1>
@@ -167,7 +167,7 @@
 
 		<!-- Actions -->
 		<div class="actions">
-			<button onclick={() => goto(resolve('/dashboard/schools'))} class="btn-secondary">
+			<button onclick={() => goto(resolve('dashboard/schools'))} class="btn-secondary">
 				กลับไปหน้ารายการ
 			</button>
 			{#if school.status === 'deployment_failed' && school.config && school.config.error}

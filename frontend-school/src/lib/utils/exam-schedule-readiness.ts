@@ -1,4 +1,4 @@
-import type { ExamScheduleReadinessFinding } from '$lib/api/examSchedule';
+import type { ExamScheduleReadinessFinding } from '#lib/api/examSchedule.js';
 
 export function examScheduleReadinessLabel(finding: ExamScheduleReadinessFinding): string {
 	switch (finding.code) {

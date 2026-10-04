@@ -1,28 +1,28 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { permissionAPI, type PermissionsByModule } from '$lib/api/roles';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { permissionAPI, type PermissionsByModule } from '#lib/api/roles.js';
 	import {
 		permissionActionLabel,
 		permissionScopeMeta,
 		permissionScopeToneClass
-	} from '$lib/permissions/registry';
+	} from '#lib/permissions/registry.js';
 	import {
 		getOrganizationPermissions,
 		updateOrganizationPermissions,
 		type OrganizationUnit
-	} from '$lib/api/staff';
+	} from '#lib/api/staff.js';
 	import { toast } from 'svelte-sonner';
 	import { LoaderCircle, Shield, Layers, UsersRound } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	type PermissionPositionValue =

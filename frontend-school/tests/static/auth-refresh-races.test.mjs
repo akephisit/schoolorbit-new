@@ -26,16 +26,16 @@ async function harness(extraClient = {}) {
 	authStore.subscribe((value) => (state = value));
 	const requests = [];
 	const { authAPI } = await load('../../src/lib/api/auth.ts', {
-		'$lib/api/client': {
+		'#lib/api/client.js': {
 			apiClient: { get: () => new Promise((resolve) => requests.push(resolve)), ...extraClient },
 			requireApiData(response) {
 				assert.equal(response.success, true);
 				return response.data;
 			}
 		},
-		'$lib/api/session-security': { clearSessionSecurity() {} },
-		'$lib/auth/auth-refresh-policy': { authRefreshDecision },
-		'$lib/stores/auth': { authStore },
+		'#lib/api/session-security.js': { clearSessionSecurity() {} },
+		'#lib/auth/auth-refresh-policy.js': { authRefreshDecision },
+		'#lib/stores/auth.js': { authStore },
 		'svelte-sonner': { toast: { success() {} } }
 	});
 	return {
@@ -122,7 +122,7 @@ test('work changes signal active route reconciliation without fetching hidden it
 	let itemReads = 0;
 	const { workStore } = await load('../../src/lib/stores/work.ts', {
 		'svelte/store': { writable },
-		'$lib/api/work': {
+		'#lib/api/work.js': {
 			getMyWorkCounts: () => new Promise((resolve) => counts.push(resolve)),
 			getMyWorkItems: () => {
 				itemReads++;
@@ -160,7 +160,7 @@ test('layout-owned counts cannot overwrite a newer refresh or refill a reset ide
 	const counts = [];
 	const { workStore } = await load('../../src/lib/stores/work.ts', {
 		'svelte/store': { writable },
-		'$lib/api/work': {
+		'#lib/api/work.js': {
 			getMyWorkCounts: () => new Promise((resolve) => counts.push(resolve)),
 			getMyWorkItems: async () => []
 		}
@@ -250,11 +250,13 @@ async function transportHarness() {
 	const h = await harness();
 	const captured = [];
 	const { apiClient } = await load('../../src/lib/api/client.ts', {
-		'$app/environment': { browser: false },
+		'$app/env': { browser: false },
 		'$app/paths': { resolve: (value) => value },
-		'$env/dynamic/public': { env: {} },
-		'$env/static/public': { PUBLIC_BACKEND_URL: 'https://api.example.invalid' },
-		'$lib/api/session-security': {
+		'$app/env/public': {
+			PUBLIC_BACKEND_URL: 'https://api.example.invalid',
+			PUBLIC_SCHOOL_SUBDOMAIN: ''
+		},
+		'#lib/api/session-security.js': {
 			captureSessionSecurityHeaders(headers) {
 				captured.push(headers.get('X-CSRF-Token'));
 			},
@@ -262,11 +264,11 @@ async function transportHarness() {
 			retryAfterSeconds() {},
 			withSessionSecurityHeaders: (_method, headers) => headers
 		},
-		'$lib/api/query': { appendApiQuery: (endpoint) => endpoint },
-		'$lib/api/school-subdomain': { normalizeSchoolSubdomain: (value) => value ?? null },
-		'$lib/deployment/maintenance': { confirmMaintenance() {}, probeDeploymentStatus() {} },
-		'$lib/deployment/maintenance-controller': { isMaintenanceResponse: () => false },
-		'$lib/stores/auth': { authStore: h.authStore }
+		'#lib/api/query.js': { appendApiQuery: (endpoint) => endpoint },
+		'#lib/api/school-subdomain.js': { normalizeSchoolSubdomain: (value) => value ?? null },
+		'#lib/deployment/maintenance.js': { confirmMaintenance() {}, probeDeploymentStatus() {} },
+		'#lib/deployment/maintenance-controller.js': { isMaintenanceResponse: () => false },
+		'#lib/stores/auth.js': { authStore: h.authStore }
 	});
 	return {
 		...h,

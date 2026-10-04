@@ -7,7 +7,7 @@ import {
 	type AcademicResultReadiness,
 	type CourseResultPreparationWorkspace,
 	type ActivityResultPreparationWorkspace
-} from '$lib/api/academicResults';
+} from '#lib/api/academicResults.js';
 import {
 	getLearnerEvaluationWorkspace,
 	getStudentLearnerEvaluationSummary,
@@ -15,9 +15,9 @@ import {
 	type LearnerEvaluationSubject,
 	type LearnerEvaluationWorkspace,
 	type StudentLearnerEvaluationSummary
-} from '$lib/api/academicLearnerEvaluations';
-import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+} from '#lib/api/academicLearnerEvaluations.js';
+import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 type Section = 'course' | 'activity' | 'learner';
 type Overview =

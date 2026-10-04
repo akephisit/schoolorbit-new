@@ -6,20 +6,20 @@
 		BellSchedule,
 		CreateAcademicTermRequest,
 		UpdateAcademicTermRequest
-	} from '$lib/api/academic-core';
+	} from '#lib/api/academic-core.js';
 	import {
 		customNameFromStored,
 		standardTermName
-	} from '$lib/academic-core/foundation-presentation';
-	import { canPlanTermsInYear, termAnnualFlags } from '$lib/academic-core/term-planning';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Collapsible from '$lib/components/ui/collapsible';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/academic-core/foundation-presentation.js';
+	import { canPlanTermsInYear, termAnnualFlags } from '#lib/academic-core/term-planning.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { ChevronDown, Pencil, Plus, Save, X } from '@lucide/svelte';
 
 	const TERM_TYPES: Array<{ value: AcademicTermType; label: string; description: string }> = [

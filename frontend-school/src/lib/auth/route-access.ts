@@ -1,10 +1,10 @@
-import type { User } from '$lib/stores/auth';
-import type { RoutePermission } from '$lib/permissions/registry';
+import type { User } from '#lib/stores/auth.js';
+import type { RoutePermission } from '#lib/permissions/registry.js';
 import {
 	hasModulePermission,
 	hasPermission,
 	hasWorkflowManagePermission
-} from '$lib/stores/permissions';
+} from '#lib/stores/permissions.js';
 
 type RouteAccessMeta = {
 	authenticated?: boolean;

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { CertificateElement, LayerDirection } from '$lib/certificates/editor-state';
-	import { Button } from '$lib/components/ui/button';
+	import type { CertificateElement, LayerDirection } from '#lib/certificates/editor-state.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { ArrowDown, ArrowUp, Braces, Image as ImageIcon, Layers3, QrCode } from '@lucide/svelte';
 
 	let {

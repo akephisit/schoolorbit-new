@@ -1,9 +1,12 @@
-import { createVisibilityIdle, browserVisibilityDependencies } from '$lib/realtime/visibility-idle';
-import { PUBLIC_VAPID_KEY } from '$env/static/public';
-import { apiClient, BACKEND_URL, getSchoolSubdomainHint } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
-import { realtimeAuthRecovery } from '$lib/realtime/auth-recovery';
-import { workStore } from '$lib/stores/work';
+import {
+	createVisibilityIdle,
+	browserVisibilityDependencies
+} from '#lib/realtime/visibility-idle.js';
+import { PUBLIC_VAPID_KEY } from '$app/env/public';
+import { apiClient, BACKEND_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
+import type { components } from '#lib/api/generated/school-api.js';
+import { realtimeAuthRecovery } from '#lib/realtime/auth-recovery.js';
+import { workStore } from '#lib/stores/work.js';
 import { toast } from 'svelte-sonner';
 import { writable } from 'svelte/store';
 
@@ -190,7 +193,7 @@ function createNotificationStore() {
 
 		const promise = (async () => {
 			try {
-				const { authAPI } = await import('$lib/api/auth');
+				const { authAPI } = await import('#lib/api/auth.js');
 				if (!shouldMaintainSSE || idle.paused || generation !== sseGeneration) return;
 				const recoveryAction = await realtimeAuthRecovery(() =>
 					authAPI.refreshCurrentUser({ silent: true })
@@ -228,7 +231,7 @@ function createNotificationStore() {
 		const version = signalVersion;
 		const ownsSnapshot = () => ownsEventSource(source, generation) && version === signalVersion;
 		try {
-			const { authAPI } = await import('$lib/api/auth');
+			const { authAPI } = await import('#lib/api/auth.js');
 			if (!ownsEventSource(source, generation)) return;
 			const action = await realtimeAuthRecovery(() =>
 				authAPI.refreshCurrentUser({ silent: true, invalidate: true })
@@ -317,7 +320,7 @@ function createNotificationStore() {
 			if (!ownsEventSource(source, generation)) return;
 			signalVersion++;
 			try {
-				const { authAPI } = await import('$lib/api/auth');
+				const { authAPI } = await import('#lib/api/auth.js');
 				if (!ownsEventSource(source, generation)) return;
 				await authAPI.refreshCurrentUser({ silent: true, invalidate: true });
 			} catch (error) {

@@ -1,8 +1,8 @@
 import type { PageLoad } from './$types';
-import { waitForPromotionReadAccess } from '$lib/academic/lifecycle/promotion-access';
-import { listPromotionRuns } from '$lib/api/academic-promotion';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { waitForPromotionReadAccess } from '#lib/academic/lifecycle/promotion-access.js';
+import { listPromotionRuns } from '#lib/api/academic-promotion.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 export const _meta = {
 	academicContext: 'year_required' as const,
 	menu: {

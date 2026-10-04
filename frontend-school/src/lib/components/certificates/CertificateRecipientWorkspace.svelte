@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { pushState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-	import { ApiClientError } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+	import { ApiClientError } from '#lib/api/client.js';
 	import {
 		bulkUpdateCertificateCandidates,
 		createAccountCertificateCandidate,
@@ -25,20 +25,20 @@
 		type CreateAccountCertificateCandidateRequest,
 		type CreateManualExternalCandidateRequest,
 		type UpdateCertificateCandidateRequest
-	} from '$lib/api/certificates';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	} from '#lib/api/certificates.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import CertificateAccountSearchDialog from './CertificateAccountSearchDialog.svelte';
 	import CertificateCandidateEditDialog from './CertificateCandidateEditDialog.svelte';
 	import CertificateCandidateTable from './CertificateCandidateTable.svelte';
 	import CertificateImportDialog from './CertificateImportDialog.svelte';
 	import CertificateManualExternalDialog from './CertificateManualExternalDialog.svelte';
 	import CertificateSubmitRequestDialog from './CertificateSubmitRequestDialog.svelte';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import type { ParsedCertificateImport } from '$lib/certificates/importer';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import type { ParsedCertificateImport } from '#lib/certificates/importer.js';
 	import {
 		FileSpreadsheet,
 		Filter,
@@ -126,7 +126,7 @@
 	let externalConfirmationIssues = $state.raw<ExternalConfirmationIssue[]>([]);
 	const context = $derived(`${identityKey}|${campaignId}`);
 	const currentUrl = $derived(
-		new URL(page.state.certificateCandidateUrl ?? page.url.href, page.url)
+		new URL(page.state.certificateCandidateUrl ?? page.url.href, new URL(page.url.href))
 	);
 	const candidateFilterKey = $derived(
 		currentUrl.searchParams.get('status') +
@@ -270,6 +270,7 @@
 	function applyCandidates(v: Awaited<typeof initialCandidates>, revision: number) {
 		if (!candidateRequest.isCurrent(revision) || (v.ok && v.data.filterKey !== candidateFilterKey))
 			return;
+
 		loading = false;
 		tableLoading = false;
 		if (!v.ok) {
@@ -320,15 +321,17 @@
 	function commitFilters() {
 		if (actionBusy) return;
 		const url = new URL(currentUrl);
+
 		if (statusFilter === 'all') url.searchParams.delete('status');
 		else url.searchParams.set('status', statusFilter);
 		if (templateFilter) url.searchParams.set('templateId', templateFilter);
 		else url.searchParams.delete('templateId');
 		if (searchQuery) url.searchParams.set('search', searchQuery);
 		else url.searchParams.delete('search');
-		pushState(resolve(`${url.pathname}${url.search}` as '/staff/certificates'), {
-			...page.state,
-			certificateCandidateUrl: url.href
+
+		goto(resolve(`staff/certificates/${campaignId}/recipients`) + url.search, {
+			shallow: true,
+			state: { ...page.state, certificateCandidateUrl: url.href }
 		});
 	}
 	function changeTemplateFilter(value: string) {
@@ -406,6 +409,7 @@
 	function isCertificateResourceLocked(value: unknown): value is CertificateResourceLocked {
 		if (value === null || typeof value !== 'object') return false;
 		if (!('code' in value) || value.code !== 'resource_locked') return false;
+
 		return (
 			!('requestId' in value) || value.requestId === null || typeof value.requestId === 'string'
 		);

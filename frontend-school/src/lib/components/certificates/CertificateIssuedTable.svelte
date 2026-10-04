@@ -4,16 +4,16 @@
 		listIssuedCertificates,
 		type IssuedCertificateSummary,
 		type RevokeCertificateResult
-	} from '$lib/api/certificates';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import CertificateBatchDownloadDialog from '$lib/components/certificates/CertificateBatchDownloadDialog.svelte';
-	import CertificateDownloadButton from '$lib/components/certificates/CertificateDownloadButton.svelte';
-	import CertificateRevokeDialog from '$lib/components/certificates/CertificateRevokeDialog.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/api/certificates.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import CertificateBatchDownloadDialog from '#lib/components/certificates/CertificateBatchDownloadDialog.svelte';
+	import CertificateDownloadButton from '#lib/components/certificates/CertificateDownloadButton.svelte';
+	import CertificateRevokeDialog from '#lib/components/certificates/CertificateRevokeDialog.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import {
 		Award,
 		Download,
@@ -24,8 +24,8 @@
 		UsersRound
 	} from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { SvelteMap } from 'svelte/reactivity';
 
 	let {
@@ -448,7 +448,7 @@
 												{#if certificate.replacementCandidateId}
 													<a
 														href={resolve(
-															`/staff/certificates/${campaignId}/recipients#candidate-${certificate.replacementCandidateId}` as '/staff/certificates/[campaignId]/recipients'
+															`staff/certificates/${campaignId}/recipients#candidate-${certificate.replacementCandidateId}`
 														)}
 														class="mt-2 block text-xs font-medium text-primary underline underline-offset-4"
 													>

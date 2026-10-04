@@ -11,7 +11,7 @@ const resolvedVirtualModuleId = `\0${virtualModuleId}`;
 const stubModulePrefix = '\0certificate-renderer-test-stub:';
 const stubModules = new Map([
 	[
-		'$app/environment',
+		'$app/env',
 		'export const browser = true; export const building = false; export const dev = true;'
 	],
 	[
@@ -19,7 +19,7 @@ const stubModules = new Map([
 		"export const base = ''; export const assets = ''; export const resolve = (path) => path;"
 	],
 	['$env/dynamic/public', 'export const env = {};'],
-	['$env/static/public', "export const PUBLIC_BACKEND_URL = 'https://school-api.schoolorbit.app';"]
+	['$app/env/public', "export const PUBLIC_BACKEND_URL = 'https://school-api.schoolorbit.app';"]
 ]);
 const backgroundFiles = new Map<string, Uint8Array>();
 

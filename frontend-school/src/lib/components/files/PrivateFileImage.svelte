@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { downloadFile } from '$lib/api/files';
+	import { downloadFile } from '#lib/api/files.js';
 	import type { Attachment } from 'svelte/attachments';
 
 	interface FileImageParams {

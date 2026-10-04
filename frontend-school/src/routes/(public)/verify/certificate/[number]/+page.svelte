@@ -1,5 +1,5 @@
 <script lang="ts">
-	import PublicCertificateVerification from '$lib/components/certificates/PublicCertificateVerification.svelte';
+	import PublicCertificateVerification from '#lib/components/certificates/PublicCertificateVerification.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

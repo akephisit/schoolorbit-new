@@ -6,10 +6,10 @@ import {
 	listLearningGroups,
 	type DatedRosterMembership,
 	type LearningGroup
-} from '$lib/api/learning-delivery';
-import { listTimetableVersions } from '$lib/api/timetable';
-import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+} from '#lib/api/learning-delivery.js';
+import { listTimetableVersions } from '#lib/api/timetable.js';
+import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

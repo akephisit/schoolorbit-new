@@ -1,7 +1,7 @@
 import type { PageLoad } from './$types';
-import { getQuestionBankOptions, listQuestionBankQuestions } from '$lib/api/questionBank';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { getQuestionBankOptions, listQuestionBankQuestions } from '#lib/api/questionBank.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'none' as const,

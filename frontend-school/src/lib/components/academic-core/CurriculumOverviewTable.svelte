@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { CurriculumDisplayState, CurriculumOverviewItem } from '$lib/api/academic-core';
-	import { gradeLevelSummary } from '$lib/academic-core/catalog-presentation';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Table from '$lib/components/ui/table';
+	import type { CurriculumDisplayState, CurriculumOverviewItem } from '#lib/api/academic-core.js';
+	import { gradeLevelSummary } from '#lib/academic-core/catalog-presentation.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { ArrowUpRight, BookOpenCheck } from '@lucide/svelte';
 
 	let { items }: { items: CurriculumOverviewItem[] } = $props();

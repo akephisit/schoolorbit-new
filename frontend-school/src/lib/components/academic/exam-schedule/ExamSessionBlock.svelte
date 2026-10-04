@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ExamSession } from '$lib/api/examSchedule';
+	import type { ExamSession } from '#lib/api/examSchedule.js';
 
 	let {
 		session,

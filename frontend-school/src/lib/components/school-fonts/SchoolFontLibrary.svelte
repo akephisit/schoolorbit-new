@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-	import { ApiClientError } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+	import { ApiClientError } from '#lib/api/client.js';
 	import {
 		attachSchoolFontBatch,
 		deleteSchoolFont,
@@ -11,18 +11,18 @@
 		type SchoolFontDeleteConflict,
 		type SchoolFontSummary,
 		type SchoolFontListResponse
-	} from '$lib/api/school-fonts';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	} from '#lib/api/school-fonts.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
+	} from '#lib/components/ui/card/index.js';
 	import { Library, RefreshCw, Trash2, Type } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import SchoolFontBatchUpload from './SchoolFontBatchUpload.svelte';

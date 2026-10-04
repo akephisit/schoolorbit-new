@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
-import { authStore } from '$lib/stores/auth';
-import { can } from '$lib/stores/permissions';
+import { authStore } from '#lib/stores/auth.js';
+import { can } from '#lib/stores/permissions.js';
 
 /** Wait for the app layout's current-user refresh before a route read. */
 export function waitForAdmissionAccess(permission: string): Promise<boolean> {

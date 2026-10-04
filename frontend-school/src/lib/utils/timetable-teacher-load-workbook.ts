@@ -1,13 +1,13 @@
 import type { Cell, Row, Workbook, Worksheet } from 'exceljs';
 
-import type { TimetableBlock } from '$lib/api/timetable';
+import type { TimetableBlock } from '#lib/api/timetable.js';
 import {
 	buildTeacherLoadExportRows,
 	calculateTeacherLoadColumnWidths,
 	TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS,
 	TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS,
 	type TeacherLoadExportRows
-} from '$lib/utils/timetable-teacher-load-export';
+} from '#lib/utils/timetable-teacher-load-export.js';
 
 const teacherLoadFontName = 'TH Sarabun New';
 

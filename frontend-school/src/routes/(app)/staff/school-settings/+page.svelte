@@ -1,26 +1,26 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { authStore } from '$lib/stores/auth';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { authStore } from '#lib/stores/auth.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
+	} from '#lib/components/ui/card/index.js';
 	import { Save, Upload, ImageOff, X } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '$lib/api/school';
-	import { publicFileUrl, uploadFile } from '$lib/api/files';
+	import { getSchoolSettings, updateSchoolSettings, deleteSchoolLogo } from '#lib/api/school.js';
+	import { publicFileUrl, uploadFile } from '#lib/api/files.js';
 
 	let logoFileId = $state<string | undefined>(undefined); // file ID สำหรับลบ
 	let saving = $state(false);

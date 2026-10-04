@@ -1,4 +1,4 @@
-import type { AcademicYear } from '$lib/api/academic-core';
+import type { AcademicYear } from '#lib/api/academic-core.js';
 
 export function canPlanTermsInYear(status: AcademicYear['status']): boolean {
 	return status === 'planning' || status === 'active';

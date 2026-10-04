@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Component, Snippet } from 'svelte';
 	import { ArrowLeft } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { cn } from '$lib/utils';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { cn } from '#lib/utils.js';
 
 	let {
 		title,
@@ -18,7 +18,7 @@
 		title: string;
 		description?: string;
 		backHref?: string;
-		backPreload?: 'hover' | 'tap' | 'off';
+		backPreload?: 'hover' | 'tap' | false;
 		backLabel?: string;
 		icon?: Component;
 		meta?: Snippet;

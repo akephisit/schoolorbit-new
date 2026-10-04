@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { scoreItemBudget } from '$lib/academic/gradebook/item-budget';
+	import { scoreItemBudget } from '#lib/academic/gradebook/item-budget.js';
 	import {
 		nextEditableCell,
 		normalizeScorePaste,
 		type GradebookCellPosition,
 		type ScorePasteMutation
-	} from '$lib/academic/gradebook/ledger';
+	} from '#lib/academic/gradebook/ledger.js';
 	import type {
 		GradebookPhaseCode,
 		GradebookScoreItem,
 		GroupPhaseWorkspace
-	} from '$lib/api/academicGradebook';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Input } from '$lib/components/ui/input';
+	} from '#lib/api/academicGradebook.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { CheckCheck, Pencil, Plus, Smartphone } from '@lucide/svelte';
 
 	let {

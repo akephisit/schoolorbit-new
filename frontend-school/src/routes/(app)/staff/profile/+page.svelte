@@ -1,29 +1,29 @@
 <script lang="ts">
-	import StaffCareerHistory from '$lib/components/staff/StaffCareerHistory.svelte';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import StaffCareerHistory from '#lib/components/staff/StaffCareerHistory.svelte';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { authStore } from '$lib/stores/auth';
-	import { authAPI, type ProfileResponse } from '$lib/api/auth';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import * as Select from '$lib/components/ui/select';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { authAPI, type ProfileResponse } from '#lib/api/auth.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
-	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
+	} from '#lib/components/ui/card/index.js';
+	import ProfileImageUpload from '#lib/components/forms/ProfileImageUpload.svelte';
 	import { Save, User, Calendar, Mail, Phone, MapPin, Shield, Lock } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

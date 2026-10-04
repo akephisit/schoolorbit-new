@@ -3,11 +3,11 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { ArrowLeft, Home } from '@lucide/svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageState } from '$lib/components/app-state';
-	import { dashboardPathForUser } from '$lib/auth/route-access';
-	import { authStore } from '$lib/stores/auth';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { dashboardPathForUser } from '#lib/auth/route-access.js';
+	import { authStore } from '#lib/stores/auth.js';
 
 	const { data }: PageProps = $props();
 	let dashboardPath = $derived(dashboardPathForUser($authStore.user));
@@ -18,7 +18,11 @@
 			return;
 		}
 
-		void goto(resolve(dashboardPath));
+		void goto(
+			resolve(
+				dashboardPath === '/staff' ? 'staff' : dashboardPath === '/student' ? 'student' : 'parent'
+			)
+		);
 	}
 </script>
 

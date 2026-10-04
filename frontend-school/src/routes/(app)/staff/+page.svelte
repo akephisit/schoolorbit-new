@@ -1,28 +1,28 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { menuPreloadPolicy } from '$lib/navigation/menu-preload';
-	import { getAppMenuRegion } from '$lib/navigation/app-menu.svelte';
-	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
-	import { getStaffDashboard, type StaffDashboardOverview } from '$lib/api/staff';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { buildSidebarNavigation } from '$lib/components/layout/sidebar-navigation';
-	import { Button } from '$lib/components/ui/button';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { menuPreloadPolicy } from '#lib/navigation/menu-preload.js';
+	import { getAppMenuRegion } from '#lib/navigation/app-menu.svelte.js';
+	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { getStaffDashboard, type StaffDashboardOverview } from '#lib/api/staff.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { buildSidebarNavigation } from '#lib/components/layout/sidebar-navigation.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
-	import { authStore } from '$lib/stores/auth';
-	import { workStore } from '$lib/stores/work';
-	import { getIconComponent } from '$lib/utils/icon-mapper';
+	} from '#lib/components/ui/card/index.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { workStore } from '#lib/stores/work.js';
+	import { getIconComponent } from '#lib/utils/icon-mapper.js';
 	import {
 		ArrowRight,
 		Building2,

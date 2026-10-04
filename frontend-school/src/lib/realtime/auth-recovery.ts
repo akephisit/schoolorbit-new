@@ -1,4 +1,4 @@
-import type { AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
+import type { AuthRefreshResult } from '#lib/auth/auth-refresh-policy.js';
 
 export async function realtimeAuthRecovery(
 	refresh: () => Promise<AuthRefreshResult>

@@ -1,8 +1,8 @@
 import type { PageLoad } from './$types';
-import { listSubjectGroups } from '$lib/api/academic-core';
-import { CATALOG_SUBJECT_GROUPS_DEPENDENCY } from '$lib/academic-core/catalog-route';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { listSubjectGroups } from '#lib/api/academic-core.js';
+import { CATALOG_SUBJECT_GROUPS_DEPENDENCY } from '#lib/academic-core/catalog-route.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'none',

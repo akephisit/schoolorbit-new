@@ -1,4 +1,4 @@
-import type { SessionDto } from '$lib/api/auth';
+import type { SessionDto } from '#lib/api/auth.js';
 
 export function removeRevokedSession(sessions: SessionDto[], id: string): SessionDto[] {
 	return sessions.filter((session) => session.id !== id);

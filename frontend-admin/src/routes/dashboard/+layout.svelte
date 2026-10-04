@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { authStore } from '$lib/stores/auth.svelte';
-	import { page } from '$app/stores';
+	import { authStore } from '#lib/stores/auth.svelte.js';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -8,12 +8,12 @@
 	let { children } = $props();
 
 	// Current route tracking
-	let currentPath = $derived($page.url.pathname);
+	let currentPath = $derived(page.url.pathname);
 
 	// Protect routes - redirect to login if not authenticated
 	onMount(() => {
 		if (!authStore.isAuthenticated) {
-			goto(resolve('/login'));
+			goto(resolve('login'));
 		}
 	});
 

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { ArrowRight, CheckCircle2, History, ShieldAlert } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import {
 		getPromotionRunImpacts,
 		resolvePromotionRunImpact,
@@ -11,28 +11,28 @@
 		type PromotionPolicyOptions,
 		type PromotionRunStudent,
 		type ResolvePromotionImpactInput
-	} from '$lib/api/academic-promotion';
-	import { ApiClientError } from '$lib/api/client';
-	import { lookupHomerooms, type HomeroomLookupItem } from '$lib/api/lookup';
+	} from '#lib/api/academic-promotion.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { lookupHomerooms, type HomeroomLookupItem } from '#lib/api/lookup.js';
 	import {
 		decisionError,
 		decisionUsesDestination,
 		initialDecision,
 		outcomeLabels,
 		type DecisionDraft
-	} from '$lib/academic/lifecycle/promotion-presentation';
-	import { formatEffectiveResultValue } from '$lib/academic/results/presentation';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { LoadingButton, PageSkeleton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/academic/lifecycle/promotion-presentation.js';
+	import { formatEffectiveResultValue } from '#lib/academic/results/presentation.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { LoadingButton, PageSkeleton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let {
 		runId,

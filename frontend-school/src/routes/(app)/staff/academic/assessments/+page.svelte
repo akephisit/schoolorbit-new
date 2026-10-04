@@ -2,11 +2,11 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
+	} from '#lib/academic-context/store.js';
 	import {
 		getAssessmentPlan,
 		listAssessmentPhaseControls,
@@ -21,25 +21,25 @@
 		type AssessmentPlanSummary,
 		type AssessmentReadinessFinding,
 		type SaveAssessmentPhaseRequest
-	} from '$lib/api/academicAssessments';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
+	} from '#lib/api/academicAssessments.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
-	} from '$lib/components/academic-workflow';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Sheet from '$lib/components/ui/sheet';
-	import { Switch } from '$lib/components/ui/switch';
-	import * as Table from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/academic-workflow/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		BookOpenCheck,
 		CalendarClock,

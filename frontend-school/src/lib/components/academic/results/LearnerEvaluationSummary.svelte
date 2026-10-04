@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { presentLearnerEvaluationDomain } from '$lib/academic/learner-evaluation/presentation';
-	import type { StudentLearnerEvaluationSummary } from '$lib/api/academicLearnerEvaluations';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Card from '$lib/components/ui/card';
+	import { presentLearnerEvaluationDomain } from '#lib/academic/learner-evaluation/presentation.js';
+	import type { StudentLearnerEvaluationSummary } from '#lib/api/academicLearnerEvaluations.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import { BookOpenCheck, CircleAlert, ShieldCheck } from '@lucide/svelte';
 
 	let {

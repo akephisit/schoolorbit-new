@@ -14,22 +14,22 @@
 		type StudentAcademicYear,
 		type StudentYearCandidate,
 		type StudyProgramOption
-	} from '$lib/api/academic-core';
+	} from '#lib/api/academic-core.js';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { STUDENT_YEARS_WORKSPACE_DEPENDENCY } from '$lib/academic-core/foundation-route';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import StudentYearPlacementEditor from '$lib/components/academic-core/StudentYearPlacementEditor.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { STUDENT_YEARS_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import StudentYearPlacementEditor from '#lib/components/academic-core/StudentYearPlacementEditor.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { Plus, Search, UserRoundSearch } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 

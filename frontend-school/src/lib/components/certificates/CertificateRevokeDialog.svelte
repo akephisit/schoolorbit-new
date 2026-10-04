@@ -4,11 +4,11 @@
 		revokeIssuedCertificate,
 		type IssuedCertificateSummary,
 		type RevokeCertificateResult
-	} from '$lib/api/certificates';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/api/certificates.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { AlertTriangle, FilePlus2, ShieldAlert } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

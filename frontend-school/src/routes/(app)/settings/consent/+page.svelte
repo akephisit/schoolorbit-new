@@ -1,20 +1,20 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { resolve } from '$app/paths';
-	import { consentApi, type UserConsentStatus, type ConsentRecord } from '$lib/api/consent';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import * as Card from '$lib/components/ui/card';
-	import * as Alert from '$lib/components/ui/alert';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import StatusBadge from '$lib/components/consent/StatusBadge.svelte';
+	import { consentApi, type UserConsentStatus, type ConsentRecord } from '#lib/api/consent.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import StatusBadge from '#lib/components/consent/StatusBadge.svelte';
 	import { LoaderCircle, CheckCircle2, XCircle, Clock, Shield, Info } from '@lucide/svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { th } from 'date-fns/locale';
@@ -369,7 +369,7 @@
 				<Card.Content class="p-4">
 					<p class="text-sm text-muted-foreground text-center">
 						อ่านเพิ่มเติมที่
-						<a href={resolve('/privacy-policy')} class="text-primary underline hover:no-underline">
+						<a href={resolve('privacy-policy')} class="text-primary underline hover:no-underline">
 							นโยบายความเป็นส่วนตัว
 						</a>
 						หรือติดต่อเจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคล (DPO)

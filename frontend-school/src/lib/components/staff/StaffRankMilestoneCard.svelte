@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { CalendarClock, Info } from '@lucide/svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { buttonVariants } from '$lib/components/ui/button';
-	import { formatCareerDate } from '$lib/forms/staff-career';
-	import { ACADEMIC_RANK_LABELS } from '$lib/forms/staff-personnel';
-	import type { RankMilestone } from '$lib/api/personnel';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { buttonVariants } from '#lib/components/ui/button/index.js';
+	import { formatCareerDate } from '#lib/forms/staff-career.js';
+	import { ACADEMIC_RANK_LABELS } from '#lib/forms/staff-personnel.js';
+	import type { RankMilestone } from '#lib/api/personnel.js';
 	let { milestone }: { milestone: RankMilestone } = $props();
-	import { RANK_MILESTONE_LABELS as labels } from '$lib/forms/rank-milestones';
+	import { RANK_MILESTONE_LABELS as labels } from '#lib/forms/rank-milestones.js';
 	const nextLabel = $derived(milestone.nextRank ? ACADEMIC_RANK_LABELS[milestone.nextRank] : '—');
 </script>
 

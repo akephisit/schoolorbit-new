@@ -1,29 +1,29 @@
 <script lang="ts">
-	import { goto, replaceState, pushState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { addMonths } from 'date-fns';
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { resolveScopedAcademicContextUrl } from '$lib/academic-context/scoped-year';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { resolveScopedAcademicContextUrl } from '#lib/academic-context/scoped-year.js';
 	import {
 		listMyAcademicContextOptions,
 		type AcademicContextOptionsResponse
-	} from '$lib/api/academic-context';
-	import { calendarRouteFilters } from '$lib/utils/calendar-route-filters';
-	import { type CalendarViewerEvent, listMyCalendarEvents } from '$lib/api/calendar';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import CalendarEventList from '$lib/components/calendar/CalendarEventList.svelte';
-	import CalendarMonthGrid from '$lib/components/calendar/CalendarMonthGrid.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/academic-context.js';
+	import { calendarRouteFilters } from '#lib/utils/calendar-route-filters.js';
+	import { type CalendarViewerEvent, listMyCalendarEvents } from '#lib/api/calendar.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import CalendarEventList from '#lib/components/calendar/CalendarEventList.svelte';
+	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		calendarGridRange,
 		eventOverlapsDate,
@@ -31,7 +31,7 @@
 		formatCalendarMonth,
 		monthRange,
 		toIsoDate
-	} from '$lib/utils/calendar';
+	} from '#lib/utils/calendar.js';
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
@@ -146,7 +146,11 @@
 		selectedTermId = v.data.academicTermId;
 		if (v.data.replaceHref) {
 			const url = new URL(v.data.replaceHref);
-			replaceState(resolve(`${url.pathname}${url.search}` as '/student/calendar'), page.state);
+			goto(resolve('student/calendar') + url.search, {
+				shallow: true,
+				replace: true,
+				state: page.state
+			});
 		}
 	}
 	function applyRecords(
@@ -220,9 +224,8 @@
 		if (termId) url.searchParams.set('academicTermId', termId);
 		else url.searchParams.delete('academicTermId');
 		url.searchParams.set('month', selectedMonth.slice(0, 7));
-		await goto(resolve(`${url.pathname}${url.search}` as '/student/calendar'), {
-			noScroll: true,
-			keepFocus: true
+		await goto(resolve('student/calendar') + url.search, {
+			reset: false
 		});
 	}
 	async function changeYear(yearId: string) {
@@ -247,9 +250,9 @@
 		if (selectedTermId) url.searchParams.set('academicTermId', selectedTermId);
 		else url.searchParams.delete('academicTermId');
 		url.searchParams.set('month', next.slice(0, 7));
-		pushState(resolve(`${url.pathname}${url.search}` as '/student/calendar'), {
-			...page.state,
-			learnerCalendarUrl: url.href
+		goto(resolve('student/calendar') + url.search, {
+			shallow: true,
+			state: { ...page.state, learnerCalendarUrl: url.href }
 		});
 	}
 </script>

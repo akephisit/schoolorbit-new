@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { getAppMenuRegion } from '$lib/navigation/app-menu.svelte';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { getAppMenuRegion } from '#lib/navigation/app-menu.svelte.js';
 	import {
 		deleteMenuItem,
 		listMenuGroups,
@@ -17,24 +17,24 @@
 		type MenuGroup,
 		type MenuItem,
 		type MenuWorkspace
-	} from '$lib/api/menu-admin';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import GroupManagementDialog from '$lib/components/menu/GroupManagementDialog.svelte';
-	import AcademicMenuTemplateDialog from '$lib/components/menu/AcademicMenuTemplateDialog.svelte';
-	import MenuGroupContainer from '$lib/components/menu/MenuGroupContainer.svelte';
-	import MenuItemManagementDialog from '$lib/components/menu/MenuItemManagementDialog.svelte';
-	import SortableItem from '$lib/components/menu/SortableItem.svelte';
-	import WorkspaceManagementDialog from '$lib/components/menu/WorkspaceManagementDialog.svelte';
-	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Card } from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { getIconComponent } from '$lib/utils/icon-mapper';
+	} from '#lib/api/menu-admin.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import GroupManagementDialog from '#lib/components/menu/GroupManagementDialog.svelte';
+	import AcademicMenuTemplateDialog from '#lib/components/menu/AcademicMenuTemplateDialog.svelte';
+	import MenuGroupContainer from '#lib/components/menu/MenuGroupContainer.svelte';
+	import MenuItemManagementDialog from '#lib/components/menu/MenuItemManagementDialog.svelte';
+	import SortableItem from '#lib/components/menu/SortableItem.svelte';
+	import WorkspaceManagementDialog from '#lib/components/menu/WorkspaceManagementDialog.svelte';
+	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { getIconComponent } from '#lib/utils/icon-mapper.js';
 	import { GripVertical, Pencil } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

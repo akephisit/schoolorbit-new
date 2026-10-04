@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { academicContextualMenuPath } from '$lib/academic-context/route-context';
-	import type { LearningDeliveryRefreshScope } from '$lib/academic/learning-delivery-page';
+	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
+	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
 		cancelAcademicTermChangeSet,
 		getAcademicTermChangeSet,
@@ -10,12 +10,12 @@
 		type AcademicChangeFindingCode,
 		type AcademicTermChangeSet,
 		type AcademicTermChangeSetPreview
-	} from '$lib/api/learning-delivery';
-	import { ApiClientError } from '$lib/api/client';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/api/learning-delivery.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import {
 		CheckCircle2,
 		CircleAlert,

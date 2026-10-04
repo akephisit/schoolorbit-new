@@ -2,8 +2,8 @@
 // API for fetching minimal reference data for dropdowns.
 // Generic lookup responses must stay small; workflow-specific detail belongs in options endpoints.
 
-import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
-import type { components, operations } from '$lib/api/generated/school-api';
+import { apiClient, requireApiData, type ApiRequestOptions } from '#lib/api/client.js';
+import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 

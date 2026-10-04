@@ -42,8 +42,8 @@ export interface ConsentSummary {
 // Consent API Client
 // ===================================================================
 
-import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import { apiClient, requireApiData, type ApiRequestOptions } from '#lib/api/client.js';
+import type { components } from '#lib/api/generated/school-api.js';
 
 const API_BASE = '/api';
 

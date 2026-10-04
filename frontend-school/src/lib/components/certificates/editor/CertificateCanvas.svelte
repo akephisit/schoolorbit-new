@@ -1,5 +1,8 @@
 <script lang="ts">
-	import type { CertificateRenderManifest, CertificateTemplateDetail } from '$lib/api/certificates';
+	import type {
+		CertificateRenderManifest,
+		CertificateTemplateDetail
+	} from '#lib/api/certificates.js';
 	import {
 		certificateManifestExpiresSoon,
 		certificateManifestNeedsLayoutGrants,
@@ -13,10 +16,10 @@
 		type CertificateElement,
 		type CertificateLayout,
 		type ResizeHandle
-	} from '$lib/certificates/editor-state';
-	import { interpolateCertificateText } from '$lib/certificates/interpolation';
-	import { pointsToMillimetres } from '$lib/certificates/layout';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
+	} from '#lib/certificates/editor-state.js';
+	import { interpolateCertificateText } from '#lib/certificates/interpolation.js';
+	import { pointsToMillimetres } from '#lib/certificates/layout.js';
+	import { loadCertificateRenderer } from '#lib/certificates/renderer.js';
 	import { AlertTriangle, Image as ImageIcon, QrCode } from '@lucide/svelte';
 	import { untrack } from 'svelte';
 

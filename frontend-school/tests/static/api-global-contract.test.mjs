@@ -825,13 +825,13 @@ test('staff manage pilot uses shadcn-svelte surfaces and permission gates', asyn
 	const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 	for (const requiredImport of [
-		'$lib/components/ui/button',
-		'$lib/components/ui/input',
-		'$lib/components/ui/dialog',
-		'$lib/components/ui/table',
-		'$lib/components/ui/card',
-		'$lib/components/ui/badge',
-		'$lib/components/app-state'
+		'#lib/components/ui/button/index.js',
+		'#lib/components/ui/input/index.js',
+		'#lib/components/ui/dialog/index.js',
+		'#lib/components/ui/table/index.js',
+		'#lib/components/ui/card/index.js',
+		'#lib/components/ui/badge/index.js',
+		'#lib/components/app-state/index.js'
 	]) {
 		assert.match(source, new RegExp(escapeRegex(requiredImport)));
 	}
@@ -853,7 +853,7 @@ test('roles and organization pages gate module actions with permission booleans'
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/roles/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.ROLES_READ_ALL',
 				'PERMISSIONS.ROLES_CREATE_ALL',
@@ -863,7 +863,7 @@ test('roles and organization pages gate module actions with permission booleans'
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/roles/[id]/+page.svelte',
-			imports: ['$lib/components/ui/alert', '$lib/components/ui/select'],
+			imports: ['#lib/components/ui/alert/index.js', '#lib/components/ui/select/index.js'],
 			permissions: [
 				'PERMISSIONS.ROLES_READ_ALL',
 				'PERMISSIONS.ROLES_CREATE_ALL',
@@ -881,7 +881,7 @@ test('roles and organization pages gate module actions with permission booleans'
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/organization/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.ROLES_READ_ALL',
 				'PERMISSIONS.ROLES_CREATE_ALL',
@@ -938,7 +938,7 @@ test('settings workspace pages gate module actions with permission booleans', as
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/menu/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.MENU_READ_ALL',
 				'PERMISSIONS.MENU_CREATE_ALL',
@@ -961,13 +961,13 @@ test('settings workspace pages gate module actions with permission booleans', as
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/features/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.FEATURES_READ_ALL', 'PERMISSIONS.FEATURES_UPDATE_ALL'],
 			identifiers: ['canReadFeatures', 'canUpdateFeatures']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/school-settings/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.SETTINGS_READ_ALL', 'PERMISSIONS.SETTINGS_UPDATE_ALL'],
 			identifiers: ['canReadSettings', 'canUpdateSettings']
 		}
@@ -995,7 +995,7 @@ test('academic structure workspace pages gate read and mutation actions', async 
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/core/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL',
 				'PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL',
@@ -1005,13 +1005,13 @@ test('academic structure workspace pages gate read and mutation actions', async 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/homerooms/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.HOMEROOM_MANAGE_SCHOOL'],
 			identifiers: ['canManage']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/student-years/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL'],
 			identifiers: ['canManage']
 		}
@@ -1039,13 +1039,13 @@ test('academic catalog and curriculum workspaces gate mutation actions', async (
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/catalog/subject-groups/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ACADEMIC_CATALOG_MANAGE_SCHOOL'],
 			identifiers: ['canManage']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/curricula/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL'],
 			identifiers: ['canManageAcademicCurriculum']
 		}
@@ -1112,13 +1112,13 @@ test('academic course planning pages gate read and manage actions', async () => 
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/delivery/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: offeringPermissions.filter((permission) => permission.includes('MANAGE')),
 			identifiers: ['canManage']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL',
 				'PERMISSIONS.ACADEMIC_TIMETABLE_READ_ORGANIZATION_UNIT',
@@ -1133,7 +1133,7 @@ test('academic course planning pages gate read and manage actions', async () => 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/today/+page.svelte',
-			imports: ['$lib/components/app-state', '$lib/components/app-layout'],
+			imports: ['#lib/components/app-state/index.js', '#lib/components/app-layout/index.js'],
 			permissions: ['PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL', ...offeringPermissions],
 			identifiers: [
 				'getDailyTeachingOverview',
@@ -1206,7 +1206,7 @@ test('daily teaching overview page is table based and read only', async () => {
 	assert.match(page, /Dialog\.Root/);
 	assert.match(page, /href=\{academicContextualMenuPath\(/);
 	assert.match(page, /academicYearId: data\.academicYearId, academicTermId/);
-	assert.match(page, /from '\$lib\/components\/ui\/date-picker'/);
+	assert.match(page, /from '#lib\/components\/ui\/date-picker\/index\.js'/);
 	assert.match(
 		page,
 		/<DatePicker[\s\S]*id="teaching-date"[\s\S]*value=\{selectedDate\}[\s\S]*onValueChange=\{handleDateChange\}[\s\S]*class="min-w-48"/
@@ -1222,7 +1222,7 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.STUDENT_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_READ_ASSIGNED',
@@ -1234,7 +1234,7 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/[id]/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.STUDENT_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_READ_ASSIGNED',
@@ -1246,7 +1246,7 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/[id]/edit/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.STUDENT_READ_SCHOOL',
 				'PERMISSIONS.STUDENT_READ_ASSIGNED',
@@ -1259,7 +1259,7 @@ test('student workspace pages gate read, mutation, and PII actions', async () =>
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/students/new/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.STUDENT_CREATE_ALL', 'PERMISSIONS.STUDENT_PII_READ_SCHOOL'],
 			identifiers: ['canCreateStudent', 'canHandleStudentPii']
 		}
@@ -1293,7 +1293,7 @@ test('achievement workspace gates read and owner/all mutation actions', async ()
 			'utf8'
 		)
 	);
-	const requiredImports = ['$lib/components/app-state'];
+	const requiredImports = ['#lib/components/app-state/index.js'];
 	const requiredPermissions = [
 		'PERMISSIONS.ACHIEVEMENT_READ_OWN',
 		'PERMISSIONS.ACHIEVEMENT_READ_ALL',
@@ -1327,19 +1327,19 @@ test('admission workspace pages gate read and specialized actions', async () => 
 	const routeExpectations = [
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canReadAdmission', 'canManageAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/new/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canManageAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: [
 				'PERMISSIONS.ADMISSION_READ_ALL',
 				'PERMISSIONS.ADMISSION_MANAGE_ALL',
@@ -1357,49 +1357,49 @@ test('admission workspace pages gate read and specialized actions', async () => 
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_VERIFY_ALL'],
 			identifiers: ['canReadAdmission', 'canVerifyAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/applications/[appId]/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL', 'PERMISSIONS.ADMISSION_VERIFY_ALL'],
 			identifiers: ['canReadAdmission', 'canVerifyAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canManageAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/scores/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_SCORES_ALL'],
 			identifiers: ['canScoreAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/selections/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_SCORES_ALL'],
 			identifiers: ['canScoreAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/student-ids/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_MANAGE_ALL'],
 			identifiers: ['canManageAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/enrollment/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_ENROLL_ALL'],
 			identifiers: ['canEnrollAdmission']
 		},
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/admission/[id]/report/+page.svelte',
-			imports: ['$lib/components/app-state'],
+			imports: ['#lib/components/app-state/index.js'],
 			permissions: ['PERMISSIONS.ADMISSION_READ_ALL'],
 			identifiers: ['canReadAdmission']
 		}
@@ -1478,7 +1478,7 @@ test('facility workspace gates read and mutation actions', async () => {
 			'utf8'
 		)
 	);
-	const requiredImports = ['$lib/components/app-state'];
+	const requiredImports = ['#lib/components/app-state/index.js'];
 	const requiredPermissions = [
 		'PERMISSIONS.FACILITY_READ_ALL',
 		'PERMISSIONS.FACILITY_CREATE_ALL',
@@ -1916,16 +1916,16 @@ test('web push subscription setup stays user gesture safe for iOS', async () => 
 	for (const settingsPage of [staffSettings, studentSettings]) {
 		assert.match(
 			settingsPage,
-			/import PushNotificationSettings from '\$lib\/components\/settings\/PushNotificationSettings\.svelte'/
+			/import PushNotificationSettings from '#lib\/components\/settings\/PushNotificationSettings\.svelte'/
 		);
 		assert.match(settingsPage, /activeTab = \$state<'security' \| 'app' \| 'notifications'>/);
 		assert.match(settingsPage, /activeTab === 'notifications'/);
 		assert.match(settingsPage, /<PushNotificationSettings \/>/);
 	}
 
-	assert.match(pushSettingsComponent, /from '\$lib\/components\/ui\/card'/);
-	assert.match(pushSettingsComponent, /from '\$lib\/components\/ui\/badge'/);
-	assert.match(pushSettingsComponent, /from '\$lib\/components\/app-state'/);
+	assert.match(pushSettingsComponent, /from '#lib\/components\/ui\/card\/index\.js'/);
+	assert.match(pushSettingsComponent, /from '#lib\/components\/ui\/badge\/index\.js'/);
+	assert.match(pushSettingsComponent, /from '#lib\/components\/app-state\/index\.js'/);
 	assert.match(pushSettingsComponent, /notificationStore\.getPushStatus\(\)/);
 	assert.match(pushSettingsComponent, /notificationStore\.enablePushFromUserAction\(true\)/);
 	assert.match(pushSettingsComponent, /เปิด\/ซิงก์การแจ้งเตือน/);
@@ -1992,7 +1992,7 @@ test('gradebook and result pages consume typed feature wrappers instead of the r
 			path.join(repoRoot, `frontend-school/src/routes/(app)/staff/academic/${route}/+page.svelte`),
 			'utf8'
 		);
-		assert.doesNotMatch(source, /\$lib\/api\/client|\bapiClient\./, route);
+		assert.doesNotMatch(source, /#lib\/api\/client|\bapiClient\./, route);
 	}
 });
 

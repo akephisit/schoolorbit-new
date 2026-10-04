@@ -7,8 +7,8 @@ import {
 } from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { toCanvas as renderQrToCanvas } from 'qrcode';
-import { apiClient } from '$lib/api/client';
-import type { CertificateRenderManifest } from '$lib/api/certificates';
+import { apiClient } from '#lib/api/client.js';
+import type { CertificateRenderManifest } from '#lib/api/certificates.js';
 import { validateCertificateBatchSize } from './download';
 import { interpolateCertificateText } from './interpolation';
 import { describePaper } from './paper';

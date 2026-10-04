@@ -3,11 +3,11 @@
 		ExamSourceChange,
 		ExamSourcePreview,
 		ExamSourceSyncItemResult
-	} from '$lib/api/examSchedule';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
+	} from '#lib/api/examSchedule.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import {
 		CheckCircle2,
 		CircleAlert,

@@ -147,7 +147,7 @@ test('project rules own durable development and verification workflows', async (
 		'## 4. Permissions and Resource Authorization',
 		'## 5. API Contracts',
 		'## 6. Database Migrations',
-		'## 7. Frontend: SvelteKit 5',
+		'## 7. Frontend: SvelteKit 3 / Svelte 5',
 		'## 9. Security, PDPA, and Logging',
 		'## 11. Verification Matrix',
 		'### Canonical replacements and data preservation',
@@ -189,7 +189,7 @@ test('project rules own durable development and verification workflows', async (
 	const migrationPolicy = requiredSection(
 		rules,
 		'## 6. Database Migrations',
-		'## 7. Frontend: SvelteKit 5'
+		'## 7. Frontend: SvelteKit 3 / Svelte 5'
 	);
 	assert.match(migrationPolicy, /every database-changing phase/);
 	assert.match(migrationPolicy, /blocks both consumer cutover and destructive cleanup/);
@@ -371,7 +371,7 @@ test('development rules own route data loading and navigation performance', asyn
 	assert.match(rules, /typed in-flight/);
 	assert.match(rules, /real data dependency/);
 	assert.match(rules, /visible independent region reads[\s\S]*concurrently/);
-	assert.match(rules, /invalidateAll\(\)/);
+	assert.match(rules, /refreshAll\(\)/);
 	assert.match(rules, /cache[\s\S]*tenant[\s\S]*invalidation/);
 });
 

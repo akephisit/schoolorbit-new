@@ -1,7 +1,10 @@
 import type { PageLoad } from './$types';
-import { searchEffectiveAcademicResults, type EffectiveResultKind } from '$lib/api/academicResults';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import {
+	searchEffectiveAcademicResults,
+	type EffectiveResultKind
+} from '#lib/api/academicResults.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 function requestedKind(value: string | null): 'all' | EffectiveResultKind {
 	return value === 'course' || value === 'activity' || value === 'learner_evaluation'

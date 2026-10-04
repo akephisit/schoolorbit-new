@@ -1,7 +1,10 @@
 <script lang="ts">
-	import type { CertificateRenderManifest, CertificateTemplateDetail } from '$lib/api/certificates';
-	import CertificateBackgroundUpload from '$lib/components/certificates/CertificateBackgroundUpload.svelte';
-	import * as Dialog from '$lib/components/ui/dialog';
+	import type {
+		CertificateRenderManifest,
+		CertificateTemplateDetail
+	} from '#lib/api/certificates.js';
+	import CertificateBackgroundUpload from '#lib/components/certificates/CertificateBackgroundUpload.svelte';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { ArrowRight, Maximize2, RotateCcw, Scale } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

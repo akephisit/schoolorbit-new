@@ -1,8 +1,8 @@
 // Menu API Client
 // API for fetching user's dynamic menu based on permissions
 
-import { apiClient, type ApiRequestOptions } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import { apiClient, type ApiRequestOptions } from '#lib/api/client.js';
+import type { components } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 

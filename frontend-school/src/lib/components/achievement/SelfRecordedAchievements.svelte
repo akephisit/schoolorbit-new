@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Input } from '$lib/components/ui/input';
-	import * as Tabs from '$lib/components/ui/tabs';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		Table,
 		TableBody,
@@ -19,14 +19,14 @@
 		TableHead,
 		TableHeader,
 		TableRow
-	} from '$lib/components/ui/table';
+	} from '#lib/components/ui/table/index.js';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
+	} from '#lib/components/ui/card/index.js';
 	import {
 		Plus,
 		Search,
@@ -43,11 +43,11 @@
 		createAchievement,
 		updateAchievement,
 		deleteAchievement
-	} from '$lib/api/achievement';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import type { Achievement, AchievementListFilter } from '$lib/types/achievement';
-	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	} from '#lib/api/achievement.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import type { Achievement, AchievementListFilter } from '#lib/types/achievement.js';
+	import AchievementDialog from '#lib/components/achievement/AchievementDialog.svelte';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import { toast } from 'svelte-sonner';
 
 	// State
@@ -501,7 +501,7 @@
 														size="icon"
 														class="h-8 w-8"
 														href={`/staff/view/${achievement.user_id}`}
-														data-sveltekit-preload-data="off"
+														data-sveltekit-preload-data={false}
 														title="ดูโปรไฟล์"
 													>
 														<ExternalLink class="w-4 h-4" />

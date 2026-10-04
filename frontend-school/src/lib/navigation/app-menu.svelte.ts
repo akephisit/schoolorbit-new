@@ -1,8 +1,8 @@
 import { getContext, setContext } from 'svelte';
-import { getUserMenu, type MenuGroup } from '$lib/api/menu';
-import { appIdentityKey, waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { LatestRequest } from '$lib/async/latest-request';
-import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+import { getUserMenu, type MenuGroup } from '#lib/api/menu.js';
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { LatestRequest } from '#lib/async/latest-request.js';
+import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 
 export type AppMenuRead = { identityKey: string; groups: MenuGroup[] };
 const contextKey = Symbol('app-menu-region');

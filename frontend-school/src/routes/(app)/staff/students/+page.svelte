@@ -4,11 +4,11 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { listStudents, deleteStudent, type StudentListItem } from '$lib/api/students';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { listStudents, deleteStudent, type StudentListItem } from '#lib/api/students.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import {
 		Dialog,
 		DialogContent,
@@ -16,12 +16,12 @@
 		DialogFooter,
 		DialogHeader,
 		DialogTitle
-	} from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { Plus, Search, Pencil, Trash2, Eye } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -142,9 +142,9 @@
 
 	function changePage(nextPage: number) {
 		if (!academicYearId || nextPage < 1 || deleting) return;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('page', String(nextPage));
-		void goto(resolve(`/staff/students?${url.searchParams.toString()}`));
+		void goto(resolve(`staff/students?${url.searchParams.toString()}`));
 	}
 
 	function openDeleteDialog(student: StudentListItem) {
@@ -179,13 +179,14 @@
 	}
 	function handleSearch() {
 		if (!canReadStudents || deleting) return;
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (searchQuery) url.searchParams.set('search', searchQuery);
 		else url.searchParams.delete('search');
 		url.searchParams.set('status', statusFilter);
 		url.searchParams.delete('page');
+
 		if (url.href === page.url.href) void reloadCurrentYear();
-		else void goto(resolve(`/staff/students?${url.searchParams.toString()}`));
+		else void goto(resolve(`staff/students?${url.searchParams.toString()}`));
 	}
 	function handleReset() {
 		searchQuery = '';

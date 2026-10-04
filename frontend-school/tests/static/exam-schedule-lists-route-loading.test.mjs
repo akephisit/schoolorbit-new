@@ -33,7 +33,7 @@ test('exam list wrappers use route fetch and large or unbounded lists do not hov
 	assert.match(api, /listStaffExamSchedules[\s\S]{0,100}ApiRequestOptions/);
 	assert.match(
 		policy,
-		/if \(\s*path === '\/staff\/academic\/exam-schedules' \|\|\s*path === '\/staff\/exams'[^)]*\)\s*return 'off'/
+		/if \(\s*path === '\/staff\/academic\/exam-schedules' \|\|\s*path === '\/staff\/exams'[^)]*\)\s*return false/
 	);
 	assert.match(sidebar, /data-sveltekit-preload-data=\{menuPreloadPolicy\(item\)\}/);
 });

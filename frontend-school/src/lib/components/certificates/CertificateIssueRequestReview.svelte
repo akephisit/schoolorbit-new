@@ -12,16 +12,16 @@
 		type CertificateIssueRequestItem,
 		type CertificateIssueRequestStatus,
 		type IssueCertificateOutcome
-	} from '$lib/api/certificates';
-	import type { CertificatePreviewState } from '$lib/certificates/preview-fit';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import CertificateIssueConfirmationDialog from '$lib/components/certificates/CertificateIssueConfirmationDialog.svelte';
-	import CertificatePreviewDialog from '$lib/components/certificates/CertificatePreviewDialog.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Table from '$lib/components/ui/table';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/api/certificates.js';
+	import type { CertificatePreviewState } from '#lib/certificates/preview-fit.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import CertificateIssueConfirmationDialog from '#lib/components/certificates/CertificateIssueConfirmationDialog.svelte';
+	import CertificatePreviewDialog from '#lib/components/certificates/CertificatePreviewDialog.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import {
 		AlertTriangle,
 		ArrowLeft,
@@ -34,8 +34,8 @@
 		UsersRound
 	} from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { toast } from 'svelte-sonner';
 
 	let {
@@ -388,7 +388,7 @@
 
 	{#snippet actions()}
 		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" href={resolve('/staff/certificate-requests')}>
+			<Button variant="outline" href={resolve('staff/certificate-requests')}>
 				<ArrowLeft class="size-4" /> กลับคิวคำขอ
 			</Button>
 			{#if canIssue && request?.capabilities.canStartReview}
@@ -451,9 +451,7 @@
 									</div>
 								</div>
 								<a
-									href={resolve(
-										`/staff/certificates/${request.campaignId}/issued` as '/staff/certificates/[campaignId]/issued'
-									)}
+									href={resolve(`staff/certificates/${request.campaignId}/issued`)}
 									class="mt-4 inline-flex items-center font-medium text-emerald-900 underline underline-offset-4"
 								>
 									เปิดทะเบียนใบที่ออกแล้ว

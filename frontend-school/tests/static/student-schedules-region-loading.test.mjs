@@ -17,7 +17,7 @@ for (const route of ['timetable', 'exams', 'calendar', 'activities']) {
 }
 test('month history only reloads events; registration is mutation-owned', async () => {
 	const calendar = await read('routes/(app)/student/calendar/+page.svelte');
-	assert.match(calendar, /pushState/);
+	assert.match(calendar, /shallow:\s*true/);
 	assert.match(calendar, /learnerCalendarUrl/);
 	const activities = await read('routes/(app)/student/activities/+page.svelte');
 	assert.match(activities, /applyRegistrationResult/);

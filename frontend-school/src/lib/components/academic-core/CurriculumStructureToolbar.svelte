@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { CurriculumStructureWorkspace } from '$lib/api/academic-core';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
-	import * as Tabs from '$lib/components/ui/tabs';
+	import type { CurriculumStructureWorkspace } from '#lib/api/academic-core.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { PencilLine, ShieldAlert } from '@lucide/svelte';
 
 	let {

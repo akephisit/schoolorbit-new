@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { QuestionFile, RichContent, RichInlineNode } from '$lib/api/questionBank';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	import type { QuestionFile, RichContent, RichInlineNode } from '#lib/api/questionBank.js';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import MathContent from './MathContent.svelte';
 
 	interface Props {

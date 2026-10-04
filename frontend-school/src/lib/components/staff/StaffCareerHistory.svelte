@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		listStaffCareerHistory,
 		type StaffCareerHistoryPage,
 		type StaffCareerMutationAck
-	} from '$lib/api/staff-career';
+	} from '#lib/api/staff-career.js';
 	import {
 		formatCareerDate,
 		CAREER_KIND_LABELS,
 		type StaffCareerEntry
-	} from '$lib/forms/staff-career';
-	import { staffCareerEntryLabel } from '$lib/forms/staff-personnel';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	} from '#lib/forms/staff-career.js';
+	import { staffCareerEntryLabel } from '#lib/forms/staff-personnel.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Plus, Pencil, RefreshCw, CalendarDays, History, LoaderCircle } from '@lucide/svelte';
 	import StaffRankMilestoneCard from './StaffRankMilestoneCard.svelte';
 	import StaffCareerEntryDialog from './StaffCareerEntryDialog.svelte';

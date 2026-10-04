@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
-	import { browser } from '$app/environment';
-	import { Input } from '$lib/components/ui/input';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { browser } from '$app/env';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import {
 		Dialog,
 		DialogContent,
@@ -12,15 +12,15 @@
 		DialogFooter,
 		DialogHeader,
 		DialogTitle
-	} from '$lib/components/ui/dialog';
+	} from '#lib/components/ui/dialog/index.js';
 	import { LoaderCircle, Upload, X } from '@lucide/svelte';
-	import type { Achievement } from '$lib/types/achievement';
+	import type { Achievement } from '#lib/types/achievement.js';
 	import { toast } from 'svelte-sonner';
-	import { achievementSchema } from '$lib/validation/schemas';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	import { achievementSchema } from '#lib/validation/schemas.js';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { PageState } from '$lib/components/app-state';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { PageState } from '#lib/components/app-state/index.js';
 
 	interface Props {
 		open: boolean;
@@ -61,12 +61,12 @@
 	let errors = $state<Record<string, string>>({});
 
 	// Staff List for selection
-	import { lookupStaff, type StaffLookupItem } from '$lib/api/lookup';
-	import { uploadFile } from '$lib/api/files';
-	import * as Popover from '$lib/components/ui/popover';
-	import * as Command from '$lib/components/ui/command';
+	import { lookupStaff, type StaffLookupItem } from '#lib/api/lookup.js';
+	import { uploadFile } from '#lib/api/files.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
 	import { Check, ChevronsUpDown } from '@lucide/svelte';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils.js';
 
 	let staffList = $state<StaffLookupItem[]>([]),
 		staffSearch = $state(''),

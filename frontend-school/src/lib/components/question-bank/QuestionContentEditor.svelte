@@ -12,18 +12,18 @@
 		Type,
 		Undo2
 	} from '@lucide/svelte';
-	import { buttonVariants, Button } from '$lib/components/ui/button';
+	import { buttonVariants, Button } from '#lib/components/ui/button/index.js';
 	import {
 		createQuestionEditorExtensions,
 		imageNode,
 		type MathFocusTarget
-	} from '$lib/question-bank/rich-editor-extensions';
+	} from '#lib/question-bank/rich-editor-extensions.js';
 	import {
 		emptyEditorRichContent,
 		type EditorRichContent,
 		type PendingImageReference
-	} from '$lib/question-bank/rich-document';
-	import { cn } from '$lib/utils';
+	} from '#lib/question-bank/rich-document.js';
+	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		label: string;

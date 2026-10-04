@@ -1,4 +1,4 @@
-import { PERMISSION_MODULES, PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSION_MODULES, PERMISSIONS } from '#lib/permissions/registry.js';
 
 const achievementsAccess = [PERMISSION_MODULES.ACHIEVEMENT, PERMISSIONS.CERTIFICATE_READ_OWN];
 

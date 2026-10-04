@@ -1,7 +1,7 @@
 import type { PageLoad } from './$types';
-import { currentLocalDate, getDailyTeachingOverview } from '$lib/api/timetable';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { currentLocalDate, getDailyTeachingOverview } from '#lib/api/timetable.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

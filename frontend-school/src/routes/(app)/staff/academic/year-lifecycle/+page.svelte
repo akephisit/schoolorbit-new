@@ -6,33 +6,33 @@
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
-	import { termStatusLabels } from '$lib/academic/lifecycle/presentation';
+	} from '#lib/academic-context/store.js';
+	import { termStatusLabels } from '#lib/academic/lifecycle/presentation.js';
 	import {
 		getYearLifecycleWorkspace,
 		transitionAcademicYear,
 		type YearLifecycleWorkspace,
 		type YearTransitionAction,
 		type YearTransitionRequest
-	} from '$lib/api/academic-lifecycle';
-	import { ApiClientError } from '$lib/api/client';
-	import type { YearReopeningOutcome } from '$lib/api/academic-lifecycle';
-	import YearReopeningDialog from '$lib/components/academic/lifecycle/YearReopeningDialog.svelte';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/academic-lifecycle.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import type { YearReopeningOutcome } from '#lib/api/academic-lifecycle.js';
+	import YearReopeningDialog from '#lib/components/academic/lifecycle/YearReopeningDialog.svelte';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		PageState,
 		PageSkeleton,
 		LoadingButton,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Label } from '$lib/components/ui/label';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Table from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -289,7 +289,7 @@
 											variant="ghost"
 											size="sm"
 											href={resolve(
-												`/staff/academic/term-lifecycle?academicYearId=${yearId}&academicTermId=${term.academicTermId}`
+												`staff/academic/term-lifecycle?academicYearId=${yearId}&academicTermId=${term.academicTermId}`
 											)}
 											data-sveltekit-preload-data="tap"
 											>ตรวจภาคเรียน<ArrowUpRight class="size-4" /></Button
@@ -317,7 +317,7 @@
 						{#if canReadAnnual}<Button
 								variant="outline"
 								size="sm"
-								href={resolve(`/staff/academic/results/annual?academicYearId=${yearId}`)}
+								href={resolve(`staff/academic/results/annual?academicYearId=${yearId}`)}
 								>ตรวจผลรายปี<ArrowUpRight class="size-4" /></Button
 							>{/if}
 					</div>

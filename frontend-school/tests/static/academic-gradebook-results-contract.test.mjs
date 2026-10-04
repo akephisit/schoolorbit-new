@@ -66,7 +66,7 @@ async function importWrapper(relativePath) {
 	`;
 	const clientUrl = `data:text/javascript;base64,${Buffer.from(clientModule).toString('base64')}`;
 	const source = (await read(relativePath)).replace(
-		/(['"])\$lib\/api\/client\1/g,
+		/(['"])#lib\/api\/client\.js\1/g,
 		`'${clientUrl}'`
 	);
 	const compiled = ts.transpileModule(source, {

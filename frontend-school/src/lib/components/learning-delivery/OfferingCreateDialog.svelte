@@ -4,13 +4,13 @@
 		getLearningDeliveryManagementOptions,
 		type DeliveryManagementOptions,
 		type LearningOfferingOverviewItem
-	} from '$lib/api/learning-delivery';
-	import type { SynchronizedActivityPreparationTarget } from '$lib/academic/synchronized-activity-delivery';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/learning-delivery.js';
+	import type { SynchronizedActivityPreparationTarget } from '#lib/academic/synchronized-activity-delivery.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { BookCopy, Plus, Sparkles } from '@lucide/svelte';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 	import OfferingCurriculumPreview from './OfferingCurriculumPreview.svelte';

@@ -4,16 +4,16 @@
 		ExamScheduleItem,
 		ExamSession,
 		PlaceExamSessionInput
-	} from '$lib/api/examSchedule';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
-	import { addMinutes, validateExamSessionPlacement } from '$lib/utils/examScheduleTime';
+	} from '#lib/api/examSchedule.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { compareExamDaysByDate } from '#lib/utils/examScheduleDayOrder.js';
+	import { addMinutes, validateExamSessionPlacement } from '#lib/utils/examScheduleTime.js';
 	import { CalendarPlus, GripVertical } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 

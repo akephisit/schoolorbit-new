@@ -3,10 +3,10 @@
 		TimetableBoardRow,
 		TimetableBoardState,
 		TimetableBoardView
-	} from '$lib/academic/timetable/board-state';
-	import { blocksForTimetableCell } from '$lib/academic/timetable/board-state';
-	import type { TimetableBlock } from '$lib/api/timetable';
-	import { buildSchedulerTargetLabel } from '$lib/academic/timetable/block-display';
+	} from '#lib/academic/timetable/board-state.js';
+	import { blocksForTimetableCell } from '#lib/academic/timetable/board-state.js';
+	import type { TimetableBlock } from '#lib/api/timetable.js';
+	import { buildSchedulerTargetLabel } from '#lib/academic/timetable/block-display.js';
 
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
 	import TimetableLessonCard from './TimetableLessonCard.svelte';

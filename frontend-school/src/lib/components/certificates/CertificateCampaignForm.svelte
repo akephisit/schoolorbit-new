@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { CreateCertificateCampaignRequest } from '$lib/api/certificates';
+	import type { CreateCertificateCampaignRequest } from '#lib/api/certificates.js';
 
 	export type CertificateCampaignFormValue = CreateCertificateCampaignRequest & {
 		confirmAffectsIssuedCertificates: boolean;
@@ -8,15 +8,15 @@
 
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import type { CertificateCampaignDetail } from '$lib/api/certificates';
-	import type { AcademicYearLookupItem, OrganizationUnitLookupItem } from '$lib/api/lookup';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	import type { CertificateCampaignDetail } from '#lib/api/certificates.js';
+	import type { AcademicYearLookupItem, OrganizationUnitLookupItem } from '#lib/api/lookup.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { AlertCircle, Award, Building2, CalendarDays, GraduationCap, Save } from '@lucide/svelte';
 
 	const SCHOOL_OWNER_VALUE = '__school__';

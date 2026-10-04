@@ -25,24 +25,24 @@
 		type AdmissionExamSubject,
 		type ReportConfig,
 		roundStatusLabel
-	} from '$lib/api/admission';
+	} from '#lib/api/admission.js';
 	import {
 		listStudyProgramOptionsForAcademicYear,
 		type StudyProgramOption
-	} from '$lib/api/academic-core';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import SchoolCombobox from '$lib/components/ui/SchoolCombobox.svelte';
+	} from '#lib/api/academic-core.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import SchoolCombobox from '#lib/components/ui/SchoolCombobox.svelte';
 
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import * as Card from '$lib/components/ui/card';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { Separator } from '$lib/components/ui/separator';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		Settings,
@@ -62,8 +62,8 @@
 		DoorOpen,
 		Hash
 	} from '@lucide/svelte';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 	let { data }: PageProps = $props();
 
@@ -202,7 +202,11 @@
 			toast.success(!current ? 'เปิดแสดงคะแนนบน portal แล้ว' : 'ซ่อนคะแนนบน portal แล้ว');
 			round = {
 				...round,
-				selectionSettings: { method: '', ...(round.selectionSettings ?? {}), showScores: !current }
+				selectionSettings: {
+					method: '',
+					...(round.selectionSettings ?? {}),
+					showScores: !current
+				}
 			};
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'อัปเดตไม่สำเร็จ');
@@ -345,7 +349,7 @@
 		try {
 			await deleteRound(round.id);
 			toast.success('ลบรอบรับสมัครแล้ว');
-			goto(resolve('/staff/academic/admission'));
+			goto(resolve('staff/academic/admission'));
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
 		} finally {

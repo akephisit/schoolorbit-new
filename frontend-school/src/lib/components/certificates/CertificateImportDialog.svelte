@@ -6,19 +6,19 @@
 		disposed = true;
 		parseEpoch++;
 	});
-	import { LoadingButton } from '$lib/components/app-state';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import {
 		downloadCertificateCsvTemplate,
 		downloadCertificateXlsxTemplate
-	} from '$lib/certificates/import-template';
+	} from '#lib/certificates/import-template.js';
 	import {
 		CERTIFICATE_IMPORT_HEADERS,
 		parseCertificateImport,
 		type ParsedCertificateImport
-	} from '$lib/certificates/importer';
+	} from '#lib/certificates/importer.js';
 	import { Download, FileSpreadsheet, Upload } from '@lucide/svelte';
 
 	let {

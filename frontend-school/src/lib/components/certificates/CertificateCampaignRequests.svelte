@@ -6,11 +6,11 @@
 		type CertificateIssueCode,
 		type CertificateIssueRequestStatus,
 		type CertificateIssueRequestSummary
-	} from '$lib/api/certificates';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	} from '#lib/api/certificates.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import {
 		ArrowLeft,
 		CircleCheckBig,
@@ -21,8 +21,8 @@
 		Undo2
 	} from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { toast } from 'svelte-sonner';
 
 	let {
@@ -203,7 +203,7 @@
 		<Button
 			data-sveltekit-preload-data="tap"
 			variant="outline"
-			href={resolve(`/staff/certificates/${campaignId}/recipients` as '/staff/certificates')}
+			href={resolve(`staff/certificates/${campaignId}/recipients`)}
 		>
 			<ArrowLeft class="size-4" /> กลับไปเตรียมรายชื่อ
 		</Button>

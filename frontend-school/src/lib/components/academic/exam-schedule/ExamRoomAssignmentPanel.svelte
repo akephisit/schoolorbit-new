@@ -1,17 +1,17 @@
 <script lang="ts">
-	import type { HomeroomLookupItem, RoomLookupItem } from '$lib/api/lookup';
+	import type { HomeroomLookupItem, RoomLookupItem } from '#lib/api/lookup.js';
 	import type {
 		ExamDayDetail,
 		ExamDayRoomAssignmentView,
 		UpsertDayRoomAssignmentInput
-	} from '$lib/api/examSchedule';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Sheet from '$lib/components/ui/sheet';
+	} from '#lib/api/examSchedule.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import {
 		Table,
 		TableBody,
@@ -19,8 +19,8 @@
 		TableHead,
 		TableHeader,
 		TableRow
-	} from '$lib/components/ui/table';
-	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
+	} from '#lib/components/ui/table/index.js';
+	import { compareExamDaysByDate } from '#lib/utils/examScheduleDayOrder.js';
 	import { Armchair, Plus } from '@lucide/svelte';
 
 	let {

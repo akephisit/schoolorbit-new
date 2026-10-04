@@ -167,6 +167,10 @@ Use focused test filters first when changing a handler, client, or service.
 
 ## Frontend School
 
+`npm ci` installs the app toolchain (TypeScript 6) and the private `tools/api-contracts` workspace (TypeScript 5 required by `openapi-typescript`). The API generator resolves its CLI from that workspace; keep its peer dependency isolated when upgrading app tooling.
+
+`runed`, used by the UI primitives, still declares an optional Kit 2 peer for its separate Kit utilities. The scoped override selects Kit 3 for the portable utilities used by Bits UI and Svelte Toolbelt, which do not import `runed/kit`. The Kit-specific utilities still use retired Kit APIs; do not import `runed/kit` into the applications until upstream supports Kit 3. Verify the installed graph with `npm ls @sveltejs/kit svelte vite typescript --all` and run the mocked browser acceptance after dependency changes.
+
 From `frontend-school`:
 
 ```bash
@@ -175,6 +179,7 @@ PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
 npm run test:menu-sync
 npm run test:route-loading
 npm run test:static
+npx tsc --project src/service-worker/tsconfig.json
 ```
 
 The public school homepage uses disposable API fixtures, including streamed loading, regional retries, empty academic context, and mobile/desktop organization disclosures. Its Rust tests use isolated tenant schemas and the real router to verify anonymous access, tenant isolation, current enrollment/room movement, staff position counts, and current members of every position. Run:
@@ -188,6 +193,8 @@ npx playwright test tests/e2e/landing-page.spec.ts tests/e2e/admin-landing-page.
 ```
 
 Login and app-header layout fixtures also start their own local servers. They cover small and short viewports, optional school branding failures, pending/rejected login, and the remaining header controls:
+
+Keep these self-hosted dev-server specs on one worker when combining them: Kit's generated files share one project directory, so concurrently starting independent Vite servers is not a valid test environment. The production-preview mocked route gate below can use two workers.
 
 ```bash
 npx playwright test tests/e2e/login-layout.spec.ts tests/e2e/header-layout.spec.ts --project=chromium --workers=1

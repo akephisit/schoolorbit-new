@@ -4,10 +4,10 @@
 	import { page } from '$app/state';
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import {
 		changeCertificateCampaignStatus,
 		getCertificateCampaign,
@@ -15,24 +15,24 @@
 		updateCertificateCampaign,
 		type CertificateCampaignDetail,
 		type CertificateCampaignStatus
-	} from '$lib/api/certificates';
+	} from '#lib/api/certificates.js';
 	import {
 		lookupAcademicYears,
 		type AcademicYearLookupItem,
 		type OrganizationUnitLookupItem
-	} from '$lib/api/lookup';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	} from '#lib/api/lookup.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import CertificateCampaignForm, {
 		type CertificateCampaignFormValue
-	} from '$lib/components/certificates/CertificateCampaignForm.svelte';
-	import CertificateCampaignPurgeDialog from '$lib/components/certificates/CertificateCampaignPurgeDialog.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/certificates/CertificateCampaignForm.svelte';
+	import CertificateCampaignPurgeDialog from '#lib/components/certificates/CertificateCampaignPurgeDialog.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		Archive,
 		Award,
@@ -368,7 +368,7 @@
 		if (!currentOwner(epoch, key) || !canDelete) return;
 		deleteOpen = false;
 		toast.success('ลบกิจกรรมและไฟล์ทั้งหมดแล้ว');
-		void goto(resolve('/staff/certificates'));
+		void goto(resolve('staff/certificates'));
 	}
 	function formatDate(value: string): string {
 		return new Date(`${value}T00:00:00`).toLocaleDateString('th-TH', {

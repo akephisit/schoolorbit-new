@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { careerFieldErrors, type StaffCareerCorrectionReasons } from '$lib/forms/staff-career';
+	import { careerFieldErrors, type StaffCareerCorrectionReasons } from '#lib/forms/staff-career.js';
 	import { beforeNavigate, goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
-	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
-	import StaffPersonnelFields from '$lib/components/staff/StaffPersonnelFields.svelte';
+	import { staffReturnHref, withStaffReturn } from '#lib/navigation/staff-management.js';
+	import StaffBreadcrumb from '#lib/components/staff/StaffBreadcrumb.svelte';
+	import StaffPersonnelFields from '#lib/components/staff/StaffPersonnelFields.svelte';
 	import {
 		buildStaffPersonnelPatch,
 		staffPersonnelDraft,
 		normalizeStaffEducationText
-	} from '$lib/forms/staff-personnel';
-	import { staffStatusLabel } from '$lib/forms/staff-status';
+	} from '#lib/forms/staff-personnel.js';
+	import { staffStatusLabel } from '#lib/forms/staff-status.js';
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
@@ -21,26 +21,26 @@
 		type StaffProfileResponse,
 		type UpdateStaffRequest,
 		type OrganizationUnit
-	} from '$lib/api/staff';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as Select from '$lib/components/ui/select';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import ProfileImageUpload from '$lib/components/forms/ProfileImageUpload.svelte';
+	} from '#lib/api/staff.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import ProfileImageUpload from '#lib/components/forms/ProfileImageUpload.svelte';
 	import { Building2, LoaderCircle, Save, Shield } from '@lucide/svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
-	import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
-	import { authStore } from '$lib/stores/auth';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
+	import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { authStore } from '#lib/stores/auth.js';
 
 	let { data }: PageProps = $props();
 	const staffId = $derived(data.staffId),
@@ -64,12 +64,12 @@
 		{ value: 'education', label: 'การศึกษา' },
 		{ value: 'organizations', label: 'สังกัดหน่วยงาน' }
 	];
-	const returnHref = $derived(staffReturnHref(page.url));
+	const returnHref = $derived(staffReturnHref(new URL(page.url.href)));
 	const profileHref = $derived(withStaffReturn(`/staff/manage/${staffId}`, returnHref));
 	function sectionHref(value: string) {
 		const query = new SvelteURLSearchParams(page.url.search);
 		query.set('section', value);
-		return resolve(`/staff/manage/${staffId}/edit?${query}`);
+		return resolve(`staff/manage/${staffId}/edit?${query}`);
 	}
 	$effect.pre(() => {
 		const section = page.url.searchParams.get('section');
@@ -129,7 +129,9 @@
 	const dirty = $derived(
 		originalForm !== null && JSON.stringify(formData) !== JSON.stringify(originalForm)
 	);
-	beforeNavigate(({ to, cancel, willUnload }) => {
+
+	beforeNavigate(({ to, cancel, willUnload, shallow }) => {
+		if (shallow) return;
 		if (!dirty || saving || to?.url.pathname === page.url.pathname) return;
 		if (willUnload || !window.confirm('มีข้อมูลที่ยังไม่บันทึก ต้องการออกจากหน้านี้หรือไม่?'))
 			cancel();
@@ -356,8 +358,7 @@
 						: 'personal'
 				),
 				{
-					keepFocus: true,
-					noScroll: true
+					reset: false
 				}
 			);
 			return;
@@ -366,7 +367,7 @@
 			JSON.stringify(formData.organization_assignments) !==
 			JSON.stringify(originalForm?.organization_assignments);
 		if (organizationsChanged && !validateOrganizations()) {
-			await goto(sectionHref('organizations'), { keepFocus: true, noScroll: true });
+			await goto(sectionHref('organizations'), { reset: false });
 			return;
 		}
 		const owner = staffId,
@@ -424,7 +425,9 @@
 				if (!current()) return;
 				await goto(
 					resolve(
-						withStaffReturn(`/staff/manage/${owner}`, returnHref) as `/staff/manage/${string}`
+						withStaffReturn(`/staff/manage/${owner}`, returnHref).slice(
+							1
+						) as `staff/manage/${string}`
 					)
 				);
 			} else {
@@ -584,7 +587,7 @@
 				{#each sections as section, index (section.value)}
 					<Button
 						href={sectionHref(section.value)}
-						data-sveltekit-preload-data="off"
+						data-sveltekit-preload-data={false}
 						variant={currentStep === index + 1 ? 'default' : 'ghost'}
 						aria-current={currentStep === index + 1 ? 'page' : undefined}>{section.label}</Button
 					>

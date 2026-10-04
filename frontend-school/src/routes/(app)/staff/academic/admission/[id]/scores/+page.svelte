@@ -16,18 +16,18 @@
 		type ScoreRoomGroup,
 		type RawScore,
 		getAllScores
-	} from '$lib/api/admission';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { RegionUpdatingState } from '$lib/components/app-state';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import * as Card from '$lib/components/ui/card';
-	import * as Table from '$lib/components/ui/table';
-	import { Switch } from '$lib/components/ui/switch';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/admission.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { toast } from 'svelte-sonner';
 	import { Save, Loader2, DoorOpen, UserX, RefreshCw } from '@lucide/svelte';
 	import { SvelteSet } from 'svelte/reactivity';

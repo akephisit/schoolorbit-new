@@ -7,20 +7,20 @@ import { writable, get } from 'svelte/store';
 test('timetable idle catches up after subscription even when restarted sequence is unchanged', async () => {
 	let runtime;
 	const dependencies = {
-		'$lib/realtime/visibility-idle': { browserVisibilityDependencies: () => ({}) },
+		'#lib/realtime/visibility-idle.js': { browserVisibilityDependencies: () => ({}) },
 		'svelte/store': { writable },
-		'$lib/api/client': {
+		'#lib/api/client.js': {
 			BACKEND_WS_URL: 'wss://school.example',
 			getSchoolSubdomainHint: () => null
 		},
-		'$lib/realtime/auth-recovery': { realtimeAuthRecovery: async (refresh) => refresh() },
-		'$lib/utils/timetable-socket-runtime': {
+		'#lib/realtime/auth-recovery.js': { realtimeAuthRecovery: async (refresh) => refresh() },
+		'#lib/utils/timetable-socket-runtime.js': {
 			createTimetableSocketRuntime: (config) => {
 				runtime = config;
 				return { connect() {}, disconnect() {} };
 			}
 		},
-		'$lib/api/auth': { authAPI: { refreshCurrentUser: async () => 'authenticated' } }
+		'#lib/api/auth.js': { authAPI: { refreshCurrentUser: async () => 'authenticated' } }
 	};
 	const source = await readFile(
 		new URL('../../src/lib/stores/timetable-socket.ts', import.meta.url),

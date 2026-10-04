@@ -6,8 +6,8 @@ The administration web application supports school provisioning and control-plan
 
 ## Stack
 
-- SvelteKit 5 and Svelte 5
-- TypeScript and Vite
+- SvelteKit 3 and Svelte 5
+- TypeScript 6 and Vite 8 (Node.js 24)
 - Tailwind CSS
 - Cloudflare adapter
 

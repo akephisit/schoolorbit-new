@@ -4,15 +4,15 @@
 		deleteCertificateTemplateAsset,
 		listCertificateSchoolFonts,
 		type CertificateTemplateDetail
-	} from '$lib/api/certificates';
-	import type { SchoolFontSummary } from '$lib/api/school-fonts';
-	import { deleteFile, uploadCertificateTemplateFile, type FileMetadata } from '$lib/api/files';
-	import { LoadingButton } from '$lib/components/app-state';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/api/certificates.js';
+	import type { SchoolFontSummary } from '#lib/api/school-fonts.js';
+	import { deleteFile, uploadCertificateTemplateFile, type FileMetadata } from '#lib/api/files.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import { AlertTriangle, FileImage, ImagePlus, RefreshCw, Trash2, Upload } from '@lucide/svelte';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';

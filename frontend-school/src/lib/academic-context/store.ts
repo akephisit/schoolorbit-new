@@ -1,4 +1,4 @@
-import { listAcademicContextOptions } from '$lib/api/academic-context';
+import { listAcademicContextOptions } from '#lib/api/academic-context.js';
 import { createContext } from 'svelte';
 import { get, writable } from 'svelte/store';
 import { getAcademicContextRequirement, resolveAcademicContextUrl } from './route-context';
@@ -121,9 +121,8 @@ export function createAcademicContextStore({
 			latestUrl = new URL(resolved.replaceUrl);
 			try {
 				await navigate(resolved.replaceUrl, {
-					replaceState: true,
-					noScroll: true,
-					keepFocus: true
+					replace: true,
+					reset: false
 				});
 			} catch {
 				if (currentRevision !== revision) return;
@@ -159,7 +158,7 @@ export function createAcademicContextStore({
 			nextUrl.searchParams.delete('academicTermId');
 		}
 
-		await navigate(nextUrl, { noScroll: true, keepFocus: true });
+		await navigate(nextUrl, { reset: false });
 	}
 
 	async function selectTerm(academicTermId: string | null): Promise<void> {
@@ -176,7 +175,7 @@ export function createAcademicContextStore({
 			nextUrl.searchParams.set('academicTermId', academicTermId);
 		}
 
-		await navigate(nextUrl, { noScroll: true, keepFocus: true });
+		await navigate(nextUrl, { reset: false });
 	}
 
 	async function retry(): Promise<void> {

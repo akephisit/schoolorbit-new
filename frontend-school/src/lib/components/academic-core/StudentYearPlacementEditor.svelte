@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { Homeroom, HomeroomPlacement, StudentAcademicYear } from '$lib/api/academic-core';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	import type { Homeroom, HomeroomPlacement, StudentAcademicYear } from '#lib/api/academic-core.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { ArrowRightLeft, CalendarPlus, History } from '@lucide/svelte';
 	import StudentYearTransferDialog from './StudentYearTransferDialog.svelte';
 
@@ -36,7 +36,7 @@
 				classNumber: number | null;
 				reason: string;
 			}
-		) => Promise<import('$lib/api/academic-core').HomeroomPlacementTransfer>;
+		) => Promise<import('#lib/api/academic-core.js').HomeroomPlacementTransfer>;
 	} = $props();
 
 	let draft = $state({

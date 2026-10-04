@@ -2,13 +2,13 @@
 	import type {
 		CertificateCampaignStatus,
 		CertificateCampaignSummary
-	} from '$lib/api/certificates';
-	import { PageState } from '$lib/components/app-state';
-	import CertificateCampaignPurgeDialog from '$lib/components/certificates/CertificateCampaignPurgeDialog.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/certificates.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import CertificateCampaignPurgeDialog from '#lib/components/certificates/CertificateCampaignPurgeDialog.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		Award,
 		Building2,

@@ -2,10 +2,10 @@
 	import type {
 		CurriculumDeliveryAlignmentState,
 		HomeroomDeliveryWorkspace
-	} from '$lib/api/learning-delivery';
+	} from '#lib/api/learning-delivery.js';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { ArrowLeft, BookCheck, ChevronDown, CircleAlert, Clock3 } from '@lucide/svelte';
 
 	let {

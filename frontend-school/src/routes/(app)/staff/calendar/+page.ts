@@ -1,11 +1,11 @@
 import type { PageLoad } from './$types';
 import { get } from 'svelte/store';
-import { can } from '$lib/stores/permissions';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { calendarRouteFilters } from '$lib/utils/calendar-route-filters';
-import { listCalendarEvents, listCalendarCategories, listCalendarTags } from '$lib/api/calendar';
-import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
+import { can } from '#lib/stores/permissions.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { calendarRouteFilters } from '#lib/utils/calendar-route-filters.js';
+import { listCalendarEvents, listCalendarCategories, listCalendarTags } from '#lib/api/calendar.js';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'term_optional' as const,

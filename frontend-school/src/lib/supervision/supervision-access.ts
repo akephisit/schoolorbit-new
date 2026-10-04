@@ -1,7 +1,7 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 import { get } from 'svelte/store';
-import { authStore } from '$lib/stores/auth';
-import { can } from '$lib/stores/permissions';
+import { authStore } from '#lib/stores/auth.js';
+import { can } from '#lib/stores/permissions.js';
 
 export function waitForSupervisionAccess(permissions: string[] | string): Promise<boolean> {
 	const allowed = () =>

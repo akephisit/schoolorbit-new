@@ -1,11 +1,11 @@
-import { apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
+import { apiClient, requireApiData, type ApiRequestOptions } from '#lib/api/client.js';
+import type { components } from '#lib/api/generated/school-api.js';
 import type {
 	AttachSchoolFontBatchRequest,
 	InspectSchoolFontUploadsRequest,
 	SchoolFontListResponse,
 	SchoolFontUploadInspection
-} from '$lib/api/school-fonts';
+} from '#lib/api/school-fonts.js';
 
 type Schemas = components['schemas'];
 

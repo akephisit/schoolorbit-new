@@ -3,22 +3,22 @@
 	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { authStore } from '$lib/stores/auth';
-	import { menuPreloadPolicy } from '$lib/navigation/menu-preload';
-	import { getAppMenuRegion } from '$lib/navigation/app-menu.svelte';
-	import { PageState } from '$lib/components/app-state';
-	import { Button, buttonVariants } from '$lib/components/ui/button';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import * as Tooltip from '$lib/components/ui/tooltip';
-	import { uiPreferences } from '$lib/stores/ui-preferences';
-	import { workStore } from '$lib/stores/work';
-	import { cn } from '$lib/utils';
-	import { getIconComponent } from '$lib/utils/icon-mapper';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
+	import { authStore } from '#lib/stores/auth.js';
+	import { menuPreloadPolicy } from '#lib/navigation/menu-preload.js';
+	import { getAppMenuRegion } from '#lib/navigation/app-menu.svelte.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { Button, buttonVariants } from '#lib/components/ui/button/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import { uiPreferences } from '#lib/stores/ui-preferences.js';
+	import { workStore } from '#lib/stores/work.js';
+	import { cn } from '#lib/utils.js';
+	import { getIconComponent } from '#lib/utils/icon-mapper.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import {
 		academicContextualMenuPath,
 		getAcademicContextRequirement
-	} from '$lib/academic-context/route-context';
+	} from '#lib/academic-context/route-context.js';
 	import {
 		buildSidebarNavigation,
 		type SidebarMenuItem,

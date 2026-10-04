@@ -9,7 +9,7 @@
 		uploadSchoolFontFile,
 		type FileMetadata,
 		type SchoolFontUploadContext
-	} from '$lib/api/files';
+	} from '#lib/api/files.js';
 	import type {
 		AttachSchoolFontBatchRequest,
 		InspectSchoolFontUploadsRequest,
@@ -18,13 +18,13 @@
 		SchoolFontUploadInspection,
 		SchoolFontUploadInspectionFile,
 		SchoolFontUploadStatus
-	} from '$lib/api/school-fonts';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/api/school-fonts.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import {
 		AlertTriangle,
 		CheckCircle2,

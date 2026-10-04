@@ -1,20 +1,20 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
-	import PublicSchoolLogo from '$lib/components/school-public/PublicSchoolLogo.svelte';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { AuthCheckingState } from '$lib/components/app-state';
+	import PublicSchoolLogo from '#lib/components/school-public/PublicSchoolLogo.svelte';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { AuthCheckingState } from '#lib/components/app-state/index.js';
 	import { ArrowLeft } from '@lucide/svelte';
-	import { authAPI } from '$lib/api/auth';
+	import { authAPI } from '#lib/api/auth.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import { authStore } from '$lib/stores/auth';
+	import { authStore } from '#lib/stores/auth.js';
 	let { data }: PageProps = $props();
 
 	let username = $state('');
@@ -59,11 +59,11 @@
 				window.location.replace(redirectUrl);
 				return;
 			} else if (user?.user_type === 'parent') {
-				await goto(resolve('/parent'), { replaceState: true });
+				await goto(resolve('parent'), { replace: true });
 			} else if (user?.user_type === 'student') {
-				await goto(resolve('/student'), { replaceState: true });
+				await goto(resolve('student'), { replace: true });
 			} else {
-				await goto(resolve('/staff'), { replaceState: true });
+				await goto(resolve('staff'), { replace: true });
 			}
 		} else if (result === 'unavailable') {
 			toast.warning('ระบบยืนยันตัวตนไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง');
@@ -103,11 +103,11 @@
 				window.location.assign(redirectUrl);
 				return;
 			} else if (user.user_type === 'parent') {
-				await goto(resolve('/parent'), { invalidateAll: true });
+				await goto(resolve('parent'), { refreshAll: true });
 			} else if (user.user_type === 'student') {
-				await goto(resolve('/student'), { invalidateAll: true });
+				await goto(resolve('student'), { refreshAll: true });
 			} else {
-				await goto(resolve('/staff'), { invalidateAll: true });
+				await goto(resolve('staff'), { refreshAll: true });
 			}
 		} catch (error) {
 			// Error already shown via toast in authAPI

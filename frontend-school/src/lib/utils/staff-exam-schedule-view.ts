@@ -3,7 +3,7 @@ import type {
 	StaffPublishedExamRoomAssignment,
 	StaffPublishedExamScheduleRound,
 	StaffPublishedExamSession
-} from '$lib/api/examSchedule';
+} from '#lib/api/examSchedule.js';
 
 export type StaffExamScheduleLevelFilter = 'all' | 'lower_secondary' | 'upper_secondary';
 

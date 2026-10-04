@@ -1,10 +1,10 @@
 import { get } from 'svelte/store';
-import { can } from '$lib/stores/permissions';
-import { PERMISSIONS } from '$lib/permissions/registry';
-import { listStaffCareerHistory } from '$lib/api/staff-career';
-import { authAPI } from '$lib/api/auth';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { can } from '#lib/stores/permissions.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { listStaffCareerHistory } from '#lib/api/staff-career.js';
+import { authAPI } from '#lib/api/auth.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 export const _meta = { academicContext: 'none' as const, access: { user_type: 'staff' } };
 export const load: PageLoad = ({ fetch, depends }) => {

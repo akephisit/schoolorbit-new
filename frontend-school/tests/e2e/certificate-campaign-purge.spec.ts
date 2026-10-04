@@ -48,14 +48,18 @@ const apiClientStub = `
 `;
 
 const stubModules = new Map([
-	['$lib/api/certificates', certificateApiStub],
-	['$lib/api/client', apiClientStub]
+	['#lib/api/certificates.js', certificateApiStub],
+	['#lib/api/client.js', apiClientStub]
 ]);
 
 function findStubModule(id: string): string | undefined {
 	if (stubModules.has(id)) return id;
 	for (const stubId of stubModules.keys()) {
-		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
+		const resolvedPath = path.resolve(
+			frontendRoot,
+			'src/lib',
+			stubId.slice('#lib//index.js'.length)
+		);
 		if (id === resolvedPath || id === `${resolvedPath}.ts` || id === `${resolvedPath}.js`) {
 			return stubId;
 		}
@@ -78,7 +82,7 @@ function harnessPlugin(): Plugin {
 				import { mount } from 'svelte';
 				import '/src/routes/layout.css';
 				import CertificateCampaignPurgeDialog from '/src/lib/components/certificates/CertificateCampaignPurgeDialog.svelte';
-				import { ApiClientError } from '$lib/api/client';
+				import { ApiClientError } from '#lib/api/client.js';
 
 				const mode = new URL(window.location.href).searchParams.get('mode') ?? 'start';
 				const campaignId = '10000000-0000-4000-8000-000000000001';

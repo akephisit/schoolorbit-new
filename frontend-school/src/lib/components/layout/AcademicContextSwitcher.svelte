@@ -9,13 +9,13 @@
 	import {
 		getAcademicContextStore,
 		hasAcademicContextDirtySource
-	} from '$lib/academic-context/store';
-	import type { AcademicTermOption, AcademicYearOption } from '$lib/academic-context/types';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
-	import * as Sheet from '$lib/components/ui/sheet';
+	} from '#lib/academic-context/store.js';
+	import type { AcademicTermOption, AcademicYearOption } from '#lib/academic-context/types.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
 
 	type ContextStatus = AcademicYearOption['status'] | AcademicTermOption['status'];
 	type PendingChange =

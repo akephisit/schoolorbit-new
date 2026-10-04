@@ -2,7 +2,7 @@
 	import { invalidate } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { HOMEROOMS_WORKSPACE_DEPENDENCY } from '$lib/academic-core/foundation-route';
+	import { HOMEROOMS_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 	import {
 		createHomeroom,
 		getHomeroom,
@@ -16,13 +16,13 @@
 		type ReplaceHomeroomAdvisorsRequest,
 		type StudyProgramOption,
 		type UpdateHomeroomRequest
-	} from '$lib/api/academic-core';
-	import HomeroomEditor from '$lib/components/academic-core/HomeroomEditor.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/api/academic-core.js';
+	import HomeroomEditor from '#lib/components/academic-core/HomeroomEditor.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

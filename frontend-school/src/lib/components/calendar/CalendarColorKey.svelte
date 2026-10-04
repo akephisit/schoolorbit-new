@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CalendarColorKeyItem } from '$lib/utils/calendar';
+	import type { CalendarColorKeyItem } from '#lib/utils/calendar.js';
 
 	let { items = [] }: { items?: CalendarColorKeyItem[] } = $props();
 </script>

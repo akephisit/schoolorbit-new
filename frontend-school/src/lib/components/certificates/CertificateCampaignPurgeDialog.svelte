@@ -8,13 +8,13 @@
 		type CertificateCampaignPurgeImpact,
 		type CertificateCampaignPurgePhase,
 		type CertificateCampaignPurgeStatus
-	} from '$lib/api/certificates';
-	import { ApiClientError } from '$lib/api/client';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Progress } from '$lib/components/ui/progress';
+	} from '#lib/api/certificates.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Progress } from '#lib/components/ui/progress/index.js';
 	import {
 		AlertTriangle,
 		CheckCircle2,

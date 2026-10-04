@@ -2,8 +2,8 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { Award, FilePenLine } from '@lucide/svelte';
-	import { PERMISSION_MODULES, PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { PERMISSION_MODULES, PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -16,7 +16,7 @@
 	<nav aria-label="ประเภทเกียรติบัตรและผลงาน">
 		{#if canViewIssued}
 			<a
-				href={resolve('/staff/achievements/issued')}
+				href={resolve('staff/achievements/issued')}
 				data-sveltekit-preload-data="tap"
 				aria-current={page.url.pathname === '/staff/achievements/issued' ? 'page' : undefined}
 			>
@@ -25,7 +25,7 @@
 		{/if}
 		{#if canViewSelfRecorded}
 			<a
-				href={resolve('/staff/achievements/self-recorded')}
+				href={resolve('staff/achievements/self-recorded')}
 				data-sveltekit-preload-data="tap"
 				aria-current={page.url.pathname === '/staff/achievements/self-recorded'
 					? 'page'

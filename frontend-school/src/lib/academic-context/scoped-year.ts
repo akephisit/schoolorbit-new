@@ -1,4 +1,4 @@
-import type { AcademicContextOptionsResponse } from '$lib/api/academic-context';
+import type { AcademicContextOptionsResponse } from '#lib/api/academic-context.js';
 
 export type ScopedAcademicYearResolution = {
 	academicYearId: string | null;

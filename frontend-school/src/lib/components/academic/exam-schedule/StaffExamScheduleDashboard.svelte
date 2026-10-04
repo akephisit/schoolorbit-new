@@ -8,15 +8,15 @@
 		Search,
 		Users
 	} from '@lucide/svelte';
-	import type { StaffPublishedExamScheduleRound } from '$lib/api/examSchedule';
-	import { PageState } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Tabs from '$lib/components/ui/tabs';
+	import type { StaffPublishedExamScheduleRound } from '#lib/api/examSchedule.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import {
 		buildMyExamInvigilationSummary,
 		buildStaffExamInvigilatorRenderRows,
@@ -28,7 +28,7 @@
 		formatStaffExamMinutes,
 		formatStaffExamTime,
 		type StaffExamScheduleLevelFilter
-	} from '$lib/utils/staff-exam-schedule-view';
+	} from '#lib/utils/staff-exam-schedule-view.js';
 	import MyExamInvigilationView from './MyExamInvigilationView.svelte';
 	import StaffExamInvigilatorTable from './StaffExamInvigilatorTable.svelte';
 	import StaffExamScheduleTable from './StaffExamScheduleTable.svelte';

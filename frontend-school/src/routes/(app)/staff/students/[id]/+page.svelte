@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import type { PageProps } from './$types';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Label } from '$lib/components/ui/label';
-	import { Card } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { Edit } from '@lucide/svelte';
-	import { getStudent, type Student } from '$lib/api/students';
+	import { getStudent, type Student } from '#lib/api/students.js';
 
 	let { data }: PageProps = $props();
 	const studentId = $derived(data.studentId);
@@ -88,7 +88,7 @@
 	title={student && canReadStudent ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
 	description="รายละเอียดข้อมูลนักเรียน"
 	backHref={listHref}
-	backPreload="off"
+	backPreload={false}
 >
 	{#snippet actions()}
 		<Button variant="outline" onclick={reloadCurrentYear} disabled={loading || !canReadStudent}

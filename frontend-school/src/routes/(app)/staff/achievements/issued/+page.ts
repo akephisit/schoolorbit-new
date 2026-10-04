@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 export const ssr = false;
 
@@ -10,10 +10,10 @@ export const _meta = {
 };
 
 import type { PageLoad } from './$types';
-import { listOwnCertificates } from '$lib/api/certificates';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { can } from '$lib/stores/permissions';
+import { listOwnCertificates } from '#lib/api/certificates.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { can } from '#lib/stores/permissions.js';
 import { get } from 'svelte/store';
 export const load: PageLoad = ({ fetch, depends }) => {
 	depends('school:app-identity');

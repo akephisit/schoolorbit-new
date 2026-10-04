@@ -3,22 +3,22 @@
 		CurriculumDeliveryAlignmentState,
 		HomeroomDeliveryItem,
 		HomeroomDeliveryWorkspace as Workspace
-	} from '$lib/api/learning-delivery';
+	} from '#lib/api/learning-delivery.js';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import {
 		filterHomeroomDeliveryRooms,
 		summarizeHomeroomDelivery,
 		type HomeroomReadinessFilter
-	} from '$lib/academic/homeroom-delivery';
+	} from '#lib/academic/homeroom-delivery.js';
 	import {
 		deliveryTimetableAction,
 		isPendingSynchronizedActivity
-	} from '$lib/academic/synchronized-activity-delivery';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/academic/synchronized-activity-delivery.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import {
 		ArrowUpRight,
 		BookOpenCheck,

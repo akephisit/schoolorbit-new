@@ -8,15 +8,15 @@
 		StaffOption,
 		StudyProgramOption,
 		UpdateHomeroomRequest
-	} from '$lib/api/academic-core';
-	import { customNameFromStored } from '$lib/academic-core/foundation-presentation';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/api/academic-core.js';
+	import { customNameFromStored } from '#lib/academic-core/foundation-presentation.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { DoorOpen, Pencil, Plus, Trash2, UserRoundCog, Users } from '@lucide/svelte';
 
 	type HomeroomDraft = Omit<CreateHomeroomRequest, 'academicYearId'>;

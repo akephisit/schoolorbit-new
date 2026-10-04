@@ -1,10 +1,13 @@
 <script lang="ts">
-	import type { GradeLevelOption } from '$lib/api/academic-core';
-	import { gradeLevelLabel, normalizeCatalogSearch } from '$lib/academic-core/catalog-presentation';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Command from '$lib/components/ui/command';
-	import * as Popover from '$lib/components/ui/popover';
+	import type { GradeLevelOption } from '#lib/api/academic-core.js';
+	import {
+		gradeLevelLabel,
+		normalizeCatalogSearch
+	} from '#lib/academic-core/catalog-presentation.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { ChevronsUpDown } from '@lucide/svelte';
 
 	interface Props {

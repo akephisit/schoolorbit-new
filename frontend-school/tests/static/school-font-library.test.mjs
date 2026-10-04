@@ -22,7 +22,7 @@ test('school font route is an exact manager-only settings workspace', async () =
 	assert.match(route, /workspace:\s*['"]settings['"]/);
 	assert.match(page, /SchoolFontLibrary/);
 	assert.match(page, /PERMISSIONS\.FONT_MANAGE_SCHOOL/);
-	assert.doesNotMatch(page, /\$lib\/api\/certificates/);
+	assert.doesNotMatch(page, /#lib\/api\/certificates/);
 	assert.doesNotMatch(page, /campaign|templateId|certificate/i);
 });
 

@@ -3,7 +3,7 @@ import type {
 	CurriculumPreparationProposal,
 	HomeroomDeliveryItem,
 	HomeroomDeliveryWorkspace
-} from '$lib/api/learning-delivery';
+} from '#lib/api/learning-delivery.js';
 
 export type CurriculumPreparationFocus = Pick<
 	CurriculumPreparationProposal,

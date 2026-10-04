@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import type { GradeLevelOption } from '$lib/api/academic-core';
+	import type { GradeLevelOption } from '#lib/api/academic-core.js';
 	import type {
 		BlockedWindowInput,
 		ExamDayDetail,
 		UpsertExamDayInput
-	} from '$lib/api/examSchedule';
-	import { LoadingButton, PageState } from '$lib/components/app-state';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	} from '#lib/api/examSchedule.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import {
 		Table,
 		TableBody,
@@ -21,8 +21,8 @@
 		TableHead,
 		TableHeader,
 		TableRow
-	} from '$lib/components/ui/table';
-	import { compareExamDaysByDate } from '$lib/utils/examScheduleDayOrder';
+	} from '#lib/components/ui/table/index.js';
+	import { compareExamDaysByDate } from '#lib/utils/examScheduleDayOrder.js';
 	import { Plus, Trash2 } from '@lucide/svelte';
 
 	type BlockedWindowForm = BlockedWindowInput & { localId: string };

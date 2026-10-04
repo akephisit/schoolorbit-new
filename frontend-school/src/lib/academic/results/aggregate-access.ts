@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
-import { PERMISSIONS as P } from '$lib/permissions/registry';
-import { authStore } from '$lib/stores/auth';
-import { can } from '$lib/stores/permissions';
+import { PERMISSIONS as P } from '#lib/permissions/registry.js';
+import { authStore } from '#lib/stores/auth.js';
+import { can } from '#lib/stores/permissions.js';
 
 export const aggregateReadPermissions = [
 	P.ACADEMIC_RESULT_READ_SCHOOL,

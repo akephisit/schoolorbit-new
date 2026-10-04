@@ -3,12 +3,12 @@
  */
 
 import { get } from 'svelte/store';
-import { can } from '$lib/stores/permissions';
-import { waitForAuthenticatedUser } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS, PERMISSION_MODULES } from '$lib/permissions/registry';
+import { can } from '#lib/stores/permissions.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
-import { listStudents } from '$lib/api/students';
+import { listStudents } from '#lib/api/students.js';
 
 export const _meta = {
 	academicContext: 'year_required' as const,

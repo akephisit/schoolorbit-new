@@ -2,14 +2,14 @@ import type { PageLoad } from './$types';
 import {
 	aggregateReadPermissions,
 	waitForAggregateReadAccess
-} from '$lib/academic/results/aggregate-access';
+} from '#lib/academic/results/aggregate-access.js';
 import {
 	listAggregateStudents,
 	listAggregatePolicies,
 	listTermAggregateRevisions,
 	previewTermAggregate
-} from '$lib/api/academicAggregates';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+} from '#lib/api/academicAggregates.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

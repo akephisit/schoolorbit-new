@@ -5,15 +5,15 @@ import {
 	LEARNING_DELIVERY_HOMEROOMS_DEPENDENCY,
 	readLearningDeliveryRouteContext,
 	selectAcademicTermChangeSetSummary
-} from '$lib/academic/learning-delivery-page';
+} from '#lib/academic/learning-delivery-page.js';
 import {
 	getAcademicTermChangeSet,
 	getHomeroomDeliveryWorkspace,
 	listAcademicTermChangeSets,
 	type AcademicTermChangeSet
-} from '$lib/api/learning-delivery';
-import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+} from '#lib/api/learning-delivery.js';
+import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'term_required',

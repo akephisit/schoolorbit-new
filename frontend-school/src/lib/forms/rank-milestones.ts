@@ -1,4 +1,4 @@
-import type { components } from '$lib/api/generated/school-api';
+import type { components } from '#lib/api/generated/school-api.js';
 export const RANK_MILESTONE_LABELS = {
 	future: 'ยังไม่ครบระยะเวลาตามเกณฑ์ปกติ',
 	due_soon: 'ใกล้ครบระยะเวลาใน 90 วัน',

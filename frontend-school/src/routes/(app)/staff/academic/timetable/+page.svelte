@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import { getAcademicContextStore } from '$lib/academic-context/store';
-	import { selectPreferredBoardVersion } from '$lib/academic/timetable/version-selection';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { selectPreferredBoardVersion } from '#lib/academic/timetable/version-selection.js';
 	import {
 		blockBelongsToRow,
 		blockHomeroomIds,
@@ -17,25 +17,30 @@
 		patchTimetableWorkspaceBlocks,
 		setTimetableWorkspaceBlocks,
 		type TimetablePageView
-	} from '$lib/academic/timetable/board-state';
+	} from '#lib/academic/timetable/board-state.js';
 	import {
 		createOptimisticTimetableBlock,
 		editTimetableBlockOptimistically,
 		moveTimetableBlockOptimistically,
 		removeTimetableTargetOptimistically,
 		swapTimetableBlocksOptimistically
-	} from '$lib/academic/timetable/optimistic-block';
+	} from '#lib/academic/timetable/optimistic-block.js';
+
 	import {
 		placementCellState,
 		placementFailureMessage
-	} from '$lib/academic/timetable/placement-preview';
+	} from '#lib/academic/timetable/placement-preview.js';
+
 	import {
 		createTimetableWorkspaceController,
 		type TimetableDragSource,
 		type TimetableWorkspaceController
-	} from '$lib/academic/timetable/workspace-controller.svelte';
-	import { ApiClientError } from '$lib/api/client';
-	import { getAcademicTermChangeSet, type AcademicTermChangeSet } from '$lib/api/learning-delivery';
+	} from '#lib/academic/timetable/workspace-controller.svelte.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import {
+		getAcademicTermChangeSet,
+		type AcademicTermChangeSet
+	} from '#lib/api/learning-delivery.js';
 	import {
 		createOrdinaryTimetableBlock,
 		createStructuralTimetableBlocks,
@@ -58,41 +63,41 @@
 		type TimetableVersion,
 		type UpdateTimetableBlockRequest,
 		type TimetableBlockWorkspace
-	} from '$lib/api/timetable';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import TimetableBoard from '$lib/components/academic/timetable/TimetableBoard.svelte';
-	import type { TimetableCellState } from '$lib/components/academic/timetable/TimetableCell.svelte';
-	import type { TimetablePlacementCard } from '$lib/components/academic/timetable/TimetablePlacementPreviewCard.svelte';
-	import TimetableInstructorPicker from '$lib/components/academic/timetable/TimetableInstructorPicker.svelte';
-	import TimetableTeacherTargetPicker from '$lib/components/academic/timetable/TimetableTeacherTargetPicker.svelte';
-	import TimetableUnscheduledTray from '$lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
-	import TimetableWorkspaceHeader from '$lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
+	} from '#lib/api/timetable.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import TimetableBoard from '#lib/components/academic/timetable/TimetableBoard.svelte';
+	import type { TimetableCellState } from '#lib/components/academic/timetable/TimetableCell.svelte';
+	import type { TimetablePlacementCard } from '#lib/components/academic/timetable/TimetablePlacementPreviewCard.svelte';
+	import TimetableInstructorPicker from '#lib/components/academic/timetable/TimetableInstructorPicker.svelte';
+	import TimetableTeacherTargetPicker from '#lib/components/academic/timetable/TimetableTeacherTargetPicker.svelte';
+	import TimetableUnscheduledTray from '#lib/components/academic/timetable/TimetableUnscheduledTray.svelte';
+	import TimetableWorkspaceHeader from '#lib/components/academic/timetable/TimetableWorkspaceHeader.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
-	} from '$lib/components/academic-workflow';
-	import AcademicChangeReadiness from '$lib/components/learning-delivery/AcademicChangeReadiness.svelte';
-	import AcademicChangeSetDialog from '$lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
-	import MobileDragDropPolyfill from '$lib/components/MobileDragDropPolyfill.svelte';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/academic-workflow/index.js';
+	import AcademicChangeReadiness from '#lib/components/learning-delivery/AcademicChangeReadiness.svelte';
+	import AcademicChangeSetDialog from '#lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
+	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
 	import {
 		connectTimetableSocket,
 		disconnectTimetableSocket,
 		refreshTrigger
-	} from '$lib/stores/timetable-socket';
+	} from '#lib/stores/timetable-socket.js';
 	import {
 		AlertTriangle,
 		Check,
@@ -352,7 +357,7 @@
 
 	function syncUrl(): void {
 		if (!controller) return;
-		const next = new URL(page.url);
+		const next = new URL(page.url.href);
 		next.searchParams.set('timetableVersionId', controller.workspace.version.id);
 		next.searchParams.set('view', activeView);
 		if (activeView !== 'wholeSchool' && controller.selectedOwnerId) {
@@ -360,7 +365,11 @@
 		} else {
 			next.searchParams.delete('ownerId');
 		}
-		replaceState(resolve(`/staff/academic/timetable?${next.searchParams.toString()}`), page.state);
+		goto(resolve(`staff/academic/timetable?${next.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	async function refreshChangeSet(version: TimetableVersion, retainCurrent = false): Promise<void> {
@@ -461,6 +470,7 @@
 			(!force && versionId === controller?.workspace.version.id)
 		)
 			return;
+
 		const { revision, signal } = request.begin();
 		workspaceRevision += 1;
 		const retainCurrent = controller?.workspace.version.id === versionId;
@@ -713,10 +723,12 @@
 
 	function targetBlock(dayOfWeek: string, periodId: string): TimetableBlock | null {
 		if (!controller?.selectedOwnerId) return null;
+
 		const sourceId =
 			controller.dragSource?.source.kind === 'existing_block'
 				? controller.dragSource.source.blockId
 				: null;
+
 		return (
 			blocksForTimetableCell(controller.board, {
 				view: controller.view,
@@ -811,6 +823,7 @@
 		const operationController = controller;
 		const dragSource: TimetableDragSource = controller.dragSource;
 		const target = targetBlock(dayOfWeek, periodId);
+
 		if (
 			pendingRemovalCellKeys.has(cellKey(dayOfWeek, periodId)) ||
 			(target && pendingBlockIds.has(target.id)) ||
@@ -913,6 +926,7 @@
 			const preview = await operation.previewPromise;
 			const failureMessage = placementFailureMessage(preview);
 			if (failureMessage) throw new Error(failureMessage);
+
 			if (
 				(operation.optimisticKind === 'swap' &&
 					(preview.state !== 'swap' || preview.targetBlockId !== operation.targetBlock?.id)) ||
@@ -1014,7 +1028,7 @@
 		exportingTeacherLoad = true;
 		try {
 			const { downloadTeacherLoadWorkbook } =
-				await import('$lib/utils/timetable-teacher-load-workbook');
+				await import('#lib/utils/timetable-teacher-load-workbook.js');
 			const selectedTerm = $academicContext.options?.terms.find(
 				(term) => term.id === academicTermId
 			);

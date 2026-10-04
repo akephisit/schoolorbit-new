@@ -2,24 +2,24 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { Plus, RefreshCw, Trash2, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { PageShell } from '$lib/components/app-layout';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		PageState,
 		PageSkeleton,
 		LoadingButton,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import PromotionProgressionsDialog from '$lib/components/academic/lifecycle/PromotionProgressionsDialog.svelte';
+	} from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import PromotionProgressionsDialog from '#lib/components/academic/lifecycle/PromotionProgressionsDialog.svelte';
 	import {
 		listPromotionPolicies,
 		getPromotionPolicyOptions,
@@ -28,7 +28,7 @@
 		type PromotionRule,
 		type PromotionPolicyOptions,
 		type PromotionPolicyInput
-	} from '$lib/api/academic-promotion';
+	} from '#lib/api/academic-promotion.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

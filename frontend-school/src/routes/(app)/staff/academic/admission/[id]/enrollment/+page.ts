@@ -2,10 +2,10 @@
  * Admission Enrollment (มอบตัว) Page
  */
 
-import { PERMISSIONS } from '$lib/permissions/registry';
-import { waitForAdmissionAccess } from '$lib/admission/admission-access';
-import { getRound, listEnrollmentPending } from '$lib/api/admission';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { waitForAdmissionAccess } from '#lib/admission/admission-access.js';
+import { getRound, listEnrollmentPending } from '#lib/api/admission.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

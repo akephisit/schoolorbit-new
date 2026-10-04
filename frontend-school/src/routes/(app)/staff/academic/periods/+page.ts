@@ -1,4 +1,4 @@
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import { redirect } from '@sveltejs/kit';
 
 export const _meta = {

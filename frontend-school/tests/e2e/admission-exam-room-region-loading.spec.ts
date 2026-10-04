@@ -97,6 +97,12 @@ async function mock(page: Page, manager = true) {
 				return reply(route, { rooms: [otherRoom], totalCapacity: 40, totalAssigned: 0 });
 			if (path === `/api/admission/rounds/${otherRoundId}/exam-config` && method === 'GET')
 				return reply(route, { examIdType: 'application_number', sortOrder: 'by_application' });
+			if (path === '/api/notifications/stream')
+				return route.fulfill({
+					status: 200,
+					contentType: 'text/event-stream',
+					body: ': connected\n\nretry: 3600000\n\n'
+				});
 			if (path === `/api/admission/rounds/${otherRoundId}/exam-seats` && method === 'GET')
 				return reply(route, [
 					{
@@ -348,6 +354,7 @@ test('copy-round choices and decrypted seat rows stay interaction-lazy', async (
 	await expect
 		.poll(() => state.reads.filter((path) => path === '/api/admission/rounds').length)
 		.toBe(1);
+	await page.keyboard.press('Escape');
 	await page.getByRole('button', { name: 'ผลจัดที่นั่ง' }).click();
 	await expect(page.getByText('เด็กชาย ทดสอบ')).toBeVisible();
 	expect(state.reads.filter((path) => path.endsWith('/exam-seats'))).toHaveLength(1);

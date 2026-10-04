@@ -1,26 +1,26 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
-	import { buildTimetableBlockDisplay } from '$lib/academic/timetable/block-display';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { buildTimetableBlockDisplay } from '#lib/academic/timetable/block-display.js';
 	import {
 		currentLocalDate,
 		getMyTimetable,
 		periodsFromTimetableBlocks,
 		type TimetableBlock,
 		type TimetablePeriodSummary
-	} from '$lib/api/timetable';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { authStore } from '$lib/stores/auth';
+	} from '#lib/api/timetable.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import {
 		buildStaffOwnTimetablePdfDownload,
 		canDownloadStaffOwnTimetablePdf,
 		runStaffOwnTimetablePdfDownload,
 		staffOwnTimetableSelectionKey
-	} from '$lib/utils/staff-own-timetable-pdf';
+	} from '#lib/utils/staff-own-timetable-pdf.js';
 	import { Download, Loader2, MapPin, School } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 
@@ -127,7 +127,7 @@
 
 		isExportingPdf = true;
 		try {
-			const { generateTimetablePDF } = await import('$lib/utils/pdf');
+			const { generateTimetablePDF } = await import('#lib/utils/pdf.js');
 			await runStaffOwnTimetablePdfDownload(download, {
 				generatePdf: generateTimetablePDF,
 				setExporting: (value) => (isExportingPdf = value),

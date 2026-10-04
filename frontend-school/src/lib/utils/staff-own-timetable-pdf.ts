@@ -1,5 +1,5 @@
-import type { TimetableBlock, TimetablePeriodSummary } from '$lib/api/timetable';
-import type { GeneratePdfOptions, TimetablePage } from '$lib/utils/pdf';
+import type { TimetableBlock, TimetablePeriodSummary } from '#lib/api/timetable.js';
+import type { GeneratePdfOptions, TimetablePage } from '#lib/utils/pdf.js';
 
 export interface StaffOwnTimetablePdfInput {
 	teacherName: string;

@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { ChevronRight } from '@lucide/svelte';
-	import { personnelDrilldownHref } from '$lib/forms/staff-personnel';
+	import { personnelDrilldownHref } from '#lib/forms/staff-personnel.js';
 	import type {
 		PersonnelBucket,
 		PersonnelDimension,
 		PersonnelStatusFilter
-	} from '$lib/api/personnel';
+	} from '#lib/api/personnel.js';
 	let {
 		title,
 		buckets,
@@ -31,7 +31,9 @@
 	<ul class="space-y-1">
 		{#each buckets as bucket (bucket.key)}<li>
 				<a
-					href={resolve(personnelDrilldownHref(dimension, bucket, status) as '/staff/manage')}
+					href={resolve(
+						personnelDrilldownHref(dimension, bucket, status).slice(1) as `staff/manage?${string}`
+					)}
 					data-sveltekit-preload-data="tap"
 					aria-label={`${bucket.label} ${bucket.count} คน`}
 					class="group block rounded-lg p-3 text-foreground no-underline transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

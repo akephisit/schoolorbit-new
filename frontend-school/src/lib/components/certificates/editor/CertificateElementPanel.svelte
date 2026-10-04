@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { CertificateTemplateDetail } from '$lib/api/certificates';
-	import type { SchoolFontSummary } from '$lib/api/school-fonts';
+	import type { CertificateTemplateDetail } from '#lib/api/certificates.js';
+	import type { SchoolFontSummary } from '#lib/api/school-fonts.js';
 	import {
 		imageAssetAspectRatio,
 		resetImageAspectRatio,
@@ -8,7 +8,7 @@
 		type CertificateElement,
 		type PagePointSize,
 		type TextCertificateElement
-	} from '$lib/certificates/editor-state';
+	} from '#lib/certificates/editor-state.js';
 	import {
 		certificateFontVariants,
 		findCertificateFontVariant,
@@ -18,11 +18,11 @@
 		toggleBoldVariant,
 		toggleItalicVariant,
 		type CertificateFontVariant
-	} from '$lib/certificates/font-variants';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/certificates/font-variants.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import {
 		AlignCenter,
 		AlignLeft,

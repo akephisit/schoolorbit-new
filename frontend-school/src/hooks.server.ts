@@ -1,5 +1,5 @@
-import type { Handle } from '@sveltejs/kit';
-import { getRoutePreviewMeta, injectRoutePreviewMeta } from '$lib/server/route-preview-meta';
+import type { Handle } from '@sveltejs/kit/hooks';
+import { getRoutePreviewMeta, injectRoutePreviewMeta } from '#lib/server/route-preview-meta.js';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const routePreviewMeta = getRoutePreviewMeta(event.url.pathname);

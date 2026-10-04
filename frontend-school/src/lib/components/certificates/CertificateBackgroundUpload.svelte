@@ -5,24 +5,24 @@
 		type AttachCertificateBackgroundRequest,
 		type CertificateRenderManifest,
 		type CertificateTemplateDetail
-	} from '$lib/api/certificates';
-	import { deleteFile, uploadCertificateTemplateFile, type FileMetadata } from '$lib/api/files';
+	} from '#lib/api/certificates.js';
+	import { deleteFile, uploadCertificateTemplateFile, type FileMetadata } from '#lib/api/files.js';
 	import {
 		certificateManifestExpiresSoon,
 		certificatePageGeometryMatches,
 		cloneCertificateLayout,
 		resetCertificateLayout,
 		scaleCertificateLayout
-	} from '$lib/certificates/editor-state';
+	} from '#lib/certificates/editor-state.js';
 	import {
 		loadCertificateRenderer,
 		type CertificateBackgroundInspection
-	} from '$lib/certificates/renderer';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/certificates/renderer.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { AlertTriangle, Eye, FileCheck2, RefreshCw, Trash2, Upload } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

@@ -5,26 +5,26 @@
 	import { resolve } from '$app/paths';
 	import { Plus, RefreshCw, ArrowRight } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { PageShell } from '$lib/components/app-layout';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		PageState,
 		PageSkeleton,
 		LoadingButton,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Label } from '$lib/components/ui/label';
-	import * as Table from '$lib/components/ui/table';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	} from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import {
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
-	} from '$lib/academic-context/store';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	} from '#lib/academic-context/store.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		listPromotionRuns,
 		listPromotionPolicies,
@@ -32,8 +32,8 @@
 		type PromotionRun,
 		type PromotionPolicy,
 		type PromotionRunCreateInput
-	} from '$lib/api/academic-promotion';
-	import { runStatusLabels } from '$lib/academic/lifecycle/promotion-presentation';
+	} from '#lib/api/academic-promotion.js';
+	import { runStatusLabels } from '#lib/academic/lifecycle/promotion-presentation.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -93,7 +93,10 @@
 		error = '';
 		try {
 			const data = await listPromotionRuns(
-				{ sourceYearId: selected, ...(more && cursor ? { beforeId: cursor } : {}) },
+				{
+					sourceYearId: selected,
+					...(more && cursor ? { beforeId: cursor } : {})
+				},
 				{ signal }
 			);
 			if (!requests.isCurrent(revision) || !alive) return;
@@ -147,7 +150,7 @@
 			createOpen = false;
 			pending = null;
 			toast.success('สร้างรอบเลื่อนชั้นแล้ว');
-			await goto(resolve(`/staff/academic/promotion/${created.id}`));
+			await goto(resolve(`staff/academic/promotion/${created.id}`));
 		} catch (cause) {
 			if (alive) formError = cause instanceof Error ? cause.message : 'สร้างรอบไม่สำเร็จ';
 		} finally {
@@ -197,7 +200,7 @@
 	description="เลือกปีต้นทาง ตรวจผลรายปี และเตรียมข้อมูลนักเรียนปีถัดไปโดยไม่ย้ายห้องของปีเดิม"
 >
 	{#snippet actions()}
-		<Button variant="outline" href={resolve('/staff/academic/promotion/policies')}
+		<Button variant="outline" href={resolve('staff/academic/promotion/policies')}
 			>เกณฑ์การเลื่อนชั้น</Button
 		>
 		<Button
@@ -268,7 +271,7 @@
 									><Button
 										size="sm"
 										variant="ghost"
-										href={resolve(`/staff/academic/promotion/${run.id}`)}
+										href={resolve(`staff/academic/promotion/${run.id}`)}
 										data-sveltekit-preload-data="tap">เปิดรอบ<ArrowRight class="size-4" /></Button
 									></Table.Cell
 								>

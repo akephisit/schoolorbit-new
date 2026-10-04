@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { toast } from 'svelte-sonner';
 	import { RefreshCw, Settings2 } from '@lucide/svelte';
-	import { registerAcademicContextDirtySource } from '$lib/academic-context/store';
-	import { aggregateCapabilities } from '$lib/academic/results/aggregate-access';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
+	import { aggregateCapabilities } from '#lib/academic/results/aggregate-access.js';
 	import {
 		aggregateStatus,
 		aggregateStatusLabels,
 		aggregateBlockerLabels,
 		aggregateHoldLabels,
 		canLockAggregate
-	} from '$lib/academic/results/aggregate-presentation';
+	} from '#lib/academic/results/aggregate-presentation.js';
 	import {
 		listAggregateStudents,
 		listAggregatePolicies,
@@ -27,25 +27,25 @@
 		type TermAggregatePreview,
 		type TermAggregateRevision,
 		type AggregateLockInput
-	} from '$lib/api/academicAggregates';
-	import { ApiClientError } from '$lib/api/client';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/academicAggregates.js';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		PageState,
 		PageSkeleton,
 		LoadingButton,
 		RegionUpdatingState
-	} from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let { data }: PageProps = $props();
 	const rosterRequest = new LatestRequest();
@@ -112,15 +112,18 @@
 	);
 
 	function syncSelection(): void {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
+
 		if (selected) url.searchParams.set('studentAcademicYearId', selected);
 		else url.searchParams.delete('studentAcademicYearId');
 		if (policyId) url.searchParams.set('policyId', policyId);
 		else url.searchParams.delete('policyId');
-		replaceState(
-			resolve(`/staff/academic/results/aggregates?${url.searchParams.toString()}`),
-			page.state
-		);
+
+		goto(resolve(`staff/academic/results/aggregates?${url.searchParams.toString()}`), {
+			shallow: true,
+			replace: true,
+			state: page.state
+		});
 	}
 
 	async function loadRoster() {

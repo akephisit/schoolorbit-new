@@ -81,8 +81,8 @@ const rendererStub = `
 const stubModules = new Map([
 	['$app/navigation', navigationStub],
 	['$app/paths', pathsStub],
-	['$lib/api/certificates', certificateApiStub],
-	['$lib/certificates/renderer', rendererStub]
+	['#lib/api/certificates.js', certificateApiStub],
+	['#lib/certificates/renderer.js', rendererStub]
 ]);
 
 function findStubModule(id: string): string | undefined {
@@ -90,8 +90,12 @@ function findStubModule(id: string): string | undefined {
 	if (id.includes('/@sveltejs/kit/src/runtime/app/navigation.js')) return '$app/navigation';
 	if (id.includes('/@sveltejs/kit/src/runtime/app/paths.js')) return '$app/paths';
 	for (const stubId of stubModules.keys()) {
-		if (!stubId.startsWith('$lib/')) continue;
-		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
+		if (!stubId.startsWith('#lib//index.js')) continue;
+		const resolvedPath = path.resolve(
+			frontendRoot,
+			'src/lib',
+			stubId.slice('#lib//index.js'.length)
+		);
 		if (
 			id === resolvedPath ||
 			id === `${resolvedPath}.ts` ||

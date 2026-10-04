@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { X, Share, Plus } from '@lucide/svelte';
 	import { fade, slide } from 'svelte/transition';
 

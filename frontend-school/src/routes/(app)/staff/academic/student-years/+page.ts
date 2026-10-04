@@ -1,13 +1,13 @@
 import type { PageLoad } from './$types';
-import { STUDENT_YEARS_WORKSPACE_DEPENDENCY } from '$lib/academic-core/foundation-route';
+import { STUDENT_YEARS_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 import {
 	listHomerooms,
 	listPlacementsForAcademicYear,
 	listStudentAcademicYears
-} from '$lib/api/academic-core';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
-import { loadStudentYearCollections } from '$lib/workspaces/academic-batch';
+} from '#lib/api/academic-core.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { loadStudentYearCollections } from '#lib/workspaces/academic-batch.js';
 
 export const _meta = {
 	academicContext: 'year_required',

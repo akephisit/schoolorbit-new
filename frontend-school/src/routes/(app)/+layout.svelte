@@ -1,29 +1,32 @@
 <script lang="ts">
-	import Sidebar from '$lib/components/layout/Sidebar.svelte';
-	import Header from '$lib/components/layout/Header.svelte';
+	import Sidebar from '#lib/components/layout/Sidebar.svelte';
+	import Header from '#lib/components/layout/Header.svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import type { LayoutProps } from './$types';
-	import { createAppMenuRegion } from '$lib/navigation/app-menu.svelte';
-	import { workStore } from '$lib/stores/work';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { createAcademicContextStore, setAcademicContextStore } from '$lib/academic-context/store';
+	import { createAppMenuRegion } from '#lib/navigation/app-menu.svelte.js';
+	import { workStore } from '#lib/stores/work.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import {
+		createAcademicContextStore,
+		setAcademicContextStore
+	} from '#lib/academic-context/store.js';
 	import {
 		getAcademicContextRequirement,
 		shouldHoldAcademicContextPage
-	} from '$lib/academic-context/route-context';
-	import { authAPI } from '$lib/api/auth';
-	import type { AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
-	import { userCanAccessRoute } from '$lib/auth/route-access';
-	import { authStore } from '$lib/stores/auth';
-	import { userPermissions } from '$lib/stores/permissions';
-	import { AuthCheckingState, PageSkeleton, PageState } from '$lib/components/app-state';
+	} from '#lib/academic-context/route-context.js';
+	import { authAPI } from '#lib/api/auth.js';
+	import type { AuthRefreshResult } from '#lib/auth/auth-refresh-policy.js';
+	import { userCanAccessRoute } from '#lib/auth/route-access.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { userPermissions } from '#lib/stores/permissions.js';
+	import { AuthCheckingState, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { toast } from 'svelte-sonner';
 
-	import { uiPreferences } from '$lib/stores/ui-preferences';
-	import { notificationStore } from '$lib/stores/notification';
+	import { uiPreferences } from '#lib/stores/ui-preferences.js';
+	import { notificationStore } from '#lib/stores/notification.js';
 	let { children, data }: LayoutProps = $props();
 	const appMenu = createAppMenuRegion();
 	const sharedMenuRead = $derived(data.userMenu);
@@ -69,7 +72,11 @@
 	setAcademicContextStore(academicContext);
 	let academicContextRequirement = $derived(getAcademicContextRequirement(page.route.id));
 	let holdAcademicContextPage = $derived(
-		shouldHoldAcademicContextPage(academicContextRequirement, page.url, $academicContext.status)
+		shouldHoldAcademicContextPage(
+			academicContextRequirement,
+			new URL(page.url.href),
+			$academicContext.status
+		)
 	);
 
 	function handleMenuClick() {
@@ -90,14 +97,12 @@
 		}
 
 		authStatus = 'redirecting';
-		await goto(resolve('/login'), { replaceState: true });
+		await goto(resolve('login'), { replace: true });
 	}
 
 	async function redirectToForbidden() {
 		authStatus = 'redirecting';
-		await goto(resolve(`/403?from=${encodeURIComponent(currentPath())}`), {
-			replaceState: true
-		});
+		await goto(resolve(`403?from=${encodeURIComponent(currentPath())}`), { replace: true });
 		authStatus = 'authenticated';
 	}
 
@@ -173,7 +178,7 @@
 		const url =
 			routeId === '/(app)/staff/calendar' && page.state.calendarUrl
 				? new URL(page.state.calendarUrl)
-				: page.url;
+				: new URL(page.url.href);
 		const permissions = $userPermissions;
 		const user = $authStore.user;
 

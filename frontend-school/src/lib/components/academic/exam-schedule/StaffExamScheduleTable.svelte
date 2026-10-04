@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { ChevronDown } from '@lucide/svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Collapsible from '$lib/components/ui/collapsible';
-	import * as Table from '$lib/components/ui/table';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import {
 		formatStaffExamDate,
 		formatStaffExamTime,
 		groupStaffScheduleRowsByDay,
 		type StaffExamScheduleRenderRow
-	} from '$lib/utils/staff-exam-schedule-view';
-	import { cn } from '$lib/utils.js';
+	} from '#lib/utils/staff-exam-schedule-view.js';
+	import { cn } from '#lib/utils.js';
 
 	interface Props {
 		rows: StaffExamScheduleRenderRow[];

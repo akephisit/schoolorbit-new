@@ -1,7 +1,7 @@
 import type { PageLoad } from './$types';
-import { listAssessmentPhaseControls, listAssessmentPlans } from '$lib/api/academicAssessments';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { listAssessmentPhaseControls, listAssessmentPlans } from '#lib/api/academicAssessments.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'term_required' as const,

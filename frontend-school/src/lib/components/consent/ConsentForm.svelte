@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { consentApi, type ConsentType, type CreateConsentRequest } from '$lib/api/consent';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Label } from '$lib/components/ui/label';
-	import * as Card from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
+	import { consentApi, type ConsentType, type CreateConsentRequest } from '#lib/api/consent.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { LoaderCircle, AlertCircle, CheckCircle2 } from '@lucide/svelte';
 
 	// Props
@@ -260,7 +260,7 @@
 				<p class="text-sm text-muted-foreground text-center">
 					การให้ความยินยอมนี้ถือว่าท่านได้อ่านและเข้าใจ
 					<a
-						href={resolve('/privacy-policy')}
+						href={resolve('privacy-policy')}
 						target="_blank"
 						class="text-primary underline hover:no-underline"
 					>

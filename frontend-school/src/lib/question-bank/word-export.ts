@@ -18,7 +18,7 @@ import type {
 	QuestionFile,
 	RichContent,
 	RichInlineNode
-} from '$lib/api/questionBank';
+} from '#lib/api/questionBank.js';
 
 export interface QuestionBankWordExportOptions {
 	title: string;
@@ -628,7 +628,7 @@ async function renderQuestionImage(
 ): Promise<RasterAsset> {
 	let blob: Blob;
 	try {
-		const { getQuestionBankQuestionFile } = await import('$lib/api/questionBank');
+		const { getQuestionBankQuestionFile } = await import('#lib/api/questionBank.js');
 		blob = await getQuestionBankQuestionFile(questionId, fileId);
 	} catch {
 		throw new Error('ไม่สามารถดาวน์โหลดรูปประกอบเพื่อใส่ในไฟล์ Word ได้');

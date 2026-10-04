@@ -64,9 +64,9 @@ const stubModules = new Map([
 		'$app/state',
 		"export const page = { params: { campaignId: '10000000-0000-4000-8000-000000000001' } };"
 	],
-	['$lib/api/certificates', certificateApiStub],
-	['$lib/api/client', 'export class ApiClientError extends Error {}'],
-	['$lib/api/lookup', 'export async function lookupAcademicYears() { return []; }']
+	['#lib/api/certificates.js', certificateApiStub],
+	['#lib/api/client.js', 'export class ApiClientError extends Error {}'],
+	['#lib/api/lookup.js', 'export async function lookupAcademicYears() { return []; }']
 ]);
 
 function findStubModule(id: string): string | undefined {
@@ -79,8 +79,12 @@ function findStubModule(id: string): string | undefined {
 		if (id.split('?')[0].endsWith(`/@sveltejs/kit/src/runtime/app/${entry}`)) return module;
 	}
 	for (const stubId of stubModules.keys()) {
-		if (!stubId.startsWith('$lib/')) continue;
-		const resolvedPath = path.resolve(frontendRoot, 'src/lib', stubId.slice('$lib/'.length));
+		if (!stubId.startsWith('#lib//index.js')) continue;
+		const resolvedPath = path.resolve(
+			frontendRoot,
+			'src/lib',
+			stubId.slice('#lib//index.js'.length)
+		);
 		if (id === resolvedPath || id === `${resolvedPath}.ts` || id === `${resolvedPath}.js`) {
 			return stubId;
 		}
@@ -107,7 +111,7 @@ function harnessPlugin(): Plugin {
 				import { page } from '$app/state';
 				import '/src/routes/layout.css';
 				import { setPermissions } from '/src/lib/stores/permissions.ts';
-				import { campaignFixture } from '$lib/api/certificates';
+				import { campaignFixture } from '#lib/api/certificates.js';
 				import CertificateCampaignList from '/src/lib/components/certificates/CertificateCampaignList.svelte';
 				import CampaignOverview from '/src/routes/(app)/staff/certificates/[campaignId]/overview/+page.svelte';
 

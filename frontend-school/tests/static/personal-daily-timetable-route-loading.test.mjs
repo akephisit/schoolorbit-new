@@ -32,7 +32,7 @@ test('daily overview wrapper accepts the route fetch and personal PDF stays acti
 		source('src/routes/(app)/staff/timetable/+page.svelte')
 	]);
 	assert.match(api, /getDailyTeachingOverview[\s\S]{0,350}ApiRequestOptions/);
-	assert.match(personal, /await import\('\$lib\/utils\/pdf'\)/);
+	assert.match(personal, /await import\('#lib\/utils\/pdf\.js'\)/);
 	assert.doesNotMatch(personal, /import \{ generateTimetablePDF \} from/);
 });
 

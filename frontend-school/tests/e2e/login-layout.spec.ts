@@ -74,6 +74,7 @@ test.beforeAll(async () => {
 	process.env.PUBLIC_VAPID_KEY = 'test';
 	devServer = await createServer({
 		root: frontendRoot,
+		cacheDir: path.resolve(frontendRoot, 'node_modules/.vite-login-layout-test'),
 		logLevel: 'silent',
 
 		server: { host: '127.0.0.1', port: 0 }

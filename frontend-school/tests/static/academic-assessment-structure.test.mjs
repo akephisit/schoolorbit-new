@@ -35,7 +35,7 @@ test('assessment api uses generated DTOs and offering-scoped endpoints', async (
 
 	assert.match(
 		api,
-		/import type \{ components, operations \} from '\$lib\/api\/generated\/school-api'/
+		/import type \{ components, operations \} from '#lib\/api\/generated\/school-api\.js'/
 	);
 	for (const schema of [
 		'AssessmentPlanSummary',

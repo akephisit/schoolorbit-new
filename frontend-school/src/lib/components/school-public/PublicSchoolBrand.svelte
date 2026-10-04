@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { PublicSchoolInfo } from '$lib/api/school';
-	import type { RouteLoadResult } from '$lib/navigation/route-load';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import type { PublicSchoolInfo } from '#lib/api/school.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import PublicSchoolLogo from './PublicSchoolLogo.svelte';
 	let { operation }: { operation: Promise<RouteLoadResult<PublicSchoolInfo>> } = $props();
 </script>

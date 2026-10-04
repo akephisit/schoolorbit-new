@@ -1,26 +1,26 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import {
 		Card,
 		CardContent,
 		CardHeader,
 		CardTitle,
 		CardDescription
-	} from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Dialog from '$lib/components/ui/dialog';
+	} from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import {
 		Building2,
 		Briefcase,
@@ -31,11 +31,11 @@
 		User,
 		FileText
 	} from '@lucide/svelte';
-	import { getPublicStaffProfile } from '$lib/api/staff';
-	import { getAchievements } from '$lib/api/achievement';
-	import type { PublicStaffProfileResponse } from '$lib/api/staff';
-	import type { Achievement } from '$lib/types/achievement';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	import { getPublicStaffProfile } from '#lib/api/staff.js';
+	import { getAchievements } from '#lib/api/achievement.js';
+	import type { PublicStaffProfileResponse } from '#lib/api/staff.js';
+	import type { Achievement } from '#lib/types/achievement.js';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 
 	let { data }: PageProps = $props();
 	const staffId = $derived(data.staffId);
@@ -319,7 +319,7 @@
 					title="ไม่พบข้อมูลบุคลากร"
 					description="ข้อมูลบุคลากรนี้อาจถูกลบหรือคุณอาจไม่มีสิทธิ์เข้าถึง"
 					actionLabel="กลับหน้าผลงาน"
-					href={resolve('/staff/achievements')}
+					href={resolve('staff/achievements')}
 				/>
 			{/if}
 		</div>

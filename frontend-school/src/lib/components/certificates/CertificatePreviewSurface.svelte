@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { CertificateRenderManifest } from '$lib/api/certificates';
+	import type { CertificateRenderManifest } from '#lib/api/certificates.js';
 	import {
 		calculateCertificatePreviewFit,
 		type CertificatePreviewState
-	} from '$lib/certificates/preview-fit';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
-	import { Button } from '$lib/components/ui/button';
+	} from '#lib/certificates/preview-fit.js';
+	import { loadCertificateRenderer } from '#lib/certificates/renderer.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { AlertTriangle, LoaderCircle, RefreshCw } from '@lucide/svelte';
 	import type { Attachment } from 'svelte/attachments';
 

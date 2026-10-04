@@ -1,26 +1,26 @@
 <script lang="ts">
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { resolveScopedAcademicContextUrl } from '$lib/academic-context/scoped-year';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { resolveScopedAcademicContextUrl } from '#lib/academic-context/scoped-year.js';
 	import {
 		listMyAcademicContextOptions,
 		type AcademicContextOptionsResponse
-	} from '$lib/api/academic-context';
-	import { listMyExamSchedules, type PersonalExamScheduleRound } from '$lib/api/examSchedule';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import PersonalExamScheduleView from '$lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/academic-context.js';
+	import { listMyExamSchedules, type PersonalExamScheduleRound } from '#lib/api/examSchedule.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import PersonalExamScheduleView from '#lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 
 	let { data }: PageProps = $props();
 	const identityKey = $derived.by(() => {
@@ -110,7 +110,11 @@
 		selectedTermId = v.data.academicTermId;
 		if (v.data.replaceHref) {
 			const url = new URL(v.data.replaceHref);
-			replaceState(resolve(`${url.pathname}${url.search}` as '/student/exams'), page.state);
+			goto(resolve('student/exams') + url.search, {
+				shallow: true,
+				replace: true,
+				state: page.state
+			});
 		}
 	}
 	function applyRecords(v: Awaited<typeof data.records>, revision: number, key: string) {
@@ -166,12 +170,12 @@
 	async function updateUrl(yearId: string, termId: string) {
 		const url = new URL(data.requestHref);
 		url.searchParams.set('academicYearId', yearId);
+
 		if (termId) url.searchParams.set('academicTermId', termId);
 		else url.searchParams.delete('academicTermId');
 
-		await goto(resolve(`${url.pathname}${url.search}` as '/student/exams'), {
-			noScroll: true,
-			keepFocus: true
+		await goto(resolve('student/exams') + url.search, {
+			reset: false
 		});
 	}
 	async function changeYear(yearId: string) {

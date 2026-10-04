@@ -8,8 +8,8 @@ Its homepage is an anonymous school website using existing branding, current-yea
 
 ## Stack
 
-- SvelteKit 5 and Svelte 5
-- TypeScript and Vite
+- SvelteKit 3 and Svelte 5
+- TypeScript 6 and Vite 8 (Node.js 24)
 - Tailwind CSS and local shadcn-svelte components
 - Cloudflare adapter
 - Playwright for browser E2E

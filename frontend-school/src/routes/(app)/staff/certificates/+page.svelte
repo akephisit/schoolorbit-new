@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import type { PageProps } from './$types';
-	import { authStore } from '$lib/stores/auth';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { listCertificateCampaigns, type CertificateCampaignSummary } from '$lib/api/certificates';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import CertificateCampaignList from '$lib/components/certificates/CertificateCampaignList.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { authStore } from '#lib/stores/auth.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import {
+		listCertificateCampaigns,
+		type CertificateCampaignSummary
+	} from '#lib/api/certificates.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import CertificateCampaignList from '#lib/components/certificates/CertificateCampaignList.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { Plus } from '@lucide/svelte';
 
 	const canReadCampaigns = $derived(

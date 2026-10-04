@@ -4,8 +4,8 @@
 	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
-	import { getAcademicContextStore } from '$lib/academic-context/store';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		createExamRound,
 		deleteExamRound,
@@ -13,18 +13,18 @@
 		type CreateExamRoundInput,
 		type ExamRound,
 		type ExamRoundKind
-	} from '$lib/api/examSchedule';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { PageShell } from '$lib/components/app-layout';
+	} from '#lib/api/examSchedule.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import {
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
-	} from '$lib/components/academic-workflow';
-	import ExamRoundDialog from '$lib/components/academic/exam-schedule/ExamRoundDialog.svelte';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
+	} from '#lib/components/academic-workflow/index.js';
+	import ExamRoundDialog from '#lib/components/academic/exam-schedule/ExamRoundDialog.svelte';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import {
 		Table,
 		TableBody,
@@ -32,9 +32,9 @@
 		TableHead,
 		TableHeader,
 		TableRow
-	} from '$lib/components/ui/table';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	} from '#lib/components/ui/table/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { CalendarClock, Plus, RefreshCw, Trash2 } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
@@ -176,7 +176,7 @@
 
 	function detailHref(round: ExamRound) {
 		return resolve(
-			`/staff/academic/exam-schedules/${round.id}?academicYearId=${encodeURIComponent(round.academicYearId)}&academicTermId=${encodeURIComponent(round.academicTermId)}`
+			`staff/academic/exam-schedules/${round.id}?academicYearId=${encodeURIComponent(round.academicYearId)}&academicTermId=${encodeURIComponent(round.academicTermId)}`
 		);
 	}
 

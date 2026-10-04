@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { CertificateCandidateDetail } from '$lib/api/certificates';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Table from '$lib/components/ui/table';
+	import type { CertificateCandidateDetail } from '#lib/api/certificates.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { Pencil, Trash2, UserCheck, UserRoundCheck } from '@lucide/svelte';
 
 	let {

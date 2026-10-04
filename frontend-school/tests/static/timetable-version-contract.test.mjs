@@ -72,7 +72,7 @@ test('academic timetable keeps one URL-backed version and published boards read-
 	assert.match(page, /listTimetableVersions\(/);
 	assert.match(page, /searchParams\.set\('timetableVersionId'/);
 	assert.match(page, /controller\?\.canEdit/);
-	assert.match(page, /replaceState\(resolve\(/);
+	assert.match(page, /goto\(resolve\([\s\S]*?shallow:\s*true/);
 	assert.match(header, /เผยแพร่แล้ว/);
 	assert.match(header, /อ่านอย่างเดียว/);
 	assert.match(page, /timetableVersionId:\s*controller\.workspace\.version\.id/);

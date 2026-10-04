@@ -3,7 +3,7 @@ import {
 	requireApiData,
 	type ApiResponse,
 	type ApiRequestOptions
-} from '$lib/api/client';
+} from '#lib/api/client.js';
 
 export type WorkflowWindowStatus = 'draft' | 'open' | 'closed' | 'archived';
 export type WorkflowWindowTimeState =

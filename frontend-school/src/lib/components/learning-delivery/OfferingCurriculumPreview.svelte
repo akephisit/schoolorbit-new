@@ -7,21 +7,21 @@
 		type CurriculumPreparationChoice,
 		type CurriculumPreparationProposal,
 		type DeliveryManagementOptions
-	} from '$lib/api/learning-delivery';
+	} from '#lib/api/learning-delivery.js';
 	import {
 		buildFocusedCurriculumPreparationChoices,
 		visibleCurriculumPreparationProposals,
 		type SynchronizedActivityPreparationTarget
-	} from '$lib/academic/synchronized-activity-delivery';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Command from '$lib/components/ui/command';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Popover from '$lib/components/ui/popover';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/academic/synchronized-activity-delivery.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		ChevronsUpDown,
 		CircleAlert,

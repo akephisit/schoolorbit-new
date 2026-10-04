@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import { LoadingButton, PageSkeleton, PageState } from '$lib/components/app-state';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import type {
 		CalendarAudienceType,
 		CalendarCategory,
@@ -16,8 +16,8 @@
 		CalendarEventTargetInput,
 		CalendarTag,
 		CreateCalendarEventRequest
-	} from '$lib/api/calendar';
-	import { cn } from '$lib/utils';
+	} from '#lib/api/calendar.js';
+	import { cn } from '#lib/utils.js';
 
 	type GradeLevelOption = { id: string; name: string };
 	type HomeroomOption = { id: string; name: string; gradeLevelId: string };

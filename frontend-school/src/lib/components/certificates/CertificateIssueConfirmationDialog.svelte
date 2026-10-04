@@ -2,11 +2,11 @@
 	import type {
 		CertificateIssueRequestDetail,
 		CertificateIssueRequestItem
-	} from '$lib/api/certificates';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
+	} from '#lib/api/certificates.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { AlertTriangle, Eye, FileBadge2, Hash, ShieldCheck, UsersRound } from '@lucide/svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
-	import { appIdentityKey } from '$lib/auth/settled-user';
-	import { authStore } from '$lib/stores/auth';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import { page } from '$app/state';
-	import CertificateRecipientWorkspace from '$lib/components/certificates/CertificateRecipientWorkspace.svelte';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import CertificateRecipientWorkspace from '#lib/components/certificates/CertificateRecipientWorkspace.svelte';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 
 	let { data }: PageProps = $props();
 	const identityKey = $derived.by(() => {

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { Settings, LogOut, ShieldCheck, UserCircle } from '@lucide/svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { authStore } from '$lib/stores/auth';
-	import { authAPI } from '$lib/api/auth';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { authAPI } from '#lib/api/auth.js';
 	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 
 	const user = $derived($authStore.user);
 	const isLoading = $derived($authStore.isLoading);
@@ -16,7 +16,7 @@
 		if ($authStore.isAuthenticated || authStore.sessionEpoch !== epoch + 1) return;
 		// Clear redirectAfterLogin to prevent layout from redirecting back to protected page
 		sessionStorage.removeItem('redirectAfterLogin');
-		await goto(resolve('/login'), { invalidateAll: true });
+		await goto(resolve('login'), { refreshAll: true });
 	}
 
 	// Get initials from first and last name
@@ -36,24 +36,24 @@
 	// Navigate to profile based on user type
 	function goToProfile() {
 		if (!user || user.user_type === 'student') {
-			goto(resolve('/student/profile'));
+			goto(resolve('student/profile'));
 		} else {
-			goto(resolve('/staff/profile'));
+			goto(resolve('staff/profile'));
 		}
 	}
 
 	// Navigate to settings based on user type
 	function goToSettings() {
 		if (!user || user.user_type === 'student') {
-			goto(resolve('/student/settings'));
+			goto(resolve('student/settings'));
 		} else {
-			goto(resolve('/staff/settings'));
+			goto(resolve('staff/settings'));
 		}
 	}
 
 	async function goToSecurity() {
 		const epoch = authStore.sessionEpoch;
-		const target = resolve('/account/security');
+		const target = resolve('account/security');
 		await preloadData(target);
 		if (!$authStore.isAuthenticated || authStore.sessionEpoch !== epoch) return;
 		await goto(target);

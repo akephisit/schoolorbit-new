@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
-	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PageState } from '$lib/components/app-state';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PageState } from '#lib/components/app-state/index.js';
 	import { LoaderCircle, Save } from '@lucide/svelte';
-	import { ApiClientError } from '$lib/api/client';
-	import { LatestRequest } from '$lib/async/latest-request';
+	import { ApiClientError } from '#lib/api/client.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
 	import {
 		appendStaffCareerHistory,
 		correctStaffCareerHistory,
 		listStaffCareerHistory,
 		type StaffCareerMutationAck
-	} from '$lib/api/staff-career';
+	} from '#lib/api/staff-career.js';
 	import {
 		staffCareerDraft,
 		careerEntryInput,
@@ -26,8 +26,8 @@
 		type StaffCareerDraft,
 		type StaffCareerKind,
 		type StaffPersonnelType
-	} from '$lib/forms/staff-career';
-	import { ACADEMIC_RANK_LABELS, staffCareerEntryLabel } from '$lib/forms/staff-personnel';
+	} from '#lib/forms/staff-career.js';
+	import { ACADEMIC_RANK_LABELS, staffCareerEntryLabel } from '#lib/forms/staff-personnel.js';
 	import StaffCareerDates from './StaffCareerDates.svelte';
 	import StaffJobPositionPicker from './StaffJobPositionPicker.svelte';
 	let {

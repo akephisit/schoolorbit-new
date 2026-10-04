@@ -15,22 +15,22 @@
 		type AdmissionTrack,
 		type ApplicationDocument,
 		applicationStatusLabel
-	} from '$lib/api/admission';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
-	import DocumentCropperModal from '$lib/components/DocumentCropperModal.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Input } from '$lib/components/ui/input';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { Label } from '$lib/components/ui/label';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import * as Select from '$lib/components/ui/select';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
-	import * as Card from '$lib/components/ui/card';
-	import { Separator } from '$lib/components/ui/separator';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/api/admission.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import DocumentCropperModal from '#lib/components/DocumentCropperModal.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		ChevronLeft,
@@ -52,9 +52,9 @@
 		Copy,
 		RefreshCw
 	} from '@lucide/svelte';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 
 	import type { PageProps } from './$types';
 	let { data }: PageProps = $props();

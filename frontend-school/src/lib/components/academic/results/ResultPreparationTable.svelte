@@ -4,12 +4,12 @@
 		courseOutcomeSelectionLabel,
 		resultBlockerLabel,
 		type CourseOutcomeSelection
-	} from '$lib/academic/results/presentation';
-	import type { CourseResultPreparationWorkspace } from '$lib/api/academicResults';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as Select from '$lib/components/ui/select';
-	import * as Table from '$lib/components/ui/table';
+	} from '#lib/academic/results/presentation.js';
+	import type { CourseResultPreparationWorkspace } from '#lib/api/academicResults.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { CheckCircle2, CircleAlert, LockKeyhole } from '@lucide/svelte';
 
 	let {

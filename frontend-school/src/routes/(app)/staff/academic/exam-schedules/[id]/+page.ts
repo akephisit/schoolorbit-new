@@ -1,8 +1,8 @@
 import type { PageLoad } from './$types';
-import { listGradeLevelOptions } from '$lib/api/academic-core';
-import { getExamScheduleWorkspace } from '$lib/api/examSchedule';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSIONS } from '$lib/permissions/registry';
+import { listGradeLevelOptions } from '#lib/api/academic-core.js';
+import { getExamScheduleWorkspace } from '#lib/api/examSchedule.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 const TITLE = 'จัดตารางสอบ';
 

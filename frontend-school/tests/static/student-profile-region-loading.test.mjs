@@ -13,7 +13,7 @@ for (const route of ['student', 'student/profile']) {
 		assert.match(loader, /ownerKey !==/);
 		assert.match(page, /\$effect\.pre/);
 		assert.match(page, /LatestRequest/);
-		assert.match(page, /replaceState/);
+		assert.match(page, /shallow:\s*true/);
 		assert.doesNotMatch(page, /onMount|invalidateAll/);
 	});
 }

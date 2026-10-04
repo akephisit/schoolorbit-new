@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { Input } from '$lib/components/ui/input';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { Label } from '$lib/components/ui/label';
-	import { Button } from '$lib/components/ui/button';
-	import * as Select from '$lib/components/ui/select';
-	import * as Collapsible from '$lib/components/ui/collapsible';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { CalendarDays, ChevronDown } from '@lucide/svelte';
-	import type { StaffJobPositionSummary } from '$lib/api/personnel';
+	import type { StaffJobPositionSummary } from '#lib/api/personnel.js';
 	import {
 		ACADEMIC_RANK_LABELS,
 		EDUCATION_LEVEL_LABELS,
 		type StaffPersonnelDraft
-	} from '$lib/forms/staff-personnel';
+	} from '#lib/forms/staff-personnel.js';
 	import {
 		PERSONNEL_TYPE_LABELS,
 		CAREER_KIND_LABELS,
@@ -21,7 +21,7 @@
 		type StaffCareerDraft,
 		type StaffCareerCorrectionReasons,
 		type StaffPersonnelType
-	} from '$lib/forms/staff-career';
+	} from '#lib/forms/staff-career.js';
 	import StaffJobPositionPicker from './StaffJobPositionPicker.svelte';
 	import StaffCareerDates from './StaffCareerDates.svelte';
 	let {

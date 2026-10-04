@@ -1,8 +1,8 @@
 import type { PageLoad } from './$types';
-import { getAcademicSetupWorkspace } from '$lib/api/academic-core';
-import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '$lib/academic-core/foundation-route';
-import { captureRouteLoad } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { getAcademicSetupWorkspace } from '#lib/api/academic-core.js';
+import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'none',

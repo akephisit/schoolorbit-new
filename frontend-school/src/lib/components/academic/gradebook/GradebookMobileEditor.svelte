@@ -6,12 +6,12 @@
 </script>
 
 <script lang="ts">
-	import type { GradebookSaveQueueSnapshot } from '$lib/academic/gradebook/save-queue';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import * as Sheet from '$lib/components/ui/sheet';
+	import type { GradebookSaveQueueSnapshot } from '#lib/academic/gradebook/save-queue.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import { AlertCircle, Check, ChevronLeft, Loader2, RotateCcw } from '@lucide/svelte';
 
 	let {

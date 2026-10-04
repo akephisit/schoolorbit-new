@@ -1,7 +1,7 @@
-import { getUserMenu } from '$lib/api/menu';
-import { getMyWorkCounts } from '$lib/api/work';
-import { waitForAuthenticatedUser, appIdentityKey } from '$lib/auth/settled-user';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { getUserMenu } from '#lib/api/menu.js';
+import { getMyWorkCounts } from '#lib/api/work.js';
+import { waitForAuthenticatedUser, appIdentityKey } from '#lib/auth/settled-user.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { LayoutLoad } from './$types';
 
 export const ssr = false;

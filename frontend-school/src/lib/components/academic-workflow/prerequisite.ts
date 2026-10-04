@@ -5,5 +5,5 @@ export interface AcademicPrerequisite {
 	description: string;
 	actionLabel?: string;
 	href?: string;
-	preload?: 'hover' | 'tap' | 'off';
+	preload?: 'hover' | 'tap' | false;
 }

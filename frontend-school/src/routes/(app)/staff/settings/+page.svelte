@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { LoadingButton } from '$lib/components/app-state';
-	import PushNotificationSettings from '$lib/components/settings/PushNotificationSettings.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import PushNotificationSettings from '#lib/components/settings/PushNotificationSettings.svelte';
 	import {
 		Card,
 		CardContent,
 		CardDescription,
 		CardHeader,
 		CardTitle
-	} from '$lib/components/ui/card';
+	} from '#lib/components/ui/card/index.js';
 	import {
 		ArrowRight,
 		Lock,
@@ -21,7 +21,7 @@
 		ShieldCheck
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { pwaStore } from '$lib/stores/pwa';
+	import { pwaStore } from '#lib/stores/pwa.js';
 
 	// Active tab
 	let activeTab = $state<'security' | 'app' | 'notifications'>('security');

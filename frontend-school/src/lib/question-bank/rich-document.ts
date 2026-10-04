@@ -3,7 +3,7 @@ import type {
 	RichContentBlock,
 	RichInlineNode,
 	RichTextMark
-} from '$lib/api/questionBank';
+} from '#lib/api/questionBank.js';
 
 export type EditorImageAttributes = {
 	fileId: string | null;

@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { listStaffJobPositions, type StaffJobPositionSummary } from '$lib/api/personnel';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { listStaffJobPositions, type StaffJobPositionSummary } from '#lib/api/personnel.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as Popover from '$lib/components/ui/popover';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	let {
 		selectableOnly = true,
 		label,

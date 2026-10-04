@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { ExamInvigilatorAssignmentSummary } from '$lib/api/examSchedule';
-	import { PageState } from '$lib/components/app-state';
+	import type { ExamInvigilatorAssignmentSummary } from '#lib/api/examSchedule.js';
+	import { PageState } from '#lib/components/app-state/index.js';
 	import InvigilatorRoomCard from './InvigilatorRoomCard.svelte';
 
 	let {

@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { CalendarClock, RefreshCw, ArrowUpRight } from '@lucide/svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		getRankMilestoneOverview,
 		type RankMilestoneOverview,
 		type RankMilestoneStatus,
 		type PersonnelStatusFilter
-	} from '$lib/api/personnel';
-	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { formatCareerDate } from '$lib/forms/staff-career';
-	import { ACADEMIC_RANK_LABELS } from '$lib/forms/staff-personnel';
-	import { RANK_MILESTONE_LABELS } from '$lib/forms/rank-milestones';
+	} from '#lib/api/personnel.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { formatCareerDate } from '#lib/forms/staff-career.js';
+	import { ACADEMIC_RANK_LABELS } from '#lib/forms/staff-personnel.js';
+	import { RANK_MILESTONE_LABELS } from '#lib/forms/rank-milestones.js';
 	let {
 		initial,
 		status,

@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
+	import { LatestRequest } from '#lib/async/latest-request.js';
 	import {
 		createIssuedCertificateRenderManifests,
 		type IssuedCertificateSummary
-	} from '$lib/api/certificates';
+	} from '#lib/api/certificates.js';
 	import {
 		downloadCertificatePdf,
 		MAX_CERTIFICATE_BATCH_SIZE,
 		validateCertificateBatchSize
-	} from '$lib/certificates/download';
-	import { loadCertificateRenderer } from '$lib/certificates/renderer';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
+	} from '#lib/certificates/download.js';
+	import { loadCertificateRenderer } from '#lib/certificates/renderer.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { FileArchive, Files, ShieldCheck } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 

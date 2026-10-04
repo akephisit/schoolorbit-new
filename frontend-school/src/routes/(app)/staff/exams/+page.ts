@@ -27,5 +27,5 @@ export const load: PageLoad = ({ fetch, url }) => {
 	};
 };
 import type { PageLoad } from './$types';
-import { listStaffExamSchedules } from '$lib/api/examSchedule';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { listStaffExamSchedules } from '#lib/api/examSchedule.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';

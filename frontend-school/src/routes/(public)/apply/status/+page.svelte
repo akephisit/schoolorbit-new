@@ -7,18 +7,18 @@
 		type AdmissionEnrollmentFormData,
 		type AdmissionEnrollmentParentData,
 		type PortalStatusResult
-	} from '$lib/api/admission';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/admission.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
-	import { publicFileUrl } from '$lib/api/files';
+	import { getPublicSchoolInfo, type PublicSchoolInfo } from '#lib/api/school.js';
+	import { publicFileUrl } from '#lib/api/files.js';
 	import {
 		GraduationCap,
 		Search,
@@ -72,7 +72,7 @@
 		if (portalData?.application?.admissionRoundId) {
 			sessionStorage.setItem('admissionEditNid', nationalId);
 			sessionStorage.setItem('admissionEditDob', dateOfBirth);
-			goto(resolve(`/apply/${portalData.application.admissionRoundId}?edit=true`));
+			goto(resolve(`apply/${portalData.application.admissionRoundId}?edit=true`));
 		}
 	}
 

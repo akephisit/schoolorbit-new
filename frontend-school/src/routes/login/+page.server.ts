@@ -1,6 +1,6 @@
-import { publicRequestFromOrigin } from '$lib/api/client';
-import { getRequiredPublicSchoolInfo } from '$lib/api/school';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { publicRequestFromOrigin } from '#lib/api/client.js';
+import { getRequiredPublicSchoolInfo } from '#lib/api/school.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = ({ fetch, url, setHeaders }) => {

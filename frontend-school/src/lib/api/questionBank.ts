@@ -1,5 +1,5 @@
-import { apiClient, BACKEND_URL, requireApiData, type ApiRequestOptions } from '$lib/api/client';
-import type { components, operations } from '$lib/api/generated/school-api';
+import { apiClient, BACKEND_URL, requireApiData, type ApiRequestOptions } from '#lib/api/client.js';
+import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 type ExportQuestionBankDataRequest =

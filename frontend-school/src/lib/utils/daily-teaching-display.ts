@@ -1,4 +1,4 @@
-import type { DailyTeachingEntry } from '$lib/api/timetable';
+import type { DailyTeachingEntry } from '#lib/api/timetable.js';
 
 export const DAILY_TEACHING_TEACHER_COLUMN_WIDTH = 104;
 export const DAILY_TEACHING_MIN_PERIOD_COLUMN_WIDTH = 84;

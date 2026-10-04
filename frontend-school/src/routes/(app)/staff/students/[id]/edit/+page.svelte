@@ -1,22 +1,22 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Card } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { toast } from 'svelte-sonner';
 	import { Edit, Save, X, Trash2 } from '@lucide/svelte';
-	import * as Select from '$lib/components/ui/select';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import {
 		getStudent,
 		updateStudent,
@@ -24,8 +24,8 @@
 		addParentToStudent,
 		removeParentFromStudent,
 		type Student
-	} from '$lib/api/students';
-	import * as Dialog from '$lib/components/ui/dialog';
+	} from '#lib/api/students.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 
 	let { data }: PageProps = $props();
 	const studentId = $derived(data.studentId);
@@ -44,11 +44,12 @@
 	let mutating = $state(false);
 	let parentEpoch = 0;
 	const academicYearId = $derived(data.academicYearId);
+
 	const academicYearQuery = $derived(
 		academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''
 	);
-	const listHref = $derived(`${resolve('/staff/students')}${academicYearQuery}`);
 
+	const listHref = $derived(`${resolve('staff/students')}${academicYearQuery}`);
 	const canReadStudent = $derived(
 		$can.hasAny(
 			PERMISSIONS.STUDENT_READ_SCHOOL,
@@ -219,8 +220,8 @@
 		const current = beginMutation();
 		deleting = true;
 		const destination = academicYearId
-			? resolve(`/staff/students?academicYearId=${encodeURIComponent(academicYearId)}`)
-			: resolve('/staff/students');
+			? resolve(`staff/students?academicYearId=${encodeURIComponent(academicYearId)}`)
+			: resolve('staff/students');
 		try {
 			await deleteStudent(studentId);
 			if (!current()) return;
@@ -296,7 +297,7 @@
 	title={student && canReadStudent ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
 	description="รายละเอียดและจัดการข้อมูลนักเรียน"
 	backHref={listHref}
-	backPreload="off"
+	backPreload={false}
 >
 	{#snippet actions()}
 		<Button

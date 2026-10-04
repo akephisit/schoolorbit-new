@@ -2,7 +2,7 @@ import type {
 	AcademicContextOptionsResponse,
 	AcademicTermOption,
 	AcademicYearOption
-} from '$lib/api/academic-context';
+} from '#lib/api/academic-context.js';
 import type { Readable } from 'svelte/store';
 
 export type { AcademicContextOptionsResponse, AcademicTermOption, AcademicYearOption };
@@ -30,9 +30,8 @@ export type AcademicContextResolution = Pick<
 };
 
 export type AcademicContextNavigationOptions = {
-	replaceState?: boolean;
-	noScroll?: boolean;
-	keepFocus?: boolean;
+	replace?: boolean;
+	reset?: boolean;
 };
 
 export type AcademicContextNavigate = (

@@ -2,7 +2,7 @@
 	import type { LayoutProps } from './$types';
 	import CertificateCampaignWorkspaceNav, {
 		type CertificateCampaignSectionPath
-	} from '$lib/components/certificates/CertificateCampaignWorkspaceNav.svelte';
+	} from '#lib/components/certificates/CertificateCampaignWorkspaceNav.svelte';
 
 	let { data, children }: LayoutProps = $props();
 

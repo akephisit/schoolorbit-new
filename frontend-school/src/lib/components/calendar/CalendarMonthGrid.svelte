@@ -11,15 +11,15 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils.js';
 	import {
 		CALENDAR_WEEKDAY_LABELS,
 		buildCalendarMonthWeeks,
 		eventOverlapsDate,
 		formatCalendarDate,
 		toIsoDate
-	} from '$lib/utils/calendar';
-	import type { CalendarWeekEventSegment } from '$lib/utils/calendar';
+	} from '#lib/utils/calendar.js';
+	import type { CalendarWeekEventSegment } from '#lib/utils/calendar.js';
 
 	let {
 		monthDate,

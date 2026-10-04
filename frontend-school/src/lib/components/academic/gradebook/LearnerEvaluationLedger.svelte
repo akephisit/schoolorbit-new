@@ -2,11 +2,11 @@
 	import type {
 		LearnerEvaluationCriterion,
 		LearnerEvaluationWorkspace
-	} from '$lib/api/academicLearnerEvaluations';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import * as Select from '$lib/components/ui/select';
+	} from '#lib/api/academicLearnerEvaluations.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { CheckCheck, ListChecks, Smartphone } from '@lucide/svelte';
 
 	let {

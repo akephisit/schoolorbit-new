@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Popover from '$lib/components/ui/popover';
-	import * as Command from '$lib/components/ui/command';
-	import { Button } from '$lib/components/ui/button';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as Command from '#lib/components/ui/command/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { Check, ChevronsUpDown } from '@lucide/svelte';
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils.js';
 
 	interface School {
 		name: string;
@@ -30,7 +30,7 @@
 		if (!open || schools.length > 0) return;
 		let active = true;
 		loadingSchools = true;
-		void import('$lib/data/thai-schools.json')
+		void import('#lib/data/thai-schools.json')
 			.then((mod) => {
 				if (!active) return;
 				schools = mod.default as School[];

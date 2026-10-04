@@ -2,7 +2,7 @@ import type {
 	CatalogDisplayState,
 	CatalogOwnerOption,
 	GradeLevelOption
-} from '$lib/api/academic-core';
+} from '#lib/api/academic-core.js';
 
 export type CatalogChoice = Readonly<{
 	value: string;

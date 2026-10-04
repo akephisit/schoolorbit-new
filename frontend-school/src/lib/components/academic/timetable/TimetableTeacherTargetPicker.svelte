@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { TimetableBlockWorkspaceStaff } from '$lib/api/timetable';
-	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import * as Popover from '$lib/components/ui/popover';
+	import type { TimetableBlockWorkspaceStaff } from '#lib/api/timetable.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { Check, ChevronDown, LockKeyhole, UsersRound } from '@lucide/svelte';
 
 	let {

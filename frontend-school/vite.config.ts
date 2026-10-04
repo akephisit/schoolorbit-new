@@ -1,3 +1,5 @@
+import adapter from '@sveltejs/adapter-cloudflare';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { fileURLToPath, URL } from 'node:url';
@@ -33,7 +35,10 @@ function clientOnlyWordExporterPlugin(): Plugin {
 		name: 'client-only-word-exporter',
 		enforce: 'pre',
 		resolveId(source) {
-			if (this.environment.name === 'ssr' && source === wordExporterModule) {
+			if (
+				this.environment.name === 'ssr' &&
+				(source === '#lib/question-bank/word-export.js' || source === wordExporterModule)
+			) {
 				return wordExporterServerStub;
 			}
 		}
@@ -45,7 +50,10 @@ function clientOnlyCertificateRendererPlugin(): Plugin {
 		name: 'client-only-certificate-renderer',
 		enforce: 'pre',
 		resolveId(source) {
-			if (this.environment.name === 'ssr' && source === certificateRendererModule) {
+			if (
+				this.environment.name === 'ssr' &&
+				(source === '#lib/certificates/renderer.js' || source === certificateRendererModule)
+			) {
 				return certificateRendererServerStub;
 			}
 		}
@@ -70,7 +78,15 @@ export default defineConfig({
 		clientOnlyCertificateRendererPlugin(),
 		clientOnlyHeavyDependenciesPlugin(),
 		tailwindcss(),
-		sveltekit()
+		sveltekit({
+			// Consult https://svelte.dev/docs/kit/integrations
+			// for more information about preprocessors
+			preprocess: vitePreprocess(),
+
+			// adapter-cloudflare for Cloudflare Workers deployment
+			adapter: adapter(),
+			version: { pollInterval: 0 }
+		})
 	],
 	optimizeDeps: {
 		include: ['html2pdf.js']

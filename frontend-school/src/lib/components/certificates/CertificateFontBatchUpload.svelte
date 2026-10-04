@@ -1,11 +1,14 @@
 <script lang="ts">
-	import { attachCertificateFontBatch, inspectCertificateFontUploads } from '$lib/api/certificates';
+	import {
+		attachCertificateFontBatch,
+		inspectCertificateFontUploads
+	} from '#lib/api/certificates.js';
 	import type {
 		AttachSchoolFontBatchRequest,
 		InspectSchoolFontUploadsRequest,
 		SchoolFontSummary
-	} from '$lib/api/school-fonts';
-	import SchoolFontBatchUpload from '$lib/components/school-fonts/SchoolFontBatchUpload.svelte';
+	} from '#lib/api/school-fonts.js';
+	import SchoolFontBatchUpload from '#lib/components/school-fonts/SchoolFontBatchUpload.svelte';
 
 	let {
 		templateId,

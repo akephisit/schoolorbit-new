@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { untrack } from 'svelte';
-	import { type CurriculumOverview, type CurriculumOverviewItem } from '$lib/api/academic-core';
-	import { CURRICULUM_OVERVIEW_DEPENDENCY } from '$lib/academic-core/foundation-route';
-	import CurriculumCreateDialog from '$lib/components/academic-core/CurriculumCreateDialog.svelte';
-	import CurriculumOverviewTable from '$lib/components/academic-core/CurriculumOverviewTable.svelte';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { can } from '$lib/stores/permissions';
+	import { type CurriculumOverview, type CurriculumOverviewItem } from '#lib/api/academic-core.js';
+	import { CURRICULUM_OVERVIEW_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
+	import CurriculumCreateDialog from '#lib/components/academic-core/CurriculumCreateDialog.svelte';
+	import CurriculumOverviewTable from '#lib/components/academic-core/CurriculumOverviewTable.svelte';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { can } from '#lib/stores/permissions.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();

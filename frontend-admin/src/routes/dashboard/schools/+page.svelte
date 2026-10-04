@@ -1,13 +1,18 @@
 <script lang="ts">
-	import { apiClient, type School, type CreateSchool } from '$lib/api/client';
+	import { apiClient, type School, type CreateSchool } from '#lib/api/client.js';
 	import { onMount } from 'svelte';
 	import { z } from 'zod';
-	import { createSchoolSSE, deleteSchoolSSE, type LogMessage, type Progress } from '$lib/utils/sse';
-	import InlineConsole from '$lib/components/InlineConsole.svelte';
-	import { PUBLIC_API_URL } from '$env/static/public';
+	import {
+		createSchoolSSE,
+		deleteSchoolSSE,
+		type LogMessage,
+		type Progress
+	} from '#lib/utils/sse.js';
+	import InlineConsole from '#lib/components/InlineConsole.svelte';
+	import { PUBLIC_API_URL } from '$app/env/public';
 	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
-	import { schoolCreationFailure } from '$lib/utils/school-provisioning';
+	import { schoolCreationFailure } from '#lib/utils/school-provisioning.js';
 
 	interface SchoolWithLogs extends School {
 		logs?: LogMessage[];
@@ -111,7 +116,10 @@
 				onLog: (level, message) => {
 					schools = schools.map((s) =>
 						s.id === pendingSchoolId
-							? { ...s, logs: [...(s.logs || []), { level, message, timestamp: new Date() }] }
+							? {
+									...s,
+									logs: [...(s.logs || []), { level, message, timestamp: new Date() }]
+								}
 							: s
 					);
 				},
@@ -190,7 +198,10 @@
 				onLog: (level, message) => {
 					schools = schools.map((s) =>
 						s.id === id
-							? { ...s, logs: [...(s.logs || []), { level, message, timestamp: new Date() }] }
+							? {
+									...s,
+									logs: [...(s.logs || []), { level, message, timestamp: new Date() }]
+								}
 							: s
 					);
 				},
@@ -270,9 +281,10 @@
 <div class="schools-page">
 	<div class="header">
 		<h1>จัดการโรงเรียน</h1>
-		<button class="btn-primary" onclick={() => (showCreateForm = !showCreateForm)}>
-			{showCreateForm ? 'ยกเลิก' : '+ เพิ่มโรงเรียน'}
-		</button>
+
+		<button class="btn-primary" onclick={() => (showCreateForm = !showCreateForm)}
+			>{showCreateForm ? 'ยกเลิก' : '+ เพิ่มโรงเรียน'}</button
+		>
 	</div>
 
 	{#if showCreateForm}

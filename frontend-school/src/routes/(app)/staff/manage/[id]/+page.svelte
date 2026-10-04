@@ -1,24 +1,24 @@
 <script lang="ts">
-	import StaffCareerHistory from '$lib/components/staff/StaffCareerHistory.svelte';
-	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '$lib/forms/staff-personnel';
+	import StaffCareerHistory from '#lib/components/staff/StaffCareerHistory.svelte';
+	import { ACADEMIC_RANK_LABELS, EDUCATION_LEVEL_LABELS } from '#lib/forms/staff-personnel.js';
 	import { onDestroy, untrack } from 'svelte';
-	import { LatestRequest } from '$lib/async/latest-request';
-	import { captureRouteLoad } from '$lib/navigation/route-load';
-	import { requireApiData } from '$lib/api/client';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { requireApiData } from '#lib/api/client.js';
 	import type { PageProps } from './$types';
-	import { getStaffProfile, type StaffProfileResponse } from '$lib/api/staff';
-	import { PERMISSIONS } from '$lib/permissions/registry';
-	import { authStore } from '$lib/stores/auth';
-	import { can } from '$lib/stores/permissions';
-	import { Button } from '$lib/components/ui/button';
-	import { PageShell } from '$lib/components/app-layout';
+	import { getStaffProfile, type StaffProfileResponse } from '#lib/api/staff.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { authStore } from '#lib/stores/auth.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { page } from '$app/state';
-	import { staffReturnHref, withStaffReturn } from '$lib/navigation/staff-management';
-	import StaffBreadcrumb from '$lib/components/staff/StaffBreadcrumb.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { staffStatusLabel } from '$lib/forms/staff-status';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as Dialog from '$lib/components/ui/dialog';
+	import { staffReturnHref, withStaffReturn } from '#lib/navigation/staff-management.js';
+	import StaffBreadcrumb from '#lib/components/staff/StaffBreadcrumb.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { staffStatusLabel } from '#lib/forms/staff-status.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import {
 		User,
 		Mail,
@@ -31,16 +31,16 @@
 		Plus,
 		IdCard
 	} from '@lucide/svelte';
-	import type { Achievement } from '$lib/types/achievement';
+	import type { Achievement } from '#lib/types/achievement.js';
 	import {
 		getAchievements,
 		createAchievement,
 		updateAchievement,
 		deleteAchievement
-	} from '$lib/api/achievement';
-	import AchievementCard from '$lib/components/achievement/AchievementCard.svelte';
-	import AchievementDialog from '$lib/components/achievement/AchievementDialog.svelte';
-	import PrivateFileImage from '$lib/components/files/PrivateFileImage.svelte';
+	} from '#lib/api/achievement.js';
+	import AchievementCard from '#lib/components/achievement/AchievementCard.svelte';
+	import AchievementDialog from '#lib/components/achievement/AchievementDialog.svelte';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import { toast } from 'svelte-sonner';
 
 	let staff: StaffProfileResponse | null = $state(null);
@@ -60,7 +60,7 @@
 
 	let { data }: PageProps = $props();
 	const staffId = $derived(data.staffId);
-	const returnHref = $derived(staffReturnHref(page.url));
+	const returnHref = $derived(staffReturnHref(new URL(page.url.href)));
 	const staffSource = $derived(data.staff),
 		achievementSource = $derived(data.achievements);
 	const staffRequest = new LatestRequest(),
@@ -287,7 +287,7 @@
 		: 'รายละเอียดบุคลากร'}
 	backHref={returnHref}
 	backLabel="กลับรายชื่อบุคลากร"
-	backPreload="off"
+	backPreload={false}
 >
 	{#snippet meta()}<StaffBreadcrumb
 			{returnHref}

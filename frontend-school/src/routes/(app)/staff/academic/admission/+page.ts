@@ -2,11 +2,11 @@
  * Admission Management — รายการรอบรับสมัครทั้งหมด
  */
 
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
-import { PERMISSIONS } from '$lib/permissions/registry';
-import { waitForAdmissionAccess } from '$lib/admission/admission-access';
-import { listRounds } from '$lib/api/admission';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { waitForAdmissionAccess } from '#lib/admission/admission-access.js';
+import { listRounds } from '#lib/api/admission.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

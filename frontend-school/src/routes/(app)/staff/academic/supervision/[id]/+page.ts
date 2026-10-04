@@ -1,14 +1,14 @@
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import {
 	getSupervisionObservation,
 	getSupervisionCycle,
 	getSupervisionTemplateSummary
-} from '$lib/api/supervision';
-import { captureRouteLoad } from '$lib/navigation/route-load';
+} from '#lib/api/supervision.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import {
 	waitForSupervisionAccess,
 	SUPERVISION_OBSERVATION_READ_PERMISSIONS
-} from '$lib/supervision/supervision-access';
+} from '#lib/supervision/supervision-access.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {

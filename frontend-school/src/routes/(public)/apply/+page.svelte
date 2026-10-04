@@ -5,11 +5,11 @@
 		type AdmissionRound,
 		roundStatusLabel,
 		roundStatusColor
-	} from '$lib/api/admission';
-	import { getPublicSchoolInfo, type PublicSchoolInfo } from '$lib/api/school';
-	import { Button } from '$lib/components/ui/button';
+	} from '#lib/api/admission.js';
+	import { getPublicSchoolInfo, type PublicSchoolInfo } from '#lib/api/school.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	import { GraduationCap, CalendarDays, ArrowRight, Search } from '@lucide/svelte';
-	import { publicFileUrl } from '$lib/api/files';
+	import { publicFileUrl } from '#lib/api/files.js';
 
 	let loadingRounds = $state(true);
 	let publicRounds: AdmissionRound[] = $state([]);

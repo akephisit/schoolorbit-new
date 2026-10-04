@@ -1,11 +1,11 @@
-import { browserVisibilityDependencies } from '$lib/realtime/visibility-idle';
+import { browserVisibilityDependencies } from '#lib/realtime/visibility-idle.js';
 import { writable, type Writable } from 'svelte/store';
-import { BACKEND_WS_URL, getSchoolSubdomainHint } from '$lib/api/client';
-import { realtimeAuthRecovery } from '$lib/realtime/auth-recovery';
+import { BACKEND_WS_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
+import { realtimeAuthRecovery } from '#lib/realtime/auth-recovery.js';
 import {
 	createTimetableSocketRuntime,
 	type TimetableSocketParams
-} from '$lib/utils/timetable-socket-runtime';
+} from '#lib/utils/timetable-socket-runtime.js';
 
 export interface UserContext {
 	view_mode: string;
@@ -194,7 +194,7 @@ function handleMessage(event: SequencedTimetableEvent) {
 
 async function recoverTimetableAuth() {
 	try {
-		const { authAPI } = await import('$lib/api/auth');
+		const { authAPI } = await import('#lib/api/auth.js');
 		await realtimeAuthRecovery(() => authAPI.refreshCurrentUser({ silent: true }));
 	} catch (error) {
 		console.error('Failed to refresh auth after timetable policy close', error);
@@ -222,7 +222,7 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 		clearRealtimeState();
 	},
 	onResume: async (isCurrent) => {
-		const { authAPI } = await import('$lib/api/auth');
+		const { authAPI } = await import('#lib/api/auth.js');
 		if (!isCurrent()) return false;
 		const result = await authAPI.refreshCurrentUser({ silent: true });
 		if (!isCurrent()) return false;

@@ -1,4 +1,4 @@
-import type { CertificateRenderManifest } from '$lib/api/certificates';
+import type { CertificateRenderManifest } from '#lib/api/certificates.js';
 
 export type CertificatePreviewOptions = {
 	scale?: number;

@@ -58,6 +58,8 @@ async function importScopedYear() {
 let academicContextStoreServer;
 
 async function importAcademicContextStore() {
+	process.env.PUBLIC_BACKEND_URL ??= 'http://127.0.0.1:9';
+	process.env.PUBLIC_VAPID_KEY ??= 'test';
 	academicContextStoreServer ??= await createViteServer({
 		root: projectRoot,
 		appType: 'custom',
@@ -776,7 +778,7 @@ test('manual frontend sources contain no legacy academic wrapper, path, or wire 
 	const files = await sourceFiles('src');
 	const violations = [];
 	const forbidden = [
-		/\$lib\/api\/academic['"]/,
+		/(?:\$lib|#lib)\/api\/academic(?:\.js)?['"]/,
 		/\/api\/academic\/(?:semesters|structure|classrooms|enrollments|planning\/courses|subjects|study-plans)/,
 		/\b(?:academic_semester_id|semester_id|classroom_course_id|student_class_enrollment_id|activity_slot_id)\b/,
 		new RegExp(

@@ -2,13 +2,13 @@
 	import {
 		createAcademicTermChangeSet,
 		type AcademicTermChangeSet
-	} from '$lib/api/learning-delivery';
-	import { LoadingButton } from '$lib/components/app-state';
-	import { Button } from '$lib/components/ui/button';
-	import { DatePicker } from '$lib/components/ui/date-picker';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
+	} from '#lib/api/learning-delivery.js';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { CalendarClock, TriangleAlert } from '@lucide/svelte';
 
 	type ChangePurpose = 'operational_change' | 'timetable_revision';

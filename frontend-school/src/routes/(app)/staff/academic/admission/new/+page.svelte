@@ -2,28 +2,28 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { createRound } from '$lib/api/admission';
-	import { LatestRequest, isAbortError } from '$lib/async/latest-request';
+	import { createRound } from '#lib/api/admission.js';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		lookupAcademicYears,
 		lookupGradeLevels,
 		type AcademicYearLookupItem,
 		type GradeLevelLookupItem
-	} from '$lib/api/lookup';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { PageShell } from '$lib/components/app-layout';
-	import { PageSkeleton, PageState } from '$lib/components/app-state';
-	import * as Card from '$lib/components/ui/card';
-	import * as Select from '$lib/components/ui/select';
-	import { Separator } from '$lib/components/ui/separator';
-	import DatePicker from '$lib/components/ui/date-picker/DatePicker.svelte';
+	} from '#lib/api/lookup.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { Separator } from '#lib/components/ui/separator/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import { toast } from 'svelte-sonner';
 	import { Plus, Loader2 } from '@lucide/svelte';
-	import { can } from '$lib/stores/permissions';
-	import { PERMISSIONS } from '$lib/permissions/registry';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -32,7 +32,7 @@
 	const gradesRequest = new LatestRequest();
 
 	function goToAdmissionRound(id: string) {
-		goto(resolve(`/staff/academic/admission/${id}`));
+		goto(resolve(`staff/academic/admission/${id}`));
 	}
 
 	let years: AcademicYearLookupItem[] = $state([]);

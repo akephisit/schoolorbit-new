@@ -1,8 +1,13 @@
-import { ApiClientError, apiClient, requireApiData, type ApiRequestOptions } from '$lib/api/client';
-import type { components } from '$lib/api/generated/school-api';
-import { clearSessionSecurity } from '$lib/api/session-security';
-import { authRefreshDecision, type AuthRefreshResult } from '$lib/auth/auth-refresh-policy';
-import { authStore, type User } from '$lib/stores/auth';
+import {
+	ApiClientError,
+	apiClient,
+	requireApiData,
+	type ApiRequestOptions
+} from '#lib/api/client.js';
+import type { components } from '#lib/api/generated/school-api.js';
+import { clearSessionSecurity } from '#lib/api/session-security.js';
+import { authRefreshDecision, type AuthRefreshResult } from '#lib/auth/auth-refresh-policy.js';
+import { authStore, type User } from '#lib/stores/auth.js';
 import { toast } from 'svelte-sonner';
 
 type Schemas = components['schemas'];

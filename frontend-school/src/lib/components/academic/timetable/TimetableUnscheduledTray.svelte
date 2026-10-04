@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { alignDragImageToPointer } from '$lib/academic/timetable/drag-image';
+	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
 	import type {
 		TimetableBlockPlacementCandidate,
 		TimetableBlockPlacementSource,
@@ -8,10 +8,10 @@
 		TimetableBlockWorkspaceStaff,
 		TimetableOrdinaryDemand,
 		TimetableSynchronizedDemand
-	} from '$lib/api/timetable';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import * as Popover from '$lib/components/ui/popover';
+	} from '#lib/api/timetable.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { Check, ChevronDown, Inbox, Plus, UsersRound } from '@lucide/svelte';
 	import TimetableRoomPicker from './TimetableRoomPicker.svelte';
 	import TimetableTeacherTargetPicker from './TimetableTeacherTargetPicker.svelte';

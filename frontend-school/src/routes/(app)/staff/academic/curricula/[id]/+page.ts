@@ -1,14 +1,14 @@
 import type { PageLoad } from './$types';
-import { readCurriculumAlignmentContext } from '$lib/academic-core/curriculum-detail-route';
+import { readCurriculumAlignmentContext } from '#lib/academic-core/curriculum-detail-route.js';
 import {
 	getCurriculum,
 	getCurriculumStructureWorkspace,
 	listCurriculumVersions,
 	type CurriculumStructureWorkspace
-} from '$lib/api/academic-core';
-import { getHomeroomDeliveryWorkspace } from '$lib/api/learning-delivery';
-import { captureRouteLoad, type RouteLoadResult } from '$lib/navigation/route-load';
-import { PERMISSION_MODULES } from '$lib/permissions/registry';
+} from '#lib/api/academic-core.js';
+import { getHomeroomDeliveryWorkspace } from '#lib/api/learning-delivery.js';
+import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'none' as const,

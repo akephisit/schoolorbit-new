@@ -1,4 +1,4 @@
-import type { CalendarAudienceType, CalendarEventFilters } from '$lib/api/calendar';
+import type { CalendarAudienceType, CalendarEventFilters } from '#lib/api/calendar.js';
 import { calendarGridRange } from './calendar';
 export function calendarRouteFilters(
 	url: URL,
