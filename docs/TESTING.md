@@ -217,6 +217,8 @@ node --test tests/static/<area>.test.mjs
 
 `test:route-loading` requires every authenticated page to have a completed data-owner review and a primary loader when route-owned. It rejects retired migration allowances and primary mount reads, follows local mount helper calls, and records browser subscription reasons and focused test owners in the inventory. It also guards focused invalidation, safe preload and the absence of generic page-view endpoints.
 
+The staff tools QR workflow uses synthetic staff/student/parent sessions and public branding fixtures. Against the local production preview below, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-tools-qr.spec.ts --project=chromium --workers=2` from `frontend-school`. It decodes downloaded PNGs with the test-only `jsQR` dependency, verifies exact 1024-pixel output and preview/download equality, checks logo validation/retry/supersession, and captures mobile/desktop light/dark states. Pure input validation and catalog menu registration run in `node --test tests/static/qr-code.test.mjs`.
+
 For the Academic Delivery region-loading browser gate, build and preview the frontend with a local API origin in one terminal, then run the mocked Chromium spec in another:
 
 ```bash

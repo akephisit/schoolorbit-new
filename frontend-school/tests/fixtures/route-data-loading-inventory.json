@@ -994,6 +994,26 @@
 			"notes": "Route-owned personal timetable; PDF code loads only after the download action."
 		},
 		{
+			"route": "staff/tools",
+			"wave": "self-service",
+			"dataOwner": "no-data",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "none",
+			"notes": "Static tool catalog; no page-owned read."
+		},
+		{
+			"route": "staff/tools/qr-code",
+			"wave": "self-service",
+			"dataOwner": "interaction-only",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "existing public school branding + file delivery",
+			"notes": "Browser QR generation and file selection; public school branding loads only on selection. Superseded reads and disposal revoke object URLs. Covered by staff-tools-qr browser acceptance."
+		},
+		{
 			"route": "staff/view/[id]",
 			"wave": "staff",
 			"dataOwner": "route",
