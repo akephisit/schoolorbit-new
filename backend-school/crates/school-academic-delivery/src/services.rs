@@ -13,7 +13,7 @@ pub mod groups;
 pub mod offerings;
 pub mod opening;
 pub mod roster_memberships;
-pub mod teacher_handoff;
+pub mod versions;
 pub mod workspaces;
 
 pub async fn pending_term_work(

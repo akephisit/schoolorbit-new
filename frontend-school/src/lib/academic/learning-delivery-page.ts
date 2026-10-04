@@ -1,6 +1,7 @@
 import type {
 	AcademicTermChangeSet,
-	AcademicTermChangeSetSummary
+	AcademicTermChangeSetSummary,
+	DeliveryVersionSummary
 } from '#lib/api/learning-delivery.js';
 
 export const LEARNING_DELIVERY_HOMEROOMS_DEPENDENCY = 'schoolorbit:learning-delivery-homerooms';
@@ -13,17 +14,17 @@ export type LearningDeliveryRefreshScope = 'local' | 'homerooms';
 export type LearningDeliveryRouteContext = {
 	academicYearId: string;
 	academicTermId: string;
-	timetableVersionId?: string;
+	deliveryVersionId?: string;
 	changeSetId?: string;
 };
 
 export function readLearningDeliveryRouteContext(url: URL): LearningDeliveryRouteContext | null {
 	const academicYearId = url.searchParams.get('academicYearId')?.trim() ?? '';
 	const academicTermId = url.searchParams.get('academicTermId')?.trim() ?? '';
-	const timetableVersionId = url.searchParams.get('timetableVersionId')?.trim() || undefined;
+	const deliveryVersionId = url.searchParams.get('deliveryVersionId')?.trim() || undefined;
 	const changeSetId = url.searchParams.get('changeSetId')?.trim() || undefined;
 	if (!academicYearId || !academicTermId) return null;
-	return { academicYearId, academicTermId, timetableVersionId, changeSetId };
+	return { academicYearId, academicTermId, deliveryVersionId, changeSetId };
 }
 
 export function selectAcademicTermChangeSetSummary(
@@ -48,7 +49,19 @@ export function summarizeAcademicTermChangeSet(
 		effectiveFrom: detail.effectiveFrom,
 		reason: detail.reason,
 		status: detail.status,
-		targetTimetableVersionId: detail.targetTimetableVersionId,
+		targetDeliveryVersionId: detail.targetDeliveryVersionId,
 		updatedAt: detail.updatedAt
 	};
+}
+
+export function selectDeliveryVersion(
+	versions: DeliveryVersionSummary[],
+	requestedId?: string
+): DeliveryVersionSummary | null {
+	if (requestedId) return versions.find((version) => version.id === requestedId) ?? null;
+	return (
+		versions.find((version) => version.status === 'draft') ??
+		versions.find((version) => version.status === 'published') ??
+		null
+	);
 }

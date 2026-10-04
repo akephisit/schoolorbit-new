@@ -26,7 +26,7 @@
 		matches_curriculum: 'ตรงกับหลักสูตร',
 		curriculum_requirement_not_offered: 'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
 		extra_offering: 'เปิดสอนเพิ่มเติมนอกหลักสูตร',
-		ended_early: 'หยุดสอนก่อนรุ่นตารางนี้มีผล',
+		ended_early: 'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
 		operational_periods_differ: 'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
 	};
 
@@ -48,8 +48,8 @@
 	);
 	let backHref = $derived.by(() => {
 		const query = new SvelteURLSearchParams({ academicYearId, academicTermId });
-		if (workspace.timetableVersionId) {
-			query.set('timetableVersionId', workspace.timetableVersionId);
+		if (workspace.deliveryVersionId) {
+			query.set('deliveryVersionId', workspace.deliveryVersionId);
 		}
 		return `/staff/academic/delivery?${query.toString()}`;
 	});
@@ -65,7 +65,7 @@
 	}
 
 	function formatEffectiveDate(value: string | null): string {
-		if (!value) return 'ยังไม่มีรุ่นตารางที่เลือก';
+		if (!value) return 'ยังไม่มีรุ่นเปิดสอนที่เลือก';
 		return new Intl.DateTimeFormat('th-TH', { dateStyle: 'long' }).format(
 			new Date(`${value}T00:00:00`)
 		);
@@ -83,8 +83,8 @@
 					</p>
 					<h2 class="mt-1 text-lg font-semibold">เทียบการเปิดสอนกับหลักสูตร</h2>
 					<p class="mt-1 text-sm text-muted-foreground">
-						ตรวจตามห้องและแผนการเรียน ณ รุ่นตารางที่มีผล
-						{formatEffectiveDate(workspace.timetableVersionEffectiveFrom)}
+						ตรวจตามห้องและแผนการเรียน ณ รุ่นเปิดสอนที่มีผล
+						{formatEffectiveDate(workspace.deliveryVersionEffectiveFrom)}
 					</p>
 				</div>
 			</div>

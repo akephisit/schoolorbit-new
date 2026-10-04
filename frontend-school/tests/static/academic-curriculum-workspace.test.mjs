@@ -94,7 +94,7 @@ test('curriculum detail is deep-linked and uses labeled management options', asy
 	assert.match(alignment, /ตรงกับหลักสูตร/);
 	assert.match(alignment, /หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน/);
 	assert.match(alignment, /เปิดสอนเพิ่มเติมนอกหลักสูตร/);
-	assert.match(alignment, /หยุดสอนก่อนรุ่นตารางนี้มีผล/);
+	assert.match(alignment, /หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล/);
 	assert.match(alignment, /คาบจริงต่างจากค่ามาตรฐานในหลักสูตร/);
 	assert.doesNotMatch(alignment, /getLearningOffering|getLearningGroup|listLearningGroups/);
 	assert.match(editor, /selectedCatalogIds/);

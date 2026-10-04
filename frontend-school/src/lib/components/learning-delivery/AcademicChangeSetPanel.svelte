@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
 		deleteAcademicTermChangeItem,
@@ -10,7 +12,7 @@
 		type ApplyTeacherHandoffResponse,
 		type DeliveryManagementOptions,
 		type LearningTeacherRole,
-		type LearningOfferingOverviewItem,
+		type DeliveryVersion,
 		type UpsertAcademicTermChangeItemRequest
 	} from '#lib/api/learning-delivery.js';
 	import { ApiClientError } from '#lib/api/client.js';
@@ -48,7 +50,7 @@
 		ensureOfferings
 	}: {
 		changeSet: AcademicTermChangeSet;
-		offerings: LearningOfferingOverviewItem[];
+		offerings: DeliveryVersion['snapshot']['offerings'];
 		canManage: boolean;
 		initialTeacherChangeItemId?: string;
 		onChanged: (
@@ -76,9 +78,7 @@
 	let selectedCatalogVersion = $derived(
 		managementOptions?.catalogVersions.find((item) => item.id === catalogVersionId) ?? null
 	);
-	let selectedOffering = $derived(
-		offerings.find((item) => item.offering.id === learningOfferingId)?.offering ?? null
-	);
+	let selectedOffering = $derived(offerings.find((item) => item.id === learningOfferingId) ?? null);
 	let catalogOptions = $derived(
 		(managementOptions?.catalogVersions ?? [])
 			.filter((item) => item.kind === (action === 'add_activity' ? 'activity' : 'course'))
@@ -95,11 +95,17 @@
 	);
 	let offeringOptions = $derived(
 		offerings
-			.filter((item) => item.offering.status === 'published' && !item.offering.endsOn)
+			.filter(
+				(item) =>
+					!changeSet.items.some(
+						(change) =>
+							change.actionKind === 'add_offering' && change.learningOfferingId === item.id
+					)
+			)
 			.map((item) => ({
-				id: item.offering.id,
-				label: `${item.offering.codeSnapshot} — ${item.offering.nameSnapshot}`,
-				description: item.offering.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'
+				id: item.id,
+				label: `${item.code} — ${item.name}`,
+				description: item.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'
 			}))
 	);
 	let activeHandoffItem = $derived(
@@ -157,7 +163,12 @@
 	}
 
 	async function showHandoff(itemId: string) {
-		if (!canManage || changeSet.status !== 'draft') return;
+		if (
+			!canManage ||
+			changeSet.status !== 'published' ||
+			!$can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)
+		)
+			return;
 		itemFormOpen = false;
 		teacherFormOpen = false;
 		if (!(await loadManagementOptions())) return;
@@ -195,14 +206,12 @@
 				item.actionKind === 'stop_group_teacher' ? '' : ` · ${teacherRoleLabel(item.teacherRole)}`;
 			return `${item.learningGroupLabel} · ${item.teacherLabel}${role}`;
 		}
-		const offering = offerings.find(
-			(entry) => entry.offering.id === item.learningOfferingId
-		)?.offering;
+		const offering = offerings.find((entry) => entry.id === item.learningOfferingId);
 		const periods =
 			item.actionKind === 'add_offering' || item.actionKind === 'adjust_weekly_period_target'
 				? ` · ${item.weeklyPeriodTarget} คาบ/สัปดาห์`
 				: '';
-		return `${offering?.nameSnapshot ?? item.learningOfferingId}${periods}`;
+		return `${offering?.name ?? item.learningOfferingId}${periods}`;
 	}
 
 	async function teacherItemSaved(updated: AcademicTermChangeSet) {
@@ -218,7 +227,12 @@
 
 	onMount(() => {
 		handoffItemId = initialTeacherChangeItemId;
-		if (handoffItemId && changeSet.status === 'draft' && canManage) {
+		if (
+			handoffItemId &&
+			changeSet.status === 'published' &&
+			canManage &&
+			$can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)
+		) {
 			void loadManagementOptions();
 		}
 	});
@@ -425,7 +439,7 @@
 							<div class="flex shrink-0 gap-1">
 								{#if item.actionKind === 'add_offering'}
 									<Button
-										href={`/staff/academic/delivery/${item.learningOfferingId}?timetableVersionId=${changeSet.targetTimetableVersionId}`}
+										href={`/staff/academic/delivery/${item.learningOfferingId}?deliveryVersionId=${changeSet.targetDeliveryVersionId}`}
 										data-sveltekit-preload-data="tap"
 										size="sm"
 										variant="ghost"
@@ -434,7 +448,7 @@
 										<ExternalLink class="size-3.5" />
 									</Button>
 								{/if}
-								{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'draft'}
+								{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'published' && canManage && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
 									<Button size="sm" variant="ghost" onclick={() => showHandoff(item.id)}>
 										จัดการคาบที่ได้รับผลกระทบ
 										<ExternalLink class="size-3.5" />
@@ -472,7 +486,7 @@
 			{/if}
 		{/if}
 
-		{#if activeHandoffItem && managementOptions && canManage && changeSet.status === 'draft'}
+		{#if activeHandoffItem && managementOptions && canManage && changeSet.status === 'published' && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
 			{#key activeHandoffItem.id}
 				<TeacherHandoffPanel
 					{changeSet}
@@ -625,10 +639,10 @@
 							<div>
 								<p class="text-xs text-muted-foreground">ตามหลักสูตร</p>
 								<p class="font-semibold">
-									{selectedOffering?.snapshot.kind === 'course'
-										? selectedOffering.snapshot.standardPeriodsPerWeek
+									{selectedOffering?.catalog.kind === 'course'
+										? selectedOffering.catalog.standardPeriodsPerWeek
 										: 'ไม่มีค่ามาตรฐาน'}
-									{selectedOffering?.snapshot.kind === 'course' ? 'คาบ/สัปดาห์' : ''}
+									{selectedOffering?.catalog.kind === 'course' ? 'คาบ/สัปดาห์' : ''}
 								</p>
 							</div>
 							<div class="space-y-1">

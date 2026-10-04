@@ -1,13 +1,15 @@
 import type { PageLoad } from './$types';
 import {
 	getLearningGroup,
+	getDeliveryVersion,
+	listDeliveryVersions,
 	getLearningOffering,
 	listDatedRosterMemberships,
 	listLearningGroups,
 	type DatedRosterMembership,
 	type LearningGroup
 } from '#lib/api/learning-delivery.js';
-import { listTimetableVersions } from '#lib/api/timetable.js';
+import { selectDeliveryVersion } from '#lib/academic/learning-delivery-page.js';
 import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
@@ -33,11 +35,24 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 	const versions = offering.then((result) =>
 		result.ok
 			? captureRouteLoad(
-					listTimetableVersions(result.data.academicTermId, { requestFetch: fetch }),
-					'โหลดรุ่นตารางสอนไม่สำเร็จ'
+					listDeliveryVersions(result.data.academicTermId, { requestFetch: fetch }),
+					'โหลดรุ่นเปิดสอนไม่สำเร็จ'
 				)
 			: ({ ok: true, data: [], error: null } satisfies RouteLoadResult<never[]>)
 	);
+	const deliveryVersion = versions.then(async (result) => {
+		if (!result.ok) return result;
+		const selected = selectDeliveryVersion(
+			result.data,
+			url.searchParams.get('deliveryVersionId') ?? undefined
+		);
+		return selected
+			? captureRouteLoad(
+					getDeliveryVersion(selected.id, { requestFetch: fetch }),
+					'โหลดข้อมูลรุ่นเปิดสอนไม่สำเร็จ'
+				)
+			: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
+	});
 	const loadSelectedGroup = (groupId: string): Promise<RouteLoadResult<LearningGroup | null>> =>
 		captureRouteLoad(
 			getLearningGroup(groupId, { requestFetch: fetch }).then((group) => {
@@ -70,6 +85,7 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 		offering,
 		groups,
 		versions,
+		deliveryVersion,
 		selectedGroup,
 		memberships
 	};

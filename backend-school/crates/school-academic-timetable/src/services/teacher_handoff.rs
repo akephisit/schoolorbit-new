@@ -5,19 +5,23 @@ use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use super::effective_teachers::{
-    eligible_teacher_ids_for_group, project_effective_assignments_in_tx,
-};
-use crate::models::{
+use school_academic_core::services::lifecycle_guard;
+use school_academic_delivery::models::{
     AcademicTermChangeActionKind, ApplyTeacherHandoffRequest, ApplyTeacherHandoffResponse,
     PreviewTeacherHandoffRequest, TeacherHandoffConflict, TeacherHandoffConflictKind,
     TeacherHandoffEntryPreview, TeacherHandoffEntryVersion, TeacherHandoffInstructorPreview,
     TeacherHandoffMode, TeacherHandoffPreview,
 };
-use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
 
-use super::{require_writable_term, stable_hash, validate_row_version};
+use super::timetable_lifecycle::hash as stable_hash;
+
+fn validate_row_version(revision: i64) -> Result<(), AppError> {
+    if revision <= 0 {
+        return Err(AppError::ValidationError("rowVersion ต้องมากกว่าศูนย์".into()));
+    }
+    Ok(())
+}
 
 #[derive(Debug, FromRow)]
 struct HandoffContextRow {
@@ -26,6 +30,7 @@ struct HandoffContextRow {
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     target_timetable_version_id: Uuid,
+    delivery_version_id: Uuid,
     target_timetable_version_row_version: i64,
 }
 
@@ -70,6 +75,7 @@ struct OccupiedInstructorRow {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NormalizedApplyRequest {
+    timetable_version_id: Uuid,
     change_set_id: Uuid,
     change_set_row_version: i64,
     target_timetable_version_row_version: i64,
@@ -134,6 +140,7 @@ pub async fn apply(
     }
     let instructor_ids = canonical_ids(&request.instructor_ids);
     let request_hash = stable_hash(&NormalizedApplyRequest {
+        timetable_version_id: request.timetable_version_id,
         change_set_id,
         change_set_row_version: request.change_set_row_version,
         target_timetable_version_row_version: request.target_timetable_version_row_version,
@@ -178,15 +185,14 @@ pub async fn apply(
 
     // Completed retries above only return retained receipts. New mutations must
     // take the academic boundary before locking the change set or timetable.
-    let term_id =
-        sqlx::query_scalar("SELECT academic_term_id FROM academic_term_change_sets WHERE id=$1")
-            .bind(change_set_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
-    require_writable_term(&mut transaction, term_id, false).await?;
+    super::timetable_version_service::require_version_term_write(
+        &mut transaction,
+        request.timetable_version_id,
+    )
+    .await?;
     let entry_ids = entries.iter().map(|(id, _)| *id).collect::<Vec<_>>();
     let preview_request = PreviewTeacherHandoffRequest {
+        timetable_version_id: request.timetable_version_id,
         change_set_row_version: request.change_set_row_version,
         target_timetable_version_row_version: request.target_timetable_version_row_version,
         teacher_change_item_id: request.teacher_change_item_id,
@@ -212,10 +218,11 @@ pub async fn apply(
     }
     let context: (Uuid, Uuid, Uuid, NaiveDate) = sqlx::query_as(
         r#"SELECT academic_term_id, academic_year_id,
-                  target_timetable_version_id, effective_from
+                  $2::uuid, effective_from
            FROM academic_term_change_sets WHERE id = $1"#,
     )
     .bind(change_set_id)
+    .bind(request.timetable_version_id)
     .fetch_one(&mut *transaction)
     .await?;
     let expected_versions = entries.into_iter().collect::<BTreeMap<_, _>>();
@@ -350,18 +357,19 @@ async fn preview_in_tx(
         r#"SELECT change_set.row_version AS change_set_row_version,
                   change_set.effective_from, change_set.academic_term_id,
                   change_set.academic_year_id,
-                  change_set.target_timetable_version_id,
+                  version.id AS target_timetable_version_id,version.delivery_version_id,
                   version.row_version AS target_timetable_version_row_version
            FROM academic_term_change_sets change_set
            JOIN academic_timetable_versions version
-             ON version.id = change_set.target_timetable_version_id
+             ON version.id = $2 AND version.academic_term_id=change_set.academic_term_id AND version.academic_year_id=change_set.academic_year_id
            WHERE change_set.id = $1
-             AND change_set.status = 'draft'
+             AND change_set.status = 'published'
              AND version.status = 'draft'
-             AND version.change_set_id = change_set.id
+             AND version.delivery_version_id=change_set.target_delivery_version_id
            {context_lock}"#,
     )))
     .bind(change_set_id)
+    .bind(request.timetable_version_id)
     .fetch_optional(&mut **transaction)
     .await?
     .ok_or_else(|| AppError::Conflict("ชุดการเปลี่ยนแปลงหรือรุ่นตารางไม่ใช่แบบร่างแล้ว".to_string()))?;
@@ -438,10 +446,24 @@ async fn preview_in_tx(
     let before_by_entry = load_instructors(transaction, &all_entry_ids, lock_for_apply).await?;
     let replacement_ids = canonical_ids(&request.instructor_ids);
     let display_names = load_staff_names(transaction, &replacement_ids).await?;
-    let projected =
-        project_effective_assignments_in_tx(transaction, change_set_id, &[item.learning_group_id])
-            .await?;
-    let eligible_ids = eligible_teacher_ids_for_group(&projected, item.learning_group_id);
+    let source = school_academic_delivery::services::versions::published_source(
+        transaction,
+        context.delivery_version_id,
+        context.academic_term_id,
+    )
+    .await?;
+    let source_group = source
+        .snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| offering.groups.iter())
+        .find(|group| group.id == item.learning_group_id)
+        .ok_or_else(|| AppError::ValidationError("กลุ่มไม่มีในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?;
+    let eligible_ids = source_group
+        .teachers
+        .iter()
+        .map(|teacher| teacher.teacher_id)
+        .collect::<BTreeSet<_>>();
     let route = timetable_route(
         context.academic_year_id,
         context.academic_term_id,
@@ -477,12 +499,23 @@ async fn preview_in_tx(
     let mut proposed_entries = Vec::new();
     for entry in &all_affected {
         let before = before_by_entry.get(&entry.id).cloned().unwrap_or_default();
-        let after =
+        let mut after =
             if selected_set.contains(&entry.id) && request.mode != TeacherHandoffMode::Manual {
                 proposed_instructors(&before, item.teacher_id, &replacement_ids, &display_names)?
             } else {
                 before.clone()
             };
+        if selected_set.contains(&entry.id) && request.mode != TeacherHandoffMode::Manual {
+            for instructor in &mut after {
+                if let Some(teacher) = source_group
+                    .teachers
+                    .iter()
+                    .find(|teacher| teacher.teacher_id == instructor.instructor_id)
+                {
+                    instructor.role = super::timetable_source::role_text(teacher.role).into();
+                }
+            }
+        }
         let preview = entry_preview(entry, before, after);
         affected_entries.push(preview.clone());
         if selected_set.contains(&entry.id) && request.mode != TeacherHandoffMode::Manual {

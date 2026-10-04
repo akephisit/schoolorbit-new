@@ -16,15 +16,16 @@
 	import {
 		getAcademicTermChangeSet,
 		getHomeroomDeliveryWorkspace,
-		getLearningDeliveryOverview,
+		getDeliveryVersion,
 		listAcademicTermChangeSets,
+		listDeliveryVersions,
+		type DeliveryVersionSummary,
 		type AcademicTermChangeSet,
 		type AcademicTermChangeSetSummary,
 		type HomeroomDeliveryWorkspace as HomeroomWorkspace,
-		type LearningDeliveryOverview,
+		type DeliveryVersion,
 		type LearningOfferingOverviewItem
 	} from '#lib/api/learning-delivery.js';
-	import { includeTimetableVersionOffering } from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
@@ -36,7 +37,9 @@
 	import AcademicChangeSetPanel from '#lib/components/learning-delivery/AcademicChangeSetPanel.svelte';
 	import HomeroomDeliveryWorkspace from '#lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
 	import OfferingCreateDialog from '#lib/components/learning-delivery/OfferingCreateDialog.svelte';
-	import OfferingOverviewTable from '#lib/components/learning-delivery/OfferingOverviewTable.svelte';
+	import DeliveryVersionOverviewTable from '#lib/components/learning-delivery/DeliveryVersionOverviewTable.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { RefreshCw } from '@lucide/svelte';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -49,8 +52,61 @@
 	const changeSetSummaryRequest = new LatestRequest();
 	const changeSetRequest = new LatestRequest();
 	const overviewRequest = new LatestRequest();
+	const deliveryVersionsRequest = new LatestRequest();
+	let deliveryVersions = $state<DeliveryVersionSummary[]>([]);
+	let deliveryVersionsLoading = $state(false);
+	let deliveryVersionsError = $state('');
+	const selectedDelivery = $derived(
+		deliveryVersions.find((version) => version.id === workspace?.deliveryVersionId) ?? null
+	);
+	async function refreshDeliveryVersions(): Promise<void> {
+		if (!academicTermId) return;
+		const { revision, signal } = deliveryVersionsRequest.begin();
+		deliveryVersionsLoading = true;
+		deliveryVersionsError = '';
+		try {
+			const loaded = await listDeliveryVersions(academicTermId, { signal });
+			if (deliveryVersionsRequest.isCurrent(revision)) deliveryVersions = loaded;
+		} catch (error) {
+			if (!isAbortError(error) && deliveryVersionsRequest.isCurrent(revision))
+				deliveryVersionsError = error instanceof Error ? error.message : 'โหลดรุ่นเปิดสอนไม่สำเร็จ';
+		} finally {
+			if (deliveryVersionsRequest.isCurrent(revision)) deliveryVersionsLoading = false;
+		}
+	}
+	function deliveryVersionLabel(version: DeliveryVersionSummary): string {
+		return `${version.status === 'draft' ? 'แบบร่าง' : version.status === 'published' ? 'เผยแพร่แล้ว' : 'ยกเลิก'} · เริ่มใช้ ${formatDate(version.effectiveFrom)} · ${version.offeringCount} รายการ`;
+	}
+	function selectDeliveryVersion(id: string): void {
+		const url = new URL(page.url.href);
+		url.searchParams.set('deliveryVersionId', id);
+		url.searchParams.delete('changeSetId');
+		void goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`));
+	}
+	$effect.pre(() => {
+		const promise = data.deliveryVersions;
+		const { revision } = deliveryVersionsRequest.begin();
+		untrack(() => {
+			deliveryVersionsLoading = Boolean(promise);
+			deliveryVersionsError = '';
+			deliveryVersions = [];
+		});
+		if (promise)
+			void promise.then((result) => {
+				if (!deliveryVersionsRequest.isCurrent(revision)) return;
+				untrack(() => {
+					if (result.ok) deliveryVersions = result.data;
+					else deliveryVersionsError = result.error;
+					deliveryVersionsLoading = false;
+				});
+			});
+		return () => {
+			if (deliveryVersionsRequest.isCurrent(revision)) deliveryVersionsRequest.abort();
+		};
+	});
 	let workspace = $state.raw<HomeroomWorkspace | null>(null);
-	let overview = $state.raw<LearningDeliveryOverview | null>(null);
+	let overview = $state.raw<DeliveryVersion | null>(null);
+	let revisionOfferings = $state.raw<DeliveryVersion['snapshot']['offerings']>([]);
 	let changeSets = $state.raw<AcademicTermChangeSetSummary[]>([]);
 	let activeChangeSet = $state.raw<AcademicTermChangeSet | null>(null);
 	let selectedChangeSetId = $state('');
@@ -67,13 +123,13 @@
 	let offeringDialog = $state<{
 		openCurriculumPreparation: (
 			target: SynchronizedActivityPreparationTarget,
-			timetableVersionId?: string | null
+			deliveryVersionId?: string | null
 		) => Promise<void>;
 	}>();
-	let timetableRevisionDialog = $state<{ openDialog: () => void }>();
-	let pendingTimetableAction = $state.raw<
-		{ kind: 'activate'; catalogVersionId: string } | { kind: 'include' } | null
-	>(null);
+	let deliveryRevisionDialog = $state<{ openDialog: () => void }>();
+	let pendingDeliveryAction = $state.raw<{ kind: 'activate'; catalogVersionId: string } | null>(
+		null
+	);
 	let initialKind = $derived<'all' | 'activity'>(
 		page.url.searchParams.get('kind') === 'activity' ? 'activity' : 'all'
 	);
@@ -85,23 +141,7 @@
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
 		)
 	);
-	let canManageTimetable = $derived(
-		$can.hasAny(
-			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
-			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED
-		)
-	);
-	let items = $derived(overview?.offerings ?? []);
-	let activeChangeSetSummary = $derived(
-		changeSets.find((changeSet) => changeSet.id === selectedChangeSetId) ?? null
-	);
-	let activeChangeSetLabel = $derived(
-		activeChangeSetSummary
-			? formatChangeSetOption(activeChangeSetSummary)
-			: 'เลือกชุดการเปลี่ยนแปลง'
-	);
+	let items = $derived(overview?.snapshot.offerings ?? []);
 
 	const missingTermPrerequisite: AcademicPrerequisite = {
 		key: 'academic-term',
@@ -126,24 +166,16 @@
 		);
 	}
 
-	function formatChangeSetOption(changeSet: AcademicTermChangeSetSummary): string {
-		const status =
-			changeSet.status === 'draft'
-				? 'แบบร่าง'
-				: changeSet.status === 'published'
-					? 'เผยแพร่แล้ว'
-					: 'ยกเลิกแล้ว';
-		return `${formatDate(changeSet.effectiveFrom)} · ${status} · ${changeSet.reason}`;
-	}
-
 	function updateSelectedChangeSetUrl(id: string) {
 		const url = new URL(page.url.href);
 
-		if (id) url.searchParams.set('changeSetId', id);
-		else url.searchParams.delete('changeSetId');
+		if (id) {
+			url.searchParams.set('changeSetId', id);
+			const selected = changeSets.find((item) => item.id === id);
+			if (selected) url.searchParams.set('deliveryVersionId', selected.targetDeliveryVersionId);
+		} else url.searchParams.delete('changeSetId');
 
 		goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`), {
-			shallow: true,
 			replace: true,
 			state: page.state
 		});
@@ -167,7 +199,7 @@
 		homeroomError = '';
 		try {
 			const result = await getHomeroomDeliveryWorkspace(academicYearId, academicTermId, {
-				timetableVersionId: page.url.searchParams.get('timetableVersionId') ?? undefined,
+				deliveryVersionId: page.url.searchParams.get('deliveryVersionId') ?? undefined,
 				signal
 			});
 			if (homeroomRequest.isCurrent(revision)) workspace = result;
@@ -237,8 +269,22 @@
 		const { revision, signal } = overviewRequest.begin();
 		overviewLoading = true;
 		try {
-			const result = await getLearningDeliveryOverview(termId, { signal });
-			if (overviewRequest.isCurrent(revision)) overview = result;
+			const versionId = workspace?.deliveryVersionId;
+			if (!versionId) return;
+			const result = await getDeliveryVersion(versionId, { signal });
+			if (result.academicTermId !== termId) throw new Error('รุ่นเปิดสอนไม่อยู่ในภาคเรียนที่เลือก');
+			const base = result.sourceVersionId
+				? await getDeliveryVersion(result.sourceVersionId, { signal })
+				: null;
+			if (overviewRequest.isCurrent(revision)) {
+				overview = result;
+				revisionOfferings = [
+					...result.snapshot.offerings,
+					...(base?.snapshot.offerings.filter(
+						(item) => !result.snapshot.offerings.some((current) => current.id === item.id)
+					) ?? [])
+				];
+			}
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (overviewRequest.isCurrent(revision))
@@ -265,69 +311,35 @@
 			void loadOverview(academicTermId);
 	}
 
-	function addCreated(item: LearningOfferingOverviewItem) {
-		if (!overview) {
-			overview = { academicTermId: item.offering.academicTermId, offerings: [item] };
-		} else {
-			overview = {
-				...overview,
-				offerings: [...overview.offerings, item].sort((left, right) =>
-					left.offering.codeSnapshot.localeCompare(right.offering.codeSnapshot, 'th-TH', {
-						numeric: true
-					})
-				)
-			};
-		}
-		void loadHomerooms();
+	function addCreated(_item: LearningOfferingOverviewItem) {
+		void refreshDeliveryVersions();
+		void refreshDeliveryRegions();
 	}
 
 	function prepareSynchronizedActivity(catalogVersionId: string) {
 		if (!workspace || !offeringDialog) return;
-		if (workspace.timetableVersionStatus === 'published') {
-			pendingTimetableAction = { kind: 'activate', catalogVersionId };
-			timetableRevisionDialog?.openDialog();
+		if (workspace.deliveryVersionStatus === 'published') {
+			pendingDeliveryAction = { kind: 'activate', catalogVersionId };
+			deliveryRevisionDialog?.openDialog();
 			return;
 		}
 		const target = buildSynchronizedActivityPreparationTarget(workspace, catalogVersionId);
 		if (!target) return;
 		void offeringDialog.openCurriculumPreparation(
 			target,
-			workspace.timetableVersionStatus === 'draft' ? workspace.timetableVersionId : null
+			workspace.deliveryVersionStatus === 'draft' ? workspace.deliveryVersionId : null
 		);
 	}
 
-	async function includeOfferingInTimetable(offeringId: string) {
-		if (!workspace || !academicYearId || !academicTermId) return;
-		if (workspace.timetableVersionStatus === 'published') {
-			pendingTimetableAction = { kind: 'include' };
-			timetableRevisionDialog?.openDialog();
-			return;
-		}
-		if (workspace.timetableVersionStatus !== 'draft' || !workspace.timetableVersionId) {
-			errorMessage = 'ยังไม่มีรุ่นตารางแบบร่างสำหรับเพิ่มรายการเปิดสอน';
-			return;
-		}
-		errorMessage = '';
-		try {
-			await includeTimetableVersionOffering(workspace.timetableVersionId, {
-				learningOfferingId: offeringId
-			});
-			await loadHomerooms();
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'เพิ่มรายการเข้ารุ่นตารางไม่สำเร็จ';
-		}
-	}
-
-	async function handleTimetableRevisionCreated(created: AcademicTermChangeSet) {
-		const pending = pendingTimetableAction;
-		pendingTimetableAction = null;
+	async function handleDeliveryRevisionCreated(created: AcademicTermChangeSet) {
+		const pending = pendingDeliveryAction;
+		pendingDeliveryAction = null;
 		addChangeSet(created);
 		if (!academicYearId || !academicTermId) return;
 		const url = new URL(page.url.href);
-		url.searchParams.set('timetableVersionId', created.targetTimetableVersionId);
+		url.searchParams.set('deliveryVersionId', created.targetDeliveryVersionId);
 		url.searchParams.set('changeSetId', created.id);
 		goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`), {
-			shallow: true,
 			replace: true,
 			state: page.state
 		});
@@ -335,7 +347,7 @@
 		if (pending?.kind !== 'activate' || !workspace || !offeringDialog) return;
 		const target = buildSynchronizedActivityPreparationTarget(workspace, pending.catalogVersionId);
 		if (!target) return;
-		await offeringDialog.openCurriculumPreparation(target, created.targetTimetableVersionId);
+		await offeringDialog.openCurriculumPreparation(target, created.targetDeliveryVersionId);
 	}
 
 	function addChangeSet(created: AcademicTermChangeSet) {
@@ -343,6 +355,7 @@
 		changeSets = [summary, ...changeSets.filter((changeSet) => changeSet.id !== created.id)];
 		selectedChangeSetId = created.id;
 		activeChangeSet = created;
+		void refreshDeliveryVersions();
 		updateSelectedChangeSetUrl(created.id);
 	}
 
@@ -358,9 +371,10 @@
 			.map((changeSet) => (changeSet.id === updated.id ? summary : changeSet))
 			.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
-		if (updated.items.length > 0 && !overview && academicTermId) {
+		if (updated.items.length > 0 && academicTermId && (overview || viewMode === 'offerings')) {
 			await loadOverview(academicTermId);
 		}
+		await refreshDeliveryVersions();
 		if (refreshScope === 'homerooms') await loadHomerooms();
 	}
 
@@ -440,12 +454,15 @@
 
 	$effect.pre(() => {
 		const termId = academicTermId;
+		const selectedVersionId = workspace?.deliveryVersionId;
 		overviewRequest.abort();
 		untrack(() => {
 			overview = null;
+			revisionOfferings = [];
 			overviewLoading = false;
 			errorMessage = '';
 			if (!termId) viewMode = 'homerooms';
+			else if (selectedVersionId && viewMode === 'offerings') void loadOverview(termId);
 		});
 		return () => overviewRequest.abort();
 	});
@@ -453,27 +470,40 @@
 
 <PageShell
 	title="จัดการการเปิดสอน"
-	description="ตรวจจากห้องประจำชั้นว่าเรียนอะไรบ้าง แล้วจัดรายการเปิดสอน กลุ่ม ครู และตารางให้ครบ"
+	description="จัดรายวิชา กลุ่มเรียน ครู และจำนวนคาบ แล้วเผยแพร่รุ่นเปิดสอนเพื่อนำไปจัดตาราง"
 >
 	{#snippet actions()}
+		{#if academicTermId}<Button
+				variant="outline"
+				disabled={homeroomLoading || changeSetSummaryLoading || deliveryVersionsLoading}
+				onclick={() =>
+					Promise.all([
+						refreshDeliveryVersions(),
+						refreshDeliveryRegions(),
+						loadChangeSetSummaries()
+					])}
+			>
+				<RefreshCw class="size-4" />โหลดล่าสุด
+			</Button>{/if}
 		{#if canManage && academicTermId}
-			<OfferingCreateDialog
-				bind:this={offeringDialog}
-				{academicTermId}
-				onCreated={addCreated}
-				onApplied={() => refreshDeliveryRegions(true)}
-				defaultTimetableVersionId={workspace?.timetableVersionStatus === 'draft'
-					? workspace.timetableVersionId
-					: null}
-			/>
-			<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
-			{#if canManageTimetable}
-				<AcademicChangeSetDialog
-					bind:this={timetableRevisionDialog}
+			{#if workspace?.deliveryVersionStatus === 'draft'}
+				<OfferingCreateDialog
+					bind:this={offeringDialog}
 					{academicTermId}
-					purpose="timetable_revision"
+					onCreated={addCreated}
+					onApplied={() => refreshDeliveryRegions(true)}
+					defaultDeliveryVersionId={workspace?.deliveryVersionStatus === 'draft'
+						? workspace.deliveryVersionId
+						: null}
+				/>
+			{/if}
+			<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
+			{#if canManage}
+				<AcademicChangeSetDialog
+					bind:this={deliveryRevisionDialog}
+					{academicTermId}
 					showTrigger={false}
-					onCreated={handleTimetableRevisionCreated}
+					onCreated={handleDeliveryRevisionCreated}
 				/>
 			{/if}
 		{/if}
@@ -484,8 +514,47 @@
 	{:else}
 		<div class="space-y-4">
 			<section
+				class="rounded-xl border bg-card p-3 sm:p-4"
+				aria-label="รุ่นเปิดสอน"
+				aria-busy={deliveryVersionsLoading}
+			>
+				{#if deliveryVersionsLoading && deliveryVersions.length === 0}<PageSkeleton
+						variant="cards"
+						rows={1}
+					/>
+				{:else if deliveryVersionsError}<PageState
+						variant="error"
+						title="โหลดรุ่นเปิดสอนไม่สำเร็จ"
+						description={deliveryVersionsError}
+						actionLabel="ลองอีกครั้ง"
+						onaction={refreshDeliveryVersions}
+					/>
+				{:else if deliveryVersions.length > 0}
+					<div class="space-y-2">
+						<p class="text-sm font-medium">รุ่นเปิดสอน</p>
+						<Select.Root
+							type="single"
+							value={workspace?.deliveryVersionId ?? ''}
+							onValueChange={selectDeliveryVersion}
+							><Select.Trigger class="w-full" aria-label="เลือกรุ่นเปิดสอน"
+								>{selectedDelivery
+									? deliveryVersionLabel(selectedDelivery)
+									: 'เลือกรุ่นเปิดสอน'}</Select.Trigger
+							><Select.Content
+								>{#each deliveryVersions as version (version.id)}<Select.Item value={version.id}
+										>{deliveryVersionLabel(version)}</Select.Item
+									>{/each}</Select.Content
+							></Select.Root
+						>
+						<p class="text-xs text-muted-foreground">
+							รุ่นเปิดสอนหนึ่งรุ่นใช้จัดตารางได้หลายรุ่น การเผยแพร่ที่หน้านี้ไม่เปลี่ยนตารางเดิม
+						</p>
+					</div>
+				{/if}
+			</section>
+			<section
 				class="relative space-y-4"
-				aria-label="ชุดการเปลี่ยนแปลงกลางภาค"
+				aria-label="การจัดการรุ่นเปิดสอน"
 				aria-busy={changeSetSummaryLoading || changeSetLoading}
 				data-testid={changeSetSummaryResolved &&
 				!changeSetSummaryLoading &&
@@ -509,34 +578,6 @@
 					{#if (changeSetSummaryLoading || changeSetLoading) && activeChangeSet}
 						<RegionUpdatingState label="กำลังอัปเดตชุดการเปลี่ยนแปลงกลางภาค" />
 					{/if}
-					{#if changeSets.length > 1}
-						<section
-							class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
-						>
-							<div>
-								<p class="text-sm font-medium">ชุดการเปลี่ยนแปลงกลางภาค</p>
-								<p class="text-xs text-muted-foreground">
-									เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว
-								</p>
-							</div>
-							<Select.Root
-								type="single"
-								value={selectedChangeSetId}
-								onValueChange={(value) => void loadSelectedChangeSet(value)}
-							>
-								<Select.Trigger class="w-full sm:w-[430px]">
-									<span class="truncate">{activeChangeSetLabel}</span>
-								</Select.Trigger>
-								<Select.Content>
-									{#each changeSets as changeSet (changeSet.id)}
-										<Select.Item value={changeSet.id}>
-											{formatChangeSetOption(changeSet)}
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</section>
-					{/if}
 					{#if changeSetLoading && !activeChangeSet}
 						<PageSkeleton variant="detail" />
 					{:else if changeSetError && !activeChangeSet}
@@ -551,7 +592,7 @@
 						{#key activeChangeSet.id}
 							<AcademicChangeSetPanel
 								changeSet={activeChangeSet}
-								offerings={items}
+								offerings={revisionOfferings}
 								{canManage}
 								ensureOfferings={ensureOverview}
 								initialTeacherChangeItemId={page.url.searchParams.get('teacherChangeItemId') ?? ''}
@@ -563,9 +604,10 @@
 							class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-amber-500/35 bg-amber-500/5 p-3 text-sm"
 						>
 							<div>
-								<p class="font-medium text-amber-900">เมื่อเปิดสอนแล้วและต้องเปลี่ยนกลางภาค</p>
+								<p class="font-medium text-amber-900">เริ่มต้นด้วยรุ่นเปิดสอน</p>
 								<p class="text-xs text-muted-foreground">
-									ใช้ปุ่ม “เพิ่ม/ปรับ/หยุดกลางภาค” ด้านบน ระบบจะแยกรุ่นตารางและเก็บประวัติเดิมให้
+									ใช้ปุ่ม “สร้างรุ่นเปิดสอน” ด้านบน แล้วกำหนดรายวิชา กลุ่ม ครู
+									และจำนวนคาบก่อนเผยแพร่
 								</p>
 							</div>
 						</section>
@@ -601,9 +643,7 @@
 							<HomeroomDeliveryWorkspace
 								{workspace}
 								{canManage}
-								{canManageTimetable}
 								onPrepareSynchronizedActivity={prepareSynchronizedActivity}
-								onIncludeOfferingInTimetable={includeOfferingInTimetable}
 							/>
 						{/if}
 					</section>
@@ -620,6 +660,14 @@
 						{/if}
 						{#if overviewLoading && !overview}
 							<PageSkeleton variant="table" rows={6} />
+						{:else if errorMessage && !overview}
+							<PageState
+								variant="error"
+								title="โหลดรายการเปิดสอนไม่สำเร็จ"
+								description={errorMessage}
+								actionLabel="ลองอีกครั้ง"
+								onaction={() => void ensureOverview()}
+							/>
 						{:else if items.length === 0}
 							<AcademicPrerequisiteNotice prerequisite={noOfferingPrerequisite} />
 						{:else}
@@ -628,7 +676,7 @@
 									class="flex flex-wrap items-start justify-between gap-4 border-b bg-muted/25 p-4"
 								>
 									<div>
-										<h2 class="font-semibold">รายการเปิดสอนของภาคเรียน</h2>
+										<h2 class="font-semibold">รายการเปิดสอนของรุ่นที่เลือก</h2>
 										<p class="mt-1 text-sm text-muted-foreground">
 											ใช้มุมมองนี้เมื่อต้องจัดรายละเอียดของรายวิชาหรือกิจกรรมใดกิจกรรมหนึ่ง
 										</p>
@@ -637,7 +685,7 @@
 										{items.length} รายการ
 									</p>
 								</div>
-								<OfferingOverviewTable {items} {initialKind} />
+								{#if overview}<DeliveryVersionOverviewTable version={overview} {initialKind} />{/if}
 							</section>
 						{/if}
 					</section>

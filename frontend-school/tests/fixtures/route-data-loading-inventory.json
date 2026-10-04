@@ -294,7 +294,7 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-delivery",
-			"notes": "Route loader starts homerooms and change-set summaries; selected detail follows its ID and offerings tab stays lazy."
+			"notes": "Route loads opening versions and its delivery journal independently; selected immutable opening identity precedes homeroom graph hydration. Offering graph stays tab-lazy; explicit refresh updates only visible regions and their version/journal references."
 		},
 		{
 			"route": "staff/academic/delivery/[offeringId]",
@@ -304,7 +304,7 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-delivery",
-			"notes": "Independent offering/groups and direct selected-group route reads; versions depend only on offering term and published membership history on selected group. Heavy detail links preload on tap; management and roster actions stay lazy."
+			"notes": "Route starts offering identity, group list and explicit group independently. Opening summaries and the selected immutable graph follow offering identity; published snapshots expose separate dated roster history, while management options remain action-lazy."
 		},
 		{
 			"route": "staff/academic/exam-schedules",
@@ -572,15 +572,15 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-timetable",
-			"notes": "Route-owned version list and selected board workspace; change-set detail follows workspace only when present. Heavy board uses tap preload; mutation resources and export stay action-lazy.",
+			"notes": "Route owns the version list and selected board; each timetable pins a published delivery graph. Source readiness, mutations and export stay action-lazy.",
 			"browserMount": {
-				"reason": "Context/auth subscriptions synchronize the socket. Refresh subscription reconciles only a positive event with an existing controller; no initial workspace read.",
+				"reason": "Context/auth subscriptions synchronize the socket. Positive refresh events reconcile the selected workspace and version list, including a deleted draft; initial reads remain route-owned.",
 				"tests": [
 					"tests/static/timetable-board-templates-route-loading.test.mjs",
 					"tests/static/timetable-idle-reconcile.test.mjs",
 					"tests/e2e/timetable-teacher-board.spec.ts"
 				],
-				"eventReads": ["subscribe:getTimetableBlockWorkspace"]
+				"eventReads": ["subscribe:getTimetableBlockWorkspace", "subscribe:listTimetableVersions"]
 			}
 		},
 		{

@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use super::timetable_block_conflicts::map_write_error;
 use crate::models::timetable_version::{
-    CloneTimetableVersionRequest, TimetableVersion, TimetableVersionDisplayState,
-    TimetableVersionStatus, TimetableVersionTarget,
+    CloneTimetableVersionRequest, CreateTimetableVersionRequest, TimetableVersion,
+    TimetableVersionDisplayState, TimetableVersionStatus, TimetableVersionTarget,
 };
 use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
@@ -35,11 +35,11 @@ struct TimetableVersionRow {
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
-    effective_from: NaiveDate,
+    effective_from: Option<NaiveDate>,
     effective_until: Option<NaiveDate>,
     status: TimetableVersionStatus,
     source_version_id: Option<Uuid>,
-    change_set_id: Option<Uuid>,
+    delivery_version_id: Uuid,
     bell_schedule_id: Uuid,
     row_version: i64,
     created_by: Option<Uuid>,
@@ -50,22 +50,12 @@ struct TimetableVersionRow {
 }
 
 #[derive(Debug, Clone, FromRow)]
-struct TimetableVersionTargetRow {
-    timetable_version_id: Uuid,
-    learning_offering_id: Uuid,
-    weekly_period_target: i32,
-    standard_periods_per_week: Option<i32>,
-}
-
-#[derive(Debug, Clone, FromRow)]
 struct CloneSourceRow {
     id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     status: TimetableVersionStatus,
     row_version: i64,
-    term_start_date: NaiveDate,
-    academic_year_end_date: NaiveDate,
     bell_schedule_id: Uuid,
 }
 
@@ -91,7 +81,7 @@ const VERSION_SELECT: &str = r#"
            END AS effective_until,
            version.status,
            version.source_version_id,
-           version.change_set_id,
+           version.delivery_version_id,
            version.bell_schedule_id,
            version.row_version,
            version.created_by,
@@ -134,6 +124,47 @@ pub async fn list_versions(
     hydrate_versions(pool, rows, Utc::now().date_naive()).await
 }
 
+/// Public read DTOs expose only opening targets within the timetable read scope.
+pub async fn restrict_targets(
+    pool: &PgPool,
+    versions: &mut [TimetableVersion],
+    access: &crate::policy::TimetableAccessFilter,
+) -> Result<(), AppError> {
+    if access.includes_school_owned {
+        return Ok(());
+    }
+    let ids = versions
+        .iter()
+        .map(|version| version.delivery_version_id)
+        .collect::<Vec<_>>();
+    let snapshots = school_academic_delivery::services::versions::snapshots(pool, &ids).await?;
+    for version in versions {
+        let snapshot = snapshots
+            .get(&version.delivery_version_id)
+            .ok_or_else(|| AppError::Conflict("ไม่พบรุ่นเปิดสอนของตาราง".into()))?;
+        version.targets.retain(|target| {
+            snapshot.offerings.iter().any(|offering| {
+                offering.id == target.learning_offering_id
+                    && (access
+                        .organization_unit_ids
+                        .contains(&offering.owning_organization_unit_id)
+                        || access
+                            .organization_tree_unit_ids
+                            .contains(&offering.owning_organization_unit_id)
+                        || access.assigned_actor_id.is_some_and(|actor| {
+                            offering.groups.iter().any(|group| {
+                                group
+                                    .teachers
+                                    .iter()
+                                    .any(|teacher| teacher.teacher_id == actor)
+                            })
+                        }))
+            })
+        });
+    }
+    Ok(())
+}
+
 pub async fn resolve_for_date(
     pool: &PgPool,
     term_id: Uuid,
@@ -172,6 +203,57 @@ pub async fn resolve_version_id_for_date<'e>(
     .ok_or_else(|| AppError::NotFound(format!("ไม่พบตารางเรียนที่เผยแพร่และมีผลในวันที่ {on_date}")))
 }
 
+/// Start the first timetable after independently publishing its opening graph.
+/// Term serialization also makes a repeated request resume the same blank draft.
+pub async fn create_initial_draft(
+    pool: &PgPool,
+    actor: Uuid,
+    request: CreateTimetableVersionRequest,
+) -> Result<TimetableVersion, AppError> {
+    let mut tx = pool.begin().await?;
+    let (year, bell): (Uuid, Option<Uuid>) =
+        sqlx::query_as("SELECT academic_year_id,bell_schedule_id FROM academic_terms WHERE id=$1")
+            .bind(request.academic_term_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".into()))?;
+    lifecycle_guard::require_term_write_exclusive(&mut tx, year, request.academic_term_id).await?;
+    let bell = bell.ok_or_else(|| {
+        AppError::ValidationError("ตั้งค่าตารางเวลาของภาคเรียนก่อนสร้างตารางสอน".into())
+    })?;
+    let published: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published')")
+        .bind(request.academic_term_id).fetch_one(&mut *tx).await?;
+    if published {
+        return Err(AppError::Conflict(
+            "มีตารางที่เผยแพร่แล้ว กรุณาเปิดรุ่นต้นทางแล้วกดแก้ไข".into(),
+        ));
+    }
+    let drafts: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='draft' ORDER BY created_at,id FOR UPDATE")
+        .bind(request.academic_term_id).fetch_all(&mut *tx).await?;
+    if drafts.len() > 1 {
+        return Err(AppError::Conflict(
+            "มีหลายแบบร่าง กรุณาเลือกแบบร่างที่จะจัดต่อ".into(),
+        ));
+    }
+    let id = if let Some(id) = drafts.first() {
+        *id
+    } else {
+        let delivery = school_academic_delivery::services::versions::latest_published_id(
+            &mut tx,
+            request.academic_term_id,
+        )
+        .await?;
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,delivery_version_id,bell_schedule_id,created_by) VALUES($1,$2,$3,NULL,'draft',$4,$5,$6)")
+            .bind(id).bind(request.academic_term_id).bind(year).bind(delivery).bind(bell).bind(actor).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.draft_created','academic_timetable_version',$1,$2,$3,$4,$5)")
+            .bind(id).bind(year).bind(request.academic_term_id).bind(actor).bind(serde_json::json!({"deliveryVersionId":delivery})).execute(&mut *tx).await?;
+        id
+    };
+    tx.commit().await?;
+    get_version(pool, id, Utc::now().date_naive()).await
+}
+
 pub async fn clone_draft(
     pool: &PgPool,
     actor_id: Uuid,
@@ -179,132 +261,10 @@ pub async fn clone_draft(
     request: CloneTimetableVersionRequest,
 ) -> Result<TimetableVersion, AppError> {
     let mut transaction = pool.begin().await?;
-    let new_version_id = clone_draft_in_transaction(
-        &mut transaction,
-        actor_id,
-        source_id,
-        request.source_row_version,
-        request.effective_from,
-        None,
-    )
-    .await?;
+    let new_version_id =
+        clone_draft_in_transaction(&mut transaction, actor_id, source_id, request).await?;
     transaction.commit().await?;
     get_version(pool, new_version_id, Utc::now().date_naive()).await
-}
-
-pub async fn include_offering_target(
-    pool: &PgPool,
-    timetable_version_id: Uuid,
-    learning_offering_id: Uuid,
-) -> Result<TimetableVersionTarget, AppError> {
-    let mut transaction = pool.begin().await?;
-    let target = include_offering_target_in_transaction(
-        &mut transaction,
-        timetable_version_id,
-        learning_offering_id,
-    )
-    .await?;
-    transaction.commit().await?;
-    Ok(target)
-}
-
-pub async fn include_offering_target_in_transaction(
-    transaction: &mut Transaction<'_, Postgres>,
-    timetable_version_id: Uuid,
-    learning_offering_id: Uuid,
-) -> Result<TimetableVersionTarget, AppError> {
-    require_version_term_write(transaction, timetable_version_id).await?;
-    let (academic_term_id, academic_year_id, effective_from, status): (
-        Uuid,
-        Uuid,
-        NaiveDate,
-        TimetableVersionStatus,
-    ) = sqlx::query_as(
-        r#"SELECT academic_term_id, academic_year_id, effective_from, status
-           FROM academic_timetable_versions
-           WHERE id = $1
-           FOR UPDATE"#,
-    )
-    .bind(timetable_version_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางเรียน".to_string()))?;
-    if status != TimetableVersionStatus::Draft {
-        return Err(AppError::Conflict(
-            "เพิ่มรายการเปิดสอนได้เฉพาะรุ่นตารางเรียนแบบร่าง".to_string(),
-        ));
-    }
-
-    let candidate: (i32, Option<i32>) = sqlx::query_as(
-        r#"SELECT COALESCE(subject_version.periods_per_week,
-                           activity_version.periods_per_week) AS weekly_period_target,
-                  subject_version.periods_per_week AS standard_periods_per_week
-           FROM learning_offerings offering
-           LEFT JOIN course_offering_details course_detail
-             ON course_detail.learning_offering_id = offering.id
-           LEFT JOIN subject_versions subject_version
-             ON subject_version.id = course_detail.subject_version_id
-           LEFT JOIN activity_offering_details activity_detail
-             ON activity_detail.learning_offering_id = offering.id
-           LEFT JOIN activity_versions activity_version
-             ON activity_version.id = activity_detail.activity_version_id
-           WHERE offering.id = $1
-             AND offering.academic_term_id = $2
-             AND offering.academic_year_id = $3
-             AND offering.status IN ('draft', 'published')
-             AND (offering.starts_on IS NULL OR offering.starts_on <= $4)
-             AND (offering.ends_on IS NULL OR offering.ends_on >= $4)
-             AND EXISTS (
-                 SELECT 1
-                 FROM learning_offering_targets offering_target
-                 WHERE offering_target.learning_offering_id = offering.id
-             )"#,
-    )
-    .bind(learning_offering_id)
-    .bind(academic_term_id)
-    .bind(academic_year_id)
-    .bind(effective_from)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::Conflict("รายการเปิดสอนไม่พร้อมใช้ในวันที่เริ่มต้นของรุ่นตารางนี้".to_string()))?;
-    if candidate.0 <= 0 {
-        return Err(AppError::Conflict(
-            "รายการเปิดสอนไม่มีจำนวนคาบต่อสัปดาห์ที่ใช้จัดตารางได้".to_string(),
-        ));
-    }
-
-    let inserted = sqlx::query(
-        r#"INSERT INTO academic_timetable_version_targets (
-               timetable_version_id, learning_offering_id, academic_term_id,
-               academic_year_id, weekly_period_target, migration_provenance
-           ) VALUES ($1, $2, $3, $4, $5,
-                     jsonb_build_object('includedFromDelivery', true))
-           ON CONFLICT (timetable_version_id, learning_offering_id) DO NOTHING"#,
-    )
-    .bind(timetable_version_id)
-    .bind(learning_offering_id)
-    .bind(academic_term_id)
-    .bind(academic_year_id)
-    .bind(candidate.0)
-    .execute(&mut **transaction)
-    .await?;
-    if inserted.rows_affected() == 1 {
-        sqlx::query(
-            r#"UPDATE academic_timetable_versions
-               SET row_version = row_version + 1, updated_at = now()
-               WHERE id = $1"#,
-        )
-        .bind(timetable_version_id)
-        .execute(&mut **transaction)
-        .await?;
-    }
-
-    Ok(TimetableVersionTarget {
-        timetable_version_id,
-        learning_offering_id,
-        weekly_period_target: candidate.0,
-        standard_periods_per_week: candidate.1,
-    })
 }
 
 /// Coordinate before version/block locks. Resolve immutable IDs without row
@@ -328,10 +288,9 @@ pub async fn clone_draft_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
     actor_id: Uuid,
     source_id: Uuid,
-    source_row_version: i64,
-    effective_from: NaiveDate,
-    change_set_id: Option<Uuid>,
+    request: CloneTimetableVersionRequest,
 ) -> Result<Uuid, AppError> {
+    let source_row_version = request.source_row_version;
     if source_row_version <= 0 {
         return Err(AppError::ValidationError(
             "sourceRowVersion ต้องมากกว่าศูนย์".to_string(),
@@ -345,8 +304,6 @@ pub async fn clone_draft_in_transaction(
                   source.academic_year_id,
                   source.status,
                   source.row_version,
-                  term.start_date AS term_start_date,
-                  year.end_date AS academic_year_end_date,
                   term.bell_schedule_id
            FROM academic_timetable_versions source
            JOIN academic_terms term ON term.id = source.academic_term_id
@@ -370,115 +327,62 @@ pub async fn clone_draft_in_transaction(
             source_row_version, source.row_version
         )));
     }
-    if effective_from < source.term_start_date || effective_from > source.academic_year_end_date {
-        return Err(AppError::ValidationError(
-            "วันที่เริ่มใช้ตารางต้องอยู่ตั้งแต่วันเปิดภาคเรียนถึงวันสิ้นสุดปีการศึกษา".to_string(),
-        ));
-    }
-
-    let duplicate: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
-               SELECT 1
-               FROM academic_timetable_versions
-               WHERE academic_term_id = $1
-                 AND effective_from = $2
-                 AND status IN ('draft', 'published')
-           )"#,
+    let delivery_version_id = school_academic_delivery::services::versions::latest_published_id(
+        transaction,
+        source.academic_term_id,
     )
-    .bind(source.academic_term_id)
-    .bind(effective_from)
-    .fetch_one(&mut **transaction)
     .await?;
-    if duplicate {
-        return Err(AppError::Conflict(
-            "มีรุ่นตารางเรียนแบบร่างหรือเผยแพร่ในวันที่นี้แล้ว".to_string(),
-        ));
+    let drafts: Vec<(Uuid, i64)> = sqlx::query_as("SELECT id,row_version FROM academic_timetable_versions WHERE source_version_id=$1 AND status='draft' ORDER BY created_at,id FOR UPDATE")
+        .bind(source.id).fetch_all(&mut **transaction).await?;
+    let resume = match request.resume_draft_id {
+        Some(id) => Some(
+            *drafts
+                .iter()
+                .find(|(draft_id, _)| *draft_id == id)
+                .ok_or_else(|| AppError::Conflict("ไม่พบแบบร่างจากรุ่นต้นทางที่เลือก".into()))?,
+        ),
+        None if drafts.len() == 1 => drafts.first().copied(),
+        None if drafts.len() > 1 => {
+            return Err(AppError::Conflict(
+                "มีหลายแบบร่างจากรุ่นนี้ กรุณาเลือกแบบร่างที่ต้องการแก้ต่อ".into(),
+            ))
+        }
+        None => None,
+    };
+    if let Some((id, revision)) = resume {
+        if request
+            .draft_row_version
+            .is_some_and(|expected| expected != revision)
+        {
+            return Err(AppError::Conflict("แบบร่างถูกแก้ไข กรุณาโหลดข้อมูลใหม่".into()));
+        }
+        let updated=sqlx::query("UPDATE academic_timetable_versions SET delivery_version_id=$2,row_version=row_version+1,updated_at=now() WHERE id=$1 AND delivery_version_id<>$2")
+            .bind(id).bind(delivery_version_id).execute(&mut **transaction).await?;
+        if updated.rows_affected() == 1 {
+            sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.source_updated','academic_timetable_version',$1,$2,$3,$4,$5)")
+                .bind(id).bind(source.academic_year_id).bind(source.academic_term_id).bind(actor_id)
+                .bind(sqlx::types::Json(serde_json::json!({"deliveryVersionId":delivery_version_id,"sourceVersionId":source.id,"resumed":true}))).execute(&mut **transaction).await?;
+        }
+        return Ok(id);
     }
 
     let new_version_id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO academic_timetable_versions (
                id, academic_term_id, academic_year_id, effective_from, status,
-               source_version_id, change_set_id, bell_schedule_id, created_by
-           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7, $8)"#,
+               source_version_id, delivery_version_id, bell_schedule_id, created_by
+           ) VALUES ($1, $2, $3, NULL, 'draft', $4, $5, $6, $7)"#,
     )
     .bind(new_version_id)
     .bind(source.academic_term_id)
     .bind(source.academic_year_id)
-    .bind(effective_from)
     .bind(source.id)
-    .bind(change_set_id)
+    .bind(delivery_version_id)
     .bind(source.bell_schedule_id)
     .bind(actor_id)
     .execute(&mut **transaction)
     .await
     .map_err(map_clone_write_error)?;
-
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_version_targets (
-               timetable_version_id, learning_offering_id, academic_term_id,
-               academic_year_id, weekly_period_target, migration_provenance
-           )
-           SELECT $1, target.learning_offering_id, target.academic_term_id,
-                  target.academic_year_id, target.weekly_period_target,
-                  target.migration_provenance || jsonb_build_object(
-                      'clonedFromVersionId', $2::text
-                  )
-           FROM academic_timetable_version_targets target
-           WHERE target.timetable_version_id = $2"#,
-    )
-    .bind(new_version_id)
-    .bind(source.id)
-    .execute(&mut **transaction)
-    .await?;
-
-    sqlx::query(
-        r#"WITH candidates AS (
-               SELECT offering.id AS learning_offering_id,
-                      offering.academic_term_id,
-                      offering.academic_year_id,
-                      COALESCE(
-                          subject_version.periods_per_week,
-                          activity_version.periods_per_week
-                      ) AS weekly_period_target
-               FROM learning_offerings offering
-               LEFT JOIN course_offering_details course_detail
-                 ON course_detail.learning_offering_id = offering.id
-               LEFT JOIN subject_versions subject_version
-                 ON subject_version.id = course_detail.subject_version_id
-               LEFT JOIN activity_offering_details activity_detail
-                 ON activity_detail.learning_offering_id = offering.id
-               LEFT JOIN activity_versions activity_version
-                 ON activity_version.id = activity_detail.activity_version_id
-               WHERE offering.academic_term_id = $2
-                 AND offering.academic_year_id = $3
-                 AND offering.status IN ('draft', 'published')
-                 AND (offering.starts_on IS NULL OR offering.starts_on <= $4)
-                 AND (offering.ends_on IS NULL OR offering.ends_on >= $4)
-                 AND EXISTS (
-                     SELECT 1
-                     FROM learning_offering_targets offering_target
-                     WHERE offering_target.learning_offering_id = offering.id
-                 )
-           )
-           INSERT INTO academic_timetable_version_targets (
-               timetable_version_id, learning_offering_id, academic_term_id,
-               academic_year_id, weekly_period_target, migration_provenance
-           )
-           SELECT $1, candidate.learning_offering_id, candidate.academic_term_id,
-                  candidate.academic_year_id, candidate.weekly_period_target,
-                  jsonb_build_object('includedDuringCloneFromVersionId', $5::text)
-           FROM candidates candidate
-           WHERE candidate.weekly_period_target > 0
-           ON CONFLICT (timetable_version_id, learning_offering_id) DO NOTHING"#,
-    )
-    .bind(new_version_id)
-    .bind(source.academic_term_id)
-    .bind(source.academic_year_id)
-    .bind(effective_from)
-    .bind(source.id)
-    .execute(&mut **transaction)
-    .await?;
 
     sqlx::query(
         r#"CREATE TEMP TABLE timetable_clone_block_map ON COMMIT DROP AS
@@ -534,13 +438,13 @@ pub async fn clone_draft_in_transaction(
     sqlx::query(
         r#"INSERT INTO academic_timetable_block_groups (
                id, block_id, learning_group_id, learning_offering_id,
-               academic_term_id, academic_year_id, room_id, row_version,
+               academic_term_id, academic_year_id, room_id, row_version, homeroom_ids,
                is_active, migration_provenance, created_by, updated_by,
                created_at, updated_at
            )
            SELECT group_map.target_id, block_map.target_id, source.learning_group_id,
                   source.learning_offering_id, source.academic_term_id,
-                  source.academic_year_id, source.room_id, 1, true,
+                  source.academic_year_id, source.room_id, 1, source.homeroom_ids, true,
                   source.migration_provenance || jsonb_build_object(
                       'clonedFromBlockGroupId', source.id::text,
                       'sourceVersionId', $2::text
@@ -686,10 +590,13 @@ pub async fn clone_draft_in_transaction(
             "คัดลอกรุ่นตารางสอนไม่ครบถ้วน กรุณาลองใหม่".to_string(),
         ));
     }
+    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.draft_created','academic_timetable_version',$1,$2,$3,$4,$5)")
+        .bind(new_version_id).bind(source.academic_year_id).bind(source.academic_term_id).bind(actor_id)
+        .bind(sqlx::types::Json(serde_json::json!({"sourceVersionId":source.id,"deliveryVersionId":delivery_version_id,"copiedBlockCount":cloned_block_count}))).execute(&mut **transaction).await?;
     Ok(new_version_id)
 }
 
-pub(crate) async fn get_version(
+pub async fn get_version(
     pool: &PgPool,
     version_id: Uuid,
     display_date: NaiveDate,
@@ -715,42 +622,43 @@ async fn hydrate_versions(
         return Ok(Vec::new());
     }
 
-    let version_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let target_rows: Vec<TimetableVersionTargetRow> = sqlx::query_as(
-        r#"SELECT target.timetable_version_id,
-                  target.learning_offering_id,
-                  target.weekly_period_target,
-                  subject_version.periods_per_week AS standard_periods_per_week
-           FROM academic_timetable_version_targets target
-           LEFT JOIN course_offering_details course_detail
-             ON course_detail.learning_offering_id = target.learning_offering_id
-           LEFT JOIN subject_versions subject_version
-             ON subject_version.id = course_detail.subject_version_id
-           WHERE target.timetable_version_id = ANY($1)
-           ORDER BY target.timetable_version_id, target.learning_offering_id"#,
-    )
-    .bind(&version_ids)
-    .fetch_all(pool)
-    .await?;
+    let source_ids: Vec<Uuid> = rows.iter().map(|row| row.delivery_version_id).collect();
+    let snapshots =
+        school_academic_delivery::services::versions::snapshots(pool, &source_ids).await?;
     let mut targets_by_version: HashMap<Uuid, Vec<TimetableVersionTarget>> = HashMap::new();
-    for target in target_rows {
-        targets_by_version
-            .entry(target.timetable_version_id)
-            .or_default()
-            .push(TimetableVersionTarget {
-                timetable_version_id: target.timetable_version_id,
-                learning_offering_id: target.learning_offering_id,
-                weekly_period_target: target.weekly_period_target,
-                standard_periods_per_week: target.standard_periods_per_week,
-            });
+    for row in &rows {
+        let snapshot = snapshots
+            .get(&row.delivery_version_id)
+            .ok_or_else(|| AppError::Conflict("รุ่นเปิดสอนของตารางไม่พร้อม กรุณาติดต่อผู้ดูแลระบบ".into()))?;
+        targets_by_version.insert(
+            row.id,
+            snapshot
+                .offerings
+                .iter()
+                .map(|offering| TimetableVersionTarget {
+                    timetable_version_id: row.id,
+                    learning_offering_id: offering.id,
+                    weekly_period_target: offering.weekly_period_target,
+                    standard_periods_per_week: match &offering.catalog {
+                        school_academic_delivery::models::LearningOfferingSnapshot::Course(
+                            course,
+                        ) => Some(course.standard_periods_per_week),
+                        school_academic_delivery::models::LearningOfferingSnapshot::Activity(_) => {
+                            None
+                        }
+                    },
+                })
+                .collect(),
+        );
     }
 
     Ok(rows
         .into_iter()
         .map(|row| {
-            let display_state = (row.status == TimetableVersionStatus::Published).then(|| {
-                derive_display_state(row.effective_from, row.effective_until, display_date)
-            });
+            let display_state = row
+                .effective_from
+                .filter(|_| row.status == TimetableVersionStatus::Published)
+                .map(|date| derive_display_state(date, row.effective_until, display_date));
             TimetableVersion {
                 id: row.id,
                 academic_term_id: row.academic_term_id,
@@ -760,7 +668,7 @@ async fn hydrate_versions(
                 status: row.status,
                 display_state,
                 source_version_id: row.source_version_id,
-                change_set_id: row.change_set_id,
+                delivery_version_id: row.delivery_version_id,
                 bell_schedule_id: row.bell_schedule_id,
                 row_version: row.row_version,
                 created_by: row.created_by,

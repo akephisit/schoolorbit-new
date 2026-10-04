@@ -4,7 +4,6 @@ use serde::Serialize;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::ports::TimetableMutationPort;
 use school_authorization::AcademicResourceListFilter;
 use school_errors::AppError;
 
@@ -244,7 +243,6 @@ pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningGroup, AppError> {
 }
 
 pub async fn create(
-    timetable: &(impl TimetableMutationPort + ?Sized),
     pool: &PgPool,
     actor_user_id: Uuid,
     offering_id: Uuid,
@@ -295,9 +293,7 @@ pub async fn create(
         &request.preferred_room_ids,
     )
     .await?;
-    timetable
-        .retry_group_sync(&mut transaction, id, actor_user_id)
-        .await?;
+    super::versions::refresh_drafts_for_offering(&mut transaction, offering_id).await?;
     transaction.commit().await?;
     append_audit(
         pool,
@@ -314,7 +310,6 @@ pub async fn create(
 }
 
 pub async fn update(
-    timetable: &(impl TimetableMutationPort + ?Sized),
     pool: &PgPool,
     actor_user_id: Uuid,
     id: Uuid,
@@ -346,8 +341,7 @@ pub async fn update(
         &request.preferred_room_ids,
     )
     .await?;
-    timetable
-        .retry_group_sync(&mut transaction, id, actor_user_id)
+    super::versions::refresh_drafts_for_offering(&mut transaction, group.learning_offering_id)
         .await?;
     transaction.commit().await?;
     append_group_audit(pool, actor_user_id, &group, "learning_group.updated").await?;
@@ -355,7 +349,6 @@ pub async fn update(
 }
 
 pub async fn replace_teachers(
-    timetable: &(impl TimetableMutationPort + ?Sized),
     pool: &PgPool,
     actor_user_id: Uuid,
     id: Uuid,
@@ -412,8 +405,7 @@ pub async fn replace_teachers(
     }
     increment_group_revision(&mut transaction, id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[id]).await?;
-    timetable
-        .retry_group_sync(&mut transaction, id, actor_user_id)
+    super::versions::refresh_drafts_for_offering(&mut transaction, group.learning_offering_id)
         .await?;
     transaction.commit().await?;
     append_group_audit(
@@ -427,7 +419,6 @@ pub async fn replace_teachers(
 }
 
 pub async fn replace_homerooms(
-    timetable: &(impl TimetableMutationPort + ?Sized),
     pool: &PgPool,
     actor_user_id: Uuid,
     id: Uuid,
@@ -467,8 +458,7 @@ pub async fn replace_homerooms(
     .bind(id)
     .execute(&mut *transaction)
     .await?;
-    timetable
-        .retry_group_sync(&mut transaction, id, actor_user_id)
+    super::versions::refresh_drafts_for_offering(&mut transaction, group.learning_offering_id)
         .await?;
     transaction.commit().await?;
     append_group_audit(

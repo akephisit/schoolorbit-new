@@ -22,16 +22,8 @@ struct VersionContext {
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     bell_schedule_id: Uuid,
+    delivery_version_id: Uuid,
     status: String,
-}
-
-#[derive(Debug, FromRow)]
-struct GroupContext {
-    learning_offering_id: Uuid,
-    academic_term_id: Uuid,
-    academic_year_id: Uuid,
-    offering_kind: String,
-    scheduling_mode: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -175,68 +167,53 @@ pub async fn create_ordinary_block(
         request.bell_schedule_period_id,
     )
     .await?;
-    let group: GroupContext = sqlx::query_as(
-        r#"SELECT learning_group.learning_offering_id,
-                  learning_group.academic_term_id,
-                  learning_group.academic_year_id,
-                  offering.kind AS offering_kind,
-                  activity_detail.scheduling_mode
-           FROM learning_groups learning_group
-           JOIN learning_offerings offering
-             ON offering.id = learning_group.learning_offering_id
-           LEFT JOIN activity_offering_details activity_detail
-             ON activity_detail.learning_offering_id = offering.id
-           WHERE learning_group.id = $1"#,
-    )
-    .bind(request.learning_group_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))?;
-    if group.academic_term_id != version.academic_term_id
-        || group.academic_year_id != version.academic_year_id
-    {
-        return Err(AppError::BadRequest(
-            "กลุ่มเรียนไม่อยู่ในปีและภาคเรียนของรุ่นตารางสอน".to_string(),
-        ));
-    }
-    if group.scheduling_mode.as_deref() == Some("synchronized") {
-        return Err(AppError::ValidationError(
-            "กิจกรรมแบบพร้อมกันต้องวางจากช่วงกิจกรรมหลัก".to_string(),
-        ));
-    }
-    ensure_version_offering_target(
+    let source = school_academic_delivery::services::versions::published_source(
         &mut transaction,
-        request.timetable_version_id,
-        group.learning_offering_id,
+        version.delivery_version_id,
+        version.academic_term_id,
     )
     .await?;
-    let assignments: Vec<InstructorAssignment> = sqlx::query_as(
-        r#"SELECT teacher.teacher_id, teacher.role
-           FROM learning_group_teachers teacher
-           JOIN academic_timetable_versions version ON version.id = $2
-           WHERE teacher.learning_group_id = $1
-             AND teacher.teacher_id = ANY($3)
-             AND teacher.starts_on <= version.effective_from
-             AND (teacher.ends_on IS NULL OR teacher.ends_on >= version.effective_from)
-           ORDER BY teacher.teacher_id"#,
-    )
-    .bind(request.learning_group_id)
-    .bind(request.timetable_version_id)
-    .bind(&instructor_ids)
-    .fetch_all(&mut *transaction)
-    .await?;
-    if assignments.len() != instructor_ids.len() {
+    let (offering, group) = source
+        .snapshot
+        .offerings
+        .iter()
+        .find_map(|offering| {
+            offering
+                .groups
+                .iter()
+                .find(|group| group.id == request.learning_group_id)
+                .map(|group| (offering, group))
+        })
+        .ok_or_else(|| AppError::ValidationError("กลุ่มเรียนไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?;
+    let scheduling_mode = match &offering.catalog {
+        school_academic_delivery::models::LearningOfferingSnapshot::Course(_) => {
+            Some("independent")
+        }
+        school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity) => {
+            Some(match activity.scheduling_mode {
+                school_academic_delivery::models::ActivitySchedulingMode::Independent => {
+                    "independent"
+                }
+                school_academic_delivery::models::ActivitySchedulingMode::Synchronized => {
+                    "synchronized"
+                }
+            })
+        }
+    };
+    if scheduling_mode == Some("synchronized") {
         return Err(AppError::ValidationError(
-            "ครูที่เลือกต้องเป็นครูของกลุ่มเรียนในวันที่รุ่นตารางเริ่มใช้".to_string(),
+            "กิจกรรมแบบพร้อมกันต้องวางจากช่วงกิจกรรมหลัก".into(),
         ));
     }
+    let assignments = source_assignments(group, &instructor_ids)?;
 
     let block_id = Uuid::new_v4();
-    let block_kind = if group.offering_kind == "course" {
-        "COURSE"
-    } else {
-        "ACTIVITY"
-    };
+    let block_kind =
+        if offering.kind == school_academic_delivery::models::LearningOfferingKind::Course {
+            "COURSE"
+        } else {
+            "ACTIVITY"
+        };
     insert_block(
         &mut transaction,
         block_id,
@@ -245,8 +222,8 @@ pub async fn create_ordinary_block(
         request.bell_schedule_period_id,
         &day,
         block_kind,
-        group.scheduling_mode.as_deref(),
-        Some(group.learning_offering_id),
+        scheduling_mode,
+        Some(offering.id),
         None,
         None,
         request.note.as_deref(),
@@ -258,17 +235,18 @@ pub async fn create_ordinary_block(
     sqlx::query(
         r#"INSERT INTO academic_timetable_block_groups (
                id, block_id, learning_group_id, learning_offering_id,
-               academic_term_id, academic_year_id, room_id, created_by, updated_by
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)"#,
+               academic_term_id, academic_year_id, room_id, created_by, updated_by, homeroom_ids
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)"#,
     )
     .bind(block_group_id)
     .bind(block_id)
     .bind(request.learning_group_id)
-    .bind(group.learning_offering_id)
+    .bind(offering.id)
     .bind(version.academic_term_id)
     .bind(version.academic_year_id)
     .bind(request.room_id)
     .bind(actor_id)
+    .bind(&group.homeroom_ids)
     .execute(&mut *transaction)
     .await
     .map_err(map_write_error)?;
@@ -276,7 +254,7 @@ pub async fn create_ordinary_block(
         let assignment = assignments
             .iter()
             .find(|assignment| assignment.teacher_id == *teacher_id)
-            .expect("validated assignment set must contain every selected teacher");
+            .ok_or_else(|| AppError::ValidationError("ครูไม่อยู่ในข้อมูลเปิดสอนของกลุ่ม".into()))?;
         sqlx::query(
             r#"INSERT INTO academic_timetable_block_group_instructors (
                    id, block_group_id, instructor_id, role, display_order
@@ -315,41 +293,26 @@ pub async fn create_synchronized_block(
         request.bell_schedule_period_id,
     )
     .await?;
-    let offering_valid: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
-               SELECT 1
-               FROM learning_offerings offering
-               JOIN activity_offering_details detail
-                 ON detail.learning_offering_id = offering.id
-               WHERE offering.id = $1
-                 AND offering.academic_term_id = $2
-                 AND offering.academic_year_id = $3
-                 AND offering.kind = 'activity'
-                 AND detail.scheduling_mode = 'synchronized'
-           )"#,
+    let source = school_academic_delivery::services::versions::published_source(
+        &mut transaction,
+        version.delivery_version_id,
+        version.academic_term_id,
     )
-    .bind(request.learning_offering_id)
-    .bind(version.academic_term_id)
-    .bind(version.academic_year_id)
-    .fetch_one(&mut *transaction)
     .await?;
-    if !offering_valid {
+    let offering = source
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| offering.id == request.learning_offering_id)
+        .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่อยู่ในรุ่นที่ตารางอ้างอิง".into()))?;
+    if !matches!(&offering.catalog,school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity)
+        if activity.scheduling_mode==school_academic_delivery::models::ActivitySchedulingMode::Synchronized)
+    {
         return Err(AppError::ValidationError(
-            "รายการนี้ไม่ใช่กิจกรรมแบบจัดพร้อมกันในภาคเรียนที่เลือก".to_string(),
+            "รายการนี้ไม่ใช่กิจกรรมแบบจัดพร้อมกัน".into(),
         ));
     }
-    ensure_version_offering_target(
-        &mut transaction,
-        request.timetable_version_id,
-        request.learning_offering_id,
-    )
-    .await?;
-    let scoped_homeroom_ids = offering_homeroom_ids(
-        &mut transaction,
-        request.learning_offering_id,
-        version.academic_year_id,
-    )
-    .await?;
+    let scoped_homeroom_ids = &offering.homeroom_ids;
     if homeroom_ids
         .iter()
         .any(|homeroom_id| !scoped_homeroom_ids.contains(homeroom_id))
@@ -1112,28 +1075,22 @@ async fn replace_group_instructors(
     timetable_version_id: Uuid,
     instructor_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    let assignments: Vec<InstructorAssignment> = sqlx::query_as(
-        r#"SELECT assignment.teacher_id, assignment.role
-           FROM academic_timetable_block_groups block_group
-           JOIN learning_group_teachers assignment
-             ON assignment.learning_group_id = block_group.learning_group_id
-           JOIN academic_timetable_versions version ON version.id = $2
-           WHERE block_group.id = $1
-             AND assignment.teacher_id = ANY($3)
-             AND assignment.starts_on <= version.effective_from
-             AND (assignment.ends_on IS NULL OR assignment.ends_on >= version.effective_from)
-           ORDER BY assignment.teacher_id"#,
+    let (delivery_id,term_id,group_id): (Uuid,Uuid,Uuid)=sqlx::query_as("SELECT version.delivery_version_id,version.academic_term_id,placed.learning_group_id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetable_versions version ON version.id=block.timetable_version_id WHERE placed.id=$1 AND version.id=$2")
+        .bind(block_group_id).bind(timetable_version_id).fetch_one(&mut **transaction).await?;
+    let source = school_academic_delivery::services::versions::published_source(
+        transaction,
+        delivery_id,
+        term_id,
     )
-    .bind(block_group_id)
-    .bind(timetable_version_id)
-    .bind(instructor_ids)
-    .fetch_all(&mut **transaction)
     .await?;
-    if assignments.len() != instructor_ids.len() {
-        return Err(AppError::ValidationError(
-            "ครูที่เลือกต้องเป็นครูของกลุ่มเรียนในวันที่รุ่นตารางเริ่มใช้".to_string(),
-        ));
-    }
+    let group = source
+        .snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| offering.groups.iter())
+        .find(|group| group.id == group_id)
+        .ok_or_else(|| AppError::ValidationError("กลุ่มนี้ไม่มีในข้อมูลเปิดสอนใหม่ กรุณาถอดคาบ".into()))?;
+    let assignments = source_assignments(group, instructor_ids)?;
     sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1")
         .bind(block_group_id)
         .execute(&mut **transaction)
@@ -1142,7 +1099,7 @@ async fn replace_group_instructors(
         let assignment = assignments
             .iter()
             .find(|assignment| assignment.teacher_id == *teacher_id)
-            .expect("validated instructor set must contain every selected teacher");
+            .ok_or_else(|| AppError::ValidationError("ครูไม่อยู่ในข้อมูลเปิดสอนของกลุ่ม".into()))?;
         sqlx::query(
             r#"INSERT INTO academic_timetable_block_group_instructors (
                    id, block_group_id, instructor_id, role, display_order
@@ -1213,7 +1170,7 @@ async fn lock_draft_version(
     require_version_term_write(transaction, version_id).await?;
     let version: VersionContext = sqlx::query_as(
         r#"SELECT version.academic_term_id, version.academic_year_id,
-                  version.bell_schedule_id, version.status
+                  version.bell_schedule_id, version.delivery_version_id, version.status
            FROM academic_timetable_versions version
            WHERE version.id = $1 AND version.academic_term_id = $2
            FOR UPDATE OF version"#,
@@ -1256,56 +1213,25 @@ async fn ensure_period(
     }
 }
 
-async fn ensure_version_offering_target(
-    transaction: &mut Transaction<'_, Postgres>,
-    version_id: Uuid,
-    offering_id: Uuid,
-) -> Result<(), AppError> {
-    let exists: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
-               SELECT 1 FROM academic_timetable_version_targets
-               WHERE timetable_version_id = $1 AND learning_offering_id = $2
-           )"#,
-    )
-    .bind(version_id)
-    .bind(offering_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    if exists {
-        Ok(())
-    } else {
-        Err(AppError::ValidationError(
-            "รายการเปิดสอนไม่อยู่ในเป้าหมายของรุ่นตารางสอน".to_string(),
-        ))
+fn source_assignments(
+    group: &school_academic_delivery::models::versions::DeliveryVersionGroup,
+    ids: &[Uuid],
+) -> Result<Vec<InstructorAssignment>, AppError> {
+    let assignments = group
+        .teachers
+        .iter()
+        .filter(|teacher| ids.contains(&teacher.teacher_id))
+        .map(|teacher| InstructorAssignment {
+            teacher_id: teacher.teacher_id,
+            role: super::timetable_source::role_text(teacher.role).into(),
+        })
+        .collect::<Vec<_>>();
+    if assignments.len() != ids.len() || ids.is_empty() {
+        return Err(AppError::ValidationError(
+            "ครูที่เลือกต้องเป็นครูของกลุ่มตามรุ่นเปิดสอนที่ตารางอ้างอิง".into(),
+        ));
     }
-}
-
-async fn offering_homeroom_ids(
-    transaction: &mut Transaction<'_, Postgres>,
-    offering_id: Uuid,
-    academic_year_id: Uuid,
-) -> Result<Vec<Uuid>, AppError> {
-    Ok(sqlx::query_scalar(
-        r#"SELECT DISTINCT homeroom.id
-           FROM learning_offering_targets target
-           JOIN homerooms homeroom
-             ON homeroom.academic_year_id = target.academic_year_id
-            AND homeroom.is_active
-            AND (
-                (target.target_kind = 'homeroom' AND target.homeroom_id = homeroom.id)
-                OR
-                (target.target_kind = 'grade_program'
-                 AND target.grade_level_id = homeroom.grade_level_id
-                 AND target.study_program_id = homeroom.study_program_id)
-            )
-           WHERE target.learning_offering_id = $1
-             AND target.academic_year_id = $2
-           ORDER BY homeroom.id"#,
-    )
-    .bind(offering_id)
-    .bind(academic_year_id)
-    .fetch_all(&mut **transaction)
-    .await?)
+    Ok(assignments)
 }
 
 async fn ensure_homerooms(

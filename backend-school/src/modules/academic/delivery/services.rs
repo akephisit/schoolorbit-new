@@ -1,6 +1,4 @@
-pub use school_academic_delivery::services::{
-    activities, opening, roster_memberships, teacher_handoff, workspaces,
-};
+pub use school_academic_delivery::services::{activities, opening, roster_memberships, workspaces};
 
 pub mod offerings {
     pub use school_academic_delivery::services::offerings::*;
@@ -10,27 +8,24 @@ pub mod offerings {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use super::super::adapters::TIMETABLE_MUTATIONS;
-
     pub async fn create(
         pool: &PgPool,
         actor_user_id: Uuid,
         request: CreateLearningOfferingRequest,
     ) -> Result<LearningOffering, AppError> {
-        create_for_timetable(pool, actor_user_id, None, request).await
+        create_for_delivery(pool, actor_user_id, None, request).await
     }
 
-    pub async fn create_for_timetable(
+    pub async fn create_for_delivery(
         pool: &PgPool,
         actor_user_id: Uuid,
-        timetable_version_id: Option<Uuid>,
+        delivery_version_id: Option<Uuid>,
         request: CreateLearningOfferingRequest,
     ) -> Result<LearningOffering, AppError> {
         school_academic_delivery::services::offerings::create(
-            &TIMETABLE_MUTATIONS,
             pool,
             actor_user_id,
-            timetable_version_id,
+            delivery_version_id,
             request,
         )
         .await
@@ -48,8 +43,6 @@ pub mod groups {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use super::super::adapters::TIMETABLE_MUTATIONS;
-
     pub async fn create(
         pool: &PgPool,
         actor_user_id: Uuid,
@@ -57,7 +50,6 @@ pub mod groups {
         request: CreateLearningGroupRequest,
     ) -> Result<LearningGroup, AppError> {
         school_academic_delivery::services::groups::create(
-            &TIMETABLE_MUTATIONS,
             pool,
             actor_user_id,
             offering_id,
@@ -72,14 +64,7 @@ pub mod groups {
         id: Uuid,
         request: UpdateLearningGroupRequest,
     ) -> Result<LearningGroup, AppError> {
-        school_academic_delivery::services::groups::update(
-            &TIMETABLE_MUTATIONS,
-            pool,
-            actor_user_id,
-            id,
-            request,
-        )
-        .await
+        school_academic_delivery::services::groups::update(pool, actor_user_id, id, request).await
     }
 
     pub async fn replace_teachers(
@@ -89,7 +74,6 @@ pub mod groups {
         request: ReplaceLearningGroupTeachersRequest,
     ) -> Result<LearningGroup, AppError> {
         school_academic_delivery::services::groups::replace_teachers(
-            &TIMETABLE_MUTATIONS,
             pool,
             actor_user_id,
             id,
@@ -105,7 +89,6 @@ pub mod groups {
         request: ReplaceLearningGroupHomeroomsRequest,
     ) -> Result<LearningGroup, AppError> {
         school_academic_delivery::services::groups::replace_homerooms(
-            &TIMETABLE_MUTATIONS,
             pool,
             actor_user_id,
             id,
@@ -125,15 +108,12 @@ pub mod change_sets {
     use sqlx::PgPool;
     use uuid::Uuid;
 
-    use super::super::adapters::TIMETABLE_MUTATIONS;
-
     pub async fn create_change_set(
         pool: &PgPool,
         actor_user_id: Uuid,
         request: CreateAcademicTermChangeSetRequest,
     ) -> Result<AcademicTermChangeSet, AppError> {
         school_academic_delivery::services::change_sets::create_change_set(
-            &TIMETABLE_MUTATIONS,
             pool,
             actor_user_id,
             request,
@@ -141,3 +121,5 @@ pub mod change_sets {
         .await
     }
 }
+
+pub use school_academic_timetable::services::teacher_handoff;

@@ -29,7 +29,8 @@ pub struct TimetableVersion {
     pub id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
-    pub effective_from: NaiveDate,
+    #[schema(required = true)]
+    pub effective_from: Option<NaiveDate>,
     #[schema(required = true)]
     pub effective_until: Option<NaiveDate>,
     pub status: TimetableVersionStatus,
@@ -37,8 +38,7 @@ pub struct TimetableVersion {
     pub display_state: Option<TimetableVersionDisplayState>,
     #[schema(required = true)]
     pub source_version_id: Option<Uuid>,
-    #[schema(required = true)]
-    pub change_set_id: Option<Uuid>,
+    pub delivery_version_id: Uuid,
     pub bell_schedule_id: Uuid,
     pub row_version: i64,
     #[schema(required = true)]
@@ -69,13 +69,37 @@ pub struct ResolveTimetableVersionQuery {
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CloneTimetableVersionRequest {
-    pub effective_from: NaiveDate,
-    pub source_row_version: i64,
+pub struct CreateTimetableVersionRequest {
+    pub academic_term_id: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct IncludeTimetableVersionOfferingRequest {
-    pub learning_offering_id: Uuid,
+pub struct CloneTimetableVersionRequest {
+    pub source_row_version: i64,
+    pub resume_draft_id: Option<Uuid>,
+    pub draft_row_version: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateTimetableDeliverySourceRequest {
+    pub row_version: i64,
+    pub delivery_version_id: Uuid,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteTimetableDraftRequest {
+    pub row_version: i64,
+    pub expected_block_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedTimetableDraft {
+    pub id: Uuid,
+    #[schema(required = true)]
+    pub source_version_id: Option<Uuid>,
+    pub deleted_block_count: i64,
 }

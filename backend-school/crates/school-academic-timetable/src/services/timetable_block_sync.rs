@@ -9,13 +9,7 @@ struct SyncBlockContext {
     learning_offering_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
-    effective_from: chrono::NaiveDate,
-}
-
-#[derive(Debug, FromRow)]
-struct SyncGroupRow {
-    id: Uuid,
-    row_version: i64,
+    delivery_version_id: Uuid,
 }
 
 #[derive(Debug, FromRow)]
@@ -69,36 +63,6 @@ pub(crate) async fn restore_group_in_tx(
     sync_groups_in_tx(transaction, block_id, actor_id, &[learning_group_id], true).await
 }
 
-pub async fn retry_sync_for_group_in_tx(
-    transaction: &mut Transaction<'_, Postgres>,
-    learning_group_id: Uuid,
-    actor_id: Uuid,
-) -> Result<(), AppError> {
-    let block_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT block.id
-           FROM learning_groups learning_group
-           JOIN academic_timetable_blocks block
-             ON block.learning_offering_id = learning_group.learning_offering_id
-            AND block.academic_term_id = learning_group.academic_term_id
-            AND block.academic_year_id = learning_group.academic_year_id
-           JOIN academic_timetable_versions version
-             ON version.id = block.timetable_version_id
-           WHERE learning_group.id = $1
-             AND block.scheduling_mode = 'synchronized'
-             AND block.is_active
-             AND version.status = 'draft'
-           ORDER BY block.id
-           FOR UPDATE OF block"#,
-    )
-    .bind(learning_group_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for block_id in block_ids {
-        retry_groups_in_tx(transaction, block_id, actor_id, &[learning_group_id]).await?;
-    }
-    Ok(())
-}
-
 async fn sync_groups_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,
@@ -108,7 +72,7 @@ async fn sync_groups_in_tx(
 ) -> Result<Vec<TimetableBlockSyncState>, AppError> {
     let context: SyncBlockContext = sqlx::query_as(
         r#"SELECT block.learning_offering_id, block.academic_term_id,
-                  block.academic_year_id, version.effective_from
+                  block.academic_year_id, version.delivery_version_id
            FROM academic_timetable_blocks block
            JOIN academic_timetable_versions version ON version.id = block.timetable_version_id
            WHERE block.id = $1
@@ -124,22 +88,37 @@ async fn sync_groups_in_tx(
     .ok_or_else(|| AppError::Conflict("ซิงค์ได้เฉพาะช่วงกิจกรรมพร้อมกันในรุ่นแบบร่าง".to_string()))?;
 
     let selected = canonical_ids(selected_group_ids);
-    let groups: Vec<SyncGroupRow> = sqlx::query_as(
-        r#"SELECT learning_group.id, learning_group.row_version
-           FROM learning_groups learning_group
-           WHERE learning_group.learning_offering_id = $1
-             AND learning_group.academic_term_id = $2
-             AND learning_group.academic_year_id = $3
-             AND (cardinality($4::uuid[]) = 0 OR learning_group.id = ANY($4))
-           ORDER BY learning_group.id"#,
+    let source = school_academic_delivery::services::versions::published_source(
+        transaction,
+        context.delivery_version_id,
+        context.academic_term_id,
     )
-    .bind(context.learning_offering_id)
-    .bind(context.academic_term_id)
-    .bind(context.academic_year_id)
-    .bind(&selected)
-    .fetch_all(&mut **transaction)
     .await?;
-
+    let offering = source
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| offering.id == context.learning_offering_id)
+        .ok_or_else(|| AppError::ValidationError("กิจกรรมไม่มีในรุ่นเปิดสอนที่อ้างอิง กรุณาถอดคาบ".into()))?;
+    if selected
+        .iter()
+        .any(|id| !offering.groups.iter().any(|group| group.id == *id))
+    {
+        return Err(AppError::ValidationError(
+            "กลุ่มที่เลือกไม่มีในรุ่นเปิดสอนที่อ้างอิง".into(),
+        ));
+    }
+    let groups = offering
+        .groups
+        .iter()
+        .filter(|group| selected.is_empty() || selected.contains(&group.id));
+    let teacher_ids: Vec<Uuid> = offering
+        .groups
+        .iter()
+        .flat_map(|group| group.teachers.iter().map(|teacher| teacher.teacher_id))
+        .collect();
+    let active_teachers: Vec<Uuid>=sqlx::query_scalar("SELECT id FROM users WHERE id=ANY($1) AND user_type='staff' AND status='active' ORDER BY id FOR SHARE")
+        .bind(&teacher_ids).fetch_all(&mut **transaction).await?;
     for group in groups {
         let existing_status: Option<String> = sqlx::query_scalar(
             r#"SELECT status FROM academic_timetable_block_group_sync
@@ -153,13 +132,7 @@ async fn sync_groups_in_tx(
             continue;
         }
 
-        let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
-            r#"SELECT homeroom_id FROM learning_group_homerooms
-               WHERE learning_group_id = $1 ORDER BY homeroom_id"#,
-        )
-        .bind(group.id)
-        .fetch_all(&mut **transaction)
-        .await?;
+        let homeroom_ids = &group.homeroom_ids;
         let inside_scope: bool = !homeroom_ids.is_empty()
             && sqlx::query_scalar(
                 r#"SELECT count(*) = cardinality($3::uuid[])
@@ -180,7 +153,7 @@ async fn sync_groups_in_tx(
                 block_id,
                 &context,
                 group.id,
-                group.row_version,
+                source.row_version,
                 "OUTSIDE_SCOPE",
                 None,
                 Some("TIMETABLE_SYNC_OUTSIDE_RESERVED_HOMEROOMS"),
@@ -191,25 +164,17 @@ async fn sync_groups_in_tx(
             continue;
         }
 
-        let teachers: Vec<(Uuid, String)> = sqlx::query_as(
-            r#"SELECT assignment.teacher_id, assignment.role
-               FROM learning_group_teachers assignment
-               JOIN users account ON account.id = assignment.teacher_id
-               WHERE assignment.learning_group_id = $1
-                 AND assignment.starts_on <= $2
-                 AND (assignment.ends_on IS NULL OR assignment.ends_on >= $2)
-                 AND account.user_type = 'staff' AND account.status = 'active'
-               ORDER BY CASE assignment.role
-                            WHEN 'primary' THEN 1
-                            WHEN 'secondary' THEN 2
-                            ELSE 3
-                        END,
-                        assignment.starts_on, assignment.id"#,
-        )
-        .bind(group.id)
-        .bind(context.effective_from)
-        .fetch_all(&mut **transaction)
-        .await?;
+        let teachers = group
+            .teachers
+            .iter()
+            .filter(|teacher| active_teachers.contains(&teacher.teacher_id))
+            .map(|teacher| {
+                (
+                    teacher.teacher_id,
+                    super::timetable_source::role_text(teacher.role).to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
         if teachers.is_empty() {
             remove_group_allocation(transaction, block_id, group.id, actor_id).await?;
             upsert_sync_state(
@@ -217,7 +182,7 @@ async fn sync_groups_in_tx(
                 block_id,
                 &context,
                 group.id,
-                group.row_version,
+                source.row_version,
                 "WAITING_FOR_DATA",
                 None,
                 Some("TIMETABLE_SYNC_MISSING_INSTRUCTOR"),
@@ -231,15 +196,9 @@ async fn sync_groups_in_tx(
         sqlx::query("SAVEPOINT timetable_sync_group")
             .execute(&mut **transaction)
             .await?;
-        let allocation = write_group_allocation(
-            transaction,
-            block_id,
-            &context,
-            group.id,
-            &teachers,
-            actor_id,
-        )
-        .await;
+        let allocation =
+            write_group_allocation(transaction, block_id, &context, group, &teachers, actor_id)
+                .await;
         match allocation {
             Ok(block_group_id) => {
                 sqlx::query("RELEASE SAVEPOINT timetable_sync_group")
@@ -250,7 +209,7 @@ async fn sync_groups_in_tx(
                     block_id,
                     &context,
                     group.id,
-                    group.row_version,
+                    source.row_version,
                     "LINKED",
                     Some(block_group_id),
                     None,
@@ -260,20 +219,23 @@ async fn sync_groups_in_tx(
                 .await?;
             }
             Err(error) => {
-                let (code, message) = sync_conflict(&error);
+                let conflict = sync_conflict(&error);
                 sqlx::query("ROLLBACK TO SAVEPOINT timetable_sync_group")
                     .execute(&mut **transaction)
                     .await?;
                 sqlx::query("RELEASE SAVEPOINT timetable_sync_group")
                     .execute(&mut **transaction)
                     .await?;
+                let Some((code, message)) = conflict else {
+                    return Err(AppError::DbError(error));
+                };
                 remove_group_allocation(transaction, block_id, group.id, actor_id).await?;
                 upsert_sync_state(
                     transaction,
                     block_id,
                     &context,
                     group.id,
-                    group.row_version,
+                    source.row_version,
                     "CONFLICT",
                     None,
                     Some(code),
@@ -292,37 +254,31 @@ async fn write_group_allocation(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,
     context: &SyncBlockContext,
-    learning_group_id: Uuid,
+    group: &school_academic_delivery::models::versions::DeliveryVersionGroup,
     teachers: &[(Uuid, String)],
     actor_id: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
-    let room_id: Option<Uuid> = sqlx::query_scalar(
-        r#"SELECT room_id FROM learning_group_preferred_rooms
-           WHERE learning_group_id = $1
-           ORDER BY rank, id LIMIT 1"#,
-    )
-    .bind(learning_group_id)
-    .fetch_optional(&mut **transaction)
-    .await?;
+    let room_id = group.preferred_room_ids.first().copied();
     let block_group_id: Uuid = sqlx::query_scalar(
         r#"INSERT INTO academic_timetable_block_groups (
                id, block_id, learning_group_id, learning_offering_id,
                academic_term_id, academic_year_id, room_id,
-               created_by, updated_by
-           ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $7)
+               created_by, updated_by, homeroom_ids
+           ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $7, $8)
            ON CONFLICT (block_id, learning_group_id) DO UPDATE
-           SET room_id = EXCLUDED.room_id, is_active = true,
+           SET room_id = EXCLUDED.room_id, homeroom_ids=EXCLUDED.homeroom_ids, is_active = true,
                row_version = academic_timetable_block_groups.row_version + 1,
                updated_by = EXCLUDED.updated_by, updated_at = now()
            RETURNING id"#,
     )
     .bind(block_id)
-    .bind(learning_group_id)
+    .bind(group.id)
     .bind(context.learning_offering_id)
     .bind(context.academic_term_id)
     .bind(context.academic_year_id)
     .bind(room_id)
     .bind(actor_id)
+    .bind(&group.homeroom_ids)
     .fetch_one(&mut **transaction)
     .await?;
     sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1")
@@ -452,32 +408,29 @@ async fn load_states(
         .collect()
 }
 
-fn sync_conflict(error: &sqlx::Error) -> (&'static str, &'static str) {
+fn sync_conflict(error: &sqlx::Error) -> Option<(&'static str, &'static str)> {
     let message = match error {
         sqlx::Error::Database(database) => database.message(),
         _ => "",
     };
     match message {
-        "ACADEMIC_TIMETABLE_GROUP_CONFLICT" => (
+        "ACADEMIC_TIMETABLE_GROUP_CONFLICT" => Some((
             "TIMETABLE_SYNC_GROUP_CONFLICT",
             "กลุ่มกิจกรรมมีคาบอื่นอยู่ในช่วงเวลานี้",
-        ),
-        "ACADEMIC_TIMETABLE_HOMEROOM_CONFLICT" => (
+        )),
+        "ACADEMIC_TIMETABLE_HOMEROOM_CONFLICT" => Some((
             "TIMETABLE_SYNC_HOMEROOM_CONFLICT",
             "ห้องประจำชั้นของกลุ่มมีคาบอื่นอยู่ในช่วงเวลานี้",
-        ),
-        "ACADEMIC_TIMETABLE_INSTRUCTOR_DOUBLE_BOOKED" => (
+        )),
+        "ACADEMIC_TIMETABLE_INSTRUCTOR_DOUBLE_BOOKED" => Some((
             "TIMETABLE_SYNC_TEACHER_CONFLICT",
             "ครูของกลุ่มมีคาบอื่นอยู่ในช่วงเวลานี้",
-        ),
-        "ACADEMIC_TIMETABLE_ROOM_CONFLICT" => (
+        )),
+        "ACADEMIC_TIMETABLE_ROOM_CONFLICT" => Some((
             "TIMETABLE_SYNC_ROOM_CONFLICT",
             "ห้องเรียนของกลุ่มถูกใช้ในช่วงเวลานี้",
-        ),
-        _ => (
-            "TIMETABLE_SYNC_WRITE_CONFLICT",
-            "ไม่สามารถเชื่อมกลุ่มเข้าช่วงกิจกรรมได้ กรุณาตรวจสอบข้อมูลตารางสอน",
-        ),
+        )),
+        _ => None,
     }
 }
 

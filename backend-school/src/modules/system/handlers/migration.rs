@@ -52,6 +52,8 @@ struct SchoolMigrationStatus {
     academic_core_cutover: AcademicCoreCutoverStatus,
     #[serde(rename = "gradebookResultsCutover")]
     gradebook_results_cutover: GradebookResultsCutoverStatus,
+    #[serde(rename = "deliveryTimetableCutover")]
+    delivery_timetable_cutover: DeliveryTimetableCutoverStatus,
 }
 
 #[derive(Serialize)]
@@ -70,6 +72,56 @@ struct GradebookResultsCutoverStatus {
     migration_version: i64,
     passed: Option<bool>,
     checks: Vec<ReconciliationCheck>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeliveryTimetableCutoverStatus {
+    status: String,
+    migration_version: i64,
+    passed: Option<bool>,
+    checks: Vec<school_academic_delivery::services::versions::DeliveryCutoverCheck>,
+}
+fn delivery_timetable_cutover_unavailable() -> DeliveryTimetableCutoverStatus {
+    DeliveryTimetableCutoverStatus {
+        status: "failed".into(),
+        migration_version: 88,
+        passed: Some(false),
+        checks: Vec::new(),
+    }
+}
+async fn delivery_timetable_cutover_status(
+    pool: Option<&PgPool>,
+    version: i32,
+) -> DeliveryTimetableCutoverStatus {
+    if version < 88 {
+        return DeliveryTimetableCutoverStatus {
+            status: "cutoverPending".into(),
+            migration_version: 88,
+            passed: None,
+            checks: Vec::new(),
+        };
+    }
+    let Some(pool) = pool else {
+        return delivery_timetable_cutover_unavailable();
+    };
+    match school_academic_delivery::services::versions::read_cutover_audit(pool).await {
+        Ok(audit) => DeliveryTimetableCutoverStatus {
+            status: if audit.completed {
+                "cutoverCompleted"
+            } else {
+                "failed"
+            }
+            .into(),
+            migration_version: 88,
+            passed: Some(audit.completed),
+            checks: audit.checks,
+        },
+        Err(error) => {
+            tracing::warn!(reason="delivery_timetable_cutover_audit_query_failed",database_code=?error.database_code());
+            delivery_timetable_cutover_unavailable()
+        }
+    }
 }
 
 fn gradebook_results_cutover_unavailable(current_version: i32) -> GradebookResultsCutoverStatus {
@@ -333,7 +385,7 @@ pub async fn migration_status(
             .migration_status
             .unwrap_or_else(|| "pending".to_string());
 
-        let (version, academic_core_cutover, gradebook_results_cutover) =
+        let (version, academic_core_cutover, gradebook_results_cutover, delivery_timetable_cutover) =
             if let Some(database_url) = school
                 .db_connection_string
                 .as_deref()
@@ -350,12 +402,18 @@ pub async fn migration_status(
                                 .await;
                         let gradebook_results_cutover =
                             gradebook_results_cutover_status(Some(&pool), version).await;
-                        (version, academic_core_cutover, gradebook_results_cutover)
+                        (
+                            version,
+                            academic_core_cutover,
+                            gradebook_results_cutover,
+                            delivery_timetable_cutover_status(Some(&pool), version).await,
+                        )
                     }
                     Err(_) => (
                         reported_version,
                         academic_core_cutover_unavailable(reported_version),
                         gradebook_results_cutover_unavailable(reported_version),
+                        delivery_timetable_cutover_unavailable(),
                     ),
                 }
             } else {
@@ -363,6 +421,7 @@ pub async fn migration_status(
                     reported_version,
                     academic_core_cutover_status(None, reported_version).await,
                     gradebook_results_cutover_status(None, reported_version).await,
+                    delivery_timetable_cutover_status(None, reported_version).await,
                 )
             };
 
@@ -390,6 +449,7 @@ pub async fn migration_status(
             migration_error: school.migration_error,
             academic_core_cutover,
             gradebook_results_cutover,
+            delivery_timetable_cutover,
         });
     }
 
@@ -543,6 +603,33 @@ mod tests {
     };
     use school_test_db::create_named_test_pool;
 
+    #[tokio::test]
+    async fn delivery_cutover_status_requires_both_actual_reconciliation_audits() {
+        let pending = delivery_timetable_cutover_status(None, 87).await;
+        assert_eq!(pending.status, "cutoverPending");
+        assert_eq!(pending.passed, None);
+        assert_eq!(
+            delivery_timetable_cutover_status(None, 88).await.status,
+            "failed"
+        );
+        let pool = create_named_test_pool("migration_status_delivery_cutover").await;
+        seed_release_two_predecessor(&pool).await.unwrap();
+        apply_migrations_through(&pool, 88).await.unwrap();
+        let complete = delivery_timetable_cutover_status(Some(&pool), 88).await;
+        assert_eq!(complete.status, "cutoverCompleted");
+        assert_eq!(complete.passed, Some(true));
+        assert_eq!(complete.checks.len(), 30);
+        sqlx::query(
+            "DELETE FROM academic_delivery_version_migration_audit WHERE migration_version=87",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let incomplete = delivery_timetable_cutover_status(Some(&pool), 88).await;
+        assert_eq!(incomplete.status, "failed");
+        assert_eq!(incomplete.passed, Some(false));
+    }
+
     async fn phase_a_pool(name: &str) -> PgPool {
         let pool = create_named_test_pool(name).await;
         apply_migrations_through(&pool, 40).await.unwrap();
@@ -681,6 +768,7 @@ mod tests {
                 passed: Some(true),
                 checks: Vec::new(),
             },
+            delivery_timetable_cutover: delivery_timetable_cutover_unavailable(),
             gradebook_results_cutover: GradebookResultsCutoverStatus {
                 status: "cutoverCompleted".to_string(),
                 migration_version: 60,
@@ -695,6 +783,7 @@ mod tests {
         assert!(value.get("gradebookResultsCutover").is_some());
         assert!(value.get("gradebook_results_cutover").is_none());
         assert!(value.get("personnelCutover").is_none());
+        assert!(value.get("deliveryTimetableCutover").is_some());
     }
 
     #[test]

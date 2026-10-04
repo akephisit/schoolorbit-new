@@ -70,18 +70,18 @@ test('change set and readiness panels expose teacher handoff without reviving di
 	assert.match(changePanel, /จัดการคาบที่ได้รับผลกระทบ/);
 	assert.doesNotMatch(changePanel, /replaceLearningGroupTeachers/);
 	assert.match(readiness, /teacherFindings/);
-	assert.match(readiness, /stopped_teacher_still_scheduled/);
-	assert.match(readiness, /entry_instructor_not_effective/);
+	assert.match(readiness, /missing_effective_teacher/);
+	assert.match(readiness, /missing_primary_teacher/);
 });
 
-test('teacher handoff findings remain in readiness and link to the canonical timetable', async () => {
+test('teacher opening readiness and placement checks have separate owners', async () => {
 	const readiness = await readProjectFile(
 		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
 	);
 	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
-	assert.match(readiness, /stopped_teacher_still_scheduled/);
-	assert.match(readiness, /entry_instructor_not_effective/);
+	assert.match(readiness, /missing_effective_teacher/);
+	assert.match(readiness, /missing_primary_teacher/);
 	assert.match(page, /blockInstructorIds/);
 	assert.match(page, /blockTargetTeacherIds/);
 	assert.match(page, /updateTimetableBlock/);

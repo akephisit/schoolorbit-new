@@ -33,26 +33,27 @@ test('operational academic change API consumes generated contracts and camelCase
 	assert.doesNotMatch(api, /academic_term_id|ApiResponse<unknown>|Record<string, unknown>/);
 });
 
-test('published delivery rows expose date-derived state and a permission-gated exceptional action', async () => {
+test('delivery versions expose immutable source data and permission-gated version creation', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.svelte');
 	const table = await readProjectFile(
-		'src/lib/components/learning-delivery/OfferingOverviewTable.svelte'
+		'src/lib/components/learning-delivery/DeliveryVersionOverviewTable.svelte'
 	);
 
 	assert.match(page, /AcademicChangeSetDialog/);
 	assert.match(page, /{#if canManage[\s\S]*<AcademicChangeSetDialog/);
 	assert.match(page, /AcademicChangeSetPanel/);
 	assert.match(page, /selectedChangeSetId/);
-	assert.match(page, /เลือกดูแบบร่างที่กำลังทำหรือประวัติที่เผยแพร่และยกเลิกแล้ว/);
+	assert.match(page, /deliveryVersionLabel/);
+	assert.match(page, /selectedDelivery/);
 	assert.match(page, /updated\.items\.length > 0/);
 	assert.match(page, /const routeResult = data\.homerooms/);
 	assert.match(page, /const routeResult = data\.changeSetSummaries/);
 	assert.match(page, /const routeResult = data\.selectedChangeSet/);
 	assert.doesNotMatch(page, /applyPageView|data\.pageView/);
-	assert.match(table, /startsOn/);
-	assert.match(table, /endsOn/);
-	assert.match(table, /กำลังจะเริ่ม|กำลังสอน|สิ้นสุดแล้ว/);
-	assert.match(page, /เพิ่ม\/ปรับ\/หยุดกลางภาค/);
+	assert.match(table, /version.snapshot.offerings/);
+	assert.match(table, /deliveryVersionId: version.id/);
+	assert.match(table, /weeklyPeriodTarget/);
+	assert.match(page, /สร้างรุ่นเปิดสอน/);
 });
 
 test('change creation is explicit, exceptional, and keeps curriculum unchanged', async () => {
@@ -63,12 +64,12 @@ test('change creation is explicit, exceptional, and keeps curriculum unchanged',
 	assert.match(dialog, /DatePicker/);
 	assert.match(dialog, /effectiveFrom/);
 	assert.match(dialog, /reason/);
-	assert.match(dialog, /ไม่เปลี่ยนหลักสูตร/);
-	assert.match(dialog, /เฉพาะภาคเรียนนี้/);
+	assert.match(dialog, /รายวิชา กลุ่ม ครู/);
+	assert.match(dialog, /รุ่นเปิดสอน/);
 	assert.match(dialog, /disabled={!effectiveFrom\.trim\(\) \|\| !reason\.trim\(\)/);
 });
 
-test('change panel separates readiness, impacts, scheduling, and warning acknowledgement', async () => {
+test('opening readiness is independent of timetable publication', async () => {
 	const panel = await readProjectFile(
 		'src/lib/components/learning-delivery/AcademicChangeSetPanel.svelte'
 	);
@@ -92,13 +93,13 @@ test('change panel separates readiness, impacts, scheduling, and warning acknowl
 	assert.match(readiness, /onCheckedChange/);
 	assert.doesNotMatch(readiness, /<Checkbox[\s\S]{0,300}\sonchange=/);
 	assert.match(readiness, /new Set\(warningFindings\.map\(\(finding\) => finding\.code\)\)/);
-	assert.match(readiness, /weekly_period_excess/);
+	assert.doesNotMatch(readiness, /weekly_period_excess|stopped_teacher_still_scheduled/);
 	assert.match(
 		readiness,
 		/getAcademicTermChangeSet\(changeSet\.id\)[\s\S]*previewAcademicTermChangeSet\(changeSet\.id\)/
 	);
 	assert.match(readiness, /{#if changeSet\.status === 'draft'}[\s\S]*ตรวจผลกระทบและความพร้อม/);
-	assert.match(readiness, /ชุดนี้เผยแพร่แล้ว/);
+	assert.match(readiness, /รุ่นเปิดสอนนี้เผยแพร่แล้ว/);
 	assert.match(readiness, /แบบร่างนี้ยกเลิกแล้ว/);
 	assert.match(
 		readiness,
@@ -108,8 +109,9 @@ test('change panel separates readiness, impacts, scheduling, and warning acknowl
 		readiness,
 		/ตาราง|กลุ่มเรียน|รายชื่อนักเรียน|ครูผู้สอน|โครงสร้างคะแนน|ผลการเรียน|ตารางสอบ|นิเทศ/
 	);
-	assert.match(readiness, /ข้อมูลเดิมยังคงอยู่/);
-	assert.match(readiness, /\/staff\/academic\/timetable\?timetableVersionId=/);
+	assert.match(readiness, /ไม่ได้ลบข้อมูลเดิม/);
+	assert.doesNotMatch(readiness, /targetTimetableVersionId/);
+	assert.match(readiness, /publishAcademicTermChangeSet/);
 	assert.match(readiness, /blockingFindings\.length > 0|warningsAcknowledged/);
 });
 

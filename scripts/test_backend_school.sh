@@ -79,6 +79,15 @@ if [[ ${1-} == --package ]]; then
     target_arguments=(-p "$package_name")
 fi
 
+if [[ ${1-} == --integration ]]; then
+    if (($# < 2)) || [[ ! $2 =~ ^[a-z0-9_]+$ ]] || [[ ! -f $BACKEND_DIR/tests/$2.rs ]]; then
+        printf '%s\n' 'ERROR: --integration requires a root integration test target' >&2
+        exit 64
+    fi
+    target_arguments=(--test "$2")
+    shift 2
+fi
+
 focused_filter=''
 argument_takes_value=false
 for argument in "$@"; do

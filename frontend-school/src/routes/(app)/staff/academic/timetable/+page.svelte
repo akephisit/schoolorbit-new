@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onDestroy, onMount, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
@@ -38,10 +39,13 @@
 	} from '#lib/academic/timetable/workspace-controller.svelte.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import {
-		getAcademicTermChangeSet,
-		type AcademicTermChangeSet
-	} from '#lib/api/learning-delivery.js';
-	import {
+		cloneTimetableVersion,
+		createTimetableVersion,
+		deleteTimetableDraft,
+		previewTimetablePublication,
+		publishTimetableVersion,
+		updateTimetableDeliverySource,
+		type TimetablePublicationPreview,
 		createOrdinaryTimetableBlock,
 		createStructuralTimetableBlocks,
 		createSynchronizedTimetableBlock,
@@ -78,15 +82,15 @@
 		AcademicPrerequisiteNotice,
 		type AcademicPrerequisite
 	} from '#lib/components/academic-workflow/index.js';
-	import AcademicChangeReadiness from '#lib/components/learning-delivery/AcademicChangeReadiness.svelte';
-	import AcademicChangeSetDialog from '#lib/components/learning-delivery/AcademicChangeSetDialog.svelte';
 	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -102,7 +106,9 @@
 		AlertTriangle,
 		Check,
 		FileSpreadsheet,
-		History,
+		Pencil,
+		MoreHorizontal,
+		Send,
 		LoaderCircle,
 		Plus,
 		RefreshCw,
@@ -195,23 +201,35 @@
 	const academicYearId = $derived(data.academicYearId);
 	const request = new LatestRequest();
 	const versionsRequest = new LatestRequest();
-	const changeSetRequest = new LatestRequest();
 
 	let versions = $state<TimetableVersion[]>([]);
 	let controller = $state.raw<TimetableWorkspaceController | null>(null);
-	let selectedChangeSet = $state.raw<AcademicTermChangeSet | null>(null);
 	let loading = $state(true);
 	let versionsLoading = $state(true);
 	let versionsError = $state('');
-	let changeSetLoading = $state(false);
-	let changeSetError = $state('');
 	let activeContextKey = '';
 	let activeRouteVersionId: string | null = null;
 	let versionsRevision = 0;
 	let workspaceRevision = 0;
-	let changeSetRevision = 0;
 	let boardRetryVersionId = '';
 	let busy = $state(false);
+	let lifecycleError = $state('');
+	let draftChoiceOpen = $state(false);
+	let draftChoiceId = $state('');
+	let publishOpen = $state(false);
+	let deleteDraftOpen = $state(false);
+	let deleteDraftConfirmation = $state<{
+		id: string;
+		rowVersion: number;
+		count: number;
+		label: string;
+	} | null>(null);
+	let saveError = $state('');
+	let publicationDate = $state('');
+	let publicationPreview = $state.raw<TimetablePublicationPreview | null>(null);
+	let publicationKey = '';
+	const pendingWaiters = new SvelteSet<() => void>();
+
 	let previewing = $state(false);
 	let pendingBlockIds = $state.raw<Set<string>>(new Set());
 	let pendingRemovalCellKeys = $state.raw<Set<string>>(new Set());
@@ -229,7 +247,6 @@
 	let exportingTeacherLoad = $state(false);
 	let errorMessage = $state('');
 	let refreshError = $state('');
-	let draftRevision = $state(0);
 	let activeView = $state<TimetablePageView>('homeroom');
 	let previewCellKey = $state('');
 	let selectedBlockId = $state<string | null>(null);
@@ -247,7 +264,6 @@
 	onDestroy(() => {
 		request.abort();
 		versionsRequest.abort();
-		changeSetRequest.abort();
 	});
 
 	const canRead = $derived(
@@ -280,8 +296,18 @@
 	const selectedBlock = $derived(
 		controller?.workspace.blocks.find((block) => block.id === selectedBlockId) ?? null
 	);
-	const activeDraftVersion = $derived(
-		versions.find((version) => version.status === 'draft' && version.changeSetId) ?? null
+	const canManageSchool = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL));
+	const canPublish = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL));
+	const sameSourceDrafts = $derived(
+		versions.filter(
+			(version) => version.status === 'draft' && version.sourceVersionId === selectedVersion?.id
+		)
+	);
+	const hasNewDelivery = $derived(
+		Boolean(
+			controller?.workspace.latestDeliveryVersionId &&
+			controller.workspace.latestDeliveryVersionId !== selectedVersion?.deliveryVersionId
+		)
 	);
 	const groupsWithoutTeachers = $derived(
 		controller?.workspace.learningGroups.filter((group) => group.eligibleInstructors.length === 0)
@@ -343,11 +369,16 @@
 				: version.status === 'published'
 					? 'เผยแพร่'
 					: 'ยกเลิก';
-		return `${state} · เริ่ม ${version.effectiveFrom}`;
+		return version.effectiveFrom
+			? `${state} · เริ่ม ${version.effectiveFrom}`
+			: `${state} · ${new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(version.createdAt))}`;
 	}
 
 	function initializeController(workspace: TimetableBlockWorkspace): void {
+		const keepEditing =
+			controller?.workspace.version.id === workspace.version.id && controller.editing;
 		const next = createTimetableWorkspaceController(workspace);
+		next.setEditing(Boolean(keepEditing));
 		activeView = requestedView();
 		next.setView(activeView === 'wholeSchool' ? 'homeroom' : activeView);
 		const ownerId = page.url.searchParams.get('ownerId');
@@ -372,27 +403,6 @@
 		});
 	}
 
-	async function refreshChangeSet(version: TimetableVersion, retainCurrent = false): Promise<void> {
-		const changeSetId = version.changeSetId;
-		changeSetRevision += 1;
-		changeSetRequest.abort();
-		changeSetError = '';
-		if (!retainCurrent) selectedChangeSet = null;
-		changeSetLoading = Boolean(changeSetId);
-		if (!changeSetId) return;
-		const { revision, signal } = changeSetRequest.begin();
-		try {
-			const loaded = await getAcademicTermChangeSet(changeSetId, { signal });
-			if (changeSetRequest.isCurrent(revision) && controller?.workspace.version.id === version.id)
-				selectedChangeSet = loaded;
-		} catch (error) {
-			if (!isAbortError(error) && changeSetRequest.isCurrent(revision))
-				changeSetError = error instanceof Error ? error.message : 'โหลดชุดการเปลี่ยนแปลงไม่สำเร็จ';
-		} finally {
-			if (changeSetRequest.isCurrent(revision)) changeSetLoading = false;
-		}
-	}
-
 	async function loadContext(termId: string, yearId: string): Promise<void> {
 		const { revision, signal } = request.begin();
 		workspaceRevision += 1;
@@ -412,7 +422,6 @@
 			);
 			if (!selected) {
 				controller = null;
-				selectedChangeSet = null;
 				return;
 			}
 			const workspace = await getTimetableBlockWorkspace(
@@ -422,9 +431,7 @@
 			if (!request.isCurrent(revision)) return;
 			initializeController(workspace);
 			boardRetryVersionId = workspace.version.id;
-			draftRevision += 1;
 			syncUrl();
-			void refreshChangeSet(workspace.version);
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
@@ -473,13 +480,10 @@
 
 		const { revision, signal } = request.begin();
 		workspaceRevision += 1;
+		await waitForSaves();
 		const retainCurrent = controller?.workspace.version.id === versionId;
 		if (!retainCurrent) {
 			controller = null;
-			selectedChangeSet = null;
-			changeSetRequest.abort();
-			changeSetLoading = false;
-			changeSetError = '';
 		}
 		boardRetryVersionId = versionId;
 		loading = true;
@@ -491,9 +495,7 @@
 			);
 			if (!request.isCurrent(revision)) return;
 			initializeController(workspace);
-			draftRevision += 1;
 			syncUrl();
-			void refreshChangeSet(workspace.version, retainCurrent);
 		} catch (error) {
 			if (!isAbortError(error) && request.isCurrent(revision)) {
 				errorMessage = error instanceof Error ? error.message : 'เปลี่ยนรุ่นตารางสอนไม่สำเร็จ';
@@ -526,9 +528,24 @@
 				return;
 			}
 			targetController.setWorkspace(workspace);
-			draftRevision += 1;
 			if (message) toast.success(message);
 		} catch (error) {
+			if (
+				error instanceof ApiClientError &&
+				error.status === 404 &&
+				controller === targetController
+			) {
+				const sourceId = targetController.workspace.version.sourceVersionId;
+				controller = null;
+				await refreshVersions();
+				const nextId =
+					sourceId && versions.some((version) => version.id === sourceId)
+						? sourceId
+						: selectPreferredBoardVersion(versions, null)?.id;
+				if (nextId) await loadVersion(nextId, true);
+				toast.info('แบบร่างนี้ถูกลบแล้ว กลับไปดูตารางต้นทาง');
+				return;
+			}
 			if (controller === targetController) {
 				refreshError = error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ';
 				toast.error(refreshError);
@@ -545,6 +562,7 @@
 		workspaceRevision += 1;
 		request.abort();
 		loading = false;
+		if (pendingOperationCount === 0) saveError = '';
 		pendingOperationCount += 1;
 		pendingBlockIds = new Set([...pendingBlockIds, ...blockIds]);
 		pendingRemovalCellKeys = new Set([...pendingRemovalCellKeys, ...cellKeys]);
@@ -561,9 +579,14 @@
 			[...pendingRemovalCellKeys].filter((key) => !cellKeys.includes(key))
 		);
 		pendingOperationCount = Math.max(0, pendingOperationCount - 1);
+		if (pendingOperationCount === 0) {
+			for (const resolvePending of pendingWaiters) resolvePending();
+			pendingWaiters.clear();
+		}
 		if (pendingOperationCount === 0 && reconcileAfterPending) {
 			reconcileAfterPending = false;
 			void reload();
+			void refreshVersions();
 		}
 	}
 
@@ -573,7 +596,23 @@
 			return;
 		}
 		void reload();
+		void refreshVersions();
 	}
+
+	beforeNavigate((navigation) => {
+		if (pendingOperationCount === 0) return;
+		navigation.cancel();
+		if (!navigation.willUnload && navigation.to?.url) {
+			const destination = navigation.to.url.href;
+			void waitForSaves().then(() => {
+				if (saveError) {
+					lifecycleError = saveError;
+					return;
+				}
+				void goto(destination);
+			});
+		}
+	});
 
 	function changeView(view: TimetablePageView): void {
 		if (!controller) return;
@@ -894,7 +933,8 @@
 			}
 		} catch (error) {
 			cancelPlacement();
-			toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
+			saveError = error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ';
+			toast.error(saveError);
 			return;
 		}
 
@@ -996,7 +1036,6 @@
 					);
 				}
 				operation.controller.setWorkspace(patchTimetableWorkspaceBlocks(workspace, savedBlocks));
-				draftRevision += 1;
 			}
 			toast.success('บันทึกตำแหน่งคาบแล้ว');
 		} catch (error) {
@@ -1012,7 +1051,8 @@
 					patchTimetableWorkspaceBlocks(workspace, operation.originalBlocks)
 				);
 			}
-			toast.error(error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ');
+			saveError = error instanceof Error ? error.message : 'วางคาบไม่สำเร็จ';
+			toast.error(saveError);
 		} finally {
 			finishPendingOperation(operation.pendingBlockIds);
 		}
@@ -1048,29 +1088,241 @@
 		}
 	}
 
-	async function handleRevisionCreated(created: AcademicTermChangeSet): Promise<void> {
-		if (!academicTermId) return;
-		changeSetRevision += 1;
-		changeSetRequest.abort();
-		changeSetLoading = false;
-		selectedChangeSet = created;
-		await refreshVersions();
-		await loadVersion(created.targetTimetableVersionId, true);
-		toast.success('สร้างรุ่นตารางสอนแบบร่างแล้ว');
+	async function createFirstTable(): Promise<void> {
+		if (!academicTermId || busy || !canManageSchool) return;
+		busy = true;
+		lifecycleError = '';
+		try {
+			const version = await createTimetableVersion({ academicTermId });
+			await refreshVersions();
+			await loadVersion(version.id, true);
+			controller?.setEditing(true);
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'สร้างตารางสอนไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
 	}
-
-	async function handleChangeSetChanged(updated: AcademicTermChangeSet): Promise<void> {
-		changeSetRevision += 1;
-		changeSetRequest.abort();
-		changeSetLoading = false;
-		selectedChangeSet = updated;
-		if (!academicTermId) return;
-		await refreshVersions();
-		await loadVersion(updated.targetTimetableVersionId, true);
-		if (updated.status === 'published') toast.success('เผยแพร่รุ่นตารางสอนใหม่แล้ว');
-		if (updated.status === 'cancelled') toast.success('ยกเลิกรุ่นตารางสอนแบบร่างแล้ว');
+	function waitForSaves(): Promise<void> {
+		if (pendingOperationCount === 0) return Promise.resolve();
+		return new Promise((resolvePending) => pendingWaiters.add(resolvePending));
 	}
-
+	async function savedVersion(): Promise<TimetableVersion> {
+		await waitForSaves();
+		if (saveError) throw new Error(saveError);
+		if (!controller) throw new Error('กรุณาเลือกรุ่นตารางสอน');
+		await reload();
+		if (refreshError) throw new Error(refreshError);
+		return controller.workspace.version;
+	}
+	async function startEditing(draftId?: string): Promise<void> {
+		if (!controller || busy) return;
+		if (controller.workspace.version.status === 'draft') {
+			if (!canManage) return;
+			if (
+				canManageSchool &&
+				controller.workspace.latestDeliveryVersionId !==
+					controller.workspace.version.deliveryVersionId
+			) {
+				busy = true;
+				lifecycleError = '';
+				try {
+					const version = await savedVersion();
+					await updateTimetableDeliverySource(version.id, {
+						rowVersion: version.rowVersion,
+						deliveryVersionId: controller.workspace.latestDeliveryVersionId
+					});
+					await refreshVersions();
+					await loadVersion(version.id, true);
+					controller?.setEditing(true);
+				} catch (error) {
+					lifecycleError =
+						error instanceof Error ? error.message : 'อัปเดตข้อมูลเปิดสอนก่อนแก้ไขไม่สำเร็จ';
+				} finally {
+					busy = false;
+				}
+			} else controller.setEditing(true);
+			return;
+		}
+		if (!canManageSchool) return;
+		if (sameSourceDrafts.length > 1 && !draftId) {
+			draftChoiceId = sameSourceDrafts[0].id;
+			draftChoiceOpen = true;
+			return;
+		}
+		busy = true;
+		lifecycleError = '';
+		try {
+			const source = await savedVersion();
+			const resume = draftId
+				? versions.find((version) => version.id === draftId)
+				: sameSourceDrafts[0];
+			const draft = await cloneTimetableVersion(source.id, {
+				sourceRowVersion: source.rowVersion,
+				resumeDraftId: resume?.id,
+				draftRowVersion: resume?.rowVersion
+			});
+			await refreshVersions();
+			await loadVersion(draft.id, true);
+			if (controller?.workspace.version.id === draft.id) controller.setEditing(true);
+			draftChoiceOpen = false;
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'เปิดแบบร่างไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
+	}
+	async function finishEditing(): Promise<void> {
+		if (!controller || busy) return;
+		busy = true;
+		lifecycleError = '';
+		try {
+			await savedVersion();
+			controller?.setEditing(false);
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'บันทึกตารางไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
+	}
+	async function updateDeliverySource(): Promise<void> {
+		if (!controller?.editing || !canManageSchool || busy) return;
+		busy = true;
+		lifecycleError = '';
+		try {
+			const version = await savedVersion();
+			const latest = controller?.workspace.latestDeliveryVersionId;
+			if (!latest) throw new Error('ยังไม่มีรุ่นเปิดสอนที่เผยแพร่');
+			await updateTimetableDeliverySource(version.id, {
+				rowVersion: version.rowVersion,
+				deliveryVersionId: latest
+			});
+			await reload();
+			await refreshVersions();
+			toast.success('อัปเดตข้อมูลเปิดสอนแล้ว กรุณาตรวจคาบที่มีเครื่องหมาย');
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'อัปเดตข้อมูลเปิดสอนไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
+	}
+	async function openPublication(): Promise<void> {
+		if (!canPublish || busy) return;
+		busy = true;
+		lifecycleError = '';
+		try {
+			await savedVersion();
+			const now = new Date();
+			publicationDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+			publicationPreview = null;
+			publicationKey = crypto.randomUUID();
+			publishOpen = true;
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'โหลดตารางไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
+	}
+	async function checkPublication(): Promise<void> {
+		if (!controller || busy || !publicationDate) return;
+		busy = true;
+		lifecycleError = '';
+		publicationPreview = null;
+		try {
+			const version = await savedVersion();
+			publicationPreview = await previewTimetablePublication(version.id, {
+				rowVersion: version.rowVersion,
+				effectiveFrom: publicationDate
+			});
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'ตรวจความพร้อมไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
+	}
+	async function publishVersion(): Promise<void> {
+		if (!publicationPreview?.canPublish || !controller || busy || !canPublish) return;
+		busy = true;
+		lifecycleError = '';
+		try {
+			await waitForSaves();
+			const preview = publicationPreview;
+			const version = await publishTimetableVersion(preview.timetableVersionId, {
+				rowVersion: preview.rowVersion,
+				effectiveFrom: preview.effectiveFrom,
+				previewHash: preview.previewHash,
+				idempotencyKey: publicationKey
+			});
+			controller.setEditing(false);
+			publishOpen = false;
+			await refreshVersions();
+			await loadVersion(version.id, true);
+			toast.success('เผยแพร่เวอร์ชันตารางสอนใหม่แล้ว');
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'เผยแพร่ตารางสอนไม่สำเร็จ';
+			publicationPreview = null;
+		} finally {
+			busy = false;
+		}
+	}
+	async function openDeleteDraft(): Promise<void> {
+		if (!controller || busy || !canManageSchool) return;
+		busy = true;
+		lifecycleError = '';
+		try {
+			const version = await savedVersion();
+			const count = controller?.workspace.totalDraftBlockCount;
+			if (count === null || count === undefined) throw new Error('ไม่สามารถตรวจจำนวนคาบที่จะลบได้');
+			deleteDraftConfirmation = {
+				id: version.id,
+				rowVersion: version.rowVersion,
+				count,
+				label: versionLabel(version)
+			};
+			deleteDraftOpen = true;
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'ตรวจแบบร่างไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
+	}
+	async function confirmDeleteDraft(): Promise<void> {
+		if (!controller || busy || !canManageSchool || !deleteDraftConfirmation) return;
+		busy = true;
+		lifecycleError = '';
+		try {
+			await waitForSaves();
+			const confirmation = deleteDraftConfirmation;
+			const deleted = await deleteTimetableDraft(confirmation.id, {
+				rowVersion: confirmation.rowVersion,
+				expectedBlockCount: confirmation.count
+			});
+			deleteDraftOpen = false;
+			controller.setEditing(false);
+			controller = null;
+			await refreshVersions();
+			const source = deleted.sourceVersionId ?? selectPreferredBoardVersion(versions, null)?.id;
+			if (source) await loadVersion(source, true);
+			toast.success('ลบแบบร่างแล้ว');
+		} catch (error) {
+			lifecycleError = error instanceof Error ? error.message : 'ลบแบบร่างไม่สำเร็จ';
+		} finally {
+			busy = false;
+		}
+	}
+	function sourceIssueLabel(code: TimetableBlockWorkspace['sourceIssues'][number]['code']): string {
+		const labels = {
+			missing_offering: 'รายวิชาไม่อยู่ในรุ่นเปิดสอน',
+			missing_group: 'กลุ่มเรียนไม่อยู่ในรุ่นเปิดสอน',
+			group_offering_mismatch: 'กลุ่มเรียนไม่ตรงกับรายวิชา',
+			ineligible_instructor: 'ครูไม่ตรงกับรุ่นเปิดสอน',
+			instructor_role_mismatch: 'บทบาทครูไม่ตรงกับรุ่นเปิดสอน',
+			scheduling_mode_mismatch: 'รูปแบบการจัดคาบเปลี่ยนไป',
+			homeroom_coverage_mismatch: 'ห้องที่เรียนไม่ตรงกับรุ่นเปิดสอน',
+			missing_instructor: 'ยังไม่มีครูประจำคาบ'
+		} satisfies Record<TimetableBlockWorkspace['sourceIssues'][number]['code'], string>;
+		return labels[code];
+	}
 	function openEditor(block: TimetableBlock): void {
 		selectedBlockId = block.id;
 		editTitle = block.title ?? '';
@@ -1175,7 +1427,6 @@
 				operation.controller.setWorkspace(
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, [saved])
 				);
-				draftRevision += 1;
 			}
 			toast.success('แก้รายละเอียดคาบแล้ว');
 		} catch (error) {
@@ -1184,7 +1435,8 @@
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, [operation.originalBlock])
 				);
 			}
-			toast.error(error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ');
+			saveError = error instanceof Error ? error.message : 'แก้รายละเอียดคาบไม่สำเร็จ';
+			toast.error(saveError);
 		} finally {
 			finishPendingOperation([operation.originalBlock.id]);
 		}
@@ -1326,7 +1578,6 @@
 			} else {
 				await deleteTimetableBlock(block.id, block.rowVersion, operation.versionId);
 			}
-			draftRevision += 1;
 			toast.success('นำรายการออกจากตารางแล้ว');
 		} catch (error) {
 			if (controller === operation.controller) {
@@ -1334,7 +1585,8 @@
 					patchTimetableWorkspaceBlocks(operation.controller.workspace, operation.originalBlocks)
 				);
 			}
-			toast.error(error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ');
+			saveError = error instanceof Error ? error.message : 'นำรายการออกไม่สำเร็จ';
+			toast.error(saveError);
 		} finally {
 			finishPendingOperation(operation.pendingBlockIds, operation.pendingCellKeys);
 		}
@@ -1409,7 +1661,8 @@
 			structuralOpen = false;
 			await reload('เพิ่มคาบพิเศษแล้ว แต่ละห้องและครูสามารถนำออกแยกกันได้');
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ');
+			saveError = error instanceof Error ? error.message : 'เพิ่มคาบพิเศษไม่สำเร็จ';
+			toast.error(saveError);
 		} finally {
 			busy = false;
 		}
@@ -1429,19 +1682,16 @@
 		const requestedVersionId = data.requestedVersionId;
 		const routeVersions = data.versions;
 		const routeWorkspace = data.workspace;
-		const routeChangeSet = data.changeSet;
 		const contextKey = `${yearId}:${termId}`;
 		const versionSelectionChanged = activeRouteVersionId !== requestedVersionId;
 		const initialVersionsRevision = versionsRevision;
 		const initialWorkspaceRevision = workspaceRevision;
-		const initialChangeSetRevision = changeSetRevision;
 		let current = true;
 		untrack(() => {
 			if (activeContextKey !== contextKey) {
 				activeContextKey = contextKey;
 				versions = [];
 				controller = null;
-				selectedChangeSet = null;
 				boardRetryVersionId = requestedVersionId ?? '';
 				selectedBlockId = null;
 				editOpen = false;
@@ -1453,19 +1703,15 @@
 				(!requestedVersionId || controller?.workspace.version.id !== requestedVersionId)
 			) {
 				controller = null;
-				selectedChangeSet = null;
 				boardRetryVersionId = requestedVersionId ?? '';
 			}
 			activeRouteVersionId = requestedVersionId;
 			request.abort();
 			versionsRequest.abort();
-			changeSetRequest.abort();
 			versionsLoading = Boolean(routeVersions);
 			loading = Boolean(routeWorkspace);
-			changeSetLoading = Boolean(routeChangeSet);
 			versionsError = '';
 			errorMessage = '';
-			changeSetError = '';
 		});
 		if (routeVersions) {
 			void routeVersions.then((result) => {
@@ -1490,22 +1736,9 @@
 						if (result.ok && result.data) {
 							initializeController(result.data);
 							boardRetryVersionId = result.data.version.id;
-							draftRevision += 1;
 							syncUrl();
 						} else if (!result.ok) errorMessage = result.error;
 						loading = false;
-					}
-				});
-			});
-		}
-		if (routeChangeSet) {
-			void routeChangeSet.then((result) => {
-				if (!current) return;
-				untrack(() => {
-					if (changeSetRevision === initialChangeSetRevision) {
-						if (result.ok) selectedChangeSet = result.data;
-						else changeSetError = result.error;
-						changeSetLoading = false;
 					}
 				});
 			});
@@ -1553,30 +1786,45 @@
 <MobileDragDropPolyfill />
 
 <PageShell
-	title="จัดตารางสอน"
-	description="ลากรายวิชาและกิจกรรมลงตาราง ตรวจการชนของห้อง ครู และห้องเรียนก่อนบันทึก"
+	title="ตารางสอน"
+	description="ดูตารางตามห้อง กลุ่มเรียน หรือครู กดแก้ไขเมื่อต้องการจัดตารางเวอร์ชันใหม่"
 >
 	{#snippet actions()}
-		{#if canManage && academicTermId}
-			{#if activeDraftVersion}
-				<Button
-					variant="outline"
-					disabled={selectedVersion?.id === activeDraftVersion.id || loading}
-					onclick={() => loadVersion(activeDraftVersion.id)}
+		{#if selectedVersion && academicTermId}
+			{#if controller?.editing}
+				<Button disabled={busy} onclick={finishEditing}><Check class="size-4" />เสร็จสิ้น</Button>
+			{:else if (selectedVersion.status === 'published' && canManageSchool) || (selectedVersion.status === 'draft' && canManage)}
+				<Button disabled={busy || loading} onclick={() => startEditing()}
+					><Pencil class="size-4" />แก้ไข</Button
 				>
-					<History class="size-4" />
-					{selectedVersion?.id === activeDraftVersion.id
-						? 'กำลังแก้รุ่นแบบร่าง'
-						: 'เปิดรุ่นแบบร่าง'}
-				</Button>
-			{:else if selectedVersion?.status === 'published'}
-				<AcademicChangeSetDialog
-					{academicTermId}
-					purpose="timetable_revision"
-					onCreated={handleRevisionCreated}
-				/>
+			{/if}
+			{#if selectedVersion.status === 'draft'}
+				{#if canPublish}<Button
+						variant="outline"
+						disabled={busy || loading}
+						onclick={openPublication}><Send class="size-4" />เผยแพร่เวอร์ชันใหม่</Button
+					>{/if}
+				{#if canManageSchool}
+					<DropdownMenu.Root
+						><DropdownMenu.Trigger
+							disabled={busy}
+							aria-label="เพิ่มเติม"
+							class="inline-flex size-9 items-center justify-center rounded-md border"
+							><MoreHorizontal class="size-4" /></DropdownMenu.Trigger
+						>
+						<DropdownMenu.Content
+							><DropdownMenu.Item onclick={openDeleteDraft}
+								><Trash2 class="size-4" />ลบแบบร่าง</DropdownMenu.Item
+							></DropdownMenu.Content
+						>
+					</DropdownMenu.Root>
+				{/if}
 			{/if}
 		{/if}
+		{#if !selectedVersion && canManageSchool && academicTermId && !loading}<Button
+				disabled={busy}
+				onclick={createFirstTable}><Plus class="size-4" />สร้างตารางสอน</Button
+			>{/if}
 		<Button
 			variant="outline"
 			disabled={exportingTeacherLoad || loading || !controller?.workspace.blocks.length}
@@ -1594,6 +1842,9 @@
 		</Button>
 	{/snippet}
 
+	{#if lifecycleError && !controller}<p role="alert" class="text-sm text-destructive">
+			{lifecycleError}
+		</p>{/if}
 	{#if !canRead}
 		<PageState
 			variant="permission"
@@ -1631,7 +1882,7 @@
 		<PageState
 			variant="empty"
 			title="ยังไม่มีรุ่นตารางสอน"
-			description="สร้างรุ่นตารางสอนของภาคเรียนนี้จากหน้าจัดการเรียนก่อน"
+			description="เผยแพร่รุ่นเปิดสอนของภาคเรียนก่อน แล้วกดสร้างตารางสอน"
 		/>
 	{:else if !controller}
 		<PageSkeleton variant="table" rows={7} />
@@ -1649,6 +1900,7 @@
 				view={activeView}
 				isSaving={busy || previewing || pendingOperationCount > 0}
 				isRefreshing={controller.isRefreshing}
+				editing={controller.editing}
 				onViewChange={changeView}
 			/>
 
@@ -1663,7 +1915,7 @@
 							type="single"
 							bind:value={versionSelectValue}
 							onValueChange={loadVersion}
-							disabled={loading || versionsLoading || busy}
+							disabled={loading || versionsLoading || busy || pendingOperationCount > 0}
 						>
 							<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
 								{versionLabel(controller.workspace.version)}
@@ -1743,6 +1995,12 @@
 					>
 				</div>
 			{/if}
+			{#if saveError}<p
+					role="alert"
+					class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					บันทึกไม่สำเร็จ: {saveError} กรุณาลองดำเนินการอีกครั้ง
+				</p>{/if}
 			{#if refreshError}
 				<div
 					role="alert"
@@ -1752,49 +2010,40 @@
 					<Button variant="outline" size="sm" onclick={() => reload()}>ลองใหม่</Button>
 				</div>
 			{/if}
-			{#if changeSetLoading && controller.workspace.version.changeSetId && !selectedChangeSet}
-				<PageSkeleton variant="cards" rows={1} />
-			{/if}
-			{#if changeSetError}
-				<div
+			{#if lifecycleError}<div
 					role="alert"
-					class="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+					class="rounded-xl border border-destructive/30 p-3 text-sm text-destructive"
 				>
-					<span>{changeSetError}</span>
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => {
-							if (controller) void refreshChangeSet(controller.workspace.version, true);
-						}}>ลองใหม่</Button
-					>
+					{lifecycleError}
+				</div>{/if}
+			{#if hasNewDelivery}
+				<div
+					role="status"
+					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3 text-sm"
+				>
+					<span>มีรุ่นเปิดสอนใหม่ ตารางนี้ยังใช้ข้อมูลเปิดสอนรุ่นเดิม</span>
+					{#if controller.editing && canManageSchool}<Button
+							variant="outline"
+							disabled={busy}
+							onclick={updateDeliverySource}>อัปเดตข้อมูลเปิดสอน</Button
+						>{/if}
 				</div>
 			{/if}
-			{#if selectedChangeSet}
-				<div class="relative" aria-busy={changeSetLoading} data-testid="timetable-change-set-ready">
-					{#if changeSetLoading}<RegionUpdatingState label="กำลังอัปเดตขั้นตอนการเผยแพร่..." />{/if}
-					<Card.Root class="gap-0 overflow-hidden border-amber-500/25 py-0">
-						<Card.Header class="border-b border-amber-500/20 bg-amber-500/5 py-4">
-							<div class="flex flex-wrap items-start justify-between gap-3">
-								<div>
-									<Card.Title class="text-base">ขั้นตอนของรุ่นตารางสอนนี้</Card.Title>
-									<Card.Description class="mt-1">{selectedChangeSet.reason}</Card.Description>
-								</div>
-								<Badge variant="outline" class="bg-background">
-									เริ่มใช้ {selectedChangeSet.effectiveFrom}
-								</Badge>
-							</div>
-						</Card.Header>
-						<Card.Content class="p-4 sm:p-5">
-							{#key `${selectedChangeSet.id}:${draftRevision}`}
-								<AcademicChangeReadiness
-									changeSet={selectedChangeSet}
-									{canManage}
-									onChanged={handleChangeSetChanged}
-								/>
-							{/key}
-						</Card.Content>
-					</Card.Root>
+			{#if controller.workspace.sourceIssues.length > 0}
+				<div role="alert" class="space-y-2 rounded-xl border border-destructive/30 p-3 text-sm">
+					<p class="font-medium">
+						มีคาบที่ต้องตรวจแก้ก่อนเผยแพร่ ({controller.workspace.sourceIssues.length})
+					</p>
+					{#each controller.workspace.sourceIssues as issue (`${issue.blockId}:${issue.code}:${issue.learningGroupId}:${issue.teacherId}`)}<button
+							type="button"
+							class="block text-left text-destructive underline"
+							onclick={() => {
+								const block = controller?.workspace.blocks.find(
+									(item) => item.id === issue.blockId
+								);
+								if (block) openEditor(block);
+							}}>{sourceIssueLabel(issue.code)}</button
+						>{/each}
 				</div>
 			{/if}
 			{#if controller.workspace.learningGroups.length === 0}
@@ -1909,19 +2158,21 @@
 					</div>
 				</section>
 			{:else if controller.selectedRow && controller.workspace.bellPeriods.length > 0}
-				<div class="grid min-h-0 gap-4 xl:grid-cols-[15rem_minmax(0,1fr)]">
-					<TimetableUnscheduledTray
-						ordinaryDemands={visibleOrdinaryDemands}
-						synchronizedDemands={visibleSynchronizedDemands}
-						groups={controller.workspace.learningGroups}
-						rooms={controller.workspace.rooms}
-						staff={controller.workspace.staff}
-						disabled={!canEdit}
-						onChooseDemand={chooseDemand}
-						onDragStartDemand={startPlacement}
-						onCancelDrag={finishPlacementDrag}
-						onOpenStructural={openStructuralDialog}
-					/>
+				<div
+					class={['grid min-h-0 gap-4', controller.editing && 'xl:grid-cols-[15rem_minmax(0,1fr)]']}
+				>
+					{#if controller.editing}<TimetableUnscheduledTray
+							ordinaryDemands={visibleOrdinaryDemands}
+							synchronizedDemands={visibleSynchronizedDemands}
+							groups={controller.workspace.learningGroups}
+							rooms={controller.workspace.rooms}
+							staff={controller.workspace.staff}
+							disabled={!canEdit}
+							onChooseDemand={chooseDemand}
+							onDragStartDemand={startPlacement}
+							onCancelDrag={finishPlacementDrag}
+							onOpenStructural={openStructuralDialog}
+						/>{/if}
 					<TimetableBoard
 						state={controller.board}
 						view={controller.view}
@@ -2292,6 +2543,92 @@
 					ยืนยันนำออก
 				</AlertDialog.Action>
 			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
+
+	<Dialog.Root bind:open={draftChoiceOpen}>
+		<Dialog.Content
+			><Dialog.Header
+				><Dialog.Title>เลือกแบบร่างที่จะแก้ต่อ</Dialog.Title><Dialog.Description
+					>มีหลายแบบร่างจากตารางรุ่นนี้ ข้อมูลเปิดสอนจะอัปเดตเป็นรุ่นล่าสุดเมื่อเปิดแก้ไข</Dialog.Description
+				></Dialog.Header
+			>
+			<Label for="timetable-draft-choice">แบบร่าง</Label>
+			<Select.Root type="single" bind:value={draftChoiceId}
+				><Select.Trigger id="timetable-draft-choice">เลือกแบบร่าง</Select.Trigger><Select.Content
+					>{#each sameSourceDrafts as draft (draft.id)}<Select.Item value={draft.id}
+							>{versionLabel(draft)}</Select.Item
+						>{/each}</Select.Content
+				></Select.Root
+			>
+			{#if lifecycleError}<p role="alert" class="text-sm text-destructive">{lifecycleError}</p>{/if}
+			<Dialog.Footer
+				><Button variant="outline" disabled={busy} onclick={() => (draftChoiceOpen = false)}
+					>ยกเลิก</Button
+				><Button disabled={busy || !draftChoiceId} onclick={() => startEditing(draftChoiceId)}
+					>แก้ต่อ</Button
+				></Dialog.Footer
+			>
+		</Dialog.Content>
+	</Dialog.Root>
+	<Dialog.Root bind:open={publishOpen}>
+		<Dialog.Content class="sm:max-w-xl"
+			><Dialog.Header
+				><Dialog.Title>เผยแพร่เวอร์ชันใหม่</Dialog.Title><Dialog.Description
+					>เลือกวันที่เริ่มใช้ แล้วตรวจจำนวนคาบ การชน และรุ่นเปิดสอนก่อนเผยแพร่</Dialog.Description
+				></Dialog.Header
+			>
+			<div class="space-y-2">
+				<Label for="timetable-publication-date">วันที่เริ่มใช้</Label><DatePicker
+					id="timetable-publication-date"
+					bind:value={publicationDate}
+					disabled={busy}
+					onValueChange={() => (publicationPreview = null)}
+					ariaLabel="เลือกวันที่เริ่มใช้ตาราง"
+				/>
+			</div>
+			<Button variant="outline" disabled={busy || !publicationDate} onclick={checkPublication}
+				>ตรวจความพร้อม</Button
+			>
+			{#if busy}<p role="status" class="text-sm text-muted-foreground">กำลังดำเนินการ...</p>{/if}
+			{#if publicationPreview}<div
+					aria-live="polite"
+					class="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm"
+				>
+					{#if publicationPreview.canPublish}<p>
+							พร้อมเผยแพร่ {publicationPreview.blockCount} คาบ
+						</p>{:else}{#each publicationPreview.findings as finding, index (`${finding.code}:${index}`)}<p
+								class="text-destructive"
+							>
+								{finding.message}
+							</p>{/each}{/if}
+				</div>{/if}
+			{#if lifecycleError}<p role="alert" class="text-sm text-destructive">{lifecycleError}</p>{/if}
+			<Dialog.Footer
+				><Button variant="outline" disabled={busy} onclick={() => (publishOpen = false)}
+					>ยกเลิก</Button
+				><Button disabled={busy || !publicationPreview?.canPublish} onclick={publishVersion}
+					>เผยแพร่</Button
+				></Dialog.Footer
+			>
+		</Dialog.Content>
+	</Dialog.Root>
+	<AlertDialog.Root bind:open={deleteDraftOpen}>
+		<AlertDialog.Content
+			><AlertDialog.Header
+				><AlertDialog.Title>ลบแบบร่างถาวร</AlertDialog.Title><AlertDialog.Description
+					>ลบ {deleteDraftConfirmation?.label ?? 'แบบร่าง'} พร้อมคาบ {deleteDraftConfirmation?.count ??
+						0} คาบ การลบนี้ย้อนกลับไม่ได้</AlertDialog.Description
+				></AlertDialog.Header
+			>
+			{#if lifecycleError}<p role="alert" class="text-sm text-destructive">{lifecycleError}</p>{/if}
+			<AlertDialog.Footer
+				><AlertDialog.Cancel disabled={busy}>ยกเลิก</AlertDialog.Cancel><Button
+					variant="destructive"
+					disabled={busy}
+					onclick={confirmDeleteDraft}>ลบแบบร่าง</Button
+				></AlertDialog.Footer
+			>
 		</AlertDialog.Content>
 	</AlertDialog.Root>
 </PageShell>

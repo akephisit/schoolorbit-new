@@ -282,6 +282,10 @@ pub struct TimetableBlockSummary {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimetableBlockWorkspace {
+    #[schema(required = true)]
+    pub total_draft_block_count: Option<i64>,
+    pub source_issues: Vec<super::timetable_source::TimetableSourceIssue>,
+    pub latest_delivery_version_id: Uuid,
     pub version: TimetableVersion,
     pub bell_periods: Vec<BellSchedulePeriod>,
     pub blocks: Vec<TimetableBlock>,

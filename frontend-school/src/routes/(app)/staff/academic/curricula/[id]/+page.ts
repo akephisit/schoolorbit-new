@@ -54,7 +54,7 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 					alignmentContext.academicYearId,
 					alignmentContext.academicTermId,
 					{
-						timetableVersionId: alignmentContext.timetableVersionId,
+						deliveryVersionId: alignmentContext.deliveryVersionId,
 						requestFetch: fetch
 					}
 				),

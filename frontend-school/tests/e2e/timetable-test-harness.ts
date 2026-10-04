@@ -1,6 +1,10 @@
 import type { Page, Route } from '@playwright/test';
 
-import type { TimetableBlock } from '../../src/lib/api/timetable';
+import type {
+	TimetableBlock,
+	TimetableVersion,
+	TimetableBlockWorkspace
+} from '../../src/lib/api/timetable';
 
 export const timetableIds = {
 	year: '11000000-0000-4000-8000-000000000201',
@@ -22,7 +26,8 @@ export const timetableIds = {
 	roomB: '91000000-0000-4000-8000-000000000202',
 	publishedVersion: 'a1000000-0000-4000-8000-000000000201',
 	draftVersion: 'a1000000-0000-4000-8000-000000000202',
-	changeSet: 'b1000000-0000-4000-8000-000000000201',
+	deliveryVersion: 'b1000000-0000-4000-8000-000000000201',
+	newDeliveryVersion: 'b1000000-0000-4000-8000-000000000202',
 	blockA: 'c1000000-0000-4000-8000-000000000201',
 	blockB: 'c1000000-0000-4000-8000-000000000202',
 	createdBlock: 'c1000000-0000-4000-8000-000000000203',
@@ -34,6 +39,8 @@ export type MockBlock = TimetableBlock;
 
 export interface TimetableMockOptions {
 	status?: 'draft' | 'published';
+	permissions?: string[];
+	sourceIssues?: TimetableBlockWorkspace['sourceIssues'];
 	blocks?: MockBlock[];
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
@@ -44,6 +51,7 @@ export interface TimetableMockOptions {
 	createDelayMs?: number;
 	updateDelayMs?: number;
 	deleteDelayMs?: number;
+	deleteGate?: Promise<void>;
 	failDelete?: boolean;
 	failUpdate?: boolean;
 	preferredRoomIds?: string[];
@@ -58,17 +66,17 @@ function fulfill(route: Route, data: unknown, status = 200) {
 	});
 }
 
-export function makeTimetableVersion(status: 'draft' | 'published') {
+export function makeTimetableVersion(status: 'draft' | 'published'): TimetableVersion {
 	const id = status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion;
 	return {
 		id,
 		academicTermId: timetableIds.term,
 		academicYearId: timetableIds.year,
 		bellScheduleId: timetableIds.schedule,
-		changeSetId: status === 'draft' ? timetableIds.changeSet : null,
+		deliveryVersionId: timetableIds.deliveryVersion,
 		status,
 		displayState: status === 'published' ? 'current' : null,
-		effectiveFrom: '2026-05-01',
+		effectiveFrom: status === 'published' ? '2026-05-01' : null,
 		effectiveUntil: null,
 		sourceVersionId: status === 'draft' ? timetableIds.publishedVersion : null,
 		rowVersion: 1,
@@ -281,35 +289,18 @@ function periods(count = 3) {
 	});
 }
 
-function changeSet() {
-	return {
-		id: timetableIds.changeSet,
-		academicTermId: timetableIds.term,
-		academicYearId: timetableIds.year,
-		effectiveFrom: '2026-05-01',
-		reason: 'ปรับตารางสอนสำหรับทดสอบ',
-		status: 'draft',
-		baseTimetableVersionId: timetableIds.publishedVersion,
-		targetTimetableVersionId: timetableIds.draftVersion,
-		rowVersion: 1,
-		createdBy: timetableIds.user,
-		publishedBy: null,
-		publishedAt: null,
-		cancelledBy: null,
-		cancelledAt: null,
-		createdAt: '2026-08-31T00:00:00Z',
-		updatedAt: '2026-08-31T00:00:00Z',
-		items: []
-	};
-}
-
 export async function installTimetableMock(page: Page, options: TimetableMockOptions = {}) {
 	const status = options.status ?? 'draft';
 	const selectedVersion = makeTimetableVersion(status);
-	const versions = [makeTimetableVersion('published'), makeTimetableVersion('draft')];
+	let versions = [makeTimetableVersion('published'), makeTimetableVersion('draft')];
 	let blocks = [...(options.blocks ?? [])];
 	const eligibleInstructorIds = options.eligibleInstructorIds ?? [timetableIds.teacherA];
 	const requiredPeriods = options.requiredPeriods ?? 3;
+	let latestDeliveryVersionId: string = timetableIds.deliveryVersion;
+	let sourceUpdateRequests = 0;
+	let draftDeleteRequests = 0;
+	let publicationRequests = 0;
+	let sourceIssues = options.sourceIssues ?? [];
 	let workspaceRequests = 0;
 	let previewRequests = 0;
 	let createRequests = 0;
@@ -330,6 +321,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		).length;
 		return {
 			version,
+			totalDraftBlockCount: version.status === 'draft' ? blocks.length : null,
+			sourceIssues,
+			latestDeliveryVersionId,
 			bellPeriods: periods(options.periodCount),
 			blocks,
 			learningGroups: [
@@ -434,7 +428,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					userType: 'staff',
 					status: 'active',
 					profileImageFileId: null,
-					permissions: ['*']
+					permissions: options.permissions ?? ['*']
 				});
 				return;
 			}
@@ -477,27 +471,67 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			if (url.pathname === '/api/academic/timetable-blocks/workspace') {
 				workspaceRequests += 1;
 				const requestedVersionId = url.searchParams.get('timetableVersionId');
-				const version = options.requestedWorkspaceVersion
-					? (versions.find((item) => item.id === requestedVersionId) ?? selectedVersion)
-					: selectedVersion;
+				const version = versions.find((item) => item.id === requestedVersionId) ?? selectedVersion;
 				await fulfill(route, workspace(version));
 				return;
 			}
-			if (url.pathname === `/api/academic/term-change-sets/${timetableIds.changeSet}`) {
-				await fulfill(route, changeSet());
+			if (url.pathname.endsWith('/delivery-source')) {
+				sourceUpdateRequests += 1;
+				const body = route.request().postDataJSON();
+				const draft = versions.find((version) => version.id === timetableIds.draftVersion);
+				if (!draft) throw new Error('draft missing');
+				draft.deliveryVersionId = body.deliveryVersionId;
+				draft.rowVersion += 1;
+				await fulfill(route, draft);
 				return;
 			}
-			if (url.pathname.endsWith('/preview') && url.pathname.includes('/term-change-sets/')) {
+			if (url.pathname.endsWith('/clone')) {
+				await fulfill(
+					route,
+					versions.find((version) => version.status === 'draft')
+				);
+				return;
+			}
+			if (url.pathname.endsWith('/publication-preview')) {
+				const body = route.request().postDataJSON();
 				await fulfill(route, {
-					changeSetId: timetableIds.changeSet,
-					changeSetRowVersion: 1,
-					effectiveFrom: '2026-05-01',
-					targetTimetableVersionId: timetableIds.draftVersion,
-					targetTimetableVersionRowVersion: 1,
-					previewHash: 'a'.repeat(64),
+					timetableVersionId: timetableIds.draftVersion,
+					rowVersion: 1,
+					deliveryVersionId: timetableIds.deliveryVersion,
+					latestDeliveryVersionId: timetableIds.deliveryVersion,
+					effectiveFrom: body.effectiveFrom,
+					blockCount: blocks.length,
+					contentChanged: true,
+					canPublish: true,
+					sourceIssues: [],
 					findings: [],
-					impactCounts: {},
-					scheduleCounts: []
+					previewHash: 'a'.repeat(64)
+				});
+				return;
+			}
+			if (url.pathname.endsWith('/publish')) {
+				publicationRequests += 1;
+				const draft = versions.find((version) => version.id === timetableIds.draftVersion);
+				if (!draft) throw new Error('draft missing');
+				const body = route.request().postDataJSON();
+				Object.assign(draft, {
+					status: 'published',
+					displayState: 'scheduled',
+					effectiveFrom: body.effectiveFrom,
+					rowVersion: draft.rowVersion + 1
+				});
+				await fulfill(route, draft);
+				return;
+			}
+			if (url.pathname.endsWith('/delete-draft')) {
+				draftDeleteRequests += 1;
+				const deletedCount = blocks.length;
+				versions = versions.filter((version) => version.id !== timetableIds.draftVersion);
+				blocks = [];
+				await fulfill(route, {
+					id: timetableIds.draftVersion,
+					sourceVersionId: timetableIds.publishedVersion,
+					deletedBlockCount: deletedCount
 				});
 				return;
 			}
@@ -683,6 +717,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (/^\/api\/academic\/timetable-blocks\/[^/]+$/.test(url.pathname) && method === 'DELETE') {
 				deleteRequests += 1;
+				await options.deleteGate;
 				if (options.deleteDelayMs) {
 					await new Promise((resolve) => setTimeout(resolve, options.deleteDelayMs));
 				}
@@ -735,6 +770,15 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		lastSynchronizedCreateBody: () => lastSynchronizedCreateBody,
 		lastCreateBody: () => lastCreateBody,
 		lastUpdateBody: () => lastUpdateBody,
-		blocks: () => blocks
+		blocks: () => blocks,
+		sourceUpdateRequestCount: () => sourceUpdateRequests,
+		draftDeleteRequestCount: () => draftDeleteRequests,
+		publicationRequestCount: () => publicationRequests,
+		publishNewOpening: () => {
+			latestDeliveryVersionId = timetableIds.newDeliveryVersion;
+		},
+		setSourceIssues: (issues: TimetableBlockWorkspace['sourceIssues']) => {
+			sourceIssues = issues;
+		}
 	};
 }

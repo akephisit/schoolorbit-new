@@ -75,6 +75,9 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 		block('block-3', 'group-2', 'WED', 'period-2', ['teacher-1', 'teacher-2'], ['homeroom-2'])
 	];
 	return {
+		latestDeliveryVersionId: 'delivery-1',
+		sourceIssues: [],
+		totalDraftBlockCount: null,
 		version: { id: 'version-1', status } as TimetableBlockWorkspace['version'],
 		bellPeriods: [
 			{ id: 'period-1', orderIndex: 1 },

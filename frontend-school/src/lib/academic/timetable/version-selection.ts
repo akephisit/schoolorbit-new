@@ -6,8 +6,10 @@ export function selectPreferredBoardVersion(
 ): TimetableVersion | null {
 	return (
 		versions.find((version) => version.id === requestedId) ??
-		versions.find((version) => version.status === 'draft') ??
-		versions.find((version) => version.displayState === 'current') ??
+		versions.find(
+			(version) => version.status === 'published' && version.displayState === 'current'
+		) ??
+		versions.find((version) => version.status === 'published') ??
 		versions[0] ??
 		null
 	);

@@ -24,7 +24,9 @@ test('offering, groups, versions, and selected group start as independent route 
 	]);
 	assert.match(page, /getLearningOffering/);
 	assert.match(page, /listLearningGroups/);
-	assert.match(page, /listTimetableVersions/);
+	assert.match(page, /listDeliveryVersions/);
+	assert.match(page, /getDeliveryVersion/);
+	assert.doesNotMatch(page, /listTimetableVersions/);
 	assert.match(page, /getLearningGroup/);
 	assert.match(page, /listDatedRosterMemberships/);
 	assert.match(page, /groupId/);

@@ -7,7 +7,7 @@ const ids = {
 	year: '12000000-0000-4000-8000-000000000401',
 	futureYear: '12000000-0000-4000-8000-000000000402',
 	term: '22000000-0000-4000-8000-000000000401',
-	timetableVersion: '32000000-0000-4000-8000-000000000401',
+	deliveryVersion: '32000000-0000-4000-8000-000000000401',
 	curriculum: '42000000-0000-4000-8000-000000000401',
 	curriculumVersion: '52000000-0000-4000-8000-000000000401',
 	clonedVersion: '52000000-0000-4000-8000-000000000402',
@@ -42,9 +42,9 @@ function homeroomWorkspace() {
 	return {
 		academicYearId: ids.year,
 		academicTermId: ids.term,
-		timetableVersionId: ids.timetableVersion,
-		timetableVersionStatus: 'published',
-		timetableVersionEffectiveFrom: '2026-08-15',
+		deliveryVersionId: ids.deliveryVersion,
+		deliveryVersionStatus: 'published',
+		deliveryVersionEffectiveFrom: '2026-08-15',
 		homerooms: [
 			{
 				homeroom: { id: ids.homeroom, name: 'ม.1/1', gradeLevelId: ids.grade, gradeLevel: 'ม.1' },
@@ -287,6 +287,45 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				});
 				return;
 			}
+			if (url.pathname === '/api/academic/delivery-versions') {
+				await fulfill(route, [
+					{
+						id: ids.deliveryVersion,
+						academicYearId: ids.year,
+						academicTermId: ids.term,
+						sourceVersionId: null,
+						changeSetId: null,
+						effectiveFrom: '2026-08-15',
+						effectiveUntil: null,
+						status: 'published',
+						rowVersion: 1,
+						offeringCount: 2,
+						groupCount: 1,
+						teacherAssignmentCount: 1,
+						updatedAt: '2026-08-15T00:00:00Z'
+					}
+				]);
+				return;
+			}
+			if (url.pathname === `/api/academic/delivery-versions/${ids.deliveryVersion}`) {
+				await fulfill(route, {
+					id: ids.deliveryVersion,
+					academicYearId: ids.year,
+					academicTermId: ids.term,
+					sourceVersionId: null,
+					effectiveFrom: '2026-08-15',
+					effectiveUntil: null,
+					status: 'published',
+					rowVersion: 1,
+					createdBy: ids.user,
+					publishedBy: ids.user,
+					createdAt: '2026-08-15T00:00:00Z',
+					updatedAt: '2026-08-15T00:00:00Z',
+					publishedAt: '2026-08-15T00:00:00Z',
+					snapshot: { offerings: [] }
+				});
+				return;
+			}
 			if (url.pathname === '/api/academic/delivery/homerooms') {
 				workspaceQueries.push(new URLSearchParams(url.searchParams));
 				await fulfill(route, homeroomWorkspace());
@@ -448,24 +487,25 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 	};
 }
 
-test('delivery requests and links the exact selected timetable version without row fan-out', async ({
+test('delivery requests and links the exact selected opening version without row fan-out', async ({
 	page
 }) => {
 	const mocked = await mockShell(page);
 	await page.goto(
-		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.timetableVersion}`
+		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.deliveryVersion}`
 	);
 
 	await expect(page.getByText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร')).toBeVisible();
 	await expect(page.getByText('วิทยาศาสตร์เสริม')).toBeVisible();
 	await expect(page.getByRole('link', { name: /ตรวจในหลักสูตร/ })).toHaveAttribute(
 		'href',
-		`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}&academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&timetableVersionId=${ids.timetableVersion}`
+		`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}&academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&deliveryVersionId=${ids.deliveryVersion}`
 	);
 	expect(mocked.workspaceQueries).toHaveLength(1);
 	expect(mocked.workspaceQueries[0]?.get('academicYearId')).toBe(ids.year);
 	expect(mocked.workspaceQueries[0]?.get('academicTermId')).toBe(ids.term);
-	expect(mocked.workspaceQueries[0]?.get('timetableVersionId')).toBe(ids.timetableVersion);
+	expect(mocked.workspaceQueries[0]?.get('deliveryVersionId')).toBe(ids.deliveryVersion);
+	expect(mocked.workspaceQueries[0]?.has('timetableVersionId')).toBe(false);
 	expect(
 		mocked.academicRequests.filter(
 			(request) => request.includes('/offerings/') || request.includes('/learning-groups')
@@ -480,7 +520,7 @@ test('read-only curriculum context inspects one workspace without management or 
 		permissions: ['academic_curriculum.read.school', 'learning_offering.read.school']
 	});
 	await page.goto(
-		`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}&academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&timetableVersionId=${ids.timetableVersion}`
+		`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}&academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&deliveryVersionId=${ids.deliveryVersion}`
 	);
 
 	await expect(page.getByRole('heading', { name: 'เทียบการเปิดสอนกับหลักสูตร' })).toBeVisible();
@@ -488,7 +528,8 @@ test('read-only curriculum context inspects one workspace without management or 
 	await expect(page.getByText('วิทยาศาสตร์เสริม')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'สร้างหลักสูตรรุ่นใหม่แบบร่าง' })).toHaveCount(0);
 	expect(mocked.workspaceQueries).toHaveLength(1);
-	expect(mocked.workspaceQueries[0]?.get('timetableVersionId')).toBe(ids.timetableVersion);
+	expect(mocked.workspaceQueries[0]?.get('deliveryVersionId')).toBe(ids.deliveryVersion);
+	expect(mocked.workspaceQueries[0]?.has('timetableVersionId')).toBe(false);
 	expect(mocked.createOptionsRequestCount()).toBe(0);
 	expect(mocked.managementOptionsRequestCount()).toBe(0);
 	expect(

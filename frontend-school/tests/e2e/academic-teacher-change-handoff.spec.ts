@@ -44,9 +44,10 @@ function teacherChangeSet() {
 		academicYearId: ids.year,
 		effectiveFrom: '2026-09-01',
 		reason: 'เปลี่ยนครูผู้สอนระหว่างภาคเรียน',
-		status: 'draft',
-		baseTimetableVersionId: ids.baseVersion,
-		targetTimetableVersionId: ids.targetVersion,
+		status: 'published',
+		baseDeliveryVersionId: ids.baseVersion,
+		targetDeliveryVersionId: ids.targetVersion,
+		targetDeliveryVersionRowVersion: 1,
 		rowVersion: 2,
 		createdBy: ids.user,
 		publishedBy: null,
@@ -166,13 +167,78 @@ async function mockTeacherHandoff(
 				});
 				return;
 			}
+			if (url.pathname === '/api/academic/delivery-versions') {
+				await fulfill(route, [
+					{
+						id: ids.targetVersion,
+						academicYearId: ids.year,
+						academicTermId: ids.term,
+						sourceVersionId: ids.baseVersion,
+						changeSetId: ids.changeSet,
+						status: 'published',
+						effectiveFrom: '2026-09-01',
+						effectiveUntil: null,
+						rowVersion: 1,
+						offeringCount: 1,
+						groupCount: 1,
+						teacherAssignmentCount: 1,
+						updatedAt: '2026-09-01T00:00:00Z'
+					}
+				]);
+				return;
+			}
+			if (url.pathname === `/api/academic/delivery-versions/${ids.targetVersion}`) {
+				await fulfill(route, {
+					id: ids.targetVersion,
+					status: 'published',
+					snapshot: {
+						offerings: [
+							{
+								id: ids.offering,
+								code: 'ค21101',
+								name: 'คณิตศาสตร์พื้นฐาน',
+								kind: 'course',
+								weeklyPeriodTarget: 2,
+								groups: [
+									{
+										id: ids.group,
+										teachers: [
+											{
+												assignmentId: ids.addItem,
+												teacherId: ids.teacherB,
+												displayName: 'ครูบี รับช่วง',
+												role: 'primary'
+											}
+										]
+									}
+								]
+							}
+						]
+					}
+				});
+				return;
+			}
+			if (url.pathname === '/api/academic/timetable-versions') {
+				await fulfill(route, [
+					{
+						id: ids.targetVersion,
+						academicYearId: ids.year,
+						academicTermId: ids.term,
+						status: 'draft',
+						deliveryVersionId: ids.targetVersion,
+						rowVersion: 3,
+						createdAt: '2026-09-01T00:00:00Z'
+					}
+				]);
+				return;
+			}
 			if (url.pathname === '/api/academic/delivery/homerooms') {
 				await fulfill(route, {
 					academicYearId: ids.year,
 					academicTermId: ids.term,
-					timetableVersionId: ids.baseVersion,
-					timetableVersionStatus: 'published',
-					timetableVersionEffectiveFrom: '2026-05-01',
+					deliveryVersionId: ids.targetVersion,
+					deliveryVersionStatus: 'published',
+					deliveryVersionEffectiveFrom: '2026-05-01',
 					homerooms: [],
 					unlinked: []
 				});
@@ -263,7 +329,7 @@ async function mockTeacherHandoff(
 				return;
 			}
 			if (
-				url.pathname === `${changeSetPath}/teacher-handoff/preview` &&
+				url.pathname === `/api/academic/teacher-handoffs/${ids.changeSet}/preview` &&
 				route.request().method() === 'POST'
 			) {
 				handoffPreviewRequests += 1;
@@ -319,7 +385,7 @@ async function mockTeacherHandoff(
 				return;
 			}
 			if (
-				url.pathname === `${changeSetPath}/teacher-handoff/apply` &&
+				url.pathname === `/api/academic/teacher-handoffs/${ids.changeSet}/apply` &&
 				route.request().method() === 'POST'
 			) {
 				applyRequests += 1;
@@ -385,7 +451,7 @@ async function mockTeacherHandoff(
 }
 
 function deliveryUrl() {
-	return `/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&changeSetId=${ids.changeSet}&teacherChangeItemId=${ids.stopItem}`;
+	return `/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.targetVersion}&changeSetId=${ids.changeSet}&teacherChangeItemId=${ids.stopItem}`;
 }
 
 test('assigns one replacement teacher to the selected affected entries', async ({ page }) => {

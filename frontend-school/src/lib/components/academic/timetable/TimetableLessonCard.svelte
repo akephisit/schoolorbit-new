@@ -3,7 +3,7 @@
 	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
 	import type { TimetableBlock } from '#lib/api/timetable.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { DoorOpen, LoaderCircle, Trash2, Users } from '@lucide/svelte';
+	import { AlertTriangle, DoorOpen, LoaderCircle, Trash2, Users } from '@lucide/svelte';
 
 	let {
 		block,
@@ -13,6 +13,7 @@
 		selected = false,
 		canEdit = false,
 		pending = false,
+		needsReview = false,
 		onSelect,
 		onDragStart,
 		onDragEnd,
@@ -25,6 +26,7 @@
 		selected?: boolean;
 		canEdit?: boolean;
 		pending?: boolean;
+		needsReview?: boolean;
 		onSelect?: (block: TimetableBlock) => void;
 		onDragStart?: (block: TimetableBlock, event: DragEvent) => void;
 		onDragEnd?: () => void;
@@ -57,6 +59,7 @@
 		[
 			showCode ? code : null,
 			title,
+			needsReview ? 'ต้องตรวจแก้ข้อมูลเปิดสอน' : null,
 			allTargetNames.join(', '),
 			shouldShowTeacher ? `ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}` : null
 		]
@@ -91,6 +94,7 @@
 	draggable={canEdit}
 	class={[
 		'group relative flex min-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border bg-background p-1.5 text-left shadow-xs transition',
+		needsReview && 'border-destructive/60',
 		canEdit && 'cursor-grab active:cursor-grabbing',
 		selected ? 'border-primary ring-2 ring-primary/20' : 'hover:border-primary/45'
 	]}
@@ -107,6 +111,9 @@
 			disabled={pending}
 			onclick={() => onSelect?.(block)}
 		>
+			{#if needsReview}<p class="mb-1 flex items-center gap-1 text-xs font-medium text-destructive">
+					<AlertTriangle class="size-3" />ต้องตรวจแก้
+				</p>{/if}
 			{#if showCode}
 				<p
 					data-timetable-card-line

@@ -291,15 +291,13 @@ async fn module_source_fingerprint(
                 )
                 .await?,
             ));
-            tables.push((
-                "targets",
-                json_rows(
-                    tx,
-                    "SELECT to_jsonb(target)::text FROM academic_timetable_version_targets target WHERE target.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) ORDER BY target.learning_offering_id",
-                    term_id,
-                )
-                .await?,
-            ));
+            let source_id: Option<Uuid>=sqlx::query_scalar("SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+                .bind(term_id).fetch_optional(&mut **tx).await?;
+            let target_source=school_academic_delivery::services::versions::latest_published_source(tx,term_id).await?;
+            let mut source_checks=Vec::new();
+            if let Some(id)=source_id {source_checks.push(school_academic_delivery::services::versions::published_source_evidence(tx,id,term_id).await?);}
+            if let Some(version)=target_source {source_checks.push(school_academic_delivery::services::versions::published_source_evidence(tx,version.id,term_id).await?);}
+            tables.push(("deliverySource",source_checks));
             for (name, sql) in [
                 ("blocks", "SELECT to_jsonb(block)::text FROM academic_timetable_blocks block WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active ORDER BY block.id"),
                 ("groups", "SELECT to_jsonb(block_group)::text FROM academic_timetable_block_groups block_group JOIN academic_timetable_blocks block ON block.id=block_group.block_id WHERE block.timetable_version_id=(SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) AND block.is_active AND block_group.is_active ORDER BY block_group.id"),
@@ -423,6 +421,23 @@ async fn build_workspace(
             TermPreparationModule::Timetable => {
                 let source = count(tx, "SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published'", context.source_term_id).await?;
                 let target = count(tx, "SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1 AND status <> 'cancelled'", context.target_term_id).await?;
+                if source > 0
+                    && school_academic_delivery::services::versions::latest_published_source(
+                        tx,
+                        context.target_term_id,
+                    )
+                    .await?
+                    .is_none()
+                {
+                    findings.push(LifecycleFinding {
+                        code: "timetable.delivery_not_published".into(),
+                        severity: LifecycleSeverity::Blocking,
+                        count: 1,
+                        message: "กรุณาเตรียมและเผยแพร่รุ่นเปิดสอนของภาคเรียนเป้าหมายก่อนคัดลอกตารางสอน"
+                            .into(),
+                        resolution_url: Some("/staff/academic/delivery".into()),
+                    });
+                }
                 if target > 0 {
                     findings.push(non_pristine(*module, target));
                 }
@@ -946,6 +961,22 @@ async fn add_timetable_mapping_seeds(
     context: &ContextRow,
     result: &mut Vec<(TermPreparationMappingKind, Vec<MappingSeed>)>,
 ) -> Result<(), AppError> {
+    let source_delivery_id: Option<Uuid>=sqlx::query_scalar("SELECT delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+        .bind(context.source_term_id).fetch_optional(&mut **tx).await?;
+    let offering_ids = match source_delivery_id {
+        Some(id) => school_academic_delivery::services::versions::published_source(
+            tx,
+            id,
+            context.source_term_id,
+        )
+        .await?
+        .snapshot
+        .offerings
+        .into_iter()
+        .map(|offering| offering.id)
+        .collect::<Vec<_>>(),
+        None => Vec::new(),
+    };
     let source_cte = "WITH source_version AS (SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1) ";
     result.push((TermPreparationMappingKind::LearningOffering, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT offering.id AS source_id, offering.code_snapshot || ' · ' || offering.name_snapshot AS source_label,
@@ -956,12 +987,9 @@ async fn add_timetable_mapping_seeds(
                    LEFT JOIN activity_offering_details sa ON sa.learning_offering_id=offering.id
                    WHERE target.academic_term_id=$2 AND ((td.subject_id=sd.subject_id AND sd.subject_id IS NOT NULL) OR (ta.activity_id=sa.activity_id AND sa.activity_id IS NOT NULL))
                    ORDER BY target.id LIMIT 1) AS suggested_target_id
-           FROM source_version
-           JOIN academic_timetable_version_targets version_target
-             ON version_target.timetable_version_id=source_version.id
-           JOIN learning_offerings offering ON offering.id=version_target.learning_offering_id
+           FROM source_version JOIN learning_offerings offering ON offering.id=ANY($3)
            ORDER BY source_id"#))
-        .bind(context.source_term_id).bind(context.target_term_id).fetch_all(&mut **tx).await?));
+        .bind(context.source_term_id).bind(context.target_term_id).bind(&offering_ids).fetch_all(&mut **tx).await?));
     result.push((TermPreparationMappingKind::LearningGroup, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT learning_group.id AS source_id, learning_group.name AS source_label, NULL::uuid AS suggested_target_id
            FROM source_version JOIN academic_timetable_block_groups block_group ON true
@@ -995,8 +1023,11 @@ async fn add_timetable_mapping_seeds(
         r#"SELECT DISTINCT homeroom.id AS source_id, homeroom.name AS source_label,
                   (SELECT target.id FROM homerooms target WHERE target.academic_year_id=$2 AND target.is_active AND target.name=homeroom.name AND target.grade_level_id=homeroom.grade_level_id ORDER BY target.id LIMIT 1) AS suggested_target_id
            FROM source_version JOIN academic_timetable_blocks block ON block.timetable_version_id=source_version.id
-           JOIN academic_timetable_block_homerooms bh ON bh.block_id=block.id AND bh.is_active
-           JOIN homerooms homeroom ON homeroom.id=bh.homeroom_id ORDER BY source_id"#))
+           JOIN LATERAL (
+               SELECT homeroom_id FROM academic_timetable_block_homerooms WHERE block_id=block.id AND is_active
+               UNION SELECT unnest(homeroom_ids) FROM academic_timetable_block_groups WHERE block_id=block.id AND is_active
+           ) coverage ON true
+           JOIN homerooms homeroom ON homeroom.id=coverage.homeroom_id ORDER BY source_id"#))
         .bind(context.source_term_id).bind(context.target_year_id).fetch_all(&mut **tx).await?));
     result.push((TermPreparationMappingKind::BellPeriod, sqlx::query_as(sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT period.id AS source_id,
@@ -1219,12 +1250,14 @@ pub async fn apply(
                     .delivery_preview
                     .as_ref()
                     .ok_or_else(|| AppError::Conflict("ไม่พบตัวอย่าง Delivery ที่พร้อมใช้".into()))?;
-                let result = offerings::apply_term_preparation(&mut tx, preview).await?;
+                let result =
+                    offerings::apply_term_preparation(&mut tx, actor.user_id, preview).await?;
                 let mut ids = result.offering_ids;
                 ids.extend(result.group_ids);
+                ids.push(result.delivery_revision_id);
                 TermPreparationModuleOutcome {
                     module: *module,
-                    created_count: result.created_offering_count + result.created_group_count,
+                    created_count: result.created_offering_count + result.created_group_count + 1,
                     target_ids: ids,
                 }
             }

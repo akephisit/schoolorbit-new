@@ -1273,6 +1273,11 @@ jobs:
                   and .gradebookResultsCutover.status == \"cutoverCompleted\"
                   and .gradebookResultsCutover.passed == true
                   and all(.gradebookResultsCutover.checks[]; .passed == true)
+                  and .deliveryTimetableCutover.migrationVersion == 88
+                  and .deliveryTimetableCutover.status == \"cutoverCompleted\"
+                  and .deliveryTimetableCutover.passed == true
+                  and (.deliveryTimetableCutover.checks | length) == 30
+                  and all(.deliveryTimetableCutover.checks[]; .passed == true)
                 )
               "
             if ! podman run --rm -i "$jq_image" -e "$migration_completion_filter" < "$migration_response" >/dev/null

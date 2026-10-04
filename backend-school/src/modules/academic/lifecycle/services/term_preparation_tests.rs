@@ -124,7 +124,7 @@ fn preparation_normalization_is_deterministic() {
 
 async fn delivery_preparation_fixture(name: &str) -> (sqlx::PgPool, ActorContext, Uuid, Uuid) {
     let pool = core::services_tests::prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 79).await.unwrap();
+    apply_migrations_through(&pool, 88).await.unwrap();
     let actor = ActorContext {
         user_id: sqlx::query_scalar(
             "SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1",
@@ -404,6 +404,101 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         "fixture must exercise every selected provider: {:?}",
         initial_workspace.modules
     );
+    assert!(!initial_workspace.can_apply);
+    assert!(initial_workspace
+        .findings
+        .iter()
+        .any(|finding| finding.code == "timetable.delivery_not_published"));
+    let opening_preparation = preview(
+        &pool,
+        &actor,
+        PreviewTermPreparationInput {
+            source_term_id,
+            target_term_id,
+            modules: vec![TermPreparationModule::Delivery],
+            mappings: TermPreparationMappings::default(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        opening_preparation.can_apply,
+        "{:?}",
+        opening_preparation.findings
+    );
+    apply(
+        &pool,
+        &actor,
+        ApplyTermPreparationInput {
+            request_id: Uuid::new_v4(),
+            source_checksum: opening_preparation.source_checksum,
+            source_term_id,
+            target_term_id,
+            modules: vec![TermPreparationModule::Delivery],
+            mappings: TermPreparationMappings::default(),
+        },
+    )
+    .await
+    .unwrap();
+    let opening_revision_id:Uuid=sqlx::query_scalar("SELECT id FROM academic_term_change_sets WHERE academic_term_id=$1 AND status='draft' ORDER BY created_at DESC LIMIT 1").bind(target_term_id).fetch_one(&pool).await.unwrap();
+    use school_academic_delivery::{
+        models as delivery_models,
+        services::{change_sets, groups},
+    };
+    let target_groups: Vec<(Uuid, i64)> = sqlx::query_as(
+        "SELECT id,row_version FROM learning_groups WHERE academic_term_id=$1 ORDER BY id",
+    )
+    .bind(target_term_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    for (group_id, row_version) in target_groups {
+        groups::replace_teachers(
+            &pool,
+            actor.user_id,
+            group_id,
+            delivery_models::ReplaceLearningGroupTeachersRequest {
+                row_version,
+                teachers: vec![delivery_models::TeacherAssignmentInput {
+                    teacher_id: actor.user_id,
+                    role: delivery_models::LearningTeacherRole::Primary,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let opening_readiness = change_sets::preview_change_set(&pool, opening_revision_id)
+        .await
+        .unwrap();
+    assert!(
+        !opening_readiness
+            .findings
+            .iter()
+            .any(|finding| finding.severity
+                == delivery_models::AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        opening_readiness.findings
+    );
+    change_sets::publish_change_set(
+        &pool,
+        actor.user_id,
+        opening_revision_id,
+        delivery_models::PublishAcademicTermChangeSetRequest {
+            row_version: opening_readiness.change_set_row_version,
+            target_delivery_version_row_version: opening_readiness
+                .target_delivery_version_row_version,
+            preview_hash: opening_readiness.preview_hash,
+            acknowledged_warning_codes: Vec::new(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let modules = TermPreparationModule::ALL
+        .into_iter()
+        .filter(|module| *module != TermPreparationModule::Delivery)
+        .collect::<Vec<_>>();
     let mut tx = pool.begin().await.unwrap();
     let delivery_preview = offerings::preview_term_preparation(&mut tx, target_term_id)
         .await
@@ -489,7 +584,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     let outcome = apply(&pool, &actor, request.clone()).await.unwrap();
     let replay = apply(&pool, &actor, request.clone()).await.unwrap();
     assert_eq!(replay.run_id, outcome.run_id);
-    assert_eq!(outcome.modules.len(), TermPreparationModule::ALL.len());
+    assert_eq!(outcome.modules.len(), TermPreparationModule::ALL.len() - 1);
 
     let different_actor = ActorContext {
         user_id: sqlx::query_scalar("SELECT id FROM users WHERE id<>$1 ORDER BY id LIMIT 1")
@@ -517,7 +612,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(target_drafts.4, 1);
+    assert_eq!(target_drafts.4, 2);
     assert!(target_drafts.0 > 0);
     assert!(target_drafts.1 > 0);
     assert!(target_drafts.2 > 0);

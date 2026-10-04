@@ -208,7 +208,7 @@
 			const loaded = await getHomeroomDeliveryWorkspace(
 				context.academicYearId,
 				context.academicTermId,
-				{ signal, timetableVersionId: context.timetableVersionId }
+				{ signal, deliveryVersionId: context.deliveryVersionId }
 			);
 			if (alignmentRequest.isCurrent(revision)) alignmentWorkspace = loaded;
 		} catch (error) {

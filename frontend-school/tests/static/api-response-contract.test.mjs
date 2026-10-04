@@ -1124,8 +1124,8 @@ test('new academic workspace mutations use typed returned resources', async () =
 	assert.match(corePage, /years = \[created, \.\.\.years\]/);
 	assert.match(deliveryCreateDialog, /const offering = await createLearningOffering\(/);
 	assert.match(deliveryCreateDialog, /onCreated\(\{\s*offering,/);
-	assert.match(deliveryPage, /function addCreated\(item: LearningOfferingOverviewItem\)/);
-	assert.match(deliveryPage, /offerings: \[\.\.\.overview\.offerings, item\]\.sort/);
+	assert.match(deliveryPage, /function addCreated\(_item: LearningOfferingOverviewItem\)/);
+	assert.match(deliveryPage, /function addCreated[\s\S]*?refreshDeliveryRegions\(\)/);
 	assert.match(deliveryDetailPage, /const created = await createLearningGroup\(/);
 	assert.match(deliveryDetailPage, /groups = \[\.\.\.groups, created\]\.sort/);
 	assert.match(deliveryDetailPage, /const updated = await updateLearningGroup\(/);

@@ -494,6 +494,49 @@ Rank milestone reads use the canonical current history and existing profile scop
 
 After a tenant applies 085, binaries writing position/rank directly into `staff_info` are prohibited. Deploy migration, backend, generated API contracts and frontend as one coordinated full release under maintenance. Rehearse the central runner on every affected active-tenant copy, preserve a current recovery point using the seven-day procedure above, and require actual SQLx-version equality before opening the proxy. Keep maintenance active on failure and repair forward with reviewed artifacts. Never bypass the guards, modify an applied migration or SQLx history, or assume an old binary is a safe rollback. Recovery must account for writes after the retained point. This release records career facts; it does not calculate eligibility or a next submission date.
 
+### Delivery and timetable version cutover
+
+The coordinated school release applies migrations
+[`086`](../backend-school/migrations/086_academic_delivery_versions_expand.sql),
+[`087`](../backend-school/migrations/087_academic_delivery_versions_backfill.sql), and
+[`088`](../backend-school/migrations/088_academic_delivery_timetable_cutover.sql) with the new backend,
+generated contract and matching frontend while school-api remains in maintenance.
+Rehearse the central runner on protected copies of every affected active tenant before consumer
+cutover, retain the current recovery point, and use the disposable fixture recipe in `TESTING.md`.
+
+086 only expands the schema. 087 locks and captures immutable opening graphs, maps exact source IDs,
+and records fifteen identity/relationship fingerprints. Consecutive equal opening graphs share a
+source; an A/B/A transition retains three dated opening versions. Pure placement drafts remain
+independent; mixed revisions retain their pending opening commands and the separately pinned
+placement draft. 088 requires fresh passing evidence before removing joint lifecycle columns,
+migrates persisted placement coverage, and independently reconciles the canonical result.
+Recorded direct inclusions without edit items become deterministic opening commands only when
+the journal and draft agree on the published source, retain every original target, and provide
+explicit added offering IDs and weekly targets. Early publication captures groups existing by
+the recorded Bangkok effective boundary. Later imports require exact active placement IDs and
+one dated assignment for every placed instructor, matching teacher ID, group ID and role at the
+effective date across all placements. All historical instructors are reconciled against captured
+episodes. Missing or overlapping episodes, changed targets without commands, missing journals,
+and conflicting sources still stop reconciliation.
+Missing, conflicting or ambiguous source evidence stops the migration without partial writes.
+Repair evidence through a reviewed operation on protected data; never infer relationships from
+names, discard a draft, weaken a guard, edit an applied migration, or change SQLx history.
+
+`/internal/migration-status` reports `deliveryTimetableCutover` using the delivery-owned aggregate
+audit reader. The full release keeps maintenance active until every tenant has the exact repository
+SQLx version, `migrationVersion: 88`, `status: cutoverCompleted`, `passed: true`, and all thirty
+checks from migrations 087/088 passing. It returns bounded codes/counts, without snapshot rows or
+teacher/student data. Once 087 captures reconciliation, legacy writes invalidate that evidence;
+keep traffic closed until 088 and coordinated backend/frontend acceptance complete. After 088,
+older binaries using the joint opening/table lifecycle are prohibited. Recover by rolling forward
+with a reviewed migration/application artifact; an old binary rollback is unsafe.
+
+Acceptance verifies existing table/block/resource IDs, pinned historical opening facts, independent
+opening publication, editing with the latest published source, review-marked retained placements,
+autosave errors, standalone table publication, and deletion limited to an unreferenced draft.
+Check read-only and scoped users through the deployed proxy and retain the feature branch and
+recovery artifacts until migration, authenticated smoke, menu registration and acceptance pass.
+
 ### Gradebook and results cutover
 
 Migration `060_gradebook_results_and_learner_evaluations.sql` is the Release 2 boundary for Gradebook,

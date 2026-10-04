@@ -42,7 +42,25 @@
 		uiPreferences.setSidebarCollapsed(isCollapsed);
 	});
 
-	let workspaceSections = $derived.by(() => buildSidebarNavigation(menuGroups));
+	let workspaceSections = $derived.by(() =>
+		buildSidebarNavigation(menuGroups)
+			.map((workspace) => ({
+				...workspace,
+				sections: workspace.sections
+					.map((section) => ({
+						...section,
+						items: section.items.filter(
+							(item) =>
+								$academicContext.options !== null ||
+								getAcademicContextRequirement(
+									`/(app)${new URL(item.path, page.url.href).pathname}`
+								) === 'none'
+						)
+					}))
+					.filter((section) => section.items.length > 0)
+			}))
+			.filter((workspace) => workspace.sections.length > 0)
+	);
 
 	let allMenuPaths = $derived.by(() => {
 		const paths: string[] = ['/staff/work'];

@@ -237,7 +237,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 59).await.unwrap();
+    apply_migrations_through(&pool, 88).await.unwrap();
     sqlx::query(
         r#"INSERT INTO bell_schedule_periods (
                id, bell_schedule_id, name,
@@ -260,63 +260,78 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
 }
 
 async fn draft_version(pool: &sqlx::PgPool) -> (Uuid, Uuid, Uuid, Uuid) {
-    let actor_id = Uuid::parse_str(ACTOR_ID).unwrap();
-    let (source_id, term_id, year_id, bell_schedule_id, starts_on): (
-        Uuid,
-        Uuid,
-        Uuid,
-        Uuid,
-        NaiveDate,
-    ) = sqlx::query_as(
-        r#"SELECT version.id, version.academic_term_id, version.academic_year_id,
-                  version.bell_schedule_id,
-                  (SELECT max(live.effective_from) + 1
-                   FROM academic_timetable_versions live
-                   WHERE live.academic_term_id = version.academic_term_id
-                     AND live.status IN ('draft', 'published'))
-           FROM academic_timetable_versions version
-           JOIN academic_terms term ON term.id = version.academic_term_id
-           WHERE version.status = 'published'
-             AND term.status = 'active'
-           ORDER BY version.effective_from, version.id
-           LIMIT 1"#,
+    let (source_id,term_id,year_id,bell_id,delivery_id):(Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT v.id,v.academic_term_id,v.academic_year_id,v.bell_schedule_id,v.delivery_version_id FROM academic_timetable_versions v JOIN academic_terms t ON t.id=v.academic_term_id WHERE v.status='published' AND t.status='active' ORDER BY v.effective_from,v.id LIMIT 1").fetch_one(pool).await.unwrap();
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,status,source_version_id,bell_schedule_id,delivery_version_id,created_by) VALUES($1,$2,$3,'draft',$4,$5,$6,$7)").bind(id).bind(term_id).bind(year_id).bind(source_id).bind(bell_id).bind(delivery_id).bind(Uuid::parse_str(ACTOR_ID).unwrap()).execute(pool).await.unwrap();
+    (id, term_id, year_id, bell_id)
+}
+
+async fn publish_updated_opening_for_draft(pool: &sqlx::PgPool, version_id: Uuid) {
+    use school_academic_delivery::{
+        models::*,
+        services::{change_sets, versions},
+    };
+    let table = school_academic_timetable::services::timetable_version_service::get_version(
+        pool,
+        version_id,
+        chrono::Utc::now().date_naive(),
     )
-    .fetch_one(pool)
     .await
     .unwrap();
-    let version_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_versions (
-               id, academic_term_id, academic_year_id, effective_from, status,
-               source_version_id, bell_schedule_id, created_by
-           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)"#,
+    let source = versions::get_version(pool, table.delivery_version_id)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
+        .bind(table.academic_term_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let actor = Uuid::parse_str(ACTOR_ID).unwrap();
+    let revision = change_sets::create_change_set(
+        pool,
+        actor,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: table.academic_term_id,
+            effective_from: source.effective_from + chrono::Duration::days(1),
+            reason: "เตรียมกลุ่มและครูสำหรับทดสอบคาบ".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
     )
-    .bind(version_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(starts_on)
-    .bind(source_id)
-    .bind(bell_schedule_id)
-    .bind(actor_id)
-    .execute(pool)
     .await
     .unwrap();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_version_targets (
-               timetable_version_id, learning_offering_id, academic_term_id,
-               academic_year_id, weekly_period_target, migration_provenance
-           )
-           SELECT $1, learning_offering_id, academic_term_id,
-                  academic_year_id, weekly_period_target, '{}'::jsonb
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $2"#,
+    let preview = change_sets::preview_change_set(pool, revision.id)
+        .await
+        .unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    change_sets::publish_change_set(
+        pool,
+        actor,
+        revision.id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: Vec::new(),
+            idempotency_key: Uuid::new_v4(),
+        },
     )
-    .bind(version_id)
-    .bind(source_id)
-    .execute(pool)
     .await
     .unwrap();
-    (version_id, term_id, year_id, bell_schedule_id)
+    let table = school_academic_timetable::services::timetable_version_service::get_version(
+        pool,
+        version_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await
+    .unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(pool,actor,version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:table.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
 }
 
 #[tokio::test]
@@ -406,6 +421,7 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     .fetch_one(&pool)
     .await
     .unwrap();
+    publish_updated_opening_for_draft(&pool, version_id).await;
     let request = CreateOrdinaryTimetableBlockRequest {
         timetable_version_id: version_id,
         academic_term_id: term_id,
@@ -483,491 +499,270 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
 }
 
 #[tokio::test]
-async fn synchronized_zero_group_and_structural_per_target_removal_are_canonical() {
+async fn synchronized_published_groups_and_structural_per_target_removal_are_canonical() {
     let pool = migrated_pool("timetable_block_sync_structural").await;
     let actor_id = Uuid::parse_str(ACTOR_ID).unwrap();
     let (version_id, term_id, year_id, bell_schedule_id) = draft_version(&pool).await;
-    let period_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM bell_schedule_periods
-           WHERE bell_schedule_id = $1 AND is_active
-           ORDER BY order_index, id LIMIT 2"#,
+    use school_academic_delivery::{
+        models::*,
+        services::{change_sets, groups, versions},
+    };
+    let source_id: Uuid = sqlx::query_scalar(
+        "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
     )
-    .bind(bell_schedule_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    let homeroom_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM homerooms WHERE academic_year_id = $1 AND is_active",
-    )
-    .bind(year_id)
+    .bind(version_id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    if homeroom_count < 2 {
-        let extra_homeroom_id = Uuid::new_v4();
-        sqlx::query(
-            r#"INSERT INTO homerooms (
-                   id, code, name, academic_year_id, grade_level_id, room_number,
-                   study_program_id, capacity, is_active
-               )
-               SELECT $1, $2, 'ห้องทดสอบตารางสอน', academic_year_id,
-                      grade_level_id, $3, study_program_id, capacity, true
-               FROM homerooms
-               WHERE academic_year_id = $4 AND is_active
-               ORDER BY id LIMIT 1"#,
-        )
-        .bind(extra_homeroom_id)
-        .bind(format!("BLOCK-{}", &extra_homeroom_id.to_string()[..8]))
-        .bind(format!("BLOCK-{}", &extra_homeroom_id.to_string()[..8]))
-        .bind(year_id)
+    let source = versions::get_version(&pool, source_id).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
+        .bind(term_id)
         .execute(&pool)
         .await
         .unwrap();
-    }
-    let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM homerooms
-           WHERE academic_year_id = $1 AND is_active
-           ORDER BY id LIMIT 2"#,
-    )
-    .bind(year_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert!(!period_ids.is_empty());
-    assert_eq!(homeroom_ids.len(), 2);
-
-    let synchronized_offering_id = Uuid::new_v4();
-    sqlx::query_scalar::<_, Uuid>(
-        r#"WITH source AS (
-               SELECT offering.academic_term_id, offering.academic_year_id,
-                      offering.owning_organization_unit_id, offering.starts_on,
-                      detail.activity_version_id, detail.activity_id,
-                      detail.registration_type, detail.hours
-               FROM learning_offerings offering
-               JOIN activity_offering_details detail
-                 ON detail.learning_offering_id = offering.id
-               WHERE offering.academic_term_id = $2
-                 AND detail.scheduling_mode = 'synchronized'
-               ORDER BY offering.id LIMIT 1
-           ), inserted_offering AS (
-               INSERT INTO learning_offerings (
-                   id, academic_term_id, academic_year_id, kind, code_snapshot,
-                   name_snapshot, status, published_at, owning_organization_unit_id,
-                   starts_on, migration_provenance
-               )
-               SELECT $1, academic_term_id, academic_year_id,
-                      'activity', 'SYNC-ZERO', 'กิจกรรมยังไม่มีกลุ่ม', 'draft', NULL,
-                      owning_organization_unit_id, starts_on, '{}'::jsonb
-               FROM source
-               RETURNING id
-           ), inserted_detail AS (
-               INSERT INTO activity_offering_details (
-                   learning_offering_id, academic_term_id, academic_year_id,
-                   activity_version_id, activity_id, registration_type,
-                   scheduling_mode, hours, attendance_requirement, pass_criteria,
-                   migration_provenance
-               )
-               SELECT inserted_offering.id, source.academic_term_id, source.academic_year_id,
-                      source.activity_version_id, source.activity_id, source.registration_type,
-                      'synchronized', source.hours, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb
-               FROM source CROSS JOIN inserted_offering
-               RETURNING learning_offering_id
-           )
-           SELECT learning_offering_id FROM inserted_detail"#,
-    )
-    .bind(synchronized_offering_id)
-    .bind(term_id)
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must create a synchronized offering without groups");
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_version_targets (
-               timetable_version_id, learning_offering_id, academic_term_id,
-               academic_year_id, weekly_period_target, migration_provenance
-           ) VALUES ($1, $2, $3, $4, 1, '{}'::jsonb)
-           ON CONFLICT (timetable_version_id, learning_offering_id) DO NOTHING"#,
-    )
-    .bind(version_id)
-    .bind(synchronized_offering_id)
-    .bind(term_id)
-    .bind(year_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let (first_grade_level_id, first_study_program_id): (Uuid, Uuid) =
-        sqlx::query_as("SELECT grade_level_id, study_program_id FROM homerooms WHERE id = $1")
-            .bind(homeroom_ids[0])
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let (second_grade_level_id, second_study_program_id): (Uuid, Uuid) =
-        sqlx::query_as("SELECT grade_level_id, study_program_id FROM homerooms WHERE id = $1")
-            .bind(homeroom_ids[1])
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_offering_targets (
-               id, learning_offering_id, academic_term_id, academic_year_id,
-               target_kind, homeroom_id, grade_level_id, study_program_id
-           ) VALUES
-               (gen_random_uuid(), $1, $2, $3, 'homeroom', $4, $5, $6),
-               (gen_random_uuid(), $1, $2, $3, 'grade_program', NULL, $7, $8)"#,
-    )
-    .bind(synchronized_offering_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(homeroom_ids[0])
-    .bind(first_grade_level_id)
-    .bind(first_study_program_id)
-    .bind(second_grade_level_id)
-    .bind(second_study_program_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "UPDATE learning_offerings SET status = 'published', published_at = now() WHERE id = $1",
-    )
-    .bind(synchronized_offering_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let expected_target_homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id
-           FROM homerooms
-           WHERE academic_year_id = $1
-             AND is_active
-             AND (id = $2 OR (
-                 grade_level_id = $3 AND study_program_id = $4
-             ))
-           ORDER BY id"#,
-    )
-    .bind(year_id)
-    .bind(homeroom_ids[0])
-    .bind(second_grade_level_id)
-    .bind(second_study_program_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-
-    let workspace = timetable_block_service::get_workspace(
-        &pool,
-        TimetableBlockWorkspaceQuery {
-            academic_year_id: year_id,
-            academic_term_id: term_id,
-            timetable_version_id: version_id,
-        },
-        &TimetableAccessFilter {
-            includes_school_owned: true,
-            ..TimetableAccessFilter::default()
-        },
-    )
-    .await
-    .expect("a deferred synchronized offering must hydrate before its first block");
-    let deferred_demand = workspace
-        .synchronized_demands
-        .iter()
-        .find(|demand| demand.learning_offering_id == synchronized_offering_id)
-        .expect("the zero-group synchronized offering must appear as a timetable demand");
-    assert_eq!(
-        deferred_demand.intended_homeroom_ids,
-        expected_target_homeroom_ids
-    );
-    assert_eq!(deferred_demand.scheduled_periods, 0);
-
-    let teacher_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM users WHERE user_type = 'staff' AND status = 'active' ORDER BY id LIMIT 2",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert_eq!(teacher_ids.len(), 2);
-    let outside_homeroom_id: Uuid = sqlx::query_scalar(
-        r#"SELECT id FROM homerooms
-           WHERE academic_year_id <> $1 AND is_active
-           ORDER BY id LIMIT 1"#,
-    )
-    .bind(year_id)
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must include a homeroom from another academic year");
-    let outside_scope = timetable_block_service::create_synchronized_block(
+    let revision = change_sets::create_change_set(
         &pool,
         actor_id,
-        CreateSynchronizedTimetableBlockRequest {
-            timetable_version_id: version_id,
+        CreateAcademicTermChangeSetRequest {
             academic_term_id: term_id,
-            learning_offering_id: synchronized_offering_id,
-            day_of_week: "WED".to_string(),
-            bell_schedule_period_id: period_ids[0],
-            intended_homeroom_ids: vec![outside_homeroom_id],
-            teacher_ids: Vec::new(),
-            room_id: None,
-            note: None,
+            effective_from: source.effective_from + chrono::Duration::days(1),
+            reason: "เปิดกิจกรรมก่อนจัดคาบ".into(),
+            idempotency_key: Uuid::new_v4(),
         },
     )
-    .await;
-    assert!(matches!(
-        outside_scope,
-        Err(AppError::ValidationError(message))
-            if message.contains("นอกขอบเขตรายการเปิดสอน")
-    ));
-
+    .await
+    .unwrap();
+    let activity_version_id:Uuid=sqlx::query_scalar("SELECT v.id FROM activity_versions v JOIN academic_terms t ON t.id=$1 WHERE v.scheduling_mode='synchronized' AND v.status='published' AND v.effective_from<=t.start_date AND (v.effective_until IS NULL OR t.start_date<v.effective_until) ORDER BY v.id LIMIT 1").bind(term_id).fetch_one(&pool).await.unwrap();
+    let (homeroom_id,grade_level_id,study_program_id):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT id,grade_level_id,study_program_id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 1").bind(year_id).fetch_one(&pool).await.unwrap();
+    let changed = change_sets::upsert_change_item(
+        &pool,
+        actor_id,
+        revision.id,
+        UpsertAcademicTermChangeItemRequest::AddActivity {
+            change_set_row_version: revision.row_version,
+            weekly_period_target: 1,
+            offering: CreateActivityOfferingRequest {
+                academic_term_id: term_id,
+                activity_version_id,
+                curriculum_activity_requirement_id: None,
+                targets: vec![OfferingTargetInput {
+                    target_kind: OfferingTargetKind::Homeroom,
+                    homeroom_id: Some(homeroom_id),
+                    grade_level_id,
+                    study_program_id,
+                }],
+                registration_type: ActivityRegistrationType::Assigned,
+                scheduling_mode: ActivitySchedulingMode::Synchronized,
+                capacity: None,
+                attendance_requirement: ActivityAttendanceRequirement {
+                    minimum_percent: None,
+                    required_sessions: None,
+                },
+                pass_criteria: ActivityPassCriteria {
+                    require_attendance: false,
+                    require_teacher_confirmation: true,
+                    outcomes: vec!["pass".into(), "fail".into()],
+                },
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let added_id = changed
+        .items
+        .iter()
+        .find_map(|item| match item {
+            AcademicTermChangeItem::AddOffering {
+                learning_offering_id,
+                ..
+            } => Some(*learning_offering_id),
+            _ => None,
+        })
+        .unwrap();
+    for group in groups::list(&pool, added_id).await.unwrap() {
+        groups::replace_teachers(
+            &pool,
+            actor_id,
+            group.id,
+            ReplaceLearningGroupTeachersRequest {
+                row_version: group.row_version,
+                teachers: vec![TeacherAssignmentInput {
+                    teacher_id: actor_id,
+                    role: LearningTeacherRole::Primary,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let preview = change_sets::preview_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    change_sets::publish_change_set(
+        &pool,
+        actor_id,
+        revision.id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: Vec::new(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let current = school_academic_timetable::services::timetable_version_service::get_version(
+        &pool,
+        version_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await
+    .unwrap();
+    school_academic_timetable::services::timetable_lifecycle::update_source(&pool,actor_id,version_id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {row_version:current.row_version,delivery_version_id:revision.target_delivery_version_id}).await.unwrap();
+    let table = school_academic_timetable::services::timetable_version_service::get_version(
+        &pool,
+        version_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await
+    .unwrap();
+    let opening =
+        school_academic_delivery::services::versions::get_version(&pool, table.delivery_version_id)
+            .await
+            .unwrap();
+    let offering=opening.snapshot.offerings.iter().find(|offering| matches!(&offering.catalog,school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity) if activity.scheduling_mode==school_academic_delivery::models::ActivitySchedulingMode::Synchronized)).unwrap();
+    let period_ids:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND is_active ORDER BY order_index,id LIMIT 2").bind(bell_schedule_id).fetch_all(&pool).await.unwrap();
+    let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 2",
+    )
+    .bind(year_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let reserved_teacher:Uuid=sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' AND status='active' AND NOT(id=ANY($1)) ORDER BY id LIMIT 1")
+        .bind(offering.groups.iter().flat_map(|group|group.teachers.iter().map(|teacher|teacher.teacher_id)).collect::<Vec<_>>()).fetch_one(&pool).await.unwrap();
     let sync_block = timetable_block_service::create_synchronized_block(
         &pool,
         actor_id,
         CreateSynchronizedTimetableBlockRequest {
             timetable_version_id: version_id,
             academic_term_id: term_id,
-            learning_offering_id: synchronized_offering_id,
-            day_of_week: "WED".to_string(),
+            learning_offering_id: offering.id,
+            day_of_week: "WED".into(),
             bell_schedule_period_id: period_ids[0],
-            intended_homeroom_ids: expected_target_homeroom_ids.clone(),
-            teacher_ids: vec![teacher_ids[0]],
+            intended_homeroom_ids: offering.homeroom_ids.clone(),
             room_id: None,
+            teacher_ids: vec![reserved_teacher],
             note: None,
         },
     )
     .await
-    .expect("a synchronized block must exist before Delivery groups");
-    assert!(sync_block.groups.is_empty());
-    assert!(sync_block.sync_states.is_empty());
-    assert_eq!(
-        sync_block.homerooms.len(),
-        expected_target_homeroom_ids.len()
+    .unwrap();
+    assert!(
+        !sync_block.groups.is_empty(),
+        "published opening groups synchronize immediately"
     );
+    let group = sync_block.groups[0].clone();
     assert_eq!(
         sync_block
-            .teachers
+            .sync_states
             .iter()
-            .map(|teacher| teacher.teacher_id)
-            .collect::<Vec<_>>(),
-        vec![teacher_ids[0]]
-    );
-
-    let expanded_teachers = timetable_block_service::update_block(
-        &pool,
-        actor_id,
-        sync_block.id,
-        UpdateTimetableBlockRequest {
-            timetable_version_id: version_id,
-            row_version: sync_block.row_version,
-            day_of_week: None,
-            bell_schedule_period_id: None,
-            title: None,
-            clear_title: false,
-            note: None,
-            clear_note: false,
-            room_id: None,
-            clear_room: false,
-            instructor_ids: None,
-            teacher_ids: Some(teacher_ids.clone()),
-        },
-    )
-    .await
-    .expect("a synchronized block must replace its provisional teacher set atomically");
-    assert_eq!(expanded_teachers.teachers.len(), 2);
-    let removed_teacher = expanded_teachers
-        .teachers
-        .iter()
-        .find(|teacher| teacher.teacher_id == teacher_ids[0])
-        .unwrap();
-    let one_reserved_teacher = timetable_block_service::remove_target(
-        &pool,
-        actor_id,
-        expanded_teachers.id,
-        RemoveTimetableBlockTargetRequest {
-            timetable_version_id: version_id,
-            block_row_version: expanded_teachers.row_version,
-            target_kind: TimetableTargetKind::Teacher,
-            target_id: removed_teacher.id,
-            target_row_version: removed_teacher.row_version,
-        },
-    )
-    .await
-    .expect("one provisional teacher must be removable without changing the shared block");
-    assert_eq!(one_reserved_teacher.teachers.len(), 1);
-    assert_eq!(one_reserved_teacher.teachers[0].teacher_id, teacher_ids[1]);
-    assert_eq!(
-        one_reserved_teacher.homerooms.len(),
-        expected_target_homeroom_ids.len()
-    );
-    let reactivated = timetable_block_service::update_block(
-        &pool,
-        actor_id,
-        sync_block.id,
-        UpdateTimetableBlockRequest {
-            timetable_version_id: version_id,
-            row_version: one_reserved_teacher.row_version,
-            day_of_week: None,
-            bell_schedule_period_id: None,
-            title: None,
-            clear_title: false,
-            note: None,
-            clear_note: false,
-            room_id: None,
-            clear_room: false,
-            instructor_ids: None,
-            teacher_ids: Some(teacher_ids.clone()),
-        },
-    )
-    .await
-    .expect("a removed provisional teacher must be reusable on the same shared block");
-    let reactivated_teacher = reactivated
-        .teachers
-        .iter()
-        .find(|teacher| teacher.teacher_id == teacher_ids[0])
-        .unwrap();
-    assert!(reactivated_teacher.row_version > removed_teacher.row_version);
-    let reserved_for_group = timetable_block_service::remove_target(
-        &pool,
-        actor_id,
-        reactivated.id,
-        RemoveTimetableBlockTargetRequest {
-            timetable_version_id: version_id,
-            block_row_version: reactivated.row_version,
-            target_kind: TimetableTargetKind::Teacher,
-            target_id: reactivated_teacher.id,
-            target_row_version: reactivated_teacher.row_version,
-        },
-    )
-    .await
-    .expect("the reactivated teacher must remain individually removable");
-
-    let synchronized_group_id = Uuid::new_v4();
-    let teacher_id = teacher_ids[1];
-    let offering_starts_on: NaiveDate =
-        sqlx::query_scalar("SELECT starts_on FROM learning_offerings WHERE id = $1")
-            .bind(synchronized_offering_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_groups (
-               id, learning_offering_id, academic_term_id, academic_year_id,
-               code, name, status, roster_status
-           ) VALUES ($1, $2, $3, $4, 'SYNC-GROUP', 'กลุ่มกิจกรรมทดสอบ', 'draft', 'draft')"#,
-    )
-    .bind(synchronized_group_id)
-    .bind(synchronized_offering_id)
-    .bind(term_id)
-    .bind(year_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_group_homerooms (
-               id, learning_group_id, academic_term_id, academic_year_id,
-               homeroom_id, coverage_source, migration_provenance
-           ) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'manual', '{}'::jsonb)"#,
-    )
-    .bind(synchronized_group_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(homeroom_ids[0])
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_group_teachers (
-               id, learning_group_id, academic_term_id, academic_year_id,
-               teacher_id, role, starts_on, created_by, updated_by
-           ) VALUES (gen_random_uuid(), $1, $2, $3, $4, 'primary', $5, $6, $6)"#,
-    )
-    .bind(synchronized_group_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(teacher_id)
-    .bind(offering_starts_on)
-    .bind(actor_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let linked = timetable_block_service::retry_sync(
-        &pool,
-        actor_id,
-        reserved_for_group.id,
-        RetryTimetableBlockSyncRequest {
-            timetable_version_id: version_id,
-            block_row_version: reserved_for_group.row_version,
-            learning_group_ids: vec![synchronized_group_id],
-        },
-    )
-    .await
-    .expect("a later Delivery group must synchronize into the reserved block");
-    assert_eq!(
-        linked.groups.len(),
-        1,
-        "sync states: {:?}",
-        linked.sync_states
-    );
-    assert_eq!(linked.groups[0].instructors.len(), 1);
-    assert_eq!(
-        linked.sync_states[0].status,
+            .find(|state| state.learning_group_id == group.learning_group_id)
+            .unwrap()
+            .status,
         TimetableBlockSyncStatus::Linked
     );
-    let confirmed_teacher = linked
+    let reservation = sync_block
         .teachers
         .iter()
-        .find(|teacher| teacher.teacher_id == teacher_id)
-        .expect("the confirmed teacher should retain the provisional reservation");
-    let confirmed_removal = timetable_block_service::remove_target(
+        .find(|teacher| teacher.teacher_id == reserved_teacher)
+        .unwrap();
+    let without_reservation = timetable_block_service::remove_target(
         &pool,
         actor_id,
-        linked.id,
+        sync_block.id,
         RemoveTimetableBlockTargetRequest {
             timetable_version_id: version_id,
-            block_row_version: linked.row_version,
+            block_row_version: sync_block.row_version,
             target_kind: TimetableTargetKind::Teacher,
-            target_id: confirmed_teacher.id,
-            target_row_version: confirmed_teacher.row_version,
+            target_id: reservation.id,
+            target_row_version: reservation.row_version,
         },
     )
-    .await;
-    assert!(matches!(
-        confirmed_removal,
-        Err(AppError::ValidationError(message))
-            if message.contains("ครูประจำกลุ่ม")
-    ));
-
+    .await
+    .unwrap();
+    assert_eq!(without_reservation.groups.len(), sync_block.groups.len());
     let excluded = timetable_block_service::remove_target(
         &pool,
         actor_id,
-        linked.id,
+        sync_block.id,
         RemoveTimetableBlockTargetRequest {
             timetable_version_id: version_id,
-            block_row_version: linked.row_version,
+            block_row_version: without_reservation.row_version,
             target_kind: TimetableTargetKind::Group,
-            target_id: linked.groups[0].id,
-            target_row_version: linked.groups[0].row_version,
+            target_id: group.id,
+            target_row_version: group.row_version,
         },
     )
     .await
-    .expect("one synchronized group must be excludable without removing the block");
-    assert!(excluded.groups.is_empty());
+    .unwrap();
+    assert!(!excluded
+        .groups
+        .iter()
+        .any(|entry| entry.learning_group_id == group.learning_group_id));
     assert_eq!(
-        excluded.sync_states[0].status,
+        excluded
+            .sync_states
+            .iter()
+            .find(|state| state.learning_group_id == group.learning_group_id)
+            .unwrap()
+            .status,
         TimetableBlockSyncStatus::Excluded
+    );
+    let retried = timetable_block_service::retry_sync(
+        &pool,
+        actor_id,
+        sync_block.id,
+        RetryTimetableBlockSyncRequest {
+            timetable_version_id: version_id,
+            block_row_version: excluded.row_version,
+            learning_group_ids: vec![group.learning_group_id],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        !retried
+            .groups
+            .iter()
+            .any(|entry| entry.learning_group_id == group.learning_group_id),
+        "retry does not undo a deliberate exclusion"
     );
     let restored = timetable_block_service::restore_group(
         &pool,
         actor_id,
-        excluded.id,
+        sync_block.id,
         RestoreTimetableBlockGroupRequest {
             timetable_version_id: version_id,
-            block_row_version: excluded.row_version,
-            learning_group_id: synchronized_group_id,
+            block_row_version: retried.row_version,
+            learning_group_id: group.learning_group_id,
         },
     )
     .await
-    .expect("an explicitly excluded group must restore only through the explicit action");
-    assert_eq!(restored.groups.len(), 1);
-    assert_eq!(
-        restored.sync_states[0].status,
-        TimetableBlockSyncStatus::Linked
-    );
-
+    .unwrap();
+    assert!(restored
+        .groups
+        .iter()
+        .any(|entry| entry.learning_group_id == group.learning_group_id));
     let structural = timetable_block_service::create_structural_blocks(
         &pool,
         actor_id,
@@ -975,10 +770,10 @@ async fn synchronized_zero_group_and_structural_per_target_removal_are_canonical
             timetable_version_id: version_id,
             academic_term_id: term_id,
             structural_kind: TimetableStructuralKind::FlagCeremony,
-            title: "กิจกรรมหน้าเสาธง".to_string(),
+            title: "กิจกรรมหน้าเสาธง".into(),
             note: None,
             slots: vec![TimetableStructuralSlotInput {
-                day_of_week: "TUE".to_string(),
+                day_of_week: "TUE".into(),
                 bell_schedule_period_id: period_ids[0],
             }],
             homeroom_ids: homeroom_ids.clone(),
@@ -989,12 +784,9 @@ async fn synchronized_zero_group_and_structural_per_target_removal_are_canonical
         },
     )
     .await
-    .expect("structural block must be created once with explicit targets");
-    assert_eq!(structural.len(), 1);
-    assert_eq!(structural[0].homerooms.len(), 2);
-
-    let removed_target = structural[0].homerooms[0].clone();
-    let updated = timetable_block_service::remove_target(
+    .unwrap();
+    let removed = &structural[0].homerooms[0];
+    let changed = timetable_block_service::remove_target(
         &pool,
         actor_id,
         structural[0].id,
@@ -1002,31 +794,20 @@ async fn synchronized_zero_group_and_structural_per_target_removal_are_canonical
             timetable_version_id: version_id,
             block_row_version: structural[0].row_version,
             target_kind: TimetableTargetKind::Homeroom,
-            target_id: removed_target.id,
-            target_row_version: removed_target.row_version,
+            target_id: removed.id,
+            target_row_version: removed.row_version,
         },
     )
     .await
-    .expect("one homeroom target must be removable without deleting the series");
-    assert_eq!(updated.homerooms.len(), 1);
-    assert_eq!(updated.homerooms[0].homeroom_id, homeroom_ids[1]);
-
-    sqlx::query(
-        r#"UPDATE academic_timetable_versions
-           SET status = 'published', published_by = $2, published_at = now()
-           WHERE id = $1"#,
-    )
-    .bind(version_id)
-    .bind(actor_id)
-    .execute(&pool)
-    .await
     .unwrap();
-    let mut timetable_date: NaiveDate =
-        sqlx::query_scalar("SELECT effective_from FROM academic_timetable_versions WHERE id = $1")
-            .bind(version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    assert_eq!(changed.homerooms.len(), homeroom_ids.len() - 1);
+    assert!(!changed
+        .homerooms
+        .iter()
+        .any(|target| target.id == removed.id));
+    let date = opening.effective_from + chrono::Duration::days(1);
+    sqlx::query("UPDATE academic_timetable_versions SET status='published',effective_from=$3,published_by=$2,published_at=now(),publication_idempotency_key=gen_random_uuid(),publication_request_hash=repeat('a',64) WHERE id=$1").bind(version_id).bind(actor_id).bind(date).execute(&pool).await.unwrap();
+    let mut timetable_date = date;
     while daily_teaching_service::day_code_from_date(timetable_date) != "WED" {
         timetable_date = timetable_date.checked_add_days(Days::new(1)).unwrap();
     }
@@ -1039,20 +820,15 @@ async fn synchronized_zero_group_and_structural_per_target_removal_are_canonical
         },
     )
     .await
-    .expect("the confirmed teacher should appear once in the daily timetable");
-    let teacher_day = daily
+    .unwrap();
+    let teacher_id = group.instructors[0].teacher_id;
+    assert!(daily
         .teachers
         .iter()
         .find(|teacher| teacher.id == teacher_id)
-        .expect("the confirmed teacher must appear in the daily timetable");
-    let period_entries = teacher_day
+        .unwrap()
         .periods
         .iter()
-        .find(|period| period.bell_schedule_period_id == period_ids[0])
-        .unwrap();
-    assert_eq!(period_entries.entries.len(), 1);
-    assert_eq!(
-        period_entries.entries[0].learning_group_id,
-        Some(synchronized_group_id)
-    );
+        .flat_map(|period| &period.entries)
+        .any(|entry| entry.learning_group_id == Some(group.learning_group_id)));
 }

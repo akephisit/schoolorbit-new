@@ -88,6 +88,44 @@ cross-domain tests such as staff soft-delete followed by session invalidation.
 
 Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh modules::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
 
+Delivery and timetable versions have independent publication lifecycles. Rehearse their canonical
+migration and concurrent writers against disposable PostgreSQL using:
+
+```bash
+./scripts/test_backend_school.sh --integration delivery_versions -- --nocapture
+./scripts/test_backend_school.sh modules::academic::delivery::services_tests -- --nocapture
+./scripts/test_backend_school.sh modules::academic::services::timetable_ -- --nocapture
+./scripts/test_backend_school.sh modules::academic::lifecycle::services::term_preparation_tests -- --nocapture
+./scripts/test_backend_school.sh modules::system::handlers::migration::tests -- --nocapture
+./scripts/test_backend_school.sh --package school-academic-delivery
+./scripts/test_backend_school.sh --package school-academic-timetable
+```
+
+The migration fixtures cover stable identities, a delivery graph shared by multiple tables,
+dated A/B/A source chains, independent placement drafts, mixed opening/placement drafts,
+explicit legacy target inclusions, early publication boundaries, unmappable sources/targets/historical
+groups, fresh reconciliation gates, and safe retry. Runtime
+cases cover separate opening publication, exact instructor handoff, source reconciliation,
+semantic content comparisons, publication receipts, deletion rollback, and serialized writers.
+Against the ready local production preview, run the opening/table workflows from `frontend-school`:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
+  tests/e2e/homeroom-delivery-workspace.spec.ts \
+  tests/e2e/delivery-offering-route-loading.spec.ts \
+  tests/e2e/academic-teacher-change-handoff.spec.ts \
+  tests/e2e/timetable-version-workspace.spec.ts \
+  tests/e2e/timetable-board-templates-region-loading.spec.ts \
+  tests/e2e/timetable-drag-board.spec.ts \
+  tests/e2e/timetable-teacher-board.spec.ts \
+  tests/e2e/timetable-whole-school-overview.spec.ts \
+  tests/e2e/timetable-dense-board-layout.spec.ts --project=chromium --workers=2
+```
+
+Fixtures use synthetic staff/resources and generated API shapes. A published opening never
+implicitly creates or publishes a timetable or student roster. Opening snapshots retain their
+course/group/teacher facts; dated student memberships remain on their separate roster lifecycle.
+
 The six `school-academic-*` crates own Core, Delivery, Timetable, Assessment, Results, and
 Lifecycle respectively. Lifecycle and Supervision expose dev-only integration-support features
 only for root tests that intentionally span domain owners; the normal release graph must keep

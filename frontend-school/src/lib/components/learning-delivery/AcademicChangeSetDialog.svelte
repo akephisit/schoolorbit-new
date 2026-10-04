@@ -11,17 +11,13 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { CalendarClock, TriangleAlert } from '@lucide/svelte';
 
-	type ChangePurpose = 'operational_change' | 'timetable_revision';
-
 	let {
 		academicTermId,
 		onCreated,
-		purpose = 'operational_change',
 		showTrigger = true
 	}: {
 		academicTermId: string;
 		onCreated: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
-		purpose?: ChangePurpose;
 		showTrigger?: boolean;
 	} = $props();
 
@@ -53,87 +49,48 @@
 			reason = '';
 			open = false;
 		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? error.message
-					: purpose === 'timetable_revision'
-						? 'สร้างรุ่นตารางสอนใหม่ไม่สำเร็จ'
-						: 'สร้างแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ';
+			errorMessage = error instanceof Error ? error.message : 'สร้างแบบร่างรุ่นเปิดสอนไม่สำเร็จ';
 		} finally {
 			saving = false;
 		}
 	}
 </script>
 
-{#if showTrigger}
-	{#if purpose === 'timetable_revision'}
-		<Button variant="outline" onclick={openDialog}>
-			<CalendarClock class="size-4" /> สร้างรุ่นตารางสอนใหม่
-		</Button>
-	{:else}
-		<Button variant="outline" class="border-amber-500/40 text-amber-800" onclick={openDialog}>
-			<CalendarClock class="size-4" /> เพิ่ม/ปรับ/หยุดกลางภาค
-		</Button>
-	{/if}
-{/if}
+{#if showTrigger}<Button variant="outline" onclick={openDialog}
+		><CalendarClock class="size-4" />สร้างรุ่นเปิดสอน</Button
+	>{/if}
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-xl">
-		<Dialog.Header>
-			<Dialog.Title>
-				{purpose === 'timetable_revision' ? 'สร้างรุ่นตารางสอนใหม่' : 'เริ่มการเปลี่ยนแปลงกลางภาค'}
-			</Dialog.Title>
-			<Dialog.Description>
-				{purpose === 'timetable_revision'
-					? 'คัดลอกรุ่นที่ใช้อยู่ตามวันที่เริ่มใช้ แล้วปรับตารางโดยไม่กระทบรุ่นเดิม'
-					: 'ใช้เมื่อภาคเรียนเริ่มสอนแล้วและต้องเพิ่ม ปรับคาบ หรือหยุดรายการเปิดสอน'}
-			</Dialog.Description>
-		</Dialog.Header>
-
-		<div class="flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3 text-sm">
-			<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-700" />
-			<p class="leading-relaxed">
-				{#if purpose === 'timetable_revision'}
-					ระบบจะสร้างรุ่นแบบร่างจากตารางที่มีผลในวันนั้น
-					รุ่นเดิมยังใช้งานต่อจนถึงวันก่อนเริ่มใช้รุ่นใหม่
-				{:else}
-					การทำงานนี้มีผลเฉพาะภาคเรียนนี้และ <strong>ไม่เปลี่ยนหลักสูตร</strong>
-					ระบบจะสร้างรุ่นตารางสอนแบบร่างสำหรับวันที่เริ่มใช้โดยอัตโนมัติ
-				{/if}
+		<Dialog.Header
+			><Dialog.Title>สร้างรุ่นเปิดสอน</Dialog.Title><Dialog.Description
+				>กำหนดรายวิชา กลุ่ม ครู และจำนวนคาบของภาคเรียน ก่อนเผยแพร่ข้อมูลให้ใช้จัดตาราง</Dialog.Description
+			></Dialog.Header
+		>
+		<div class="flex gap-3 rounded-xl border bg-muted/30 p-3 text-sm">
+			<TriangleAlert class="size-4 shrink-0" />
+			<p>
+				ตารางที่เผยแพร่แล้วจะใช้ข้อมูลรุ่นเดิมต่อไป
+				การเผยแพร่รุ่นเปิดสอนใหม่ไม่เปลี่ยนตารางโดยอัตโนมัติ
 			</p>
 		</div>
 
 		<form class="space-y-4" onsubmit={createDraft}>
 			<div class="space-y-2">
-				<Label for="academic-change-effective-date">
-					{purpose === 'timetable_revision' ? 'วันที่เริ่มใช้รุ่นใหม่' : 'วันที่เริ่มมีผล'}
-				</Label>
-				<DatePicker
+				<Label for="academic-change-effective-date">วันที่เริ่มใช้รุ่นเปิดสอน</Label><DatePicker
 					id="academic-change-effective-date"
 					bind:value={effectiveFrom}
-					placeholder={purpose === 'timetable_revision'
-						? 'เลือกวันที่เริ่มใช้รุ่นใหม่'
-						: 'เลือกวันที่เริ่มใช้จริง'}
-					ariaLabel={purpose === 'timetable_revision'
-						? 'เลือกวันที่เริ่มใช้รุ่นใหม่'
-						: 'เลือกวันที่เริ่มใช้จริง'}
+					placeholder="เลือกวันที่เริ่มใช้จริง"
+					ariaLabel="เลือกวันที่เริ่มใช้รุ่นเปิดสอน"
 					required
 				/>
-				<p class="text-xs text-muted-foreground">
-					{purpose === 'timetable_revision'
-						? 'รุ่นใหม่จะเริ่มมีผลในวันนี้ และรุ่นก่อนหน้าจะสิ้นสุดโดยอัตโนมัติเมื่อเผยแพร่'
-						: 'รายการและตารางชุดใหม่เริ่มใช้ตั้งแต่วันนี้ ส่วนข้อมูลก่อนหน้านี้ยังคงเดิม'}
-				</p>
 			</div>
 			<div class="space-y-2">
-				<Label for="academic-change-reason">เหตุผลการเปลี่ยนแปลง</Label>
-				<Textarea
+				<Label for="academic-change-reason">ชื่อหรือเหตุผลของรุ่น</Label><Textarea
 					id="academic-change-reason"
 					bind:value={reason}
 					rows={3}
-					placeholder={purpose === 'timetable_revision'
-						? 'เช่น ปรับตารางหลังเปลี่ยนจำนวนคาบและห้องเรียน'
-						: 'เช่น เปิดรายวิชาเสริมตั้งแต่สัปดาห์ที่ 8 ตามมติฝ่ายวิชาการ'}
+					placeholder="เช่น เปลี่ยนครูหรือปรับจำนวนคาบตามมติฝ่ายวิชาการ"
 					required
 				/>
 			</div>

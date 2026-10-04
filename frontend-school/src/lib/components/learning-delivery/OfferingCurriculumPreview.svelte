@@ -38,13 +38,13 @@
 		options,
 		onApplied,
 		preparationTarget = null,
-		timetableVersionId = null
+		deliveryVersionId = null
 	}: {
 		academicTermId: string;
 		options: DeliveryManagementOptions;
 		onApplied: () => Promise<void> | void;
 		preparationTarget?: SynchronizedActivityPreparationTarget | null;
-		timetableVersionId?: string | null;
+		deliveryVersionId?: string | null;
 	} = $props();
 
 	let programPickerOpen = $state(false);
@@ -241,7 +241,7 @@
 			await applyLearningOfferingsFromCurriculum({
 				academicTermId,
 				studyProgramIds,
-				timetableVersionId,
+				deliveryVersionId,
 				sourceHash: preview.sourceHash,
 				idempotencyKey: crypto.randomUUID(),
 				choices

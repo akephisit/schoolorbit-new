@@ -1,10 +1,6 @@
 import type { PageLoad } from './$types';
 import { selectPreferredBoardVersion } from '#lib/academic/timetable/version-selection.js';
 import {
-	getAcademicTermChangeSet,
-	type AcademicTermChangeSet
-} from '#lib/api/learning-delivery.js';
-import {
 	getTimetableBlockWorkspace,
 	listTimetableVersions,
 	type TimetableBlockWorkspace
@@ -15,7 +11,7 @@ import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 export const _meta = {
 	academicContext: 'term_required' as const,
 	menu: {
-		title: 'จัดตารางสอน',
+		title: 'ตารางสอน',
 		icon: 'CalendarDays',
 		group: 'academic_delivery',
 		workspace: 'academic',
@@ -36,8 +32,7 @@ export const load: PageLoad = ({ fetch, url }) => {
 			academicTermId,
 			requestedVersionId,
 			versions: null,
-			workspace: null,
-			changeSet: null
+			workspace: null
 		};
 	}
 	const versions = captureRouteLoad(
@@ -71,24 +66,12 @@ export const load: PageLoad = ({ fetch, url }) => {
 					? loadWorkspace(preferred.id)
 					: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
 			});
-	const changeSet: Promise<RouteLoadResult<AcademicTermChangeSet | null>> = workspace.then(
-		async (result): Promise<RouteLoadResult<AcademicTermChangeSet | null>> => {
-			const changeSetId = result.ok ? result.data?.version.changeSetId : null;
-			return changeSetId
-				? captureRouteLoad(
-						getAcademicTermChangeSet(changeSetId, { requestFetch: fetch }),
-						'โหลดชุดการเปลี่ยนแปลงตารางสอนไม่สำเร็จ'
-					)
-				: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
-		}
-	);
 	return {
 		title: _meta.menu.title,
 		academicYearId,
 		academicTermId,
 		requestedVersionId,
 		versions,
-		workspace,
-		changeSet
+		workspace
 	};
 };

@@ -7,14 +7,13 @@ use uuid::Uuid;
 
 use crate::models::{
     AcademicChangeFinding, AcademicChangeFindingCode, AcademicChangeFindingSeverity,
-    AcademicChangeImpactCounts, AcademicOfferingScheduleCount, AcademicTermChangeActionKind,
-    AcademicTermChangeItem, AcademicTermChangeSet, AcademicTermChangeSetPreview,
-    AcademicTermChangeSetStatus, AcademicTermChangeSetSummary, CancelAcademicTermChangeSetRequest,
+    AcademicChangeImpactCounts, AcademicTermChangeActionKind, AcademicTermChangeItem,
+    AcademicTermChangeSet, AcademicTermChangeSetPreview, AcademicTermChangeSetStatus,
+    AcademicTermChangeSetSummary, CancelAcademicTermChangeSetRequest,
     CreateAcademicTermChangeSetRequest, DeleteAcademicTermChangeItemRequest,
     LearningOfferingStatus, LearningTeacherRole, PublishAcademicTermChangeSetRequest,
     UpdateAcademicTermChangeSetRequest, UpsertAcademicTermChangeItemRequest,
 };
-use crate::ports::TimetableMutationPort;
 use school_academic_core::{
     models::{AcademicTermStatus, AcademicYearStatus},
     services::lifecycle_guard::AcademicWriteState,
@@ -22,8 +21,8 @@ use school_academic_core::{
 use school_errors::AppError;
 
 use super::{
-    append_audit, effective_teachers, offerings, require_writable_term, stable_hash,
-    validate_row_version, TermContext,
+    append_audit, offerings, require_writable_term, stable_hash, validate_row_version, versions,
+    TermContext,
 };
 
 #[derive(Debug, FromRow)]
@@ -34,8 +33,8 @@ struct ChangeSetRow {
     effective_from: NaiveDate,
     reason: String,
     status: AcademicTermChangeSetStatus,
-    base_timetable_version_id: Option<Uuid>,
-    target_timetable_version_id: Option<Uuid>,
+    base_delivery_version_id: Option<Uuid>,
+    target_delivery_version_id: Option<Uuid>,
     row_version: i64,
     created_by: Uuid,
     published_by: Option<Uuid>,
@@ -54,7 +53,7 @@ struct ChangeSetSummaryRow {
     effective_from: NaiveDate,
     reason: String,
     status: AcademicTermChangeSetStatus,
-    target_timetable_version_id: Option<Uuid>,
+    target_delivery_version_id: Option<Uuid>,
     updated_at: chrono::DateTime<Utc>,
 }
 
@@ -73,24 +72,6 @@ struct ChangeItemRow {
     created_by: Uuid,
     created_at: chrono::DateTime<Utc>,
     updated_at: chrono::DateTime<Utc>,
-}
-
-#[derive(Debug, FromRow)]
-struct TargetVersionPreviewRow {
-    id: Uuid,
-    status: String,
-    row_version: i64,
-    change_set_id: Option<Uuid>,
-}
-
-#[derive(Debug, FromRow)]
-struct ScheduleCountRow {
-    learning_offering_id: Uuid,
-    learning_group_id: Uuid,
-    offering_label: String,
-    learning_group_label: String,
-    actual_periods: i64,
-    target_periods: i32,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,7 +105,7 @@ struct NormalizedCreateRequest<'a> {
 
 const CHANGE_SET_COLUMNS: &str = r#"
     id, academic_term_id, academic_year_id, effective_from, reason, status,
-    base_timetable_version_id, target_timetable_version_id, row_version,
+    base_delivery_version_id, target_delivery_version_id, row_version,
     created_by, published_by, published_at, cancelled_by, cancelled_at,
     created_at, updated_at
 "#;
@@ -135,9 +116,9 @@ pub async fn list_change_set_summaries(
 ) -> Result<Vec<AcademicTermChangeSetSummary>, AppError> {
     let rows = sqlx::query_as::<_, ChangeSetSummaryRow>(
         r#"SELECT id, academic_term_id, academic_year_id, effective_from, reason, status,
-                  target_timetable_version_id, updated_at
+                  target_delivery_version_id, updated_at
            FROM academic_term_change_sets
-           WHERE academic_term_id = $1
+           WHERE academic_term_id = $1 AND target_delivery_version_id IS NOT NULL
            ORDER BY effective_from DESC, created_at DESC, id"#,
     )
     .bind(academic_term_id)
@@ -153,8 +134,8 @@ pub async fn list_change_set_summaries(
                 effective_from: row.effective_from,
                 reason: row.reason,
                 status: row.status,
-                target_timetable_version_id: required_version_id(
-                    row.target_timetable_version_id,
+                target_delivery_version_id: required_version_id(
+                    row.target_delivery_version_id,
                     "ชุดการเปลี่ยนแปลงไม่มีตารางเป้าหมาย",
                 )?,
                 updated_at: row.updated_at,
@@ -193,7 +174,7 @@ pub async fn publish_change_set(
     request: PublishAcademicTermChangeSetRequest,
 ) -> Result<AcademicTermChangeSet, AppError> {
     validate_row_version(request.row_version)?;
-    validate_row_version(request.target_timetable_version_row_version)?;
+    validate_row_version(request.target_delivery_version_row_version)?;
     if request.preview_hash.len() != 64
         || !request
             .preview_hash
@@ -215,7 +196,7 @@ pub async fn publish_change_set(
     let publication_request_hash = stable_hash(&(
         id,
         request.row_version,
-        request.target_timetable_version_row_version,
+        request.target_delivery_version_row_version,
         &request.preview_hash,
         &acknowledged_warning_codes,
         request.idempotency_key,
@@ -259,10 +240,9 @@ pub async fn publish_change_set(
             "ชุดการเปลี่ยนแปลงถูกแก้ไขหลังการตรวจ กรุณาตรวจความพร้อมใหม่".to_string(),
         ));
     }
-    if preview.target_timetable_version_row_version != request.target_timetable_version_row_version
-    {
+    if preview.target_delivery_version_row_version != request.target_delivery_version_row_version {
         return Err(AppError::Conflict(
-            "รุ่นตารางแบบร่างถูกแก้ไขหลังการตรวจ กรุณาตรวจความพร้อมใหม่".to_string(),
+            "รุ่นเปิดสอนแบบร่างถูกแก้ไขหลังการตรวจ กรุณาตรวจความพร้อมใหม่".to_string(),
         ));
     }
     if preview.preview_hash != request.preview_hash {
@@ -301,8 +281,8 @@ pub async fn publish_change_set(
     .fetch_one(&mut *transaction)
     .await?;
     let target_version_id = required_version_id(
-        change_set.target_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนเป้าหมาย",
+        change_set.target_delivery_version_id,
+        "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
     )?;
     let item_rows: Vec<ChangeItemRow> = sqlx::query_as(
         r#"SELECT id, change_set_id, action_kind, learning_offering_id,
@@ -314,10 +294,17 @@ pub async fn publish_change_set(
     .bind(id)
     .fetch_all(&mut *transaction)
     .await?;
-    let add_offering_ids = item_rows
+    let target_graph: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
+        sqlx::query_scalar(
+            "SELECT snapshot FROM academic_delivery_versions WHERE id=$1 FOR UPDATE",
+        )
+        .bind(target_version_id)
+        .fetch_one(&mut *transaction)
+        .await?;
+    let add_offering_ids = target_graph
+        .offerings
         .iter()
-        .filter(|item| item.action_kind == AcademicTermChangeActionKind::AddOffering)
-        .filter_map(|item| item.learning_offering_id)
+        .map(|offering| offering.id)
         .collect::<Vec<_>>();
     let stop_offering_ids = item_rows
         .iter()
@@ -334,29 +321,14 @@ pub async fn publish_change_set(
         .await?;
         if !added_group_ids.is_empty() {
             sqlx::query(
-                r#"UPDATE learning_group_students
-                   SET published_at = COALESCE(published_at, now()), updated_at = now()
-                   WHERE learning_group_id = ANY($1) AND membership_status = 'active'"#,
+                r#"UPDATE learning_groups SET status='published',row_version=row_version+1,updated_at=now()
+                   WHERE id=ANY($1) AND status='draft'"#,
             )
             .bind(&added_group_ids)
-            .execute(&mut *transaction)
-            .await?;
-            sqlx::query(
-                r#"UPDATE learning_groups
-                   SET status = 'published', roster_status = 'published',
-                       roster_published_at = now(),
-                       roster_publish_idempotency_key = uuid_generate_v5(
-                           $2, 'change-set-roster:' || id::text
-                       ),
-                       row_version = row_version + 1, updated_at = now()
-                   WHERE id = ANY($1) AND status = 'draft'"#,
-            )
-            .bind(&added_group_ids)
-            .bind(request.idempotency_key)
             .execute(&mut *transaction)
             .await?;
         }
-        let published_offerings = sqlx::query(
+        sqlx::query(
             r#"UPDATE learning_offerings
                SET status = 'published', published_at = now(),
                    publish_idempotency_key = uuid_generate_v5(
@@ -369,9 +341,16 @@ pub async fn publish_change_set(
         .bind(request.idempotency_key)
         .execute(&mut *transaction)
         .await?;
-        if published_offerings.rows_affected() != add_offering_ids.len() as u64 {
+        let all_published: bool = sqlx::query_scalar(
+            "SELECT count(*)=$2 FROM learning_offerings WHERE id=ANY($1) AND status='published'",
+        )
+        .bind(&add_offering_ids)
+        .bind(add_offering_ids.len() as i64)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if !all_published {
             return Err(AppError::Conflict(
-                "รายการเปิดสอนที่เพิ่มเปลี่ยนสถานะก่อนเผยแพร่ กรุณาตรวจความพร้อมใหม่".to_string(),
+                "รายการเปิดสอนเปลี่ยนสถานะ กรุณาตรวจความพร้อมใหม่".into(),
             ));
         }
     }
@@ -412,19 +391,22 @@ pub async fn publish_change_set(
     super::invalidate_group_academic_confirmations(&mut transaction, &teacher_group_ids).await?;
 
     let published_version = sqlx::query(
-        r#"UPDATE academic_timetable_versions
+        r#"UPDATE academic_delivery_versions
            SET status = 'published', published_by = $1, published_at = now(),
+               publication_idempotency_key=$4,publication_request_hash=$5,
                row_version = row_version + 1, updated_at = now()
            WHERE id = $2 AND status = 'draft' AND row_version = $3"#,
     )
     .bind(actor_user_id)
     .bind(target_version_id)
-    .bind(request.target_timetable_version_row_version)
+    .bind(request.target_delivery_version_row_version)
+    .bind(request.idempotency_key)
+    .bind(&publication_request_hash)
     .execute(&mut *transaction)
     .await?;
     if published_version.rows_affected() != 1 {
         return Err(AppError::Conflict(
-            "รุ่นตารางแบบร่างเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
+            "รุ่นเปิดสอนแบบร่างเปลี่ยนไป กรุณาตรวจความพร้อมใหม่".to_string(),
         ));
     }
     let warning_code_values = acknowledged_warning_codes
@@ -463,7 +445,7 @@ pub async fn publish_change_set(
                'academic_term_change_set.published', 'academic_term_change_set',
                $1, $2, $3, $4,
                jsonb_build_object(
-                   'targetTimetableVersionId', $5::text,
+                   'targetDeliveryVersionId', $5::text,
                    'effectiveFrom', $6::text,
                    'itemCount', $7::integer,
                    'requestHash', $8::text,
@@ -616,7 +598,7 @@ async fn apply_teacher_episode_changes(
             required_change_item_field(item.learning_group_id, "รายการเพิ่มช่วงการสอนไม่มีกลุ่มเรียน")?;
         let teacher_id = required_change_item_field(item.teacher_id, "รายการเพิ่มช่วงการสอนไม่มีครู")?;
         let role = required_change_item_field(item.teacher_role, "รายการเพิ่มช่วงการสอนไม่มีบทบาท")?;
-        let episode_id = Uuid::new_v4();
+        let episode_id = Uuid::new_v5(&item.id, b"delivery-teacher-episode");
         sqlx::query(
             r#"INSERT INTO learning_group_teachers (
                    id, learning_group_id, academic_term_id, academic_year_id,
@@ -654,6 +636,57 @@ async fn apply_teacher_episode_changes(
     Ok(changes)
 }
 
+#[derive(Serialize)]
+struct OpeningResourceEvidence {
+    offerings: Vec<(Uuid, i64, String)>,
+    groups: Vec<(Uuid, i64, String)>,
+    teachers: Vec<(Uuid, i64, String, NaiveDate, Option<NaiveDate>)>,
+    items: Vec<(Uuid, i64)>,
+    staff: Vec<(Uuid, String)>,
+}
+
+async fn opening_resource_evidence(
+    tx: &mut Transaction<'_, Postgres>,
+    revision: Uuid,
+    snapshot: &crate::models::versions::DeliverySnapshot,
+) -> Result<OpeningResourceEvidence, AppError> {
+    let mut offering_ids = snapshot
+        .offerings
+        .iter()
+        .map(|offering| offering.id)
+        .collect::<BTreeSet<_>>();
+    let item_offerings: Vec<Uuid>=sqlx::query_scalar("SELECT learning_offering_id FROM academic_term_change_items WHERE change_set_id=$1 AND learning_offering_id IS NOT NULL")
+        .bind(revision).fetch_all(&mut **tx).await?;
+    offering_ids.extend(item_offerings);
+    let offering_ids = offering_ids.into_iter().collect::<Vec<_>>();
+    let offerings=sqlx::query_as("SELECT id,row_version,status FROM learning_offerings WHERE id=ANY($1) ORDER BY id FOR SHARE")
+        .bind(&offering_ids).fetch_all(&mut **tx).await?;
+    let groups=sqlx::query_as("SELECT id,row_version,status FROM learning_groups WHERE learning_offering_id=ANY($1) ORDER BY id FOR SHARE")
+        .bind(&offering_ids).fetch_all(&mut **tx).await?;
+    let teachers=sqlx::query_as("SELECT teacher.id,teacher.row_version,teacher.role,teacher.starts_on,teacher.ends_on FROM learning_group_teachers teacher JOIN learning_groups source_group ON source_group.id=teacher.learning_group_id WHERE source_group.learning_offering_id=ANY($1) ORDER BY teacher.id FOR SHARE OF teacher")
+        .bind(&offering_ids).fetch_all(&mut **tx).await?;
+    let items=sqlx::query_as("SELECT id,row_version FROM academic_term_change_items WHERE change_set_id=$1 ORDER BY id FOR SHARE")
+        .bind(revision).fetch_all(&mut **tx).await?;
+    let staff_ids = snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| &offering.groups)
+        .flat_map(|group| &group.teachers)
+        .map(|teacher| teacher.teacher_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let staff=sqlx::query_as("SELECT id,status::text FROM users WHERE id=ANY($1) AND user_type='staff' ORDER BY id FOR SHARE")
+        .bind(&staff_ids).fetch_all(&mut **tx).await?;
+    Ok(OpeningResourceEvidence {
+        offerings,
+        groups,
+        teachers,
+        items,
+        staff,
+    })
+}
+
 async fn build_preview_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
     id: Uuid,
@@ -664,225 +697,235 @@ async fn build_preview_in_transaction(
     } else {
         "FOR SHARE"
     };
-    let change_query =
-        format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id = $1 {lock}");
-    let change_set = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(change_query))
+    let query =
+        format!("SELECT {CHANGE_SET_COLUMNS} FROM academic_term_change_sets WHERE id=$1 {lock}");
+    let revision = sqlx::query_as::<_, ChangeSetRow>(sqlx::AssertSqlSafe(query))
         .bind(id)
         .fetch_optional(&mut **transaction)
         .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()))?;
-    if change_set.status != AcademicTermChangeSetStatus::Draft {
+        .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นเปิดสอนแบบร่าง".into()))?;
+    if revision.status != AcademicTermChangeSetStatus::Draft {
         return Err(AppError::Conflict(
-            "ตรวจความพร้อมได้เฉพาะชุดการเปลี่ยนแปลงฉบับร่าง".to_string(),
+            "ตรวจความพร้อมได้เฉพาะรุ่นเปิดสอนแบบร่าง".into(),
         ));
     }
-    let base_version_id = required_version_id(
-        change_set.base_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนต้นทาง",
-    )?;
-    let target_version_id = required_version_id(
-        change_set.target_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนเป้าหมาย",
-    )?;
-    if lock_for_publication {
-        let mut version_ids = vec![base_version_id, target_version_id];
-        version_ids.sort_unstable();
-        version_ids.dedup();
-        sqlx::query(
-            "SELECT id FROM academic_timetable_versions \
-             WHERE id = ANY($1) ORDER BY id FOR UPDATE",
-        )
-        .bind(&version_ids)
-        .fetch_all(&mut **transaction)
-        .await?;
-    }
-    let version_lock = if lock_for_publication {
-        "FOR UPDATE"
-    } else {
-        "FOR SHARE"
-    };
-    let target_query = format!(
-        "SELECT id, status, row_version, change_set_id \
-         FROM academic_timetable_versions WHERE id = $1 {version_lock}"
-    );
-    let target = sqlx::query_as::<_, TargetVersionPreviewRow>(sqlx::AssertSqlSafe(target_query))
-        .bind(target_version_id)
+    let target_id =
+        required_version_id(revision.target_delivery_version_id, "ไม่พบรุ่นเปิดสอนเป้าหมาย")?;
+    let query = format!("SELECT snapshot,row_version,effective_from,status,academic_term_id FROM academic_delivery_versions WHERE id=$1 {lock}");
+    let (snapshot, target_row_version, effective_from, status, term_id): (
+        sqlx::types::Json<crate::models::versions::DeliverySnapshot>,
+        i64,
+        NaiveDate,
+        String,
+        Uuid,
+    ) = sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(target_id)
         .fetch_optional(&mut **transaction)
         .await?
-        .ok_or_else(|| AppError::Conflict("ไม่พบรุ่นตารางเรียนเป้าหมาย".to_string()))?;
-    if target.status != "draft" || target.change_set_id != Some(change_set.id) {
+        .ok_or_else(|| AppError::Conflict("รุ่นเปิดสอนแบบร่างไม่พร้อมใช้งาน".into()))?;
+    if status != "draft"
+        || term_id != revision.academic_term_id
+        || effective_from != revision.effective_from
+    {
         return Err(AppError::Conflict(
-            "รุ่นตารางเรียนเป้าหมายไม่ใช่แบบร่างของชุดการเปลี่ยนแปลงนี้".to_string(),
+            "ข้อมูลรุ่นเปิดสอนแบบร่างเปลี่ยนไป กรุณาโหลดใหม่".into(),
         ));
     }
-    let item_query = format!(
-        r#"SELECT id, change_set_id, action_kind, learning_offering_id,
-                  weekly_period_target, learning_group_id, learning_group_teacher_id,
-                  teacher_id, teacher_role, row_version, created_by, created_at, updated_at
-           FROM academic_term_change_items
-           WHERE change_set_id = $1
-           ORDER BY id {lock}"#
-    );
-    let items = sqlx::query_as::<_, ChangeItemRow>(sqlx::AssertSqlSafe(item_query))
-        .bind(change_set.id)
-        .fetch_all(&mut **transaction)
-        .await?;
-    let target_pristine = target_is_pristine(
-        transaction,
-        change_set.id,
-        base_version_id,
-        target_version_id,
-    )
-    .await?;
-    if lock_for_publication {
-        lock_publication_resources(transaction, target_version_id, &items).await?;
-    }
-    let stop_offering_ids = items
-        .iter()
-        .filter(|item| item.action_kind == AcademicTermChangeActionKind::StopOffering)
-        .filter_map(|item| item.learning_offering_id)
-        .collect::<Vec<_>>();
-
-    let mut impact_counts =
-        load_stop_impact_counts(transaction, base_version_id, &stop_offering_ids).await?;
-    impact_counts.teacher_assignments += items
-        .iter()
-        .filter(|item| {
-            matches!(
-                item.action_kind,
-                AcademicTermChangeActionKind::AddGroupTeacher
-                    | AcademicTermChangeActionKind::AdjustGroupTeacherRole
-                    | AcademicTermChangeActionKind::StopGroupTeacher
-            )
-        })
-        .count() as i64;
-    let schedule_rows: Vec<ScheduleCountRow> = sqlx::query_as(
-        r#"SELECT target.learning_offering_id, learning_group.id AS learning_group_id,
-                  concat_ws(' · ', nullif(offering.code_snapshot, ''), offering.name_snapshot)
-                    AS offering_label,
-                  concat_ws(' · ', nullif(learning_group.code, ''), learning_group.name)
-                    AS learning_group_label,
-                  count(block.id)::bigint AS actual_periods,
-                  target.weekly_period_target AS target_periods
-           FROM academic_timetable_version_targets target
-           JOIN learning_offerings offering ON offering.id = target.learning_offering_id
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = target.learning_offering_id
-            AND learning_group.status <> 'closed'
-           LEFT JOIN academic_timetable_block_groups block_group
-             ON block_group.learning_group_id = learning_group.id
-            AND block_group.is_active
-           LEFT JOIN academic_timetable_blocks block
-             ON block.id = block_group.block_id
-            AND block.timetable_version_id = target.timetable_version_id
-            AND block.is_active
-           WHERE target.timetable_version_id = $1
-           GROUP BY target.learning_offering_id, learning_group.id,
-                    offering.code_snapshot, offering.name_snapshot,
-                    learning_group.code, learning_group.name,
-                    target.weekly_period_target
-           ORDER BY target.learning_offering_id, learning_group.id"#,
-    )
-    .bind(target.id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    let schedule_counts = schedule_rows
-        .into_iter()
-        .map(|row| AcademicOfferingScheduleCount {
-            learning_offering_id: row.learning_offering_id,
-            learning_group_id: row.learning_group_id,
-            offering_label: row.offering_label,
-            learning_group_label: row.learning_group_label,
-            actual_periods: row.actual_periods,
-            target_periods: row.target_periods,
-        })
-        .collect::<Vec<_>>();
-
+    let term = super::load_term_context(transaction, term_id).await?;
+    let year_status: AcademicYearStatus =
+        sqlx::query_scalar("SELECT status FROM academic_years WHERE id=$1")
+            .bind(term.academic_year_id)
+            .fetch_one(&mut **transaction)
+            .await?;
+    let term_status: AcademicTermStatus =
+        sqlx::query_scalar("SELECT status FROM academic_terms WHERE id=$1")
+            .bind(term_id)
+            .fetch_one(&mut **transaction)
+            .await?;
     let mut findings = Vec::new();
-    if items.is_empty() && target_pristine {
+    if !(AcademicWriteState {
+        year_status,
+        term_status,
+    })
+    .is_writable()
+    {
         findings.push(change_finding(
-            AcademicChangeFindingCode::ChangeSetNoItems,
+            AcademicChangeFindingCode::TermNotWritable,
             AcademicChangeFindingSeverity::Blocking,
-            "ยังไม่มีการเปลี่ยนแปลง",
-            "แก้ตารางในรุ่นแบบร่าง หรือเพิ่มรายการเปลี่ยนแปลงอย่างน้อยหนึ่งรายการก่อนเผยแพร่",
+            "ภาคเรียนปิดรับการแก้ไข",
+            "ดูรุ่นเดิมได้ แต่เผยแพร่รุ่นเปิดสอนใหม่ไม่ได้",
             1,
             None,
             None,
-            Some(change_set.id),
+            Some(term_id),
         ));
     }
-    append_term_and_version_findings(
-        transaction,
-        &change_set,
-        base_version_id,
-        target_version_id,
-        &mut findings,
-    )
-    .await?;
-    append_resource_readiness_findings(
-        transaction,
-        &change_set,
-        target_version_id,
-        &items,
-        &schedule_counts,
-        &mut findings,
-    )
-    .await?;
-    findings.sort_by_key(|finding| {
-        (
-            finding.severity,
-            finding.code,
-            finding.learning_offering_id,
-            finding.learning_group_id,
-            finding.resource_id,
-        )
-    });
-
-    let item_fingerprint = items
-        .iter()
-        .map(|item| {
-            (
-                item.id,
-                item.action_kind,
-                item.learning_offering_id,
-                item.weekly_period_target,
-                item.learning_group_id,
-                item.learning_group_teacher_id,
-                item.teacher_id,
-                item.teacher_role,
-                item.row_version,
-            )
-        })
-        .collect::<Vec<_>>();
-    let affected_offering_ids = items
-        .iter()
-        .filter_map(|item| item.learning_offering_id)
-        .collect::<Vec<_>>();
-    let resource_fingerprint =
-        load_preview_resource_fingerprint(transaction, target_version_id, &affected_offering_ids)
+    if effective_from < term.start_date
+        || effective_from > term.academic_year_end_date
+        || (term_status == AcademicTermStatus::Active && effective_from < Utc::now().date_naive())
+    {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::EffectiveDateInvalid,
+            AcademicChangeFindingSeverity::Blocking,
+            "กรุณาตรวจวันที่เริ่มใช้",
+            "เลือกวันที่ในช่วงภาคเรียน และไม่ย้อนหลังเมื่อภาคเรียนเริ่มแล้ว",
+            1,
+            None,
+            None,
+            Some(id),
+        ));
+    }
+    let latest: Option<(Uuid,NaiveDate)> = sqlx::query_as("SELECT id,effective_from FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
+        .bind(term_id).fetch_optional(&mut **transaction).await?;
+    if latest.is_some_and(|(latest_id, date)| {
+        revision.base_delivery_version_id != Some(latest_id) || effective_from <= date
+    }) {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::BaseDeliveryVersionStale,
+            AcademicChangeFindingSeverity::Blocking,
+            "มีรุ่นเปิดสอนใหม่หรือวันที่เริ่มใช้ซ้ำ",
+            "สร้างร่างจากรุ่นเปิดสอนล่าสุด และเลือกวันเริ่มใช้หลังรุ่นนั้น",
+            1,
+            None,
+            None,
+            revision.base_delivery_version_id,
+        ));
+    }
+    let fresh: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
+        sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1)")
+            .bind(id)
+            .fetch_one(&mut **transaction)
             .await?;
+    if stable_hash(&snapshot.0)? != stable_hash(&fresh.0)? {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::ResourceStale,
+            AcademicChangeFindingSeverity::Blocking,
+            "ข้อมูลเปิดสอนเปลี่ยนไป",
+            "อัปเดตข้อมูลรุ่นเปิดสอนแบบร่างแล้วตรวจความพร้อมอีกครั้ง",
+            1,
+            None,
+            None,
+            Some(target_id),
+        ));
+    }
+    let unchanged = if let Some(base_id) = revision.base_delivery_version_id {
+        let base: sqlx::types::Json<crate::models::versions::DeliverySnapshot> =
+            sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE id=$1")
+                .bind(base_id)
+                .fetch_one(&mut **transaction)
+                .await?;
+        stable_hash(&base.0)? == stable_hash(&snapshot.0)?
+    } else {
+        snapshot.0.offerings.is_empty()
+    };
+    if unchanged {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::ChangeSetNoItems,
+            AcademicChangeFindingSeverity::Blocking,
+            "ยังไม่มีข้อมูลเปิดสอนที่เปลี่ยนแปลง",
+            "เพิ่มหรือแก้ข้อมูลเปิดสอนก่อนเผยแพร่รุ่นใหม่",
+            1,
+            None,
+            None,
+            Some(target_id),
+        ));
+    }
+    for finding in versions::readiness(&snapshot.0) {
+        use crate::models::versions::DeliveryReadinessCode;
+        let (code, title, guidance) = match finding.code {
+            DeliveryReadinessCode::MissingPrimaryTeacher => (
+                AcademicChangeFindingCode::MissingPrimaryTeacher,
+                "กลุ่มเรียนยังไม่มีครูหลัก",
+                "เลือกครูหลักให้กลุ่มเรียนก่อนเผยแพร่",
+            ),
+            DeliveryReadinessCode::InvalidWeeklyTarget => (
+                AcademicChangeFindingCode::MissingWeeklyPeriodTarget,
+                "จำนวนคาบไม่ถูกต้อง",
+                "กำหนดจำนวนคาบต่อสัปดาห์มากกว่าศูนย์",
+            ),
+            DeliveryReadinessCode::MissingTargets => (
+                AcademicChangeFindingCode::MissingDeliveryTarget,
+                "ยังไม่กำหนดกลุ่มเป้าหมาย",
+                "เลือกห้องหรือระดับชั้นที่เปิดสอน",
+            ),
+            DeliveryReadinessCode::MissingGroups => (
+                AcademicChangeFindingCode::MissingDeliveryGroup,
+                "ยังไม่มีกลุ่มเรียน",
+                "สร้างกลุ่มเรียนและเลือกครู",
+            ),
+            _ => (
+                AcademicChangeFindingCode::DeliveryGraphInvalid,
+                "ข้อมูลเปิดสอนซ้ำหรือไม่ตรงกัน",
+                "ตรวจรายวิชา กลุ่มเรียน และครูที่ระบุ",
+            ),
+        };
+        findings.push(change_finding(
+            code,
+            AcademicChangeFindingSeverity::Blocking,
+            title,
+            guidance,
+            1,
+            Some(finding.learning_offering_id),
+            finding.learning_group_id,
+            Some(target_id),
+        ));
+    }
+    let teacher_ids = snapshot
+        .0
+        .offerings
+        .iter()
+        .flat_map(|offering| &offering.groups)
+        .flat_map(|group| &group.teachers)
+        .map(|teacher| teacher.teacher_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let resources = opening_resource_evidence(transaction, id, &snapshot.0).await?;
+    let valid_teachers = resources
+        .staff
+        .iter()
+        .filter(|(_, status)| status == "active")
+        .count() as i64;
+    if valid_teachers != teacher_ids.len() as i64 {
+        findings.push(change_finding(
+            AcademicChangeFindingCode::MissingEffectiveTeacher,
+            AcademicChangeFindingSeverity::Blocking,
+            "ครูบางคนไม่พร้อมใช้งาน",
+            "เลือกครูที่ยังปฏิบัติงานในโรงเรียน",
+            teacher_ids.len() as i64 - valid_teachers,
+            None,
+            None,
+            Some(target_id),
+        ));
+    }
+    let stop_ids: Vec<Uuid> = sqlx::query_scalar("SELECT learning_offering_id FROM academic_term_change_items WHERE change_set_id=$1 AND action_kind='stop_offering' ORDER BY learning_offering_id")
+        .bind(id).fetch_all(&mut **transaction).await?;
+    let impacts = load_stop_impact_counts(
+        transaction,
+        revision.base_delivery_version_id.unwrap_or(Uuid::nil()),
+        &stop_ids,
+    )
+    .await?;
     let preview_hash = stable_hash(&(
-        change_set.id,
-        change_set.row_version,
-        base_version_id,
-        target.id,
-        target.row_version,
-        change_set.effective_from,
-        item_fingerprint,
-        resource_fingerprint,
-        &impact_counts,
-        &schedule_counts,
+        id,
+        revision.row_version,
+        target_id,
+        target_row_version,
+        effective_from,
+        &snapshot.0,
+        &fresh.0,
+        (&teacher_ids, &resources),
+        valid_teachers,
+        &impacts,
         &findings,
     ))?;
-
     Ok(AcademicTermChangeSetPreview {
-        change_set_id: change_set.id,
-        change_set_row_version: change_set.row_version,
-        target_timetable_version_id: target.id,
-        target_timetable_version_row_version: target.row_version,
-        effective_from: change_set.effective_from,
-        impact_counts,
-        schedule_counts,
+        change_set_id: id,
+        change_set_row_version: revision.row_version,
+        target_delivery_version_id: target_id,
+        target_delivery_version_row_version: target_row_version,
+        effective_from,
+        impact_counts: impacts,
         findings,
         preview_hash,
     })
@@ -910,7 +953,7 @@ async fn load_stop_impact_counts(
                 JOIN learning_groups learning_group ON learning_group.id = teacher.learning_group_id
                 WHERE learning_group.learning_offering_id = ANY($1)) AS teacher_assignments,
              (SELECT count(*) FROM academic_timetable_blocks block
-                WHERE block.timetable_version_id = $2
+                WHERE block.timetable_version_id IN (SELECT id FROM academic_timetable_versions WHERE delivery_version_id=$2)
                   AND block.learning_offering_id = ANY($1) AND block.is_active)
                 AS target_timetable_entries,
              (SELECT count(*) FROM course_assessment_plans plan
@@ -1023,831 +1066,6 @@ async fn load_stop_impact_counts(
     })
 }
 
-async fn lock_publication_resources(
-    transaction: &mut Transaction<'_, Postgres>,
-    target_version_id: Uuid,
-    items: &[ChangeItemRow],
-) -> Result<(), AppError> {
-    let mut affected_offering_ids = items
-        .iter()
-        .filter_map(|item| item.learning_offering_id)
-        .collect::<Vec<_>>();
-    let target_offering_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT learning_offering_id
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1
-           ORDER BY learning_offering_id
-           FOR UPDATE"#,
-    )
-    .bind(target_version_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    affected_offering_ids.extend(target_offering_ids);
-    affected_offering_ids.sort_unstable();
-    affected_offering_ids.dedup();
-    if affected_offering_ids.is_empty() {
-        return Ok(());
-    }
-
-    sqlx::query("SELECT id FROM learning_offerings WHERE id = ANY($1) ORDER BY id FOR UPDATE")
-        .bind(&affected_offering_ids)
-        .fetch_all(&mut **transaction)
-        .await?;
-    let group_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM learning_groups
-           WHERE learning_offering_id = ANY($1)
-           ORDER BY id FOR UPDATE"#,
-    )
-    .bind(&affected_offering_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
-    if !group_ids.is_empty() {
-        sqlx::query(
-            "SELECT id FROM learning_group_students \
-             WHERE learning_group_id = ANY($1) ORDER BY id FOR UPDATE",
-        )
-        .bind(&group_ids)
-        .fetch_all(&mut **transaction)
-        .await?;
-        sqlx::query(
-            "SELECT id FROM learning_group_teachers \
-             WHERE learning_group_id = ANY($1) ORDER BY id FOR UPDATE",
-        )
-        .bind(&group_ids)
-        .fetch_all(&mut **transaction)
-        .await?;
-    }
-    let block_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM academic_timetable_blocks
-           WHERE timetable_version_id = $1
-           ORDER BY id FOR UPDATE"#,
-    )
-    .bind(target_version_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    if !block_ids.is_empty() {
-        sqlx::query(
-            "SELECT id FROM academic_timetable_block_groups \
-             WHERE block_id = ANY($1) ORDER BY id FOR UPDATE",
-        )
-        .bind(&block_ids)
-        .fetch_all(&mut **transaction)
-        .await?;
-    }
-    Ok(())
-}
-
-async fn load_preview_resource_fingerprint(
-    transaction: &mut Transaction<'_, Postgres>,
-    target_version_id: Uuid,
-    affected_offering_ids: &[Uuid],
-) -> Result<Vec<String>, AppError> {
-    Ok(sqlx::query_scalar(
-        r#"WITH target_offerings AS (
-               SELECT learning_offering_id
-               FROM academic_timetable_version_targets
-               WHERE timetable_version_id = $1
-               UNION
-               SELECT unnest($2::uuid[])
-           ), target_groups AS (
-               SELECT learning_group.id
-               FROM learning_groups learning_group
-               JOIN target_offerings target
-                 ON target.learning_offering_id = learning_group.learning_offering_id
-           ), target_blocks AS (
-               SELECT id FROM academic_timetable_blocks WHERE timetable_version_id = $1
-           )
-           SELECT state FROM (
-               SELECT concat_ws('|', 'offering', offering.id::text,
-                                offering.row_version::text, offering.status,
-                                offering.starts_on::text, coalesce(offering.ends_on::text, '')) AS state
-               FROM learning_offerings offering
-               JOIN target_offerings target ON target.learning_offering_id = offering.id
-               UNION ALL
-               SELECT concat_ws('|', 'group', learning_group.id::text,
-                                learning_group.row_version::text, learning_group.status,
-                                learning_group.roster_status,
-                                coalesce(learning_group.roster_source_hash::text, ''))
-               FROM learning_groups learning_group
-               JOIN target_groups target ON target.id = learning_group.id
-               UNION ALL
-               SELECT concat_ws('|', 'teacher', assignment.id::text,
-                                assignment.learning_group_id::text,
-                                assignment.teacher_id::text, assignment.role,
-                                assignment.starts_on::text,
-                                coalesce(assignment.ends_on::text, ''),
-                                assignment.row_version::text,
-                                coalesce(assignment.started_by_change_set_id::text, ''),
-                                coalesce(assignment.ended_by_change_set_id::text, ''))
-               FROM learning_group_teachers assignment
-               JOIN target_groups target ON target.id = assignment.learning_group_id
-               UNION ALL
-               SELECT concat_ws('|', 'membership', membership.id::text,
-                                membership.learning_group_id::text,
-                                membership.row_version::text, membership.membership_status,
-                                membership.joined_at::text, coalesce(membership.left_at::text, ''),
-                                coalesce(membership.published_at::text, ''))
-               FROM learning_group_students membership
-               JOIN target_groups target ON target.id = membership.learning_group_id
-               UNION ALL
-               SELECT concat_ws('|', 'target', target.learning_offering_id::text,
-                                target.weekly_period_target::text)
-               FROM academic_timetable_version_targets target
-               WHERE target.timetable_version_id = $1
-               UNION ALL
-               SELECT concat_ws('|', 'block', block.id::text, block.row_version::text,
-                                block.day_of_week, block.bell_schedule_period_id::text,
-                                coalesce(block.learning_offering_id::text, ''),
-                                coalesce(block.structural_kind, ''), block.is_active::text)
-               FROM academic_timetable_blocks block
-               JOIN target_blocks target ON target.id = block.id
-               UNION ALL
-               SELECT concat_ws('|', 'block-group', block_group.id::text,
-                                block_group.block_id::text,
-                                block_group.learning_group_id::text,
-                                coalesce(block_group.room_id::text, ''),
-                                block_group.row_version::text, block_group.is_active::text)
-               FROM academic_timetable_block_groups block_group
-               JOIN target_blocks target ON target.id = block_group.block_id
-               UNION ALL
-               SELECT concat_ws('|', 'instructor', instructor.id::text,
-                                instructor.block_group_id::text,
-                                instructor.instructor_id::text, instructor.role,
-                                instructor.display_order::text)
-               FROM academic_timetable_block_group_instructors instructor
-               JOIN academic_timetable_block_groups block_group
-                 ON block_group.id = instructor.block_group_id
-               JOIN target_blocks target ON target.id = block_group.block_id
-           ) fingerprint
-           ORDER BY state"#,
-    )
-    .bind(target_version_id)
-    .bind(affected_offering_ids)
-    .fetch_all(&mut **transaction)
-    .await?)
-}
-
-async fn append_term_and_version_findings(
-    transaction: &mut Transaction<'_, Postgres>,
-    change_set: &ChangeSetRow,
-    base_version_id: Uuid,
-    target_version_id: Uuid,
-    findings: &mut Vec<AcademicChangeFinding>,
-) -> Result<(), AppError> {
-    let (year_status, term_status, term_start, academic_year_end): (
-        AcademicYearStatus,
-        AcademicTermStatus,
-        NaiveDate,
-        NaiveDate,
-    ) = sqlx::query_as(
-        r#"SELECT year.status, term.status, term.start_date, year.end_date
-               FROM academic_terms term
-               JOIN academic_years year ON year.id = term.academic_year_id
-               WHERE term.id = $1"#,
-    )
-    .bind(change_set.academic_term_id)
-    .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or_else(|| AppError::Conflict("ไม่พบภาคเรียนของชุดการเปลี่ยนแปลง".to_string()))?;
-    if !(AcademicWriteState {
-        year_status,
-        term_status,
-    })
-    .is_writable()
-    {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::TermNotWritable,
-            AcademicChangeFindingSeverity::Blocking,
-            "ปีหรือภาคเรียนปิดรับการแก้ไข",
-            "ดูข้อมูลเดิมได้ แต่เผยแพร่ชุดการเปลี่ยนแปลงในปีหรือภาคเรียนที่ปิดแล้วไม่ได้",
-            1,
-            None,
-            None,
-            Some(change_set.academic_term_id),
-        ));
-    }
-    if change_set.effective_from < term_start
-        || change_set.effective_from > academic_year_end
-        || (term_status == AcademicTermStatus::Active
-            && change_set.effective_from < Utc::now().date_naive())
-    {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::EffectiveDateInvalid,
-            AcademicChangeFindingSeverity::Blocking,
-            "วันที่เริ่มใช้ไม่อยู่ในช่วงปีการศึกษา",
-            "แก้วันที่เริ่มใช้ให้อยู่ตั้งแต่วันเปิดภาคเรียนถึงวันสิ้นสุดปีการศึกษา",
-            1,
-            None,
-            None,
-            Some(change_set.id),
-        ));
-    }
-    let base_is_published: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
-               SELECT 1 FROM academic_timetable_versions
-               WHERE id = $1 AND academic_term_id = $2 AND status = 'published'
-           )"#,
-    )
-    .bind(base_version_id)
-    .bind(change_set.academic_term_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    if !base_is_published {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::BaseTimetableVersionStale,
-            AcademicChangeFindingSeverity::Blocking,
-            "รุ่นตารางต้นทางไม่พร้อมใช้งาน",
-            "สร้างชุดการเปลี่ยนแปลงใหม่จากรุ่นตารางที่เผยแพร่ล่าสุด",
-            1,
-            None,
-            None,
-            Some(base_version_id),
-        ));
-    }
-    let target_matches: bool = sqlx::query_scalar(
-        r#"SELECT EXISTS (
-               SELECT 1 FROM academic_timetable_versions
-               WHERE id = $1 AND academic_term_id = $2 AND status = 'draft'
-                 AND change_set_id = $3 AND effective_from = $4
-           )"#,
-    )
-    .bind(target_version_id)
-    .bind(change_set.academic_term_id)
-    .bind(change_set.id)
-    .bind(change_set.effective_from)
-    .fetch_one(&mut **transaction)
-    .await?;
-    if !target_matches {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::TargetTimetableVersionStale,
-            AcademicChangeFindingSeverity::Blocking,
-            "รุ่นตารางแบบร่างไม่ตรงกับชุดการเปลี่ยนแปลง",
-            "โหลดชุดการเปลี่ยนแปลงใหม่ก่อนแก้ตารางหรือเผยแพร่",
-            1,
-            None,
-            None,
-            Some(target_version_id),
-        ));
-    }
-    Ok(())
-}
-
-async fn append_resource_readiness_findings(
-    transaction: &mut Transaction<'_, Postgres>,
-    change_set: &ChangeSetRow,
-    target_version_id: Uuid,
-    items: &[ChangeItemRow],
-    schedule_counts: &[AcademicOfferingScheduleCount],
-    findings: &mut Vec<AcademicChangeFinding>,
-) -> Result<(), AppError> {
-    let missing_targets: Vec<(Uuid, Uuid)> = sqlx::query_as(
-        r#"SELECT item.id, item.learning_offering_id
-           FROM academic_term_change_items item
-           LEFT JOIN academic_timetable_version_targets target
-             ON target.timetable_version_id = $2
-            AND target.learning_offering_id = item.learning_offering_id
-           WHERE item.change_set_id = $1
-             AND item.action_kind IN ('add_offering', 'adjust_weekly_period_target')
-             AND target.learning_offering_id IS NULL
-           ORDER BY item.id"#,
-    )
-    .bind(change_set.id)
-    .bind(target_version_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for (item_id, offering_id) in missing_targets {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::MissingWeeklyPeriodTarget,
-            AcademicChangeFindingSeverity::Blocking,
-            "ยังไม่ได้กำหนดจำนวนคาบเป้าหมาย",
-            "กำหนดจำนวนคาบต่อสัปดาห์ของรายการนี้ในรุ่นตารางแบบร่าง",
-            1,
-            Some(offering_id),
-            None,
-            Some(item_id),
-        ));
-    }
-
-    let stopped_schedule_rows: Vec<(Uuid, i64)> = sqlx::query_as(
-        r#"SELECT item.learning_offering_id,
-                  (CASE WHEN target.learning_offering_id IS NULL THEN 0 ELSE 1 END
-                   + count(block.id))::bigint AS remaining_count
-           FROM academic_term_change_items item
-           LEFT JOIN academic_timetable_version_targets target
-             ON target.timetable_version_id = $2
-            AND target.learning_offering_id = item.learning_offering_id
-           LEFT JOIN academic_timetable_blocks block
-             ON block.timetable_version_id = $2
-            AND block.learning_offering_id = item.learning_offering_id
-            AND block.is_active
-           WHERE item.change_set_id = $1 AND item.action_kind = 'stop_offering'
-           GROUP BY item.learning_offering_id, target.learning_offering_id
-           HAVING CASE WHEN target.learning_offering_id IS NULL THEN 0 ELSE 1 END
-                  + count(block.id) > 0
-           ORDER BY item.learning_offering_id"#,
-    )
-    .bind(change_set.id)
-    .bind(target_version_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for (offering_id, affected_count) in stopped_schedule_rows {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::StoppedOfferingStillScheduled,
-            AcademicChangeFindingSeverity::Blocking,
-            "รายการที่จะหยุดยังอยู่ในตารางรุ่นใหม่",
-            "นำเป้าหมายและคาบของรายการนี้ออกจากรุ่นตารางแบบร่าง",
-            affected_count,
-            Some(offering_id),
-            None,
-            Some(target_version_id),
-        ));
-    }
-    let invalid_stop_offerings: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT offering.id
-           FROM academic_term_change_items item
-           JOIN learning_offerings offering ON offering.id = item.learning_offering_id
-           WHERE item.change_set_id = $1 AND item.action_kind = 'stop_offering'
-             AND (offering.status <> 'published'
-                  OR offering.starts_on >= $2
-                  OR (offering.ends_on IS NOT NULL AND offering.ends_on < $2))
-           ORDER BY offering.id"#,
-    )
-    .bind(change_set.id)
-    .bind(change_set.effective_from)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for offering_id in invalid_stop_offerings {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::OfferingUnavailable,
-            AcademicChangeFindingSeverity::Blocking,
-            "รายการเปิดสอนไม่สามารถสิ้นสุดก่อนวันที่เริ่มใช้ได้",
-            "เลือกวันที่เริ่มใช้หลังวันที่รายการเริ่มสอน หรือยกเลิกรายการฉบับร่างแทน",
-            1,
-            Some(offering_id),
-            None,
-            Some(offering_id),
-        ));
-    }
-
-    let target_group_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT learning_group.id
-           FROM academic_timetable_version_targets target
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = target.learning_offering_id
-           WHERE target.timetable_version_id = $1
-             AND learning_group.status <> 'closed'
-           ORDER BY learning_group.id"#,
-    )
-    .bind(target_version_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    let projected_teachers = effective_teachers::project_effective_assignments_in_tx(
-        transaction,
-        change_set.id,
-        &target_group_ids,
-    )
-    .await?;
-    let projected_primary_groups = projected_teachers
-        .iter()
-        .filter(|assignment| assignment.role == LearningTeacherRole::Primary)
-        .map(|assignment| assignment.learning_group_id)
-        .collect::<BTreeSet<_>>();
-    let projected_teacher_keys = projected_teachers
-        .iter()
-        .map(|assignment| (assignment.learning_group_id, assignment.teacher_id))
-        .collect::<BTreeSet<_>>();
-    let stopped_teacher_items = items
-        .iter()
-        .filter(|item| item.action_kind == AcademicTermChangeActionKind::StopGroupTeacher)
-        .filter_map(|item| Some(((item.learning_group_id?, item.teacher_id?), item.id)))
-        .collect::<HashMap<_, _>>();
-
-    let group_rows = sqlx::query(
-        r#"SELECT learning_group.id, learning_group.learning_offering_id,
-                  learning_group.status, learning_group.roster_status,
-                  learning_group.roster_source_hash IS NOT NULL AS roster_prepared,
-                  learning_group.status <> 'draft' AS teachers_locked,
-                  EXISTS (
-                      SELECT 1
-                      FROM learning_group_teachers teacher_assignment
-                      JOIN users teacher ON teacher.id = teacher_assignment.teacher_id
-                      WHERE teacher_assignment.learning_group_id = learning_group.id
-                        AND teacher_assignment.role = 'primary'
-                        AND teacher_assignment.starts_on <= $3
-                        AND (
-                            teacher_assignment.ends_on IS NULL
-                            OR teacher_assignment.ends_on >= $3
-                        )
-                        AND teacher.status = 'active'
-                  ) AS has_active_primary,
-                  EXISTS (
-                      SELECT 1 FROM academic_term_change_items item
-                      WHERE item.change_set_id = $2
-                        AND item.action_kind = 'add_offering'
-                        AND item.learning_offering_id = learning_group.learning_offering_id
-                  ) AS is_added
-           FROM academic_timetable_version_targets target
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = target.learning_offering_id
-            AND learning_group.status <> 'closed'
-           WHERE target.timetable_version_id = $1
-           ORDER BY learning_group.id"#,
-    )
-    .bind(target_version_id)
-    .bind(change_set.id)
-    .bind(change_set.effective_from)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for row in group_rows {
-        let group_id: Uuid = row.get("id");
-        let offering_id: Uuid = row.get("learning_offering_id");
-        let status: String = row.get("status");
-        let roster_status: String = row.get("roster_status");
-        let roster_prepared: bool = row.get("roster_prepared");
-        let teachers_locked: bool = row.get("teachers_locked");
-        let has_active_primary = projected_primary_groups.contains(&group_id);
-        let is_added: bool = row.get("is_added");
-        if status != "published" && !(is_added && status == "draft") {
-            findings.push(change_finding(
-                AcademicChangeFindingCode::DraftGroup,
-                AcademicChangeFindingSeverity::Blocking,
-                "กลุ่มเรียนยังไม่พร้อมเผยแพร่",
-                "ตรวจข้อมูลกลุ่มเรียนให้ครบก่อนเผยแพร่รุ่นตาราง",
-                1,
-                Some(offering_id),
-                Some(group_id),
-                Some(group_id),
-            ));
-        }
-        if !has_active_primary || (!is_added && !teachers_locked) {
-            findings.push(change_finding(
-                if items
-                    .iter()
-                    .any(|item| item.learning_group_id == Some(group_id))
-                {
-                    AcademicChangeFindingCode::MissingEffectiveTeacher
-                } else {
-                    AcademicChangeFindingCode::MissingPrimaryTeacher
-                },
-                AcademicChangeFindingSeverity::Blocking,
-                "กลุ่มเรียนยังไม่มีครูหลักที่พร้อมใช้งาน",
-                "กำหนดครูหลักให้กลุ่มเรียนก่อนเผยแพร่ ครูจะถูกล็อกเมื่อเผยแพร่",
-                1,
-                Some(offering_id),
-                Some(group_id),
-                Some(group_id),
-            ));
-        }
-        let roster_ready = if is_added {
-            roster_status == "published" || (roster_status == "draft" && roster_prepared)
-        } else {
-            roster_status == "published" || roster_status == "closed"
-        };
-        if !roster_ready {
-            findings.push(change_finding(
-                AcademicChangeFindingCode::UnpublishedRoster,
-                AcademicChangeFindingSeverity::Blocking,
-                "รายชื่อนักเรียนยังไม่พร้อมเผยแพร่",
-                "จัดรายชื่อนักเรียนฉบับร่างให้ครบก่อนเผยแพร่ชุดการเปลี่ยนแปลง",
-                1,
-                Some(offering_id),
-                Some(group_id),
-                Some(group_id),
-            ));
-        }
-    }
-
-    let offering_rows = sqlx::query(
-        r#"SELECT offering.id, offering.status, offering.starts_on, offering.ends_on,
-                  EXISTS (
-                      SELECT 1 FROM academic_term_change_items item
-                      WHERE item.change_set_id = $2
-                        AND item.action_kind = 'add_offering'
-                        AND item.learning_offering_id = offering.id
-                  ) AS is_added
-           FROM academic_timetable_version_targets target
-           JOIN learning_offerings offering ON offering.id = target.learning_offering_id
-           WHERE target.timetable_version_id = $1
-           ORDER BY offering.id"#,
-    )
-    .bind(target_version_id)
-    .bind(change_set.id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for row in offering_rows {
-        let offering_id: Uuid = row.get("id");
-        let status: String = row.get("status");
-        let starts_on: NaiveDate = row.get("starts_on");
-        let ends_on: Option<NaiveDate> = row.get("ends_on");
-        let is_added: bool = row.get("is_added");
-        let status_ready = status == "published" || (is_added && status == "draft");
-        if !status_ready
-            || change_set.effective_from < starts_on
-            || ends_on.is_some_and(|end| change_set.effective_from > end)
-        {
-            findings.push(change_finding(
-                AcademicChangeFindingCode::OfferingUnavailable,
-                AcademicChangeFindingSeverity::Blocking,
-                "รายการเปิดสอนไม่พร้อมใช้ในวันที่เริ่มรุ่นตาราง",
-                "ตรวจสถานะและช่วงวันที่เปิดสอนของรายการนี้",
-                1,
-                Some(offering_id),
-                None,
-                Some(offering_id),
-            ));
-        }
-    }
-
-    let entries_without_instructors: Vec<(Uuid, Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
-        r#"SELECT block.id, block.learning_offering_id, block_group.learning_group_id
-           FROM academic_timetable_blocks block
-           JOIN academic_timetable_block_groups block_group ON block_group.block_id = block.id
-           WHERE block.timetable_version_id = $1
-             AND block.is_active AND block_group.is_active
-             AND block.block_kind IN ('COURSE', 'ACTIVITY')
-             AND NOT EXISTS (
-                 SELECT 1
-                 FROM academic_timetable_block_group_instructors instructor
-                 WHERE instructor.block_group_id = block_group.id
-             )
-           ORDER BY block.id"#,
-    )
-    .bind(target_version_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for (entry_id, offering_id, group_id) in entries_without_instructors {
-        findings.push(change_finding(
-            AcademicChangeFindingCode::MissingEntryInstructor,
-            AcademicChangeFindingSeverity::Blocking,
-            "คาบเรียนยังไม่มีครูผู้สอน",
-            "กำหนดครูผู้สอนให้คาบนี้ในรุ่นตารางแบบร่างก่อนเผยแพร่",
-            1,
-            offering_id,
-            group_id,
-            Some(entry_id),
-        ));
-    }
-
-    let entry_instructors: Vec<(Uuid, Uuid, Uuid, Uuid)> = sqlx::query_as(
-        r#"SELECT block.id, block.learning_offering_id,
-                  block_group.learning_group_id, instructor.instructor_id
-           FROM academic_timetable_blocks block
-           JOIN academic_timetable_block_groups block_group ON block_group.block_id = block.id
-           JOIN academic_timetable_block_group_instructors instructor
-             ON instructor.block_group_id = block_group.id
-           WHERE block.timetable_version_id = $1
-             AND block.is_active AND block_group.is_active
-             AND block.block_kind IN ('COURSE', 'ACTIVITY')
-           ORDER BY block.id, instructor.instructor_id"#,
-    )
-    .bind(target_version_id)
-    .fetch_all(&mut **transaction)
-    .await?;
-    for (entry_id, offering_id, group_id, instructor_id) in entry_instructors {
-        if projected_teacher_keys.contains(&(group_id, instructor_id)) {
-            continue;
-        }
-        let stopped_item_id = stopped_teacher_items
-            .get(&(group_id, instructor_id))
-            .copied();
-        let mut finding = change_finding(
-            if stopped_item_id.is_some() {
-                AcademicChangeFindingCode::StoppedTeacherStillScheduled
-            } else {
-                AcademicChangeFindingCode::EntryInstructorNotEffective
-            },
-            AcademicChangeFindingSeverity::Blocking,
-            if stopped_item_id.is_some() {
-                "ครูที่จะหยุดยังอยู่ในคาบของรุ่นตารางใหม่"
-            } else {
-                "คาบเรียนมีครูที่ไม่มีช่วงการสอนในวันที่เริ่มใช้"
-            },
-            if stopped_item_id.is_some() {
-                "เปิดการส่งมอบคาบ เลือกครูรับช่วง หรือจัดเองในหน้าตารางสอน"
-            } else {
-                "แก้ครูประจำคาบ หรือเพิ่มช่วงการสอนของครูให้ครอบคลุมวันที่เริ่มใช้"
-            },
-            1,
-            Some(offering_id),
-            Some(group_id),
-            Some(entry_id),
-        );
-        finding.route = Some(if let Some(item_id) = stopped_item_id {
-            format!(
-                "/staff/academic/delivery?academicYearId={}&academicTermId={}&changeSetId={}&teacherChangeItemId={}",
-                change_set.academic_year_id,
-                change_set.academic_term_id,
-                change_set.id,
-                item_id
-            )
-        } else {
-            format!(
-                "/staff/academic/timetable?academicYearId={}&academicTermId={}&timetableVersionId={}&view=group&ownerId={}",
-                change_set.academic_year_id,
-                change_set.academic_term_id,
-                target_version_id,
-                group_id
-            )
-        });
-        findings.push(finding);
-    }
-
-    for count in schedule_counts {
-        if count.actual_periods < i64::from(count.target_periods) {
-            findings.push(change_finding(
-                AcademicChangeFindingCode::WeeklyPeriodDeficit,
-                AcademicChangeFindingSeverity::Blocking,
-                "จำนวนคาบยังไม่ครบตามเป้าหมาย",
-                "เพิ่มคาบให้กลุ่มเรียนนี้จนครบเป้าหมายของรุ่นตาราง",
-                i64::from(count.target_periods) - count.actual_periods,
-                Some(count.learning_offering_id),
-                Some(count.learning_group_id),
-                Some(count.learning_group_id),
-            ));
-        } else if count.actual_periods > i64::from(count.target_periods) {
-            findings.push(change_finding(
-                AcademicChangeFindingCode::WeeklyPeriodExcess,
-                AcademicChangeFindingSeverity::Warning,
-                "จำนวนคาบมากกว่าเป้าหมาย",
-                "ตรวจยืนยันว่าต้องการใช้จำนวนคาบเกินเป้าหมายในรุ่นนี้",
-                count.actual_periods - i64::from(count.target_periods),
-                Some(count.learning_offering_id),
-                Some(count.learning_group_id),
-                Some(count.learning_group_id),
-            ));
-        }
-    }
-
-    append_conflict_findings(transaction, target_version_id, findings).await?;
-    let _ = items;
-    Ok(())
-}
-
-async fn append_conflict_findings(
-    transaction: &mut Transaction<'_, Postgres>,
-    target_version_id: Uuid,
-    findings: &mut Vec<AcademicChangeFinding>,
-) -> Result<(), AppError> {
-    let group_conflicts: i64 = sqlx::query_scalar(
-        r#"SELECT count(*) FROM (
-               SELECT block_group.learning_group_id, block.day_of_week,
-                      block.bell_schedule_period_id
-               FROM academic_timetable_blocks block
-               JOIN academic_timetable_block_groups block_group ON block_group.block_id = block.id
-               WHERE block.timetable_version_id = $1
-                 AND block.is_active AND block_group.is_active
-               GROUP BY block_group.learning_group_id, block.day_of_week,
-                        block.bell_schedule_period_id
-               HAVING count(DISTINCT block.id) > 1
-           ) conflicts"#,
-    )
-    .bind(target_version_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    push_conflict_finding(
-        findings,
-        AcademicChangeFindingCode::LearningGroupConflict,
-        "กลุ่มเรียนมีคาบซ้อนกัน",
-        "ย้ายคาบที่ซ้อนกันของกลุ่มเรียนออกจากช่วงเวลาเดียวกัน",
-        group_conflicts,
-        target_version_id,
-    );
-
-    let homeroom_conflicts: i64 = sqlx::query_scalar(
-        r#"WITH block_homerooms AS (
-               SELECT block.id, block.day_of_week, block.bell_schedule_period_id,
-                      coverage.homeroom_id
-               FROM academic_timetable_blocks block
-               JOIN academic_timetable_block_groups block_group ON block_group.block_id = block.id
-               JOIN learning_group_homerooms coverage
-                 ON coverage.learning_group_id = block_group.learning_group_id
-               WHERE block.timetable_version_id = $1
-                 AND block.is_active AND block_group.is_active
-               UNION
-               SELECT block.id, block.day_of_week, block.bell_schedule_period_id,
-                      target.homeroom_id
-               FROM academic_timetable_blocks block
-               JOIN academic_timetable_block_homerooms target ON target.block_id = block.id
-               WHERE block.timetable_version_id = $1
-                 AND block.is_active AND target.is_active
-           )
-           SELECT count(*) FROM (
-               SELECT homeroom_id, day_of_week, bell_schedule_period_id
-               FROM block_homerooms
-               GROUP BY homeroom_id, day_of_week, bell_schedule_period_id
-               HAVING count(DISTINCT id) > 1
-           ) conflicts"#,
-    )
-    .bind(target_version_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    push_conflict_finding(
-        findings,
-        AcademicChangeFindingCode::HomeroomConflict,
-        "ห้องประจำชั้นมีคาบซ้อนกัน",
-        "ย้ายคาบของห้องประจำชั้นที่อยู่ในช่วงเวลาเดียวกัน",
-        homeroom_conflicts,
-        target_version_id,
-    );
-
-    let teacher_conflicts: i64 = sqlx::query_scalar(
-        r#"SELECT count(*) FROM (
-               SELECT teacher_id, day_of_week, bell_schedule_period_id
-               FROM (
-                   SELECT instructor.instructor_id AS teacher_id,
-                          block.day_of_week, block.bell_schedule_period_id, block.id
-                   FROM academic_timetable_blocks block
-                   JOIN academic_timetable_block_groups block_group
-                     ON block_group.block_id = block.id
-                   JOIN academic_timetable_block_group_instructors instructor
-                     ON instructor.block_group_id = block_group.id
-                   WHERE block.timetable_version_id = $1
-                     AND block.is_active AND block_group.is_active
-                   UNION ALL
-                   SELECT target.teacher_id, block.day_of_week,
-                          block.bell_schedule_period_id, block.id
-                   FROM academic_timetable_blocks block
-                   JOIN academic_timetable_block_teachers target ON target.block_id = block.id
-                   WHERE block.timetable_version_id = $1
-                     AND block.is_active AND target.is_active
-               ) occupied
-               GROUP BY teacher_id, day_of_week, bell_schedule_period_id
-               HAVING count(DISTINCT id) > 1
-           ) conflicts"#,
-    )
-    .bind(target_version_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    push_conflict_finding(
-        findings,
-        AcademicChangeFindingCode::TeacherConflict,
-        "ครูผู้สอนมีคาบซ้อนกัน",
-        "ย้ายคาบของครูที่อยู่ในช่วงเวลาเดียวกัน",
-        teacher_conflicts,
-        target_version_id,
-    );
-
-    let room_conflicts: i64 = sqlx::query_scalar(
-        r#"SELECT count(*) FROM (
-               SELECT room_id, day_of_week, bell_schedule_period_id
-               FROM (
-                   SELECT block_group.room_id, block.day_of_week,
-                          block.bell_schedule_period_id, block.id
-                   FROM academic_timetable_blocks block
-                   JOIN academic_timetable_block_groups block_group
-                     ON block_group.block_id = block.id
-                   WHERE block.timetable_version_id = $1
-                     AND block.is_active AND block_group.is_active
-                     AND block_group.room_id IS NOT NULL
-                   UNION ALL
-                   SELECT target.room_id, block.day_of_week,
-                          block.bell_schedule_period_id, block.id
-                   FROM academic_timetable_blocks block
-                   JOIN academic_timetable_block_homerooms target ON target.block_id = block.id
-                   WHERE block.timetable_version_id = $1
-                     AND block.is_active AND target.is_active
-                     AND target.room_id IS NOT NULL
-               ) occupied
-               GROUP BY room_id, day_of_week, bell_schedule_period_id
-               HAVING count(DISTINCT id) > 1
-           ) conflicts"#,
-    )
-    .bind(target_version_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    push_conflict_finding(
-        findings,
-        AcademicChangeFindingCode::RoomConflict,
-        "ห้องเรียนมีคาบซ้อนกัน",
-        "ย้ายคาบที่ใช้ห้องเดียวกันในช่วงเวลาเดียวกัน",
-        room_conflicts,
-        target_version_id,
-    );
-    Ok(())
-}
-
-fn push_conflict_finding(
-    findings: &mut Vec<AcademicChangeFinding>,
-    code: AcademicChangeFindingCode,
-    title: &str,
-    guidance: &str,
-    affected_count: i64,
-    target_version_id: Uuid,
-) {
-    if affected_count > 0 {
-        findings.push(change_finding(
-            code,
-            AcademicChangeFindingSeverity::Blocking,
-            title,
-            guidance,
-            affected_count,
-            None,
-            None,
-            Some(target_version_id),
-        ));
-    }
-}
-
 fn change_finding(
     code: AcademicChangeFindingCode,
     severity: AcademicChangeFindingSeverity,
@@ -1874,149 +1092,69 @@ fn change_finding(
 fn finding_code_text(code: AcademicChangeFindingCode) -> &'static str {
     match code {
         AcademicChangeFindingCode::ChangeSetNoItems => "change_set_no_items",
-        AcademicChangeFindingCode::ChangeSetStale => "change_set_stale",
         AcademicChangeFindingCode::TermNotWritable => "term_not_writable",
         AcademicChangeFindingCode::EffectiveDateInvalid => "effective_date_invalid",
-        AcademicChangeFindingCode::BaseTimetableVersionStale => "base_timetable_version_stale",
-        AcademicChangeFindingCode::TargetTimetableVersionStale => "target_timetable_version_stale",
-        AcademicChangeFindingCode::ChangeItemStale => "change_item_stale",
+        AcademicChangeFindingCode::BaseDeliveryVersionStale => "base_delivery_version_stale",
         AcademicChangeFindingCode::ResourceStale => "resource_stale",
-        AcademicChangeFindingCode::DraftGroup => "draft_group",
+        AcademicChangeFindingCode::MissingDeliveryTarget => "missing_delivery_target",
+        AcademicChangeFindingCode::MissingDeliveryGroup => "missing_delivery_group",
+        AcademicChangeFindingCode::DeliveryGraphInvalid => "delivery_graph_invalid",
         AcademicChangeFindingCode::MissingPrimaryTeacher => "missing_primary_teacher",
-        AcademicChangeFindingCode::MissingEntryInstructor => "missing_entry_instructor",
-        AcademicChangeFindingCode::UnpublishedRoster => "unpublished_roster",
-        AcademicChangeFindingCode::OfferingUnavailable => "offering_unavailable",
         AcademicChangeFindingCode::MissingWeeklyPeriodTarget => "missing_weekly_period_target",
-        AcademicChangeFindingCode::WeeklyPeriodDeficit => "weekly_period_deficit",
-        AcademicChangeFindingCode::WeeklyPeriodExcess => "weekly_period_excess",
-        AcademicChangeFindingCode::HomeroomConflict => "homeroom_conflict",
-        AcademicChangeFindingCode::LearningGroupConflict => "learning_group_conflict",
-        AcademicChangeFindingCode::TeacherConflict => "teacher_conflict",
-        AcademicChangeFindingCode::RoomConflict => "room_conflict",
-        AcademicChangeFindingCode::StoppedOfferingStillScheduled => {
-            "stopped_offering_still_scheduled"
-        }
         AcademicChangeFindingCode::MissingEffectiveTeacher => "missing_effective_teacher",
-        AcademicChangeFindingCode::StoppedTeacherStillScheduled => {
-            "stopped_teacher_still_scheduled"
-        }
-        AcademicChangeFindingCode::EntryInstructorNotEffective => "entry_instructor_not_effective",
     }
 }
 
 pub async fn create_change_set(
-    timetable: &(impl TimetableMutationPort + ?Sized),
     pool: &PgPool,
     actor_user_id: Uuid,
     request: CreateAcademicTermChangeSetRequest,
 ) -> Result<AcademicTermChangeSet, AppError> {
+    let mut tx = pool.begin().await?;
+    let id = create_change_set_in_transaction(&mut tx, actor_user_id, request).await?;
+    tx.commit().await?;
+    get_change_set(pool, id).await
+}
+
+pub async fn create_change_set_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    request: CreateAcademicTermChangeSetRequest,
+) -> Result<Uuid, AppError> {
     let reason = normalized_reason(&request.reason)?;
     let request_hash = stable_hash(&NormalizedCreateRequest {
         academic_term_id: request.academic_term_id,
         effective_from: request.effective_from,
         reason: &reason,
     })?;
-
-    let mut transaction = pool.begin().await?;
-    let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
+    let term = require_writable_term(transaction, request.academic_term_id, true).await?;
     validate_effective_date(&term, request.effective_from)?;
-
-    if let Some((existing_id, existing_hash)) = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, creation_request_hash FROM academic_term_change_sets \
-         WHERE academic_term_id = $1 AND idempotency_key = $2",
-    )
-    .bind(request.academic_term_id)
-    .bind(request.idempotency_key.to_string())
-    .fetch_optional(&mut *transaction)
-    .await?
-    {
-        if existing_hash != request_hash {
-            return Err(AppError::Conflict(
-                "idempotencyKey นี้ถูกใช้กับรายละเอียดชุดเปลี่ยนแปลงอื่นแล้ว".to_string(),
-            ));
-        }
-        transaction.commit().await?;
-        return get_change_set(pool, existing_id).await;
+    if let Some((existing_id,existing_hash)) = sqlx::query_as::<_, (Uuid,String)>(
+        "SELECT id,creation_request_hash FROM academic_term_change_sets WHERE academic_term_id=$1 AND idempotency_key=$2"
+    ).bind(term.id).bind(request.idempotency_key.to_string()).fetch_optional(&mut **transaction).await? {
+        if existing_hash!=request_hash { return Err(AppError::Conflict("idempotencyKey นี้ถูกใช้กับคำขออื่นแล้ว".into())); }
+        return Ok(existing_id);
     }
-
-    let (base_version_id, base_row_version): (Uuid, i64) = sqlx::query_as(
-        r#"SELECT id, row_version
-           FROM academic_timetable_versions
-           WHERE academic_term_id = $1
-             AND status = 'published'
-             AND effective_from <= $2
-           ORDER BY effective_from DESC, id
-           LIMIT 1
-           FOR SHARE"#,
-    )
-    .bind(request.academic_term_id)
-    .bind(request.effective_from)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or_else(|| {
-        AppError::ValidationError("ยังไม่มีรุ่นตารางเรียนที่เผยแพร่และใช้เป็นต้นทางในวันที่เลือก".to_string())
-    })?;
-
-    let change_set_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO academic_term_change_sets (
-               id, academic_term_id, academic_year_id, effective_from, reason,
-               idempotency_key, creation_request_hash, created_by
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
-    )
-    .bind(change_set_id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(request.effective_from)
-    .bind(&reason)
-    .bind(request.idempotency_key.to_string())
-    .bind(&request_hash)
-    .bind(actor_user_id)
-    .execute(&mut *transaction)
-    .await?;
-
-    let target_version_id = timetable
-        .clone_change_set_draft(
-            &mut transaction,
-            actor_user_id,
-            base_version_id,
-            base_row_version,
-            request.effective_from,
-            change_set_id,
-        )
-        .await?;
-
-    sqlx::query(
-        r#"UPDATE academic_term_change_sets
-           SET base_timetable_version_id = $1,
-               target_timetable_version_id = $2,
-               updated_at = now()
-           WHERE id = $3"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(change_set_id)
-    .execute(&mut *transaction)
-    .await?;
-
-    transaction.commit().await?;
-    append_audit(
-        pool,
-        "academic_term_change_set.created",
-        "academic_term_change_set",
-        change_set_id,
-        term.academic_year_id,
-        term.id,
-        actor_user_id,
-        serde_json::json!({
-            "effectiveFrom": request.effective_from,
-            "baseTimetableVersionId": base_version_id,
-            "targetTimetableVersionId": target_version_id,
-            "requestHash": request_hash,
-        }),
-    )
-    .await?;
-    get_change_set(pool, change_set_id).await
+    let base_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1 FOR SHARE")
+        .bind(term.id).fetch_optional(&mut **transaction).await?;
+    let revision_id = Uuid::new_v4();
+    let target_id = Uuid::new_v4();
+    sqlx::query(r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,effective_from,snapshot,created_by)
+        VALUES($1,$2,$3,$4,$5,'{"offerings":[]}'::jsonb,$6)"#)
+        .bind(target_id).bind(term.id).bind(term.academic_year_id).bind(base_id).bind(request.effective_from).bind(actor_user_id)
+        .execute(&mut **transaction).await?;
+    sqlx::query("INSERT INTO academic_term_change_sets(id,academic_term_id,academic_year_id,effective_from,reason,idempotency_key,creation_request_hash,created_by,base_delivery_version_id,target_delivery_version_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+        .bind(revision_id).bind(term.id).bind(term.academic_year_id).bind(request.effective_from).bind(&reason)
+        .bind(request.idempotency_key.to_string()).bind(&request_hash).bind(actor_user_id).bind(base_id).bind(target_id)
+        .execute(&mut **transaction).await?;
+    versions::refresh_revision_snapshot(transaction, revision_id).await?;
+    sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload)
+        VALUES('academic_delivery_version.created','academic_delivery_version',$1,$2,$3,$4,$5)")
+        .bind(target_id).bind(term.academic_year_id).bind(term.id).bind(actor_user_id)
+        .bind(sqlx::types::Json(serde_json::json!({"changeSetId":revision_id,"sourceVersionId":base_id,"effectiveFrom":request.effective_from,"requestHash":request_hash})))
+        .execute(&mut **transaction).await?;
+    Ok(revision_id)
 }
 
 pub async fn update_change_set(
@@ -2043,31 +1181,23 @@ pub async fn update_change_set(
         ));
     }
     let target_version_id = required_version_id(
-        row.target_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนเป้าหมาย",
+        row.target_delivery_version_id,
+        "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
     )?;
-    let base_version_id = required_version_id(
-        row.base_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนต้นทาง",
-    )?;
-
     if request.effective_from != row.effective_from {
-        if !target_is_pristine(&mut transaction, id, base_version_id, target_version_id).await? {
+        let has_items: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM academic_term_change_items WHERE change_set_id=$1)",
+        )
+        .bind(id)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if has_items {
             return Err(AppError::Conflict(
-                "มีรายการเปลี่ยนแปลงหรือแก้ตารางในแบบร่างแล้ว กรุณาสร้างชุดใหม่หากต้องเปลี่ยนวันที่เริ่มใช้"
-                    .to_string(),
+                "ร่างนี้มีรายการเปลี่ยนแปลงแล้ว กรุณาสร้างร่างเปิดสอนใหม่หากต้องเปลี่ยนวันที่".into(),
             ));
         }
-        sqlx::query(
-            r#"UPDATE academic_timetable_versions
-               SET effective_from = $1, row_version = row_version + 1, updated_at = now()
-               WHERE id = $2 AND status = 'draft'"#,
-        )
-        .bind(request.effective_from)
-        .bind(target_version_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(map_live_effective_conflict)?;
+        sqlx::query("UPDATE academic_delivery_versions SET effective_from=$1,row_version=row_version+1,updated_at=now() WHERE id=$2 AND status='draft'")
+            .bind(request.effective_from).bind(target_version_id).execute(&mut *transaction).await?;
     }
 
     sqlx::query(
@@ -2081,6 +1211,7 @@ pub async fn update_change_set(
     .bind(id)
     .execute(&mut *transaction)
     .await?;
+    versions::refresh_revision_snapshot(&mut transaction, id).await?;
     transaction.commit().await?;
 
     append_audit(
@@ -2122,8 +1253,8 @@ pub async fn cancel_change_set(
         ));
     }
     let target_version_id = required_version_id(
-        row.target_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนเป้าหมาย",
+        row.target_delivery_version_id,
+        "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
     )?;
 
     sqlx::query(
@@ -2141,7 +1272,7 @@ pub async fn cancel_change_set(
     .await?;
 
     sqlx::query(
-        r#"UPDATE academic_timetable_versions
+        r#"UPDATE academic_delivery_versions
            SET status = 'cancelled', row_version = row_version + 1, updated_at = now()
            WHERE id = $1 AND status = 'draft'"#,
     )
@@ -2196,11 +1327,6 @@ pub async fn upsert_change_item(
             "ชุดการเปลี่ยนแปลงถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
     }
-    let target_version_id = required_version_id(
-        row.target_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนเป้าหมาย",
-    )?;
-
     let (item_id, action_code, no_op) = match request {
         UpsertAcademicTermChangeItemRequest::AddCourse { offering, .. } => {
             if offering.academic_term_id != term.id {
@@ -2218,15 +1344,6 @@ pub async fn upsert_change_item(
                     .bind(subject_version_id)
                     .fetch_one(&mut *transaction)
                     .await?;
-            insert_version_target(
-                &mut transaction,
-                target_version_id,
-                offering_id,
-                &term,
-                weekly_period_target,
-                change_set_id,
-            )
-            .await?;
             create_default_draft_groups(&mut transaction, offering_id, &term).await?;
             let item_id = insert_change_item(
                 &mut transaction,
@@ -2255,15 +1372,6 @@ pub async fn upsert_change_item(
             let offering_id = Uuid::new_v4();
             offerings::insert_activity(&mut transaction, offering_id, &term, offering).await?;
             set_added_offering_start(&mut transaction, offering_id, row.effective_from).await?;
-            insert_version_target(
-                &mut transaction,
-                target_version_id,
-                offering_id,
-                &term,
-                weekly_period_target,
-                change_set_id,
-            )
-            .await?;
             create_default_draft_groups(&mut transaction, offering_id, &term).await?;
             let item_id = insert_change_item(
                 &mut transaction,
@@ -2310,27 +1418,12 @@ pub async fn upsert_change_item(
                         "ไม่พบรายการหยุดเปิดสอนรุ่นที่ต้องการแก้ไข".to_string(),
                     ));
                 }
-                sqlx::query(
-                    "DELETE FROM academic_timetable_blocks \
-                     WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+                require_snapshot_offering(
+                    &mut transaction,
+                    row.target_delivery_version_id,
+                    learning_offering_id,
                 )
-                .bind(target_version_id)
-                .bind(learning_offering_id)
-                .execute(&mut *transaction)
                 .await?;
-                let deleted_target = sqlx::query(
-                    "DELETE FROM academic_timetable_version_targets \
-                     WHERE timetable_version_id = $1 AND learning_offering_id = $2",
-                )
-                .bind(target_version_id)
-                .bind(learning_offering_id)
-                .execute(&mut *transaction)
-                .await?;
-                if deleted_target.rows_affected() != 1 {
-                    return Err(AppError::Conflict(
-                        "รายการเปิดสอนนี้ไม่ได้อยู่ในรุ่นตารางเป้าหมาย".to_string(),
-                    ));
-                }
                 let item_id = insert_change_item(
                     &mut transaction,
                     change_set_id,
@@ -2359,21 +1452,12 @@ pub async fn upsert_change_item(
                 "หยุดและปรับจำนวนคาบของรายการเดียวกันในชุดเดียวไม่ได้",
             )
             .await?;
-            let updated_target = sqlx::query(
-                r#"UPDATE academic_timetable_version_targets
-                   SET weekly_period_target = $1, updated_at = now()
-                   WHERE timetable_version_id = $2 AND learning_offering_id = $3"#,
+            require_snapshot_offering(
+                &mut transaction,
+                row.target_delivery_version_id,
+                learning_offering_id,
             )
-            .bind(weekly_period_target)
-            .bind(target_version_id)
-            .bind(learning_offering_id)
-            .execute(&mut *transaction)
             .await?;
-            if updated_target.rows_affected() != 1 {
-                return Err(AppError::Conflict(
-                    "รายการเปิดสอนนี้ไม่มีเป้าหมายในรุ่นตารางแบบร่าง".to_string(),
-                ));
-            }
             if let Some(existing) = find_change_item(
                 &mut transaction,
                 change_set_id,
@@ -2701,92 +1785,42 @@ pub async fn delete_change_item(
             "รายการเปลี่ยนแปลงถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
     }
-    let base_version_id = required_version_id(
-        row.base_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนต้นทาง",
-    )?;
-    let target_version_id = required_version_id(
-        row.target_timetable_version_id,
-        "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนเป้าหมาย",
-    )?;
-
     match item.action_kind {
         AcademicTermChangeActionKind::AddOffering => {
             let offering_id = required_change_item_field(
                 item.learning_offering_id,
                 "รายการเพิ่มการเปิดสอนไม่มีรายการเปิดสอน",
             )?;
-            require_draft_only_delete(&mut transaction, offering_id).await?;
-            sqlx::query(
-                "DELETE FROM academic_timetable_blocks \
-                 WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+            let is_draft: bool = sqlx::query_scalar(
+                "SELECT status='draft' FROM learning_offerings WHERE id=$1 FOR UPDATE",
             )
-            .bind(target_version_id)
             .bind(offering_id)
-            .execute(&mut *transaction)
+            .fetch_one(&mut *transaction)
             .await?;
-            sqlx::query(
-                "DELETE FROM academic_timetable_version_targets \
-                 WHERE timetable_version_id = $1 AND learning_offering_id = $2",
-            )
-            .bind(target_version_id)
-            .bind(offering_id)
-            .execute(&mut *transaction)
-            .await?;
+            if is_draft {
+                require_draft_only_delete(&mut transaction, offering_id).await?;
+            }
             sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
                 .bind(item.id)
                 .execute(&mut *transaction)
                 .await?;
-            sqlx::query("DELETE FROM learning_groups WHERE learning_offering_id = $1")
-                .bind(offering_id)
-                .execute(&mut *transaction)
-                .await?;
-            sqlx::query("DELETE FROM learning_offerings WHERE id = $1 AND status = 'draft'")
-                .bind(offering_id)
-                .execute(&mut *transaction)
-                .await?;
+            if is_draft {
+                sqlx::query("DELETE FROM learning_groups WHERE learning_offering_id = $1")
+                    .bind(offering_id)
+                    .execute(&mut *transaction)
+                    .await?;
+                sqlx::query("DELETE FROM learning_offerings WHERE id = $1 AND status = 'draft'")
+                    .bind(offering_id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
         }
-        AcademicTermChangeActionKind::StopOffering => {
-            let offering_id = required_change_item_field(
-                item.learning_offering_id,
-                "รายการหยุดเปิดสอนไม่มีรายการเปิดสอน",
-            )?;
-            sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
+        AcademicTermChangeActionKind::StopOffering
+        | AcademicTermChangeActionKind::AdjustWeeklyPeriodTarget => {
+            sqlx::query("DELETE FROM academic_term_change_items WHERE id=$1")
                 .bind(item.id)
                 .execute(&mut *transaction)
                 .await?;
-            restore_version_target(
-                &mut transaction,
-                base_version_id,
-                target_version_id,
-                offering_id,
-            )
-            .await?;
-            restore_version_entries(
-                &mut transaction,
-                actor_user_id,
-                base_version_id,
-                target_version_id,
-                offering_id,
-            )
-            .await?;
-        }
-        AcademicTermChangeActionKind::AdjustWeeklyPeriodTarget => {
-            let offering_id = required_change_item_field(
-                item.learning_offering_id,
-                "รายการปรับจำนวนคาบไม่มีรายการเปิดสอน",
-            )?;
-            sqlx::query("DELETE FROM academic_term_change_items WHERE id = $1")
-                .bind(item.id)
-                .execute(&mut *transaction)
-                .await?;
-            restore_version_target(
-                &mut transaction,
-                base_version_id,
-                target_version_id,
-                offering_id,
-            )
-            .await?;
         }
         AcademicTermChangeActionKind::AddGroupTeacher
         | AcademicTermChangeActionKind::AdjustGroupTeacherRole
@@ -2833,29 +1867,26 @@ async fn set_added_offering_start(
     Ok(())
 }
 
-async fn insert_version_target(
+async fn require_snapshot_offering(
     transaction: &mut Transaction<'_, Postgres>,
-    target_version_id: Uuid,
+    version_id: Option<Uuid>,
     offering_id: Uuid,
-    term: &TermContext,
-    weekly_period_target: i32,
-    change_set_id: Uuid,
 ) -> Result<(), AppError> {
-    validate_weekly_period_target(weekly_period_target)?;
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_version_targets (
-               timetable_version_id, learning_offering_id, academic_term_id,
-               academic_year_id, weekly_period_target, migration_provenance
-           ) VALUES ($1, $2, $3, $4, $5, jsonb_build_object('changeSetId', $6::text))"#,
+    let version_id = required_version_id(version_id, "ไม่พบรุ่นเปิดสอนแบบร่าง")?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM academic_delivery_versions version,
+        jsonb_array_elements(version.snapshot->'offerings') offering
+        WHERE version.id=$1 AND version.status='draft' AND (offering->>'id')::uuid=$2)",
     )
-    .bind(target_version_id)
+    .bind(version_id)
     .bind(offering_id)
-    .bind(term.id)
-    .bind(term.academic_year_id)
-    .bind(weekly_period_target)
-    .bind(change_set_id)
-    .execute(&mut **transaction)
+    .fetch_one(&mut **transaction)
     .await?;
+    if !exists {
+        return Err(AppError::Conflict(
+            "รายการเปิดสอนนี้ไม่ได้อยู่ในรุ่นเปิดสอนแบบร่าง".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -3288,6 +2319,7 @@ async fn increment_change_set_revision(
     .bind(change_set_id)
     .execute(&mut **transaction)
     .await?;
+    versions::refresh_revision_snapshot(transaction, change_set_id).await?;
     Ok(())
 }
 
@@ -3383,248 +2415,6 @@ async fn require_draft_only_delete(
     Ok(())
 }
 
-async fn restore_version_target(
-    transaction: &mut Transaction<'_, Postgres>,
-    base_version_id: Uuid,
-    target_version_id: Uuid,
-    offering_id: Uuid,
-) -> Result<(), AppError> {
-    let restored = sqlx::query(
-        r#"INSERT INTO academic_timetable_version_targets (
-               timetable_version_id, learning_offering_id, academic_term_id,
-               academic_year_id, weekly_period_target, migration_provenance
-           )
-           SELECT $2, base.learning_offering_id, base.academic_term_id,
-                  base.academic_year_id, base.weekly_period_target,
-                  base.migration_provenance || jsonb_build_object(
-                      'restoredFromVersionId', $1::text
-                  )
-           FROM academic_timetable_version_targets base
-           WHERE base.timetable_version_id = $1
-             AND base.learning_offering_id = $3
-           ON CONFLICT (timetable_version_id, learning_offering_id)
-           DO UPDATE SET weekly_period_target = EXCLUDED.weekly_period_target,
-                         migration_provenance = EXCLUDED.migration_provenance,
-                         updated_at = now()"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(offering_id)
-    .execute(&mut **transaction)
-    .await?;
-    if restored.rows_affected() != 1 {
-        return Err(AppError::Conflict(
-            "รุ่นตารางต้นทางไม่มีเป้าหมายของรายการนี้ให้คืนค่า".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-async fn restore_version_entries(
-    transaction: &mut Transaction<'_, Postgres>,
-    actor_user_id: Uuid,
-    base_version_id: Uuid,
-    target_version_id: Uuid,
-    offering_id: Uuid,
-) -> Result<(), AppError> {
-    let existing_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
-    )
-    .bind(target_version_id)
-    .bind(offering_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    if existing_count != 0 {
-        return Err(AppError::Conflict(
-            "รุ่นตารางเป้าหมายมีคาบของรายการนี้อยู่แล้ว กรุณาโหลดข้อมูลล่าสุด".to_string(),
-        ));
-    }
-    sqlx::query(
-        r#"CREATE TEMP TABLE timetable_restore_block_map ON COMMIT DROP AS
-           SELECT block.id AS source_id,
-                  uuid_generate_v5($2, 'restore-block:' || block.id::text) AS target_id
-           FROM academic_timetable_blocks block
-           WHERE block.timetable_version_id = $1
-             AND block.learning_offering_id = $3 AND block.is_active"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(offering_id)
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"CREATE TEMP TABLE timetable_restore_group_map ON COMMIT DROP AS
-           SELECT block_group.id AS source_id,
-                  uuid_generate_v5($1, 'restore-group:' || block_group.id::text) AS target_id
-           FROM academic_timetable_block_groups block_group
-           JOIN timetable_restore_block_map block_map ON block_map.source_id = block_group.block_id
-           WHERE block_group.is_active"#,
-    )
-    .bind(target_version_id)
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_blocks (
-               id, timetable_version_id, academic_term_id, academic_year_id,
-               bell_schedule_id, bell_schedule_period_id, day_of_week,
-               block_kind, scheduling_mode, learning_offering_id, structural_kind,
-               title, note, series_id, row_version, is_active, migration_provenance,
-               created_by, updated_by
-           )
-           SELECT block_map.target_id, $2, source.academic_term_id, source.academic_year_id,
-                  source.bell_schedule_id, source.bell_schedule_period_id, source.day_of_week,
-                  source.block_kind, source.scheduling_mode, source.learning_offering_id,
-                  source.structural_kind, source.title, source.note,
-                  CASE WHEN source.series_id IS NULL THEN NULL
-                       ELSE uuid_generate_v5($2, 'restore-series:' || source.series_id::text) END,
-                  1, true,
-                  source.migration_provenance || jsonb_build_object(
-                      'restoredFromBlockId', source.id::text,
-                      'sourceVersionId', $1::text
-                  ), $4, $4
-           FROM timetable_restore_block_map block_map
-           JOIN academic_timetable_blocks source ON source.id = block_map.source_id"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(offering_id)
-    .bind(actor_user_id)
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_block_groups (
-               id, block_id, learning_group_id, learning_offering_id,
-               academic_term_id, academic_year_id, room_id, row_version,
-               is_active, migration_provenance, created_by, updated_by
-           )
-           SELECT group_map.target_id, block_map.target_id, source.learning_group_id,
-                  source.learning_offering_id, source.academic_term_id,
-                  source.academic_year_id, source.room_id, 1, true,
-                  source.migration_provenance || jsonb_build_object(
-                      'restoredFromBlockGroupId', source.id::text,
-                      'sourceVersionId', $1::text
-                  ), $4, $4
-           FROM timetable_restore_group_map group_map
-           JOIN academic_timetable_block_groups source ON source.id = group_map.source_id
-           JOIN timetable_restore_block_map block_map ON block_map.source_id = source.block_id"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(offering_id)
-    .bind(actor_user_id)
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_block_group_instructors (
-               id, block_group_id, instructor_id, role, display_order
-           )
-           SELECT gen_random_uuid(), group_map.target_id, source.instructor_id,
-                  source.role, source.display_order
-           FROM timetable_restore_group_map group_map
-           JOIN academic_timetable_block_group_instructors source
-             ON source.block_group_id = group_map.source_id"#,
-    )
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_block_homerooms (
-               id, block_id, homeroom_id, academic_term_id, academic_year_id,
-               target_kind, room_id, row_version, is_active, migration_provenance,
-               created_by, updated_by
-           )
-           SELECT uuid_generate_v5($2, 'restore-homeroom:' || source.id::text),
-                  block_map.target_id, source.homeroom_id, source.academic_term_id,
-                  source.academic_year_id, source.target_kind, source.room_id, 1, true,
-                  source.migration_provenance || jsonb_build_object(
-                      'restoredFromTargetId', source.id::text,
-                      'sourceVersionId', $1::text
-                  ), $4, $4
-           FROM timetable_restore_block_map block_map
-           JOIN academic_timetable_block_homerooms source
-             ON source.block_id = block_map.source_id
-           WHERE source.is_active"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(offering_id)
-    .bind(actor_user_id)
-    .execute(&mut **transaction)
-    .await?;
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_block_group_sync (
-               id, block_id, learning_group_id, learning_offering_id,
-               academic_term_id, academic_year_id, status, linked_block_group_id,
-               conflict_code, conflict_message, attempted_group_row_version,
-               row_version, created_by, updated_by
-           )
-           SELECT uuid_generate_v5($2, 'restore-sync:' || source.id::text),
-                  block_map.target_id, source.learning_group_id,
-                  source.learning_offering_id, source.academic_term_id,
-                  source.academic_year_id, source.status, group_map.target_id,
-                  source.conflict_code, source.conflict_message,
-                  source.attempted_group_row_version, 1, $4, $4
-           FROM timetable_restore_block_map block_map
-           JOIN academic_timetable_block_group_sync source
-             ON source.block_id = block_map.source_id
-           LEFT JOIN timetable_restore_group_map group_map
-             ON group_map.source_id = source.linked_block_group_id"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(offering_id)
-    .bind(actor_user_id)
-    .execute(&mut **transaction)
-    .await?;
-    let (
-        source_entry_count,
-        restored_entry_count,
-        source_instructor_count,
-        restored_instructor_count,
-    ): (i64, i64, i64, i64) = sqlx::query_as(
-        r#"SELECT
-               (SELECT count(*)
-                FROM academic_timetable_blocks
-                WHERE timetable_version_id = $1
-                  AND learning_offering_id = $3
-                  AND is_active),
-               (SELECT count(*)
-                FROM academic_timetable_blocks
-                WHERE timetable_version_id = $2
-                  AND learning_offering_id = $3
-                  AND is_active),
-               (SELECT count(*)
-                FROM academic_timetable_block_group_instructors instructor
-                JOIN academic_timetable_block_groups block_group
-                  ON block_group.id = instructor.block_group_id
-                JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-                WHERE block.timetable_version_id = $1
-                  AND block.learning_offering_id = $3
-                  AND block.is_active AND block_group.is_active),
-               (SELECT count(*)
-                FROM academic_timetable_block_group_instructors instructor
-                JOIN academic_timetable_block_groups block_group
-                  ON block_group.id = instructor.block_group_id
-                JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-                WHERE block.timetable_version_id = $2
-                  AND block.learning_offering_id = $3
-                  AND block.is_active AND block_group.is_active)"#,
-    )
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .bind(offering_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    if source_entry_count != restored_entry_count
-        || source_instructor_count != restored_instructor_count
-    {
-        return Err(AppError::InternalServerError(
-            "คืนค่าคาบและครูผู้สอนจากรุ่นตารางต้นทางไม่ครบถ้วน กรุณาลองใหม่".to_string(),
-        ));
-    }
-    Ok(())
-}
-
 fn validate_weekly_period_target(value: i32) -> Result<(), AppError> {
     if value <= 0 {
         Err(AppError::ValidationError(
@@ -3654,62 +2444,6 @@ async fn require_draft_change_set_for_update(
         ));
     }
     Ok(row)
-}
-
-async fn target_is_pristine(
-    transaction: &mut Transaction<'_, Postgres>,
-    change_set_id: Uuid,
-    base_version_id: Uuid,
-    target_version_id: Uuid,
-) -> Result<bool, AppError> {
-    let pristine: bool = sqlx::query_scalar(
-        r#"SELECT
-               NOT EXISTS (
-                   SELECT 1 FROM academic_term_change_items WHERE change_set_id = $1
-               )
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM academic_timetable_blocks target
-                   WHERE target.timetable_version_id = $3
-                     AND (
-                         target.row_version <> 1
-                         OR target.migration_provenance ->> 'sourceVersionId' <> $2::text
-                     )
-               )
-               AND (
-                   SELECT count(*) FROM academic_timetable_blocks
-                   WHERE timetable_version_id = $3 AND is_active
-               ) = (
-                   SELECT count(*) FROM academic_timetable_blocks
-                   WHERE timetable_version_id = $2 AND is_active
-               )
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM academic_timetable_version_targets target
-                   FULL JOIN academic_timetable_version_targets base
-                     ON base.learning_offering_id = target.learning_offering_id
-                    AND base.timetable_version_id = $2
-                   WHERE target.timetable_version_id = $3
-                     AND (
-                         base.learning_offering_id IS NULL
-                         OR target.learning_offering_id IS NULL
-                         OR target.weekly_period_target <> base.weekly_period_target
-                     )
-               )
-               AND (
-                   SELECT count(*) FROM academic_timetable_version_targets
-                   WHERE timetable_version_id = $3
-               ) = (
-                   SELECT count(*) FROM academic_timetable_version_targets
-                   WHERE timetable_version_id = $2
-               )"#,
-    )
-    .bind(change_set_id)
-    .bind(base_version_id)
-    .bind(target_version_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    Ok(pristine)
 }
 
 fn normalized_reason(reason: &str) -> Result<String, AppError> {
@@ -3965,13 +2699,10 @@ async fn hydrate_many(
                 effective_from: row.effective_from,
                 reason: row.reason,
                 status: row.status,
-                base_timetable_version_id: required_version_id(
-                    row.base_timetable_version_id,
-                    "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนต้นทาง",
-                )?,
-                target_timetable_version_id: required_version_id(
-                    row.target_timetable_version_id,
-                    "ชุดการเปลี่ยนแปลงไม่มีรุ่นตารางเรียนเป้าหมาย",
+                base_delivery_version_id: row.base_delivery_version_id,
+                target_delivery_version_id: required_version_id(
+                    row.target_delivery_version_id,
+                    "ชุดการเปลี่ยนแปลงไม่มีรุ่นเปิดสอนเป้าหมาย",
                 )?,
                 row_version: row.row_version,
                 created_by: row.created_by,
@@ -4000,13 +2731,4 @@ fn required_change_item_label(
         .get(&id)
         .cloned()
         .ok_or_else(|| AppError::InternalServerError(message.to_string()))
-}
-
-fn map_live_effective_conflict(error: sqlx::Error) -> AppError {
-    if let sqlx::Error::Database(database) = &error {
-        if database.constraint() == Some("academic_timetable_versions_live_effective_key") {
-            return AppError::Conflict("มีรุ่นตารางเรียนแบบร่างหรือเผยแพร่ในวันที่นี้แล้ว".to_string());
-        }
-    }
-    AppError::DbError(error)
 }

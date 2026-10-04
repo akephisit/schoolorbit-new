@@ -124,20 +124,41 @@ pub fn academic_routes() -> Router<AppState> {
             )
             // Timetable versions: register literal paths before timetable entry IDs.
             .route(
+                "/teacher-handoffs/{id}/preview",
+                post(handlers::teacher_handoff::preview_teacher_handoff),
+            )
+            .route(
+                "/teacher-handoffs/{id}/apply",
+                post(handlers::teacher_handoff::apply_teacher_handoff),
+            )
+            .route(
                 "/timetable-versions/resolve",
                 get(handlers::timetable_versions::resolve_version),
             )
             .route(
                 "/timetable-versions",
-                get(handlers::timetable_versions::list_versions),
+                get(handlers::timetable_versions::list_versions)
+                    .post(handlers::timetable_versions::create_version),
             )
             .route(
                 "/timetable-versions/{source_id}/clone",
                 post(handlers::timetable_versions::clone_version),
             )
             .route(
-                "/timetable-versions/{version_id}/targets",
-                post(handlers::timetable_versions::include_offering),
+                "/timetable-versions/{version_id}/delivery-source",
+                put(handlers::timetable_versions::update_delivery_source),
+            )
+            .route(
+                "/timetable-versions/{version_id}/delete-draft",
+                post(handlers::timetable_versions::delete_draft),
+            )
+            .route(
+                "/timetable-versions/{version_id}/publication-preview",
+                post(handlers::timetable_versions::preview_publication),
+            )
+            .route(
+                "/timetable-versions/{version_id}/publish",
+                post(handlers::timetable_versions::publish_version),
             )
             // Canonical timetable blocks. Literal action paths must precede block IDs.
             .route(

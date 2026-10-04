@@ -103,13 +103,27 @@ pub(crate) async fn preview_placement(
     let covered_homeroom_ids: Vec<Uuid> = if group_ids.is_empty() {
         candidate.homeroom_ids.clone()
     } else {
-        let mut ids: Vec<Uuid> = sqlx::query_scalar(
-            r#"SELECT homeroom_id FROM learning_group_homerooms
-               WHERE learning_group_id = ANY($1)"#,
-        )
-        .bind(&group_ids)
-        .fetch_all(pool)
-        .await?;
+        let mut ids = if let Some(block_id) = source_block_id {
+            sqlx::query_scalar::<_,Uuid>("SELECT DISTINCT unnest(homeroom_ids) FROM academic_timetable_block_groups WHERE block_id=$1 AND is_active AND learning_group_id=ANY($2)")
+                .bind(block_id).bind(&group_ids).fetch_all(pool).await?
+        } else {
+            let source_id: Uuid = sqlx::query_scalar(
+                "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+            )
+            .bind(request.timetable_version_id)
+            .fetch_one(pool)
+            .await?;
+            let source =
+                school_academic_delivery::services::versions::get_version(pool, source_id).await?;
+            source
+                .snapshot
+                .offerings
+                .iter()
+                .flat_map(|offering| offering.groups.iter())
+                .filter(|group| group_ids.contains(&group.id))
+                .flat_map(|group| group.homeroom_ids.iter().copied())
+                .collect()
+        };
         ids.extend(candidate.homeroom_ids.iter().copied());
         canonical_ids(&ids)
     };
@@ -140,8 +154,7 @@ pub(crate) async fn preview_placement(
                SELECT 'homeroom', block.id, coverage.homeroom_id
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_groups target ON target.block_id = block.id
-               JOIN learning_group_homerooms coverage
-                 ON coverage.learning_group_id = target.learning_group_id
+               CROSS JOIN LATERAL unnest(target.homeroom_ids) coverage(homeroom_id)
                WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active

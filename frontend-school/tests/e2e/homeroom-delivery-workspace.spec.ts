@@ -28,15 +28,15 @@ function fulfill(route: Route, data: unknown, status = 200) {
 }
 
 function homeroomWorkspace(
-	timetableVersionId: string | null = null,
-	timetableVersionStatus: 'draft' | 'published' | null = null
+	deliveryVersionId: string | null = null,
+	deliveryVersionStatus: 'draft' | 'published' | null = null
 ) {
 	return {
 		academicYearId: ids.year,
 		academicTermId: ids.term,
-		timetableVersionId,
-		timetableVersionStatus,
-		timetableVersionEffectiveFrom: null,
+		deliveryVersionId,
+		deliveryVersionStatus,
+		deliveryVersionEffectiveFrom: null,
 		homerooms: [
 			{
 				homeroom: {
@@ -79,9 +79,9 @@ function homeroomWorkspace(
 						alignmentStates: ['matches_curriculum'],
 						schedulingMode: null,
 						standardPeriodsPerWeek: 4,
-						weeklyPeriodTarget: timetableVersionStatus === 'draft' ? null : 4,
+						weeklyPeriodTarget: deliveryVersionStatus === 'draft' ? null : 4,
 						teacherState: 'assigned',
-						timetableState: timetableVersionStatus === 'draft' ? 'unscheduled' : 'scheduled',
+						deliveryState: deliveryVersionStatus === 'draft' ? 'excluded' : 'included',
 						groups: [
 							{
 								id: ids.group,
@@ -112,7 +112,7 @@ function changeSetSummary() {
 		effectiveFrom: '2027-08-01',
 		reason: 'ปรับการเปิดสอนทดสอบ',
 		status: 'draft',
-		targetTimetableVersionId: ids.version,
+		targetDeliveryVersionId: ids.version,
 		updatedAt: '2027-07-01T00:00:00Z'
 	};
 }
@@ -120,7 +120,7 @@ function changeSetSummary() {
 function changeSetDetail() {
 	return {
 		...changeSetSummary(),
-		baseTimetableVersionId: ids.version,
+		baseDeliveryVersionId: ids.version,
 		rowVersion: 1,
 		createdBy: '90000000-0000-4000-8000-000000000001',
 		publishedBy: null,
@@ -138,7 +138,7 @@ type DeliveryMockOptions = {
 	changeSetSummaryGate?: Promise<void>;
 	changeSetDetailGate?: Promise<void>;
 	failHomeroomAttempts?: number;
-	timetableVersionStatus?: 'draft' | 'published' | null;
+	deliveryVersionStatus?: 'draft' | 'published' | null;
 };
 
 async function mockDelivery(
@@ -232,7 +232,7 @@ async function mockDelivery(
 									code: 'delivery-version',
 									name: 'การเปิดสอนรุ่นถัดไป',
 									icon: 'Workflow',
-									path: `/staff/academic/delivery?timetableVersionId=${ids.version}`
+									path: `/staff/academic/delivery?deliveryVersionId=${ids.version}`
 								}
 							]
 						}
@@ -257,18 +257,42 @@ async function mockDelivery(
 					await fulfill(
 						route,
 						homeroomWorkspace(
-							url.searchParams.get('timetableVersionId'),
-							options.timetableVersionStatus
+							url.searchParams.get('deliveryVersionId'),
+							options.deliveryVersionStatus
 						)
 					);
 				}
 				return;
 			}
-			if (
-				url.pathname === `/api/academic/timetable-versions/${ids.version}/targets` &&
-				route.request().method() === 'POST'
-			) {
-				await fulfill(route, {});
+			if (url.pathname === '/api/academic/delivery-versions') {
+				await fulfill(route, [
+					{
+						id: ids.version,
+						academicYearId: ids.year,
+						academicTermId: ids.term,
+						changeSetId: ids.changeSet,
+						sourceVersionId: null,
+						effectiveFrom: '2027-08-01',
+						effectiveUntil: null,
+						status: options.deliveryVersionStatus ?? 'draft',
+						rowVersion: 1,
+						offeringCount: 1,
+						groupCount: 1,
+						teacherAssignmentCount: 1,
+						updatedAt: '2027-07-01T00:00:00Z'
+					}
+				]);
+				return;
+			}
+			if (url.pathname === `/api/academic/delivery-versions/${ids.version}`) {
+				offeringOverviewRequests += 1;
+				await fulfill(route, {
+					id: ids.version,
+					academicYearId: ids.year,
+					academicTermId: ids.term,
+					status: 'draft',
+					snapshot: { offerings: [] }
+				});
 				return;
 			}
 			if (url.pathname === '/api/academic/term-change-sets') {
@@ -282,11 +306,6 @@ async function mockDelivery(
 				changeSetDetailRequests += 1;
 				await options.changeSetDetailGate;
 				await fulfill(route, changeSetDetail());
-				return;
-			}
-			if (url.pathname === '/api/academic/delivery/workspace') {
-				offeringOverviewRequests += 1;
-				await fulfill(route, { academicTermId: ids.term, offerings: [] });
 				return;
 			}
 			if (url.pathname === '/api/me/work-items/counts')
@@ -363,7 +382,7 @@ test('opens visible regions independently and loads the offering projection only
 	await expect.poll(changeSetSummaryRequestCount).toBe(2);
 	await expect.poll(changeSetDetailRequestCount).toBe(2);
 	await nextVersionLink.click();
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${ids.version}`));
+	await expect(page).toHaveURL(new RegExp(`deliveryVersionId=${ids.version}`));
 	expect(homeroomRequestCount()).toBe(2);
 	expect(changeSetSummaryRequestCount()).toBe(2);
 	expect(changeSetDetailRequestCount()).toBe(2);
@@ -382,14 +401,18 @@ test('marks unresolved visible regions busy and renders their skeletons', async 
 	const changeSetSummaryGate = new Promise<void>((resolve) => {
 		releaseSummaries = resolve;
 	});
-	await mockDelivery(page, undefined, undefined, { homeroomGate, changeSetSummaryGate });
+	await mockDelivery(page, undefined, undefined, {
+		homeroomGate,
+		changeSetSummaryGate,
+		changeSetDetailGate: changeSetSummaryGate
+	});
 
 	try {
 		await page.goto(
 			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`
 		);
 		const changeSetRegion = page.getByRole('region', {
-			name: 'ชุดการเปลี่ยนแปลงกลางภาค'
+			name: 'การจัดการรุ่นเปิดสอน'
 		});
 		const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
 
@@ -418,7 +441,7 @@ test('renders warm preloaded regions immediately without forcing skeletons', asy
 	await deliveryLink.click();
 
 	const changeSetRegion = page.getByRole('region', {
-		name: 'ชุดการเปลี่ยนแปลงกลางภาค'
+		name: 'การจัดการรุ่นเปิดสอน'
 	});
 	const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
 	await expect(changeSetRegion).toHaveAttribute('aria-busy', 'false');
@@ -442,7 +465,7 @@ test('clears incompatible homerooms before painting a new route context', async 
 		await page.getByRole('link', { name: 'การเปิดสอนรุ่นถัดไป' }).click();
 		const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
 
-		await expect(page).toHaveURL(new RegExp(`timetableVersionId=${ids.version}`));
+		await expect(page).toHaveURL(new RegExp(`deliveryVersionId=${ids.version}`));
 		await expect(homeroomRegion).toHaveAttribute('aria-busy', 'true');
 		await expect(homeroomRegion.locator('[data-slot="skeleton"]')).not.toHaveCount(0);
 		await expect(page.getByText('ม.1/1', { exact: true })).toHaveCount(0);
@@ -458,16 +481,16 @@ test('keeps loaded homerooms visible and announces a background refresh', async 
 	});
 	await mockDelivery(page, undefined, undefined, {
 		homeroomRefreshGate,
-		timetableVersionStatus: 'draft'
+		deliveryVersionStatus: 'draft'
 	});
 
 	try {
 		await page.goto(
-			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.version}`
+			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
 		);
 		const homeroomRegion = page.getByRole('region', { name: 'มุมมองรายห้อง' });
 		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
-		await page.getByRole('button', { name: 'เพิ่มเข้ารุ่นตาราง' }).click();
+		await page.getByRole('button', { name: 'โหลดล่าสุด', exact: true }).click();
 
 		await expect(homeroomRegion).toHaveAttribute('aria-busy', 'true');
 		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
@@ -570,7 +593,9 @@ test('renders change-set detail while homerooms are still loading', async ({ pag
 	}
 });
 
-test('renders homerooms while change-set summaries are still loading', async ({ page }) => {
+test('renders the selected opening and homerooms while journal summaries are still loading', async ({
+	page
+}) => {
 	let releaseSummaries: () => void = () => {};
 	const changeSetSummaryGate = new Promise<void>((resolve) => {
 		releaseSummaries = resolve;
@@ -582,7 +607,7 @@ test('renders homerooms while change-set summaries are still loading', async ({ 
 			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`
 		);
 		await expect(page.getByText('ม.1/1', { exact: true })).toBeVisible();
-		await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toHaveCount(0);
+		await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
 	} finally {
 		releaseSummaries();
 	}
@@ -601,7 +626,7 @@ test('loads an explicitly selected change-set without waiting for its summary li
 
 	try {
 		await page.goto(
-			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&changeSetId=${ids.changeSet}`
+			`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
 		);
 		await expect(page.getByText('ปรับการเปิดสอนทดสอบ', { exact: true })).toBeVisible();
 		expect(changeSetDetailRequestCount()).toBe(1);

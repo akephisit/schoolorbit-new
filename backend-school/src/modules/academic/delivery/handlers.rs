@@ -12,17 +12,12 @@ use crate::utils::request_context::{actor_tenant_context_from_session, ActorTena
 use crate::AppState;
 use school_academic_delivery::models::*;
 use school_academic_delivery::services::{
-    activities, change_sets, groups, offerings, roster_memberships, teacher_handoff, workspaces,
-};
-use school_academic_timetable::policy::{
-    require_timetable_resources, TimetableAction, TimetableResourceSet,
+    activities, change_sets, groups, offerings, roster_memberships, workspaces,
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_authorization::ActorContext;
 use school_http::HttpError as AppError;
 use school_http::{ApiErrorResponse, ApiResponse};
-
-use super::adapters::TIMETABLE_MUTATIONS;
 
 fn with_homeroom_delivery_timing(
     mut response: Response,
@@ -118,7 +113,7 @@ fn require_student_session(session: &AuthenticatedSession) -> Result<(), AppErro
     }
 }
 
-async fn require_term_change_set_access(
+pub(crate) async fn require_term_change_set_access(
     context: &ActorTenantContext,
     change_set_id: Uuid,
     action: OfferingAction,
@@ -368,7 +363,7 @@ pub async fn get_homeroom_delivery_workspace(
         &context.tenant.pool,
         query.academic_year_id,
         query.academic_term_id,
-        query.timetable_version_id,
+        query.delivery_version_id,
         &filter,
     )
     .await?;
@@ -449,23 +444,10 @@ pub async fn create_offering(
             "ไม่มีสิทธิ์เปิดสอนรายการจากทะเบียนนี้".to_string(),
         ));
     }
-    if let Some(timetable_version_id) = query.timetable_version_id {
-        require_timetable_resources(
-            &context.tenant.pool,
-            &context.actor,
-            TimetableAction::Manage,
-            &TimetableResourceSet {
-                timetable_version_ids: vec![timetable_version_id],
-                ..TimetableResourceSet::default()
-            },
-        )
-        .await?;
-    }
     let offering = offerings::create(
-        &TIMETABLE_MUTATIONS,
         &context.tenant.pool,
         context.actor.user_id,
-        query.timetable_version_id,
+        query.delivery_version_id,
         request,
     )
     .await?;
@@ -549,25 +531,9 @@ pub async fn apply_offerings_from_curriculum(
             ));
         }
     }
-    if let Some(timetable_version_id) = request.timetable_version_id {
-        require_timetable_resources(
-            &context.tenant.pool,
-            &context.actor,
-            TimetableAction::Manage,
-            &TimetableResourceSet {
-                timetable_version_ids: vec![timetable_version_id],
-                ..TimetableResourceSet::default()
-            },
-        )
-        .await?;
-    }
-    let result = offerings::apply_from_curriculum(
-        &TIMETABLE_MUTATIONS,
-        &context.tenant.pool,
-        context.actor.user_id,
-        request,
-    )
-    .await?;
+    let result =
+        offerings::apply_from_curriculum(&context.tenant.pool, context.actor.user_id, request)
+            .await?;
     let signal_descriptors =
         offerings::signal_descriptors(&context.tenant.pool, &result.offering_ids).await?;
     for descriptor in signal_descriptors {
@@ -794,7 +760,6 @@ pub async fn create_group(
     )
     .await?;
     let group = groups::create(
-        &TIMETABLE_MUTATIONS,
         &context.tenant.pool,
         context.actor.user_id,
         offering_id,
@@ -864,14 +829,7 @@ pub async fn update_group(
         OfferingAction::Manage,
     )
     .await?;
-    let group = groups::update(
-        &TIMETABLE_MUTATIONS,
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        request,
-    )
-    .await?;
+    let group = groups::update(&context.tenant.pool, context.actor.user_id, id, request).await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
 }
@@ -937,14 +895,8 @@ pub async fn replace_group_homerooms(
         OfferingAction::Manage,
     )
     .await?;
-    let group = groups::replace_homerooms(
-        &TIMETABLE_MUTATIONS,
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        request,
-    )
-    .await?;
+    let group =
+        groups::replace_homerooms(&context.tenant.pool, context.actor.user_id, id, request).await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
 }
@@ -1010,14 +962,8 @@ pub async fn replace_group_teachers(
         OfferingAction::Manage,
     )
     .await?;
-    let group = groups::replace_teachers(
-        &TIMETABLE_MUTATIONS,
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        request,
-    )
-    .await?;
+    let group =
+        groups::replace_teachers(&context.tenant.pool, context.actor.user_id, id, request).await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
 }
@@ -1185,13 +1131,9 @@ pub async fn create_term_change_set(
         OfferingAction::Manage,
     )
     .await?;
-    let change_set = change_sets::create_change_set(
-        &TIMETABLE_MUTATIONS,
-        &context.tenant.pool,
-        context.actor.user_id,
-        request,
-    )
-    .await?;
+    let change_set =
+        change_sets::create_change_set(&context.tenant.pool, context.actor.user_id, request)
+            .await?;
     signal_term_change_set_changed(&state, &session, &context, &change_set, &[]).await?;
     Ok(created(change_set))
 }
@@ -1411,80 +1353,6 @@ pub async fn delete_term_change_item(
     signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
         .await?;
     Ok(ok(change_set))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/academic/term-change-sets/{id}/teacher-handoff/preview",
-    operation_id = "previewTeacherHandoff",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
-    request_body = PreviewTeacherHandoffRequest,
-    responses(
-        (status = 200, description = "Teacher timetable handoff preview", body = ApiResponse<TeacherHandoffPreview>),
-        (status = 400, description = "Invalid teacher handoff", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
-        (status = 409, description = "Teacher handoff conflict", body = ApiErrorResponse)
-    )
-)]
-pub async fn preview_teacher_handoff(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<PreviewTeacherHandoffRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
-    Ok(ok(teacher_handoff::preview(
-        &context.tenant.pool,
-        id,
-        request,
-    )
-    .await?))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/academic/term-change-sets/{id}/teacher-handoff/apply",
-    operation_id = "applyTeacherHandoff",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
-    request_body = ApplyTeacherHandoffRequest,
-    responses(
-        (status = 200, description = "Teacher timetable handoff applied", body = ApiResponse<ApplyTeacherHandoffResponse>),
-        (status = 400, description = "Invalid teacher handoff", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Teacher change item not found", body = ApiErrorResponse),
-        (status = 409, description = "Teacher handoff conflict or stale preview", body = ApiErrorResponse)
-    )
-)]
-pub async fn apply_teacher_handoff(
-    State(state): State<AppState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<ApplyTeacherHandoffRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state, &session).await?;
-    require_term_change_set_access(&context, id, OfferingAction::Manage).await?;
-    let outcome =
-        teacher_handoff::apply(&context.tenant.pool, context.actor.user_id, id, request).await?;
-    for entry in &outcome.response.handoff.proposed_entries {
-        state.websocket_manager.broadcast_mutation(
-            session.tenant.subdomain.clone(),
-            outcome.academic_term_id,
-            crate::modules::academic::websockets::TimetableEvent::TimetableChanged {
-                user_id: context.actor.user_id,
-                academic_term_id: outcome.academic_term_id,
-                timetable_version_id: outcome.response.handoff.target_timetable_version_id,
-                block_id: None,
-                revision: entry.row_version + 1,
-            },
-        );
-    }
-    Ok(ok(outcome.response))
 }
 
 #[utoipa::path(

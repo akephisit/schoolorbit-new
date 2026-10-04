@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
 	import {
 		cancelAcademicTermChangeSet,
@@ -15,7 +14,6 @@
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import * as Table from '#lib/components/ui/table/index.js';
 	import {
 		CheckCircle2,
 		CircleAlert,
@@ -46,24 +44,13 @@
 	let cancelling = $state(false);
 	let acknowledgedWarnings = $state<AcademicChangeFindingCode[]>([]);
 	let errorMessage = $state('');
-	let boardHref = $derived(
-		academicContextualMenuPath(
-			`/staff/academic/timetable?timetableVersionId=${encodeURIComponent(changeSet.targetTimetableVersionId)}`,
-			{
-				academicYearId: changeSet.academicYearId,
-				academicTermId: changeSet.academicTermId
-			},
-			null
-		)
-	);
 
 	let blockingFindings = $derived(
 		preview?.findings.filter((finding) => finding.severity === 'blocking') ?? []
 	);
 	const teacherFindingCodes = new Set<AcademicChangeFindingCode>([
 		'missing_effective_teacher',
-		'stopped_teacher_still_scheduled',
-		'entry_instructor_not_effective'
+		'missing_primary_teacher'
 	]);
 	let teacherFindings = $derived(
 		blockingFindings.filter((finding) => teacherFindingCodes.has(finding.code))
@@ -94,7 +81,7 @@
 					['ห้องประจำชั้น', preview.impactCounts.homerooms],
 					['รายชื่อนักเรียน', preview.impactCounts.membershipIntervals],
 					['ครูผู้สอน', preview.impactCounts.teacherAssignments],
-					['คาบในตารางเป้าหมาย', preview.impactCounts.targetTimetableEntries],
+					['คาบในตารางที่อ้างอิง', preview.impactCounts.targetTimetableEntries],
 					['แผนโครงสร้างคะแนน', preview.impactCounts.courseAssessmentPlans],
 					['ช่วงคะแนน', preview.impactCounts.courseAssessmentPhases],
 					['รายการคะแนนรายกลุ่ม', preview.impactCounts.learningGroupScoreItems],
@@ -185,7 +172,7 @@
 		try {
 			const updated = await publishAcademicTermChangeSet(changeSet.id, {
 				rowVersion: preview.changeSetRowVersion,
-				targetTimetableVersionRowVersion: preview.targetTimetableVersionRowVersion,
+				targetDeliveryVersionRowVersion: preview.targetDeliveryVersionRowVersion,
 				previewHash: preview.previewHash,
 				acknowledgedWarningCodes: [...new Set(warningFindings.map((finding) => finding.code))],
 				idempotencyKey: crypto.randomUUID()
@@ -249,7 +236,7 @@
 					<div class="grid gap-3 lg:grid-cols-3">
 						<div class="rounded-xl border border-sky-500/25 bg-sky-500/5 p-3">
 							<p class="flex items-center gap-2 font-medium text-sky-900">
-								<UsersRound class="size-4" /> ครูและการส่งต่อคาบ {teacherFindings.length}
+								<UsersRound class="size-4" /> ครูผู้สอน {teacherFindings.length}
 							</p>
 							<div class="mt-2 space-y-2">
 								{#each teacherFindings as finding (`teacher:${finding.code}:${finding.resourceId ?? ''}:${finding.learningGroupId ?? ''}`)}
@@ -263,21 +250,19 @@
 												variant="link"
 												class="h-auto px-0 py-1"
 											>
-												{finding.code === 'stopped_teacher_still_scheduled'
-													? 'เปิดการส่งต่อคาบ'
-													: 'ไปแก้ไข'}
+												ไปแก้ไข
 												<ExternalLink class="size-3" />
 											</Button>
 										{/if}
 									</div>
 								{:else}
-									<p class="text-sm text-emerald-700">ครูและคาบพร้อมตามวันที่เริ่มใช้</p>
+									<p class="text-sm text-emerald-700">ครูพร้อมตามวันที่เริ่มใช้</p>
 								{/each}
 							</div>
 						</div>
 						<div class="rounded-xl border border-destructive/25 bg-destructive/5 p-3">
 							<p class="flex items-center gap-2 font-medium text-destructive">
-								<CircleAlert class="size-4" /> โครงสร้างและตาราง {otherBlockingFindings.length}
+								<CircleAlert class="size-4" /> ข้อมูลเปิดสอน {otherBlockingFindings.length}
 							</p>
 							<div class="mt-2 space-y-2">
 								{#each otherBlockingFindings as finding (`${finding.code}:${finding.resourceId ?? ''}:${finding.learningGroupId ?? ''}`)}
@@ -318,11 +303,6 @@
 										<span>
 											<span class="font-medium">{finding.title}</span>
 											<span class="block text-xs text-muted-foreground">{finding.guidance}</span>
-											{#if finding.code === 'weekly_period_excess'}
-												<span class="mt-1 block text-xs font-medium text-amber-800">
-													รับทราบว่าคาบจริงมากกว่าเป้าหมาย (weekly_period_excess)
-												</span>
-											{/if}
 										</span>
 									</label>
 								{:else}
@@ -331,36 +311,13 @@
 							</div>
 						</div>
 					</div>
-
-					{#if preview.scheduleCounts.length > 0}
-						<div class="overflow-x-auto rounded-xl border">
-							<Table.Root>
-								<Table.Header>
-									<Table.Row>
-										<Table.Head>กลุ่มเรียน</Table.Head>
-										<Table.Head class="text-end">จัดแล้ว</Table.Head>
-										<Table.Head class="text-end">เป้าหมาย</Table.Head>
-									</Table.Row>
-								</Table.Header>
-								<Table.Body>
-									{#each preview.scheduleCounts as count (`${count.learningOfferingId}:${count.learningGroupId}`)}
-										<Table.Row>
-											<Table.Cell>{count.learningGroupLabel}</Table.Cell>
-											<Table.Cell class="text-end font-mono">{count.actualPeriods}</Table.Cell>
-											<Table.Cell class="text-end font-mono">{count.targetPeriods}</Table.Cell>
-										</Table.Row>
-									{/each}
-								</Table.Body>
-							</Table.Root>
-						</div>
-					{/if}
 				{:else if loadingPreview}
 					<div class="h-32 animate-pulse rounded-xl bg-muted"></div>
 				{:else}
 					<PageState
 						variant="empty"
 						title="ยังไม่ได้ตรวจความพร้อม"
-						description="บันทึกสิ่งที่ต้องการ แล้วตรวจผลกระทบก่อนจัดตารางและเผยแพร่"
+						description="บันทึกสิ่งที่ต้องการ แล้วตรวจข้อมูลเปิดสอนก่อนเผยแพร่"
 					/>
 				{/if}
 			</section>
@@ -368,43 +325,22 @@
 	</div>
 
 	<aside class="space-y-4 xl:sticky xl:top-4 xl:self-start">
-		{#if changeSet.status === 'draft'}
-			<div class="rounded-xl border bg-muted/20 p-4">
-				<h3 class="font-medium">รุ่นตารางสอนหลังเปลี่ยน</h3>
-				<p class="mt-1 text-xs text-muted-foreground">
-					จัดตารางในรุ่นแบบร่างนี้เท่านั้น รุ่นเดิมยังไม่ถูกแก้ไข
-				</p>
-				<Button
-					href={boardHref}
-					data-sveltekit-preload-data="tap"
-					variant="outline"
-					class="mt-3 w-full"
-				>
-					เปิดรุ่นตารางแบบร่าง <ExternalLink class="size-4" />
-				</Button>
-			</div>
-		{:else if changeSet.status === 'published'}
-			<div class="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
-				<h3 class="font-medium text-emerald-900">ชุดนี้เผยแพร่แล้ว</h3>
-				<p class="mt-1 text-xs text-muted-foreground">
-					มีผลตั้งแต่ {formatDate(changeSet.effectiveFrom)}{changeSet.publishedAt
+		{#if changeSet.status === 'published'}<div class="rounded-xl border p-4">
+				<h3 class="font-medium">รุ่นเปิดสอนนี้เผยแพร่แล้ว</h3>
+				<p class="mt-1 text-sm text-muted-foreground">
+					เริ่มใช้ {formatDate(changeSet.effectiveFrom)}{changeSet.publishedAt
 						? ` · เผยแพร่ ${formatDateTime(changeSet.publishedAt)}`
 						: ''}
 				</p>
-				<Button
-					href={boardHref}
-					data-sveltekit-preload-data="tap"
-					variant="outline"
-					class="mt-3 w-full"
-				>
-					เปิดรุ่นตารางที่เผยแพร่ <ExternalLink class="size-4" />
-				</Button>
+				<p class="mt-2 text-sm">
+					นำข้อมูลรุ่นนี้ไปจัดตารางสอนได้ ตารางเดิมยังคงข้อมูลของรุ่นที่อ้างอิง
+				</p>
 			</div>
-		{:else}
-			<div class="rounded-xl border bg-muted/20 p-4">
+		{:else if changeSet.status === 'cancelled'}
+			<div class="rounded-xl border p-4">
 				<h3 class="font-medium">แบบร่างนี้ยกเลิกแล้ว</h3>
-				<p class="mt-1 text-xs text-muted-foreground">
-					ไม่มีผลต่อรายการเปิดสอน กลุ่มเรียน ครู และตารางสอน
+				<p class="mt-1 text-sm text-muted-foreground">
+					รุ่นเปิดสอนที่เผยแพร่แล้วและตารางสอนเดิมยังใช้งานได้
 				</p>
 			</div>
 		{/if}
@@ -437,7 +373,7 @@
 					{:else}
 						<Clock3 class="size-4 text-muted-foreground" />
 					{/if}
-					<h3 class="font-medium">เผยแพร่ชุดใหม่</h3>
+					<h3 class="font-medium">เผยแพร่รุ่นเปิดสอน</h3>
 				</div>
 				<p class="text-xs text-muted-foreground">
 					ต้องไม่มีจุดบล็อก และรับทราบคำเตือนปัจจุบันทุกข้อ

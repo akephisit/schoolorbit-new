@@ -40,8 +40,11 @@ export type TimetableBlockPlacementPreviewRequest =
 export type TimetableBlockPlacementPreview = Schemas['TimetableBlockPlacementPreview'];
 export type CloneTimetableVersionRequest =
 	operations['cloneTimetableVersion']['requestBody']['content']['application/json'];
-export type IncludeTimetableVersionOfferingRequest =
-	operations['includeTimetableVersionOffering']['requestBody']['content']['application/json'];
+export type UpdateTimetableDeliverySourceRequest = Schemas['UpdateTimetableDeliverySourceRequest'];
+export type PreviewTimetablePublicationRequest = Schemas['PreviewTimetablePublicationRequest'];
+export type PublishTimetableVersionRequest = Schemas['PublishTimetableVersionRequest'];
+export type TimetablePublicationPreview = Schemas['TimetablePublicationPreview'];
+export type DeletedTimetableDraft = Schemas['DeletedTimetableDraft'];
 export type CreateOrdinaryTimetableBlockRequest = Schemas['CreateOrdinaryTimetableBlockRequest'];
 export type CreateSynchronizedTimetableBlockRequest =
 	Schemas['CreateSynchronizedTimetableBlockRequest'];
@@ -203,6 +206,12 @@ export const resolveTimetableVersion = (
 	);
 };
 
+export const createTimetableVersion = (body: Schemas['CreateTimetableVersionRequest']) =>
+	timetableData(
+		apiClient.post<TimetableVersion>('/api/academic/timetable-versions', body),
+		'สร้างตารางสอนแรกไม่สำเร็จ'
+	);
+
 export const cloneTimetableVersion = (sourceId: string, body: CloneTimetableVersionRequest) =>
 	timetableData(
 		apiClient.post<TimetableVersion>(
@@ -212,16 +221,40 @@ export const cloneTimetableVersion = (sourceId: string, body: CloneTimetableVers
 		'สร้างแบบร่างตารางสอนไม่สำเร็จ'
 	);
 
-export const includeTimetableVersionOffering = (
-	versionId: string,
-	body: IncludeTimetableVersionOfferingRequest
+export const updateTimetableDeliverySource = (
+	id: string,
+	body: UpdateTimetableDeliverySourceRequest
 ) =>
 	timetableData(
-		apiClient.post<TimetableVersionTarget>(
-			`/api/academic/timetable-versions/${encodeURIComponent(versionId)}/targets`,
+		apiClient.put<TimetableVersion>(
+			`/api/academic/timetable-versions/${encodeURIComponent(id)}/delivery-source`,
 			body
 		),
-		'เพิ่มรายการเปิดสอนเข้ารุ่นตารางไม่สำเร็จ'
+		'อัปเดตข้อมูลเปิดสอนไม่สำเร็จ'
+	);
+export const previewTimetablePublication = (id: string, body: PreviewTimetablePublicationRequest) =>
+	timetableData(
+		apiClient.post<TimetablePublicationPreview>(
+			`/api/academic/timetable-versions/${encodeURIComponent(id)}/publication-preview`,
+			body
+		),
+		'ตรวจความพร้อมไม่สำเร็จ'
+	);
+export const publishTimetableVersion = (id: string, body: PublishTimetableVersionRequest) =>
+	timetableData(
+		apiClient.post<TimetableVersion>(
+			`/api/academic/timetable-versions/${encodeURIComponent(id)}/publish`,
+			body
+		),
+		'เผยแพร่ตารางสอนไม่สำเร็จ'
+	);
+export const deleteTimetableDraft = (id: string, body: Schemas['DeleteTimetableDraftRequest']) =>
+	timetableData(
+		apiClient.post<DeletedTimetableDraft>(
+			`/api/academic/timetable-versions/${encodeURIComponent(id)}/delete-draft`,
+			body
+		),
+		'ลบแบบร่างไม่สำเร็จ'
 	);
 
 export const createOrdinaryTimetableBlock = (body: CreateOrdinaryTimetableBlockRequest) =>

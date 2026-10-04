@@ -29,7 +29,12 @@ class TimetableWorkspaceController {
 	board = $derived.by(() => createTimetableBoardState(this.workspace));
 	rows = $derived.by(() => rowsForTimetableView(this.board, this.view));
 	selectedRow = $derived(this.rows.find((row) => row.id === this.selectedOwnerId) ?? null);
-	canEdit = $derived(this.board.canEdit && this.pendingMutation === null);
+	editing = $state(false);
+	canEdit = $derived(this.editing && this.board.canEdit && this.pendingMutation === null);
+	setEditing = (editing: boolean) => {
+		this.editing = editing;
+		if (!editing) this.clearPlacement();
+	};
 
 	constructor(workspace: TimetableBlockWorkspace) {
 		this.workspace = $state.raw(workspace);
@@ -57,6 +62,7 @@ class TimetableWorkspaceController {
 		source: TimetableBlockPlacementSource,
 		candidate: TimetableBlockPlacementCandidate
 	) => {
+		if (!this.canEdit) return;
 		this.dragSource = { source, candidate };
 		this.preview = null;
 	};

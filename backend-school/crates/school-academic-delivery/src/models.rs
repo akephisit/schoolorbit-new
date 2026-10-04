@@ -4,6 +4,8 @@ use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+pub mod versions;
+
 use school_academic_core::models::HomeroomLookupItem;
 use school_academic_core::models::{GradeLevelLookupItem, RequirementKind, StudyProgramOption};
 
@@ -292,8 +294,8 @@ pub struct AcademicTermChangeSet {
     pub effective_from: NaiveDate,
     pub reason: String,
     pub status: AcademicTermChangeSetStatus,
-    pub base_timetable_version_id: Uuid,
-    pub target_timetable_version_id: Uuid,
+    pub base_delivery_version_id: Option<Uuid>,
+    pub target_delivery_version_id: Uuid,
     pub row_version: i64,
     pub created_by: Uuid,
     pub published_by: Option<Uuid>,
@@ -314,7 +316,7 @@ pub struct AcademicTermChangeSetSummary {
     pub effective_from: NaiveDate,
     pub reason: String,
     pub status: AcademicTermChangeSetStatus,
-    pub target_timetable_version_id: Uuid,
+    pub target_delivery_version_id: Uuid,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -518,29 +520,16 @@ pub enum AcademicChangeFindingSeverity {
 #[serde(rename_all = "snake_case")]
 pub enum AcademicChangeFindingCode {
     ChangeSetNoItems,
-    ChangeSetStale,
     TermNotWritable,
     EffectiveDateInvalid,
-    BaseTimetableVersionStale,
-    TargetTimetableVersionStale,
-    ChangeItemStale,
+    BaseDeliveryVersionStale,
     ResourceStale,
-    DraftGroup,
+    MissingDeliveryTarget,
+    MissingDeliveryGroup,
+    DeliveryGraphInvalid,
     MissingPrimaryTeacher,
-    MissingEntryInstructor,
-    UnpublishedRoster,
-    OfferingUnavailable,
     MissingWeeklyPeriodTarget,
-    WeeklyPeriodDeficit,
-    WeeklyPeriodExcess,
-    HomeroomConflict,
-    LearningGroupConflict,
-    TeacherConflict,
-    RoomConflict,
-    StoppedOfferingStillScheduled,
     MissingEffectiveTeacher,
-    StoppedTeacherStillScheduled,
-    EntryInstructorNotEffective,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
@@ -580,27 +569,15 @@ pub struct AcademicChangeImpactCounts {
     pub supervision_observations: i64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AcademicOfferingScheduleCount {
-    pub learning_offering_id: Uuid,
-    pub learning_group_id: Uuid,
-    pub offering_label: String,
-    pub learning_group_label: String,
-    pub actual_periods: i64,
-    pub target_periods: i32,
-}
-
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicTermChangeSetPreview {
     pub change_set_id: Uuid,
     pub change_set_row_version: i64,
-    pub target_timetable_version_id: Uuid,
-    pub target_timetable_version_row_version: i64,
+    pub target_delivery_version_id: Uuid,
+    pub target_delivery_version_row_version: i64,
     pub effective_from: NaiveDate,
     pub impact_counts: AcademicChangeImpactCounts,
-    pub schedule_counts: Vec<AcademicOfferingScheduleCount>,
     pub findings: Vec<AcademicChangeFinding>,
     pub preview_hash: String,
 }
@@ -609,7 +586,7 @@ pub struct AcademicTermChangeSetPreview {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishAcademicTermChangeSetRequest {
     pub row_version: i64,
-    pub target_timetable_version_row_version: i64,
+    pub target_delivery_version_row_version: i64,
     pub preview_hash: String,
     #[serde(default)]
     pub acknowledged_warning_codes: Vec<AcademicChangeFindingCode>,
@@ -627,6 +604,7 @@ pub enum TeacherHandoffMode {
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PreviewTeacherHandoffRequest {
+    pub timetable_version_id: Uuid,
     pub change_set_row_version: i64,
     pub target_timetable_version_row_version: i64,
     pub teacher_change_item_id: Uuid,
@@ -647,6 +625,7 @@ pub struct TeacherHandoffEntryVersion {
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyTeacherHandoffRequest {
+    pub timetable_version_id: Uuid,
     pub change_set_row_version: i64,
     pub target_timetable_version_row_version: i64,
     pub teacher_change_item_id: Uuid,
@@ -803,7 +782,7 @@ impl CreateLearningOfferingRequest {
 #[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateLearningOfferingQuery {
-    pub timetable_version_id: Option<Uuid>,
+    pub delivery_version_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
@@ -833,7 +812,7 @@ pub struct LearningOfferingQuery {
 pub struct HomeroomDeliveryQuery {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
-    pub timetable_version_id: Option<Uuid>,
+    pub delivery_version_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, IntoParams, ToSchema)]
@@ -863,13 +842,13 @@ pub struct ApplyCurriculumOfferingsRequest {
     pub academic_term_id: Uuid,
     pub study_program_ids: Vec<Uuid>,
     #[serde(default)]
-    pub timetable_version_id: Option<Uuid>,
+    pub delivery_version_id: Option<Uuid>,
     pub source_hash: String,
     pub idempotency_key: Uuid,
     pub choices: Vec<CurriculumPreparationChoice>,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LearningOfferingTarget {
     pub id: Uuid,
@@ -879,7 +858,7 @@ pub struct LearningOfferingTarget {
     pub study_program_id: Uuid,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CourseOfferingSnapshot {
     pub subject_version_id: Uuid,
@@ -892,7 +871,7 @@ pub struct CourseOfferingSnapshot {
     pub assessment_total_score: String,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityOfferingSnapshot {
     pub activity_version_id: Uuid,
@@ -943,7 +922,7 @@ pub struct StudentActivityRegistrationResult {
     pub revision: i64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LearningOfferingSnapshot {
     Course(CourseOfferingSnapshot),
@@ -1023,14 +1002,6 @@ pub enum HomeroomTeacherState {
     Assigned,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum HomeroomTimetableState {
-    Unscheduled,
-    PartlyScheduled,
-    Scheduled,
-}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CurriculumDeliveryAlignmentState {
@@ -1071,7 +1042,6 @@ pub struct HomeroomDeliveryGroupSummary {
     pub homeroom_ids: Vec<Uuid>,
     pub homeroom_names: Vec<String>,
     pub primary_teacher_count: i64,
-    pub timetable_entry_count: i64,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -1092,7 +1062,6 @@ pub struct HomeroomDeliveryItem {
     pub offering_state: HomeroomOfferingState,
     pub group_mode: HomeroomGroupMode,
     pub teacher_state: HomeroomTeacherState,
-    pub timetable_state: HomeroomTimetableState,
     pub alignment_states: Vec<CurriculumDeliveryAlignmentState>,
     pub groups: Vec<HomeroomDeliveryGroupSummary>,
 }
@@ -1134,11 +1103,11 @@ pub struct HomeroomDeliveryWorkspace {
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
     #[schema(required = true)]
-    pub timetable_version_id: Option<Uuid>,
+    pub delivery_version_id: Option<Uuid>,
     #[schema(required = true)]
-    pub timetable_version_status: Option<school_academic_core::models::TimetableVersionStatus>,
+    pub delivery_version_status: Option<versions::DeliveryVersionStatus>,
     #[schema(required = true)]
-    pub timetable_version_effective_from: Option<NaiveDate>,
+    pub delivery_version_effective_from: Option<NaiveDate>,
     pub homerooms: Vec<HomeroomDeliveryRoom>,
     pub unlinked: Vec<UnlinkedDeliveryItem>,
 }

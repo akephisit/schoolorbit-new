@@ -60,6 +60,7 @@ async function installDenseWorkspace(page: Parameters<typeof installTimetableMoc
 async function installDenseBoard(page: Parameters<typeof installTimetableMock>[0]) {
 	await installDenseWorkspace(page);
 	await page.goto(boardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 }
 
 test('keeps ten equal period columns within the desktop timetable board', async ({ page }) => {
@@ -103,6 +104,7 @@ test('keeps ten equal period columns within the desktop timetable board', async 
 test('keeps ten equal period columns within the whole-school overview', async ({ page }) => {
 	await installDenseWorkspace(page);
 	await page.goto(wholeSchoolUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const overview = page.locator('section').filter({
 		has: page.getByRole('heading', { name: 'ภาพรวมทั้งโรงเรียน · วันจันทร์' })
@@ -219,12 +221,14 @@ test('shows only context that adds information for homeroom and teacher views', 
 }) => {
 	await installDenseWorkspace(page);
 	await page.goto(boardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	let card = page.locator(`[data-block-id="${timetableIds.blockB}"]`);
 	await expect(card).toBeVisible();
 	await expect(card.getByText('ม.1/1 วิทยาศาสตร์', { exact: true })).toHaveCount(0);
 
 	await page.goto(teacherBoardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	card = page.locator(`[data-block-id="${timetableIds.blockB}"]`);
 	await expect(card).toBeVisible();
 	await expect(card.getByText('ม.1/1', { exact: true })).toBeVisible();
@@ -236,6 +240,7 @@ test('keeps teacher-view card typography compact and inside its period column', 
 }) => {
 	await installDenseWorkspace(page);
 	await page.goto(teacherBoardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const board = page.getByRole('region', { name: 'ตารางของ ครูคณิตศาสตร์ A' });
 	const cell = board.locator(
@@ -290,11 +295,13 @@ test('hides activity codes and uses a neutral card border', async ({ page }) => 
 test('hides the redundant teacher row only in teacher view', async ({ page }) => {
 	await installDenseWorkspace(page);
 	await page.goto(boardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	let card = page.locator(`[data-block-id="${timetableIds.blockA}"]`);
 	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toBeVisible();
 
 	await page.goto(teacherBoardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	card = page.locator(`[data-block-id="${timetableIds.blockA}"]`);
 	await expect(card).toBeVisible();
 	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toHaveCount(0);

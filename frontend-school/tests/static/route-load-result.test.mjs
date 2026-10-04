@@ -40,20 +40,20 @@ test('delivery route context requires year and term and preserves optional selec
 		{
 			academicYearId: 'year-1',
 			academicTermId: 'term-1',
-			timetableVersionId: undefined,
+			deliveryVersionId: undefined,
 			changeSetId: undefined
 		}
 	);
 	assert.deepEqual(
 		readLearningDeliveryRouteContext(
 			new URL(
-				'https://school.test/staff/academic/delivery?academicYearId=year-1&academicTermId=term-1&timetableVersionId=version-1&changeSetId=change-set-1'
+				'https://school.test/staff/academic/delivery?academicYearId=year-1&academicTermId=term-1&deliveryVersionId=version-1&changeSetId=change-set-1'
 			)
 		),
 		{
 			academicYearId: 'year-1',
 			academicTermId: 'term-1',
-			timetableVersionId: 'version-1',
+			deliveryVersionId: 'version-1',
 			changeSetId: 'change-set-1'
 		}
 	);

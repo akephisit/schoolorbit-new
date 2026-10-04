@@ -32,6 +32,7 @@ test('projects only exact instructor periods and moves one co-taught block for t
 	});
 
 	await page.goto(teacherUrl(timetableIds.teacherA));
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await expect(page.locator('article[data-block-id]')).toHaveCount(2);
 
 	const source = page.locator(`article[data-block-id="${timetableIds.blockB}"]`);
@@ -47,6 +48,7 @@ test('projects only exact instructor periods and moves one co-taught block for t
 	await expect(page.getByText('บันทึกตำแหน่งคาบแล้ว')).toBeVisible();
 
 	await page.goto(teacherUrl(timetableIds.teacherB));
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await expect(page.locator('article[data-block-id]')).toHaveCount(1);
 	await expect(
 		page
@@ -63,6 +65,7 @@ test('preselects the board teacher before creating an exact-instructor period', 
 		eligibleInstructorIds: [timetableIds.teacherA, timetableIds.teacherB]
 	});
 	await page.goto(teacherUrl(timetableIds.teacherA));
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
 	await trayCard.getByRole('button', { name: /เลือกครู/ }).click();
@@ -96,6 +99,6 @@ test('keeps published teacher boards read-only', async ({ page }) => {
 	});
 	await page.goto(teacherUrl(timetableIds.teacherA, timetableIds.publishedVersion));
 
-	await expect(page.getByText('เผยแพร่แล้ว · อ่านอย่างเดียว')).toBeVisible();
+	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
 	await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable', 'false');
 });

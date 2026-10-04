@@ -17,20 +17,20 @@ test('delivery renders set-based curriculum alignment and exact context links', 
 		'ตรงกับหลักสูตร',
 		'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
 		'เปิดสอนเพิ่มเติมนอกหลักสูตร',
-		'หยุดสอนก่อนรุ่นตารางนี้มีผล',
+		'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
 		'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
 	]) {
 		assert.match(workspace, new RegExp(copy));
 	}
 	assert.match(workspace, /room\.extraOfferings/);
 	assert.match(workspace, /room\.curriculumVersionId/);
-	assert.match(workspace, /workspace\.timetableVersionId/);
+	assert.match(workspace, /workspace\.deliveryVersionId/);
 	assert.match(workspace, /academicYearId/);
 	assert.match(workspace, /academicTermId/);
 	assert.match(workspace, /studyProgramId/);
 	assert.match(workspace, /versionId/);
 	assert.match(pageLoad, /readLearningDeliveryRouteContext\(url\)/);
-	assert.match(pageLoad, /getHomeroomDeliveryWorkspace\([\s\S]*timetableVersionId/);
+	assert.match(pageLoad, /getHomeroomDeliveryWorkspace\([\s\S]*deliveryVersionId/);
 	assert.doesNotMatch(
 		`${pageLoad}\n${page}\n${workspace}`,
 		/getLearningOffering|getLearningGroup|listLearningGroups/
@@ -47,11 +47,11 @@ test('curriculum alignment context remains read-only and cloning is an explicit 
 	);
 
 	assert.match(page, /getHomeroomDeliveryWorkspace/);
-	assert.match(page, /timetableVersionId/);
+	assert.match(page, /deliveryVersionId/);
 	assert.match(page, /studyProgramId/);
 	assert.match(page, /cloneCurriculumVersionDraft/);
 	assert.match(panel, /กลับไปจัดการการเปิดสอน/);
-	assert.match(panel, /workspace\.timetableVersionId/);
+	assert.match(panel, /workspace\.deliveryVersionId/);
 	assert.doesNotMatch(panel, /getLearningOffering|getLearningGroup|listLearningGroups/);
 	assert.match(versions, /selectedVersion\?\.version\.status === 'published'/);
 	assert.match(versions, /sourceRowVersion/);

@@ -5,10 +5,7 @@ use crate::modules::academic::{
         CutoverFixture,
     },
     models::{
-        timetable_block::{
-            CreateOrdinaryTimetableBlockRequest, TimetableBlockWorkspaceQuery,
-            UpdateTimetableBlockRequest,
-        },
+        timetable_block::CreateOrdinaryTimetableBlockRequest,
         timetable_version::CloneTimetableVersionRequest,
     },
     services::{timetable_block_service, timetable_version_service},
@@ -576,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 60).await.unwrap();
+    apply_migrations_through(&pool, 88).await.unwrap();
     pool
 }
 
@@ -587,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 60).await.unwrap();
+    apply_migrations_through(&pool, 88).await.unwrap();
     pool
 }
 
@@ -595,6 +592,14 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
 async fn lifecycle_delivery_closure_checks_the_year_and_keeps_closing_editable() {
     let pool = prepare_delivery_runtime_fixture("delivery_lifecycle_states").await;
     let context = planning_runtime_context(&pool).await;
+    sqlx::query(
+        "UPDATE academic_years SET status='closed' WHERE id<>$1 AND status IN ('active','closing')",
+    )
+    .bind(context.year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=COALESCE(planned_end_date,start_date) WHERE id<>$1 AND status IN ('active','closing')").bind(context.term_id).execute(&pool).await.unwrap();
     for (year_status, term_status, writable) in [
         ("closing", "closing", true),
         ("closed", "planning", false),
@@ -1182,9 +1187,10 @@ async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
              AND offering.status IN ('draft', 'published')
              AND NOT EXISTS (
                  SELECT 1
-                 FROM academic_timetable_version_targets target
-                 WHERE target.timetable_version_id = $2
-                   AND target.learning_offering_id = offering.id
+                 FROM academic_timetable_versions version
+                 JOIN academic_delivery_versions opening ON opening.id=version.delivery_version_id
+                 CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry
+                 WHERE version.id=$2 AND (entry->>'id')::uuid=offering.id
              )"#,
     )
     .bind(term_id)
@@ -1232,58 +1238,90 @@ async fn create_runtime_change_set(
     .expect("a planning term must accept a draft operational change")
 }
 
+async fn independent_table_draft(
+    pool: &PgPool,
+    context: &RuntimeContext,
+) -> school_academic_timetable::models::timetable_version::TimetableVersion {
+    let source_id: Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id LIMIT 1")
+        .bind(context.term_id).fetch_one(pool).await.unwrap();
+    let source = timetable_version_service::get_version(pool, source_id, Utc::now().date_naive())
+        .await
+        .unwrap();
+    timetable_version_service::clone_draft(
+        pool,
+        context.teacher_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+async fn table_preview(
+    pool: &PgPool,
+    draft_id: Uuid,
+) -> school_academic_timetable::models::timetable_publication::TimetablePublicationPreview {
+    let table = timetable_version_service::get_version(pool, draft_id, Utc::now().date_naive())
+        .await
+        .unwrap();
+    let opening =
+        school_academic_delivery::services::versions::get_version(pool, table.delivery_version_id)
+            .await
+            .unwrap();
+    school_academic_timetable::services::timetable_lifecycle::preview(pool,draft_id,school_academic_timetable::models::timetable_publication::PreviewTimetablePublicationRequest {
+        row_version:table.row_version,effective_from:opening.effective_from.succ_opt().unwrap()
+    }).await.unwrap()
+}
+
 async fn fill_change_set_target_deficits(
     pool: &PgPool,
     actor_user_id: Uuid,
     academic_term_id: Uuid,
     timetable_version_id: Uuid,
 ) {
-    let deficits: Vec<(Uuid, String, i64)> = sqlx::query_as(
-        r#"SELECT learning_group.id, upper(offering.kind)::text,
-                  greatest(target.weekly_period_target - count(block_group.id), 0)::bigint
-           FROM academic_timetable_version_targets target
-           JOIN learning_offerings offering ON offering.id = target.learning_offering_id
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = target.learning_offering_id
-            AND learning_group.status <> 'closed'
-           LEFT JOIN academic_timetable_blocks block
-             ON block.timetable_version_id = target.timetable_version_id
-            AND block.learning_offering_id = target.learning_offering_id
-            AND block.is_active
-           LEFT JOIN academic_timetable_block_groups block_group
-             ON block_group.block_id = block.id
-            AND block_group.learning_group_id = learning_group.id
-            AND block_group.is_active
-           WHERE target.timetable_version_id = $1
-           GROUP BY learning_group.id, offering.kind, target.weekly_period_target
-           HAVING count(block_group.id) < target.weekly_period_target
-           ORDER BY learning_group.id"#,
-    )
-    .bind(timetable_version_id)
-    .fetch_all(pool)
-    .await
-    .unwrap();
-    for (group_id, _entry_type, missing_count) in deficits {
-        let instructor_ids: Vec<Uuid> = sqlx::query_scalar(
-            r#"SELECT assignment.teacher_id
-               FROM learning_group_teachers assignment
-               JOIN academic_timetable_versions version ON version.id = $2
-               JOIN users teacher ON teacher.id = assignment.teacher_id
-               WHERE assignment.learning_group_id = $1
-                 AND assignment.starts_on <= version.effective_from
-                 AND (assignment.ends_on IS NULL OR assignment.ends_on >= version.effective_from)
-                 AND teacher.status = 'active'
-               ORDER BY CASE assignment.role WHEN 'primary' THEN 1 ELSE 2 END,
-                        assignment.starts_on, assignment.teacher_id"#,
-        )
-        .bind(group_id)
-        .bind(timetable_version_id)
-        .fetch_all(pool)
-        .await
-        .unwrap();
-        for _ in 0..missing_count {
-            let slots: Vec<(String, Uuid)> = sqlx::query_as(
-                r#"SELECT day.code, period.id
+    let table =
+        timetable_version_service::get_version(pool, timetable_version_id, Utc::now().date_naive())
+            .await
+            .unwrap();
+    let opening =
+        school_academic_delivery::services::versions::get_version(pool, table.delivery_version_id)
+            .await
+            .unwrap();
+    for offering in &opening.snapshot.offerings {
+        if matches!(&offering.catalog,LearningOfferingSnapshot::Activity(activity) if activity.scheduling_mode==ActivitySchedulingMode::Synchronized)
+        {
+            let placed_count: i64=sqlx::query_scalar("SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND learning_offering_id=$2 AND is_active").bind(timetable_version_id).bind(offering.id).fetch_one(pool).await.unwrap();
+            for _ in placed_count..i64::from(offering.weekly_period_target) {
+                let slots: Vec<(String,Uuid)>=sqlx::query_as("SELECT day.code,period.id FROM academic_terms term JOIN bell_schedule_periods period ON period.bell_schedule_id=term.bell_schedule_id CROSS JOIN (VALUES('MON'),('TUE'),('WED'),('THU'),('FRI')) day(code) WHERE term.id=$1 AND period.is_active ORDER BY day.code,period.order_index").bind(academic_term_id).fetch_all(pool).await.unwrap();
+                let mut placed = false;
+                for (day_of_week, bell_schedule_period_id) in slots {
+                    match timetable_block_service::create_synchronized_block(pool,actor_user_id,school_academic_timetable::models::timetable_block::CreateSynchronizedTimetableBlockRequest {
+                    timetable_version_id,academic_term_id,learning_offering_id:offering.id,day_of_week,bell_schedule_period_id,intended_homeroom_ids:offering.homeroom_ids.clone(),teacher_ids:vec![],room_id:None,note:None
+                }).await {
+                    Ok(_) => {placed=true;break;},Err(AppError::Conflict(_))=>{},Err(error)=>panic!("unexpected activity placement error: {error:?}")
+                }
+                }
+                assert!(placed, "fixture requires a conflict-free activity slot");
+            }
+            continue;
+        }
+        for group in &offering.groups {
+            let group_id = group.id;
+            let placed_count: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id WHERE block.timetable_version_id=$1 AND placed.learning_group_id=$2 AND placed.is_active AND block.is_active")
+            .bind(timetable_version_id).bind(group_id).fetch_one(pool).await.unwrap();
+            let missing_count = i64::from(offering.weekly_period_target) - placed_count;
+            let instructor_ids = group
+                .teachers
+                .iter()
+                .map(|teacher| teacher.teacher_id)
+                .collect::<Vec<_>>();
+            for _ in 0..missing_count {
+                let slots: Vec<(String, Uuid)> = sqlx::query_as(
+                    r#"SELECT day.code, period.id
                    FROM (VALUES ('MON'), ('TUE'), ('WED'), ('THU'), ('FRI')) AS day(code)
                    JOIN academic_terms term ON term.id = $1
                    JOIN bell_schedule_periods period
@@ -1291,34 +1329,35 @@ async fn fill_change_set_target_deficits(
                     AND period.is_active
                    ORDER BY day.code, period.order_index
                    LIMIT 100"#,
-            )
-            .bind(academic_term_id)
-            .fetch_all(pool)
-            .await
-            .expect("fixture must leave enough empty timetable slots");
-            let mut placed = false;
-            for (day_of_week, bell_schedule_period_id) in slots {
-                let result = timetable_block_service::create_ordinary_block(
-                    pool,
-                    actor_user_id,
-                    CreateOrdinaryTimetableBlockRequest {
-                        timetable_version_id,
-                        academic_term_id,
-                        learning_group_id: group_id,
-                        day_of_week,
-                        bell_schedule_period_id,
-                        room_id: None,
-                        note: Some("เติมคาบสำหรับทดสอบ readiness".to_string()),
-                        instructor_ids: instructor_ids.clone(),
-                    },
                 )
-                .await;
-                if result.is_ok() {
-                    placed = true;
-                    break;
+                .bind(academic_term_id)
+                .fetch_all(pool)
+                .await
+                .expect("fixture must leave enough empty timetable slots");
+                let mut placed = false;
+                for (day_of_week, bell_schedule_period_id) in slots {
+                    let result = timetable_block_service::create_ordinary_block(
+                        pool,
+                        actor_user_id,
+                        CreateOrdinaryTimetableBlockRequest {
+                            timetable_version_id,
+                            academic_term_id,
+                            learning_group_id: group_id,
+                            day_of_week,
+                            bell_schedule_period_id,
+                            room_id: None,
+                            note: Some("เติมคาบสำหรับทดสอบ readiness".to_string()),
+                            instructor_ids: instructor_ids.clone(),
+                        },
+                    )
+                    .await;
+                    if result.is_ok() {
+                        placed = true;
+                        break;
+                    }
                 }
+                assert!(placed, "fixture must leave a valid timetable slot");
             }
-            assert!(placed, "fixture must leave a valid timetable slot");
         }
     }
 }
@@ -1546,6 +1585,24 @@ async fn teacher_change_items_support_add_adjust_stop_and_delete() {
 async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically() {
     let pool = prepare_delivery_runtime_fixture("academic_teacher_handoff_apply").await;
     let context = operational_change_runtime_context(&pool).await;
+    let source_id: Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id LIMIT 1").bind(context.term_id).fetch_one(&pool).await.unwrap();
+    let source = timetable_version_service::get_version(&pool, source_id, Utc::now().date_naive())
+        .await
+        .unwrap();
+    let base = school_academic_delivery::services::versions::get_version(
+        &pool,
+        source.delivery_version_id,
+    )
+    .await
+    .unwrap();
+    let group = base
+        .snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| &offering.groups)
+        .find(|group| !group.teachers.is_empty())
+        .unwrap();
+    let stopped = &group.teachers[0];
     let change_set = create_runtime_change_set(
         &pool,
         context.teacher_id,
@@ -1554,89 +1611,19 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
         "teacher-handoff:create",
     )
     .await;
-    let (entry_id, group_id, stopped_assignment_id, stopped_teacher_id): (Uuid, Uuid, Uuid, Uuid) =
-        sqlx::query_as(
-            r#"SELECT block_group.id, block_group.learning_group_id, assignment.id,
-                  instructor.instructor_id
-           FROM academic_timetable_block_groups block_group
-           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-           JOIN academic_timetable_block_group_instructors instructor
-             ON instructor.block_group_id = block_group.id
-           JOIN learning_group_teachers assignment
-             ON assignment.learning_group_id = block_group.learning_group_id
-            AND assignment.teacher_id = instructor.instructor_id
-           WHERE block.timetable_version_id = $1
-             AND block.is_active
-             AND block_group.is_active
-             AND assignment.starts_on < $2
-             AND (assignment.ends_on IS NULL OR assignment.ends_on >= $2)
-           ORDER BY block_group.id, instructor.instructor_id
-           LIMIT 1"#,
-        )
-        .bind(change_set.target_timetable_version_id)
-        .bind(change_set.effective_from)
-        .fetch_one(&pool)
-        .await
-        .expect("target draft must contain an entry with an effective exact instructor");
-    fill_change_set_target_deficits(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        change_set.target_timetable_version_id,
-    )
-    .await;
-    let replacement_teacher_id = stable_uuid("teacher-handoff:replacement");
-    sqlx::query(
-        r#"INSERT INTO users (
-               id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูรับช่วง', 'ทดสอบ',
-                     'staff', 'active')"#,
-    )
-    .bind(replacement_teacher_id)
-    .bind(format!("{replacement_teacher_id}@example.invalid"))
-    .bind(format!("teacher-{replacement_teacher_id}"))
-    .execute(&pool)
-    .await
-    .unwrap();
-    let coteacher_id = stable_uuid("teacher-handoff:coteacher");
-    sqlx::query(
-        r#"INSERT INTO users (
-               id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูร่วม', 'ทดสอบ',
-                     'staff', 'active')"#,
-    )
-    .bind(coteacher_id)
-    .bind(format!("{coteacher_id}@example.invalid"))
-    .bind(format!("teacher-{coteacher_id}"))
-    .execute(&pool)
-    .await
-    .unwrap();
-    let with_replacement = change_sets::upsert_change_item(
+    let replacement = stable_uuid("teacher-handoff:replacement");
+    sqlx::query("INSERT INTO users(id,email,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,$3,'fixture-not-a-login','ครูรับช่วง','ทดสอบ','staff','active')")
+        .bind(replacement).bind(format!("{replacement}@example.invalid")).bind(format!("teacher-{replacement}")).execute(&pool).await.unwrap();
+    let added = change_sets::upsert_change_item(
         &pool,
         context.teacher_id,
         change_set.id,
         UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
             change_set_row_version: change_set.row_version,
             item_row_version: None,
-            learning_group_id: group_id,
-            teacher_id: replacement_teacher_id,
+            learning_group_id: group.id,
+            teacher_id: replacement,
             teacher_role: LearningTeacherRole::Primary,
-        },
-    )
-    .await
-    .unwrap();
-    let with_coteacher = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
-            change_set_row_version: with_replacement.row_version,
-            item_row_version: None,
-            learning_group_id: group_id,
-            teacher_id: coteacher_id,
-            teacher_role: LearningTeacherRole::Secondary,
         },
     )
     .await
@@ -1646,16 +1633,16 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
         context.teacher_id,
         change_set.id,
         UpsertAcademicTermChangeItemRequest::StopGroupTeacher {
-            change_set_row_version: with_coteacher.row_version,
+            change_set_row_version: added.row_version,
             item_row_version: None,
-            learning_group_id: group_id,
-            learning_group_teacher_id: stopped_assignment_id,
-            teacher_id: stopped_teacher_id,
+            learning_group_id: group.id,
+            learning_group_teacher_id: stopped.assignment_id,
+            teacher_id: stopped.teacher_id,
         },
     )
     .await
     .unwrap();
-    let stop_item_id = changed
+    let stop_item = changed
         .items
         .iter()
         .find_map(|item| match item {
@@ -1663,145 +1650,80 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
             _ => None,
         })
         .unwrap();
-    let version_row_version: i64 =
-        sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id = $1")
-            .bind(changed.target_timetable_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let manual = teacher_handoff::preview(
-        &pool,
-        changed.id,
-        PreviewTeacherHandoffRequest {
-            change_set_row_version: changed.row_version,
-            target_timetable_version_row_version: version_row_version,
-            teacher_change_item_id: stop_item_id,
-            entry_ids: Vec::new(),
-            mode: TeacherHandoffMode::Manual,
-            instructor_ids: Vec::new(),
-        },
-    )
-    .await
-    .expect("manual handoff must return the affected entries without a mutation proposal");
-    assert!(!manual.can_apply);
-    assert!(manual.preview_hash.is_none());
-    assert!(manual.proposed_entries.is_empty());
-    assert!(manual
-        .timetable_route
-        .contains(&format!("academicYearId={}", changed.academic_year_id)));
-    assert!(manual
-        .timetable_route
-        .contains(&format!("academicTermId={}", changed.academic_term_id)));
-    assert!(manual.timetable_route.contains(&format!(
-        "timetableVersionId={}",
-        changed.target_timetable_version_id
-    )));
-    assert!(manual.timetable_route.contains("view=group"));
-    assert!(manual
-        .timetable_route
-        .contains(&format!("ownerId={group_id}")));
-
-    let coteacher_preview = teacher_handoff::preview(
-        &pool,
-        changed.id,
-        PreviewTeacherHandoffRequest {
-            change_set_row_version: changed.row_version,
-            target_timetable_version_row_version: version_row_version,
-            teacher_change_item_id: stop_item_id,
-            entry_ids: vec![entry_id],
-            mode: TeacherHandoffMode::AssignCoteachers,
-            instructor_ids: vec![coteacher_id, replacement_teacher_id],
-        },
-    )
-    .await
-    .expect("two projected teachers must preview as an exact co-teacher set");
-    assert!(coteacher_preview.can_apply);
-    let coteacher_entry = coteacher_preview
-        .proposed_entries
-        .iter()
-        .find(|entry| entry.entry_id == entry_id)
+    let opening_preview = change_sets::preview_change_set(&pool, changed.id)
+        .await
         .unwrap();
-    assert!(coteacher_entry
-        .after_instructors
-        .iter()
-        .any(|instructor| instructor.instructor_id == replacement_teacher_id));
-    assert!(coteacher_entry
-        .after_instructors
-        .iter()
-        .any(|instructor| instructor.instructor_id == coteacher_id));
-
-    let ineligible_teacher_id = stable_uuid("teacher-handoff:ineligible");
-    sqlx::query(
-        r#"INSERT INTO users (
-               id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูนอกทีม', 'ทดสอบ',
-                     'staff', 'active')"#,
+    let published = change_sets::publish_change_set(
+        &pool,
+        context.teacher_id,
+        changed.id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: opening_preview.change_set_row_version,
+            target_delivery_version_row_version: opening_preview
+                .target_delivery_version_row_version,
+            preview_hash: opening_preview.preview_hash,
+            acknowledged_warning_codes: vec![],
+            idempotency_key: Uuid::new_v4(),
+        },
     )
-    .bind(ineligible_teacher_id)
-    .bind(format!("{ineligible_teacher_id}@example.invalid"))
-    .bind(format!("teacher-{ineligible_teacher_id}"))
-    .execute(&pool)
     .await
     .unwrap();
+    let draft = timetable_version_service::clone_draft(
+        &pool,
+        context.teacher_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        draft.delivery_version_id,
+        published.target_delivery_version_id
+    );
+    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
+    let draft = timetable_version_service::get_version(&pool, draft.id, Utc::now().date_naive())
+        .await
+        .unwrap();
+    let entry_id: Uuid=sqlx::query_scalar("SELECT placed.id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetable_block_group_instructors instructor ON instructor.block_group_id=placed.id WHERE block.timetable_version_id=$1 AND placed.learning_group_id=$2 AND instructor.instructor_id=$3 ORDER BY placed.id LIMIT 1")
+        .bind(draft.id).bind(group.id).bind(stopped.teacher_id).fetch_one(&pool).await.unwrap();
+    let request = PreviewTeacherHandoffRequest {
+        timetable_version_id: draft.id,
+        change_set_row_version: published.row_version,
+        target_timetable_version_row_version: draft.row_version,
+        teacher_change_item_id: stop_item,
+        entry_ids: vec![entry_id],
+        mode: TeacherHandoffMode::AssignOne,
+        instructor_ids: vec![replacement],
+    };
+    let preview = teacher_handoff::preview(&pool, published.id, request.clone())
+        .await
+        .unwrap();
+    assert!(preview.conflicts.is_empty());
+    assert_eq!(preview.proposed_entries.len(), 1);
+    assert!(preview.proposed_entries[0]
+        .after_instructors
+        .iter()
+        .all(|teacher| teacher.instructor_id != stopped.teacher_id));
     let ineligible = teacher_handoff::preview(
         &pool,
-        changed.id,
+        published.id,
         PreviewTeacherHandoffRequest {
-            change_set_row_version: changed.row_version,
-            target_timetable_version_row_version: version_row_version,
-            teacher_change_item_id: stop_item_id,
-            entry_ids: vec![entry_id],
-            mode: TeacherHandoffMode::AssignOne,
-            instructor_ids: vec![ineligible_teacher_id],
+            instructor_ids: vec![stopped.teacher_id],
+            ..request
         },
     )
     .await
-    .expect("ineligible teachers must be reported as a typed preview conflict");
-    assert!(!ineligible.can_apply);
-    assert!(ineligible.conflicts.iter().any(|conflict| {
-        conflict.kind == super::models::TeacherHandoffConflictKind::IneligibleInstructor
-    }));
-
-    let preview = teacher_handoff::preview(
-        &pool,
-        changed.id,
-        PreviewTeacherHandoffRequest {
-            change_set_row_version: changed.row_version,
-            target_timetable_version_row_version: version_row_version,
-            teacher_change_item_id: stop_item_id,
-            entry_ids: Vec::new(),
-            mode: TeacherHandoffMode::AssignOne,
-            instructor_ids: vec![replacement_teacher_id],
-        },
-    )
-    .await
-    .expect("an eligible replacement without a collision must preview");
-    assert!(preview.can_apply);
-    assert!(preview.conflicts.is_empty());
-    assert!(!preview.proposed_entries.is_empty());
-    let proposed = preview
-        .proposed_entries
-        .iter()
-        .find(|entry| entry.entry_id == entry_id)
-        .unwrap();
-    assert!(proposed
-        .before_instructors
-        .iter()
-        .any(|instructor| instructor.instructor_id == stopped_teacher_id));
-    assert!(proposed
-        .after_instructors
-        .iter()
-        .any(|instructor| instructor.instructor_id == replacement_teacher_id));
-    assert!(!proposed
-        .after_instructors
-        .iter()
-        .any(|instructor| instructor.instructor_id == stopped_teacher_id));
-
-    let stale_apply_request = ApplyTeacherHandoffRequest {
-        change_set_row_version: changed.row_version,
-        target_timetable_version_row_version: version_row_version,
-        teacher_change_item_id: stop_item_id,
+    .unwrap();
+    assert!(!ineligible.conflicts.is_empty());
+    let apply = ApplyTeacherHandoffRequest {
+        timetable_version_id: draft.id,
+        change_set_row_version: published.row_version,
+        target_timetable_version_row_version: draft.row_version,
+        teacher_change_item_id: stop_item,
         entries: preview
             .proposed_entries
             .iter()
@@ -1811,244 +1733,36 @@ async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically(
             })
             .collect(),
         mode: TeacherHandoffMode::AssignOne,
-        instructor_ids: vec![replacement_teacher_id],
-        preview_hash: preview.preview_hash.clone().unwrap(),
-        idempotency_key: stable_uuid("teacher-handoff:stale-apply"),
+        instructor_ids: vec![replacement],
+        preview_hash: preview.preview_hash.unwrap(),
+        idempotency_key: Uuid::new_v4(),
     };
-
-    sqlx::query(
-        "UPDATE academic_timetable_versions SET row_version = row_version + 1 WHERE id = $1",
-    )
-    .bind(changed.target_timetable_version_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let stale = teacher_handoff::apply(&pool, context.teacher_id, changed.id, stale_apply_request)
-        .await
-        .expect_err("a handoff based on a stale timetable revision must conflict");
-    assert!(matches!(stale, AppError::Conflict(_)));
-    let unchanged_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT instructor_id FROM academic_timetable_block_group_instructors WHERE block_group_id = $1 ORDER BY instructor_id",
-    )
-    .bind(entry_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert!(unchanged_ids.contains(&stopped_teacher_id));
-    assert!(!unchanged_ids.contains(&replacement_teacher_id));
-
-    let fresh_version_row_version: i64 =
-        sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id = $1")
-            .bind(changed.target_timetable_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let fresh_preview = teacher_handoff::preview(
-        &pool,
-        changed.id,
-        PreviewTeacherHandoffRequest {
-            change_set_row_version: changed.row_version,
-            target_timetable_version_row_version: fresh_version_row_version,
-            teacher_change_item_id: stop_item_id,
-            entry_ids: Vec::new(),
-            mode: TeacherHandoffMode::AssignOne,
-            instructor_ids: vec![replacement_teacher_id],
-        },
-    )
-    .await
-    .expect("a refreshed preview must be applicable");
-    let fresh_proposed = fresh_preview
-        .proposed_entries
-        .iter()
-        .find(|entry| entry.entry_id == entry_id)
-        .unwrap();
-    let apply_request = ApplyTeacherHandoffRequest {
-        change_set_row_version: changed.row_version,
-        target_timetable_version_row_version: fresh_version_row_version,
-        teacher_change_item_id: stop_item_id,
-        entries: fresh_preview
-            .proposed_entries
-            .iter()
-            .map(|entry| TeacherHandoffEntryVersion {
-                entry_id: entry.entry_id,
-                row_version: entry.row_version,
-            })
-            .collect(),
-        mode: TeacherHandoffMode::AssignOne,
-        instructor_ids: vec![replacement_teacher_id],
-        preview_hash: fresh_preview.preview_hash.clone().unwrap(),
-        idempotency_key: stable_uuid("teacher-handoff:apply"),
-    };
-    for (year_status, term_status) in [("closed", "active"), ("active", "closed")] {
-        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
-            .bind(context.year_id)
-            .bind(year_status)
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(context.term_id).bind(term_status).execute(&pool).await.unwrap();
-        assert!(
-            matches!(
-                teacher_handoff::apply(
-                    &pool,
-                    context.teacher_id,
-                    changed.id,
-                    apply_request.clone()
-                )
-                .await,
-                Err(AppError::Conflict(_))
-            ),
-            "closed context must reject a new handoff"
-        );
-    }
-    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
-        .bind(context.year_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL WHERE id=$1")
-        .bind(context.term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let applied =
-        teacher_handoff::apply(&pool, context.teacher_id, changed.id, apply_request.clone())
-            .await
-            .expect("a fresh conflict-free preview must apply atomically");
-    assert_eq!(applied.academic_term_id, changed.academic_term_id);
-    assert!(!applied.response.replayed);
-    assert_eq!(
-        applied.response.updated_entries[0].row_version,
-        fresh_proposed.row_version + 1
-    );
-    let exact_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT instructor_id FROM academic_timetable_block_group_instructors WHERE block_group_id = $1 ORDER BY instructor_id",
-    )
-    .bind(entry_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert!(exact_ids.contains(&replacement_teacher_id));
-    assert!(!exact_ids.contains(&stopped_teacher_id));
-    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
-        .bind(context.term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let replayed = teacher_handoff::apply(&pool, context.teacher_id, changed.id, apply_request)
-        .await
-        .expect("a completed handoff must replay its retained receipt even after closure");
-    assert_eq!(replayed.academic_term_id, changed.academic_term_id);
-    assert!(replayed.response.replayed);
-    sqlx::query("UPDATE academic_terms SET status='planning',closed_on=NULL WHERE id=$1")
-        .bind(context.term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let readiness = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .expect("the handed-off target must return readiness");
-    assert!(!readiness.findings.iter().any(|finding| {
-        matches!(
-            finding.code,
-            AcademicChangeFindingCode::StoppedTeacherStillScheduled
-                | AcademicChangeFindingCode::EntryInstructorNotEffective
-        )
-    }));
-    let blockers = readiness
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking)
-        .collect::<Vec<_>>();
-    assert!(blockers.is_empty(), "unexpected blockers: {blockers:?}");
-    let warning_codes = readiness
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
-        .map(|finding| finding.code)
-        .collect::<Vec<_>>();
-    let published = change_sets::publish_change_set(
+    let stale = teacher_handoff::apply(
         &pool,
         context.teacher_id,
-        changed.id,
-        PublishAcademicTermChangeSetRequest {
-            row_version: readiness.change_set_row_version,
-            target_timetable_version_row_version: readiness.target_timetable_version_row_version,
-            preview_hash: readiness.preview_hash,
-            acknowledged_warning_codes: warning_codes,
-            idempotency_key: stable_uuid("teacher-handoff:publish"),
+        published.id,
+        ApplyTeacherHandoffRequest {
+            preview_hash: "0".repeat(64),
+            ..apply.clone()
         },
     )
     .await
-    .expect("complete handoff must permit atomic teacher and timetable publication");
-    assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
-    let old_ends_on: Option<NaiveDate> =
-        sqlx::query_scalar("SELECT ends_on FROM learning_group_teachers WHERE id = $1")
-            .bind(stopped_assignment_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(
-        old_ends_on,
-        changed
-            .effective_from
-            .checked_sub_signed(chrono::Duration::days(1))
-    );
-    let new_starts_on: NaiveDate = sqlx::query_scalar(
-        r#"SELECT starts_on FROM learning_group_teachers
-           WHERE learning_group_id = $1 AND teacher_id = $2
-             AND started_by_change_set_id = $3"#,
-    )
-    .bind(group_id)
-    .bind(replacement_teacher_id)
-    .bind(changed.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(new_starts_on, changed.effective_from);
-    let before_version = timetable_version_service::resolve_for_date(
-        &pool,
-        context.term_id,
-        changed.effective_from.pred_opt().unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(before_version.id, changed.base_timetable_version_id);
-    let effective_version =
-        timetable_version_service::resolve_for_date(&pool, context.term_id, changed.effective_from)
-            .await
-            .unwrap();
-    assert_eq!(effective_version.id, changed.target_timetable_version_id);
-
-    let published_workspace = timetable_block_service::get_workspace(
-        &pool,
-        TimetableBlockWorkspaceQuery {
-            academic_year_id: changed.academic_year_id,
-            academic_term_id: changed.academic_term_id,
-            timetable_version_id: changed.target_timetable_version_id,
-        },
-        &school_academic_timetable::policy::TimetableAccessFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
-    )
-    .await
-    .expect("a published timetable must read persisted teachers without replaying its change set");
-    let published_group = published_workspace
-        .learning_groups
-        .iter()
-        .find(|group| group.id == group_id)
-        .expect("the changed group must remain in the published workspace");
-    assert!(published_group
-        .eligible_instructors
-        .iter()
-        .any(|teacher| teacher.teacher_id == replacement_teacher_id));
-    assert!(!published_group
-        .eligible_instructors
-        .iter()
-        .any(|teacher| teacher.teacher_id == stopped_teacher_id));
+    .unwrap_err();
+    assert!(matches!(stale, AppError::Conflict(_)));
+    let applied = teacher_handoff::apply(&pool, context.teacher_id, published.id, apply.clone())
+        .await
+        .unwrap();
+    assert!(!applied.response.replayed);
+    let replayed = teacher_handoff::apply(&pool, context.teacher_id, published.id, apply)
+        .await
+        .unwrap();
+    assert!(replayed.response.replayed);
+    let instructors: Vec<Uuid>=sqlx::query_scalar("SELECT instructor_id FROM academic_timetable_block_group_instructors WHERE block_group_id=$1 ORDER BY instructor_id").bind(entry_id).fetch_all(&pool).await.unwrap();
+    assert!(instructors.contains(&replacement));
+    assert!(!instructors.contains(&stopped.teacher_id));
+    let historical: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups placed ON placed.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=placed.block_id WHERE block.timetable_version_id=$1 AND placed.learning_group_id=$2 AND instructor.instructor_id=$3)")
+        .bind(source_id).bind(group.id).bind(stopped.teacher_id).fetch_one(&pool).await.unwrap();
+    assert!(historical, "handoff never rewrites the published table");
 }
 
 async fn add_operational_change_catalog_fixture(
@@ -2155,127 +1869,80 @@ async fn add_operational_change_catalog_fixture(
 
 #[tokio::test]
 async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_create").await;
+    let pool = prepare_delivery_runtime_fixture("academic_opening_clone").await;
     let context = operational_change_runtime_context(&pool).await;
-    let term_start: NaiveDate =
-        sqlx::query_scalar("SELECT start_date FROM academic_terms WHERE id = $1")
-            .bind(context.term_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let effective_from = term_start
-        .checked_add_signed(chrono::Duration::days(10))
+    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_timetable_versions")
+        .fetch_one(&pool)
+        .await
         .unwrap();
-    let idempotency_key = stable_uuid("change-set:create:idempotency");
-    let request = CreateAcademicTermChangeSetRequest {
-        academic_term_id: context.term_id,
-        effective_from,
-        reason: "  ปรับการเปิดสอนระหว่างภาคเรียน  ".to_string(),
-        idempotency_key,
-    };
-
-    let base_version_id: Uuid = sqlx::query_scalar(
-        r#"SELECT id
-           FROM academic_timetable_versions
-           WHERE academic_term_id = $1
-             AND status = 'published'
-             AND effective_from <= $2
-           ORDER BY effective_from DESC, id
-           LIMIT 1"#,
+    let created = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        10,
+        "opening:clone",
     )
-    .bind(context.term_id)
-    .bind(effective_from)
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must contain an effective published base version");
-    let base_counts: (i64, i64, i64) = sqlx::query_as(
-        r#"SELECT
-               (SELECT count(*) FROM academic_timetable_version_targets WHERE timetable_version_id = $1),
-               (SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active),
-               (SELECT count(*) FROM academic_timetable_block_group_instructors instructor
-                  JOIN academic_timetable_block_groups block_group
-                    ON block_group.id = instructor.block_group_id
-                  JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-                 WHERE block.timetable_version_id = $1
-                   AND block.is_active
-                   AND block_group.is_active)"#,
+    .await;
+    let base = school_academic_delivery::services::versions::get_version(
+        &pool,
+        created.base_delivery_version_id.unwrap(),
     )
-    .bind(base_version_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
-
-    let created = change_sets::create_change_set(&pool, context.teacher_id, request.clone())
-        .await
-        .expect("change set creation must clone the effective base");
-
-    assert_eq!(created.status, AcademicTermChangeSetStatus::Draft);
-    assert_eq!(created.reason, "ปรับการเปิดสอนระหว่างภาคเรียน");
-    assert_eq!(created.base_timetable_version_id, base_version_id);
-    assert_ne!(created.target_timetable_version_id, base_version_id);
-    assert_eq!(created.effective_from, effective_from);
+    let target = school_academic_delivery::services::versions::get_version(
+        &pool,
+        created.target_delivery_version_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(target.source_version_id, Some(base.id));
+    assert_eq!(
+        target.status,
+        school_academic_delivery::models::versions::DeliveryVersionStatus::Draft
+    );
+    assert_eq!(
+        serde_json::to_value(&target.snapshot).unwrap(),
+        serde_json::to_value(&base.snapshot).unwrap()
+    );
     assert!(created.items.is_empty());
-
-    let target_context: (Uuid, Uuid, NaiveDate, String, Option<Uuid>) = sqlx::query_as(
-        r#"SELECT academic_term_id, source_version_id, effective_from, status, change_set_id
-           FROM academic_timetable_versions
-           WHERE id = $1"#,
+    assert_eq!(created.reason, "ปรับการเปิดสอนระหว่างภาคเรียน");
+    assert_eq!(target.effective_from, created.effective_from);
+    let retried = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        10,
+        "opening:clone",
     )
-    .bind(created.target_timetable_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(target_context.0, context.term_id);
-    assert_eq!(target_context.1, base_version_id);
-    assert_eq!(target_context.2, effective_from);
-    assert_eq!(target_context.3, "draft");
-    assert_eq!(target_context.4, Some(created.id));
-
-    let target_counts: (i64, i64, i64) = sqlx::query_as(
-        r#"SELECT
-               (SELECT count(*) FROM academic_timetable_version_targets WHERE timetable_version_id = $1),
-               (SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active),
-               (SELECT count(*) FROM academic_timetable_block_group_instructors instructor
-                  JOIN academic_timetable_block_groups block_group
-                    ON block_group.id = instructor.block_group_id
-                  JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-                 WHERE block.timetable_version_id = $1
-                   AND block.is_active
-                   AND block_group.is_active)"#,
-    )
-    .bind(created.target_timetable_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(target_counts, base_counts);
-
-    let retried = change_sets::create_change_set(&pool, context.teacher_id, request.clone())
-        .await
-        .expect("same normalized input and idempotency key must be retry-safe");
+    .await;
     assert_eq!(retried.id, created.id);
-
     let mismatched = change_sets::create_change_set(
         &pool,
         context.teacher_id,
         CreateAcademicTermChangeSetRequest {
-            reason: "คนละเหตุผล".to_string(),
-            ..request
+            academic_term_id: context.term_id,
+            effective_from: created.effective_from,
+            reason: "คนละเหตุผล".into(),
+            idempotency_key: stable_uuid("opening:clone"),
         },
     )
     .await
-    .expect_err("the same idempotency key must reject different normalized input");
+    .unwrap_err();
     assert!(matches!(mismatched, AppError::Conflict(_)));
-
-    let listed = change_sets::list_change_set_summaries(&pool, context.term_id)
-        .await
-        .unwrap();
-    assert!(listed.iter().any(|item| item.id == created.id));
-    let fetched = change_sets::get_change_set(&pool, created.id)
+    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_timetable_versions")
+        .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(
-        fetched.target_timetable_version_id,
-        created.target_timetable_version_id
+        before, after,
+        "opening creation never creates timetable drafts"
+    );
+    assert!(
+        change_sets::list_change_set_summaries(&pool, context.term_id)
+            .await
+            .unwrap()
+            .iter()
+            .any(|item| item.id == created.id)
     );
 }
 
@@ -2291,17 +1958,14 @@ async fn academic_term_change_set_summary_omits_hydrated_detail() {
         "change-set:summary:idempotency",
     )
     .await;
-    let (offering_id, base_target): (Uuid, i32) = sqlx::query_as(
-        r#"SELECT learning_offering_id, weekly_period_target
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1
-           ORDER BY learning_offering_id
-           LIMIT 1"#,
+    let base = school_academic_delivery::services::versions::get_version(
+        &pool,
+        change_set.base_delivery_version_id.unwrap(),
     )
-    .bind(change_set.base_timetable_version_id)
-    .fetch_one(&pool)
     .await
-    .expect("base version must contain an offering target");
+    .unwrap();
+    let first = &base.snapshot.offerings[0];
+    let (offering_id, base_target) = (first.id, first.weekly_period_target);
     let detailed = change_sets::upsert_change_item(
         &pool,
         context.teacher_id,
@@ -2340,13 +2004,13 @@ async fn academic_term_change_set_summary_omits_hydrated_detail() {
             "id".to_string(),
             "reason".to_string(),
             "status".to_string(),
-            "targetTimetableVersionId".to_string(),
+            "targetDeliveryVersionId".to_string(),
             "updatedAt".to_string(),
         ])
     );
     assert_eq!(
-        summary.target_timetable_version_id,
-        detailed.target_timetable_version_id
+        summary.target_delivery_version_id,
+        detailed.target_delivery_version_id
     );
 }
 
@@ -2383,8 +2047,8 @@ async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base
     assert_eq!(updated.effective_from, revised_effective_from);
     assert_eq!(updated.row_version, created.row_version + 1);
     let target_effective_from: NaiveDate =
-        sqlx::query_scalar("SELECT effective_from FROM academic_timetable_versions WHERE id = $1")
-            .bind(created.target_timetable_version_id)
+        sqlx::query_scalar("SELECT effective_from FROM academic_delivery_versions WHERE id = $1")
+            .bind(created.target_delivery_version_id)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -2418,12 +2082,12 @@ async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base
 
     let (target_status, base_status): (String, String) = sqlx::query_as(
         r#"SELECT target.status, base.status
-           FROM academic_timetable_versions target
-           JOIN academic_timetable_versions base ON base.id = $2
+           FROM academic_delivery_versions target
+           JOIN academic_delivery_versions base ON base.id = $2
            WHERE target.id = $1"#,
     )
-    .bind(created.target_timetable_version_id)
-    .bind(created.base_timetable_version_id)
+    .bind(created.target_delivery_version_id)
+    .bind(created.base_delivery_version_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -2611,15 +2275,19 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
             .unwrap();
     assert_eq!(course_status, "draft");
     assert_eq!(starts_on, change_set.effective_from);
-    let course_target: i32 = sqlx::query_scalar(
-        "SELECT weekly_period_target FROM academic_timetable_version_targets \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+    let target = school_academic_delivery::services::versions::get_version(
+        &pool,
+        change_set.target_delivery_version_id,
     )
-    .bind(change_set.target_timetable_version_id)
-    .bind(course_offering_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
+    let course_target = target
+        .snapshot
+        .offerings
+        .iter()
+        .find(|item| item.id == course_offering_id)
+        .unwrap()
+        .weekly_period_target;
     let catalog_standard: i32 =
         sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
             .bind(subject_version_id)
@@ -2689,221 +2357,166 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
     )
     .await
     .expect("an activity add item must require and store an explicit period target");
-    let activity_target: i32 = sqlx::query_scalar(
-        r#"SELECT target.weekly_period_target
-           FROM academic_timetable_version_targets target
-           JOIN academic_term_change_items item
-             ON item.learning_offering_id = target.learning_offering_id
-           WHERE target.timetable_version_id = $1
-             AND item.change_set_id = $2
-             AND item.action_kind = 'add_offering'"#,
+    let target = school_academic_delivery::services::versions::get_version(
+        &pool,
+        change_set.target_delivery_version_id,
     )
-    .bind(change_set.target_timetable_version_id)
-    .bind(change_set.id)
-    .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(activity_target, 2);
+    let activity_target = target.snapshot.offerings.iter().find(|item| item.kind==LearningOfferingKind::Activity && matches!(&item.catalog,LearningOfferingSnapshot::Activity(activity) if activity.activity_version_id==activity_version_id)).map(|item| item.weekly_period_target);
+    assert_eq!(activity_target, Some(2));
     assert_eq!(with_activity.items.len(), 1);
 }
 
 #[tokio::test]
 async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restores_it() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_adjust_stop").await;
+    let pool = prepare_delivery_runtime_fixture("academic_opening_adjust_stop").await;
     let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
+    let created = create_runtime_change_set(
         &pool,
         context.teacher_id,
         context.term_id,
         13,
-        "change-set:adjust-stop:idempotency",
+        "opening:adjust-stop",
     )
     .await;
-    let (offering_id, base_target): (Uuid, i32) = sqlx::query_as(
-        r#"SELECT learning_offering_id, weekly_period_target
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1
-           ORDER BY learning_offering_id
-           LIMIT 1"#,
+    let base = school_academic_delivery::services::versions::get_version(
+        &pool,
+        created.base_delivery_version_id.unwrap(),
     )
-    .bind(change_set.base_timetable_version_id)
+    .await
+    .unwrap();
+    let first = &base.snapshot.offerings[0];
+    let before_tables: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(block) ORDER BY id) FROM academic_timetable_blocks block",
+    )
     .fetch_one(&pool)
     .await
-    .expect("base version must contain an offering target");
-
+    .unwrap();
     let adjusted = change_sets::upsert_change_item(
         &pool,
         context.teacher_id,
-        change_set.id,
+        created.id,
         UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: change_set.row_version,
+            change_set_row_version: created.row_version,
             item_row_version: None,
-            learning_offering_id: offering_id,
-            weekly_period_target: base_target + 1,
+            learning_offering_id: first.id,
+            weekly_period_target: first.weekly_period_target + 1,
         },
     )
     .await
-    .expect("a draft version target must be adjustable");
-    let (adjust_item_id, adjust_item_row_version) = adjusted
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
-                id,
-                row_version,
-                ..
-            } => Some((*id, *row_version)),
-            _ => None,
-        })
-        .unwrap();
-    let target_after_adjust: i32 = sqlx::query_scalar(
-        "SELECT weekly_period_target FROM academic_timetable_version_targets \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
+    .unwrap();
+    let target = school_academic_delivery::services::versions::get_version(
+        &pool,
+        created.target_delivery_version_id,
     )
-    .bind(change_set.target_timetable_version_id)
-    .bind(offering_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(target_after_adjust, base_target + 1);
-    let base_after_adjust: i32 = sqlx::query_scalar(
-        "SELECT weekly_period_target FROM academic_timetable_version_targets \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
-    )
-    .bind(change_set.base_timetable_version_id)
-    .bind(offering_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(base_after_adjust, base_target);
-
-    let restored_adjust = change_sets::delete_change_item(
+    assert_eq!(
+        target
+            .snapshot
+            .offerings
+            .iter()
+            .find(|offering| offering.id == first.id)
+            .unwrap()
+            .weekly_period_target,
+        first.weekly_period_target + 1
+    );
+    let item = &adjusted.items[0];
+    let restored = change_sets::delete_change_item(
         &pool,
         context.teacher_id,
-        change_set.id,
-        adjust_item_id,
+        created.id,
+        match item {
+            super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget { id, .. }
+            | super::models::AcademicTermChangeItem::StopOffering { id, .. } => *id,
+            _ => panic!("expected opening adjustment"),
+        },
         DeleteAcademicTermChangeItemRequest {
             change_set_row_version: adjusted.row_version,
-            item_row_version: adjust_item_row_version,
+            item_row_version: match item {
+                super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
+                    row_version,
+                    ..
+                }
+                | super::models::AcademicTermChangeItem::StopOffering { row_version, .. } => {
+                    *row_version
+                }
+                _ => panic!("expected opening adjustment"),
+            },
         },
     )
-    .await
-    .expect("deleting an adjustment must restore the base target");
-    let target_after_restore: i32 = sqlx::query_scalar(
-        "SELECT weekly_period_target FROM academic_timetable_version_targets \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
-    )
-    .bind(change_set.target_timetable_version_id)
-    .bind(offering_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(target_after_restore, base_target);
-
-    let base_group_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_block_groups block_group \
-         JOIN academic_timetable_blocks block ON block.id = block_group.block_id \
-         WHERE block.timetable_version_id = $1 AND block.learning_offering_id = $2 \
-           AND block.is_active AND block_group.is_active",
-    )
-    .bind(change_set.base_timetable_version_id)
-    .bind(offering_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
     let stopped = change_sets::upsert_change_item(
         &pool,
         context.teacher_id,
-        change_set.id,
+        created.id,
         UpsertAcademicTermChangeItemRequest::StopOffering {
-            change_set_row_version: restored_adjust.row_version,
+            change_set_row_version: restored.row_version,
             item_row_version: None,
-            learning_offering_id: offering_id,
+            learning_offering_id: first.id,
         },
     )
     .await
-    .expect("a published offering must be stoppable in the target version");
-    let (stop_item_id, stop_item_row_version) = stopped
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::StopOffering {
-                id, row_version, ..
-            } => Some((*id, *row_version)),
-            _ => None,
-        })
-        .unwrap();
-    let stopped_target_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM academic_timetable_version_targets \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2)",
+    .unwrap();
+    let target = school_academic_delivery::services::versions::get_version(
+        &pool,
+        created.target_delivery_version_id,
     )
-    .bind(change_set.target_timetable_version_id)
-    .bind(offering_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(!stopped_target_exists);
-
+    assert!(!target
+        .snapshot
+        .offerings
+        .iter()
+        .any(|offering| offering.id == first.id));
+    let item = &stopped.items[0];
     change_sets::delete_change_item(
         &pool,
         context.teacher_id,
-        change_set.id,
-        stop_item_id,
+        created.id,
+        match item {
+            super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget { id, .. }
+            | super::models::AcademicTermChangeItem::StopOffering { id, .. } => *id,
+            _ => panic!("expected opening adjustment"),
+        },
         DeleteAcademicTermChangeItemRequest {
             change_set_row_version: stopped.row_version,
-            item_row_version: stop_item_row_version,
+            item_row_version: match item {
+                super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
+                    row_version,
+                    ..
+                }
+                | super::models::AcademicTermChangeItem::StopOffering { row_version, .. } => {
+                    *row_version
+                }
+                _ => panic!("expected opening adjustment"),
+            },
         },
     )
     .await
-    .expect("deleting a stop item must restore the base target and entries");
-    let restored_group_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_block_groups block_group \
-         JOIN academic_timetable_blocks block ON block.id = block_group.block_id \
-         WHERE block.timetable_version_id = $1 AND block.learning_offering_id = $2 \
-           AND block.is_active AND block_group.is_active",
+    .unwrap();
+    let restored = school_academic_delivery::services::versions::get_version(
+        &pool,
+        created.target_delivery_version_id,
     )
-    .bind(change_set.target_timetable_version_id)
-    .bind(offering_id)
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(&restored.snapshot).unwrap(),
+        serde_json::to_value(&base.snapshot).unwrap()
+    );
+    let after_tables: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(block) ORDER BY id) FROM academic_timetable_blocks block",
+    )
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(restored_group_count, base_group_count);
-    let (mapped_group_count, mismatched_instructor_sets): (i64, i64) = sqlx::query_as(
-        r#"SELECT count(*),
-                  count(*) FILTER (
-                      WHERE ARRAY(
-                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM academic_timetable_block_group_instructors instructor
-                          WHERE instructor.block_group_id = source.id
-                          ORDER BY instructor.instructor_id
-                      ) <> ARRAY(
-                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM academic_timetable_block_group_instructors instructor
-                          WHERE instructor.block_group_id = restored.id
-                          ORDER BY instructor.instructor_id
-                      )
-                  )
-           FROM academic_timetable_block_groups source
-           JOIN academic_timetable_blocks source_block ON source_block.id = source.block_id
-           JOIN academic_timetable_block_groups restored
-             ON restored.migration_provenance ->> 'restoredFromBlockGroupId' = source.id::text
-           JOIN academic_timetable_blocks restored_block ON restored_block.id = restored.block_id
-           WHERE source_block.timetable_version_id = $1
-             AND restored_block.timetable_version_id = $2
-             AND source.learning_offering_id = $3
-             AND source_block.is_active
-             AND source.is_active
-             AND restored_block.is_active
-             AND restored.is_active"#,
-    )
-    .bind(change_set.base_timetable_version_id)
-    .bind(change_set.target_timetable_version_id)
-    .bind(offering_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(mapped_group_count, base_group_count);
-    assert_eq!(mismatched_instructor_sets, 0);
+    assert_eq!(
+        before_tables, after_tables,
+        "opening adjustments never rewrite placements"
+    );
 }
 
 #[tokio::test]
@@ -3116,8 +2729,8 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
     assert_eq!(preview.change_set_id, change_set.id);
     assert_eq!(preview.change_set_row_version, change_set.row_version);
     assert_eq!(
-        preview.target_timetable_version_id,
-        change_set.target_timetable_version_id
+        preview.target_delivery_version_id,
+        change_set.target_delivery_version_id
     );
     assert_eq!(preview.preview_hash.len(), 64);
     assert!(preview.findings.iter().any(|finding| {
@@ -3159,7 +2772,6 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
         .await
         .unwrap();
     assert_eq!(preview.impact_counts.groups, 0);
-    assert!(!preview.schedule_counts.is_empty());
     let repeated = change_sets::preview_change_set(&pool, change_set.id)
         .await
         .unwrap();
@@ -3167,361 +2779,93 @@ async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
 }
 
 #[tokio::test]
-async fn readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
-    let pool =
-        prepare_delivery_runtime_fixture("academic_change_set_exact_instructor_readiness").await;
+async fn timetable_readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
+    let pool = prepare_delivery_runtime_fixture("academic_table_exact_instructors").await;
     let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        14,
-        "change-set:exact-instructor-readiness:create",
-    )
-    .await;
-    let (
-        target_block_id,
-        target_block_group_id,
-        target_group_id,
-        target_term_id,
-        target_year_id,
-        effective_from,
-    ): (Uuid, Uuid, Uuid, Uuid, Uuid, chrono::NaiveDate) = sqlx::query_as(
-        r#"SELECT block.id, block_group.id, block_group.learning_group_id, block.academic_term_id,
-                  block.academic_year_id, version.effective_from
-           FROM academic_timetable_block_groups block_group
-           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-           JOIN academic_timetable_versions version
-             ON version.id = block.timetable_version_id
-           WHERE block.timetable_version_id = $1
-             AND block.is_active
-             AND block_group.is_active
-             AND block.block_kind IN ('COURSE', 'ACTIVITY')
-             AND EXISTS (
-                 SELECT 1 FROM academic_timetable_block_group_instructors instructor
-                 WHERE instructor.block_group_id = block_group.id
-             )
-           ORDER BY block_group.id
-           LIMIT 1"#,
-    )
-    .bind(change_set.target_timetable_version_id)
-    .fetch_one(&pool)
-    .await
-    .expect("cloned draft must contain one taught course or activity entry");
-    sqlx::query("UPDATE learning_groups SET status = 'draft' WHERE id = $1")
-        .bind(target_group_id)
+    let draft = independent_table_draft(&pool, &context).await;
+    let (block_id,entry_id): (Uuid,Uuid)=sqlx::query_as("SELECT block.id,placed.id FROM academic_timetable_blocks block JOIN academic_timetable_block_groups placed ON placed.block_id=block.id WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active ORDER BY placed.id LIMIT 1").bind(draft.id).fetch_one(&pool).await.unwrap();
+    sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id=$1")
+        .bind(entry_id)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id = $1")
-        .bind(target_block_group_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let missing_preview = change_sets::preview_change_set(&pool, change_set.id)
-        .await
-        .unwrap();
-    assert!(missing_preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::MissingEntryInstructor
-            && finding.severity == AcademicChangeFindingSeverity::Blocking
-            && finding.resource_id == Some(target_block_id)
-    }));
-
-    let ineligible_teacher_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO users (
-               id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูนอกกลุ่ม', 'ทดสอบ', 'staff', 'active')"#,
-    )
-    .bind(ineligible_teacher_id)
-    .bind(format!("{ineligible_teacher_id}@example.invalid"))
-    .bind(format!("teacher-{ineligible_teacher_id}"))
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_group_teachers (
-               id, learning_group_id, academic_term_id, academic_year_id,
-               teacher_id, role, starts_on, ends_on, created_by, updated_by
-           ) VALUES (
-               gen_random_uuid(), $1, $2, $3, $4, 'secondary', $5, $6, $7, $7
-           )"#,
-    )
-    .bind(target_group_id)
-    .bind(target_term_id)
-    .bind(target_year_id)
-    .bind(ineligible_teacher_id)
-    .bind(effective_from - chrono::Duration::days(10))
-    .bind(effective_from - chrono::Duration::days(1))
-    .bind(context.teacher_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query("UPDATE learning_groups SET status = 'published' WHERE id = $1")
-        .bind(target_group_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_block_group_instructors (
-               id, block_group_id, instructor_id, role, display_order
-           ) VALUES (gen_random_uuid(), $1, $2, 'primary', 1)"#,
-    )
-    .bind(target_block_group_id)
-    .bind(ineligible_teacher_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let ineligible_preview = change_sets::preview_change_set(&pool, change_set.id)
-        .await
-        .unwrap();
-    assert!(ineligible_preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::EntryInstructorNotEffective
-            && finding.severity == AcademicChangeFindingSeverity::Blocking
-            && finding.resource_id == Some(target_block_id)
-    }));
-    assert!(!ineligible_preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
-            && finding.resource_id == Some(target_group_id)
-    }));
-
-    sqlx::query("UPDATE learning_groups SET status = 'draft' WHERE id = $1")
-        .bind(target_group_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query(
-        r#"UPDATE learning_group_teachers
-           SET starts_on = $2, ends_on = NULL
-           WHERE learning_group_id = $1 AND role = 'primary'"#,
-    )
-    .bind(target_group_id)
-    .bind(effective_from + chrono::Duration::days(1))
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query("UPDATE learning_groups SET status = 'published' WHERE id = $1")
-        .bind(target_group_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let missing_primary_preview = change_sets::preview_change_set(&pool, change_set.id)
-        .await
-        .unwrap();
-    assert!(missing_primary_preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
-            && finding.severity == AcademicChangeFindingSeverity::Blocking
-            && finding.resource_id == Some(target_group_id)
-    }));
+    let missing = table_preview(&pool, draft.id).await;
+    assert!(!missing.can_publish);
+    assert!(missing.source_issues.iter().any(|issue| issue.block_id==block_id && issue.code==school_academic_timetable::models::timetable_source::TimetableSourceIssueCode::MissingInstructor));
+    let outsider = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,email,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,$3,'fixture','ครูนอกกลุ่ม','ทดสอบ','staff','active')")
+        .bind(outsider).bind(format!("{outsider}@example.invalid")).bind(outsider.to_string()).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_timetable_block_group_instructors(block_group_id,instructor_id,role,display_order) VALUES($1,$2,'primary',1)").bind(entry_id).bind(outsider).execute(&pool).await.unwrap();
+    let ineligible = table_preview(&pool, draft.id).await;
+    assert!(!ineligible.can_publish);
+    assert!(ineligible.source_issues.iter().any(|issue| issue.block_id==block_id && issue.teacher_id==Some(outsider) && issue.code==school_academic_timetable::models::timetable_source::TimetableSourceIssueCode::IneligibleInstructor));
+    assert_ne!(missing.preview_hash, ineligible.preview_hash);
 }
 
 #[tokio::test]
-async fn schedule_only_change_set_can_preview_and_publish_after_a_draft_entry_changes() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_schedule_only").await;
+async fn independent_timetable_can_publish_position_changes_without_a_delivery_revision() {
+    use school_academic_timetable::services::timetable_lifecycle;
+    let pool = prepare_delivery_runtime_fixture("academic_table_publish_positions").await;
     let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        14,
-        "change-set:schedule-only:create",
+    let draft = independent_table_draft(&pool, &context).await;
+    let before_openings: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(opening) ORDER BY id) FROM academic_delivery_versions opening",
     )
-    .await;
-    let schedule = change_sets::preview_change_set(&pool, change_set.id)
-        .await
-        .expect("cloned draft must expose target counts")
-        .schedule_counts;
-    let candidate_slots: Vec<(String, Uuid)> = sqlx::query_as(
-        r#"SELECT day.day_of_week, period.id
-           FROM academic_terms term
-           JOIN bell_schedule_periods period
-             ON period.bell_schedule_id = term.bell_schedule_id
-            AND period.is_active
-           CROSS JOIN (VALUES
-               ('MON', 1), ('TUE', 2), ('WED', 3), ('THU', 4), ('FRI', 5)
-           ) AS day(day_of_week, sort_order)
-           WHERE term.id = $1
-           ORDER BY day.sort_order, period.order_index, period.id"#,
-    )
-    .bind(context.term_id)
-    .fetch_all(&pool)
-    .await
-    .expect("fixture term must expose timetable slots");
-    for count in schedule {
-        let instructor_id: Uuid = sqlx::query_scalar(
-            r#"SELECT assignment.teacher_id
-               FROM learning_group_teachers assignment
-               JOIN academic_timetable_versions version ON version.id = $2
-               JOIN users teacher ON teacher.id = assignment.teacher_id
-               WHERE assignment.learning_group_id = $1
-                 AND assignment.starts_on <= version.effective_from
-                 AND (
-                     assignment.ends_on IS NULL
-                     OR assignment.ends_on >= version.effective_from
-                 )
-                 AND teacher.status = 'active'
-               ORDER BY CASE assignment.role WHEN 'primary' THEN 1 ELSE 2 END,
-                        assignment.starts_on,
-                        assignment.teacher_id
-               LIMIT 1"#,
-        )
-        .bind(count.learning_group_id)
-        .bind(change_set.target_timetable_version_id)
-        .fetch_one(&pool)
-        .await
-        .expect("fixture learning group must have an eligible teacher");
-        let mut actual_periods = count.actual_periods;
-        for (day_of_week, period_id) in &candidate_slots {
-            if actual_periods >= i64::from(count.target_periods) {
-                break;
-            }
-            let result = timetable_block_service::create_ordinary_block(
-                &pool,
-                context.teacher_id,
-                CreateOrdinaryTimetableBlockRequest {
-                    timetable_version_id: change_set.target_timetable_version_id,
-                    academic_term_id: context.term_id,
-                    learning_group_id: count.learning_group_id,
-                    day_of_week: day_of_week.clone(),
-                    bell_schedule_period_id: *period_id,
-                    room_id: None,
-                    note: None,
-                    instructor_ids: vec![instructor_id],
-                },
-            )
-            .await;
-            match result {
-                Ok(_) => actual_periods += 1,
-                Err(AppError::Conflict(_)) => {}
-                Err(error) => panic!("unexpected timetable fixture error: {error:?}"),
-            }
-        }
-        assert_eq!(
-            actual_periods,
-            i64::from(count.target_periods),
-            "fixture must provide enough conflict-free periods for {}",
-            count.learning_group_label
-        );
-    }
-    let target_block_id: Uuid = sqlx::query_scalar(
-        r#"SELECT id FROM academic_timetable_blocks
-           WHERE timetable_version_id = $1 AND is_active
-             AND migration_provenance ? 'clonedFromBlockId'
-           ORDER BY id LIMIT 1"#,
-    )
-    .bind(change_set.target_timetable_version_id)
     .fetch_one(&pool)
     .await
-    .expect("fixture must contain a cloned draft entry");
-    let target_block = timetable_block_service::get_block(&pool, target_block_id)
-        .await
-        .expect("cloned draft block must be readable");
-    let source_block_id: Uuid = sqlx::query_scalar(
-        r#"SELECT (migration_provenance ->> 'clonedFromBlockId')::uuid
-           FROM academic_timetable_blocks WHERE id = $1"#,
-    )
-    .bind(target_block_id)
-    .fetch_one(&pool)
-    .await
-    .expect("cloned entry must retain its source identity");
-    let source_note_before: Option<String> =
-        sqlx::query_scalar("SELECT note FROM academic_timetable_blocks WHERE id = $1")
-            .bind(source_block_id)
-            .fetch_one(&pool)
+    .unwrap();
+    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
+    let preview = table_preview(&pool, draft.id).await;
+    assert!(preview.content_changed);
+    assert!(
+        preview.can_publish,
+        "table findings: {:?}",
+        preview.findings
+    );
+    let request =
+        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
+            row_version: preview.row_version,
+            effective_from: preview.effective_from,
+            preview_hash: preview.preview_hash,
+            idempotency_key: Uuid::new_v4(),
+        };
+    let published =
+        timetable_lifecycle::publish(&pool, context.teacher_id, draft.id, request.clone())
             .await
             .unwrap();
-
-    timetable_block_service::update_block(
+    assert_eq!(
+        published.status,
+        school_academic_core::models::TimetableVersionStatus::Published
+    );
+    assert_eq!(published.delivery_version_id, draft.delivery_version_id);
+    assert_eq!(published.effective_from, Some(request.effective_from));
+    let repeated =
+        timetable_lifecycle::publish(&pool, context.teacher_id, draft.id, request.clone())
+            .await
+            .unwrap();
+    assert_eq!(repeated.row_version, published.row_version);
+    let changed_retry = timetable_lifecycle::publish(
         &pool,
         context.teacher_id,
-        target_block.id,
-        UpdateTimetableBlockRequest {
-            timetable_version_id: change_set.target_timetable_version_id,
-            row_version: target_block.row_version,
-            day_of_week: None,
-            bell_schedule_period_id: None,
-            room_id: None,
-            clear_room: false,
-            note: Some("ปรับหมายเหตุในรุ่นใหม่".to_string()),
-            clear_note: false,
-            title: None,
-            clear_title: false,
-            instructor_ids: None,
-            teacher_ids: None,
+        draft.id,
+        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
+            effective_from: request.effective_from.succ_opt().unwrap(),
+            ..request
         },
     )
     .await
-    .expect("a draft-version entry must remain editable");
-
-    let preview = change_sets::preview_change_set(&pool, change_set.id)
-        .await
-        .expect("a schedule-only revision must return readiness");
-    assert!(!preview
-        .findings
-        .iter()
-        .any(|finding| finding.code == AcademicChangeFindingCode::ChangeSetNoItems));
-    let blocking = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking)
-        .collect::<Vec<_>>();
-    assert!(blocking.is_empty(), "blocking findings: {blocking:#?}");
-    let warning_codes = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
-        .map(|finding| finding.code)
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    let published = change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        PublishAcademicTermChangeSetRequest {
-            row_version: preview.change_set_row_version,
-            target_timetable_version_row_version: preview.target_timetable_version_row_version,
-            preview_hash: preview.preview_hash,
-            acknowledged_warning_codes: warning_codes,
-            idempotency_key: stable_uuid("change-set:schedule-only:publish"),
-        },
+    .unwrap_err();
+    assert!(matches!(changed_retry, AppError::Conflict(_)));
+    let after_openings: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(opening) ORDER BY id) FROM academic_delivery_versions opening",
     )
-    .await
-    .expect("a ready schedule-only revision must publish atomically");
-    assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
-
-    let (target_status, target_note): (String, Option<String>) = sqlx::query_as(
-        r#"SELECT version.status, block.note
-           FROM academic_timetable_versions version
-           JOIN academic_timetable_blocks block
-             ON block.timetable_version_id = version.id
-           WHERE version.id = $1 AND block.id = $2"#,
-    )
-    .bind(change_set.target_timetable_version_id)
-    .bind(target_block_id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    let (source_status, source_note): (String, Option<String>) = sqlx::query_as(
-        r#"SELECT version.status, block.note
-           FROM academic_timetable_versions version
-           JOIN academic_timetable_blocks block
-             ON block.timetable_version_id = version.id
-           WHERE version.id = $1 AND block.id = $2"#,
-    )
-    .bind(change_set.base_timetable_version_id)
-    .bind(source_block_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(target_status, "published");
-    assert_eq!(target_note.as_deref(), Some("ปรับหมายเหตุในรุ่นใหม่"));
-    assert_eq!(source_status, "published");
-    assert_eq!(source_note, source_note_before);
+    assert_eq!(
+        before_openings, after_openings,
+        "table publication never publishes or revises opening data"
+    );
 }
 
 #[tokio::test]
@@ -3539,6 +2883,12 @@ async fn change_set_preview_blocks_a_past_effective_date_after_the_term_becomes_
     sqlx::query("UPDATE academic_term_change_sets SET effective_from = $1 WHERE id = $2")
         .bind(Utc::now().date_naive() - chrono::Duration::days(1))
         .bind(change_set.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_delivery_versions SET effective_from=$1 WHERE id=$2")
+        .bind(Utc::now().date_naive() - Duration::days(1))
+        .bind(change_set.target_delivery_version_id)
         .execute(&pool)
         .await
         .unwrap();
@@ -3580,7 +2930,7 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
                       learning_group.id,
                       detail.subject_id,
                       membership.student_academic_year_id
-           FROM academic_timetable_version_targets target
+           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry) target
            JOIN course_offering_details detail
              ON detail.learning_offering_id = target.learning_offering_id
            JOIN learning_groups learning_group
@@ -3589,13 +2939,13 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
             AND learning_group.academic_year_id = detail.academic_year_id
            JOIN learning_group_students membership
              ON membership.learning_group_id = learning_group.id
-           WHERE target.timetable_version_id = $1
+           WHERE target.delivery_version_id = $1
              AND learning_group.status <> 'closed'
              AND membership.left_at IS NULL
            ORDER BY target.learning_offering_id, learning_group.id, membership.id
            LIMIT 1"#,
     )
-    .bind(change_set.base_timetable_version_id)
+    .bind(change_set.base_delivery_version_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -3632,7 +2982,7 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
                 JOIN learning_groups learning_group ON learning_group.id = teacher.learning_group_id
                 WHERE learning_group.learning_offering_id = $1) AS teacher_assignments,
              (SELECT count(*) FROM academic_timetable_blocks block
-                WHERE block.timetable_version_id = $2
+                WHERE block.timetable_version_id IN (SELECT id FROM academic_timetable_versions WHERE delivery_version_id=$2)
                   AND block.learning_offering_id = $1 AND block.is_active) AS target_timetable_entries,
              (SELECT count(*) FROM course_assessment_plans plan
                 WHERE plan.learning_offering_id = $1) AS course_assessment_plans,
@@ -3719,7 +3069,7 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
                 WHERE learning_group.learning_offering_id = $1) AS supervision_observations"#,
     )
     .bind(offering_id)
-    .bind(change_set.base_timetable_version_id)
+    .bind(change_set.base_delivery_version_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -3772,200 +3122,66 @@ async fn change_set_preview_counts_stop_impact_without_exposing_roster_identitie
         .findings
         .iter()
         .any(|finding| finding.code == AcademicChangeFindingCode::ChangeSetNoItems));
-    assert!(!preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::StoppedOfferingStillScheduled
-    }));
 }
 
 #[tokio::test]
-async fn change_set_preview_reports_each_group_below_its_version_target() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_preview_deficit").await;
+async fn timetable_preview_reports_each_group_below_its_opening_target() {
+    let pool = prepare_delivery_runtime_fixture("academic_table_group_deficits").await;
     let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        16,
-        "change-set:preview-deficit:idempotency",
-    )
-    .await;
-    let (offering_id, group_id, actual_periods): (Uuid, Uuid, i64) = sqlx::query_as(
-        r#"SELECT target.learning_offering_id, learning_group.id,
-                  count(block.id)::bigint
-           FROM academic_timetable_version_targets target
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = target.learning_offering_id
-           LEFT JOIN academic_timetable_block_groups block_group
-             ON block_group.learning_group_id = learning_group.id
-            AND block_group.is_active
-           LEFT JOIN academic_timetable_blocks block
-             ON block.id = block_group.block_id
-            AND block.timetable_version_id = target.timetable_version_id
-            AND block.is_active
-           WHERE target.timetable_version_id = $1
-             AND learning_group.status = 'published'
-           GROUP BY target.learning_offering_id, learning_group.id
-           ORDER BY target.learning_offering_id, learning_group.id
-           LIMIT 1"#,
-    )
-    .bind(change_set.target_timetable_version_id)
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must contain a published scheduled group");
-    let deficit_target = i32::try_from(actual_periods + 1).unwrap();
-    let changed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-            weekly_period_target: deficit_target,
-        },
-    )
-    .await
-    .unwrap();
-
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
-    let schedule = preview
-        .schedule_counts
-        .iter()
-        .find(|count| count.learning_group_id == group_id)
-        .expect("preview must expose the affected group schedule count");
-    assert_eq!(schedule.actual_periods, actual_periods);
-    assert_eq!(schedule.target_periods, deficit_target);
-    assert!(preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::WeeklyPeriodDeficit
-            && finding.severity == AcademicChangeFindingSeverity::Blocking
-            && finding.learning_group_id == Some(group_id)
-            && finding.learning_offering_id == Some(offering_id)
-    }));
-}
-
-#[tokio::test]
-async fn change_set_preview_stays_clean_after_database_rejects_a_draft_collision() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_preview_conflicts").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        22,
-        "change-set:preview-conflicts:create",
-    )
-    .await;
-    let (block_group_id, offering_id, group_id, target_periods): (Uuid, Uuid, Uuid, i32) =
-        sqlx::query_as(
-            r#"SELECT block_group.id, block.learning_offering_id,
-                  block_group.learning_group_id,
-                  target.weekly_period_target
-           FROM academic_timetable_block_groups block_group
-           JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-           JOIN academic_timetable_version_targets target
-             ON target.timetable_version_id = block.timetable_version_id
-            AND target.learning_offering_id = block.learning_offering_id
-           JOIN learning_group_homerooms coverage
-             ON coverage.learning_group_id = block_group.learning_group_id
-           WHERE block.timetable_version_id = $1
-             AND block.is_active
-             AND block_group.is_active
-           ORDER BY block_group.id
-           LIMIT 1"#,
-        )
-        .bind(change_set.target_timetable_version_id)
-        .fetch_one(&pool)
-        .await
-        .expect("fixture must contain a scheduled covered group with a primary teacher");
-    let room_id: Uuid =
-        sqlx::query_scalar("SELECT id FROM rooms WHERE status = 'ACTIVE' ORDER BY id LIMIT 1")
-            .fetch_one(&pool)
+    let draft = independent_table_draft(&pool, &context).await;
+    let opening =
+        school_academic_delivery::services::versions::get_version(&pool, draft.delivery_version_id)
             .await
-            .expect("fixture must contain an active room");
-    sqlx::query("UPDATE academic_timetable_block_groups SET room_id = $1 WHERE id = $2")
-        .bind(room_id)
-        .bind(block_group_id)
-        .execute(&pool)
-        .await
+            .unwrap();
+    let offering = opening
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| {
+            matches!(&offering.catalog, LearningOfferingSnapshot::Course(_))
+                && !offering.groups.is_empty()
+        })
         .unwrap();
-    let duplicate_error = sqlx::query(
-        r#"WITH source AS (
-               SELECT block.*, block_group.learning_group_id
-               FROM academic_timetable_block_groups block_group
-               JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-               WHERE block_group.id = $1
-           ), duplicate_block AS (
-               INSERT INTO academic_timetable_blocks (
-                   id, timetable_version_id, academic_term_id, academic_year_id,
-                   bell_schedule_id, bell_schedule_period_id, day_of_week,
-                   block_kind, scheduling_mode, learning_offering_id,
-                   structural_kind, title, note, series_id, row_version, is_active,
-                   migration_provenance, created_by, updated_by
-               )
-               SELECT gen_random_uuid(), timetable_version_id, academic_term_id,
-                      academic_year_id, bell_schedule_id, bell_schedule_period_id,
-                      day_of_week, block_kind, scheduling_mode, learning_offering_id,
-                      structural_kind, title, 'conflict fixture', series_id, 1, true,
-                      jsonb_build_object('test', 'preview-conflicts'), $3, $3
-               FROM source
-               RETURNING id, academic_term_id, academic_year_id, learning_offering_id
-           )
-           INSERT INTO academic_timetable_block_groups (
-               id, block_id, learning_group_id, learning_offering_id,
-               academic_term_id, academic_year_id, room_id, row_version,
-               is_active, migration_provenance, created_by, updated_by
-           )
-           SELECT gen_random_uuid(), duplicate_block.id, source.learning_group_id,
-                  duplicate_block.learning_offering_id, duplicate_block.academic_term_id,
-                  duplicate_block.academic_year_id, $2, 1, true,
-                  jsonb_build_object('test', 'preview-conflicts'), $3, $3
-           FROM source CROSS JOIN duplicate_block"#,
-    )
-    .bind(block_group_id)
-    .bind(room_id)
-    .bind(context.teacher_id)
-    .execute(&pool)
-    .await
-    .expect_err("migration 054 must reject a group collision even in a draft version");
-    assert!(duplicate_error
-        .to_string()
-        .contains("ACADEMIC_TIMETABLE_GROUP_CONFLICT"));
-    let changed = change_sets::upsert_change_item(
+    sqlx::query("DELETE FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND learning_offering_id=$2").bind(draft.id).bind(offering.id).execute(&pool).await.unwrap();
+    let preview = table_preview(&pool, draft.id).await;
+    assert!(!preview.can_publish);
+    for group in &offering.groups {
+        assert!(preview.findings.iter().any(|finding| finding.code==school_academic_timetable::models::timetable_publication::TimetablePublicationFindingCode::PeriodCountMismatch && finding.learning_group_id==Some(group.id) && finding.learning_offering_id==Some(offering.id)));
+    }
+}
+
+#[tokio::test]
+async fn timetable_preview_stays_unchanged_after_a_rejected_draft_collision() {
+    let pool = prepare_delivery_runtime_fixture("academic_table_rejected_collision").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let draft = independent_table_draft(&pool, &context).await;
+    let block=timetable_block_service::get_block(&pool,sqlx::query_scalar("SELECT block.id FROM academic_timetable_blocks block JOIN academic_timetable_block_groups placed ON placed.block_id=block.id WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active AND block.scheduling_mode='independent' ORDER BY block.id LIMIT 1").bind(draft.id).fetch_one(&pool).await.unwrap()).await.unwrap();
+    let placed = &block.groups[0];
+    let before = table_preview(&pool, draft.id).await;
+    let collision = timetable_block_service::create_ordinary_block(
         &pool,
         context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-            weekly_period_target: target_periods,
+        CreateOrdinaryTimetableBlockRequest {
+            timetable_version_id: draft.id,
+            academic_term_id: context.term_id,
+            learning_group_id: placed.learning_group_id,
+            day_of_week: block.day_of_week.clone(),
+            bell_schedule_period_id: block.bell_schedule_period_id,
+            room_id: placed.room_id,
+            note: None,
+            instructor_ids: placed
+                .instructors
+                .iter()
+                .map(|teacher| teacher.teacher_id)
+                .collect(),
         },
     )
     .await
-    .unwrap();
-
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
-    for expected in [
-        AcademicChangeFindingCode::LearningGroupConflict,
-        AcademicChangeFindingCode::HomeroomConflict,
-        AcademicChangeFindingCode::RoomConflict,
-    ] {
-        assert!(
-            !preview.findings.iter().any(|finding| {
-                finding.code == expected
-                    && finding.severity == AcademicChangeFindingSeverity::Blocking
-            }),
-            "a rejected collision must not leak {expected:?} into preview"
-        );
-    }
-    assert!(preview
-        .schedule_counts
-        .iter()
-        .any(|count| count.learning_group_id == group_id));
+    .unwrap_err();
+    assert!(matches!(collision, AppError::Conflict(_)));
+    let after = table_preview(&pool, draft.id).await;
+    assert_eq!(before.preview_hash, after.preview_hash);
+    assert_eq!(before.block_count, after.block_count);
 }
 
 #[tokio::test]
@@ -3982,12 +3198,12 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     .await;
     let offering_id: Uuid = sqlx::query_scalar(
         r#"SELECT target.learning_offering_id
-           FROM academic_timetable_version_targets target
-           WHERE target.timetable_version_id = $1
+           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry) target
+           WHERE target.delivery_version_id = $1
            ORDER BY target.learning_offering_id
            LIMIT 1"#,
     )
-    .bind(change_set.base_timetable_version_id)
+    .bind(change_set.base_delivery_version_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -4021,7 +3237,7 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     let idempotency_key = stable_uuid("change-set:publish-stop:publication");
     let request = PublishAcademicTermChangeSetRequest {
         row_version: preview.change_set_row_version,
-        target_timetable_version_row_version: preview.target_timetable_version_row_version,
+        target_delivery_version_row_version: preview.target_delivery_version_row_version,
         preview_hash: preview.preview_hash.clone(),
         acknowledged_warning_codes: warning_codes,
         idempotency_key,
@@ -4064,15 +3280,15 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     assert_eq!(offering.ends_on, ends_on);
     assert_eq!(offering.stop_reason, stop_reason);
     let target_status: String =
-        sqlx::query_scalar("SELECT status FROM academic_timetable_versions WHERE id = $1")
-            .bind(changed.target_timetable_version_id)
+        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id = $1")
+            .bind(changed.target_delivery_version_id)
             .fetch_one(&pool)
             .await
             .unwrap();
     assert_eq!(target_status, "published");
     let base_status: String =
-        sqlx::query_scalar("SELECT status FROM academic_timetable_versions WHERE id = $1")
-            .bind(changed.base_timetable_version_id)
+        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id = $1")
+            .bind(changed.base_delivery_version_id)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -4085,7 +3301,8 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
     assert_eq!(retried.id, published.id);
     assert_eq!(retried.row_version, published.row_version);
     let mut changed_retry = request;
-    changed_retry.acknowledged_warning_codes = vec![AcademicChangeFindingCode::WeeklyPeriodExcess];
+    changed_retry.acknowledged_warning_codes =
+        vec![AcademicChangeFindingCode::MissingDeliveryGroup];
     let conflicting_retry =
         change_sets::publish_change_set(&pool, context.teacher_id, changed.id, changed_retry)
             .await
@@ -4094,184 +3311,80 @@ async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
 }
 
 #[tokio::test]
-async fn publication_requires_the_exact_current_warning_acknowledgements() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_publish_warning").await;
+async fn timetable_period_excess_is_blocking_and_cannot_be_acknowledged_as_a_delivery_warning() {
+    let pool = prepare_delivery_runtime_fixture("academic_table_period_excess").await;
     let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        18,
-        "change-set:publish-warning:create",
-    )
-    .await;
-    let offering_id: Uuid = sqlx::query_scalar(
-        r#"SELECT learning_offering_id
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1
-           ORDER BY learning_offering_id
-           LIMIT 1"#,
-    )
-    .bind(change_set.target_timetable_version_id)
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must contain a timetable target");
-    let group_counts: Vec<(Uuid, i64)> = sqlx::query_as(
-        r#"SELECT learning_group.id, count(block.id)::bigint
-           FROM learning_groups learning_group
-           LEFT JOIN academic_timetable_block_groups block_group
-             ON block_group.learning_group_id = learning_group.id
-            AND block_group.is_active
-           LEFT JOIN academic_timetable_blocks block
-             ON block.id = block_group.block_id
-            AND block.timetable_version_id = $2
-            AND block.is_active
-           WHERE learning_group.learning_offering_id = $1
-             AND learning_group.status = 'published'
-           GROUP BY learning_group.id
-           ORDER BY learning_group.id"#,
-    )
-    .bind(offering_id)
-    .bind(change_set.target_timetable_version_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert!(!group_counts.is_empty());
-    let target = i32::try_from(
-        group_counts
-            .iter()
-            .map(|(_, actual)| *actual)
-            .max()
-            .unwrap_or(0)
-            .max(1),
-    )
-    .unwrap();
-    let desired_periods = i64::from(target) + 1;
-    for (learning_group_id, actual_periods) in group_counts {
-        let instructor_id: Uuid = sqlx::query_scalar(
-            r#"SELECT assignment.teacher_id
-               FROM learning_group_teachers assignment
-               JOIN academic_timetable_versions version ON version.id = $2
-               JOIN users teacher ON teacher.id = assignment.teacher_id
-               WHERE assignment.learning_group_id = $1
-                 AND assignment.starts_on <= version.effective_from
-                 AND (
-                     assignment.ends_on IS NULL
-                     OR assignment.ends_on >= version.effective_from
-                 )
-                 AND teacher.status = 'active'
-               ORDER BY CASE assignment.role WHEN 'primary' THEN 1 ELSE 2 END,
-                        assignment.starts_on,
-                        assignment.teacher_id
-               LIMIT 1"#,
+    let draft = independent_table_draft(&pool, &context).await;
+    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
+    let opening =
+        school_academic_delivery::services::versions::get_version(&pool, draft.delivery_version_id)
+            .await
+            .unwrap();
+    let offering = opening
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| {
+            matches!(&offering.catalog, LearningOfferingSnapshot::Course(_))
+                && !offering.groups.is_empty()
+        })
+        .unwrap();
+    let group = &offering.groups[0];
+    let slots: Vec<(String,Uuid)>=sqlx::query_as("SELECT day.code,period.id FROM academic_terms term JOIN bell_schedule_periods period ON period.bell_schedule_id=term.bell_schedule_id CROSS JOIN (VALUES('MON'),('TUE'),('WED'),('THU'),('FRI')) day(code) WHERE term.id=$1 AND period.is_active ORDER BY day.code,period.order_index").bind(context.term_id).fetch_all(&pool).await.unwrap();
+    let mut added = false;
+    for (day_of_week, bell_schedule_period_id) in slots {
+        match timetable_block_service::create_ordinary_block(
+            &pool,
+            context.teacher_id,
+            CreateOrdinaryTimetableBlockRequest {
+                timetable_version_id: draft.id,
+                academic_term_id: context.term_id,
+                learning_group_id: group.id,
+                day_of_week,
+                bell_schedule_period_id,
+                room_id: None,
+                note: None,
+                instructor_ids: group
+                    .teachers
+                    .iter()
+                    .map(|teacher| teacher.teacher_id)
+                    .collect(),
+            },
         )
-        .bind(learning_group_id)
-        .bind(change_set.target_timetable_version_id)
-        .fetch_one(&pool)
         .await
-        .expect("fixture learning group must have an eligible teacher");
-        for _ in actual_periods..desired_periods {
-            let (day_of_week, bell_schedule_period_id): (String, Uuid) = sqlx::query_as(
-                r#"SELECT day.code, period.id
-               FROM (VALUES ('MON'), ('TUE'), ('WED'), ('THU'), ('FRI')) AS day(code)
-               JOIN academic_terms term ON term.id = $1
-               JOIN bell_schedule_periods period
-                 ON period.bell_schedule_id = term.bell_schedule_id
-                AND period.is_active
-               WHERE NOT EXISTS (
-                   SELECT 1 FROM academic_timetable_blocks block
-                   WHERE block.timetable_version_id = $2
-                     AND block.day_of_week = day.code
-                     AND block.bell_schedule_period_id = period.id
-                     AND block.is_active
-               )
-               ORDER BY day.code, period.order_index
-               LIMIT 1"#,
-            )
-            .bind(context.term_id)
-            .bind(change_set.target_timetable_version_id)
-            .fetch_one(&pool)
-            .await
-            .expect("fixture must leave enough empty timetable slots");
-            timetable_block_service::create_ordinary_block(
-                &pool,
-                context.teacher_id,
-                CreateOrdinaryTimetableBlockRequest {
-                    timetable_version_id: change_set.target_timetable_version_id,
-                    academic_term_id: context.term_id,
-                    learning_group_id,
-                    day_of_week,
-                    bell_schedule_period_id,
-                    room_id: None,
-                    note: Some("ทดสอบคำเตือนคาบเกิน".to_string()),
-                    instructor_ids: vec![instructor_id],
-                },
-            )
-            .await
-            .expect("test setup must add non-conflicting excess periods");
+        {
+            Ok(_) => {
+                added = true;
+                break;
+            }
+            Err(AppError::Conflict(_)) => {}
+            Err(error) => panic!("unexpected extra lesson error: {error:?}"),
         }
     }
-    let changed = change_sets::upsert_change_item(
+    assert!(added);
+    let preview = table_preview(&pool, draft.id).await;
+    assert!(!preview.can_publish);
+    assert!(preview.findings.iter().any(|finding| finding.code==school_academic_timetable::models::timetable_publication::TimetablePublicationFindingCode::PeriodCountMismatch && finding.learning_group_id==Some(group.id)));
+    let publication = school_academic_timetable::services::timetable_lifecycle::publish(
         &pool,
         context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-            weekly_period_target: target,
+        draft.id,
+        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
+            row_version: preview.row_version,
+            effective_from: preview.effective_from,
+            preview_hash: preview.preview_hash,
+            idempotency_key: Uuid::new_v4(),
         },
     )
     .await
-    .unwrap();
-    let preview = change_sets::preview_change_set(&pool, changed.id)
-        .await
-        .unwrap();
-    assert!(!preview
-        .findings
-        .iter()
-        .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking));
-    assert!(preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::WeeklyPeriodExcess
-            && finding.severity == AcademicChangeFindingSeverity::Warning
-    }));
-    let base_request = PublishAcademicTermChangeSetRequest {
-        row_version: preview.change_set_row_version,
-        target_timetable_version_row_version: preview.target_timetable_version_row_version,
-        preview_hash: preview.preview_hash.clone(),
-        acknowledged_warning_codes: Vec::new(),
-        idempotency_key: stable_uuid("change-set:publish-warning:publication"),
-    };
-
-    let missing = change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        changed.id,
-        base_request.clone(),
-    )
-    .await
-    .expect_err("an unacknowledged excess warning must block publication");
-    assert!(matches!(missing, AppError::Conflict(_)));
-
-    let mut unknown_request = base_request.clone();
-    unknown_request.acknowledged_warning_codes = vec![
-        AcademicChangeFindingCode::WeeklyPeriodExcess,
-        AcademicChangeFindingCode::RoomConflict,
-    ];
-    let unknown =
-        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, unknown_request)
-            .await
-            .expect_err("a warning code absent from the current preview must fail");
-    assert!(matches!(unknown, AppError::Conflict(_)));
-
-    let mut accepted_request = base_request;
-    accepted_request.acknowledged_warning_codes =
-        vec![AcademicChangeFindingCode::WeeklyPeriodExcess];
-    let published =
-        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, accepted_request)
-            .await
-            .expect("the exact current warning set must publish");
-    assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
+    .unwrap_err();
+    assert!(matches!(publication, AppError::ValidationError(_)));
+    let rejected = serde_json::from_value::<
+        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest,
+    >(
+        serde_json::json!({"rowVersion":1,"effectiveFrom":"2027-01-01","previewHash":"0".repeat(64),"idempotencyKey":Uuid::new_v4(),"acknowledgedWarningCodes":["weekly_period_excess"]}),
+    );
+    assert!(rejected.is_err());
 }
 
 #[tokio::test]
@@ -4288,11 +3401,11 @@ async fn publication_rolls_back_every_write_when_the_final_change_set_write_fail
     .await;
     let offering_id: Uuid = sqlx::query_scalar(
         r#"SELECT learning_offering_id
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1
+           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry)
+           WHERE delivery_version_id = $1
            ORDER BY learning_offering_id LIMIT 1"#,
     )
-    .bind(change_set.base_timetable_version_id)
+    .bind(change_set.base_delivery_version_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -4344,7 +3457,7 @@ async fn publication_rolls_back_every_write_when_the_final_change_set_write_fail
         changed.id,
         PublishAcademicTermChangeSetRequest {
             row_version: preview.change_set_row_version,
-            target_timetable_version_row_version: preview.target_timetable_version_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
             acknowledged_warning_codes: warning_codes,
             idempotency_key: stable_uuid("change-set:publish-rollback:publication"),
@@ -4362,8 +3475,8 @@ async fn publication_rolls_back_every_write_when_the_final_change_set_write_fail
             .unwrap();
     assert_eq!(offering_end, None);
     let target_status: String =
-        sqlx::query_scalar("SELECT status FROM academic_timetable_versions WHERE id = $1")
-            .bind(changed.target_timetable_version_id)
+        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id = $1")
+            .bind(changed.target_delivery_version_id)
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -4378,7 +3491,7 @@ async fn publication_rolls_back_every_write_when_the_final_change_set_write_fail
 }
 
 #[tokio::test]
-async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_together() {
+async fn publishing_an_added_course_preserves_the_separate_roster_publication() {
     let pool = prepare_delivery_runtime_fixture("academic_change_set_publish_added_course").await;
     let context = operational_change_runtime_context(&pool).await;
     let change_set = create_runtime_change_set(
@@ -4394,7 +3507,7 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
         unreachable!();
     };
     course.subject_version_id = subject_version_id;
-    let mut changed = change_sets::upsert_change_item(
+    let changed = change_sets::upsert_change_item(
         &pool,
         context.teacher_id,
         change_set.id,
@@ -4416,50 +3529,6 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
             _ => None,
         })
         .expect("add item must expose the draft offering");
-    let deficit_offering_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"WITH group_counts AS (
-               SELECT target.learning_offering_id, target.weekly_period_target,
-                      learning_group.id, count(block.id)::bigint AS actual_periods
-               FROM academic_timetable_version_targets target
-               JOIN learning_groups learning_group
-                 ON learning_group.learning_offering_id = target.learning_offering_id
-                AND learning_group.status <> 'closed'
-               LEFT JOIN academic_timetable_block_groups block_group
-                 ON block_group.learning_group_id = learning_group.id
-                AND block_group.is_active
-               LEFT JOIN academic_timetable_blocks block
-                 ON block.id = block_group.block_id
-                AND block.timetable_version_id = target.timetable_version_id
-                AND block.is_active
-               WHERE target.timetable_version_id = $1
-                 AND target.learning_offering_id <> $2
-               GROUP BY target.learning_offering_id, target.weekly_period_target,
-                        learning_group.id
-           )
-           SELECT DISTINCT learning_offering_id
-           FROM group_counts
-           WHERE actual_periods < weekly_period_target
-           ORDER BY learning_offering_id"#,
-    )
-    .bind(changed.target_timetable_version_id)
-    .bind(added_offering_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    for deficit_offering_id in deficit_offering_ids {
-        changed = change_sets::upsert_change_item(
-            &pool,
-            context.teacher_id,
-            changed.id,
-            UpsertAcademicTermChangeItemRequest::StopOffering {
-                change_set_row_version: changed.row_version,
-                item_row_version: None,
-                learning_offering_id: deficit_offering_id,
-            },
-        )
-        .await
-        .expect("test setup must remove unrelated incomplete targets");
-    }
     let draft_group = groups::list(&pool, added_offering_id)
         .await
         .unwrap()
@@ -4497,57 +3566,6 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
         prepared_group.roster_status,
         super::models::RosterStatus::Draft
     );
-    let weekly_target: i32 = sqlx::query_scalar(
-        r#"SELECT weekly_period_target
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
-    )
-    .bind(changed.target_timetable_version_id)
-    .bind(added_offering_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    for _ in 0..weekly_target {
-        let (day_of_week, bell_schedule_period_id): (String, Uuid) = sqlx::query_as(
-            r#"SELECT day.code, period.id
-               FROM (VALUES ('MON'), ('TUE'), ('WED'), ('THU'), ('FRI')) AS day(code)
-               JOIN academic_terms term ON term.id = $1
-               JOIN bell_schedule_periods period
-                 ON period.bell_schedule_id = term.bell_schedule_id
-                AND period.is_active
-               WHERE NOT EXISTS (
-                   SELECT 1 FROM academic_timetable_blocks block
-                   WHERE block.timetable_version_id = $2
-                     AND block.day_of_week = day.code
-                     AND block.bell_schedule_period_id = period.id
-                     AND block.is_active
-               )
-               ORDER BY day.code, period.order_index
-               LIMIT 1"#,
-        )
-        .bind(context.term_id)
-        .bind(changed.target_timetable_version_id)
-        .fetch_one(&pool)
-        .await
-        .expect("fixture must leave enough empty slots for the added course");
-        timetable_block_service::create_ordinary_block(
-            &pool,
-            context.teacher_id,
-            CreateOrdinaryTimetableBlockRequest {
-                timetable_version_id: changed.target_timetable_version_id,
-                academic_term_id: context.term_id,
-                learning_group_id: draft_group.id,
-                day_of_week,
-                bell_schedule_period_id,
-                room_id: None,
-                note: None,
-                instructor_ids: vec![context.teacher_id],
-            },
-        )
-        .await
-        .expect("prepared course periods must be schedulable in the draft version");
-    }
-
     let preview = change_sets::preview_change_set(&pool, changed.id)
         .await
         .unwrap();
@@ -4569,7 +3587,7 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
         changed.id,
         PublishAcademicTermChangeSetRequest {
             row_version: preview.change_set_row_version,
-            target_timetable_version_row_version: preview.target_timetable_version_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
             acknowledged_warning_codes: warning_codes,
             idempotency_key: stable_uuid("change-set:publish-added-course:publication"),
@@ -4584,7 +3602,7 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
     assert_eq!(published_group.status, LearningOfferingStatus::Published);
     assert_eq!(
         published_group.roster_status,
-        super::models::RosterStatus::Published
+        super::models::RosterStatus::Draft
     );
     assert!(published_group.teachers_locked);
     let unpublished_memberships: i64 = sqlx::query_scalar(
@@ -4595,7 +3613,29 @@ async fn publishing_an_added_course_publishes_its_prepared_groups_and_rosters_to
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(unpublished_memberships, 0);
+    let membership_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM learning_group_students WHERE learning_group_id=$1",
+    )
+    .bind(draft_group.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        unpublished_memberships, membership_count,
+        "opening publication never publishes student memberships"
+    );
+    let roster = groups::publish_roster(
+        &pool,
+        context.teacher_id,
+        draft_group.id,
+        PublishRosterRequest {
+            row_version: published_group.row_version,
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(roster.roster_status, super::models::RosterStatus::Published);
 }
 
 #[tokio::test]
@@ -4612,11 +3652,11 @@ async fn publication_rejects_a_preview_after_a_resource_revision_changes() {
     .await;
     let offering_id: Uuid = sqlx::query_scalar(
         r#"SELECT learning_offering_id
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1
+           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry)
+           WHERE delivery_version_id = $1
            ORDER BY learning_offering_id LIMIT 1"#,
     )
-    .bind(change_set.base_timetable_version_id)
+    .bind(change_set.base_delivery_version_id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -4656,7 +3696,7 @@ async fn publication_rejects_a_preview_after_a_resource_revision_changes() {
         changed.id,
         PublishAcademicTermChangeSetRequest {
             row_version: preview.change_set_row_version,
-            target_timetable_version_row_version: preview.target_timetable_version_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
             preview_hash: preview.preview_hash,
             acknowledged_warning_codes: warning_codes,
             idempotency_key: stable_uuid("change-set:publish-stale-preview:publication"),
@@ -4742,51 +3782,45 @@ async fn course_offering_persists_exact_assessment_total() {
 
 #[tokio::test]
 async fn manual_offering_creation_adds_the_target_to_an_existing_draft() {
-    let pool = prepare_delivery_runtime_fixture("academic_delivery_manual_draft_target").await;
+    let pool = prepare_delivery_runtime_fixture("academic_opening_manual_target").await;
     let context = planning_runtime_context(&pool).await;
-    let (term_start, bell_schedule_id): (NaiveDate, Uuid) =
-        sqlx::query_as("SELECT start_date, bell_schedule_id FROM academic_terms WHERE id = $1")
-            .bind(context.term_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let draft_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_versions (
-               id, academic_term_id, academic_year_id, effective_from, status,
-               bell_schedule_id, created_by
-           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6)"#,
-    )
-    .bind(draft_id)
-    .bind(context.term_id)
-    .bind(context.year_id)
-    .bind(term_start.checked_add_signed(Duration::days(7)).unwrap())
-    .bind(bell_schedule_id)
-    .bind(context.teacher_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let offering = offerings::create_for_timetable(
+    let created = create_runtime_change_set(
         &pool,
         context.teacher_id,
-        Some(draft_id),
+        context.term_id,
+        7,
+        "opening:manual-target",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(created.target_delivery_version_id),
         course_request(&context),
     )
     .await
     .unwrap();
-    let weekly_period_target: Option<i32> = sqlx::query_scalar(
-        r#"SELECT weekly_period_target
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
+    let target = school_academic_delivery::services::versions::get_version(
+        &pool,
+        created.target_delivery_version_id,
     )
-    .bind(draft_id)
-    .bind(offering.id)
-    .fetch_optional(&pool)
     .await
     .unwrap();
-
-    assert_eq!(weekly_period_target, Some(3));
+    let captured = target
+        .snapshot
+        .offerings
+        .iter()
+        .find(|item| item.id == offering.id)
+        .unwrap();
+    assert_eq!(captured.weekly_period_target, 3);
+    let journal = change_sets::get_change_set(&pool, created.id)
+        .await
+        .unwrap();
+    assert!(journal.items.iter().any(|item| matches!(item, super::models::AcademicTermChangeItem::AddOffering { learning_offering_id,.. } if *learning_offering_id==offering.id)));
+    assert_eq!(
+        target.status,
+        school_academic_delivery::models::versions::DeliveryVersionStatus::Draft
+    );
 }
 
 #[tokio::test]
@@ -5445,13 +4479,12 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let choices = default_preparation_choices(&preview);
 
     let mismatched = offerings::apply_from_curriculum(
-        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            timetable_version_id: None,
+            delivery_version_id: None,
             source_hash: "stale-source-hash".to_string(),
             idempotency_key: Uuid::new_v4(),
             choices: choices.clone(),
@@ -5462,13 +4495,12 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
 
     let idempotency_key = Uuid::new_v4();
     let applied = offerings::apply_from_curriculum(
-        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            timetable_version_id: None,
+            delivery_version_id: None,
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices: choices.clone(),
@@ -5477,13 +4509,12 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .await
     .unwrap();
     let retried = offerings::apply_from_curriculum(
-        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            timetable_version_id: None,
+            delivery_version_id: None,
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices,
@@ -5526,13 +4557,12 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .unwrap();
     let retained_choices = default_preparation_choices(&retained_preview);
     let retained = offerings::apply_from_curriculum(
-        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            timetable_version_id: None,
+            delivery_version_id: None,
             source_hash: retained_preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices: retained_choices,
@@ -5610,13 +4640,12 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         .unwrap()
         .groups = Vec::new();
     let empty_apply = offerings::apply_from_curriculum(
-        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            timetable_version_id: None,
+            delivery_version_id: None,
             source_hash: preview.source_hash.clone(),
             idempotency_key: Uuid::new_v4(),
             choices: empty_apply_choices,
@@ -5653,13 +4682,12 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
     ];
 
     let result = offerings::apply_from_curriculum(
-        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            timetable_version_id: None,
+            delivery_version_id: None,
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices,
@@ -6311,28 +5339,15 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
 async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverage() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_homeroom_workspace").await;
     let context = planning_runtime_context(&pool).await;
-    let (term_start, bell_schedule_id): (NaiveDate, Uuid) =
-        sqlx::query_as("SELECT start_date, bell_schedule_id FROM academic_terms WHERE id = $1")
-            .bind(context.term_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let draft_version_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_versions (
-               id, academic_term_id, academic_year_id, effective_from, status,
-               bell_schedule_id, created_by
-           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6)"#,
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        0,
+        "homeroom:opening",
     )
-    .bind(draft_version_id)
-    .bind(context.term_id)
-    .bind(context.year_id)
-    .bind(term_start)
-    .bind(bell_schedule_id)
-    .bind(context.teacher_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    .await;
+    let draft_version_id = revision.target_delivery_version_id;
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
@@ -6352,13 +5367,12 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         })
         .collect();
     let applied = offerings::apply_from_curriculum(
-        &super::adapters::TIMETABLE_MUTATIONS,
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            timetable_version_id: Some(draft_version_id),
+            delivery_version_id: Some(draft_version_id),
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices: deferred_choices,
@@ -6377,18 +5391,15 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     .await
     .unwrap();
     assert_eq!(deferred_group_count, 0);
-    let timetable_target_count: i64 = sqlx::query_scalar(
-        r#"SELECT count(*)
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1
-             AND learning_offering_id = ANY($2)"#,
-    )
-    .bind(draft_version_id)
-    .bind(&applied.offering_ids)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(timetable_target_count as usize, applied.offering_ids.len());
+    let opening =
+        school_academic_delivery::services::versions::get_version(&pool, draft_version_id)
+            .await
+            .unwrap();
+    assert!(applied.offering_ids.iter().all(|id| opening
+        .snapshot
+        .offerings
+        .iter()
+        .any(|item| item.id == *id)));
 
     let filter = AcademicResourceListFilter {
         includes_school_owned: true,
@@ -6403,10 +5414,10 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     )
     .await
     .expect("homeroom workspace should load");
-    assert_eq!(before.timetable_version_id, Some(draft_version_id));
+    assert_eq!(before.delivery_version_id, Some(draft_version_id));
     assert_eq!(
-        before.timetable_version_status,
-        Some(school_academic_core::models::TimetableVersionStatus::Draft)
+        before.delivery_version_status,
+        Some(school_academic_delivery::models::versions::DeliveryVersionStatus::Draft)
     );
     let room = before
         .homerooms
@@ -6502,12 +5513,10 @@ async fn active_homeroom_workspace_projects_the_effective_version_targets() {
     .await
     .unwrap();
 
-    assert!(workspace.timetable_version_id.is_some());
+    assert!(workspace.delivery_version_id.is_some());
     assert_eq!(
-        workspace.timetable_version_status,
-        Some(
-            school_academic_timetable::models::timetable_version::TimetableVersionStatus::Published
-        )
+        workspace.delivery_version_status,
+        Some(school_academic_delivery::models::versions::DeliveryVersionStatus::Published)
     );
     assert!(workspace
         .homerooms
@@ -6518,7 +5527,7 @@ async fn active_homeroom_workspace_projects_the_effective_version_targets() {
 }
 
 #[tokio::test]
-async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
+async fn homeroom_alignment_uses_the_explicit_delivery_version_target() {
     let pool =
         prepare_delivery_runtime_fixture("academic_delivery_workspace_alignment_version").await;
     let (year_id, term_id): (Uuid, Uuid) = sqlx::query_as(
@@ -6530,51 +5539,42 @@ async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let source = timetable_version_service::list_versions(&pool, term_id)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|version| {
-            version.status
-                == school_academic_timetable::models::timetable_version::TimetableVersionStatus::Published
-        })
-        .expect("active fixture must have a published timetable version");
-    let effective_from = source.effective_from + Duration::days(1);
-    let draft = timetable_version_service::clone_draft(
-        &pool,
-        source.created_by.or(source.published_by).unwrap(),
-        source.id,
-        CloneTimetableVersionRequest {
-            effective_from,
-            source_row_version: source.row_version,
-        },
+    let actor_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM users WHERE user_type='staff' AND status='active' ORDER BY id LIMIT 1",
     )
-    .await
-    .unwrap();
-    let (offering_id, standard_periods): (Uuid, i32) = sqlx::query_as(
-        r#"SELECT target.learning_offering_id, subject.periods_per_week
-           FROM academic_timetable_version_targets target
-           JOIN course_offering_details detail
-             ON detail.learning_offering_id = target.learning_offering_id
-           JOIN subject_versions subject ON subject.id = detail.subject_version_id
-           WHERE target.timetable_version_id = $1
-             AND subject.periods_per_week IS NOT NULL
-           ORDER BY target.learning_offering_id
-           LIMIT 1"#,
-    )
-    .bind(draft.id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    sqlx::query(
-        r#"UPDATE academic_timetable_version_targets
-           SET weekly_period_target = $1
-           WHERE timetable_version_id = $2 AND learning_offering_id = $3"#,
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
+        .bind(term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let revision =
+        create_runtime_change_set(&pool, actor_id, term_id, 1, "alignment:opening").await;
+    let opening = school_academic_delivery::services::versions::get_version(
+        &pool,
+        revision.target_delivery_version_id,
     )
-    .bind(standard_periods + 1)
-    .bind(draft.id)
-    .bind(offering_id)
-    .execute(&pool)
+    .await
+    .unwrap();
+    let offering=opening.snapshot.offerings.iter().find(|offering| matches!(&offering.catalog,LearningOfferingSnapshot::Course(course) if course.standard_periods_per_week > 0)).unwrap();
+    let offering_id = offering.id;
+    let standard_periods = match &offering.catalog {
+        LearningOfferingSnapshot::Course(course) => course.standard_periods_per_week,
+        _ => unreachable!(),
+    };
+    change_sets::upsert_change_item(
+        &pool,
+        actor_id,
+        revision.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: revision.row_version,
+            item_row_version: None,
+            learning_offering_id: offering_id,
+            weekly_period_target: standard_periods + 1,
+        },
+    )
     .await
     .unwrap();
 
@@ -6582,7 +5582,7 @@ async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
         &pool,
         year_id,
         term_id,
-        Some(draft.id),
+        Some(opening.id),
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()
@@ -6591,10 +5591,10 @@ async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
     .await
     .unwrap();
 
-    assert_eq!(workspace.timetable_version_id, Some(draft.id));
+    assert_eq!(workspace.delivery_version_id, Some(opening.id));
     assert_eq!(
-        workspace.timetable_version_effective_from,
-        Some(effective_from)
+        workspace.delivery_version_effective_from,
+        Some(opening.effective_from)
     );
     let aligned = workspace
         .homerooms
@@ -6612,7 +5612,7 @@ async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
 
     let other_version_id: Uuid = sqlx::query_scalar(
         r#"SELECT id
-           FROM academic_timetable_versions
+           FROM academic_delivery_versions
            WHERE academic_term_id <> $1
            ORDER BY id LIMIT 1"#,
     )
@@ -6631,7 +5631,7 @@ async fn homeroom_alignment_uses_the_explicit_timetable_version_target() {
         },
     )
     .await
-    .expect_err("a timetable version from another term must be rejected");
+    .expect_err("an opening version from another term must be rejected");
     assert!(matches!(error, AppError::ValidationError(_)));
 }
 
@@ -6674,49 +5674,19 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
     .fetch_one(&pool)
     .await
     .expect("fixture must expose a published catalog version outside this program term");
-    let extra = offerings::create(&pool, context.teacher_id, course_request(&context))
-        .await
-        .unwrap();
-    let (term_start, bell_schedule_id): (NaiveDate, Uuid) =
-        sqlx::query_as("SELECT start_date, bell_schedule_id FROM academic_terms WHERE id = $1")
-            .bind(context.term_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let base_version_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_versions (
-               id, academic_term_id, academic_year_id, effective_from, status,
-               bell_schedule_id, created_by, published_by, published_at
-           ) VALUES ($1, $2, $3, $4, 'published', $5, $6, $6, now())"#,
-    )
-    .bind(base_version_id)
-    .bind(context.term_id)
-    .bind(context.year_id)
-    .bind(term_start)
-    .bind(bell_schedule_id)
-    .bind(context.teacher_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let source = timetable_version_service::list_versions(&pool, context.term_id)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|version| {
-            version.status
-                == school_academic_timetable::models::timetable_version::TimetableVersionStatus::Published
-        })
-        .expect("test setup must have a published timetable version");
-    let effective_from = source.effective_from + Duration::days(7);
-    let draft = timetable_version_service::clone_draft(
+    let revision = create_runtime_change_set(
         &pool,
         context.teacher_id,
-        source.id,
-        CloneTimetableVersionRequest {
-            effective_from,
-            source_row_version: source.row_version,
-        },
+        context.term_id,
+        0,
+        "alignment:extra",
+    )
+    .await;
+    let extra = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
+        course_request(&context),
     )
     .await
     .unwrap();
@@ -6724,7 +5694,7 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
         &pool,
         context.year_id,
         context.term_id,
-        Some(draft.id),
+        Some(revision.target_delivery_version_id),
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()
@@ -7246,4 +6216,261 @@ async fn list_groups_for_term_rejects_unbounded_workspace() {
     .expect_err("an oversized term workspace must fail instead of truncating");
 
     assert!(matches!(error, AppError::ValidationError(message) if message.contains("2000")));
+}
+
+#[tokio::test]
+async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial_draft() {
+    use school_academic_timetable::models::timetable_version::CreateTimetableVersionRequest;
+    use school_academic_timetable::services::timetable_version_service::create_initial_draft;
+    let pool = prepare_delivery_runtime_fixture("academic_first_table").await;
+    let context = planning_runtime_context(&pool).await;
+    let request = CreateTimetableVersionRequest {
+        academic_term_id: context.term_id,
+    };
+    assert!(
+        create_initial_draft(&pool, context.teacher_id, request.clone())
+            .await
+            .is_err()
+    );
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        0,
+        "first:opening",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            name: "กลุ่มเปิดสอนก่อนจัดตาราง".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_homerooms(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![context.homeroom_id],
+        },
+    )
+    .await
+    .unwrap();
+    groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let preview = change_sets::preview_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    assert!(
+        !preview
+            .findings
+            .iter()
+            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
+        "{:?}",
+        preview.findings
+    );
+    change_sets::publish_change_set(
+        &pool,
+        context.teacher_id,
+        revision.id,
+        PublishAcademicTermChangeSetRequest {
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: Vec::new(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1",
+    )
+    .bind(context.term_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+    let table = create_initial_draft(&pool, context.teacher_id, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        table.delivery_version_id,
+        revision.target_delivery_version_id
+    );
+    assert_eq!(table.effective_from, None);
+    assert_eq!(table.source_version_id, None);
+    assert_eq!(
+        create_initial_draft(&pool, context.teacher_id, request)
+            .await
+            .unwrap()
+            .id,
+        table.id
+    );
+}
+
+#[tokio::test]
+async fn timetable_draft_deletion_serializes_with_autosave_without_partial_children() {
+    use school_academic_timetable::{
+        models::{
+            timetable_block::UpdateTimetableBlockRequest,
+            timetable_version::DeleteTimetableDraftRequest,
+        },
+        services::timetable_lifecycle,
+    };
+    let pool = prepare_concurrent_delivery_runtime_fixture("table_delete_save_race").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let draft = independent_table_draft(&pool, &context).await;
+    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
+    let block_id:Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND is_active ORDER BY id LIMIT 1").bind(draft.id).fetch_one(&pool).await.unwrap();
+    let block = timetable_block_service::get_block(&pool, block_id)
+        .await
+        .unwrap();
+    let current = timetable_version_service::get_version(&pool, draft.id, Utc::now().date_naive())
+        .await
+        .unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (saved, deleted) = tokio::join!(
+        timetable_block_service::update_block(
+            &pool,
+            context.teacher_id,
+            block.id,
+            UpdateTimetableBlockRequest {
+                timetable_version_id: draft.id,
+                row_version: block.row_version,
+                day_of_week: None,
+                bell_schedule_period_id: None,
+                title: None,
+                clear_title: false,
+                note: Some("บันทึกแข่งกับลบ".into()),
+                clear_note: false,
+                room_id: None,
+                clear_room: false,
+                instructor_ids: None,
+                teacher_ids: None
+            }
+        ),
+        timetable_lifecycle::delete_draft(
+            &pool,
+            context.teacher_id,
+            draft.id,
+            DeleteTimetableDraftRequest {
+                row_version: current.row_version,
+                expected_block_count: count
+            }
+        )
+    );
+    assert_ne!(
+        saved.is_ok(),
+        deleted.is_ok(),
+        "one serialized writer succeeds, the other sees a deleted or stale draft"
+    );
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    if deleted.is_ok() {
+        assert_eq!(remaining, 0);
+    } else {
+        assert_eq!(remaining, count);
+        assert!(matches!(deleted.unwrap_err(), AppError::Conflict(_)));
+    }
+}
+
+#[tokio::test]
+async fn timetable_draft_deletion_serializes_with_publication() {
+    use school_academic_timetable::{
+        models::{
+            timetable_publication::PublishTimetableVersionRequest,
+            timetable_version::DeleteTimetableDraftRequest,
+        },
+        services::timetable_lifecycle,
+    };
+    let pool = prepare_concurrent_delivery_runtime_fixture("table_delete_publish_race").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let draft = independent_table_draft(&pool, &context).await;
+    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
+    let preview = table_preview(&pool, draft.id).await;
+    assert!(preview.can_publish, "{:?}", preview.findings);
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (published, deleted) = tokio::join!(
+        timetable_lifecycle::publish(
+            &pool,
+            context.teacher_id,
+            draft.id,
+            PublishTimetableVersionRequest {
+                row_version: preview.row_version,
+                effective_from: preview.effective_from,
+                preview_hash: preview.preview_hash,
+                idempotency_key: Uuid::new_v4()
+            }
+        ),
+        timetable_lifecycle::delete_draft(
+            &pool,
+            context.teacher_id,
+            draft.id,
+            DeleteTimetableDraftRequest {
+                row_version: preview.row_version,
+                expected_block_count: count
+            }
+        )
+    );
+    assert_ne!(published.is_ok(), deleted.is_ok());
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    if published.is_ok() {
+        assert_eq!(remaining, count);
+        assert!(matches!(deleted.unwrap_err(), AppError::Conflict(_)));
+    } else {
+        assert_eq!(remaining, 0);
+        assert!(matches!(published.unwrap_err(), AppError::NotFound(_)));
+    }
 }

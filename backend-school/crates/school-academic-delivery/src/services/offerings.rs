@@ -9,8 +9,6 @@ use school_academic_core::services::validate_canonical_decimal;
 use school_authorization::AcademicResourceListFilter;
 use school_errors::AppError;
 
-use crate::ports::TimetableMutationPort;
-
 use super::super::models::{
     ActivityAttendanceRequirement, ActivityOfferingSnapshot, ActivityPassCriteria,
     ApplyCurriculumOfferingsRequest, ApplyCurriculumOfferingsResult, CourseOfferingSnapshot,
@@ -176,7 +174,7 @@ struct PreviewHashInput<'a> {
 struct ApplyRequestHashInput<'a> {
     academic_term_id: Uuid,
     study_program_ids: &'a [Uuid],
-    timetable_version_id: Option<Uuid>,
+    delivery_version_id: Option<Uuid>,
     source_hash: &'a str,
     choices: &'a [CurriculumPreparationChoice],
 }
@@ -300,16 +298,15 @@ pub async fn catalog_owners_for_curriculum_request(
 }
 
 pub async fn create(
-    timetable_mutations: &dyn TimetableMutationPort,
     pool: &PgPool,
     actor_user_id: Uuid,
-    timetable_version_id: Option<Uuid>,
+    delivery_version_id: Option<Uuid>,
     request: CreateLearningOfferingRequest,
 ) -> Result<LearningOffering, AppError> {
     let term_id = request.academic_term_id();
     let mut transaction = pool.begin().await?;
     let term =
-        require_writable_term(&mut transaction, term_id, timetable_version_id.is_some()).await?;
+        require_writable_term(&mut transaction, term_id, delivery_version_id.is_some()).await?;
     validate_targets(&mut transaction, &term, request.targets()).await?;
     let id = Uuid::new_v4();
     match request {
@@ -320,9 +317,8 @@ pub async fn create(
             insert_activity(&mut transaction, id, &term, request).await?;
         }
     }
-    if let Some(timetable_version_id) = timetable_version_id {
-        timetable_mutations
-            .include_offering_target(&mut transaction, timetable_version_id, id)
+    if let Some(delivery_version_id) = delivery_version_id {
+        super::versions::include_offering(&mut transaction, delivery_version_id, id, actor_user_id)
             .await?;
     }
     transaction.commit().await?;
@@ -387,6 +383,7 @@ pub async fn update(
     .bind(id)
     .execute(&mut *transaction)
     .await?;
+    super::versions::refresh_drafts_for_offering(&mut transaction, id).await?;
     transaction.commit().await?;
     append_audit(
         pool,
@@ -494,6 +491,7 @@ pub async fn preview_from_curriculum(
 
 #[derive(Debug, Clone)]
 pub struct TermPreparationDeliveryOutcome {
+    pub delivery_revision_id: Uuid,
     pub offering_ids: Vec<Uuid>,
     pub group_ids: Vec<Uuid>,
     pub created_offering_count: usize,
@@ -533,6 +531,7 @@ pub async fn preview_term_preparation(
 
 pub async fn apply_term_preparation(
     transaction: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
     preview: &CurriculumOfferingPreview,
 ) -> Result<TermPreparationDeliveryOutcome, AppError> {
     let term = require_writable_term(transaction, preview.academic_term_id, true).await?;
@@ -550,9 +549,20 @@ pub async fn apply_term_preparation(
         })
         .collect::<Vec<_>>();
     validate_preparation_choices(&preview.proposals, &choices)?;
-    let applied =
-        apply_preview_in_transaction(transaction, &term, preview, &choices, None, None).await?;
+    let applied = apply_preview_in_transaction(transaction, &term, preview, &choices).await?;
+    let revision_id = super::change_sets::create_change_set_in_transaction(
+        transaction,
+        actor,
+        crate::models::CreateAcademicTermChangeSetRequest {
+            academic_term_id: term.id,
+            effective_from: term.start_date,
+            reason: "เตรียมเปิดสอนตามโครงสร้างหลักสูตร".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await?;
     Ok(TermPreparationDeliveryOutcome {
+        delivery_revision_id: revision_id,
         offering_ids: applied.offering_ids,
         group_ids: applied.group_ids,
         created_offering_count: applied.created_offering_count,
@@ -561,7 +571,6 @@ pub async fn apply_term_preparation(
 }
 
 pub async fn apply_from_curriculum(
-    timetable_mutations: &dyn TimetableMutationPort,
     pool: &PgPool,
     actor_user_id: Uuid,
     request: ApplyCurriculumOfferingsRequest,
@@ -571,7 +580,7 @@ pub async fn apply_from_curriculum(
     let request_hash = stable_hash(&ApplyRequestHashInput {
         academic_term_id: request.academic_term_id,
         study_program_ids: &program_ids,
-        timetable_version_id: request.timetable_version_id,
+        delivery_version_id: request.delivery_version_id,
         source_hash: &request.source_hash,
         choices: &choices,
     })?;
@@ -638,15 +647,18 @@ pub async fn apply_from_curriculum(
     }
     validate_preparation_choices(&preview.proposals, &choices)?;
 
-    let applied = apply_preview_in_transaction(
-        &mut transaction,
-        &term,
-        &preview,
-        &choices,
-        Some(timetable_mutations),
-        request.timetable_version_id,
-    )
-    .await?;
+    let applied = apply_preview_in_transaction(&mut transaction, &term, &preview, &choices).await?;
+    if let Some(version_id) = request.delivery_version_id {
+        for offering_id in &applied.offering_ids {
+            super::versions::include_offering(
+                &mut transaction,
+                version_id,
+                *offering_id,
+                actor_user_id,
+            )
+            .await?;
+        }
+    }
     sqlx::query(
         "INSERT INTO learning_delivery_apply_runs (
              idempotency_key, academic_term_id, request_hash, source_hash,
@@ -699,8 +711,6 @@ async fn apply_preview_in_transaction(
     term: &TermContext,
     preview: &CurriculumOfferingPreview,
     choices: &[CurriculumPreparationChoice],
-    timetable_mutations: Option<&dyn TimetableMutationPort>,
-    timetable_version_id: Option<Uuid>,
 ) -> Result<AppliedCurriculumPreview, AppError> {
     let mut offering_ids = Vec::new();
     let mut group_ids = Vec::new();
@@ -735,13 +745,6 @@ async fn apply_preview_in_transaction(
             insert_generated_offering(transaction, term, proposal).await?
         };
         insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
-        if let (Some(timetable_mutations), Some(timetable_version_id)) =
-            (timetable_mutations, timetable_version_id)
-        {
-            timetable_mutations
-                .include_offering_target(transaction, timetable_version_id, offering_id)
-                .await?;
-        }
         offering_ids.push(offering_id);
         if choice.action == PreparationAction::Apply {
             for group in &choice.groups {

@@ -10,10 +10,7 @@
 		summarizeHomeroomDelivery,
 		type HomeroomReadinessFilter
 	} from '#lib/academic/homeroom-delivery.js';
-	import {
-		deliveryTimetableAction,
-		isPendingSynchronizedActivity
-	} from '#lib/academic/synchronized-activity-delivery.js';
+	import { isPendingSynchronizedActivity } from '#lib/academic/synchronized-activity-delivery.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -25,7 +22,6 @@
 		ChevronDown,
 		CircleAlert,
 		CirclePlus,
-		Clock3,
 		Search,
 		UsersRound
 	} from '@lucide/svelte';
@@ -33,15 +29,11 @@
 	let {
 		workspace,
 		canManage = false,
-		canManageTimetable = false,
-		onPrepareSynchronizedActivity,
-		onIncludeOfferingInTimetable
+		onPrepareSynchronizedActivity
 	}: {
 		workspace: Workspace;
 		canManage?: boolean;
-		canManageTimetable?: boolean;
 		onPrepareSynchronizedActivity?: (catalogVersionId: string) => void;
-		onIncludeOfferingInTimetable?: (offeringId: string) => void;
 	} = $props();
 	let search = $state('');
 	let readiness = $state<HomeroomReadinessFilter>('all');
@@ -61,16 +53,11 @@
 		split: 'แบ่งหลายกลุ่ม',
 		deferred: 'รอรูปแบบการเลือก'
 	} as const;
-	const timetableLabels = {
-		unscheduled: 'ยังไม่ลงตาราง',
-		partly_scheduled: 'ลงตารางบางส่วน',
-		scheduled: 'ลงตารางแล้ว'
-	} as const;
 	const alignmentLabels: Record<CurriculumDeliveryAlignmentState, string> = {
 		matches_curriculum: 'ตรงกับหลักสูตร',
 		curriculum_requirement_not_offered: 'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
 		extra_offering: 'เปิดสอนเพิ่มเติมนอกหลักสูตร',
-		ended_early: 'หยุดสอนก่อนรุ่นตารางนี้มีผล',
+		ended_early: 'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
 		operational_periods_differ: 'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
 	};
 
@@ -80,8 +67,7 @@
 			item.offeringState === 'missing' ||
 			item.groupMode === 'missing' ||
 			(item.offeringId !== null && item.weeklyPeriodTarget === null) ||
-			(item.groupMode !== 'deferred' && item.teacherState === 'missing_primary') ||
-			(item.groupMode !== 'deferred' && item.timetableState !== 'scheduled')
+			(item.groupMode !== 'deferred' && item.teacherState === 'missing_primary')
 		);
 	}
 
@@ -102,8 +88,8 @@
 			academicTermId: workspace.academicTermId,
 			studyProgramId: room.studyProgram.id
 		});
-		if (workspace.timetableVersionId) {
-			query.set('timetableVersionId', workspace.timetableVersionId);
+		if (workspace.deliveryVersionId) {
+			query.set('deliveryVersionId', workspace.deliveryVersionId);
 		}
 		return `/staff/academic/curricula/${room.studyProgram.curriculumId}?${query.toString()}`;
 	}
@@ -159,7 +145,7 @@
 				<div>
 					<h2 class="font-semibold">ตรวจการเปิดสอนทีละห้อง</h2>
 					<p class="mt-1 text-sm text-muted-foreground">
-						เริ่มจากห้องประจำชั้น แล้วตรวจรายการเปิดสอน กลุ่ม ครูหลัก และตารางสอนตามลำดับ
+						เริ่มจากห้องประจำชั้น แล้วตรวจรายการเปิดสอน กลุ่ม และครูหลักของรุ่นที่เลือก
 					</p>
 				</div>
 				<div class="grid gap-2 sm:grid-cols-[minmax(250px,1fr)_190px]">
@@ -345,38 +331,10 @@
 														</div>
 													</Table.Cell>
 													<Table.Cell>
-														<div class="flex items-center gap-1.5 text-sm">
-															<Clock3 class="size-3.5" />
-															{item.offeringId && item.weeklyPeriodTarget === null
-																? 'ยังไม่อยู่ในรุ่นตาราง'
-																: timetableLabels[item.timetableState]}
-														</div>
-													</Table.Cell>
-													<Table.Cell>
 														{#if item.offeringId}
 															<div class="flex items-center justify-end gap-1">
-																{#if deliveryTimetableAction(item, workspace.timetableVersionStatus) === 'include' || deliveryTimetableAction(item, workspace.timetableVersionStatus) === 'revise_then_include'}
-																	{#if canManage && canManageTimetable && onIncludeOfferingInTimetable}
-																		<Button
-																			type="button"
-																			size="sm"
-																			variant="outline"
-																			onclick={() =>
-																				onIncludeOfferingInTimetable?.(item.offeringId!)}
-																		>
-																			<CirclePlus class="size-3.5" />
-																			{workspace.timetableVersionStatus === 'published'
-																				? 'สร้างรุ่นร่าง'
-																				: 'เพิ่มเข้ารุ่นตาราง'}
-																		</Button>
-																	{:else}
-																		<span class="text-xs text-muted-foreground"
-																			>ต้องมีสิทธิ์จัดตาราง</span
-																		>
-																	{/if}
-																{/if}
 																<Button
-																	href={`/staff/academic/delivery/${item.offeringId}`}
+																	href={`/staff/academic/delivery/${item.offeringId}?deliveryVersionId=${workspace.deliveryVersionId ?? ''}`}
 																	data-sveltekit-preload-data="tap"
 																	size="icon"
 																	variant="ghost"
@@ -386,7 +344,7 @@
 																</Button>
 															</div>
 														{:else if isPendingSynchronizedActivity(item)}
-															{#if canManage && (workspace.timetableVersionStatus === null || canManageTimetable) && onPrepareSynchronizedActivity}
+															{#if canManage && onPrepareSynchronizedActivity}
 																<Button
 																	type="button"
 																	size="sm"
@@ -395,7 +353,7 @@
 																		onPrepareSynchronizedActivity?.(item.catalogVersionId)}
 																>
 																	<CirclePlus class="size-3.5" />
-																	{workspace.timetableVersionStatus === 'published'
+																	{workspace.deliveryVersionStatus === 'published'
 																		? 'สร้างรุ่นร่างและเปิดใช้งาน'
 																		: 'เปิดใช้งาน'}
 																</Button>
@@ -440,7 +398,7 @@
 														</div>
 													</div>
 													<Button
-														href={`/staff/academic/delivery/${item.offeringId}`}
+														href={`/staff/academic/delivery/${item.offeringId}?deliveryVersionId=${workspace.deliveryVersionId ?? ''}`}
 														data-sveltekit-preload-data="tap"
 														size="icon"
 														variant="ghost"

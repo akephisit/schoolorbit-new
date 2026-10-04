@@ -140,6 +140,20 @@ pub async fn get_daily_teaching_overview(
     let day = day_code_from_date(date).to_string();
     let version =
         timetable_version_service::resolve_for_date(pool, query.academic_term_id, date).await?;
+    let source = school_academic_delivery::services::versions::get_version(
+        pool,
+        version.delivery_version_id,
+    )
+    .await?;
+    let eligible_ids = source
+        .snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| offering.groups.iter())
+        .flat_map(|group| group.teachers.iter().map(|teacher| teacher.teacher_id))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let periods: Vec<DailyTeachingPeriod> = sqlx::query_as(
         r#"SELECT id, name, start_time, end_time, order_index
            FROM bell_schedule_periods
@@ -157,8 +171,8 @@ pub async fn get_daily_teaching_overview(
                       nullif(user_account.last_name, '')
                   ) AS display_name
            FROM users user_account
-           WHERE user_account.status = 'active'
-             AND EXISTS (
+           WHERE user_account.user_type = 'staff'
+             AND (EXISTS (
                  SELECT 1
                  FROM academic_timetable_blocks block
                  LEFT JOIN academic_timetable_block_groups block_group
@@ -173,28 +187,16 @@ pub async fn get_daily_teaching_overview(
                    AND block.timetable_version_id = $2
                    AND block.is_active
              )
-             OR ($3 AND EXISTS (
-                 SELECT 1
-                 FROM learning_group_teachers eligible_teacher
-                 JOIN learning_groups learning_group
-                   ON learning_group.id = eligible_teacher.learning_group_id
-                 JOIN academic_timetable_version_targets target
-                   ON target.timetable_version_id = $2
-                  AND target.learning_offering_id = learning_group.learning_offering_id
-                 WHERE eligible_teacher.teacher_id = user_account.id
-                   AND learning_group.academic_term_id = $1
-                   AND eligible_teacher.starts_on <= $4
-                   AND (eligible_teacher.ends_on IS NULL OR eligible_teacher.ends_on >= $4)
-             ))
+             OR ($3 AND user_account.status='active' AND user_account.id=ANY($4)))
            ORDER BY display_name, user_account.id"#,
     )
     .bind(query.academic_term_id)
     .bind(version.id)
     .bind(include_empty_teachers)
-    .bind(date)
+    .bind(&eligible_ids)
     .fetch_all(pool)
     .await?;
-    let entries: Vec<EntrySeed> = sqlx::query_as(
+    let mut entries: Vec<EntrySeed> = sqlx::query_as(
         r#"WITH allocations AS (
                SELECT instructor.instructor_id AS teacher_id,
                       block_group.id AS allocation_id,
@@ -246,9 +248,10 @@ pub async fn get_daily_teaching_overview(
                   CASE
                       WHEN allocation.learning_group_id IS NOT NULL THEN ARRAY(
                           SELECT homeroom.name
-                          FROM learning_group_homerooms coverage
+                          FROM academic_timetable_block_groups placed
+                          CROSS JOIN LATERAL unnest(placed.homeroom_ids) coverage(homeroom_id)
                           JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
-                          WHERE coverage.learning_group_id = allocation.learning_group_id
+                          WHERE placed.id = allocation.allocation_id
                           ORDER BY homeroom.name, homeroom.id
                       )
                       ELSE ARRAY(
@@ -294,6 +297,24 @@ pub async fn get_daily_teaching_overview(
     .fetch_all(pool)
     .await?;
 
+    for entry in &mut entries {
+        if let Some(offering) = entry.offering_id.and_then(|id| {
+            source
+                .snapshot
+                .offerings
+                .iter()
+                .find(|offering| offering.id == id)
+        }) {
+            entry.offering_code = Some(offering.code.clone());
+            entry.offering_name = Some(offering.name.clone());
+            if let Some(group) = entry
+                .learning_group_id
+                .and_then(|id| offering.groups.iter().find(|group| group.id == id))
+            {
+                entry.learning_group_name = Some(group.name.clone());
+            }
+        }
+    }
     Ok(build_overview(
         date,
         day,

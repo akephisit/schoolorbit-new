@@ -1,5 +1,5 @@
-pub(crate) mod adapters;
 pub mod handlers;
+pub mod version_handlers;
 
 #[cfg(test)]
 pub(crate) mod models {
@@ -16,6 +16,11 @@ use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/delivery-versions", get(version_handlers::list_versions))
+        .route(
+            "/delivery-versions/{id}",
+            get(version_handlers::get_version),
+        )
         .route("/delivery/workspace", get(handlers::get_delivery_overview))
         .route(
             "/delivery/homerooms",
@@ -90,14 +95,6 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/term-change-sets/{id}/preview",
             get(handlers::preview_term_change_set),
-        )
-        .route(
-            "/term-change-sets/{id}/teacher-handoff/preview",
-            post(handlers::preview_teacher_handoff),
-        )
-        .route(
-            "/term-change-sets/{id}/teacher-handoff/apply",
-            post(handlers::apply_teacher_handoff),
         )
         .route(
             "/term-change-sets/{id}/publish",

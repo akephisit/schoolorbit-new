@@ -54,6 +54,7 @@ use school_academic_core::ports::{
     TermPreparationContext, TermPreparationMappingKind, TermPreparationModule,
     TermPreparationModuleOutcome,
 };
+use school_academic_delivery::models::versions::*;
 use school_academic_delivery::models::*;
 use school_academic_lifecycle::models::*;
 use school_academic_results::models::*;
@@ -63,9 +64,12 @@ use school_academic_timetable::models::timetable::{
     TimetableTemplateTargetSelector, UpdateTemplateRequest,
 };
 use school_academic_timetable::models::timetable_block::*;
+use school_academic_timetable::models::timetable_publication::*;
+use school_academic_timetable::models::timetable_source::*;
 use school_academic_timetable::models::timetable_version::{
-    CloneTimetableVersionRequest, IncludeTimetableVersionOfferingRequest, TimetableVersion,
-    TimetableVersionDisplayState, TimetableVersionStatus, TimetableVersionTarget,
+    CloneTimetableVersionRequest, DeleteTimetableDraftRequest, DeletedTimetableDraft,
+    TimetableVersion, TimetableVersionDisplayState, TimetableVersionStatus, TimetableVersionTarget,
+    UpdateTimetableDeliverySourceRequest,
 };
 use school_academic_timetable::services::daily_teaching::{
     DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
@@ -335,9 +339,13 @@ use utoipa::OpenApi;
         crate::modules::academic::handlers::timetable_blocks::swap_blocks,
         crate::modules::academic::handlers::timetable_blocks::daily_teaching_overview,
         crate::modules::academic::handlers::timetable_versions::list_versions,
+        crate::modules::academic::handlers::timetable_versions::create_version,
         crate::modules::academic::handlers::timetable_versions::resolve_version,
         crate::modules::academic::handlers::timetable_versions::clone_version,
-        crate::modules::academic::handlers::timetable_versions::include_offering,
+        crate::modules::academic::handlers::timetable_versions::update_delivery_source,
+        crate::modules::academic::handlers::timetable_versions::delete_draft,
+        crate::modules::academic::handlers::timetable_versions::preview_publication,
+        crate::modules::academic::handlers::timetable_versions::publish_version,
         crate::modules::academic::handlers::timetable_templates::list_templates,
         crate::modules::academic::handlers::timetable_templates::get_template,
         crate::modules::academic::handlers::timetable_templates::create_template,
@@ -561,6 +569,8 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::apply_group_roster,
         crate::modules::academic::delivery::handlers::publish_group_roster,
         crate::modules::academic::delivery::handlers::list_term_change_sets,
+        crate::modules::academic::delivery::version_handlers::list_versions,
+        crate::modules::academic::delivery::version_handlers::get_version,
         crate::modules::academic::delivery::handlers::create_term_change_set,
         crate::modules::academic::delivery::handlers::get_term_change_set,
         crate::modules::academic::delivery::handlers::update_term_change_set,
@@ -568,8 +578,8 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::upsert_term_change_item,
         crate::modules::academic::delivery::handlers::delete_term_change_item,
         crate::modules::academic::delivery::handlers::preview_term_change_set,
-        crate::modules::academic::delivery::handlers::preview_teacher_handoff,
-        crate::modules::academic::delivery::handlers::apply_teacher_handoff,
+        crate::modules::academic::handlers::teacher_handoff::preview_teacher_handoff,
+        crate::modules::academic::handlers::teacher_handoff::apply_teacher_handoff,
         crate::modules::academic::delivery::handlers::publish_term_change_set,
         crate::modules::academic::delivery::handlers::list_group_memberships,
         crate::modules::academic::delivery::handlers::add_group_membership,
@@ -1419,7 +1429,6 @@ struct SchoolApiDoc;
         HomeroomOfferingState,
         HomeroomGroupMode,
         HomeroomTeacherState,
-        HomeroomTimetableState,
         DeliveryPrerequisite,
         UnlinkedDeliveryItem,
         HomeroomDeliveryGroupSummary,
@@ -1451,6 +1460,18 @@ struct SchoolApiDoc;
         PublishRosterRequest,
         LearningGroupStudent,
         AcademicTermChangeSetStatus,
+        DeliveryVersionStatus,
+        DeliverySnapshot,
+        DeliveryVersionOffering,
+        DeliveryVersionGroup,
+        DeliveryVersionTeacher,
+        DeliveryVersion,
+        DeliveryVersionSummary,
+        DeliveryVersionQuery,
+        DeliveryReadinessCode,
+        DeliveryReadinessFinding,
+        ApiResponse<Vec<DeliveryVersionSummary>>,
+        ApiResponse<DeliveryVersion>,
         AcademicTermChangeActionKind,
         AcademicTermChangeItem,
         AcademicTermChangeSet,
@@ -1465,7 +1486,6 @@ struct SchoolApiDoc;
         AcademicChangeFindingCode,
         AcademicChangeFinding,
         AcademicChangeImpactCounts,
-        AcademicOfferingScheduleCount,
         AcademicTermChangeSetPreview,
         PublishAcademicTermChangeSetRequest,
         TeacherHandoffMode,
@@ -1563,7 +1583,16 @@ struct SchoolApiDoc;
         TimetableVersionTarget,
         TimetableVersion,
         CloneTimetableVersionRequest,
-        IncludeTimetableVersionOfferingRequest,
+        DeleteTimetableDraftRequest,
+        DeletedTimetableDraft,
+        UpdateTimetableDeliverySourceRequest,
+        PreviewTimetablePublicationRequest,
+        PublishTimetableVersionRequest,
+        TimetablePublicationPreview,
+        TimetablePublicationFinding,
+        TimetablePublicationFindingCode,
+        TimetableSourceIssue,
+        TimetableSourceIssueCode,
         ApiResponse<Vec<TimetableVersion>>,
         ApiResponse<TimetableVersion>,
         ApiResponse<TimetableVersionTarget>,
@@ -2754,7 +2783,7 @@ mod tests {
                 "id",
                 "reason",
                 "status",
-                "targetTimetableVersionId",
+                "targetDeliveryVersionId",
                 "updatedAt",
             ]
         );
@@ -3435,7 +3464,7 @@ mod tests {
             BTreeSet::from([
                 ("academicTermId".to_string(), true),
                 ("academicYearId".to_string(), true),
-                ("timetableVersionId".to_string(), false),
+                ("deliveryVersionId".to_string(), false),
             ])
         );
         assert_eq!(
@@ -3914,7 +3943,7 @@ mod tests {
     }
 
     #[test]
-    fn documents_release_one_timetable_version_cutover() {
+    fn documents_independent_delivery_and_timetable_version_lifecycles() {
         let document = school_api_value().expect("document should serialize");
         assert_operations(
             &document,
@@ -3935,14 +3964,60 @@ mod tests {
                     "cloneTimetableVersion",
                 ),
                 (
-                    "/api/academic/timetable-versions/{version_id}/targets",
-                    "post",
-                    "includeTimetableVersionOffering",
+                    "/api/academic/timetable-versions/{version_id}/delivery-source",
+                    "put",
+                    "updateTimetableDeliverySource",
                 ),
             ],
         );
 
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/academic/delivery-versions",
+                    "get",
+                    "listDeliveryVersions",
+                ),
+                (
+                    "/api/academic/delivery-versions/{id}",
+                    "get",
+                    "getDeliveryVersion",
+                ),
+                (
+                    "/api/academic/timetable-versions",
+                    "post",
+                    "createTimetableVersion",
+                ),
+                (
+                    "/api/academic/timetable-versions/{version_id}/publication-preview",
+                    "post",
+                    "previewTimetablePublication",
+                ),
+                (
+                    "/api/academic/timetable-versions/{version_id}/publish",
+                    "post",
+                    "publishTimetableVersion",
+                ),
+                (
+                    "/api/academic/timetable-versions/{version_id}/delete-draft",
+                    "post",
+                    "deleteTimetableDraft",
+                ),
+            ],
+        );
+        assert!(
+            document["paths"]["/api/academic/timetable-versions/{version_id}/targets"].is_null()
+        );
         let schemas = &document["components"]["schemas"];
+        assert!(required(&schemas["TimetableVersion"]).contains(&"deliveryVersionId"));
+        assert!(schemas["TimetableVersion"]["properties"]["changeSetId"].is_null());
+        assert!(
+            schemas["AcademicTermChangeSet"]["properties"]["targetTimetableVersionId"].is_null()
+        );
+        assert!(
+            schemas["AcademicTermChangeSet"]["properties"]["targetDeliveryVersionId"].is_object()
+        );
         for schema_name in [
             "TimetableVersion",
             "TimetableVersionTarget",
@@ -3972,9 +4047,9 @@ mod tests {
         assert!(schemas["UpdateTimetableBlockRequest"]["properties"]["instructorIds"].is_object());
         assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"startsOn"));
         assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"displayName"));
-        assert!(required(&schemas["HomeroomDeliveryWorkspace"]).contains(&"timetableVersionId"));
+        assert!(required(&schemas["HomeroomDeliveryWorkspace"]).contains(&"deliveryVersionId"));
         assert!(contains_null(
-            &schemas["HomeroomDeliveryWorkspace"]["properties"]["timetableVersionId"]
+            &schemas["HomeroomDeliveryWorkspace"]["properties"]["deliveryVersionId"]
         ));
         assert!(required(&schemas["HomeroomDeliveryItem"]).contains(&"weeklyPeriodTarget"));
         assert!(contains_null(

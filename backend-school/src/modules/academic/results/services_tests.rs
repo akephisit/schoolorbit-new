@@ -1750,6 +1750,7 @@ async fn results_locked_course_keeps_policy_and_confirmation_snapshot() {
 #[tokio::test]
 async fn results_activity_completeness_assignment_and_roster_staleness() {
     let (pool, mut actor, ctx, _) = fixture("results_activity").await;
+    apply_migrations_through(&pool, 88).await.unwrap();
     let (group,teacher):(Uuid,Uuid)=sqlx::query_as("SELECT g.id,t.teacher_id FROM learning_groups g JOIN activity_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE t.role='primary' AND EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.membership_status='active') ORDER BY g.id LIMIT 1").fetch_one(&pool).await.unwrap();
     actor.user_id = teacher;
     let ws = get_activity_workspace(&pool, &actor, &ctx, group)

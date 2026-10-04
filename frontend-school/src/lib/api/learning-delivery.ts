@@ -9,6 +9,25 @@ import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 
+export type DeliveryVersion = Schemas['DeliveryVersion'];
+export type DeliveryVersionSummary = Schemas['DeliveryVersionSummary'];
+export const listDeliveryVersions = (academicTermId: string, options: ApiRequestOptions = {}) =>
+	deliveryData(
+		apiClient.get<DeliveryVersionSummary[]>('/api/academic/delivery-versions', {
+			...options,
+			query: { academicTermId: selectedTerm(academicTermId) }
+		}),
+		'โหลดรุ่นเปิดสอนไม่สำเร็จ'
+	);
+export const getDeliveryVersion = (id: string, options: ApiRequestOptions = {}) =>
+	deliveryData(
+		apiClient.get<DeliveryVersion>(
+			`/api/academic/delivery-versions/${encodeURIComponent(id)}`,
+			options
+		),
+		'โหลดข้อมูลรุ่นเปิดสอนไม่สำเร็จ'
+	);
+
 export type LearningOffering = Schemas['LearningOffering'];
 export type LearningDeliveryOverview = Schemas['LearningDeliveryOverview'];
 export type LearningOfferingOverviewItem = Schemas['LearningOfferingOverviewItem'];
@@ -94,7 +113,7 @@ type DeliveryManagementOptionsQuery = NonNullable<
 type HomeroomDeliveryWorkspaceQuery = NonNullable<
 	operations['getHomeroomDeliveryWorkspace']['parameters']['query']
 >;
-type HomeroomDeliveryRequestOptions = ApiRequestOptions & { timetableVersionId?: string };
+type HomeroomDeliveryRequestOptions = ApiRequestOptions & { deliveryVersionId?: string };
 type ListAcademicTermChangeSetsQuery = NonNullable<
 	operations['listAcademicTermChangeSets']['parameters']['query']
 >;
@@ -126,12 +145,12 @@ export const getHomeroomDeliveryWorkspace = (
 ) => {
 	const yearId = academicYearId.trim();
 	if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-	const timetableVersionId = options.timetableVersionId?.trim();
-	const { timetableVersionId: _selectedVersion, ...requestOptions } = options;
+	const deliveryVersionId = options.deliveryVersionId?.trim();
+	const { deliveryVersionId: _selectedVersion, ...requestOptions } = options;
 	const query = {
 		academicYearId: yearId,
 		academicTermId: selectedTerm(academicTermId),
-		...(timetableVersionId ? { timetableVersionId } : {})
+		...(deliveryVersionId ? { deliveryVersionId } : {})
 	} satisfies HomeroomDeliveryWorkspaceQuery;
 	return deliveryData(
 		apiClient.get<HomeroomDeliveryWorkspace>('/api/academic/delivery/homerooms', {
@@ -190,10 +209,10 @@ export const getLearningOffering = (id: string, options: ApiRequestOptions = {})
 	);
 export const createLearningOffering = (
 	body: CreateLearningOfferingRequest,
-	timetableVersionId?: string | null
+	deliveryVersionId?: string | null
 ) => {
 	const query = {
-		...(timetableVersionId ? { timetableVersionId } : {})
+		...(deliveryVersionId ? { deliveryVersionId } : {})
 	} satisfies CreateLearningOfferingQuery;
 	return deliveryData(
 		apiClient.post<LearningOffering>('/api/academic/offerings', body, { query }),
@@ -393,7 +412,7 @@ export const previewTeacherHandoff = (
 ) =>
 	deliveryData(
 		apiClient.post<TeacherHandoffPreview>(
-			`${changeSetPath(id)}/teacher-handoff/preview`,
+			`/api/academic/teacher-handoffs/${encodeURIComponent(id)}/preview`,
 			body,
 			options
 		),
@@ -408,7 +427,7 @@ export const applyTeacherHandoff = (
 ) =>
 	deliveryData(
 		apiClient.post<ApplyTeacherHandoffResponse>(
-			`${changeSetPath(id)}/teacher-handoff/apply`,
+			`/api/academic/teacher-handoffs/${encodeURIComponent(id)}/apply`,
 			body,
 			options
 		),

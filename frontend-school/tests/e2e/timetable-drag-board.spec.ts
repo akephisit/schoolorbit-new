@@ -23,6 +23,7 @@ function timetableUrl(): string {
 test('shows periods across the top and weekdays down the left side', async ({ page }) => {
 	await installTimetableMock(page);
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const board = page.locator('section[aria-label^="ตารางของ "]');
 	await expect(board.locator('thead th').first()).toHaveText('วัน / คาบ');
@@ -41,6 +42,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 }) => {
 	const mock = await installTimetableMock(page, { requiredPeriods: 3 });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await expect(page.getByText('3/3', { exact: true })).toBeVisible();
 	expect(mock.workspaceRequestCount()).toBe(1);
@@ -71,6 +73,7 @@ test('preselects the first preferred room and lets the scheduler override it bef
 		preferredRoomIds: [timetableIds.roomB, timetableIds.room]
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
 	const teacherPicker = trayCard.getByRole('button', { name: /เลือกครู/ });
@@ -107,6 +110,7 @@ test('keeps every period and the actions visible in the special-period dialog', 
 	await page.setViewportSize({ width: 1920, height: 1080 });
 	await installTimetableMock(page, { periodCount: 10 });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
 	const dialog = page.getByRole('dialog', { name: 'เพิ่มคาบพิเศษ' });
@@ -129,6 +133,7 @@ test('preserves multiline special-period titles while creating, editing, and dis
 	);
 	await installTimetableMock(page, { blocks: [structuralBlock], requiredPeriods: 0 });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	const cardTitle = card.locator('[data-timetable-card-title]');
@@ -167,6 +172,7 @@ test('keeps timetable and tray cards draggable without drag icons or structural 
 		includeSynchronizedDemand: true
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const cellCard = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	await expect(cellCard).toHaveAttribute('draggable', 'true');
@@ -200,6 +206,7 @@ test('hides shared scheduling metadata while preserving course teacher names', a
 		requiredPeriods: 0
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const structuralCard = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	await expect(structuralCard).not.toContainText('ครูคณิตศาสตร์ A');
@@ -222,6 +229,7 @@ test('shows the dragged lesson preview only in the cell currently under the poin
 }) => {
 	await installTimetableMock(page, { requiredPeriods: 1 });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const board = page.locator('section[aria-label^="ตารางของ "]');
 	const firstRow = board.locator('tbody tr').first();
@@ -272,6 +280,7 @@ test('places immediately and keeps other timetable cards editable while saves ru
 		updateDelayMs: 500
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
 	const secondPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 2"]').first();
@@ -320,6 +329,7 @@ test('saves edited room in the background while another lesson can still be drag
 		updateDelayMs: 700
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
@@ -359,6 +369,7 @@ test('restores the previous room when a background detail save fails', async ({ 
 		failUpdate: true
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
 	const dialog = page.getByRole('dialog');
@@ -369,7 +380,9 @@ test('restores the previous room when a background detail save fails', async ({ 
 	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	await expect(card).toContainText('LAB-2', { timeout: 300 });
 	await expect(card).toContainText('MATH-1', { timeout: 3000 });
-	await expect(page.getByText(/ข้อมูลคาบเปลี่ยนแปลงแล้ว/)).toBeVisible();
+	await expect(
+		page.getByRole('alert').filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
+	).toBeVisible();
 	expect(mock.updateRequestCount()).toBe(1);
 	expect(mock.workspaceRequestCount()).toBe(1);
 });
@@ -383,6 +396,7 @@ test('rolls an optimistic placement back when background validation rejects it',
 		previewDelayMs: 3000
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
 	const destination = page.locator('td[aria-label^="วันจันทร์ คาบ 2"]').first();
@@ -406,25 +420,37 @@ test('rolls an optimistic placement back when background validation rejects it',
 test('removes immediately and restores the card when the background delete fails', async ({
 	page
 }) => {
+	let releaseDelete: () => void = () => {};
+	const deleteGate = new Promise<void>((resolve) => {
+		releaseDelete = resolve;
+	});
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const mock = await installTimetableMock(page, {
 		blocks: [block],
-		deleteDelayMs: 600,
+		deleteGate,
 		failDelete: true
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const cell = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
 	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	await card.getByRole('button', { name: /นำ .* ออกจากตาราง/ }).click();
 	await page.getByRole('button', { name: 'ยืนยันนำออก' }).click();
 
-	await expect(page.getByRole('alertdialog')).toHaveCount(0, { timeout: 300 });
-	await expect(card).toHaveCount(0, { timeout: 300 });
-	await expect(cell.getByLabel('กำลังลบคาบ')).toBeVisible({ timeout: 300 });
+	try {
+		await expect.poll(mock.deleteRequestCount).toBe(1);
+		await expect(page.getByRole('alertdialog')).toHaveCount(0);
+		await expect(card).toHaveCount(0);
+		await expect(cell.getByLabel('กำลังลบคาบ')).toBeVisible();
+	} finally {
+		releaseDelete();
+	}
 	await expect(card).toBeVisible({ timeout: 3000 });
 	await expect(cell.getByLabel('กำลังลบคาบ')).toHaveCount(0);
-	await expect(page.getByText(/ข้อมูลคาบเปลี่ยนแปลงแล้ว/)).toBeVisible();
+	await expect(
+		page.getByRole('alert').filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
+	).toBeVisible();
 	expect(mock.deleteRequestCount()).toBe(1);
 	expect(mock.workspaceRequestCount()).toBe(1);
 });
@@ -432,6 +458,7 @@ test('removes immediately and restores the card when the background delete fails
 test('keeps timetable row geometry stable while drag feedback is active', async ({ page }) => {
 	await installTimetableMock(page, { requiredPeriods: 1 });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const board = page.locator('section[aria-label^="ตารางของ "]');
 	const firstRow = board.locator('tbody tr').first();
@@ -463,6 +490,7 @@ test('keeps timetable row geometry stable while drag feedback is active', async 
 test('uses border-only placement feedback without visible status labels', async ({ page }) => {
 	await installTimetableMock(page, { requiredPeriods: 1 });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
 	const trayCard = page.locator('aside article[draggable="true"]').first();
@@ -497,6 +525,7 @@ test('keeps a quick drop alive while its placement preview is still loading', as
 		previewDelayMs: 150
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const trayCard = page.locator('aside article[draggable="true"]').first();
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
@@ -521,6 +550,7 @@ test('swaps occupied periods by dragging one block onto the other', async ({ pag
 	});
 	const mock = await installTimetableMock(page, { blocks: [blockA, blockB] });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const source = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	const destination = page
@@ -548,6 +578,7 @@ test('keeps a blocked placement unchanged and explains the teacher conflict', as
 		blockedPeriodId: timetableIds.period3
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const source = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	const destination = page
@@ -588,6 +619,7 @@ test('anchors the native drag image at the point where the lesson card is grabbe
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	await installTimetableMock(page, { blocks: [block] });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const card = page.locator(`article[data-block-id="${timetableIds.blockA}"]`);
 	const box = await card.boundingBox();
@@ -637,6 +669,7 @@ test('anchors the synchronized tray drag image at the point where it is grabbed'
 		includeSynchronizedDemand: true
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ชุมนุม' });
 	const box = await trayCard.boundingBox();
@@ -670,6 +703,7 @@ test('requires an exact teacher choice when a group has several eligible teacher
 		eligibleInstructorIds: [timetableIds.teacherA, timetableIds.teacherB]
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ค21101' }).first();
 	await trayCard.getByRole('button', { name: /เลือกครู/ }).click();
@@ -696,6 +730,7 @@ test('reserves selected teachers when placing a synchronized activity and edits 
 		includeSynchronizedDemand: true
 	});
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	const trayCard = page.locator('aside article').filter({ hasText: 'ชุมนุม' });
 	const teacherPicker = trayCard.getByRole('button', { name: 'ยังไม่กำหนดครู' });
@@ -750,6 +785,7 @@ test('keeps synchronized group instructors managed by delivery when editing rese
 	);
 	const mock = await installTimetableMock(page, { blocks: [block] });
 	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await page.getByRole('button', { name: /ดูรายละเอียด ชุมนุม/ }).click();
 	const dialog = page.getByRole('dialog');

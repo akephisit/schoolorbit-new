@@ -33,7 +33,8 @@ test('academic delivery workspace uses one bounded overview request', async () =
 		'utf8'
 	);
 
-	assert.match(page, /getLearningDeliveryOverview/);
+	assert.match(page, /getDeliveryVersion/);
+	assert.match(page, /overview\?\.snapshot.offerings/);
 	assert.doesNotMatch(page, /listLearningGroupsForTerm/);
 	assert.doesNotMatch(page, /listLearningOfferings/);
 	assert.doesNotMatch(page, /listLearningGroups\(offering\.id\)/);

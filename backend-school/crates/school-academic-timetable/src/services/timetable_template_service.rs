@@ -277,12 +277,12 @@ pub async fn apply_template(
     let series_id = Uuid::new_v4();
     let mut transaction = pool.begin().await?;
     require_version_term_write(&mut transaction, request.timetable_version_id).await?;
-    let (academic_year_id, bell_schedule_id, version_effective_from): (
+    let (academic_year_id, bell_schedule_id, delivery_version_id): (
         Uuid,
         Uuid,
-        chrono::NaiveDate,
+        Uuid,
     ) = sqlx::query_as(
-        r#"SELECT version.academic_year_id, version.bell_schedule_id, version.effective_from
+        r#"SELECT version.academic_year_id, version.bell_schedule_id, version.delivery_version_id
            FROM academic_timetable_versions version
            WHERE version.id = $1
              AND version.academic_term_id = $2
@@ -295,6 +295,27 @@ pub async fn apply_template(
     .await?
     .ok_or_else(|| AppError::Conflict("เพิ่มแม่แบบได้เฉพาะรุ่นตารางฉบับร่างในภาคเรียนที่เปิดอยู่".to_string()))?;
     let mut block_ids = Vec::with_capacity(template.entries.len());
+    let delivery = school_academic_delivery::services::versions::published_source(
+        &mut transaction,
+        delivery_version_id,
+        request.academic_term_id,
+    )
+    .await?;
+    let source_teacher_ids = delivery
+        .snapshot
+        .offerings
+        .iter()
+        .flat_map(|offering| &offering.groups)
+        .flat_map(|group| group.teachers.iter().map(|teacher| teacher.teacher_id))
+        .collect::<Vec<_>>();
+    let active_teachers = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id=ANY($1) AND user_type='staff' AND status='active'",
+    )
+    .bind(source_teacher_ids)
+    .fetch_all(&mut *transaction)
+    .await?
+    .into_iter()
+    .collect::<std::collections::HashSet<_>>();
     for entry in template.entries {
         let period_id: Uuid = sqlx::query_scalar(
             r#"SELECT period.id
@@ -318,13 +339,17 @@ pub async fn apply_template(
             ))
         })?;
         let learning_group_id = resolve_target_group(
-            &mut transaction,
-            request.academic_term_id,
+            &delivery.snapshot,
             &entry.resource_kind,
             entry.stable_resource_id,
             entry.learning_group_code.as_deref(),
-        )
-        .await?;
+        )?;
+        let pinned_group = delivery
+            .snapshot
+            .offerings
+            .iter()
+            .flat_map(|offering| &offering.groups)
+            .find(|group| Some(group.id) == learning_group_id);
         let homeroom_id = if learning_group_id.is_none() {
             resolve_target_homeroom(
                 &mut transaction,
@@ -335,15 +360,9 @@ pub async fn apply_template(
         } else {
             None
         };
-        let instructor_ids = match learning_group_id {
-            Some(group_id) => {
-                eligible_template_group_instructors(
-                    &mut transaction,
-                    group_id,
-                    version_effective_from,
-                    &entry.instructor_ids,
-                )
-                .await?
+        let instructor_ids = match pinned_group {
+            Some(group) => {
+                eligible_template_group_instructors(group, &active_teachers, &entry.instructor_ids)
             }
             None => entry.instructor_ids,
         };
@@ -355,27 +374,19 @@ pub async fn apply_template(
                     entry.bell_period_order_index
                 )));
             }
-            let (offering_id, offering_kind, scheduling_mode): (Uuid, String, Option<String>) =
-                sqlx::query_as(
-                    r#"SELECT learning_group.learning_offering_id,
-                              offering.kind::text,
-                              activity_detail.scheduling_mode::text
-                       FROM learning_groups learning_group
-                       JOIN learning_offerings offering
-                         ON offering.id = learning_group.learning_offering_id
-                       LEFT JOIN activity_offering_details activity_detail
-                         ON activity_detail.learning_offering_id = offering.id
-                       WHERE learning_group.id = $1
-                         AND learning_group.academic_term_id = $2"#,
-                )
-                .bind(group_id)
-                .bind(request.academic_term_id)
-                .fetch_one(&mut *transaction)
-                .await?;
-            if scheduling_mode.as_deref() == Some("synchronized") {
+            let offering = delivery
+                .snapshot
+                .offerings
+                .iter()
+                .find(|offering| offering.groups.iter().any(|group| group.id == group_id))
+                .ok_or_else(|| AppError::ValidationError("กลุ่มไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?;
+            let offering_id = offering.id;
+            let offering_kind = offering.kind;
+            if matches!(&offering.catalog, school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity)
+                if activity.scheduling_mode == school_academic_delivery::models::ActivitySchedulingMode::Synchronized)
+            {
                 return Err(AppError::ValidationError(
-                    "กิจกรรมแบบพร้อมกันต้องสร้างจากช่วงกิจกรรมหลัก ไม่รองรับการแตกเป็นรายกลุ่มจากแม่แบบ"
-                        .to_string(),
+                    "กิจกรรมแบบพร้อมกันต้องสร้างจากช่วงกิจกรรมหลัก ไม่รองรับการแตกเป็นรายกลุ่มจากแม่แบบ".into(),
                 ));
             }
             sqlx::query(
@@ -394,11 +405,13 @@ pub async fn apply_template(
             .bind(bell_schedule_id)
             .bind(period_id)
             .bind(&entry.day_of_week)
-            .bind(if offering_kind == "course" {
-                "COURSE"
-            } else {
-                "ACTIVITY"
-            })
+            .bind(
+                if offering_kind == school_academic_delivery::models::LearningOfferingKind::Course {
+                    "COURSE"
+                } else {
+                    "ACTIVITY"
+                },
+            )
             .bind(offering_id)
             .bind(series_id)
             .bind(actor_user_id)
@@ -409,8 +422,8 @@ pub async fn apply_template(
             sqlx::query(
                 r#"INSERT INTO academic_timetable_block_groups (
                        id, block_id, learning_group_id, learning_offering_id,
-                       academic_term_id, academic_year_id, room_id, created_by, updated_by
-                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)"#,
+                       academic_term_id, academic_year_id, room_id, created_by, updated_by, homeroom_ids
+                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)"#,
             )
             .bind(block_group_id)
             .bind(block_id)
@@ -420,25 +433,22 @@ pub async fn apply_template(
             .bind(academic_year_id)
             .bind(entry.room_id)
             .bind(actor_user_id)
+            .bind(pinned_group.ok_or_else(|| AppError::ValidationError("กลุ่มไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?.homeroom_ids.clone())
             .execute(&mut *transaction)
             .await
             .map_err(map_write_error)?;
             for (index, instructor_id) in instructor_ids.iter().enumerate() {
-                let role: String = sqlx::query_scalar(
-                    r#"SELECT assignment.role::text
-                       FROM learning_group_teachers assignment
-                       WHERE assignment.learning_group_id = $1
-                         AND assignment.teacher_id = $2
-                         AND assignment.starts_on <= $3
-                         AND (assignment.ends_on IS NULL OR assignment.ends_on >= $3)
-                       ORDER BY CASE assignment.role WHEN 'primary' THEN 1 ELSE 2 END
-                       LIMIT 1"#,
-                )
-                .bind(group_id)
-                .bind(instructor_id)
-                .bind(version_effective_from)
-                .fetch_one(&mut *transaction)
-                .await?;
+                let role = pinned_group
+                    .and_then(|group| {
+                        group
+                            .teachers
+                            .iter()
+                            .find(|teacher| teacher.teacher_id == *instructor_id)
+                    })
+                    .map(|teacher| teacher.role)
+                    .ok_or_else(|| {
+                        AppError::ValidationError("ครูไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into())
+                    })?;
                 sqlx::query(
                     r#"INSERT INTO academic_timetable_block_group_instructors (
                            id, block_group_id, instructor_id, role, display_order
@@ -525,43 +535,26 @@ pub async fn apply_template(
     })
 }
 
-async fn eligible_template_group_instructors(
-    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    learning_group_id: Uuid,
-    effective_from: chrono::NaiveDate,
+fn eligible_template_group_instructors(
+    group: &school_academic_delivery::models::versions::DeliveryVersionGroup,
+    active: &std::collections::HashSet<Uuid>,
     selected_ids: &[Uuid],
-) -> Result<Vec<Uuid>, AppError> {
-    let mut requested_ids = Vec::new();
-    for requested_id in selected_ids.iter().copied() {
-        if !requested_ids.contains(&requested_id) {
-            requested_ids.push(requested_id);
+) -> Vec<Uuid> {
+    let mut ids = Vec::new();
+    for id in selected_ids {
+        if !group
+            .teachers
+            .iter()
+            .any(|teacher| teacher.teacher_id == *id)
+            || !active.contains(id)
+        {
+            return Vec::new();
+        }
+        if !ids.contains(id) {
+            ids.push(*id);
         }
     }
-    if requested_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let eligible_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"SELECT DISTINCT assignment.teacher_id
-           FROM learning_group_teachers assignment
-           JOIN users teacher ON teacher.id = assignment.teacher_id
-           WHERE assignment.learning_group_id = $1
-             AND assignment.starts_on <= $2
-             AND (assignment.ends_on IS NULL OR assignment.ends_on >= $2)
-             AND assignment.teacher_id = ANY($3)
-             AND teacher.user_type = 'staff'
-             AND teacher.status = 'active'
-           ORDER BY assignment.teacher_id"#,
-    )
-    .bind(learning_group_id)
-    .bind(effective_from)
-    .bind(&requested_ids)
-    .fetch_all(&mut **transaction)
-    .await?;
-    if eligible_ids.len() == requested_ids.len() {
-        Ok(requested_ids)
-    } else {
-        Ok(Vec::new())
-    }
+    ids
 }
 
 pub async fn clear_timetable(
@@ -619,9 +612,8 @@ pub async fn clear_timetable(
     timetable_block_queries::get_blocks(pool, &ids).await
 }
 
-async fn resolve_target_group(
-    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    academic_term_id: Uuid,
+fn resolve_target_group(
+    source: &school_academic_delivery::models::versions::DeliverySnapshot,
     resource_kind: &str,
     stable_resource_id: Option<Uuid>,
     group_code: Option<&str>,
@@ -629,55 +621,33 @@ async fn resolve_target_group(
     if resource_kind == "structural" {
         return Ok(None);
     }
-    let stable_resource_id = stable_resource_id.ok_or_else(|| {
-        AppError::ValidationError("แม่แบบขาด stable resource identity".to_string())
-    })?;
-    let group_code = group_code
-        .ok_or_else(|| AppError::ValidationError("แม่แบบขาดข้อมูลกลุ่มเรียนภายใน".to_string()))?;
-    let group_id: Option<Uuid> = match resource_kind {
-        "course" => {
-            sqlx::query_scalar(
-                r#"SELECT learning_group.id
-                   FROM learning_groups learning_group
-                   JOIN course_offering_details detail
-                     ON detail.learning_offering_id = learning_group.learning_offering_id
-                   WHERE learning_group.academic_term_id = $1
-                     AND detail.subject_id = $2
-                     AND learning_group.code = $3
-                   ORDER BY learning_group.id LIMIT 1"#,
-            )
-            .bind(academic_term_id)
-            .bind(stable_resource_id)
-            .bind(group_code)
-            .fetch_optional(&mut **transaction)
-            .await?
-        }
-        "activity" => {
-            sqlx::query_scalar(
-                r#"SELECT learning_group.id
-                   FROM learning_groups learning_group
-                   JOIN activity_offering_details detail
-                     ON detail.learning_offering_id = learning_group.learning_offering_id
-                   WHERE learning_group.academic_term_id = $1
-                     AND detail.activity_id = $2
-                     AND learning_group.code = $3
-                   ORDER BY learning_group.id LIMIT 1"#,
-            )
-            .bind(academic_term_id)
-            .bind(stable_resource_id)
-            .bind(group_code)
-            .fetch_optional(&mut **transaction)
-            .await?
-        }
-        _ => {
-            return Err(AppError::ValidationError(
-                "ชนิด resource ในแม่แบบไม่ถูกต้อง".to_string(),
-            ));
-        }
+    let Some(resource_id) = stable_resource_id else {
+        return Err(AppError::ValidationError("แม่แบบขาดข้อมูลรายวิชา".into()));
     };
-    group_id.map(Some).ok_or_else(|| {
-        AppError::ValidationError("ไม่พบกลุ่มเรียนที่ตรงกับแม่แบบในภาคเรียนเป้าหมาย".to_string())
-    })
+    let matches = source
+        .offerings
+        .iter()
+        .filter(|offering| match &offering.catalog {
+            school_academic_delivery::models::LearningOfferingSnapshot::Course(course) => {
+                resource_kind == "course" && course.subject_id == resource_id
+            }
+            school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity) => {
+                resource_kind == "activity" && activity.activity_id == resource_id
+            }
+        })
+        .flat_map(|offering| &offering.groups)
+        .filter(|group| Some(group.code.as_str()) == group_code)
+        .map(|group| group.id)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [id] => Ok(Some(*id)),
+        [] => Err(AppError::ValidationError(
+            "ไม่พบกลุ่มเรียนที่ตรงกับแม่แบบในรุ่นเปิดสอนที่ตารางอ้างอิง".into(),
+        )),
+        _ => Err(AppError::Conflict(
+            "กลุ่มเรียนในแม่แบบตรงกับหลายกลุ่ม กรุณาจัดคาบตาม ID เอง".into(),
+        )),
+    }
 }
 
 async fn resolve_target_homeroom(
@@ -756,7 +726,44 @@ fn require_name(name: &str) -> Result<&str, AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::canonical_entry_types;
+    use super::{canonical_entry_types, eligible_template_group_instructors};
+    use school_academic_delivery::models::{
+        versions::{DeliveryVersionGroup, DeliveryVersionTeacher},
+        LearningTeacherRole,
+    };
+    use std::collections::HashSet;
+    use uuid::Uuid;
+
+    #[test]
+    fn template_instructors_must_match_the_pinned_group_and_current_staff_state() {
+        let teacher = Uuid::from_u128(1);
+        let group = DeliveryVersionGroup {
+            id: Uuid::from_u128(2),
+            code: "G1".into(),
+            name: "กลุ่มทดสอบ".into(),
+            description: None,
+            capacity: None,
+            homeroom_ids: Vec::new(),
+            preferred_room_ids: Vec::new(),
+            teachers: vec![DeliveryVersionTeacher {
+                assignment_id: Uuid::from_u128(3),
+                teacher_id: teacher,
+                display_name: "ครูทดสอบ".into(),
+                role: LearningTeacherRole::Primary,
+            }],
+        };
+        let active = HashSet::from([teacher, Uuid::from_u128(4)]);
+        assert_eq!(
+            eligible_template_group_instructors(&group, &active, &[teacher, teacher]),
+            vec![teacher]
+        );
+        assert!(
+            eligible_template_group_instructors(&group, &active, &[Uuid::from_u128(4)]).is_empty()
+        );
+        assert!(
+            eligible_template_group_instructors(&group, &HashSet::new(), &[teacher]).is_empty()
+        );
+    }
 
     #[test]
     fn template_entry_types_use_canonical_values() {

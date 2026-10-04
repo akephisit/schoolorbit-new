@@ -89,7 +89,8 @@ test('learning delivery starts cohesive visible regions without per-room request
 	assert.match(page, /homeroomRequest\s*=\s*new LatestRequest/);
 	assert.match(page, /changeSetRequest\s*=\s*new LatestRequest/);
 	assert.match(page, /overviewRequest\s*=\s*new LatestRequest/);
-	assert.match(page, /getLearningDeliveryOverview/);
+	assert.match(page, /getDeliveryVersion/);
+	assert.match(page, /overview\?\.snapshot.offerings/);
 	assert.doesNotMatch(table, /getLearningOffering|getLearningGroup|listLearningGroups/);
 });
 

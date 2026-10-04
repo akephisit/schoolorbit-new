@@ -20,6 +20,7 @@ test('derives the read-only school matrix from the same bounded block workspace'
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	await page.goto(wholeSchoolUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await expect(page.getByRole('button', { name: 'ทั้งโรงเรียน' })).toHaveAttribute(
 		'aria-pressed',
@@ -39,6 +40,7 @@ test('changes the displayed day locally and opens canonical block details', asyn
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	await page.goto(wholeSchoolUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await page.getByRole('button', { name: 'เลือกวันดูภาพรวม' }).click();
 	await page.getByRole('option', { name: 'วันอังคาร' }).click();
@@ -56,6 +58,7 @@ test('switches from school overview to the exact editable homeroom board', async
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	await page.goto(wholeSchoolUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await page.getByRole('button', { name: 'ห้องประจำชั้น' }).click();
 	await expect(page).toHaveURL(new RegExp(`view=homeroom.*ownerId=${timetableIds.homeroom}`));

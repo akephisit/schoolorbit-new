@@ -4,7 +4,6 @@
 	import {
 		applyTeacherHandoff,
 		getAcademicTermChangeSet,
-		previewAcademicTermChangeSet,
 		previewTeacherHandoff,
 		type AcademicTermChangeSet,
 		type ApplyTeacherHandoffResponse,
@@ -12,6 +11,8 @@
 		type TeacherHandoffMode,
 		type TeacherHandoffPreview
 	} from '#lib/api/learning-delivery.js';
+	import { listTimetableVersions, type TimetableVersion } from '#lib/api/timetable.js';
+	import { getDeliveryVersion, type DeliveryVersion } from '#lib/api/learning-delivery.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { isAbortError } from '#lib/async/latest-request.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -57,6 +58,9 @@
 	let selectedEntryIds = $state<string[]>([]);
 	let selectionInitialized = $state(false);
 	let targetTimetableVersionRowVersion = $state(0);
+	let timetableVersionId = $state('');
+	let drafts = $state<TimetableVersion[]>([]);
+	let deliverySource = $state.raw<DeliveryVersion | null>(null);
 	let preview = $state.raw<TeacherHandoffPreview | null>(null);
 	let loading = $state(false);
 	let applying = $state(false);
@@ -65,38 +69,12 @@
 	let previewController: AbortController | null = null;
 	let previewRevision = 0;
 
-	let selectedGroup = $derived(
-		managementOptions.learningGroups.find(
-			(group) => group.id === teacherChangeItem.learningGroupId
-		) ?? null
+	let projectedTeacherIds = $derived(
+		deliverySource?.snapshot.offerings
+			.flatMap((offering) => offering.groups)
+			.find((group) => group.id === teacherChangeItem.learningGroupId)
+			?.teachers.map((teacher) => teacher.teacherId) ?? []
 	);
-	let stoppedEpisodeIds = $derived(
-		changeSet.items
-			.filter((item) => item.actionKind === 'stop_group_teacher')
-			.map((item) => item.learningGroupTeacherId)
-	);
-	let projectedTeacherIds = $derived.by(() => {
-		const ids: string[] = [];
-		for (const assignment of selectedGroup?.teacherAssignments ?? []) {
-			if (
-				assignment.startsOn <= changeSet.effectiveFrom &&
-				(!assignment.endsOn || assignment.endsOn >= changeSet.effectiveFrom) &&
-				!stoppedEpisodeIds.includes(assignment.id) &&
-				!ids.includes(assignment.teacherId)
-			) {
-				ids.push(assignment.teacherId);
-			}
-		}
-		for (const item of changeSet.items) {
-			if (
-				item.actionKind === 'add_group_teacher' &&
-				item.learningGroupId === teacherChangeItem.learningGroupId
-			) {
-				if (!ids.includes(item.teacherId)) ids.push(item.teacherId);
-			}
-		}
-		return ids.filter((id) => id !== teacherChangeItem.teacherId);
-	});
 	let replacementOptions = $derived(
 		managementOptions.teachers
 			.filter((teacher) => projectedTeacherIds.includes(teacher.id))
@@ -171,8 +149,17 @@
 	}
 
 	async function loadTargetRevision(signal: AbortSignal): Promise<void> {
-		const readiness = await previewAcademicTermChangeSet(changeSet.id, { signal });
-		targetTimetableVersionRowVersion = readiness.targetTimetableVersionRowVersion;
+		const [listed, source] = await Promise.all([
+			listTimetableVersions(changeSet.academicTermId, { signal }),
+			getDeliveryVersion(changeSet.targetDeliveryVersionId, { signal })
+		]);
+		drafts = listed.filter(
+			(version) => version.status === 'draft' && version.deliveryVersionId === source.id
+		);
+		deliverySource = source;
+		if (!timetableVersionId && drafts.length === 1) timetableVersionId = drafts[0].id;
+		const selected = drafts.find((version) => version.id === timetableVersionId);
+		targetTimetableVersionRowVersion = selected?.rowVersion ?? 0;
 	}
 
 	async function recoverStale(): Promise<void> {
@@ -196,10 +183,13 @@
 		errorMessage = '';
 		try {
 			if (targetTimetableVersionRowVersion <= 0) await loadTargetRevision(controller.signal);
+			if (!timetableVersionId || targetTimetableVersionRowVersion <= 0)
+				throw new Error('กรุณาเลือกร่างตารางที่อ้างอิงรุ่นเปิดสอนนี้ก่อน');
 			const result = await previewTeacherHandoff(
 				changeSet.id,
 				{
 					changeSetRowVersion: changeSet.rowVersion,
+					timetableVersionId,
 					targetTimetableVersionRowVersion,
 					teacherChangeItemId: teacherChangeItem.id,
 					entryIds: selectionInitialized ? selectedEntryIds : [],
@@ -245,6 +235,7 @@
 		try {
 			const result = await applyTeacherHandoff(changeSet.id, {
 				changeSetRowVersion: preview.changeSetRowVersion,
+				timetableVersionId: preview.targetTimetableVersionId,
 				targetTimetableVersionRowVersion: preview.targetTimetableVersionRowVersion,
 				teacherChangeItemId: teacherChangeItem.id,
 				entries: preview.proposedEntries.map((entry) => ({
@@ -277,8 +268,17 @@
 	}
 
 	onMount(() => {
-		void refreshPreview();
-		return () => previewController?.abort();
+		const initialization = new AbortController();
+		void loadTargetRevision(initialization.signal)
+			.then(() => refreshPreview())
+			.catch((error: unknown) => {
+				if (!isAbortError(error))
+					errorMessage = error instanceof Error ? error.message : 'โหลดแบบร่างตารางไม่สำเร็จ';
+			});
+		return () => {
+			initialization.abort();
+			previewController?.abort();
+		};
 	});
 </script>
 
@@ -307,6 +307,37 @@
 	</header>
 
 	<div class="space-y-4 p-4">
+		<div class="space-y-2">
+			<Label for="handoff-table">แบบร่างตารางที่จะปรับครู</Label>
+			<Select.Root
+				type="single"
+				bind:value={timetableVersionId}
+				onValueChange={() => {
+					targetTimetableVersionRowVersion = 0;
+					selectedEntryIds = [];
+					selectionInitialized = false;
+					preview = null;
+					void refreshPreview();
+				}}
+			>
+				<Select.Trigger id="handoff-table"
+					>{timetableVersionId
+						? `แบบร่าง ${drafts.find((draft) => draft.id === timetableVersionId)?.createdAt.slice(0, 10) ?? ''}`
+						: 'เลือกแบบร่างตาราง'}</Select.Trigger
+				>
+				<Select.Content
+					>{#each drafts as draft (draft.id)}<Select.Item value={draft.id}
+							>แบบร่าง {new Intl.DateTimeFormat('th-TH', {
+								dateStyle: 'short',
+								timeStyle: 'short'
+							}).format(new Date(draft.createdAt))}</Select.Item
+						>{/each}</Select.Content
+				>
+			</Select.Root>
+			{#if drafts.length === 0}<p class="text-sm text-muted-foreground">
+					กดแก้ไขในหน้าตารางสอน แล้วอัปเดตข้อมูลเป็นรุ่นเปิดสอนนี้ก่อนส่งต่อคาบ
+				</p>{/if}
+		</div>
 		<div class="grid gap-4 lg:grid-cols-2">
 			<div class="space-y-2">
 				<Label>วิธีจัดครูให้คาบที่เลือก</Label>
@@ -335,7 +366,7 @@
 					<div class="max-h-40 space-y-1 overflow-y-auto rounded-lg border p-2">
 						{#if replacementOptions.length === 0}
 							<p class="px-2 py-3 text-xs text-muted-foreground">
-								เพิ่มครูใหม่ในชุดการเปลี่ยนแปลงก่อน แล้วจึงเลือกส่งต่อคาบ
+								เผยแพร่ครูใหม่ในรุ่นเปิดสอนก่อน แล้วจึงเลือกส่งต่อคาบ
 							</p>
 						{:else}
 							{#each replacementOptions as teacher (teacher.id)}

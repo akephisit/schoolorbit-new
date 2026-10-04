@@ -10,12 +10,14 @@
 		version,
 		view,
 		isSaving = false,
+		editing = false,
 		isRefreshing = false,
 		onViewChange
 	}: {
 		version: TimetableVersion;
 		view: TimetablePageView;
 		isSaving?: boolean;
+		editing?: boolean;
 		isRefreshing?: boolean;
 		onViewChange: (view: TimetablePageView) => void;
 	} = $props();
@@ -37,13 +39,19 @@
 			<div class="flex flex-wrap items-center gap-2">
 				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
 				<Badge variant={version.status === 'draft' ? 'secondary' : 'outline'}>
-					{version.status === 'draft' ? 'แบบร่าง · แก้ไขได้' : 'เผยแพร่แล้ว · อ่านอย่างเดียว'}
+					{version.status === 'draft'
+						? editing
+							? 'แบบร่าง · กำลังแก้ไข'
+							: 'แบบร่าง · โหมดดู'
+						: 'เผยแพร่แล้ว · โหมดดู'}
 				</Badge>
 			</div>
 			<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
 				<span class="inline-flex items-center gap-1.5">
 					<CalendarRange class="size-4" />
-					เริ่มใช้ {thaiDate(version.effectiveFrom)} – {thaiDate(version.effectiveUntil)}
+					{#if version.effectiveFrom}เริ่มใช้ {thaiDate(version.effectiveFrom)} – {thaiDate(
+							version.effectiveUntil
+						)}{:else}เลือกวันที่เริ่มใช้ตอนเผยแพร่{/if}
 				</span>
 				<span class="inline-flex items-center gap-1.5" aria-live="polite">
 					{#if isSaving}
@@ -51,7 +59,7 @@
 					{:else if isRefreshing}
 						<RefreshCw class="size-4 animate-spin" /> กำลังโหลดข้อมูลล่าสุด
 					{:else if version.status === 'draft'}
-						<Check class="size-4 text-emerald-600" /> พร้อมจัดตาราง
+						<Check class="size-4 text-emerald-600" /> {editing ? 'บันทึกอัตโนมัติแล้ว' : 'โหมดดู'}
 					{:else}
 						<CloudCog class="size-4" /> รุ่นที่ใช้อ้างอิง
 					{/if}

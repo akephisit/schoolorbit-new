@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, NaiveTime, Utc};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::models::timetable_block::{
@@ -121,29 +121,6 @@ struct WorkspaceGroupRow {
     preferred_room_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, FromRow)]
-struct EligibleInstructorRow {
-    learning_group_id: Uuid,
-    teacher_id: Uuid,
-    display_name: String,
-    role: String,
-    display_order: i32,
-}
-
-#[derive(Debug, FromRow)]
-struct SynchronizedDemandRow {
-    learning_offering_id: Uuid,
-    offering_code: String,
-    offering_name: String,
-    required_periods: i32,
-    scheduled_periods: i32,
-    intended_homeroom_ids: Vec<Uuid>,
-    linked_group_count: i32,
-    pending_group_count: i32,
-    conflict_group_count: i32,
-    excluded_group_count: i32,
-}
-
 pub(crate) async fn get_workspace(
     pool: &PgPool,
     query: TimetableBlockWorkspaceQuery,
@@ -154,7 +131,7 @@ pub(crate) async fn get_workspace(
     const MAX_ROOMS: i64 = 2_000;
     const MAX_STAFF: i64 = 2_000;
 
-    let version = super::timetable_version_service::get_version(
+    let mut version = super::timetable_version_service::get_version(
         pool,
         query.timetable_version_id,
         Utc::now().date_naive(),
@@ -181,10 +158,10 @@ pub(crate) async fn get_workspace(
                  OR offering.owning_organization_unit_id = ANY($3)
                  OR EXISTS (
                      SELECT 1 FROM academic_timetable_block_groups block_group
-                     JOIN learning_group_teachers assignment
-                       ON assignment.learning_group_id = block_group.learning_group_id
+                     JOIN academic_timetable_block_group_instructors assignment
+                       ON assignment.block_group_id = block_group.id
                      WHERE block_group.block_id = block.id AND block_group.is_active
-                       AND assignment.teacher_id = $4
+                       AND assignment.instructor_id = $4
                  )
                  OR EXISTS (
                      SELECT 1 FROM academic_timetable_block_teachers target
@@ -223,101 +200,96 @@ pub(crate) async fn get_workspace(
     .fetch_all(pool)
     .await?;
 
-    let group_rows: Vec<WorkspaceGroupRow> = sqlx::query_as(
-        r#"SELECT learning_group.id, learning_group.learning_offering_id,
-                  learning_group.code, learning_group.name,
-                  learning_group.status, learning_group.roster_status,
-                  offering.kind AS offering_kind,
-                  offering.code_snapshot AS offering_code,
-                  offering.name_snapshot AS offering_name,
-                  activity_detail.scheduling_mode,
-                  target.weekly_period_target,
-                  COALESCE((
-                      SELECT array_agg(preference.room_id ORDER BY preference.rank, preference.room_id)
-                      FROM learning_group_preferred_rooms preference
-                      WHERE preference.learning_group_id = learning_group.id
-                  ), ARRAY[]::uuid[]) AS preferred_room_ids,
-                  COALESCE((
-                      SELECT array_agg(coverage.homeroom_id ORDER BY coverage.homeroom_id)
-                      FROM learning_group_homerooms coverage
-                      WHERE coverage.learning_group_id = learning_group.id
-                  ), ARRAY[]::uuid[]) AS homeroom_ids
-           FROM learning_groups learning_group
-           JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
-           LEFT JOIN activity_offering_details activity_detail
-             ON activity_detail.learning_offering_id = offering.id
-           JOIN academic_timetable_version_targets target
-             ON target.timetable_version_id = $1
-            AND target.learning_offering_id = learning_group.learning_offering_id
-           WHERE learning_group.academic_term_id = $2
-             AND learning_group.academic_year_id = $3
-             AND ($4 OR offering.owning_organization_unit_id = ANY($5) OR EXISTS (
-                 SELECT 1 FROM learning_group_teachers assignment
-                 WHERE assignment.learning_group_id = learning_group.id
-                   AND assignment.teacher_id = $6
-             ))
-           ORDER BY offering.code_snapshot, learning_group.code, learning_group.id
-           LIMIT $7"#,
+    let source = school_academic_delivery::services::versions::get_version(
+        pool,
+        version.delivery_version_id,
     )
-    .bind(query.timetable_version_id)
-    .bind(query.academic_term_id)
-    .bind(query.academic_year_id)
-    .bind(access.includes_school_owned)
-    .bind(&owner_ids)
-    .bind(access.assigned_actor_id)
-    .bind(MAX_GROUPS + 1)
-    .fetch_all(pool)
     .await?;
+    let visible_offerings = source
+        .snapshot
+        .offerings
+        .iter()
+        .filter(|offering| {
+            access.includes_school_owned
+                || owner_ids.contains(&offering.owning_organization_unit_id)
+                || access.assigned_actor_id.is_some_and(|actor| {
+                    offering.groups.iter().any(|group| {
+                        group
+                            .teachers
+                            .iter()
+                            .any(|teacher| teacher.teacher_id == actor)
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    let source_group_ids = visible_offerings
+        .iter()
+        .flat_map(|offering| offering.groups.iter().map(|group| group.id))
+        .collect::<Vec<_>>();
+    let roster_statuses =
+        school_academic_delivery::services::versions::roster_statuses(pool, &source_group_ids)
+            .await?;
+    version.targets.retain(|target| {
+        visible_offerings
+            .iter()
+            .any(|offering| offering.id == target.learning_offering_id)
+    });
+    let mut eligible_by_group: BTreeMap<Uuid, Vec<TimetableBlockInstructor>> = BTreeMap::new();
+    let mut group_rows = Vec::new();
+    for offering in &visible_offerings {
+        for group in &offering.groups {
+            eligible_by_group.insert(
+                group.id,
+                group
+                    .teachers
+                    .iter()
+                    .enumerate()
+                    .map(|(index, teacher)| TimetableBlockInstructor {
+                        teacher_id: teacher.teacher_id,
+                        display_name: teacher.display_name.clone(),
+                        role: super::timetable_source::role_text(teacher.role).into(),
+                        order_index: (index + 1) as i32,
+                    })
+                    .collect(),
+            );
+            group_rows.push(WorkspaceGroupRow {
+                id: group.id,
+                learning_offering_id: offering.id,
+                code: group.code.clone(),
+                name: group.name.clone(),
+                status: "published".into(),
+                roster_status: match roster_statuses
+                    .get(&group.id)
+                    .ok_or_else(|| AppError::Conflict("ไม่พบทะเบียนกลุ่มเรียนของรุ่นเปิดสอน".into()))?
+                {
+                    school_academic_delivery::models::RosterStatus::Draft => "draft",
+                    school_academic_delivery::models::RosterStatus::Published => "published",
+                    school_academic_delivery::models::RosterStatus::Closed => "closed",
+                }
+                .into(),
+                offering_kind: match offering.kind {
+                    school_academic_delivery::models::LearningOfferingKind::Course => "course",
+                    school_academic_delivery::models::LearningOfferingKind::Activity => "activity",
+                }
+                .into(),
+                offering_code: offering.code.clone(),
+                offering_name: offering.name.clone(),
+                scheduling_mode: match &offering.catalog {
+                    school_academic_delivery::models::LearningOfferingSnapshot::Course(_) => None,
+                    school_academic_delivery::models::LearningOfferingSnapshot::Activity(
+                        activity,
+                    ) => Some(activity.scheduling_mode),
+                },
+                weekly_period_target: offering.weekly_period_target,
+                homeroom_ids: group.homeroom_ids.clone(),
+                preferred_room_ids: group.preferred_room_ids.clone(),
+            });
+        }
+    }
     if group_rows.len() > MAX_GROUPS as usize {
         return Err(AppError::ValidationError(
-            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".to_string(),
+            "จำนวนกลุ่มเรียนในพื้นที่จัดตารางเกิน 2000 กลุ่ม".into(),
         ));
-    }
-    let group_ids = group_rows.iter().map(|group| group.id).collect::<Vec<_>>();
-    let eligible_rows: Vec<EligibleInstructorRow> = if group_ids.is_empty() {
-        Vec::new()
-    } else {
-        sqlx::query_as(
-            r#"SELECT assignment.learning_group_id, assignment.teacher_id,
-                      coalesce(nullif(concat_ws(' ',
-                          nullif(concat(coalesce(account.title, ''), account.first_name), ''),
-                          nullif(account.last_name, '')
-                      ), ''), account.username, account.email) AS display_name,
-                      assignment.role,
-                      row_number() OVER (
-                          PARTITION BY assignment.learning_group_id
-                          ORDER BY CASE assignment.role
-                                     WHEN 'primary' THEN 1
-                                     WHEN 'secondary' THEN 2
-                                     ELSE 3
-                                   END,
-                                   assignment.starts_on, assignment.id
-                      )::integer AS display_order
-               FROM learning_group_teachers assignment
-               JOIN users account ON account.id = assignment.teacher_id
-               JOIN academic_timetable_versions version ON version.id = $2
-               WHERE assignment.learning_group_id = ANY($1)
-                 AND assignment.starts_on <= version.effective_from
-                 AND (assignment.ends_on IS NULL OR assignment.ends_on >= version.effective_from)
-                 AND account.user_type = 'staff' AND account.status = 'active'
-               ORDER BY assignment.learning_group_id, display_order"#,
-        )
-        .bind(&group_ids)
-        .bind(query.timetable_version_id)
-        .fetch_all(pool)
-        .await?
-    };
-    let mut eligible_by_group: BTreeMap<Uuid, Vec<TimetableBlockInstructor>> = BTreeMap::new();
-    for row in eligible_rows {
-        eligible_by_group
-            .entry(row.learning_group_id)
-            .or_default()
-            .push(TimetableBlockInstructor {
-                teacher_id: row.teacher_id,
-                display_name: row.display_name,
-                role: row.role,
-                order_index: row.display_order,
-            });
     }
     let mut scheduled_by_group = BTreeMap::<Uuid, i32>::new();
     for block in &blocks {
@@ -369,79 +341,21 @@ pub(crate) async fn get_workspace(
         })
         .collect::<Vec<_>>();
 
-    let synchronized_rows: Vec<SynchronizedDemandRow> = sqlx::query_as(
-        r#"SELECT offering.id AS learning_offering_id,
-                  offering.code_snapshot AS offering_code,
-                  offering.name_snapshot AS offering_name,
-                  target.weekly_period_target AS required_periods,
-                  count(DISTINCT block.id) FILTER (WHERE block.is_active)::integer AS scheduled_periods,
-                  COALESCE((
-                      SELECT array_agg(DISTINCT scoped_homeroom.id ORDER BY scoped_homeroom.id)
-                      FROM learning_offering_targets offering_target
-                      JOIN homerooms scoped_homeroom
-                        ON scoped_homeroom.academic_year_id = offering_target.academic_year_id
-                       AND scoped_homeroom.is_active
-                       AND (
-                           (offering_target.target_kind = 'homeroom'
-                            AND offering_target.homeroom_id = scoped_homeroom.id)
-                           OR
-                           (offering_target.target_kind = 'grade_program'
-                            AND offering_target.grade_level_id = scoped_homeroom.grade_level_id
-                            AND offering_target.study_program_id = scoped_homeroom.study_program_id)
-                       )
-                      WHERE offering_target.learning_offering_id = offering.id
-                  ), ARRAY[]::uuid[]) AS intended_homeroom_ids,
-                  count(DISTINCT sync.learning_group_id)
-                      FILTER (WHERE sync.status = 'LINKED')::integer AS linked_group_count,
-                  count(DISTINCT sync.learning_group_id)
-                      FILTER (WHERE sync.status IN ('WAITING_FOR_DATA', 'OUTSIDE_SCOPE'))::integer
-                      AS pending_group_count,
-                  count(DISTINCT sync.learning_group_id)
-                      FILTER (WHERE sync.status = 'CONFLICT')::integer AS conflict_group_count,
-                  count(DISTINCT sync.learning_group_id)
-                      FILTER (WHERE sync.status = 'EXCLUDED')::integer AS excluded_group_count
-           FROM academic_timetable_version_targets target
-           JOIN learning_offerings offering ON offering.id = target.learning_offering_id
-           JOIN activity_offering_details detail
-             ON detail.learning_offering_id = offering.id
-            AND detail.scheduling_mode = 'synchronized'
-           LEFT JOIN academic_timetable_blocks block
-             ON block.timetable_version_id = target.timetable_version_id
-            AND block.learning_offering_id = offering.id
-           LEFT JOIN academic_timetable_block_group_sync sync ON sync.block_id = block.id
-           WHERE target.timetable_version_id = $1
-             AND ($2 OR offering.owning_organization_unit_id = ANY($3) OR EXISTS (
-                 SELECT 1 FROM learning_groups learning_group
-                 JOIN learning_group_teachers assignment
-                   ON assignment.learning_group_id = learning_group.id
-                 WHERE learning_group.learning_offering_id = offering.id
-                   AND assignment.teacher_id = $4
-             ))
-           GROUP BY offering.id, offering.code_snapshot, offering.name_snapshot,
-                    target.weekly_period_target
-           ORDER BY offering.code_snapshot, offering.id"#,
-    )
-    .bind(query.timetable_version_id)
-    .bind(access.includes_school_owned)
-    .bind(&owner_ids)
-    .bind(access.assigned_actor_id)
-    .fetch_all(pool)
-    .await?;
-    let synchronized_demands = synchronized_rows
-        .into_iter()
-        .map(|row| TimetableSynchronizedDemand {
-            learning_offering_id: row.learning_offering_id,
-            offering_code: row.offering_code,
-            offering_name: row.offering_name,
-            required_periods: row.required_periods,
-            scheduled_periods: row.scheduled_periods,
-            intended_homeroom_ids: row.intended_homeroom_ids,
-            linked_group_count: row.linked_group_count,
-            pending_group_count: row.pending_group_count,
-            conflict_group_count: row.conflict_group_count,
-            excluded_group_count: row.excluded_group_count,
-        })
-        .collect::<Vec<_>>();
+    let synchronized_demands = visible_offerings.iter().filter(|offering|matches!(&offering.catalog,
+        school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity) if activity.scheduling_mode==ActivitySchedulingMode::Synchronized))
+        .map(|offering| {
+            let placed=blocks.iter().filter(|block|block.is_active && block.learning_offering_id==Some(offering.id)).collect::<Vec<_>>();
+            let count_status=|statuses: &[TimetableBlockSyncStatus]| placed.iter().flat_map(|block|block.sync_states.iter())
+                .filter(|state|statuses.contains(&state.status)).map(|state|state.learning_group_id).collect::<BTreeSet<_>>().len() as i32;
+            TimetableSynchronizedDemand {
+                learning_offering_id:offering.id,offering_code:offering.code.clone(),offering_name:offering.name.clone(),
+                required_periods:offering.weekly_period_target,scheduled_periods:placed.len() as i32,
+                intended_homeroom_ids:offering.homeroom_ids.clone(),
+                linked_group_count:count_status(&[TimetableBlockSyncStatus::Linked]),
+                pending_group_count:count_status(&[TimetableBlockSyncStatus::WaitingForData,TimetableBlockSyncStatus::OutsideScope]),
+                conflict_group_count:count_status(&[TimetableBlockSyncStatus::Conflict]),excluded_group_count:count_status(&[TimetableBlockSyncStatus::Excluded]),
+            }
+        }).collect::<Vec<_>>();
 
     let relevant_homeroom_ids = learning_groups
         .iter()
@@ -611,7 +525,38 @@ pub(crate) async fn get_workspace(
             .map(|demand| demand.excluded_group_count)
             .sum(),
     };
+    let source_issues = super::timetable_source::source_issues(&source.snapshot, &blocks);
+    let latest_delivery_version_id: Uuid = sqlx::query_scalar(
+        "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
+    )
+    .bind(query.timetable_version_id)
+    .fetch_one(pool)
+    .await?;
+    let latest_delivery_version_id =
+        school_academic_delivery::services::versions::latest_published_for_term(
+            pool,
+            query.academic_term_id,
+        )
+        .await?
+        .unwrap_or(latest_delivery_version_id);
+    let total_draft_block_count = if access.includes_school_owned
+        && version.status == school_academic_core::models::TimetableVersionStatus::Draft
+    {
+        Some(
+            sqlx::query_scalar(
+                "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
+            )
+            .bind(version.id)
+            .fetch_one(pool)
+            .await?,
+        )
+    } else {
+        None
+    };
     Ok(TimetableBlockWorkspace {
+        total_draft_block_count,
+        source_issues,
+        latest_delivery_version_id,
         version,
         bell_periods,
         blocks,
@@ -636,15 +581,23 @@ pub(crate) async fn get_blocks(
     pool: &PgPool,
     block_ids: &[Uuid],
 ) -> Result<Vec<TimetableBlock>, AppError> {
+    let mut connection = pool.acquire().await?;
+    get_blocks_on_connection(&mut connection, block_ids).await
+}
+
+pub(crate) async fn get_blocks_on_connection(
+    connection: &mut PgConnection,
+    block_ids: &[Uuid],
+) -> Result<Vec<TimetableBlock>, AppError> {
     if block_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let rows: Vec<BlockRow> = sqlx::query_as(
+    let mut rows: Vec<BlockRow> = sqlx::query_as(
         r#"SELECT block.id, block.timetable_version_id, block.academic_term_id,
                   block.academic_year_id, block.bell_schedule_id,
                   block.bell_schedule_period_id, period.name AS period_name,
                   period.start_time, period.end_time, block.day_of_week,
-                  block.block_kind, detail.scheduling_mode,
+                  block.block_kind, block.scheduling_mode,
                   block.learning_offering_id, offering.code_snapshot AS offering_code,
                   offering.name_snapshot AS offering_name, block.structural_kind,
                   block.title, block.note, block.series_id, block.row_version,
@@ -652,13 +605,11 @@ pub(crate) async fn get_blocks(
            FROM academic_timetable_blocks block
            JOIN bell_schedule_periods period ON period.id = block.bell_schedule_period_id
            LEFT JOIN learning_offerings offering ON offering.id = block.learning_offering_id
-           LEFT JOIN activity_offering_details detail
-             ON detail.learning_offering_id = block.learning_offering_id
            WHERE block.id = ANY($1)
            ORDER BY block.day_of_week, period.order_index, block.id"#,
     )
     .bind(block_ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
     if rows.is_empty() {
         return Ok(Vec::new());
@@ -667,11 +618,7 @@ pub(crate) async fn get_blocks(
     let group_rows: Vec<GroupRow> = sqlx::query_as(
         r#"SELECT target.id, target.block_id, target.learning_group_id,
                   target.learning_offering_id, learning_group.code, learning_group.name,
-                  COALESCE((
-                      SELECT array_agg(coverage.homeroom_id ORDER BY coverage.homeroom_id)
-                      FROM learning_group_homerooms coverage
-                      WHERE coverage.learning_group_id = learning_group.id
-                  ), ARRAY[]::uuid[]) AS homeroom_ids,
+                  target.homeroom_ids,
                   target.room_id, room.code AS room_code,
                   target.row_version, target.is_active
            FROM academic_timetable_block_groups target
@@ -681,7 +628,7 @@ pub(crate) async fn get_blocks(
            ORDER BY target.block_id, learning_group.code, target.id"#,
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
     let group_ids = group_rows.iter().map(|row| row.id).collect::<Vec<_>>();
     let instructor_rows: Vec<InstructorRow> = if group_ids.is_empty() {
@@ -701,7 +648,7 @@ pub(crate) async fn get_blocks(
                ORDER BY instructor.block_group_id, instructor.display_order, instructor.id"#,
         )
         .bind(&group_ids)
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await?
     };
     let homeroom_rows: Vec<HomeroomRow> = sqlx::query_as(
@@ -715,7 +662,7 @@ pub(crate) async fn get_blocks(
            ORDER BY target.block_id, homeroom.code, target.id"#,
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
     let teacher_rows: Vec<TeacherRow> = sqlx::query_as(
         r#"SELECT target.id, target.block_id, target.teacher_id,
@@ -730,7 +677,7 @@ pub(crate) async fn get_blocks(
            ORDER BY target.block_id, display_name, target.id"#,
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
     let sync_rows: Vec<SyncRow> = sqlx::query_as(
         r#"SELECT id, block_id, learning_group_id, learning_offering_id,
@@ -741,7 +688,7 @@ pub(crate) async fn get_blocks(
            ORDER BY block_id, learning_group_id"#,
     )
     .bind(&ids)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
 
     let mut instructors_by_group: BTreeMap<Uuid, Vec<TimetableBlockInstructor>> = BTreeMap::new();
@@ -828,6 +775,73 @@ pub(crate) async fn get_blocks(
             });
     }
 
+    let version_ids = rows
+        .iter()
+        .map(|row| row.timetable_version_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    // The explicit timetable origin supplies labels for placements retained for review
+    // after their resource has been removed from the newly pinned opening.
+    let sources: Vec<(Uuid, Uuid, Option<Uuid>)> = sqlx::query_as(
+        "SELECT version.id,version.delivery_version_id,origin.delivery_version_id FROM academic_timetable_versions version LEFT JOIN academic_timetable_versions origin ON origin.id=version.source_version_id WHERE version.id=ANY($1)",
+    ).bind(&version_ids).fetch_all(&mut *connection).await?;
+    let delivery_ids = sources
+        .iter()
+        .flat_map(|(_, id, origin)| [Some(*id), *origin])
+        .flatten()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let snapshots =
+        school_academic_delivery::services::versions::snapshots(&mut *connection, &delivery_ids)
+            .await?;
+    let source_ids = sources
+        .into_iter()
+        .map(|(version, id, origin)| (version, (id, origin)))
+        .collect::<BTreeMap<_, _>>();
+    for row in &mut rows {
+        if let Some((source, origin)) = source_ids.get(&row.timetable_version_id) {
+            let graphs = [
+                snapshots.get(source),
+                origin.and_then(|id| snapshots.get(&id)),
+            ];
+            if let Some(offering) = row.learning_offering_id.and_then(|id| {
+                graphs
+                    .iter()
+                    .flatten()
+                    .flat_map(|graph| &graph.offerings)
+                    .find(|offering| offering.id == id)
+            }) {
+                row.offering_code = Some(offering.code.clone());
+                row.offering_name = Some(offering.name.clone());
+            }
+            if let Some(groups) = groups_by_block.get_mut(&row.id) {
+                for placed in groups {
+                    let captured = graphs
+                        .iter()
+                        .flatten()
+                        .flat_map(|graph| &graph.offerings)
+                        .flat_map(|offering| &offering.groups)
+                        .filter(|group| group.id == placed.learning_group_id)
+                        .collect::<Vec<_>>();
+                    if let Some(group) = captured.first() {
+                        placed.code = group.code.clone();
+                        placed.name = group.name.clone();
+                    }
+                    for instructor in &mut placed.instructors {
+                        if let Some(teacher) = captured
+                            .iter()
+                            .flat_map(|group| &group.teachers)
+                            .find(|teacher| teacher.teacher_id == instructor.teacher_id)
+                        {
+                            instructor.display_name = teacher.display_name.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
     rows.into_iter()
         .map(|row| {
             Ok(TimetableBlock {

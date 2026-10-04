@@ -81,7 +81,9 @@
 			<p class="font-mono text-xs font-semibold text-primary">{row.code}</p>
 			<h2 class="font-semibold">{row.label}</h2>
 		</div>
-		<p class="text-xs text-muted-foreground">ลากคาบไปยังช่องใหม่ · ครั้งละ 1 คาบ</p>
+		<p class="text-xs text-muted-foreground">
+			{canEdit ? 'ลากคาบไปยังช่องใหม่ · ครั้งละ 1 คาบ' : 'กดคาบเพื่อดูรายละเอียด'}
+		</p>
 	</div>
 	<div class="overflow-x-auto" data-timetable-scroll-container>
 		<table class="w-full min-w-[70rem] table-fixed border-collapse text-left">
@@ -135,6 +137,9 @@
 									{@const pending = isBlockPending?.(block.id) ?? false}
 									<TimetableLessonCard
 										{block}
+										needsReview={state.workspace.sourceIssues.some(
+											(issue) => issue.blockId === block.id
+										)}
 										rowId={row.id}
 										targetLabel={buildSchedulerTargetLabel(block, view, homeroomNamesById)}
 										showTeacher={view !== 'teacher'}

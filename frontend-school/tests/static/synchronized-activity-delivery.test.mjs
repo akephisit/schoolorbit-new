@@ -52,9 +52,9 @@ test('a missing synchronized activity opens one preparation target across every 
 	const workspace = {
 		academicTermId: 'term',
 		academicYearId: 'year',
-		timetableVersionId: null,
-		timetableVersionStatus: null,
-		timetableVersionEffectiveFrom: null,
+		deliveryVersionId: null,
+		deliveryVersionStatus: null,
+		deliveryVersionEffectiveFrom: null,
 		homerooms: [
 			room('ม.1/1', 'program-a', synchronizedItem),
 			room('ม.1/2', 'program-a', { ...synchronizedItem, requirementId: 'club-requirement-b' }),
@@ -106,33 +106,24 @@ test('independent or already-open activities do not offer the synchronized prepa
 	);
 });
 
-test('delivery rows choose a draft-safe timetable action before grouping exists', () => {
+test('pending opening preparation has no timetable inclusion action', () => {
+	assert.equal(typeof deliveryModule.isPendingSynchronizedActivity, 'function');
+	assert.equal(deliveryModule.isPendingSynchronizedActivity(synchronizedItem), true);
 	assert.equal(
-		typeof deliveryModule.deliveryTimetableAction,
-		'function',
-		'the delivery timetable action helper must exist'
-	);
-	assert.equal(deliveryModule.deliveryTimetableAction(synchronizedItem, 'draft'), 'activate');
-	assert.equal(
-		deliveryModule.deliveryTimetableAction(synchronizedItem, 'published'),
-		'revise_then_activate'
-	);
-	const openedWithoutTarget = {
-		...synchronizedItem,
-		offeringId: 'club-offering',
-		offeringState: 'draft'
-	};
-	assert.equal(deliveryModule.deliveryTimetableAction(openedWithoutTarget, 'draft'), 'include');
-	assert.equal(
-		deliveryModule.deliveryTimetableAction(openedWithoutTarget, 'published'),
-		'revise_then_include'
+		deliveryModule.isPendingSynchronizedActivity({ ...synchronizedItem, offeringId: 'offering' }),
+		false
 	);
 	assert.equal(
-		deliveryModule.deliveryTimetableAction(
-			{ ...openedWithoutTarget, weeklyPeriodTarget: 1 },
-			'draft'
-		),
-		'none'
+		deliveryModule.isPendingSynchronizedActivity({
+			...synchronizedItem,
+			schedulingMode: 'independent'
+		}),
+		false
+	);
+	assert.equal(
+		deliveryModule.deliveryTimetableAction,
+		undefined,
+		'opening preparation never mutates a timetable version'
 	);
 });
 

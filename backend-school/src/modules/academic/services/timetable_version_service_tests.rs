@@ -95,285 +95,201 @@ async fn insert_deferred_synchronized_offering(
 #[tokio::test]
 async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
     let pool = migrated_pool("timetable_version_list_resolve_clone").await;
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (term_id, term_start, source_id, source_row_version): (Uuid, NaiveDate, Uuid, i64) =
-        sqlx::query_as(
-            r#"SELECT term.id, term.start_date, version.id, version.row_version
-               FROM academic_terms term
-               JOIN academic_timetable_versions version
-                 ON version.academic_term_id = term.id
-                AND version.status = 'published'
-               WHERE term.status = 'active'
-               ORDER BY version.effective_from, version.id
-               LIMIT 1"#,
-        )
-        .fetch_one(&pool)
+    apply_migrations_through(&pool, 88).await.unwrap();
+    let (term_id,term_start,source_id,actor_id): (Uuid,NaiveDate,Uuid,Uuid)=sqlx::query_as("SELECT version.academic_term_id,version.effective_from,version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let source = timetable_version_service::get_version(&pool, source_id, term_start)
         .await
         .unwrap();
-
     let listed = timetable_version_service::list_versions(&pool, term_id)
         .await
         .unwrap();
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].id, source_id);
-    assert!(!listed[0].targets.is_empty());
-    assert!(listed[0]
-        .targets
+    assert!(listed
         .iter()
-        .filter_map(|target| {
-            target
-                .standard_periods_per_week
-                .map(|standard| (target.weekly_period_target, standard))
-        })
-        .all(|(target, standard)| target == standard));
-
-    let resolved = timetable_version_service::resolve_for_date(&pool, term_id, term_start)
-        .await
-        .unwrap();
-    assert_eq!(resolved.id, source_id);
-    let before_start =
+        .any(|version| version.id == source_id && !version.targets.is_empty()));
+    assert_eq!(
+        timetable_version_service::resolve_for_date(&pool, term_id, term_start)
+            .await
+            .unwrap()
+            .id,
+        source_id
+    );
+    assert!(matches!(
         timetable_version_service::resolve_for_date(&pool, term_id, term_start.pred_opt().unwrap())
-            .await;
-    assert!(matches!(before_start, Err(AppError::NotFound(_))));
-
-    let effective_from = term_start.checked_add_days(Days::new(7)).unwrap();
+            .await,
+        Err(AppError::NotFound(_))
+    ));
     let cloned = timetable_version_service::clone_draft(
         &pool,
         actor_id,
         source_id,
         CloneTimetableVersionRequest {
-            effective_from,
-            source_row_version,
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
         },
     )
     .await
     .unwrap();
     assert_eq!(cloned.source_version_id, Some(source_id));
-    assert_eq!(cloned.effective_from, effective_from);
-    for source_target in &listed[0].targets {
-        let cloned_target = cloned
+    assert_eq!(cloned.effective_from, None, "date is chosen at publication");
+    assert_eq!(cloned.delivery_version_id, source.delivery_version_id);
+    assert_eq!(
+        cloned
             .targets
             .iter()
-            .find(|target| target.learning_offering_id == source_target.learning_offering_id)
-            .expect("a clone must preserve every source timetable target");
-        assert_eq!(
-            (
-                cloned_target.weekly_period_target,
-                cloned_target.standard_periods_per_week,
-            ),
-            (
-                source_target.weekly_period_target,
-                source_target.standard_periods_per_week,
-            )
-        );
-    }
-    let expected_auto_included_ids = [
-        Uuid::parse_str("70000000-0000-0000-0000-000000000001").unwrap(),
-        Uuid::parse_str("70000000-0000-0000-0000-000000000002").unwrap(),
-    ];
-    for &offering_id in &expected_auto_included_ids {
-        assert!(
-            cloned
-                .targets
-                .iter()
-                .any(|target| target.learning_offering_id == offering_id),
-            "a clone must include fixture offerings that became eligible after the source was published"
-        );
-    }
-    assert_eq!(
-        cloned.targets.len(),
-        listed[0].targets.len() + expected_auto_included_ids.len(),
-        "the clone must contain exactly the source targets and the two eligible fixture offerings"
+            .map(|target| (target.learning_offering_id, target.weekly_period_target))
+            .collect::<Vec<_>>(),
+        source
+            .targets
+            .iter()
+            .map(|target| (target.learning_offering_id, target.weekly_period_target))
+            .collect::<Vec<_>>()
     );
-
-    let source_entry_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
-    )
-    .bind(source_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let cloned_entry_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
-    )
-    .bind(cloned.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(cloned_entry_count, source_entry_count);
-
-    let stale = timetable_version_service::clone_draft(
+    let resumed = timetable_version_service::clone_draft(
         &pool,
         actor_id,
         source_id,
         CloneTimetableVersionRequest {
-            effective_from: effective_from.checked_add_days(Days::new(7)).unwrap(),
-            source_row_version: source_row_version + 1,
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
         },
     )
-    .await;
-    assert!(matches!(stale, Err(AppError::Conflict(_))));
-
-    sqlx::query("UPDATE academic_terms SET status = 'closing' WHERE id = $1")
-        .bind(term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let closing = timetable_version_service::clone_draft(
-        &pool,
-        actor_id,
-        source_id,
-        CloneTimetableVersionRequest {
-            effective_from: effective_from.checked_add_days(Days::new(14)).unwrap(),
-            source_row_version,
-        },
-    )
-    .await;
-    assert!(
-        closing.is_ok(),
-        "closing must allow unfinished operational preparation: {closing:?}"
-    );
-    for (year_status, term_status) in [("closed", "active"), ("active", "closed")] {
-        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=(SELECT academic_year_id FROM academic_terms WHERE id=$1)")
-            .bind(term_id).bind(year_status).execute(&pool).await.unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN start_date ELSE NULL END WHERE id=$1")
-            .bind(term_id).bind(term_status).execute(&pool).await.unwrap();
-        let closed = timetable_version_service::clone_draft(
+    .await
+    .unwrap();
+    assert_eq!(resumed.id, cloned.id);
+    assert!(matches!(
+        timetable_version_service::clone_draft(
             &pool,
             actor_id,
             source_id,
             CloneTimetableVersionRequest {
-                effective_from,
-                source_row_version,
-            },
+                source_row_version: source.row_version + 1,
+                resume_draft_id: None,
+                draft_row_version: None
+            }
         )
-        .await;
-        assert!(matches!(closed, Err(AppError::Conflict(_))));
-        assert_eq!(
-            timetable_version_service::resolve_for_date(&pool, term_id, term_start)
-                .await
-                .unwrap()
-                .id,
-            source_id
-        );
-    }
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    sqlx::query("UPDATE academic_terms SET status='closing' WHERE id=$1")
+        .bind(term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(timetable_version_service::clone_draft(
+        &pool,
+        actor_id,
+        source_id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: Some(cloned.id),
+            draft_row_version: Some(cloned.row_version)
+        }
+    )
+    .await
+    .is_ok());
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=start_date WHERE id=$1")
+        .bind(term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        timetable_version_service::clone_draft(
+            &pool,
+            actor_id,
+            source_id,
+            CloneTimetableVersionRequest {
+                source_row_version: source.row_version,
+                resume_draft_id: None,
+                draft_row_version: None
+            }
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
 }
 
 #[tokio::test]
-async fn clone_draft_includes_active_offerings_missing_from_published_source() {
-    let pool = migrated_pool("timetable_version_clone_adds_missing_offering").await;
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (term_id, year_id, term_start, source_id, source_row_version): (
-        Uuid,
-        Uuid,
-        NaiveDate,
-        Uuid,
-        i64,
-    ) = sqlx::query_as(
-        r#"SELECT term.id, term.academic_year_id, term.start_date,
-                  version.id, version.row_version
-           FROM academic_terms term
-           JOIN academic_timetable_versions version
-             ON version.academic_term_id = term.id
-            AND version.status = 'published'
-           WHERE term.status = 'active'
-           ORDER BY version.effective_from, version.id
-           LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let offering_id =
-        insert_deferred_synchronized_offering(&pool, term_id, year_id, "CLONE-MISSING").await;
-
-    let source_has_target: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM academic_timetable_version_targets \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2)",
-    )
-    .bind(source_id)
-    .bind(offering_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(!source_has_target);
-
+async fn clone_draft_uses_only_its_published_opening_not_unpublished_registry_resources() {
+    let pool = migrated_pool("timetable_version_no_raw_resources").await;
+    apply_migrations_through(&pool, 88).await.unwrap();
+    let (source_id,term_id,year_id,actor): (Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT id,academic_term_id,academic_year_id,published_by FROM academic_timetable_versions WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let offering =
+        insert_deferred_synchronized_offering(&pool, term_id, year_id, "UNPUBLISHED-REGISTRY")
+            .await;
+    let source =
+        timetable_version_service::get_version(&pool, source_id, chrono::Utc::now().date_naive())
+            .await
+            .unwrap();
     let cloned = timetable_version_service::clone_draft(
         &pool,
-        actor_id,
+        actor,
         source_id,
         CloneTimetableVersionRequest {
-            effective_from: term_start.checked_add_days(Days::new(7)).unwrap(),
-            source_row_version,
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
         },
     )
     .await
     .unwrap();
-
-    let cloned_target: Option<i32> = sqlx::query_scalar(
-        "SELECT weekly_period_target FROM academic_timetable_version_targets \
-         WHERE timetable_version_id = $1 AND learning_offering_id = $2",
-    )
-    .bind(cloned.id)
-    .bind(offering_id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap();
-    assert_eq!(cloned_target, Some(1));
+    assert!(!cloned
+        .targets
+        .iter()
+        .any(|target| target.learning_offering_id == offering));
+    assert_eq!(cloned.delivery_version_id, source.delivery_version_id);
+    assert_eq!(cloned.targets.len(), source.targets.len());
 }
 
 #[tokio::test]
-async fn include_offering_target_adds_existing_deferred_activity_only_to_a_draft() {
-    let pool = migrated_pool("timetable_version_include_existing_offering").await;
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (term_id, year_id, term_start, source_id, source_row_version): (
-        Uuid,
-        Uuid,
-        NaiveDate,
-        Uuid,
-        i64,
-    ) = sqlx::query_as(
-        r#"SELECT term.id, term.academic_year_id, term.start_date,
-                  version.id, version.row_version
-           FROM academic_terms term
-           JOIN academic_timetable_versions version
-             ON version.academic_term_id = term.id
-            AND version.status = 'published'
-           WHERE term.status = 'active'
-           ORDER BY version.effective_from, version.id
-           LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let draft = timetable_version_service::clone_draft(
+async fn timetable_source_update_rejects_an_unpublished_opening_without_partial_changes() {
+    let pool = migrated_pool("timetable_version_source_update_guard").await;
+    apply_migrations_through(&pool, 88).await.unwrap();
+    let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT id,published_by FROM academic_timetable_versions WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let source =
+        timetable_version_service::get_version(&pool, source_id, chrono::Utc::now().date_naive())
+            .await
+            .unwrap();
+    let date = source.effective_from.unwrap().succ_opt().unwrap();
+    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
+        .bind(source.academic_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let opening = school_academic_delivery::services::change_sets::create_change_set(
         &pool,
-        actor_id,
-        source_id,
-        CloneTimetableVersionRequest {
-            effective_from: term_start.checked_add_days(Days::new(7)).unwrap(),
-            source_row_version,
+        actor,
+        school_academic_delivery::models::CreateAcademicTermChangeSetRequest {
+            academic_term_id: source.academic_term_id,
+            effective_from: date,
+            reason: "ร่างเปิดสอนยังไม่เผยแพร่".into(),
+            idempotency_key: Uuid::new_v4(),
         },
     )
     .await
     .unwrap();
-    let offering_id =
-        insert_deferred_synchronized_offering(&pool, term_id, year_id, "INCLUDE-EXISTING").await;
-
-    let included = timetable_version_service::include_offering_target(&pool, draft.id, offering_id)
+    let cloned = timetable_version_service::clone_draft(
+        &pool,
+        actor,
+        source_id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    let failure=school_academic_timetable::services::timetable_lifecycle::update_source(&pool,actor,cloned.id,school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest {
+        row_version:cloned.row_version,delivery_version_id:opening.target_delivery_version_id
+    }).await.unwrap_err();
+    assert!(matches!(failure, AppError::ValidationError(_)));
+    let unchanged = timetable_version_service::get_version(&pool, cloned.id, date)
         .await
         .unwrap();
-    assert_eq!(included.timetable_version_id, draft.id);
-    assert_eq!(included.learning_offering_id, offering_id);
-    assert_eq!(included.weekly_period_target, 1);
-
-    let repeated = timetable_version_service::include_offering_target(&pool, draft.id, offering_id)
-        .await
-        .unwrap();
-    assert_eq!(repeated, included);
-
-    let published =
-        timetable_version_service::include_offering_target(&pool, source_id, offering_id).await;
-    assert!(matches!(published, Err(AppError::Conflict(_))));
+    assert_eq!(unchanged.delivery_version_id, source.delivery_version_id);
+    assert_eq!(unchanged.row_version, cloned.row_version);
 }
 
 #[tokio::test]
@@ -451,8 +367,9 @@ async fn migration_080_reconciles_eligible_offerings_into_existing_drafts() {
 #[tokio::test]
 async fn cloned_timetable_version_preserves_exact_instructor_sets() {
     let pool = migrated_pool("timetable_version_clone_exact_instructors").await;
+    apply_migrations_through(&pool, 88).await.unwrap();
     let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (source_id, source_row_version, term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
+    let (source_id, source_row_version, _term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
         r#"SELECT version.id, version.row_version, term.start_date
            FROM academic_timetable_versions version
            JOIN academic_terms term ON term.id = version.academic_term_id
@@ -467,7 +384,8 @@ async fn cloned_timetable_version_preserves_exact_instructor_sets() {
         actor_id,
         source_id,
         CloneTimetableVersionRequest {
-            effective_from: term_start.succ_opt().unwrap(),
+            resume_draft_id: None,
+            draft_row_version: None,
             source_row_version,
         },
     )

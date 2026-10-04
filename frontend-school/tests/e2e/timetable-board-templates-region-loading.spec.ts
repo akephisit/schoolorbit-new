@@ -25,7 +25,7 @@ function fulfill(route: Route, data: unknown): Promise<void> {
 	});
 }
 
-test('explicit board workspace paints before delayed versions and change-set siblings', async ({
+test('explicit board workspace paints before delayed versions without requesting an opening journal', async ({
 	page
 }) => {
 	await installTimetableMock(page);
@@ -38,7 +38,7 @@ test('explicit board workspace paints before delayed versions and change-set sib
 	await page.route('**/api/academic/timetable-blocks/workspace?**', (route) => {
 		workspaces.push(route);
 	});
-	await page.route(`**/api/academic/term-change-sets/${timetableIds.changeSet}`, (route) => {
+	await page.route('**/api/academic/term-change-sets/**', (route) => {
 		changeSets.push(route);
 	});
 
@@ -48,11 +48,9 @@ test('explicit board workspace paints before delayed versions and change-set sib
 	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
 	await workspaces[0].fallback();
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
-	await expect.poll(() => changeSets.length).toBe(1);
+	expect(changeSets).toHaveLength(0);
 	await expect(page.getByText('กำลังโหลดรุ่น...')).toBeVisible();
-	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
-	await changeSets[0].fallback();
-	await expect(page.getByTestId('timetable-change-set-ready')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เลือกรุ่นตารางสอน' })).toBeDisabled();
 	await versions[0].fallback();
 	await expect(page.getByText('กำลังโหลดรุ่น...')).toHaveCount(0);
 	expect(workspaces).toHaveLength(1);
@@ -99,7 +97,7 @@ test('an obsolete version deep link falls back to the first available board', as
 	});
 	await page.goto(boardUrl(missingVersion));
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.draftVersion}`));
+	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
 	expect(requestedReads).toBe(1);
 	expect(fallbackReads).toBe(1);
 });

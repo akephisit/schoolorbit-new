@@ -877,9 +877,11 @@ fn homeroom_delivery_workspace_keeps_database_reads_bounded_and_set_based() {
     assert!(workspace.contains("join_context_and_homeroom_reads"));
     assert!(!workspace.contains("else if let Some(draft)"));
     assert!(source.contains("LEFT JOIN LATERAL"));
-    assert!(source.contains("WITH relevant_groups AS"));
-    assert!(source.contains("teacher_counts AS"));
-    assert!(source.contains("timetable_counts AS"));
+    assert!(workspace.contains("versions::visible_version"));
+    assert!(workspace.contains("versions::roster_statuses"));
+    assert!(workspace.contains("source.snapshot.offerings"));
+    assert!(!workspace.contains("academic_timetable_blocks"));
+    assert!(!workspace.contains("learning_group_teachers"));
     assert!(!source.contains("(SELECT count(*)::bigint"));
 }
 
@@ -1661,7 +1663,8 @@ fn timetable_block_service_uses_only_canonical_delivery_identity() {
         "academic_timetable_block_groups",
         "academic_timetable_block_group_instructors",
         "row_version",
-        "learning_group_teachers",
+        "versions::published_source",
+        "source_assignments",
     ] {
         assert!(
             service.contains(required),
@@ -1719,7 +1722,7 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
     ));
 
     let scheduled_entry_query = daily_teaching
-        .split_once("let entries: Vec<EntrySeed>")
+        .split_once("let mut entries: Vec<EntrySeed>")
         .expect("daily teaching must isolate its exact scheduled-entry query")
         .1
         .split_once("Ok(build_overview")

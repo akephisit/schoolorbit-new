@@ -6,7 +6,7 @@ export function readCurriculumAlignmentContext(url: URL) {
 		academicYearId,
 		academicTermId,
 		studyProgramId: url.searchParams.get('studyProgramId')?.trim() || undefined,
-		timetableVersionId: url.searchParams.get('timetableVersionId')?.trim() || undefined
+		deliveryVersionId: url.searchParams.get('deliveryVersionId')?.trim() || undefined
 	};
 }
 
@@ -14,6 +14,6 @@ export function curriculumAlignmentContextKey(
 	context: ReturnType<typeof readCurriculumAlignmentContext>
 ) {
 	return context
-		? `${context.academicYearId}:${context.academicTermId}:${context.studyProgramId ?? ''}:${context.timetableVersionId ?? ''}`
+		? `${context.academicYearId}:${context.academicTermId}:${context.studyProgramId ?? ''}:${context.deliveryVersionId ?? ''}`
 		: '';
 }

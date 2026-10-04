@@ -581,6 +581,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/delivery-versions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listDeliveryVersions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/delivery-versions/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getDeliveryVersion'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/delivery/homerooms': {
 		parameters: {
 			query?: never;
@@ -2474,6 +2506,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/teacher-handoffs/{id}/apply': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['applyTeacherHandoff'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/teacher-handoffs/{id}/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewTeacherHandoff'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/term-change-sets': {
 		parameters: {
 			query?: never;
@@ -2580,38 +2644,6 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['publishAcademicTermChangeSet'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/term-change-sets/{id}/teacher-handoff/apply': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['applyTeacherHandoff'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/academic/term-change-sets/{id}/teacher-handoff/preview': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['previewTeacherHandoff'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -2915,7 +2947,7 @@ export interface paths {
 		};
 		get: operations['listTimetableVersions'];
 		put?: never;
-		post?: never;
+		post: operations['createTimetableVersion'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -2938,7 +2970,7 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/academic/timetable-versions/{version_id}/targets': {
+	'/api/academic/timetable-versions/{version_id}/delete-draft': {
 		parameters: {
 			query?: never;
 			header?: never;
@@ -2947,7 +2979,55 @@ export interface paths {
 		};
 		get?: never;
 		put?: never;
-		post: operations['includeTimetableVersionOffering'];
+		post: operations['deleteTimetableDraft'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-versions/{version_id}/delivery-source': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['updateTimetableDeliverySource'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-versions/{version_id}/publication-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewTimetablePublication'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/timetable-versions/{version_id}/publish': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['publishTimetableVersion'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -6015,29 +6095,16 @@ export interface components {
 		/** @enum {string} */
 		AcademicChangeFindingCode:
 			| 'change_set_no_items'
-			| 'change_set_stale'
 			| 'term_not_writable'
 			| 'effective_date_invalid'
-			| 'base_timetable_version_stale'
-			| 'target_timetable_version_stale'
-			| 'change_item_stale'
+			| 'base_delivery_version_stale'
 			| 'resource_stale'
-			| 'draft_group'
+			| 'missing_delivery_target'
+			| 'missing_delivery_group'
+			| 'delivery_graph_invalid'
 			| 'missing_primary_teacher'
-			| 'missing_entry_instructor'
-			| 'unpublished_roster'
-			| 'offering_unavailable'
 			| 'missing_weekly_period_target'
-			| 'weekly_period_deficit'
-			| 'weekly_period_excess'
-			| 'homeroom_conflict'
-			| 'learning_group_conflict'
-			| 'teacher_conflict'
-			| 'room_conflict'
-			| 'stopped_offering_still_scheduled'
-			| 'missing_effective_teacher'
-			| 'stopped_teacher_still_scheduled'
-			| 'entry_instructor_not_effective';
+			| 'missing_effective_teacher';
 		/** @enum {string} */
 		AcademicChangeFindingSeverity: 'blocking' | 'warning';
 		AcademicChangeImpactCounts: {
@@ -6121,18 +6188,6 @@ export interface components {
 			displayOrder: number;
 			name: string;
 			workspaceCode: string;
-		};
-		AcademicOfferingScheduleCount: {
-			/** Format: int64 */
-			actualPeriods: number;
-			/** Format: uuid */
-			learningGroupId: string;
-			learningGroupLabel: string;
-			/** Format: uuid */
-			learningOfferingId: string;
-			offeringLabel: string;
-			/** Format: int32 */
-			targetPeriods: number;
 		};
 		AcademicSetupWorkspace: {
 			bellSchedules: components['schemas']['BellSchedule'][];
@@ -6302,7 +6357,7 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
-			baseTimetableVersionId: string;
+			baseDeliveryVersionId?: string | null;
 			/** Format: date-time */
 			cancelledAt?: string | null;
 			/** Format: uuid */
@@ -6325,7 +6380,7 @@ export interface components {
 			rowVersion: number;
 			status: components['schemas']['AcademicTermChangeSetStatus'];
 			/** Format: uuid */
-			targetTimetableVersionId: string;
+			targetDeliveryVersionId: string;
 			/** Format: date-time */
 			updatedAt: string;
 		};
@@ -6339,11 +6394,10 @@ export interface components {
 			findings: components['schemas']['AcademicChangeFinding'][];
 			impactCounts: components['schemas']['AcademicChangeImpactCounts'];
 			previewHash: string;
-			scheduleCounts: components['schemas']['AcademicOfferingScheduleCount'][];
 			/** Format: uuid */
-			targetTimetableVersionId: string;
+			targetDeliveryVersionId: string;
 			/** Format: int64 */
-			targetTimetableVersionRowVersion: number;
+			targetDeliveryVersionRowVersion: number;
 		};
 		AcademicTermChangeSetQuery: {
 			/** Format: uuid */
@@ -6363,7 +6417,7 @@ export interface components {
 			reason: string;
 			status: components['schemas']['AcademicTermChangeSetStatus'];
 			/** Format: uuid */
-			targetTimetableVersionId: string;
+			targetDeliveryVersionId: string;
 			/** Format: date-time */
 			updatedAt: string;
 		};
@@ -6907,7 +6961,7 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: uuid */
-				baseTimetableVersionId: string;
+				baseDeliveryVersionId?: string | null;
 				/** Format: date-time */
 				cancelledAt?: string | null;
 				/** Format: uuid */
@@ -6930,7 +6984,7 @@ export interface components {
 				rowVersion: number;
 				status: components['schemas']['AcademicTermChangeSetStatus'];
 				/** Format: uuid */
-				targetTimetableVersionId: string;
+				targetDeliveryVersionId: string;
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -6948,11 +7002,10 @@ export interface components {
 				findings: components['schemas']['AcademicChangeFinding'][];
 				impactCounts: components['schemas']['AcademicChangeImpactCounts'];
 				previewHash: string;
-				scheduleCounts: components['schemas']['AcademicOfferingScheduleCount'][];
 				/** Format: uuid */
-				targetTimetableVersionId: string;
+				targetDeliveryVersionId: string;
 				/** Format: int64 */
-				targetTimetableVersionRowVersion: number;
+				targetDeliveryVersionRowVersion: number;
 			};
 			message?: string;
 			success: boolean;
@@ -7864,6 +7917,18 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_DeletedTimetableDraft: {
+			data: {
+				/** Format: int64 */
+				deletedBlockCount: number;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				sourceVersionId: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_DeliveryManagementOptions: {
 			data: {
 				/** Format: uuid */
@@ -7877,6 +7942,38 @@ export interface components {
 				rooms: components['schemas']['Room'][];
 				studyPrograms: components['schemas']['StudyProgramOption'][];
 				teachers: components['schemas']['StaffLookupItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_DeliveryVersion: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: date-time */
+				createdAt: string;
+				/** Format: uuid */
+				createdBy?: string | null;
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: date */
+				effectiveUntil: string | null;
+				/** Format: uuid */
+				id: string;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: uuid */
+				publishedBy?: string | null;
+				/** Format: int64 */
+				rowVersion: number;
+				snapshot: components['schemas']['DeliverySnapshot'];
+				/** Format: uuid */
+				sourceVersionId: string | null;
+				status: components['schemas']['DeliveryVersionStatus'];
+				/** Format: date-time */
+				updatedAt: string;
 			};
 			message?: string;
 			success: boolean;
@@ -8282,12 +8379,12 @@ export interface components {
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
-				homerooms: components['schemas']['HomeroomDeliveryRoom'][];
 				/** Format: date */
-				timetableVersionEffectiveFrom: string | null;
+				deliveryVersionEffectiveFrom: string | null;
 				/** Format: uuid */
-				timetableVersionId: string | null;
-				timetableVersionStatus: null | components['schemas']['TimetableVersionStatus'];
+				deliveryVersionId: string | null;
+				deliveryVersionStatus: null | components['schemas']['DeliveryVersionStatus'];
+				homerooms: components['schemas']['HomeroomDeliveryRoom'][];
 				unlinked: components['schemas']['UnlinkedDeliveryItem'][];
 			};
 			message?: string;
@@ -10001,13 +10098,40 @@ export interface components {
 				bellPeriods: components['schemas']['BellSchedulePeriod'][];
 				blocks: components['schemas']['TimetableBlock'][];
 				homerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+				/** Format: uuid */
+				latestDeliveryVersionId: string;
 				learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
 				ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
 				rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
+				sourceIssues: components['schemas']['TimetableSourceIssue'][];
 				staff: components['schemas']['TimetableBlockWorkspaceStaff'][];
 				summary: components['schemas']['TimetableBlockSummary'];
 				synchronizedDemands: components['schemas']['TimetableSynchronizedDemand'][];
+				/** Format: int64 */
+				totalDraftBlockCount: number | null;
 				version: components['schemas']['TimetableVersion'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_TimetablePublicationPreview: {
+			data: {
+				blockCount: number;
+				canPublish: boolean;
+				contentChanged: boolean;
+				/** Format: uuid */
+				deliveryVersionId: string;
+				/** Format: date */
+				effectiveFrom: string;
+				findings: components['schemas']['TimetablePublicationFinding'][];
+				/** Format: uuid */
+				latestDeliveryVersionId: string;
+				previewHash: string;
+				/** Format: int64 */
+				rowVersion: number;
+				sourceIssues: components['schemas']['TimetableSourceIssue'][];
+				/** Format: uuid */
+				timetableVersionId: string;
 			};
 			message?: string;
 			success: boolean;
@@ -10036,15 +10160,15 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				bellScheduleId: string;
-				/** Format: uuid */
-				changeSetId: string | null;
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy: string | null;
+				/** Format: uuid */
+				deliveryVersionId: string;
 				displayState: null | components['schemas']['TimetableVersionDisplayState'];
 				/** Format: date */
-				effectiveFrom: string;
+				effectiveFrom: string | null;
 				/** Format: date */
 				effectiveUntil: string | null;
 				/** Format: uuid */
@@ -10162,7 +10286,7 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: uuid */
-				baseTimetableVersionId: string;
+				baseDeliveryVersionId?: string | null;
 				/** Format: date-time */
 				cancelledAt?: string | null;
 				/** Format: uuid */
@@ -10185,7 +10309,7 @@ export interface components {
 				rowVersion: number;
 				status: components['schemas']['AcademicTermChangeSetStatus'];
 				/** Format: uuid */
-				targetTimetableVersionId: string;
+				targetDeliveryVersionId: string;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -10205,7 +10329,7 @@ export interface components {
 				reason: string;
 				status: components['schemas']['AcademicTermChangeSetStatus'];
 				/** Format: uuid */
-				targetTimetableVersionId: string;
+				targetDeliveryVersionId: string;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -10986,6 +11110,37 @@ export interface components {
 				/** Format: uuid */
 				to_user_id: string;
 				to_user_name: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_DeliveryVersionSummary: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				academicYearId: string;
+				/** Format: uuid */
+				changeSetId: string | null;
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: date */
+				effectiveUntil: string | null;
+				/** Format: int64 */
+				groupCount: number;
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				offeringCount: number;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				sourceVersionId: string | null;
+				status: components['schemas']['DeliveryVersionStatus'];
+				/** Format: int64 */
+				teacherAssignmentCount: number;
+				/** Format: date-time */
+				updatedAt: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -11952,15 +12107,15 @@ export interface components {
 				academicYearId: string;
 				/** Format: uuid */
 				bellScheduleId: string;
-				/** Format: uuid */
-				changeSetId: string | null;
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy: string | null;
+				/** Format: uuid */
+				deliveryVersionId: string;
 				displayState: null | components['schemas']['TimetableVersionDisplayState'];
 				/** Format: date */
-				effectiveFrom: string;
+				effectiveFrom: string | null;
 				/** Format: date */
 				effectiveUntil: string | null;
 				/** Format: uuid */
@@ -12074,11 +12229,11 @@ export interface components {
 			academicTermId: string;
 			choices: components['schemas']['CurriculumPreparationChoice'][];
 			/** Format: uuid */
+			deliveryVersionId?: string | null;
+			/** Format: uuid */
 			idempotencyKey: string;
 			sourceHash: string;
 			studyProgramIds: string[];
-			/** Format: uuid */
-			timetableVersionId?: string | null;
 		};
 		ApplyCurriculumOfferingsResult: {
 			/** Format: uuid */
@@ -12111,6 +12266,8 @@ export interface components {
 			targetTimetableVersionRowVersion: number;
 			/** Format: uuid */
 			teacherChangeItemId: string;
+			/** Format: uuid */
+			timetableVersionId: string;
 		};
 		ApplyTeacherHandoffResponse: {
 			handoff: components['schemas']['TeacherHandoffPreview'];
@@ -13301,8 +13458,10 @@ export interface components {
 			versionName: string;
 		};
 		CloneTimetableVersionRequest: {
-			/** Format: date */
-			effectiveFrom: string;
+			/** Format: int64 */
+			draftRowVersion?: number | null;
+			/** Format: uuid */
+			resumeDraftId?: string | null;
 			/** Format: int64 */
 			sourceRowVersion: number;
 		};
@@ -13650,7 +13809,7 @@ export interface components {
 		};
 		CreateLearningOfferingQuery: {
 			/** Format: uuid */
-			timetableVersionId?: string | null;
+			deliveryVersionId?: string | null;
 		};
 		CreateLearningOfferingRequest:
 			| (components['schemas']['CreateCourseOfferingRequest'] & {
@@ -13987,6 +14146,10 @@ export interface components {
 		CreateTemplateRequest: {
 			description?: string | null;
 			name: string;
+		};
+		CreateTimetableVersionRequest: {
+			/** Format: uuid */
+			academicTermId: string;
 		};
 		CriterionInput: {
 			active: boolean;
@@ -14383,6 +14546,20 @@ export interface components {
 			/** Format: int64 */
 			itemRowVersion: number;
 		};
+		DeletedTimetableDraft: {
+			/** Format: int64 */
+			deletedBlockCount: number;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			sourceVersionId: string | null;
+		};
+		DeleteTimetableDraftRequest: {
+			/** Format: int64 */
+			expectedBlockCount: number;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		DeliveryCatalogVersionOption: {
 			code: string;
 			/** Format: uuid */
@@ -14412,6 +14589,126 @@ export interface components {
 			code: string;
 			message: string;
 			recoveryPath: string;
+		};
+		/** @enum {string} */
+		DeliveryReadinessCode:
+			| 'duplicate_offering'
+			| 'duplicate_group'
+			| 'duplicate_teacher'
+			| 'invalid_weekly_target'
+			| 'catalog_kind_mismatch'
+			| 'missing_targets'
+			| 'missing_groups'
+			| 'missing_primary_teacher';
+		DeliveryReadinessFinding: {
+			code: components['schemas']['DeliveryReadinessCode'];
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			/** Format: uuid */
+			learningOfferingId: string;
+		};
+		/** @description Published delivery graphs contain academic resource identities, never student rosters. */
+		DeliverySnapshot: {
+			offerings: components['schemas']['DeliveryVersionOffering'][];
+		};
+		DeliveryVersion: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy?: string | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			publishedAt?: string | null;
+			/** Format: uuid */
+			publishedBy?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			snapshot: components['schemas']['DeliverySnapshot'];
+			/** Format: uuid */
+			sourceVersionId: string | null;
+			status: components['schemas']['DeliveryVersionStatus'];
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		DeliveryVersionGroup: {
+			/** Format: int32 */
+			capacity?: number | null;
+			code: string;
+			description?: string | null;
+			homeroomIds: string[];
+			/** Format: uuid */
+			id: string;
+			name: string;
+			preferredRoomIds: string[];
+			teachers: components['schemas']['DeliveryVersionTeacher'][];
+		};
+		DeliveryVersionOffering: {
+			catalog: components['schemas']['LearningOfferingSnapshot'];
+			code: string;
+			groups: components['schemas']['DeliveryVersionGroup'][];
+			homeroomIds: string[];
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['LearningOfferingKind'];
+			name: string;
+			/** Format: uuid */
+			owningOrganizationUnitId: string;
+			/** Format: uuid */
+			sourceRequirementId?: string | null;
+			sourceRequirementKind?: string | null;
+			targets: components['schemas']['LearningOfferingTarget'][];
+			/** Format: int32 */
+			weeklyPeriodTarget: number;
+		};
+		DeliveryVersionQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+		};
+		/** @enum {string} */
+		DeliveryVersionStatus: 'draft' | 'published' | 'cancelled';
+		DeliveryVersionSummary: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: uuid */
+			changeSetId: string | null;
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: date */
+			effectiveUntil: string | null;
+			/** Format: int64 */
+			groupCount: number;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			offeringCount: number;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			sourceVersionId: string | null;
+			status: components['schemas']['DeliveryVersionStatus'];
+			/** Format: int64 */
+			teacherAssignmentCount: number;
+			/** Format: date-time */
+			updatedAt: string;
+		};
+		DeliveryVersionTeacher: {
+			/** Format: uuid */
+			assignmentId: string;
+			displayName: string;
+			role: components['schemas']['LearningTeacherRole'];
+			/** Format: uuid */
+			teacherId: string;
 		};
 		DocumentUploadResponse: {
 			docType: string;
@@ -15316,8 +15613,6 @@ export interface components {
 			rosterStatus: components['schemas']['RosterStatus'];
 			status: components['schemas']['LearningOfferingStatus'];
 			teachersLocked: boolean;
-			/** Format: int64 */
-			timetableEntryCount: number;
 		};
 		HomeroomDeliveryItem: {
 			alignmentStates: components['schemas']['CurriculumDeliveryAlignmentState'][];
@@ -15338,7 +15633,6 @@ export interface components {
 			/** Format: int32 */
 			standardPeriodsPerWeek?: number | null;
 			teacherState: components['schemas']['HomeroomTeacherState'];
-			timetableState: components['schemas']['HomeroomTimetableState'];
 			/** Format: int32 */
 			weeklyPeriodTarget: number | null;
 		};
@@ -15348,7 +15642,7 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: uuid */
-			timetableVersionId?: string | null;
+			deliveryVersionId?: string | null;
 		};
 		HomeroomDeliveryRoom: {
 			blockers: components['schemas']['DeliveryPrerequisite'][];
@@ -15367,12 +15661,12 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
-			homerooms: components['schemas']['HomeroomDeliveryRoom'][];
 			/** Format: date */
-			timetableVersionEffectiveFrom: string | null;
+			deliveryVersionEffectiveFrom: string | null;
 			/** Format: uuid */
-			timetableVersionId: string | null;
-			timetableVersionStatus: null | components['schemas']['TimetableVersionStatus'];
+			deliveryVersionId: string | null;
+			deliveryVersionStatus: null | components['schemas']['DeliveryVersionStatus'];
+			homerooms: components['schemas']['HomeroomDeliveryRoom'][];
 			unlinked: components['schemas']['UnlinkedDeliveryItem'][];
 		};
 		/** @enum {string} */
@@ -15423,8 +15717,6 @@ export interface components {
 		/** @enum {string} */
 		HomeroomTeacherState: 'missing_primary' | 'assigned';
 		/** @enum {string} */
-		HomeroomTimetableState: 'unscheduled' | 'partly_scheduled' | 'scheduled';
-		/** @enum {string} */
 		ImageAlignment: 'left' | 'center' | 'right';
 		ImageElement: {
 			/** Format: double */
@@ -15446,10 +15738,6 @@ export interface components {
 			fileId: string;
 			/** Format: int32 */
 			widthPercent: number;
-		};
-		IncludeTimetableVersionOfferingRequest: {
-			/** Format: uuid */
-			learningOfferingId: string;
 		};
 		InspectSchoolFontUploadsRequest: {
 			fileIds: string[];
@@ -16409,6 +16697,8 @@ export interface components {
 			targetTimetableVersionRowVersion: number;
 			/** Format: uuid */
 			teacherChangeItemId: string;
+			/** Format: uuid */
+			timetableVersionId: string;
 		};
 		PreviewTermPreparationInput: {
 			mappings?: components['schemas']['TermPreparationMappings'];
@@ -16417,6 +16707,12 @@ export interface components {
 			sourceTermId: string;
 			/** Format: uuid */
 			targetTermId: string;
+		};
+		PreviewTimetablePublicationRequest: {
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		ProfileResponse: {
 			address: string | null;
@@ -16878,7 +17174,7 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: int64 */
-			targetTimetableVersionRowVersion: number;
+			targetDeliveryVersionRowVersion: number;
 		};
 		PublishLearningOfferingRequest: {
 			/** Format: uuid */
@@ -16889,6 +17185,15 @@ export interface components {
 		PublishRosterRequest: {
 			/** Format: uuid */
 			idempotencyKey: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		PublishTimetableVersionRequest: {
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: uuid */
+			idempotencyKey: string;
+			previewHash: string;
 			/** Format: int64 */
 			rowVersion: number;
 		};
@@ -19221,12 +19526,17 @@ export interface components {
 			bellPeriods: components['schemas']['BellSchedulePeriod'][];
 			blocks: components['schemas']['TimetableBlock'][];
 			homerooms: components['schemas']['TimetableBlockWorkspaceHomeroom'][];
+			/** Format: uuid */
+			latestDeliveryVersionId: string;
 			learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
 			ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
 			rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
+			sourceIssues: components['schemas']['TimetableSourceIssue'][];
 			staff: components['schemas']['TimetableBlockWorkspaceStaff'][];
 			summary: components['schemas']['TimetableBlockSummary'];
 			synchronizedDemands: components['schemas']['TimetableSynchronizedDemand'][];
+			/** Format: int64 */
+			totalDraftBlockCount: number | null;
 			version: components['schemas']['TimetableVersion'];
 		};
 		TimetableBlockWorkspaceHomeroom: {
@@ -19287,6 +19597,65 @@ export interface components {
 			/** Format: int32 */
 			scheduledPeriods: number;
 		};
+		TimetablePublicationFinding: {
+			/** Format: uuid */
+			blockId: string | null;
+			code: components['schemas']['TimetablePublicationFindingCode'];
+			/** Format: uuid */
+			learningGroupId: string | null;
+			/** Format: uuid */
+			learningOfferingId: string | null;
+			message: string;
+		};
+		/** @enum {string} */
+		TimetablePublicationFindingCode:
+			| 'invalid_date'
+			| 'delivery_date_mismatch'
+			| 'date_already_published'
+			| 'no_content_change'
+			| 'source_needs_review'
+			| 'period_count_mismatch'
+			| 'missing_targets'
+			| 'pending_synchronization'
+			| 'collision'
+			| 'inactive_resource';
+		TimetablePublicationPreview: {
+			blockCount: number;
+			canPublish: boolean;
+			contentChanged: boolean;
+			/** Format: uuid */
+			deliveryVersionId: string;
+			/** Format: date */
+			effectiveFrom: string;
+			findings: components['schemas']['TimetablePublicationFinding'][];
+			/** Format: uuid */
+			latestDeliveryVersionId: string;
+			previewHash: string;
+			/** Format: int64 */
+			rowVersion: number;
+			sourceIssues: components['schemas']['TimetableSourceIssue'][];
+			/** Format: uuid */
+			timetableVersionId: string;
+		};
+		TimetableSourceIssue: {
+			/** Format: uuid */
+			blockId: string;
+			code: components['schemas']['TimetableSourceIssueCode'];
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			/** Format: uuid */
+			teacherId?: string | null;
+		};
+		/** @enum {string} */
+		TimetableSourceIssueCode:
+			| 'missing_offering'
+			| 'homeroom_coverage_mismatch'
+			| 'missing_instructor'
+			| 'missing_group'
+			| 'group_offering_mismatch'
+			| 'ineligible_instructor'
+			| 'instructor_role_mismatch'
+			| 'scheduling_mode_mismatch';
 		/** @enum {string} */
 		TimetableStructuralKind:
 			'break' | 'homeroom' | 'flag_ceremony' | 'teacher_meeting' | 'academic' | 'other';
@@ -19362,15 +19731,15 @@ export interface components {
 			academicYearId: string;
 			/** Format: uuid */
 			bellScheduleId: string;
-			/** Format: uuid */
-			changeSetId: string | null;
 			/** Format: date-time */
 			createdAt: string;
 			/** Format: uuid */
 			createdBy: string | null;
+			/** Format: uuid */
+			deliveryVersionId: string;
 			displayState: null | components['schemas']['TimetableVersionDisplayState'];
 			/** Format: date */
-			effectiveFrom: string;
+			effectiveFrom: string | null;
 			/** Format: date */
 			effectiveUntil: string | null;
 			/** Format: uuid */
@@ -19914,6 +20283,12 @@ export interface components {
 			/** Format: uuid */
 			timetableVersionId: string;
 			title?: string | null;
+		};
+		UpdateTimetableDeliverySourceRequest: {
+			/** Format: uuid */
+			deliveryVersionId: string;
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		UpsertAcademicTermChangeItemRequest:
 			| {
@@ -23545,12 +23920,102 @@ export interface operations {
 			};
 		};
 	};
+	listDeliveryVersions: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Opening versions with counts scoped to visible resources */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_DeliveryVersionSummary'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Opening read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getDeliveryVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Opening version ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Immutable opening graph scoped to visible resources */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_DeliveryVersion'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Opening read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Opening version not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getHomeroomDeliveryWorkspace: {
 		parameters: {
 			query: {
 				academicTermId: string;
 				academicYearId: string;
-				timetableVersionId?: string;
+				deliveryVersionId?: string;
 			};
 			header?: never;
 			path?: never;
@@ -29167,7 +29632,7 @@ export interface operations {
 	createLearningOffering: {
 		parameters: {
 			query?: {
-				timetableVersionId?: string;
+				deliveryVersionId?: string;
 			};
 			header?: never;
 			path?: never;
@@ -32150,6 +32615,150 @@ export interface operations {
 			};
 		};
 	};
+	applyTeacherHandoff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Published opening revision ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ApplyTeacherHandoffRequest'];
+			};
+		};
+		responses: {
+			/** @description Teacher timetable handoff applied */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ApplyTeacherHandoffResponse'];
+				};
+			};
+			/** @description Invalid teacher handoff */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher change item not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher handoff conflict or stale preview */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewTeacherHandoff: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Published opening revision ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewTeacherHandoffRequest'];
+			};
+		};
+		responses: {
+			/** @description Teacher timetable handoff preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TeacherHandoffPreview'];
+				};
+			};
+			/** @description Invalid teacher handoff */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Learning offering management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher change item not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Teacher handoff conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listAcademicTermChangeSets: {
 		parameters: {
 			query: {
@@ -32774,150 +33383,6 @@ export interface operations {
 				};
 			};
 			/** @description Preview or publication conflict */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	applyTeacherHandoff: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Operational change set ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ApplyTeacherHandoffRequest'];
-			};
-		};
-		responses: {
-			/** @description Teacher timetable handoff applied */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_ApplyTeacherHandoffResponse'];
-				};
-			};
-			/** @description Invalid teacher handoff */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Learning offering management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Teacher change item not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Teacher handoff conflict or stale preview */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	previewTeacherHandoff: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Operational change set ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['PreviewTeacherHandoffRequest'];
-			};
-		};
-		responses: {
-			/** @description Teacher timetable handoff preview */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_TeacherHandoffPreview'];
-				};
-			};
-			/** @description Invalid teacher handoff */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Learning offering management permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Teacher change item not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Teacher handoff conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -34240,6 +34705,69 @@ export interface operations {
 			};
 		};
 	};
+	createTimetableVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateTimetableVersionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	cloneTimetableVersion: {
 		parameters: {
 			query?: never;
@@ -34312,41 +34840,29 @@ export interface operations {
 			};
 		};
 	};
-	includeTimetableVersionOffering: {
+	deleteTimetableDraft: {
 		parameters: {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Draft timetable version ID */
 				version_id: string;
 			};
 			cookie?: never;
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['IncludeTimetableVersionOfferingRequest'];
+				'application/json': components['schemas']['DeleteTimetableDraftRequest'];
 			};
 		};
 		responses: {
-			/** @description Learning offering included in the draft timetable version */
 			200: {
 				headers: {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_TimetableVersionTarget'];
+					'application/json': components['schemas']['ApiResponse_DeletedTimetableDraft'];
 				};
 			};
-			/** @description Invalid learning offering target */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
 			401: {
 				headers: {
 					[name: string]: unknown;
@@ -34355,7 +34871,6 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Timetable manage permission denied */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -34364,7 +34879,6 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Timetable version or learning offering not found */
 			404: {
 				headers: {
 					[name: string]: unknown;
@@ -34373,7 +34887,201 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Timetable version or learning offering conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateTimetableDeliverySource: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				version_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateTimetableDeliverySourceRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewTimetablePublication: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				version_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewTimetablePublicationRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetablePublicationPreview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	publishTimetableVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				version_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PublishTimetableVersionRequest'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_TimetableVersion'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			409: {
 				headers: {
 					[name: string]: unknown;

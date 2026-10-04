@@ -442,6 +442,12 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 	assert.match(verification, /\.gradebookResultsCutover\.status == "cutoverCompleted"/);
 	assert.match(verification, /\.gradebookResultsCutover\.passed == true/);
 	assert.match(verification, /all\(\.gradebookResultsCutover\.checks\[\]; \.passed == true\)/);
+	assert.match(migrationHandler, /deliveryTimetableCutover/);
+	assert.match(verification, /\.deliveryTimetableCutover\.migrationVersion == 88/);
+	assert.match(verification, /\.deliveryTimetableCutover\.status == "cutoverCompleted"/);
+	assert.match(verification, /\.deliveryTimetableCutover\.passed == true/);
+	assert.match(verification, /\(\.deliveryTimetableCutover\.checks \| length\) == 30/);
+	assert.match(verification, /all\(\.deliveryTimetableCutover\.checks\[\]; \.passed == true\)/);
 	assert.match(verification, /maintenance remains enabled/);
 
 	for (const endpoint of [

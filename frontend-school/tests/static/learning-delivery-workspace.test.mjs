@@ -35,7 +35,7 @@ test('homeroom delivery contract is camelCase and preparation requires reviewed 
 	assert.deepEqual(operation.parameters.map((parameter) => parameter.name).sort(), [
 		'academicTermId',
 		'academicYearId',
-		'timetableVersionId'
+		'deliveryVersionId'
 	]);
 	const preview = openapi.components.schemas.CurriculumOfferingPreview;
 	assert.ok(preview.required.includes('proposals'));
@@ -109,7 +109,8 @@ test('delivery workspace is homeroom-first, loads offering overview lazily, and 
 	assert.match(page, /getHomeroomDeliveryWorkspace/);
 	assert.match(page, /getAcademicTermChangeSet/);
 	assert.match(page, /viewMode = \$state<'homerooms' \| 'offerings'>\('homerooms'\)/);
-	assert.match(page, /getLearningDeliveryOverview/);
+	assert.match(page, /getDeliveryVersion/);
+	assert.match(page, /overview\?\.snapshot.offerings/);
 	assert.match(page, /viewMode === 'offerings'/);
 	assert.match(readiness, /onChanged\(updated,\s*'homerooms'\)/);
 	assert.match(page, /{#if canManage[\s\S]*AcademicChangeSetDialog/);

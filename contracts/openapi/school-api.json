@@ -59,29 +59,16 @@
       "AcademicChangeFindingCode": {
         "enum": [
           "change_set_no_items",
-          "change_set_stale",
           "term_not_writable",
           "effective_date_invalid",
-          "base_timetable_version_stale",
-          "target_timetable_version_stale",
-          "change_item_stale",
+          "base_delivery_version_stale",
           "resource_stale",
-          "draft_group",
+          "missing_delivery_target",
+          "missing_delivery_group",
+          "delivery_graph_invalid",
           "missing_primary_teacher",
-          "missing_entry_instructor",
-          "unpublished_roster",
-          "offering_unavailable",
           "missing_weekly_period_target",
-          "weekly_period_deficit",
-          "weekly_period_excess",
-          "homeroom_conflict",
-          "learning_group_conflict",
-          "teacher_conflict",
-          "room_conflict",
-          "stopped_offering_still_scheduled",
-          "missing_effective_teacher",
-          "stopped_teacher_still_scheduled",
-          "entry_instructor_not_effective"
+          "missing_effective_teacher"
         ],
         "type": "string"
       },
@@ -348,41 +335,6 @@
           "name",
           "workspaceCode",
           "displayOrder"
-        ],
-        "type": "object"
-      },
-      "AcademicOfferingScheduleCount": {
-        "properties": {
-          "actualPeriods": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "learningGroupId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "learningGroupLabel": {
-            "type": "string"
-          },
-          "learningOfferingId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "offeringLabel": {
-            "type": "string"
-          },
-          "targetPeriods": {
-            "format": "int32",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "learningOfferingId",
-          "learningGroupId",
-          "offeringLabel",
-          "learningGroupLabel",
-          "actualPeriods",
-          "targetPeriods"
         ],
         "type": "object"
       },
@@ -865,9 +817,12 @@
             "format": "uuid",
             "type": "string"
           },
-          "baseTimetableVersionId": {
+          "baseDeliveryVersionId": {
             "format": "uuid",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "cancelledAt": {
             "format": "date-time",
@@ -929,7 +884,7 @@
           "status": {
             "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
           },
-          "targetTimetableVersionId": {
+          "targetDeliveryVersionId": {
             "format": "uuid",
             "type": "string"
           },
@@ -945,8 +900,7 @@
           "effectiveFrom",
           "reason",
           "status",
-          "baseTimetableVersionId",
-          "targetTimetableVersionId",
+          "targetDeliveryVersionId",
           "rowVersion",
           "createdBy",
           "createdAt",
@@ -981,17 +935,11 @@
           "previewHash": {
             "type": "string"
           },
-          "scheduleCounts": {
-            "items": {
-              "$ref": "#/components/schemas/AcademicOfferingScheduleCount"
-            },
-            "type": "array"
-          },
-          "targetTimetableVersionId": {
+          "targetDeliveryVersionId": {
             "format": "uuid",
             "type": "string"
           },
-          "targetTimetableVersionRowVersion": {
+          "targetDeliveryVersionRowVersion": {
             "format": "int64",
             "type": "integer"
           }
@@ -999,11 +947,10 @@
         "required": [
           "changeSetId",
           "changeSetRowVersion",
-          "targetTimetableVersionId",
-          "targetTimetableVersionRowVersion",
+          "targetDeliveryVersionId",
+          "targetDeliveryVersionRowVersion",
           "effectiveFrom",
           "impactCounts",
-          "scheduleCounts",
           "findings",
           "previewHash"
         ],
@@ -1054,7 +1001,7 @@
           "status": {
             "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
           },
-          "targetTimetableVersionId": {
+          "targetDeliveryVersionId": {
             "format": "uuid",
             "type": "string"
           },
@@ -1070,7 +1017,7 @@
           "effectiveFrom",
           "reason",
           "status",
-          "targetTimetableVersionId",
+          "targetDeliveryVersionId",
           "updatedAt"
         ],
         "type": "object"
@@ -2991,9 +2938,12 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "baseTimetableVersionId": {
+              "baseDeliveryVersionId": {
                 "format": "uuid",
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "cancelledAt": {
                 "format": "date-time",
@@ -3055,7 +3005,7 @@
               "status": {
                 "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
               },
-              "targetTimetableVersionId": {
+              "targetDeliveryVersionId": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -3071,8 +3021,7 @@
               "effectiveFrom",
               "reason",
               "status",
-              "baseTimetableVersionId",
-              "targetTimetableVersionId",
+              "targetDeliveryVersionId",
               "rowVersion",
               "createdBy",
               "createdAt",
@@ -3122,17 +3071,11 @@
               "previewHash": {
                 "type": "string"
               },
-              "scheduleCounts": {
-                "items": {
-                  "$ref": "#/components/schemas/AcademicOfferingScheduleCount"
-                },
-                "type": "array"
-              },
-              "targetTimetableVersionId": {
+              "targetDeliveryVersionId": {
                 "format": "uuid",
                 "type": "string"
               },
-              "targetTimetableVersionRowVersion": {
+              "targetDeliveryVersionRowVersion": {
                 "format": "int64",
                 "type": "integer"
               }
@@ -3140,11 +3083,10 @@
             "required": [
               "changeSetId",
               "changeSetRowVersion",
-              "targetTimetableVersionId",
-              "targetTimetableVersionRowVersion",
+              "targetDeliveryVersionId",
+              "targetDeliveryVersionRowVersion",
               "effectiveFrom",
               "impactCounts",
-              "scheduleCounts",
               "findings",
               "previewHash"
             ],
@@ -6586,6 +6528,46 @@
         ],
         "type": "object"
       },
+      "ApiResponse_DeletedTimetableDraft": {
+        "properties": {
+          "data": {
+            "properties": {
+              "deletedBlockCount": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "sourceVersionId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "sourceVersionId",
+              "deletedBlockCount"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_DeliveryManagementOptions": {
         "properties": {
           "data": {
@@ -6651,6 +6633,108 @@
               "learningGroups",
               "teachers",
               "rooms"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_DeliveryVersion": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "effectiveFrom": {
+                "format": "date",
+                "type": "string"
+              },
+              "effectiveUntil": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "publishedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "publishedBy": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "snapshot": {
+                "$ref": "#/components/schemas/DeliverySnapshot"
+              },
+              "sourceVersionId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/DeliveryVersionStatus"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "academicTermId",
+              "academicYearId",
+              "sourceVersionId",
+              "effectiveFrom",
+              "effectiveUntil",
+              "status",
+              "rowVersion",
+              "createdAt",
+              "updatedAt",
+              "snapshot"
             ],
             "type": "object"
           },
@@ -8118,35 +8202,35 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "homerooms": {
-                "items": {
-                  "$ref": "#/components/schemas/HomeroomDeliveryRoom"
-                },
-                "type": "array"
-              },
-              "timetableVersionEffectiveFrom": {
+              "deliveryVersionEffectiveFrom": {
                 "format": "date",
                 "type": [
                   "string",
                   "null"
                 ]
               },
-              "timetableVersionId": {
+              "deliveryVersionId": {
                 "format": "uuid",
                 "type": [
                   "string",
                   "null"
                 ]
               },
-              "timetableVersionStatus": {
+              "deliveryVersionStatus": {
                 "oneOf": [
                   {
                     "type": "null"
                   },
                   {
-                    "$ref": "#/components/schemas/TimetableVersionStatus"
+                    "$ref": "#/components/schemas/DeliveryVersionStatus"
                   }
                 ]
+              },
+              "homerooms": {
+                "items": {
+                  "$ref": "#/components/schemas/HomeroomDeliveryRoom"
+                },
+                "type": "array"
               },
               "unlinked": {
                 "items": {
@@ -8158,9 +8242,9 @@
             "required": [
               "academicTermId",
               "academicYearId",
-              "timetableVersionId",
-              "timetableVersionStatus",
-              "timetableVersionEffectiveFrom",
+              "deliveryVersionId",
+              "deliveryVersionStatus",
+              "deliveryVersionEffectiveFrom",
               "homerooms",
               "unlinked"
             ],
@@ -14569,6 +14653,10 @@
                 },
                 "type": "array"
               },
+              "latestDeliveryVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "learningGroups": {
                 "items": {
                   "$ref": "#/components/schemas/TimetableBlockWorkspaceLearningGroup"
@@ -14587,6 +14675,12 @@
                 },
                 "type": "array"
               },
+              "sourceIssues": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableSourceIssue"
+                },
+                "type": "array"
+              },
               "staff": {
                 "items": {
                   "$ref": "#/components/schemas/TimetableBlockWorkspaceStaff"
@@ -14602,11 +14696,21 @@
                 },
                 "type": "array"
               },
+              "totalDraftBlockCount": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "version": {
                 "$ref": "#/components/schemas/TimetableVersion"
               }
             },
             "required": [
+              "totalDraftBlockCount",
+              "sourceIssues",
+              "latestDeliveryVersionId",
               "version",
               "bellPeriods",
               "blocks",
@@ -14617,6 +14721,84 @@
               "rooms",
               "staff",
               "summary"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_TimetablePublicationPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "blockCount": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "canPublish": {
+                "type": "boolean"
+              },
+              "contentChanged": {
+                "type": "boolean"
+              },
+              "deliveryVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "effectiveFrom": {
+                "format": "date",
+                "type": "string"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetablePublicationFinding"
+                },
+                "type": "array"
+              },
+              "latestDeliveryVersionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "previewHash": {
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "sourceIssues": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableSourceIssue"
+                },
+                "type": "array"
+              },
+              "timetableVersionId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "timetableVersionId",
+              "rowVersion",
+              "deliveryVersionId",
+              "latestDeliveryVersionId",
+              "effectiveFrom",
+              "blockCount",
+              "contentChanged",
+              "canPublish",
+              "sourceIssues",
+              "findings",
+              "previewHash"
             ],
             "type": "object"
           },
@@ -14703,13 +14885,6 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "changeSetId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -14720,6 +14895,10 @@
                   "string",
                   "null"
                 ]
+              },
+              "deliveryVersionId": {
+                "format": "uuid",
+                "type": "string"
               },
               "displayState": {
                 "oneOf": [
@@ -14733,7 +14912,10 @@
               },
               "effectiveFrom": {
                 "format": "date",
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "effectiveUntil": {
                 "format": "date",
@@ -14794,7 +14976,7 @@
               "status",
               "displayState",
               "sourceVersionId",
-              "changeSetId",
+              "deliveryVersionId",
               "bellScheduleId",
               "rowVersion",
               "createdBy",
@@ -15147,9 +15329,12 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "baseTimetableVersionId": {
+                "baseDeliveryVersionId": {
                   "format": "uuid",
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "cancelledAt": {
                   "format": "date-time",
@@ -15211,7 +15396,7 @@
                 "status": {
                   "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
                 },
-                "targetTimetableVersionId": {
+                "targetDeliveryVersionId": {
                   "format": "uuid",
                   "type": "string"
                 },
@@ -15227,8 +15412,7 @@
                 "effectiveFrom",
                 "reason",
                 "status",
-                "baseTimetableVersionId",
-                "targetTimetableVersionId",
+                "targetDeliveryVersionId",
                 "rowVersion",
                 "createdBy",
                 "createdAt",
@@ -15279,7 +15463,7 @@
                 "status": {
                   "$ref": "#/components/schemas/AcademicTermChangeSetStatus"
                 },
-                "targetTimetableVersionId": {
+                "targetDeliveryVersionId": {
                   "format": "uuid",
                   "type": "string"
                 },
@@ -15295,7 +15479,7 @@
                 "effectiveFrom",
                 "reason",
                 "status",
-                "targetTimetableVersionId",
+                "targetDeliveryVersionId",
                 "updatedAt"
               ],
               "type": "object"
@@ -18183,6 +18367,104 @@
                 "reason",
                 "started_at",
                 "expires_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_DeliveryVersionSummary": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "academicTermId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "academicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "changeSetId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "effectiveFrom": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "effectiveUntil": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "groupCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "offeringCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "sourceVersionId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/DeliveryVersionStatus"
+                },
+                "teacherAssignmentCount": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "academicTermId",
+                "academicYearId",
+                "sourceVersionId",
+                "changeSetId",
+                "effectiveFrom",
+                "effectiveUntil",
+                "status",
+                "rowVersion",
+                "offeringCount",
+                "groupCount",
+                "teacherAssignmentCount",
+                "updatedAt"
               ],
               "type": "object"
             },
@@ -21776,13 +22058,6 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "changeSetId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "createdAt": {
                   "format": "date-time",
                   "type": "string"
@@ -21793,6 +22068,10 @@
                     "string",
                     "null"
                   ]
+                },
+                "deliveryVersionId": {
+                  "format": "uuid",
+                  "type": "string"
                 },
                 "displayState": {
                   "oneOf": [
@@ -21806,7 +22085,10 @@
                 },
                 "effectiveFrom": {
                   "format": "date",
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "effectiveUntil": {
                   "format": "date",
@@ -21867,7 +22149,7 @@
                 "status",
                 "displayState",
                 "sourceVersionId",
-                "changeSetId",
+                "deliveryVersionId",
                 "bellScheduleId",
                 "rowVersion",
                 "createdBy",
@@ -22237,6 +22519,13 @@
             },
             "type": "array"
           },
+          "deliveryVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "idempotencyKey": {
             "format": "uuid",
             "type": "string"
@@ -22250,13 +22539,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "timetableVersionId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -22386,9 +22668,14 @@
           "teacherChangeItemId": {
             "format": "uuid",
             "type": "string"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "timetableVersionId",
           "changeSetRowVersion",
           "targetTimetableVersionRowVersion",
           "teacherChangeItemId",
@@ -26726,9 +27013,19 @@
       "CloneTimetableVersionRequest": {
         "additionalProperties": false,
         "properties": {
-          "effectiveFrom": {
-            "format": "date",
-            "type": "string"
+          "draftRowVersion": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "resumeDraftId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sourceRowVersion": {
             "format": "int64",
@@ -26736,7 +27033,6 @@
           }
         },
         "required": [
-          "effectiveFrom",
           "sourceRowVersion"
         ],
         "type": "object"
@@ -28022,7 +28318,7 @@
       "CreateLearningOfferingQuery": {
         "additionalProperties": false,
         "properties": {
-          "timetableVersionId": {
+          "deliveryVersionId": {
             "format": "uuid",
             "type": [
               "string",
@@ -29434,6 +29730,19 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "CreateTimetableVersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId"
         ],
         "type": "object"
       },
@@ -30897,6 +31206,49 @@
         ],
         "type": "object"
       },
+      "DeletedTimetableDraft": {
+        "properties": {
+          "deletedBlockCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sourceVersionId",
+          "deletedBlockCount"
+        ],
+        "type": "object"
+      },
+      "DeleteTimetableDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedBlockCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "expectedBlockCount"
+        ],
+        "type": "object"
+      },
       "DeliveryCatalogVersionOption": {
         "properties": {
           "code": {
@@ -31020,6 +31372,403 @@
           "code",
           "message",
           "recoveryPath"
+        ],
+        "type": "object"
+      },
+      "DeliveryReadinessCode": {
+        "enum": [
+          "duplicate_offering",
+          "duplicate_group",
+          "duplicate_teacher",
+          "invalid_weekly_target",
+          "catalog_kind_mismatch",
+          "missing_targets",
+          "missing_groups",
+          "missing_primary_teacher"
+        ],
+        "type": "string"
+      },
+      "DeliveryReadinessFinding": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/DeliveryReadinessCode"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "learningOfferingId"
+        ],
+        "type": "object"
+      },
+      "DeliverySnapshot": {
+        "additionalProperties": false,
+        "description": "Published delivery graphs contain academic resource identities, never student rosters.",
+        "properties": {
+          "offerings": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryVersionOffering"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "offerings"
+        ],
+        "type": "object"
+      },
+      "DeliveryVersion": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "effectiveUntil": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publishedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/DeliverySnapshot"
+          },
+          "sourceVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeliveryVersionStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "academicYearId",
+          "sourceVersionId",
+          "effectiveFrom",
+          "effectiveUntil",
+          "status",
+          "rowVersion",
+          "createdAt",
+          "updatedAt",
+          "snapshot"
+        ],
+        "type": "object"
+      },
+      "DeliveryVersionGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "capacity": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preferredRoomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "teachers": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryVersionTeacher"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "homeroomIds",
+          "preferredRoomIds",
+          "teachers"
+        ],
+        "type": "object"
+      },
+      "DeliveryVersionOffering": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/LearningOfferingSnapshot"
+          },
+          "code": {
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryVersionGroup"
+            },
+            "type": "array"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LearningOfferingKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owningOrganizationUnitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceRequirementId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRequirementKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/LearningOfferingTarget"
+            },
+            "type": "array"
+          },
+          "weeklyPeriodTarget": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "code",
+          "name",
+          "owningOrganizationUnitId",
+          "weeklyPeriodTarget",
+          "catalog",
+          "targets",
+          "homeroomIds",
+          "groups"
+        ],
+        "type": "object"
+      },
+      "DeliveryVersionQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId"
+        ],
+        "type": "object"
+      },
+      "DeliveryVersionStatus": {
+        "enum": [
+          "draft",
+          "published",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "DeliveryVersionSummary": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "changeSetId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "effectiveUntil": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groupCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "offeringCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceVersionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeliveryVersionStatus"
+          },
+          "teacherAssignmentCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "academicYearId",
+          "sourceVersionId",
+          "changeSetId",
+          "effectiveFrom",
+          "effectiveUntil",
+          "status",
+          "rowVersion",
+          "offeringCount",
+          "groupCount",
+          "teacherAssignmentCount",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "DeliveryVersionTeacher": {
+        "additionalProperties": false,
+        "properties": {
+          "assignmentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/LearningTeacherRole"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignmentId",
+          "teacherId",
+          "displayName",
+          "role"
         ],
         "type": "object"
       },
@@ -34070,10 +34819,6 @@
           },
           "teachersLocked": {
             "type": "boolean"
-          },
-          "timetableEntryCount": {
-            "format": "int64",
-            "type": "integer"
           }
         },
         "required": [
@@ -34085,8 +34830,7 @@
           "rosterStatus",
           "homeroomIds",
           "homeroomNames",
-          "primaryTeacherCount",
-          "timetableEntryCount"
+          "primaryTeacherCount"
         ],
         "type": "object"
       },
@@ -34157,9 +34901,6 @@
           "teacherState": {
             "$ref": "#/components/schemas/HomeroomTeacherState"
           },
-          "timetableState": {
-            "$ref": "#/components/schemas/HomeroomTimetableState"
-          },
           "weeklyPeriodTarget": {
             "format": "int32",
             "type": [
@@ -34180,7 +34921,6 @@
           "offeringState",
           "groupMode",
           "teacherState",
-          "timetableState",
           "alignmentStates",
           "groups"
         ],
@@ -34197,7 +34937,7 @@
             "format": "uuid",
             "type": "string"
           },
-          "timetableVersionId": {
+          "deliveryVersionId": {
             "format": "uuid",
             "type": [
               "string",
@@ -34276,35 +35016,35 @@
             "format": "uuid",
             "type": "string"
           },
-          "homerooms": {
-            "items": {
-              "$ref": "#/components/schemas/HomeroomDeliveryRoom"
-            },
-            "type": "array"
-          },
-          "timetableVersionEffectiveFrom": {
+          "deliveryVersionEffectiveFrom": {
             "format": "date",
             "type": [
               "string",
               "null"
             ]
           },
-          "timetableVersionId": {
+          "deliveryVersionId": {
             "format": "uuid",
             "type": [
               "string",
               "null"
             ]
           },
-          "timetableVersionStatus": {
+          "deliveryVersionStatus": {
             "oneOf": [
               {
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/TimetableVersionStatus"
+                "$ref": "#/components/schemas/DeliveryVersionStatus"
               }
             ]
+          },
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomDeliveryRoom"
+            },
+            "type": "array"
           },
           "unlinked": {
             "items": {
@@ -34316,9 +35056,9 @@
         "required": [
           "academicTermId",
           "academicYearId",
-          "timetableVersionId",
-          "timetableVersionStatus",
-          "timetableVersionEffectiveFrom",
+          "deliveryVersionId",
+          "deliveryVersionStatus",
+          "deliveryVersionEffectiveFrom",
           "homerooms",
           "unlinked"
         ],
@@ -34474,14 +35214,6 @@
         ],
         "type": "string"
       },
-      "HomeroomTimetableState": {
-        "enum": [
-          "unscheduled",
-          "partly_scheduled",
-          "scheduled"
-        ],
-        "type": "string"
-      },
       "ImageAlignment": {
         "enum": [
           "left",
@@ -34558,19 +35290,6 @@
           "fileId",
           "alignment",
           "widthPercent"
-        ],
-        "type": "object"
-      },
-      "IncludeTimetableVersionOfferingRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "learningOfferingId": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "learningOfferingId"
         ],
         "type": "object"
       },
@@ -38076,9 +38795,14 @@
           "teacherChangeItemId": {
             "format": "uuid",
             "type": "string"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
+          "timetableVersionId",
           "changeSetRowVersion",
           "targetTimetableVersionRowVersion",
           "teacherChangeItemId",
@@ -38111,6 +38835,24 @@
           "sourceTermId",
           "targetTermId",
           "modules"
+        ],
+        "type": "object"
+      },
+      "PreviewTimetablePublicationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "effectiveFrom"
         ],
         "type": "object"
       },
@@ -39777,14 +40519,14 @@
             "format": "int64",
             "type": "integer"
           },
-          "targetTimetableVersionRowVersion": {
+          "targetDeliveryVersionRowVersion": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
           "rowVersion",
-          "targetTimetableVersionRowVersion",
+          "targetDeliveryVersionRowVersion",
           "previewHash",
           "idempotencyKey"
         ],
@@ -39822,6 +40564,33 @@
         },
         "required": [
           "rowVersion",
+          "idempotencyKey"
+        ],
+        "type": "object"
+      },
+      "PublishTimetableVersionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "previewHash": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "effectiveFrom",
+          "previewHash",
           "idempotencyKey"
         ],
         "type": "object"
@@ -48153,6 +48922,10 @@
             },
             "type": "array"
           },
+          "latestDeliveryVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "learningGroups": {
             "items": {
               "$ref": "#/components/schemas/TimetableBlockWorkspaceLearningGroup"
@@ -48171,6 +48944,12 @@
             },
             "type": "array"
           },
+          "sourceIssues": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableSourceIssue"
+            },
+            "type": "array"
+          },
           "staff": {
             "items": {
               "$ref": "#/components/schemas/TimetableBlockWorkspaceStaff"
@@ -48186,11 +48965,21 @@
             },
             "type": "array"
           },
+          "totalDraftBlockCount": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "version": {
             "$ref": "#/components/schemas/TimetableVersion"
           }
         },
         "required": [
+          "totalDraftBlockCount",
+          "sourceIssues",
+          "latestDeliveryVersionId",
           "version",
           "bellPeriods",
           "blocks",
@@ -48418,6 +49207,166 @@
           "eligibleInstructors"
         ],
         "type": "object"
+      },
+      "TimetablePublicationFinding": {
+        "properties": {
+          "blockId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "$ref": "#/components/schemas/TimetablePublicationFindingCode"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "blockId",
+          "learningOfferingId",
+          "learningGroupId"
+        ],
+        "type": "object"
+      },
+      "TimetablePublicationFindingCode": {
+        "enum": [
+          "invalid_date",
+          "delivery_date_mismatch",
+          "date_already_published",
+          "no_content_change",
+          "source_needs_review",
+          "period_count_mismatch",
+          "missing_targets",
+          "pending_synchronization",
+          "collision",
+          "inactive_resource"
+        ],
+        "type": "string"
+      },
+      "TimetablePublicationPreview": {
+        "properties": {
+          "blockCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "canPublish": {
+            "type": "boolean"
+          },
+          "contentChanged": {
+            "type": "boolean"
+          },
+          "deliveryVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/TimetablePublicationFinding"
+            },
+            "type": "array"
+          },
+          "latestDeliveryVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "previewHash": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceIssues": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableSourceIssue"
+            },
+            "type": "array"
+          },
+          "timetableVersionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timetableVersionId",
+          "rowVersion",
+          "deliveryVersionId",
+          "latestDeliveryVersionId",
+          "effectiveFrom",
+          "blockCount",
+          "contentChanged",
+          "canPublish",
+          "sourceIssues",
+          "findings",
+          "previewHash"
+        ],
+        "type": "object"
+      },
+      "TimetableSourceIssue": {
+        "properties": {
+          "blockId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "$ref": "#/components/schemas/TimetableSourceIssueCode"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "blockId",
+          "code"
+        ],
+        "type": "object"
+      },
+      "TimetableSourceIssueCode": {
+        "enum": [
+          "missing_offering",
+          "homeroom_coverage_mismatch",
+          "missing_instructor",
+          "missing_group",
+          "group_offering_mismatch",
+          "ineligible_instructor",
+          "instructor_role_mismatch",
+          "scheduling_mode_mismatch"
+        ],
+        "type": "string"
       },
       "TimetableStructuralKind": {
         "enum": [
@@ -48667,13 +49616,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "changeSetId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -48684,6 +49626,10 @@
               "string",
               "null"
             ]
+          },
+          "deliveryVersionId": {
+            "format": "uuid",
+            "type": "string"
           },
           "displayState": {
             "oneOf": [
@@ -48697,7 +49643,10 @@
           },
           "effectiveFrom": {
             "format": "date",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "effectiveUntil": {
             "format": "date",
@@ -48758,7 +49707,7 @@
           "status",
           "displayState",
           "sourceVersionId",
-          "changeSetId",
+          "deliveryVersionId",
           "bellScheduleId",
           "rowVersion",
           "createdBy",
@@ -50975,6 +51924,24 @@
         "required": [
           "timetableVersionId",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "UpdateTimetableDeliverySourceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "deliveryVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "deliveryVersionId"
         ],
         "type": "object"
       },
@@ -56047,6 +57014,119 @@
         ]
       }
     },
+    "/api/academic/delivery-versions": {
+      "get": {
+        "operationId": "listDeliveryVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_DeliveryVersionSummary"
+                }
+              }
+            },
+            "description": "Opening versions with counts scoped to visible resources"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Opening read permission denied"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/delivery-versions/{id}": {
+      "get": {
+        "operationId": "getDeliveryVersion",
+        "parameters": [
+          {
+            "description": "Opening version ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DeliveryVersion"
+                }
+              }
+            },
+            "description": "Immutable opening graph scoped to visible resources"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Opening read permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Opening version not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/delivery/homerooms": {
       "get": {
         "operationId": "getHomeroomDeliveryWorkspace",
@@ -56071,7 +57151,7 @@
           },
           {
             "in": "query",
-            "name": "timetableVersionId",
+            "name": "deliveryVersionId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -63950,7 +65030,7 @@
         "parameters": [
           {
             "in": "query",
-            "name": "timetableVersionId",
+            "name": "deliveryVersionId",
             "required": false,
             "schema": {
               "format": "uuid",
@@ -68184,6 +69264,190 @@
         ]
       }
     },
+    "/api/academic/teacher-handoffs/{id}/apply": {
+      "post": {
+        "operationId": "applyTeacherHandoff",
+        "parameters": [
+          {
+            "description": "Published opening revision ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTeacherHandoffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ApplyTeacherHandoffResponse"
+                }
+              }
+            },
+            "description": "Teacher timetable handoff applied"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid teacher handoff"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher change item not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher handoff conflict or stale preview"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/teacher-handoffs/{id}/preview": {
+      "post": {
+        "operationId": "previewTeacherHandoff",
+        "parameters": [
+          {
+            "description": "Published opening revision ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewTeacherHandoffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TeacherHandoffPreview"
+                }
+              }
+            },
+            "description": "Teacher timetable handoff preview"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid teacher handoff"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Learning offering management permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher change item not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Teacher handoff conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/term-change-sets": {
       "get": {
         "operationId": "listAcademicTermChangeSets",
@@ -68968,190 +70232,6 @@
               }
             },
             "description": "Preview or publication conflict"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/term-change-sets/{id}/teacher-handoff/apply": {
-      "post": {
-        "operationId": "applyTeacherHandoff",
-        "parameters": [
-          {
-            "description": "Operational change set ID",
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApplyTeacherHandoffRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ApplyTeacherHandoffResponse"
-                }
-              }
-            },
-            "description": "Teacher timetable handoff applied"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid teacher handoff"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Learning offering management permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Teacher change item not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Teacher handoff conflict or stale preview"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/term-change-sets/{id}/teacher-handoff/preview": {
-      "post": {
-        "operationId": "previewTeacherHandoff",
-        "parameters": [
-          {
-            "description": "Operational change set ID",
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PreviewTeacherHandoffRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TeacherHandoffPreview"
-                }
-              }
-            },
-            "description": "Teacher timetable handoff preview"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid teacher handoff"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Learning offering management permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Teacher change item not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Teacher handoff conflict"
           }
         },
         "tags": [
@@ -70861,6 +71941,84 @@
         "tags": [
           "academic"
         ]
+      },
+      "post": {
+        "operationId": "createTimetableVersion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTimetableVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
       }
     },
     "/api/academic/timetable-versions/{source_id}/clone": {
@@ -70955,12 +72113,11 @@
         ]
       }
     },
-    "/api/academic/timetable-versions/{version_id}/targets": {
+    "/api/academic/timetable-versions/{version_id}/delete-draft": {
       "post": {
-        "operationId": "includeTimetableVersionOffering",
+        "operationId": "deleteTimetableDraft",
         "parameters": [
           {
-            "description": "Draft timetable version ID",
             "in": "path",
             "name": "version_id",
             "required": true,
@@ -70974,7 +72131,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IncludeTimetableVersionOfferingRequest"
+                "$ref": "#/components/schemas/DeleteTimetableDraftRequest"
               }
             }
           },
@@ -70985,21 +72142,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_TimetableVersionTarget"
+                  "$ref": "#/components/schemas/ApiResponse_DeletedTimetableDraft"
                 }
               }
             },
-            "description": "Learning offering included in the draft timetable version"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid learning offering target"
+            "description": ""
           },
           "401": {
             "content": {
@@ -71009,7 +72156,7 @@
                 }
               }
             },
-            "description": "Authentication required"
+            "description": ""
           },
           "403": {
             "content": {
@@ -71019,7 +72166,7 @@
                 }
               }
             },
-            "description": "Timetable manage permission denied"
+            "description": ""
           },
           "404": {
             "content": {
@@ -71029,7 +72176,7 @@
                 }
               }
             },
-            "description": "Timetable version or learning offering not found"
+            "description": ""
           },
           "409": {
             "content": {
@@ -71039,7 +72186,280 @@
                 }
               }
             },
-            "description": "Timetable version or learning offering conflict"
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-versions/{version_id}/delivery-source": {
+      "put": {
+        "operationId": "updateTimetableDeliverySource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTimetableDeliverySourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-versions/{version_id}/publication-preview": {
+      "post": {
+        "operationId": "previewTimetablePublication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewTimetablePublicationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetablePublicationPreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/timetable-versions/{version_id}/publish": {
+      "post": {
+        "operationId": "publishTimetableVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishTimetableVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TimetableVersion"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
           }
         },
         "tags": [

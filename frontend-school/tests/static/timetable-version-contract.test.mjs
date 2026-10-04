@@ -74,17 +74,17 @@ test('academic timetable keeps one URL-backed version and published boards read-
 	assert.match(page, /controller\?\.canEdit/);
 	assert.match(page, /goto\(resolve\([\s\S]*?shallow:\s*true/);
 	assert.match(header, /เผยแพร่แล้ว/);
-	assert.match(header, /อ่านอย่างเดียว/);
+	assert.match(header, /โหมดดู/);
 	assert.match(page, /timetableVersionId:\s*controller\.workspace\.version\.id/);
 });
 
 test('published timetable revisions and teacher load export remain available after block cutover', async () => {
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
-	assert.match(page, /getAcademicTermChangeSet/);
-	assert.match(page, /AcademicChangeSetDialog/);
-	assert.match(page, /purpose="timetable_revision"/);
-	assert.match(page, /AcademicChangeReadiness/);
+	assert.doesNotMatch(page, /getAcademicTermChangeSet/);
+	assert.match(page, /cloneTimetableVersion/);
+	assert.match(page, /previewTimetablePublication/);
+	assert.match(page, /publishTimetableVersion/);
 	assert.match(page, /downloadTeacherLoadWorkbook/);
 	assert.match(page, /controller\.workspace\.blocks/);
 });

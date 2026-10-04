@@ -4,12 +4,13 @@ import {
 	LEARNING_DELIVERY_CHANGE_SETS_DEPENDENCY,
 	LEARNING_DELIVERY_HOMEROOMS_DEPENDENCY,
 	readLearningDeliveryRouteContext,
-	selectAcademicTermChangeSetSummary
+	selectDeliveryVersion
 } from '#lib/academic/learning-delivery-page.js';
 import {
 	getAcademicTermChangeSet,
 	getHomeroomDeliveryWorkspace,
 	listAcademicTermChangeSets,
+	listDeliveryVersions,
 	type AcademicTermChangeSet
 } from '#lib/api/learning-delivery.js';
 import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
@@ -39,7 +40,8 @@ export const load: PageLoad = ({ depends, fetch, url }) => {
 			context,
 			homerooms: null,
 			changeSetSummaries: null,
-			selectedChangeSet: null
+			selectedChangeSet: null,
+			deliveryVersions: null
 		};
 	}
 
@@ -56,32 +58,39 @@ export const load: PageLoad = ({ depends, fetch, url }) => {
 			'โหลดรายละเอียดชุดการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
 		);
 
-	const homerooms = captureRouteLoad(
-		getHomeroomDeliveryWorkspace(context.academicYearId, context.academicTermId, {
-			timetableVersionId: context.timetableVersionId,
-			requestFetch: fetch
-		}),
-		'โหลดภาพรวมรายห้องประจำชั้นไม่สำเร็จ'
+	const deliveryVersions = captureRouteLoad(
+		listDeliveryVersions(context.academicTermId, { requestFetch: fetch }),
+		'โหลดรุ่นเปิดสอนไม่สำเร็จ'
 	);
+	const homerooms = deliveryVersions.then((result) => {
+		const selected = result.ok
+			? selectDeliveryVersion(result.data, context.deliveryVersionId)
+			: null;
+		return captureRouteLoad(
+			getHomeroomDeliveryWorkspace(context.academicYearId, context.academicTermId, {
+				deliveryVersionId: context.deliveryVersionId ?? selected?.id,
+				requestFetch: fetch
+			}),
+			'โหลดภาพรวมรายห้องประจำชั้นไม่สำเร็จ'
+		);
+	});
 	const changeSetSummaries = captureRouteLoad(
 		listAcademicTermChangeSets(context.academicTermId, { requestFetch: fetch }),
 		'โหลดรายการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
 	);
-	const selectedChangeSet = context.changeSetId
-		? loadSelectedChangeSet(context.changeSetId)
-		: changeSetSummaries.then((result) => {
-				if (!result.ok) {
-					return { ok: true, data: null, error: null } satisfies RouteLoadResult<null>;
-				}
-				const selected = selectAcademicTermChangeSetSummary(result.data);
-				return selected
-					? loadSelectedChangeSet(selected.id)
-					: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
-			});
+	const selectedChangeSet = deliveryVersions.then((result) => {
+		const selected = result.ok
+			? selectDeliveryVersion(result.data, context.deliveryVersionId)
+			: null;
+		return selected?.changeSetId
+			? loadSelectedChangeSet(selected.changeSetId)
+			: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
+	});
 
 	return {
 		title: _meta.menu.title,
 		context,
+		deliveryVersions,
 		homerooms,
 		changeSetSummaries,
 		selectedChangeSet

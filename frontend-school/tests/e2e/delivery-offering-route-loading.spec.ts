@@ -14,7 +14,8 @@ const ids = {
 const paths = {
 	offering: `/api/academic/offerings/${ids.offering}`,
 	groups: `/api/academic/offerings/${ids.offering}/groups`,
-	versions: '/api/academic/timetable-versions',
+	versions: '/api/academic/delivery-versions',
+	version: `/api/academic/delivery-versions/${ids.version}`,
 	groupA: `/api/academic/learning-groups/${ids.groupA}`,
 	groupB: `/api/academic/learning-groups/${ids.groupB}`,
 	membershipsA: `/api/academic/learning-groups/${ids.groupA}/memberships`,
@@ -50,7 +51,8 @@ function offering() {
 			credit: '1.0',
 			hours: '40',
 			standardPeriodsPerWeek: 2,
-			gradingPolicy: { policyCode: 'school_default', totalScore: '100.00', passingScore: '50.00' }
+			curriculumCourseRequirementId: null,
+			assessmentTotalScore: '100.00'
 		}
 	};
 }
@@ -76,22 +78,58 @@ function group(id: string, published = false) {
 	};
 }
 
-function version() {
+function version(published = false) {
 	return {
 		id: ids.version,
 		academicTermId: ids.term,
 		academicYearId: ids.year,
-		status: 'published',
-		displayState: 'current',
+		status: published ? 'published' : 'draft',
+		sourceVersionId: null,
+		changeSetId: null,
 		effectiveFrom: '2026-05-01',
-		targets: [
-			{
-				timetableVersionId: ids.version,
-				learningOfferingId: ids.offering,
-				standardPeriodsPerWeek: 2,
-				weeklyPeriodTarget: 2
-			}
-		]
+		effectiveUntil: null,
+		rowVersion: 1,
+		offeringCount: 1,
+		groupCount: 2,
+		teacherAssignmentCount: 0,
+		updatedAt: '2026-05-01T00:00:00Z'
+	};
+}
+function versionGraph(published = false) {
+	const catalog = offering().snapshot;
+	return {
+		...version(published),
+		createdBy: null,
+		publishedBy: null,
+		publishedAt: null,
+		createdAt: '2026-05-01T00:00:00Z',
+		snapshot: {
+			offerings: [
+				{
+					id: ids.offering,
+					kind: 'course',
+					code: 'ค21101',
+					name: 'คณิตศาสตร์พื้นฐาน',
+					owningOrganizationUnitId: ids.offering,
+					sourceRequirementId: null,
+					sourceRequirementKind: null,
+					weeklyPeriodTarget: 2,
+					catalog,
+					targets: [],
+					homeroomIds: [],
+					groups: [group(ids.groupA, published), group(ids.groupB)].map((row) => ({
+						id: row.id,
+						code: row.code,
+						name: row.name,
+						description: null,
+						capacity: 40,
+						homeroomIds: [],
+						preferredRoomIds: [],
+						teachers: []
+					}))
+				}
+			]
+		}
 	};
 }
 
@@ -169,7 +207,9 @@ async function mockOffering(
 					group(ids.groupA, options.published),
 					group(ids.groupB)
 				]));
-			if (path === paths.versions) return void (await fulfill(route, [version()]));
+			if (path === paths.versions) return void (await fulfill(route, [version(options.published)]));
+			if (path === paths.version)
+				return void (await fulfill(route, versionGraph(options.published)));
 			if (path === paths.groupA)
 				return void (await fulfill(route, group(ids.groupA, options.published)));
 			if (path === paths.groupB) return void (await fulfill(route, group(ids.groupB)));
@@ -186,13 +226,13 @@ function url(groupId: string | null = ids.groupA) {
 	return `/staff/academic/delivery/${ids.offering}?academicYearId=${ids.year}&academicTermId=${ids.term}${groupId ? `&groupId=${groupId}` : ''}`;
 }
 
-test('group list and direct group detail paint while offering is delayed', async ({ page }) => {
+test('starts independent group reads while the opening identity is delayed', async ({ page }) => {
 	const gate = deferred();
 	const count = await mockOffering(page, { gate: { path: paths.offering, promise: gate.promise } });
 	try {
 		await page.goto(url());
-		await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
-		await expect(page.getByTestId('delivery-selected-group-ready')).toBeVisible();
+		await expect.poll(() => count(paths.groups)).toBe(1);
+		await expect.poll(() => count(paths.groupA)).toBe(1);
 		await expect(page.getByTestId('delivery-offering-ready')).toHaveCount(0);
 		expect(count(paths.versions)).toBe(0);
 	} finally {
@@ -317,7 +357,7 @@ test('published history has its own first skeleton and ready state', async ({ pa
 	});
 	try {
 		await page.goto(url());
-		await expect(page.getByTestId('delivery-selected-group-ready')).toBeVisible();
+		await expect(page.getByTestId('delivery-version-roster')).toBeVisible();
 		await expect.poll(() => count(paths.membershipsA)).toBe(1);
 		await expect(page.getByLabel('กำลังโหลดประวัติสมาชิก')).toBeVisible();
 		await expect(page.getByTestId('delivery-memberships-ready')).toHaveCount(0);

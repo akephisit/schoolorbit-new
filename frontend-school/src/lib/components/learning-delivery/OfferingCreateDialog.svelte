@@ -19,18 +19,18 @@
 		academicTermId,
 		onCreated,
 		onApplied,
-		defaultTimetableVersionId = null
+		defaultDeliveryVersionId = null
 	}: {
 		academicTermId: string;
 		onCreated: (item: LearningOfferingOverviewItem) => void;
 		onApplied: () => Promise<void>;
-		defaultTimetableVersionId?: string | null;
+		defaultDeliveryVersionId?: string | null;
 	} = $props();
 
 	let open = $state(false);
 	let mode = $state<'curriculum' | 'manual'>('curriculum');
 	let preparationTarget = $state.raw<SynchronizedActivityPreparationTarget | null>(null);
-	let timetableVersionId = $state<string | null>(null);
+	let deliveryVersionId = $state<string | null>(null);
 	let preparationRevision = $state(0);
 	let options = $state.raw<DeliveryManagementOptions | null>(null);
 	let optionsLoading = $state(false);
@@ -54,10 +54,10 @@
 
 	async function showDialog(
 		target: SynchronizedActivityPreparationTarget | null,
-		targetTimetableVersionId: string | null = defaultTimetableVersionId
+		targetDeliveryVersionId: string | null = defaultDeliveryVersionId
 	) {
 		preparationTarget = target;
-		timetableVersionId = targetTimetableVersionId;
+		deliveryVersionId = targetDeliveryVersionId;
 		preparationRevision += 1;
 		mode = 'curriculum';
 		open = true;
@@ -76,9 +76,9 @@
 
 	export function openCurriculumPreparation(
 		target: SynchronizedActivityPreparationTarget,
-		targetTimetableVersionId: string | null = defaultTimetableVersionId
+		targetDeliveryVersionId: string | null = defaultDeliveryVersionId
 	) {
-		return showDialog(target, targetTimetableVersionId);
+		return showDialog(target, targetDeliveryVersionId);
 	}
 
 	function selectMode(nextMode: 'curriculum' | 'manual') {
@@ -126,7 +126,7 @@
 							},
 							targets
 						},
-				timetableVersionId
+				deliveryVersionId
 			);
 			onCreated({
 				offering,
@@ -212,7 +212,7 @@
 						{academicTermId}
 						{options}
 						{preparationTarget}
-						{timetableVersionId}
+						{deliveryVersionId}
 						onApplied={applied}
 					/>
 				{/key}

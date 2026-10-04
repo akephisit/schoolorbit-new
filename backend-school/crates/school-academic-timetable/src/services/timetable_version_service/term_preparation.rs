@@ -12,6 +12,7 @@ use school_academic_core::ports::{
 #[derive(FromRow)]
 struct SourceVersion {
     id: Uuid,
+    delivery_version_id: Uuid,
 }
 
 #[derive(FromRow)]
@@ -35,6 +36,7 @@ struct SourceBlockGroup {
     learning_group_id: Uuid,
     learning_offering_id: Uuid,
     room_id: Option<Uuid>,
+    homeroom_ids: Vec<Uuid>,
 }
 
 #[derive(FromRow)]
@@ -93,7 +95,7 @@ pub async fn apply(
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
     let source: Option<SourceVersion> = sqlx::query_as(
-        "SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1",
+        "SELECT id,delivery_version_id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1",
     )
     .bind(context.source_term_id)
     .fetch_optional(&mut **tx)
@@ -105,6 +107,40 @@ pub async fn apply(
             target_ids: Vec::new(),
         });
     };
+    let target_delivery_id = school_academic_delivery::services::versions::latest_published_id(
+        tx,
+        context.target_term_id,
+    )
+    .await?;
+    let target_delivery = school_academic_delivery::services::versions::published_source(
+        tx,
+        target_delivery_id,
+        context.target_term_id,
+    )
+    .await?;
+    let source_delivery = school_academic_delivery::services::versions::published_source(
+        tx,
+        source.delivery_version_id,
+        context.source_term_id,
+    )
+    .await?;
+    for offering in &source_delivery.snapshot.offerings {
+        let mapped_id = mapped(
+            mappings,
+            TermPreparationMappingKind::LearningOffering,
+            offering.id,
+        )?;
+        if !target_delivery
+            .snapshot
+            .offerings
+            .iter()
+            .any(|offering| offering.id == mapped_id)
+        {
+            return Err(AppError::Conflict(
+                "รายการเปิดสอนที่จับคู่ไม่ได้อยู่ในรุ่นเปิดสอนที่เผยแพร่ของภาคเรียนเป้าหมาย".into(),
+            ));
+        }
+    }
     let target_bell_schedule_id: Uuid = sqlx::query_scalar(
         "SELECT bell_schedule_id FROM academic_terms WHERE id=$1 AND academic_year_id=$2",
     )
@@ -116,60 +152,17 @@ pub async fn apply(
     sqlx::query(
         r#"INSERT INTO academic_timetable_versions(
                id,academic_term_id,academic_year_id,effective_from,status,
-               source_version_id,change_set_id,bell_schedule_id,row_version,created_by
-           ) VALUES($1,$2,$3,$4,'draft',NULL,NULL,$5,1,$6)"#,
+               source_version_id,delivery_version_id,bell_schedule_id,row_version,created_by
+           ) VALUES($1,$2,$3,NULL,'draft',NULL,$4,$5,1,$6)"#,
     )
     .bind(version_id)
     .bind(context.target_term_id)
     .bind(context.target_year_id)
-    .bind(context.target_start_date)
+    .bind(target_delivery_id)
     .bind(target_bell_schedule_id)
     .bind(actor)
     .execute(&mut **tx)
     .await?;
-
-    let source_targets: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT learning_offering_id FROM academic_timetable_version_targets WHERE timetable_version_id=$1 ORDER BY learning_offering_id",
-    )
-    .bind(source.id)
-    .fetch_all(&mut **tx)
-    .await?;
-    for (source_offering_id,) in source_targets {
-        let target_offering_id = mapped(
-            mappings,
-            TermPreparationMappingKind::LearningOffering,
-            source_offering_id,
-        )?;
-        let weekly_period_target: Option<i32> = sqlx::query_scalar(
-            r#"SELECT COALESCE(
-                   (SELECT version.periods_per_week
-                    FROM course_offering_details detail
-                    JOIN subject_versions version ON version.id=detail.subject_version_id
-                    WHERE detail.learning_offering_id=offering.id),
-                   (SELECT version.periods_per_week
-                    FROM activity_offering_details detail
-                    JOIN activity_versions version ON version.id=detail.activity_version_id
-                    WHERE detail.learning_offering_id=offering.id)
-               )
-               FROM learning_offerings offering WHERE offering.id=$1 AND offering.academic_term_id=$2"#,
-        )
-        .bind(target_offering_id)
-        .bind(context.target_term_id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .flatten()
-        .ok_or_else(|| AppError::Conflict("รายการเปิดสอนเป้าหมายไม่มีค่าคาบมาตรฐาน".into()))?;
-        sqlx::query(
-            "INSERT INTO academic_timetable_version_targets(timetable_version_id,learning_offering_id,academic_term_id,academic_year_id,weekly_period_target) VALUES($1,$2,$3,$4,$5)",
-        )
-        .bind(version_id)
-        .bind(target_offering_id)
-        .bind(context.target_term_id)
-        .bind(context.target_year_id)
-        .bind(weekly_period_target)
-        .execute(&mut **tx)
-        .await?;
-    }
 
     let blocks: Vec<SourceBlock> = sqlx::query_as(
         r#"SELECT id,bell_schedule_period_id,day_of_week,block_kind,scheduling_mode,
@@ -185,7 +178,7 @@ pub async fn apply(
         Vec::new()
     } else {
         sqlx::query_as(
-        "SELECT id,block_id,learning_group_id,learning_offering_id,room_id FROM academic_timetable_block_groups WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
+        "SELECT id,block_id,learning_group_id,learning_offering_id,room_id,homeroom_ids FROM academic_timetable_block_groups WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
     ).bind(&block_ids).fetch_all(&mut **tx).await?
     };
     let source_group_ids = block_groups.iter().map(|row| row.id).collect::<Vec<_>>();
@@ -272,6 +265,11 @@ pub async fn apply(
             TermPreparationMappingKind::LearningOffering,
             group.learning_offering_id,
         )?;
+        let coverage = group
+            .homeroom_ids
+            .iter()
+            .map(|id| mapped(mappings, TermPreparationMappingKind::Homeroom, *id))
+            .collect::<Result<Vec<_>, _>>()?;
         let room_id = group
             .room_id
             .map(|id| mapped(mappings, TermPreparationMappingKind::Room, id))
@@ -282,10 +280,10 @@ pub async fn apply(
             return Err(AppError::Conflict("ห้องเรียนเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
         let target_block_group_id = Uuid::new_v4();
-        sqlx::query(r#"INSERT INTO academic_timetable_block_groups(id,block_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,room_id,row_version,is_active,created_by,updated_by)
-                       VALUES($1,$2,$3,$4,$5,$6,$7,1,true,$8,$8)"#)
+        sqlx::query(r#"INSERT INTO academic_timetable_block_groups(id,block_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,room_id,row_version,is_active,created_by,updated_by,homeroom_ids)
+                       VALUES($1,$2,$3,$4,$5,$6,$7,1,true,$8,$8,$9)"#)
             .bind(target_block_group_id).bind(target_block_id).bind(target_group_id).bind(target_offering_id)
-            .bind(context.target_term_id).bind(context.target_year_id).bind(room_id).bind(actor).execute(&mut **tx).await?;
+            .bind(context.target_term_id).bind(context.target_year_id).bind(room_id).bind(actor).bind(&coverage).execute(&mut **tx).await?;
         block_group_map.insert(
             group.id,
             (target_block_group_id, target_block_id, day, period),

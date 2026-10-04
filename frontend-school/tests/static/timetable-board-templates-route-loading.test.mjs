@@ -17,11 +17,11 @@ test('board route starts versions and explicit selected workspace before compone
 	]);
 	assert.match(loader, /listTimetableVersions/);
 	assert.match(loader, /getTimetableBlockWorkspace/);
-	assert.match(loader, /getAcademicTermChangeSet/);
+	assert.doesNotMatch(loader, /getAcademicTermChangeSet/);
 	assert.match(loader, /requestFetch:\s*fetch/);
 	assert.match(page, /data\.versions/);
 	assert.match(page, /data\.workspace/);
-	assert.match(page, /data\.changeSet/);
+	assert.doesNotMatch(page, /data\.changeSet/);
 	const mountOnly = page.slice(page.lastIndexOf('\tonMount('), page.indexOf('</script>'));
 	assert.doesNotMatch(
 		mountOnly,
@@ -68,7 +68,7 @@ test('direct timetable links carry the already-known academic context', async ()
 		source('src/routes/(app)/staff/academic/timetable/today/+page.svelte'),
 		source('src/routes/(app)/staff/academic/timetable/templates/+page.ts'),
 		source('src/routes/(app)/staff/academic/timetable/templates/+page.svelte'),
-		source('src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'),
+		source('src/lib/components/learning-delivery/TeacherHandoffPanel.svelte'),
 		source('src/lib/components/supervision/SupervisionWorkspace.svelte'),
 		source('src/lib/components/app-layout/PageShell.svelte'),
 		source('src/lib/components/app-layout/PageHeader.svelte')
@@ -80,7 +80,14 @@ test('direct timetable links carry the already-known academic context', async ()
 	assert.match(templatesPage, /backPreload="tap"/);
 	assert.match(pageShell, /<PageHeader[^>]*\{backPreload\}/);
 	assert.match(pageHeader, /data-sveltekit-preload-data=\{backPreload\}/);
-	assert.match(changeReadiness, /changeSet\.academicYearId/);
-	assert.match(changeReadiness, /changeSet\.academicTermId/);
+	assert.match(changeReadiness, /href=\{preview\.timetableRoute\}/);
+	const handoff = await readFile(
+		path.join(
+			root,
+			'../backend-school/crates/school-academic-timetable/src/services/teacher_handoff.rs'
+		),
+		'utf8'
+	);
+	assert.match(handoff, /academicYearId=\{academic_year_id\}&academicTermId=\{academic_term_id\}/);
 	assert.match(supervision, /academicContextualMenuPath\(/);
 });
