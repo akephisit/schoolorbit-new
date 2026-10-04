@@ -24,11 +24,12 @@ async function accepts(report) {
     });
 }
 
-function validReport(version = 84) {
+function validReport(version = 88) {
     const school = {
         migration_version: version, migration_status: 'migrated', migration_error: null,
         academicCoreCutover: { migrationVersion: 45, status: 'cleanupCompleted', passed: true, checks: [{ passed: true }] },
-        gradebookResultsCutover: { migrationVersion: 60, status: 'cutoverCompleted', passed: true, checks: [{ passed: true }] }
+        gradebookResultsCutover: { migrationVersion: 60, status: 'cutoverCompleted', passed: true, checks: [{ passed: true }] },
+        deliveryTimetableCutover: { migrationVersion: 88, status: 'cutoverCompleted', passed: true, checks: Array.from({ length: 30 }, () => ({ passed: true })) }
     };
     return {
         latest_version: version, total_schools: 2, migrated: 2, pending: 0, failed: 0, outdated: 0,
@@ -38,7 +39,7 @@ function validReport(version = 84) {
 
 test('fully migrated tenants pass without a retired personnel report', async () => {
     assert.equal(await accepts(validReport()), true);
-    assert.equal(await accepts(validReport(85)), true, 'future SQL migrations use the same completion gate');
+    assert.equal(await accepts(validReport(89)), true, 'future SQL migrations use the same completion gate');
 });
 
 test('migration completion refuses incomplete, failed or inconsistent tenant coverage', async () => {
@@ -47,8 +48,8 @@ test('migration completion refuses incomplete, failed or inconsistent tenant cov
         r => { r.total_schools = 0; r.migrated = 0; r.schools = []; },
         ...['pending', 'failed', 'outdated'].map(key => r => { r[key] = 1; }),
         r => { r.migrated = 1; },
-        r => { r.schools[1].migration_version = 83; },
-        r => { r.schools[1].migration_version = 85; },
+        r => { r.schools[1].migration_version = 87; },
+        r => { r.schools[1].migration_version = 89; },
         r => { r.schools[1].migration_status = 'failed'; },
         r => { r.schools[1].migration_error = 'synthetic_failure'; }
     ];
@@ -60,7 +61,7 @@ test('migration completion refuses incomplete, failed or inconsistent tenant cov
 });
 
 test('retiring personnel hooks preserves the other domain audit gates', async () => {
-    for (const key of ['academicCoreCutover', 'gradebookResultsCutover']) {
+    for (const key of ['academicCoreCutover', 'gradebookResultsCutover', 'deliveryTimetableCutover']) {
         for (const change of [
             a => { a.passed = false; },
             a => { a.status = 'pending'; },
@@ -71,5 +72,21 @@ test('retiring personnel hooks preserves the other domain audit gates', async ()
             change(report.schools[1][key]);
             assert.equal(await accepts(report), false);
         }
+    }
+});
+
+test('delivery cutover requires both complete reconciliation audits before release', async () => {
+    for (const change of [
+        r => { delete r.schools[1].deliveryTimetableCutover; },
+        r => { r.schools[1].deliveryTimetableCutover = null; },
+        r => { r.schools[1].deliveryTimetableCutover.migrationVersion = 87; },
+        r => { r.schools[1].deliveryTimetableCutover.checks = []; },
+        r => { r.schools[1].deliveryTimetableCutover.checks.pop(); },
+        r => { r.schools[1].deliveryTimetableCutover.checks.push({ passed: true }); },
+        r => { delete r.schools[1].deliveryTimetableCutover.checks[0].passed; }
+    ]) {
+        const report = validReport();
+        change(report);
+        assert.equal(await accepts(report), false);
     }
 });
