@@ -77,10 +77,7 @@
 	aria-label={`ตารางของ ${row.label}`}
 >
 	<div class="flex items-center justify-between border-b bg-muted/20 px-4 py-3">
-		<div>
-			<p class="text-sm font-semibold text-primary">{row.code}</p>
-			<h2 class="text-lg font-semibold">{row.label}</h2>
-		</div>
+		<h2 class="text-lg font-semibold">{row.label}</h2>
 		<p class="text-sm text-muted-foreground">
 			{canEdit ? 'ลากคาบไปยังช่องใหม่ · ครั้งละ 1 คาบ' : 'กดคาบเพื่อดูรายละเอียด'}
 		</p>

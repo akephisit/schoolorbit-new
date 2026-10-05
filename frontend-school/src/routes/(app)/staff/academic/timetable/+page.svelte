@@ -1923,8 +1923,8 @@
 			>
 				{#snippet controls()}
 					{#if controller}
-						<div class="grid min-w-0 items-end gap-3 sm:grid-cols-2" aria-busy={versionsLoading}>
-							<div class="space-y-1.5">
+						<div class="flex flex-wrap items-end gap-3" aria-busy={versionsLoading}>
+							<div class="w-full min-w-0 space-y-1.5 sm:w-60">
 								<Label class="text-sm text-muted-foreground">รุ่นตารางสอน</Label>
 								{#if versionsLoading}<span role="status" class="text-xs text-muted-foreground"
 										>กำลังโหลดรุ่น...</span
@@ -1936,7 +1936,9 @@
 									disabled={loading || versionsLoading || busy || pendingOperationCount > 0}
 								>
 									<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
-										{versionLabel(controller.workspace.version)}
+										<span class="min-w-0 truncate"
+											>{versionLabel(controller.workspace.version)}</span
+										>
 									</Select.Trigger>
 									<Select.Content>
 										{#each versions as version (version.id)}
@@ -1946,7 +1948,7 @@
 								</Select.Root>
 							</div>
 							{#if activeView === 'wholeSchool'}
-								<div class="space-y-1.5">
+								<div class="w-full min-w-0 space-y-1.5 sm:w-60">
 									<Label class="text-sm text-muted-foreground">วันที่ดูภาพรวม</Label>
 									<Select.Root type="single" bind:value={overviewDay}>
 										<Select.Trigger class="w-full" aria-label="เลือกวันดูภาพรวม">
@@ -1960,7 +1962,7 @@
 									</Select.Root>
 								</div>
 							{:else}
-								<div class="space-y-1.5">
+								<div class="w-full min-w-0 space-y-1.5 sm:w-60">
 									<Label class="text-sm text-muted-foreground">
 										{controller.view === 'homeroom'
 											? 'ห้องประจำชั้น'
@@ -1975,9 +1977,11 @@
 										disabled={busy}
 									>
 										<Select.Trigger class="w-full" aria-label="เลือกรายการสำหรับจัดตาราง">
-											{selectedOwner
-												? `${selectedOwner.code} · ${selectedOwner.label}`
-												: 'เลือกรายการ'}
+											<span class="min-w-0 truncate"
+												>{selectedOwner
+													? `${selectedOwner.code} · ${selectedOwner.label}`
+													: 'เลือกรายการ'}</span
+											>
 										</Select.Trigger>
 										<Select.Content>
 											{#each controller.rows as row (row.id)}

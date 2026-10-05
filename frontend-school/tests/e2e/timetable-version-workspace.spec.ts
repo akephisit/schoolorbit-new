@@ -91,9 +91,7 @@ test('does not prompt a published timetable to update when opening data changes'
 	expect(mock.sourceUpdateRequestCount()).toBe(0);
 });
 
-test('keeps version and owner filters beside the view selector in one desktop header', async ({
-	page
-}) => {
+test('keeps compact context filters in the top desktop header row', async ({ page }) => {
 	await page.setViewportSize({ width: 1543, height: 884 });
 	await installTimetableMock(page);
 	await page.goto(timetableUrl(timetableIds.draftVersion));
@@ -109,6 +107,16 @@ test('keeps version and owner filters beside the view selector in one desktop he
 		const versionBox = (await version.boundingBox())!;
 		const ownerBox = (await owner.boundingBox())!;
 		const viewsBox = (await header.locator('[aria-label="มุมมองตารางสอน"]').boundingBox())!;
+		const summaryBox = (await header
+			.getByRole('heading', { name: 'รุ่นตารางสอนที่เลือก', exact: true })
+			.locator('../..')
+			.boundingBox())!;
+		expect(summaryBox.x + summaryBox.width).toBeLessThan(versionBox.x);
+		expect(
+			Math.abs(summaryBox.y + summaryBox.height - versionBox.y - versionBox.height)
+		).toBeLessThanOrEqual(1);
+		expect(versionBox.width).toBeLessThanOrEqual(240);
+		expect(ownerBox.width).toBeLessThanOrEqual(240);
 		expect(Math.abs(versionBox.y - ownerBox.y)).toBeLessThanOrEqual(1);
 		expect(
 			Math.abs(ownerBox.y + ownerBox.height - viewsBox.y - viewsBox.height)

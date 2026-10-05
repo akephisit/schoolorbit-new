@@ -40,8 +40,8 @@
 	aria-label="บริบทตารางสอน"
 >
 	<div class="h-1 bg-primary"></div>
-	<div class="space-y-3 p-3 sm:p-4">
-		<div class="min-w-0 space-y-2">
+	<div class="flex flex-wrap items-end gap-3 p-3 sm:p-4">
+		<div class="w-full min-w-0 space-y-2 sm:w-auto sm:min-w-72 sm:flex-1 sm:basis-72">
 			<div class="flex flex-wrap items-center gap-2">
 				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
 				<Badge variant={version.status === 'draft' ? 'secondary' : 'outline'}>
@@ -72,9 +72,7 @@
 				</span>
 			</div>
 		</div>
-		<div class="flex flex-col gap-3 xl:flex-row xl:items-end">
-			<div class="min-w-0 flex-1">{@render controls()}</div>
-			<TimetableViewSelector value={view} {onViewChange} disabled={isSaving} />
-		</div>
+		<div class="w-full min-w-0 sm:w-auto sm:max-w-full sm:flex-none">{@render controls()}</div>
+		<TimetableViewSelector value={view} {onViewChange} disabled={isSaving} />
 	</div>
 </header>

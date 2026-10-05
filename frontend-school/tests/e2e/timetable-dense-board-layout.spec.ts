@@ -68,6 +68,8 @@ test('keeps ten equal period columns within the desktop timetable board', async 
 
 	const board = page.getByRole('region', { name: 'ตารางของ ม.1/1' });
 	await expect(board).toBeVisible();
+	await expect(board.getByRole('heading', { name: 'ม.1/1', exact: true })).toBeVisible();
+	await expect(board.getByText('M1-1', { exact: true })).toHaveCount(0);
 	await expect(board.getByRole('columnheader')).toHaveCount(11);
 	for (const [shortDay, fullDay] of [
 		['จ.', 'วันจันทร์'],
