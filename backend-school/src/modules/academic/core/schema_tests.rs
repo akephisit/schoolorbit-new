@@ -4586,6 +4586,7 @@ async fn migration_060_subject_group_projections_support_timetable_load() {
             .bind(id).bind(id.simple().to_string()[..20].to_string()).bind(name).bind(order).execute(&pool).await.unwrap();
     }
     let mut owner = Uuid::nil();
+    let mut units = std::collections::HashMap::new();
     for (group_id, active, start, end) in [
         (group, true, "2000-01-01", None),
         (group, true, "2001-01-01", None),
@@ -4593,9 +4594,15 @@ async fn migration_060_subject_group_projections_support_timetable_load() {
         (future_group, true, "2000-01-01", Some("2001-01-01")),
         (future_group, false, "2000-01-01", None),
     ] {
-        let unit = Uuid::new_v4();
-        sqlx::query("INSERT INTO organization_units(id,code,name,category,unit_type,subject_group_id,is_active) VALUES($1,$2,'Fixture Unit','academic','subject_group',$3,$4)")
-            .bind(unit).bind(unit.to_string()).bind(group_id).bind(active).execute(&pool).await.unwrap();
+        let unit = if let Some(unit) = units.get(&(group_id, active)) {
+            *unit
+        } else {
+            let unit = Uuid::new_v4();
+            sqlx::query("INSERT INTO organization_units(id,code,name,category,unit_type,subject_group_id,is_active) VALUES($1,$2,'Fixture Unit','academic','subject_group',$3,$4)")
+                .bind(unit).bind(unit.to_string()).bind(group_id).bind(active).execute(&pool).await.unwrap();
+            units.insert((group_id, active), unit);
+            unit
+        };
         sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at,ended_at) VALUES($1,$2,'member',$3::text::date,$4::text::date)")
             .bind(teacher).bind(unit).bind(start).bind(end).execute(&pool).await.unwrap();
         if group_id == group {
