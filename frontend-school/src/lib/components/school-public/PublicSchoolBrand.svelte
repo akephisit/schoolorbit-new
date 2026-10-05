@@ -3,7 +3,10 @@
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import PublicSchoolLogo from './PublicSchoolLogo.svelte';
-	let { operation }: { operation: Promise<RouteLoadResult<PublicSchoolInfo>> } = $props();
+	let {
+		operation
+	}: { operation: RouteLoadResult<PublicSchoolInfo> | Promise<RouteLoadResult<PublicSchoolInfo>> } =
+		$props();
 </script>
 
 {#await operation}

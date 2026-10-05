@@ -337,6 +337,14 @@ never the private key. Monitor that expiry independently and schedule replacemen
 Cloudflare does not send Origin CA expiry notifications. Keep Cloudflare SSL/TLS mode at
 `Full (strict)` for installer-managed API origins.
 
+## School homepage search indexing
+
+School homepage indexing follows the configured `PUBLIC_BACKEND_URL` hostname, which must use the production topology `school-api.<base-domain>`. The shared policy in `frontend-school/src/lib/school-public/seo.ts` excludes sandbox, local, preview and reserved hosts. `/robots.txt` allows page resources and declares the current production school's `/sitemap.xml`; the sitemap contains only that school's HTTPS homepage. Other HTML responses use `X-Robots-Tag: noindex`. Robots rules and noindex are indexing controls, not replacements for authentication or resource authorization.
+
+After a frontend release, verify initial HTML without JavaScript, tenant-specific metadata and canonical URL, sitemap XML, and sandbox/login noindex as described in [Testing](./TESTING.md). Existing school settings remain the source of truth; do not enter a second name or logo for SEO.
+
+The domain owner completes Google Search Console setup in their own Google account: add the Domain property for the production base domain, copy Google's TXT verification value into that domain's DNS, verify ownership, then submit each real school's `/sitemap.xml` and request indexing of its homepage through URL Inspection. Do not submit sandbox. Google tokens and account credentials must not be stored in repository files. A sitemap or indexing request does not guarantee immediate inclusion or ranking; monitor indexing in Search Console. See [Google's ownership guide](https://support.google.com/webmasters/answer/9008080) and [recrawl guide](https://developers.google.com/search/docs/crawling-indexing/ask-google-to-recrawl).
+
 ## Cockpit Management over Cloudflare Tunnel
 
 The supported management path is:

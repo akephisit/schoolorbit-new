@@ -4,9 +4,6 @@
 	let { info }: { info: PublicSchoolInfo } = $props();
 </script>
 
-<svelte:head
-	><title>{info.schoolName || 'เว็บไซต์โรงเรียน'} — ข้อมูลและบริการสาธารณะ</title></svelte:head
->
 <div
 	class="school-identity public-enter grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 sm:gap-6"
 >

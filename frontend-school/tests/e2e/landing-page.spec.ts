@@ -13,6 +13,9 @@ let failedRegion: string | undefined;
 let empty = false;
 let logoAvailable = true;
 let brokenLogo = false;
+let schoolName = 'โรงเรียนสาธิตทดสอบ';
+let identityGate: Promise<void> | undefined;
+let releaseIdentity: (() => void) | undefined;
 let statisticsGate: Promise<void> | undefined;
 let releaseStatistics: (() => void) | undefined;
 const requests: { path: string; cookie?: string; origin?: string }[] = [];
@@ -114,6 +117,7 @@ test.beforeAll(async () => {
 			return;
 		}
 		if (endpoint === '/api/school/public/statistics' && statisticsGate) await statisticsGate;
+		if (endpoint === '/api/school/public' && identityGate) await identityGate;
 		if (
 			(endpoint === '/api/school/public/statistics' && failStatistics) ||
 			endpoint === failedRegion
@@ -136,7 +140,7 @@ test.beforeAll(async () => {
 					? { units: [] }
 					: organization
 				: {
-						schoolName: 'โรงเรียนสาธิตทดสอบ',
+						schoolName,
 						logoFileId: logoAvailable ? '11111111-1111-4111-8111-111111111111' : null
 					};
 		res.end(JSON.stringify({ success: true, data }));
@@ -164,10 +168,16 @@ test.beforeEach(() => {
 	empty = false;
 	logoAvailable = true;
 	brokenLogo = false;
+	schoolName = 'โรงเรียนสาธิตทดสอบ';
+	identityGate = undefined;
+	releaseIdentity = undefined;
 	statisticsGate = undefined;
 	releaseStatistics = undefined;
 });
-test.afterEach(() => releaseStatistics?.());
+test.afterEach(() => {
+	releaseStatistics?.();
+	releaseIdentity?.();
+});
 test.afterAll(async () => {
 	await devServer?.close();
 	await new Promise<void>((done, reject) =>
@@ -199,6 +209,113 @@ test('anonymous visitors see real school regions and existing services', async (
 	expect(requests.some((r) => r.path === '/api/auth/me')).toBe(false);
 	await page.getByRole('link', { name: 'เข้าสู่ระบบ', exact: true }).click();
 	await expect(page).toHaveURL(/\/login$/);
+});
+
+test('school identity and SEO are readable without JavaScript in the first HTML response', async ({
+	browser
+}) => {
+	const context = await browser.newContext({ javaScriptEnabled: false, serviceWorkers: 'block' });
+	try {
+		const page = await context.newPage();
+		const response = await page.goto(`${baseUrl}/?utm_source=fixture`);
+		expect(response?.headers()['x-robots-tag']).toBe('noindex');
+		await expect(page.getByRole('heading', { name: schoolName, exact: true })).toBeVisible();
+		await expect(page).toHaveTitle(`${schoolName} — ข้อมูลและบริการสาธารณะ`);
+		await expect(page.locator('head title')).toHaveCount(1);
+		await expect(page.locator('meta[name="description"]')).toHaveCount(1);
+		await expect(page.locator('meta[name="description"]')).toHaveAttribute(
+			'content',
+			new RegExp(schoolName)
+		);
+		await expect(page.locator('meta[property="og:title"]')).toHaveCount(1);
+		await expect(page.locator('meta[property="og:site_name"]')).toHaveAttribute(
+			'content',
+			schoolName
+		);
+		await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', `${baseUrl}/`);
+		await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `${baseUrl}/`);
+		const schema = JSON.parse(
+			(await page.locator('script[type="application/ld+json"]').textContent()) || 'null'
+		);
+		expect(schema).toEqual({
+			'@context': 'https://schema.org',
+			'@type': 'School',
+			name: schoolName,
+			url: `${baseUrl}/`,
+			logo: expect.stringContaining('/api/public/files/')
+		});
+		expect(requests.filter((r) => r.path === '/api/school/public')).toHaveLength(1);
+	} finally {
+		await context.close();
+	}
+});
+
+test('fresh HTML metadata follows each school name and escapes hostile text safely', async ({
+	page
+}) => {
+	for (const name of [
+		'โรงเรียนทดสอบแห่งที่สอง',
+		'โรงเรียน "ทดสอบ" & </script><script>window.seoInjection=true</script>'
+	]) {
+		schoolName = name;
+		await page.goto(baseUrl);
+		await expect(page).toHaveTitle(`${name} — ข้อมูลและบริการสาธารณะ`);
+		await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+		const schema = await page.locator('script[type="application/ld+json"]').textContent();
+		expect(JSON.parse(schema || 'null').name).toBe(name);
+		expect(schema).not.toContain('</script>');
+		expect(await page.evaluate(() => Reflect.has(window, 'seoInjection'))).toBe(false);
+		await expect(page.locator('head title')).toHaveCount(1);
+		await expect(page.locator('meta[name="description"]')).toHaveCount(1);
+	}
+});
+
+test('crawler endpoints and non-home HTML apply the local noindex policy without API reads', async ({
+	request
+}) => {
+	const robots = await request.get(`${baseUrl}/robots.txt`);
+	expect(robots.status()).toBe(200);
+	expect(robots.headers()['content-type']).toContain('text/plain');
+	expect(await robots.text()).toBe('User-agent: *\nDisallow:\n');
+	const sitemap = await request.get(`${baseUrl}/sitemap.xml`);
+	expect(sitemap.status()).toBe(200);
+	expect(sitemap.headers()['content-type']).toContain('application/xml');
+	expect(await sitemap.text()).not.toContain('<url>');
+	expect(requests).toHaveLength(0);
+	for (const route of ['/login', '/staff/academic/assessments', '/not-an-existing-page']) {
+		const response = await request.get(`${baseUrl}${route}`);
+		expect(response.headers()['x-robots-tag']).toBe('noindex');
+	}
+});
+
+test('a slow identity read is bounded while sibling reads start concurrently and retries remain local', async ({
+	page
+}) => {
+	identityGate = new Promise<void>((done) => (releaseIdentity = done));
+	const started = Date.now();
+	const navigation = page.goto(baseUrl);
+	await expect
+		.poll(() => requests.filter((r) => r.path.startsWith('/api/school/public')).length)
+		.toBe(3);
+	await navigation;
+	expect(Date.now() - started).toBeLessThan(6_000);
+	await expect(page.getByText('โหลดข้อมูลโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('school-statistics')).toContainText('124');
+	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
+	await expect(page).toHaveTitle('เว็บไซต์โรงเรียน — ข้อมูลและบริการสาธารณะ');
+	await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
+	releaseIdentity?.();
+	identityGate = undefined;
+	const before = requests.filter((r) => r.path.startsWith('/api/school/public')).length;
+	await page.getByRole('button', { name: 'ลองใหม่: ข้อมูลโรงเรียน' }).click();
+	await expect(page.getByRole('heading', { name: schoolName, exact: true })).toBeVisible();
+	await expect(page).toHaveTitle(`${schoolName} — ข้อมูลและบริการสาธารณะ`);
+	expect(
+		requests
+			.filter((r) => r.path.startsWith('/api/school/public'))
+			.slice(before)
+			.map((r) => r.path)
+	).toEqual(['/api/school/public']);
 });
 
 test('class details include unassigned students and an empty room', async ({ page }) => {

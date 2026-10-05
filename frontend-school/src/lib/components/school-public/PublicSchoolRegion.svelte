@@ -11,7 +11,7 @@
 		skeleton,
 		retryResult = $bindable<Promise<RouteLoadResult<T>> | null>(null)
 	}: {
-		source: Promise<RouteLoadResult<T>>;
+		source: RouteLoadResult<T> | Promise<RouteLoadResult<T>>;
 		retry: (signal: AbortSignal) => Promise<T>;
 		label: string;
 		children: Snippet<[T]>;

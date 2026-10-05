@@ -246,12 +246,17 @@ The public school homepage uses disposable API fixtures, including streamed load
 ./scripts/test_backend_school.sh modules::school -- --nocapture
 # frontend-school (the browser specs start their own local servers)
 node --experimental-strip-types --test tests/runtime/public-school-organization.test.ts
+node --experimental-strip-types --test tests/runtime/public-school-seo.test.ts
 npx playwright test tests/e2e/landing-page.spec.ts tests/e2e/admin-landing-page.spec.ts --project=chromium --workers=1
 ```
+
+The homepage spec also checks the first HTML with JavaScript disabled, unique metadata and H1, safe School JSON-LD, a three-second identity timeout, concurrent sibling reads, retries, and crawler endpoints. SEO runtime cases cover tenant-specific canonical/sitemap URLs, the configured base domain, and exclusion of sandbox/local/preview hosts. After release, fetch each production homepage without executing JavaScript and verify its school name, one title/description, its own HTTPS canonical, and its sitemap; check `noindex` on sandbox and login.
 
 Login and app-header layout fixtures also start their own local servers. They cover small and short viewports, optional school branding failures, pending/rejected login, and the remaining header controls:
 
 Keep these self-hosted dev-server specs on one worker when combining them: Kit's generated files share one project directory, so concurrently starting independent Vite servers is not a valid test environment. The production-preview mocked route gate below can use two workers.
+
+Run self-hosted browser specs after `test:static` and `check` have finished, and before starting a build. The static academic-context cases also start Vite in the same project; overlapping them can rewrite generated public environment modules and hot-reload a running browser fixture with the wrong API origin.
 
 ```bash
 npx playwright test tests/e2e/login-layout.spec.ts tests/e2e/header-layout.spec.ts --project=chromium --workers=1

@@ -2,6 +2,7 @@
 	import type { PublicSchoolInfo } from '#lib/api/school.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import PublicSchoolBrand from '#lib/components/school-public/PublicSchoolBrand.svelte';
+	import PublicSchoolSeo from '#lib/components/school-public/PublicSchoolSeo.svelte';
 	import type { PageProps } from './$types';
 	import { resolve } from '$app/paths';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -53,13 +54,7 @@
 	];
 </script>
 
-<svelte:head>
-	<title>เว็บไซต์โรงเรียน — ข้อมูลและบริการสาธารณะ</title>
-	<meta
-		name="description"
-		content="รู้จักโรงเรียน ดูสถิตินักเรียน ครู ห้องเรียน และโครงสร้างบริหาร พร้อมเข้าถึงบริการสาธารณะ"
-	/>
-</svelte:head>
+<PublicSchoolSeo operation={identityOperation} site={data.site} />
 <div class="school-public min-h-screen bg-background text-foreground">
 	<a href="#main-content" class="skip-link rounded-lg bg-card px-4 py-3 text-primary shadow-lg"
 		>ข้ามไปเนื้อหาหลัก</a

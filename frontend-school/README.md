@@ -4,7 +4,9 @@
 
 The tenant-facing web application provides staff, student, and parent workflows against backend-school.
 
-Its homepage is an anonymous school website using existing branding, current-year student and homeroom aggregates, staff totals, and active organization units with all current members. The three public reads load independently and can retry separately. School management continues through the existing login and authenticated routes; no separate content store or manually entered public totals are required.
+Its homepage is an anonymous school website using existing branding, current-year student and homeroom aggregates, staff totals, and active organization units with all current members. The loader starts all three public reads concurrently, awaits school identity for at most three seconds to render the school name and SEO in the initial HTML, and streams statistics and organization separately. Each read can retry independently. School management continues through the existing login and authenticated routes; no separate content store or manually entered public totals are required.
+
+Homepage indexing, canonical URLs, robots and sitemap share the policy in `src/lib/school-public/seo.ts`. The production tenant domain comes from the configured `PUBLIC_BACKEND_URL` hostname (`school-api.<base-domain>`). Sandbox, local, preview and reserved hosts are not indexable. Only production school homepages enter sitemaps; other HTML responses use `noindex`. Search Console ownership and submissions are described in [Operations](../docs/OPERATIONS.md).
 
 Spreadsheet import accepts `.xlsx` and UTF-8 `.csv`. Convert legacy `.xls` files before importing student IDs. ExcelJS owns Excel file reading and writing; SSF preserves displayed cell values such as zero-padded IDs during import.
 
