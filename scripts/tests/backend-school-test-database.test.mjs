@@ -519,7 +519,11 @@ test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
         compatibilityTests,
         /gradebook_results_status --bin backend-school -- --nocapture --test-threads=4/
     );
-    assert.doesNotMatch(compatibilityTests, /--test-threads=1/);
+    const academicSelections = compatibilityTests.split('\n').filter(line => line.includes('cargo test modules::'));
+    assert.doesNotMatch(academicSelections.join('\n'), /--test-threads=1/);
+    assert.match(workflow, /test_scope:[\s\S]*?default: full/);
+    assert.match(compatibilityTests, /NEON_COMPATIBILITY_SCOPE: \$\{\{ inputs\.test_scope \}\}/);
+    assert.match(compatibilityTests, /migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture/);
     const deletion = workflow.slice(deleteAt);
     assert.match(deletion, /if:\s*\$\{\{ always\(\)/);
     assert.match(deletion, /steps\.create_branch\.outputs\.created == 'true'/);

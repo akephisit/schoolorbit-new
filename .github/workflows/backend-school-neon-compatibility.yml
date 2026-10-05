@@ -8,6 +8,14 @@ on:
         required: true
         default: false
         type: boolean
+      test_scope:
+        description: Database compatibility selection
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+          - timetable-subject-groups
 
 permissions:
   contents: read
@@ -105,6 +113,7 @@ jobs:
       - name: Run direct-endpoint compatibility tests
         working-directory: backend-school
         env:
+          NEON_COMPATIBILITY_SCOPE: ${{ inputs.test_scope }}
           TEST_DATABASE_URL: ${{ steps.create_branch.outputs.db_url }}
         run: |
           set -euo pipefail
@@ -118,11 +127,22 @@ jobs:
               return 1
             fi
           }
-          run_nonempty_tests cargo test -p school-staff personnel_simplification -- --test-threads=1
-          run_nonempty_tests cargo test -p school-auth session_schema_tests -- --nocapture
-          run_nonempty_tests cargo test -p school-file-platform schema_tests -- --nocapture
-          run_nonempty_tests cargo test modules::academic::core::schema_tests::migration_060 --bin backend-school -- --nocapture --test-threads=4
-          run_nonempty_tests cargo test modules::system::handlers::migration::tests::gradebook_results_status --bin backend-school -- --nocapture --test-threads=4
+          case "${NEON_COMPATIBILITY_SCOPE:-full}" in
+            full)
+              run_nonempty_tests cargo test -p school-staff personnel_simplification -- --test-threads=1
+              run_nonempty_tests cargo test -p school-auth session_schema_tests -- --nocapture
+              run_nonempty_tests cargo test -p school-file-platform schema_tests -- --nocapture
+              run_nonempty_tests cargo test modules::academic::core::schema_tests::migration_060 --bin backend-school -- --nocapture --test-threads=4
+              run_nonempty_tests cargo test modules::system::handlers::migration::tests::gradebook_results_status --bin backend-school -- --nocapture --test-threads=4
+              ;;
+            timetable-subject-groups)
+              run_nonempty_tests cargo test modules::academic::core::schema_tests::migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture
+              ;;
+            *)
+              echo 'ERROR: unknown Neon compatibility selection' >&2
+              exit 64
+              ;;
+          esac
 
       - name: Delete disposable Neon branch
         if: ${{ always() && steps.create_branch.outputs.created == 'true' && steps.create_branch.outputs.branch_id != '' }}
