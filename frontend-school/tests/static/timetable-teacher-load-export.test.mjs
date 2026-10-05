@@ -252,6 +252,27 @@ describe('timetable teacher load export helpers', () => {
 		assert.equal(b.homeroomName, 'ม.1/2');
 		assert.equal(b.roomName, 'ห้องวิทยาศาสตร์');
 	});
+	it('shows linked teachers their own groups and reserved teachers the activity targets', () => {
+		const rows = exportRows([
+			entry({
+				blockKind: 'activity',
+				schedulingMode: 'synchronized',
+				homerooms: [
+					{ name: 'ม.1/1', isActive: true },
+					{ name: 'ม.1/2', isActive: true }
+				],
+				teachers: [{ teacherId: 'teacher-reserved', displayName: 'ครูผู้ดูแล', isActive: true }]
+			})
+		]);
+		assert.equal(
+			rows.detailRows.find((row) => row.teacherId === 'teacher-a').homeroomName,
+			'ม.1/1'
+		);
+		const reserved = rows.detailRows.find((row) => row.teacherId === 'teacher-reserved');
+		assert.equal(reserved.homeroomName, 'ม.1/1, ม.1/2');
+		assert.equal(reserved.instructorRole, 'target');
+	});
+
 	it('calculates capped Excel widths for both worksheets', () => {
 		const rows = exportRows([
 			entry({ offeringName: 'ชื่อรายวิชาที่ยาวมากเพื่อทดสอบการจำกัดความกว้างของคอลัมน์' })

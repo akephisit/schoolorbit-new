@@ -47,6 +47,7 @@
 	<Popover.Trigger>
 		{#snippet child({ props })}
 			<Button
+				{...props}
 				type="button"
 				variant="outline"
 				role="combobox"
@@ -54,7 +55,6 @@
 				aria-expanded={open}
 				class="w-full justify-between font-normal"
 				{disabled}
-				{...props}
 			>
 				<span class={cn('min-w-0 truncate', !selected && 'text-muted-foreground')}>
 					{selected?.label ?? placeholder}
@@ -63,7 +63,7 @@
 			</Button>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="w-[var(--bits-popover-trigger-width)] p-0" align="start">
+	<Popover.Content class="w-[var(--bits-popover-anchor-width)] p-0" align="start">
 		<Command.Root shouldFilter={false}>
 			<Command.Input bind:value={search} placeholder={searchPlaceholder} />
 			<Command.List class="max-h-72">

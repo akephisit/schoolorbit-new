@@ -1087,20 +1087,16 @@
 		if (!controller || exportingTeacherLoad) return;
 		exportingTeacherLoad = true;
 		const workspace = controller.workspace;
+		const selectedTerm = $academicContext.options?.terms.find((term) => term.id === academicTermId);
+		const selectedYear = $academicContext.options?.years.find((year) => year.id === academicYearId);
 		try {
 			const { downloadTeacherLoadWorkbook } =
 				await import('#lib/utils/timetable-teacher-load-workbook.js');
-			const selectedTerm = $academicContext.options?.terms.find(
-				(term) => term.id === academicTermId
-			);
-			const selectedYear = $academicContext.options?.years.find(
-				(year) => year.id === academicYearId
-			);
 			const teacherCount = await downloadTeacherLoadWorkbook(
 				workspace,
 				`สรุปคาบสอนครู-${selectedTerm?.name ?? 'ภาคเรียน'}-${selectedYear?.name ?? 'ปีการศึกษา'}`
 			);
-			if (teacherCount === 0) toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
+			if (teacherCount === 0) toast.error('ไม่พบคาบที่มีครูผู้รับผิดชอบในรุ่นตารางที่เลือก');
 			else toast.success(`ดาวน์โหลดสรุปคาบสอน ${teacherCount} คนแล้ว`);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งออกสรุปคาบสอนไม่สำเร็จ');

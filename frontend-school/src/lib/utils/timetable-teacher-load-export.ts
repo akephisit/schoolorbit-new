@@ -461,15 +461,15 @@ function blockTargetNames(
 	teacherId: string,
 	homerooms: Map<string, string>
 ): string[] {
-	return [
-		...teacherGroups(entry, teacherId).flatMap((group) => {
+	const groups = teacherGroups(entry, teacherId);
+	if (groups.length)
+		return groups.flatMap((group) => {
 			const names = group.homeroomIds.flatMap((id) =>
 				homerooms.has(id) ? [homerooms.get(id)!] : []
 			);
 			return names.length ? names : [group.name];
-		}),
-		...entry.homerooms.filter((target) => target.isActive).map((target) => target.name)
-	];
+		});
+	return entry.homerooms.filter((target) => target.isActive).map((target) => target.name);
 }
 
 function blockRoomNames(
@@ -477,11 +477,10 @@ function blockRoomNames(
 	teacherId: string,
 	rooms: Map<string, string>
 ): string[] {
+	const groups = teacherGroups(entry, teacherId);
+	const targets = groups.length ? groups : entry.homerooms.filter((target) => target.isActive);
 	return uniqueNonEmpty(
-		[
-			...teacherGroups(entry, teacherId),
-			...entry.homerooms.filter((target) => target.isActive)
-		].flatMap((target) =>
+		targets.flatMap((target) =>
 			target.roomId ? [rooms.get(target.roomId) ?? target.roomCode ?? ''] : []
 		)
 	);

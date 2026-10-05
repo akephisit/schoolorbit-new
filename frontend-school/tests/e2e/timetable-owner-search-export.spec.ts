@@ -20,7 +20,6 @@ for (const width of [1543, 390]) {
 			page
 		}) => {
 			await page.setViewportSize({ width, height: 884 });
-			await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
 			await installTimetableMock(page, {
 				staff: [
 					{
@@ -38,6 +37,8 @@ for (const width of [1543, 390]) {
 				]
 			});
 			await page.goto(url());
+			if (theme === 'dark') await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+			await expect(page.locator('html')).toHaveClass(theme === 'dark' ? /dark/ : /^(?!.*dark)/);
 			const header = page.locator('header[aria-label="บริบทตารางสอน"]');
 			const owner = header.getByRole('combobox', { name: 'เลือกรายการสำหรับจัดตาราง' });
 			await expect(owner).toHaveText('ม.1/1');
@@ -53,9 +54,14 @@ for (const width of [1543, 390]) {
 				await expect(page.getByText('ไม่พบรายการที่ค้นหา')).toBeVisible();
 				await search.fill(query);
 				await expect(page.getByRole('option', { name: label, exact: true })).toBeVisible();
+				if (view === 'ครู')
+					await page.screenshot({ path: `/tmp/timetable-load-picker-${width}-${theme}.png` });
 				await search.press('ArrowDown');
 				await search.press('Enter');
 				await expect(owner).toHaveText(label);
+				const ownerBox = (await owner.boundingBox())!;
+				const fieldBox = (await owner.locator('..').boundingBox())!;
+				expect(Math.abs(ownerBox.width - fieldBox.width)).toBeLessThanOrEqual(1);
 				await expect(owner).toHaveAttribute('aria-expanded', 'false');
 			}
 			await expect(page).toHaveURL(new RegExp(`ownerId=${timetableIds.teacherB}`));
@@ -154,6 +160,65 @@ for (const status of ['draft', 'published'] as const) {
 			status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion
 		);
 		expect(metadata.getCell('B4').value).toBe(status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว');
+		expect(summary.getRow(1).height).toBeGreaterThanOrEqual(56);
 		expect(summary.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
 	});
 }
+
+test('keeps the requested report version while its lazy module loads', async ({ page }) => {
+	await installTimetableMock(page, {
+		requestedWorkspaceVersion: true,
+		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
+	});
+	await page.goto(url());
+	await expect(page.getByRole('button', { name: 'สรุปคาบ XLSX', exact: true })).toBeEnabled();
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let signal!: () => void;
+	const started = new Promise<void>((resolve) => {
+		signal = resolve;
+	});
+	await page.route('**/_app/immutable/chunks/*.js', async (route) => {
+		signal();
+		await gate;
+		await route.continue();
+	});
+	const downloadPromise = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'สรุปคาบ XLSX', exact: true }).click();
+	await started;
+	await page.getByRole('button', { name: 'เลือกรุ่นตารางสอน', exact: true }).click();
+	await page.getByRole('option', { name: /เผยแพร่/ }).click();
+	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
+	release();
+	const workbook = new ExcelJS.Workbook();
+	await workbook.xlsx.readFile((await (await downloadPromise).path())!);
+	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B3').value).toBe(
+		timetableIds.draftVersion
+	);
+	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B4').value).toBe('แบบร่าง');
+});
+
+test('keeps a long teacher name within its fixed-width control and searchable list', async ({
+	page
+}) => {
+	const name = 'นางสาวชื่อสำหรับทดสอบช่องค้นหาที่ยาวเป็นพิเศษให้แสดงพอดีกับพื้นที่';
+	await page.setViewportSize({ width: 1543, height: 884 });
+	await installTimetableMock(page, {
+		staff: [{ id: timetableIds.teacherA, displayName: name, status: 'active', subjectGroups: [] }]
+	});
+	await page.goto(url());
+	await page.getByRole('button', { name: 'ครู', exact: true }).click();
+	const owner = page.getByRole('combobox', { name: 'เลือกรายการสำหรับจัดตาราง' });
+	await expect(owner).toHaveText(name);
+	const ownerBox = (await owner.boundingBox())!;
+	expect(ownerBox.width).toBeLessThanOrEqual(240);
+	await owner.click();
+	const option = page.getByRole('option', { name, exact: true });
+	await expect(option).toBeVisible();
+	const panel = page.locator('[data-slot="popover-content"]');
+	const panelBox = (await panel.boundingBox())!;
+	expect(Math.abs(panelBox.width - ownerBox.width)).toBeLessThanOrEqual(1);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
