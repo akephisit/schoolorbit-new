@@ -37,6 +37,60 @@ fn school_dependencies_in_section(manifest: &str, section: &str) -> BTreeSet<Str
 }
 
 #[test]
+fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
+    let handlers = strip_comments(&read_source(
+        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
+    ));
+    let service = strip_comments(&read_source(
+        workspace_crate_dir("school-academic-timetable")
+            .join("src/services/timetable_block_service.rs"),
+    ));
+
+    // UUID arguments compile even when actor, block, series and version IDs are swapped.
+    // Check the HTTP boundary against the service's named parameters, not only its types.
+    for operation in [
+        "create_ordinary_block",
+        "create_synchronized_block",
+        "create_structural_blocks",
+        "update_block",
+        "remove_target",
+        "retry_sync",
+        "restore_group",
+        "deactivate_block",
+        "deactivate_series",
+        "swap_blocks",
+    ] {
+        let signature = Regex::new(&format!(r"pub async fn {operation}\s*\(([^)]*)\)")).unwrap();
+        let parameters = signature.captures(&service).unwrap();
+        let expected: Vec<&str> = parameters[1]
+            .split(',')
+            .filter_map(|parameter| parameter.split_once(':'))
+            .map(|(name, _)| match name.trim() {
+                "pool" => "&context.tenant.pool",
+                "actor_id" => "context.actor.user_id",
+                "request" => "payload",
+                "block_id" => "block_id",
+                "series_id" => "series_id",
+                "timetable_version_id" => "query.timetable_version_id",
+                "row_version" => "query.row_version",
+                unexpected => panic!("unmapped {operation} parameter: {unexpected}"),
+            })
+            .collect();
+        let invocation = Regex::new(&format!(
+            r"timetable_block_service::{operation}\s*\(([^)]*)\)"
+        ))
+        .unwrap();
+        let arguments = invocation.captures(&handlers).unwrap();
+        let actual: Vec<&str> = arguments[1]
+            .split(',')
+            .map(str::trim)
+            .filter(|argument| !argument.is_empty())
+            .collect();
+        assert_eq!(actual, expected, "{operation} must preserve identity roles");
+    }
+}
+
+#[test]
 fn permission_registry_has_one_workspace_owner() {
     let manifest = read_source(manifest_dir().join("Cargo.toml"));
     let crate_root = workspace_crate_dir("school-permissions");

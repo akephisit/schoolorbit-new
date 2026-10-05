@@ -334,8 +334,8 @@ pub async fn remove_target(
     .await?;
     let block = timetable_block_service::remove_target(
         &context.tenant.pool,
-        block_id,
         context.actor.user_id,
+        block_id,
         payload,
     )
     .await?;
@@ -363,8 +363,8 @@ pub async fn retry_sync(
     require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
     let block = timetable_block_service::retry_sync(
         &context.tenant.pool,
-        block_id,
         context.actor.user_id,
+        block_id,
         payload,
     )
     .await?;
@@ -392,8 +392,8 @@ pub async fn restore_group(
     require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
     let block = timetable_block_service::restore_group(
         &context.tenant.pool,
-        block_id,
         context.actor.user_id,
+        block_id,
         payload,
     )
     .await?;
@@ -459,9 +459,9 @@ pub async fn delete_series(
     .await?;
     let blocks = timetable_block_service::deactivate_series(
         &context.tenant.pool,
+        context.actor.user_id,
         series_id,
         query.timetable_version_id,
-        context.actor.user_id,
     )
     .await?;
     for block in &blocks {
