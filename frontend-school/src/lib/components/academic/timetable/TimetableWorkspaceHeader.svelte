@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { TimetableVersion } from '#lib/api/timetable.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { CalendarRange, Check, CloudCog, LoaderCircle, RefreshCw } from '@lucide/svelte';
@@ -12,6 +13,7 @@
 		isSaving = false,
 		editing = false,
 		isRefreshing = false,
+		controls,
 		onViewChange
 	}: {
 		version: TimetableVersion;
@@ -19,6 +21,7 @@
 		isSaving?: boolean;
 		editing?: boolean;
 		isRefreshing?: boolean;
+		controls: Snippet;
 		onViewChange: (view: TimetablePageView) => void;
 	} = $props();
 
@@ -32,9 +35,12 @@
 	};
 </script>
 
-<header class="overflow-hidden rounded-xl border bg-background shadow-sm">
+<header
+	class="overflow-hidden rounded-xl border bg-background shadow-sm"
+	aria-label="บริบทตารางสอน"
+>
 	<div class="h-1 bg-primary"></div>
-	<div class="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+	<div class="space-y-3 p-3 sm:p-4">
 		<div class="min-w-0 space-y-2">
 			<div class="flex flex-wrap items-center gap-2">
 				<h2 class="text-lg font-semibold tracking-tight">รุ่นตารางสอนที่เลือก</h2>
@@ -66,6 +72,9 @@
 				</span>
 			</div>
 		</div>
-		<TimetableViewSelector value={view} {onViewChange} disabled={isSaving} />
+		<div class="flex flex-col gap-3 xl:flex-row xl:items-end">
+			<div class="min-w-0 flex-1">{@render controls()}</div>
+			<TimetableViewSelector value={view} {onViewChange} disabled={isSaving} />
+		</div>
 	</div>
 </header>

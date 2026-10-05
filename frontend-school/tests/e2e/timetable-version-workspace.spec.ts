@@ -73,16 +73,64 @@ test('starts with a full read-only board and exposes placement controls only aft
 	await expect(page.locator('aside article')).toHaveCount(0);
 });
 
+test('does not prompt a published timetable to update when opening data changes', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page, { status: 'published' });
+	await page.goto(timetableUrl(timetableIds.publishedVersion));
+	mock.publishNewOpening();
+	await page.getByRole('button', { name: 'โหลดล่าสุด', exact: true }).click();
+	await expect.poll(mock.workspaceRequestCount).toBe(2);
+	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
+	await expect(page.getByText(/ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่/)).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true })).toHaveCount(
+		0
+	);
+	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
+	expect(mock.sourceUpdateRequestCount()).toBe(0);
+});
+
+test('keeps version and owner filters beside the view selector in one desktop header', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1543, height: 884 });
+	await installTimetableMock(page);
+	await page.goto(timetableUrl(timetableIds.draftVersion));
+	const header = page.locator('header[aria-label="บริบทตารางสอน"]');
+	for (const view of ['ห้องประจำชั้น', 'กลุ่มเรียน', 'ครูผู้สอน', 'ทั้งโรงเรียน']) {
+		await header.getByRole('button', { name: view, exact: true }).click();
+		const version = header.getByRole('button', { name: 'เลือกรุ่นตารางสอน', exact: true });
+		const owner = header.getByRole('button', {
+			name: view === 'ทั้งโรงเรียน' ? 'เลือกวันดูภาพรวม' : 'เลือกรายการสำหรับจัดตาราง',
+			exact: true
+		});
+		await expect(owner).toBeVisible();
+		const versionBox = (await version.boundingBox())!;
+		const ownerBox = (await owner.boundingBox())!;
+		const viewsBox = (await header.locator('[aria-label="มุมมองตารางสอน"]').boundingBox())!;
+		expect(Math.abs(versionBox.y - ownerBox.y)).toBeLessThanOrEqual(1);
+		expect(
+			Math.abs(ownerBox.y + ownerBox.height - viewsBox.y - viewsBox.height)
+		).toBeLessThanOrEqual(1);
+		expect(versionBox.x + versionBox.width).toBeLessThan(ownerBox.x);
+		expect(ownerBox.x + ownerBox.width).toBeLessThan(viewsBox.x);
+	}
+});
+
 test('notifies of a newer opening without changing an in-progress draft and keeps review placements', async ({
 	page
 }) => {
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const mock = await installTimetableMock(page, { blocks: [block] });
 	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await expect(page.getByText(/ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่/)).toHaveCount(0);
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	mock.publishNewOpening();
 	await page.getByRole('button', { name: 'โหลดล่าสุด', exact: true }).click();
-	await expect(page.getByText(/มีรุ่นเปิดสอนใหม่/)).toBeVisible();
+	await expect(
+		page.getByText('ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่ แบบร่างตารางสอนนี้ยังอ้างอิงรุ่นเดิม')
+	).toBeVisible();
 	expect(mock.sourceUpdateRequestCount()).toBe(0);
 	mock.setSourceIssues([
 		{

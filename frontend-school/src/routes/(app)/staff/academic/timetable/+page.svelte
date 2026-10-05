@@ -89,7 +89,6 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -325,10 +324,11 @@
 			(version) => version.status === 'draft' && version.sourceVersionId === selectedVersion?.id
 		)
 	);
-	const hasNewDelivery = $derived(
+	const draftHasNewDelivery = $derived(
 		Boolean(
+			selectedVersion?.status === 'draft' &&
 			controller?.workspace.latestDeliveryVersionId &&
-			controller.workspace.latestDeliveryVersionId !== selectedVersion?.deliveryVersionId
+			controller.workspace.latestDeliveryVersionId !== selectedVersion.deliveryVersionId
 		)
 	);
 	const groupsWithoutTeachers = $derived(
@@ -1920,73 +1920,77 @@
 				isRefreshing={controller.isRefreshing}
 				editing={controller.editing}
 				onViewChange={changeView}
-			/>
-
-			<Card.Root class="gap-0 py-0" aria-busy={versionsLoading}>
-				<Card.Content class="grid gap-3 p-3 sm:p-4 lg:grid-cols-2">
-					<div class="space-y-1.5">
-						<Label class="text-xs text-muted-foreground">รุ่นตารางสอน</Label>
-						{#if versionsLoading}<span role="status" class="text-xs text-muted-foreground"
-								>กำลังโหลดรุ่น...</span
-							>{/if}
-						<Select.Root
-							type="single"
-							bind:value={versionSelectValue}
-							onValueChange={loadVersion}
-							disabled={loading || versionsLoading || busy || pendingOperationCount > 0}
-						>
-							<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
-								{versionLabel(controller.workspace.version)}
-							</Select.Trigger>
-							<Select.Content>
-								{#each versions as version (version.id)}
-									<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					{#if activeView === 'wholeSchool'}
-						<div class="space-y-1.5">
-							<Label class="text-sm text-muted-foreground">วันที่ดูภาพรวม</Label>
-							<Select.Root type="single" bind:value={overviewDay}>
-								<Select.Trigger class="w-full" aria-label="เลือกวันดูภาพรวม">
-									{days.find((day) => day.id === overviewDay)?.label ?? 'เลือกวัน'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each days as day (day.id)}
-										<Select.Item value={day.id}>วัน{day.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-					{:else}
-						<div class="space-y-1.5">
-							<Label class="text-sm text-muted-foreground">
-								{controller.view === 'homeroom'
-									? 'ห้องประจำชั้น'
-									: controller.view === 'teacher'
-										? 'ครูผู้สอน'
-										: 'กลุ่มเรียน'}
-							</Label>
-							<Select.Root
-								type="single"
-								value={controller.selectedOwnerId ?? ''}
-								onValueChange={changeOwner}
-								disabled={busy}
-							>
-								<Select.Trigger class="w-full" aria-label="เลือกรายการสำหรับจัดตาราง">
-									{selectedOwner ? `${selectedOwner.code} · ${selectedOwner.label}` : 'เลือกรายการ'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each controller.rows as row (row.id)}
-										<Select.Item value={row.id}>{row.code} · {row.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+			>
+				{#snippet controls()}
+					{#if controller}
+						<div class="grid min-w-0 items-end gap-3 sm:grid-cols-2" aria-busy={versionsLoading}>
+							<div class="space-y-1.5">
+								<Label class="text-sm text-muted-foreground">รุ่นตารางสอน</Label>
+								{#if versionsLoading}<span role="status" class="text-xs text-muted-foreground"
+										>กำลังโหลดรุ่น...</span
+									>{/if}
+								<Select.Root
+									type="single"
+									bind:value={versionSelectValue}
+									onValueChange={loadVersion}
+									disabled={loading || versionsLoading || busy || pendingOperationCount > 0}
+								>
+									<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
+										{versionLabel(controller.workspace.version)}
+									</Select.Trigger>
+									<Select.Content>
+										{#each versions as version (version.id)}
+											<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							{#if activeView === 'wholeSchool'}
+								<div class="space-y-1.5">
+									<Label class="text-sm text-muted-foreground">วันที่ดูภาพรวม</Label>
+									<Select.Root type="single" bind:value={overviewDay}>
+										<Select.Trigger class="w-full" aria-label="เลือกวันดูภาพรวม">
+											{days.find((day) => day.id === overviewDay)?.label ?? 'เลือกวัน'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each days as day (day.id)}
+												<Select.Item value={day.id}>วัน{day.label}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								</div>
+							{:else}
+								<div class="space-y-1.5">
+									<Label class="text-sm text-muted-foreground">
+										{controller.view === 'homeroom'
+											? 'ห้องประจำชั้น'
+											: controller.view === 'teacher'
+												? 'ครูผู้สอน'
+												: 'กลุ่มเรียน'}
+									</Label>
+									<Select.Root
+										type="single"
+										value={controller.selectedOwnerId ?? ''}
+										onValueChange={changeOwner}
+										disabled={busy}
+									>
+										<Select.Trigger class="w-full" aria-label="เลือกรายการสำหรับจัดตาราง">
+											{selectedOwner
+												? `${selectedOwner.code} · ${selectedOwner.label}`
+												: 'เลือกรายการ'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each controller.rows as row (row.id)}
+												<Select.Item value={row.id}>{row.code} · {row.label}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								</div>
+							{/if}
 						</div>
 					{/if}
-				</Card.Content>
-			</Card.Root>
+				{/snippet}
+			</TimetableWorkspaceHeader>
 
 			{#if versionsError}
 				<div
@@ -2034,12 +2038,12 @@
 				>
 					{lifecycleError}
 				</div>{/if}
-			{#if hasNewDelivery}
+			{#if draftHasNewDelivery}
 				<div
 					role="status"
 					class="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3 text-sm"
 				>
-					<span>มีรุ่นเปิดสอนใหม่ ตารางนี้ยังใช้ข้อมูลเปิดสอนรุ่นเดิม</span>
+					<span>ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่ แบบร่างตารางสอนนี้ยังอ้างอิงรุ่นเดิม</span>
 					{#if controller.editing && canManageSchool}<Button
 							variant="outline"
 							disabled={busy}
