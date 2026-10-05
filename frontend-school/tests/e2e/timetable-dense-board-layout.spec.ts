@@ -306,3 +306,103 @@ test('hides the redundant teacher row only in teacher view', async ({ page }) =>
 	await expect(card).toBeVisible();
 	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toHaveCount(0);
 });
+
+test('uses the app font for course codes and drag previews', async ({ page }) => {
+	await installTimetableMock(page, {
+		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
+	});
+	await page.goto(boardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const tray = page.getByRole('complementary', { name: 'คาบที่ยังไม่ได้จัด' });
+	const code = tray.getByText('ค21101', { exact: true });
+	expect(await code.evaluate((element) => getComputedStyle(element).fontFamily)).toContain('Kanit');
+	const boardCode = page
+		.locator('[data-timetable-lesson-card]')
+		.getByText('ค21101', { exact: true });
+	expect(await boardCode.evaluate((element) => getComputedStyle(element).fontFamily)).toContain(
+		'Kanit'
+	);
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	await tray.locator('article').first().dispatchEvent('dragstart', { dataTransfer });
+	await page
+		.locator(`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period3}"]`)
+		.dispatchEvent('dragover', { dataTransfer });
+	const previewCode = page
+		.locator('[data-timetable-placement-preview]')
+		.getByText('ค21101', { exact: true })
+		.first();
+	await expect(previewCode).toBeVisible();
+	expect(await previewCode.evaluate((element) => getComputedStyle(element).fontFamily)).toContain(
+		'Kanit'
+	);
+});
+
+test('bounds a long tray to the board and scrolls all remaining demands', async ({ page }) => {
+	const demands = Array.from({ length: 12 }, (_, index) => ({
+		learningGroupId: `group-${index}`,
+		learningOfferingId: `offering-${index}`,
+		offeringCode: `ค211${index}`,
+		offeringName: `วิชาทดสอบ ${index + 1}`,
+		requiredPeriods: 3,
+		scheduledPeriods: 0,
+		remainingPeriods: 3,
+		homeroomIds: [timetableIds.homeroom],
+		eligibleInstructors: [
+			{
+				teacherId: timetableIds.teacherA,
+				displayName: 'ครูคณิตศาสตร์ A',
+				role: 'primary',
+				orderIndex: 0
+			}
+		]
+	}));
+	await installTimetableMock(page, {
+		ordinaryDemands: demands,
+		learningGroups: demands.map((demand) => ({
+			id: demand.learningGroupId,
+			learningOfferingId: demand.learningOfferingId,
+			code: demand.offeringCode,
+			name: demand.offeringName,
+			status: 'published',
+			rosterStatus: 'published',
+			offeringKind: 'course',
+			offeringCode: demand.offeringCode,
+			offeringName: demand.offeringName,
+			homeroomIds: demand.homeroomIds,
+			preferredRoomIds: [],
+			eligibleInstructors: demand.eligibleInstructors
+		})),
+		includeSynchronizedDemand: true
+	});
+	await page.goto(boardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const tray = page.getByRole('complementary', { name: 'คาบที่ยังไม่ได้จัด' });
+	const board = page.getByRole('region', { name: 'ตารางของ ม.1/1' });
+	const [trayBox, boardBox] = await Promise.all([tray.boundingBox(), board.boundingBox()]);
+	expect(
+		Math.abs(trayBox!.y + trayBox!.height - boardBox!.y - boardBox!.height)
+	).toBeLessThanOrEqual(1);
+	const scroll = tray.locator('[data-timetable-tray-scroll]');
+	expect(await scroll.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+		true
+	);
+	await scroll.evaluate((element) => {
+		element.scrollTop = element.scrollHeight;
+	});
+	await expect(tray.getByText('วิชาทดสอบ 12', { exact: true })).toBeInViewport();
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(tray).toBeVisible();
+	await expect(board).toBeVisible();
+	const mobileBoxes = await Promise.all([tray.boundingBox(), board.boundingBox()]);
+	expect(mobileBoxes[1]!.y).toBeGreaterThanOrEqual(mobileBoxes[0]!.y + mobileBoxes[0]!.height);
+});
+
+test('hides synchronized demand codes in teacher view', async ({ page }) => {
+	await installTimetableMock(page, { includeSynchronizedDemand: true });
+	await page.goto(teacherBoardUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const activity = page.locator('aside article').filter({ hasText: 'ชุมนุม' });
+	await expect(activity).toBeVisible();
+	await expect(activity.getByText('CLUB', { exact: true })).toHaveCount(0);
+	await expect(activity.getByText('พร้อมกัน 1 ห้อง', { exact: true })).toBeVisible();
+});

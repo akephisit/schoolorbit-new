@@ -117,7 +117,7 @@
 			{#if showCode}
 				<p
 					data-timetable-card-line
-					class="truncate font-mono text-[8px] leading-[14px] font-semibold text-primary"
+					class="truncate text-[8px] leading-[14px] font-semibold text-primary"
 				>
 					{code}
 				</p>

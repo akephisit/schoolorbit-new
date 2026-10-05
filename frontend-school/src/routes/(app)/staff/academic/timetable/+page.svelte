@@ -70,7 +70,10 @@
 	} from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import TimetableBoard from '#lib/components/academic/timetable/TimetableBoard.svelte';
-	import type { TimetableCellState } from '#lib/components/academic/timetable/TimetableCell.svelte';
+	import TimetableCell, {
+		type TimetableCellState
+	} from '#lib/components/academic/timetable/TimetableCell.svelte';
+	import TimetableLessonCard from '#lib/components/academic/timetable/TimetableLessonCard.svelte';
 	import type { TimetablePlacementCard } from '#lib/components/academic/timetable/TimetablePlacementPreviewCard.svelte';
 	import TimetableInstructorPicker from '#lib/components/academic/timetable/TimetableInstructorPicker.svelte';
 	import TimetableTeacherTargetPicker from '#lib/components/academic/timetable/TimetableTeacherTargetPicker.svelte';
@@ -2130,26 +2133,25 @@
 													block.bellSchedulePeriodId === period.id &&
 													blockBelongsToRow(block, 'homeroom', homeroom.id)
 											)}
-											<td class="border-b border-r p-1.5 align-top">
+											<TimetableCell
+												dayOfWeek={overviewDay}
+												periodId={period.id}
+												dayLabel={`วัน${days.find((day) => day.id === overviewDay)?.label}`}
+												periodLabel={periodLabel(period)}
+												disabled={true}
+											>
 												{#each blocks as block (block.id)}
-													<button
-														type="button"
-														class={[
-															'mb-1 w-full rounded-md border bg-background p-2 text-left',
-															block.blockKind === 'activity' && 'border-l-4 border-l-violet-500',
-															block.blockKind === 'structural' && 'border-l-4 border-l-amber-500'
-														]}
-														onclick={() => openEditor(block)}
-													>
-														<p class="font-mono text-[0.65rem] font-semibold text-primary">
-															{block.offeringCode ?? 'กิจกรรม'}
-														</p>
-														<p class="line-clamp-2 font-medium">
-															{block.offeringName ?? block.title}
-														</p>
-													</button>
+													<TimetableLessonCard
+														{block}
+														rowId={homeroom.id}
+														targetLabel={null}
+														needsReview={controller.workspace.sourceIssues.some(
+															(issue) => issue.blockId === block.id
+														)}
+														onSelect={openEditor}
+													/>
 												{/each}
-											</td>
+											</TimetableCell>
 										{/each}
 									</tr>
 								{/each}
@@ -2161,18 +2163,20 @@
 				<div
 					class={['grid min-h-0 gap-4', controller.editing && 'xl:grid-cols-[15rem_minmax(0,1fr)]']}
 				>
-					{#if controller.editing}<TimetableUnscheduledTray
-							ordinaryDemands={visibleOrdinaryDemands}
-							synchronizedDemands={visibleSynchronizedDemands}
-							groups={controller.workspace.learningGroups}
-							rooms={controller.workspace.rooms}
-							staff={controller.workspace.staff}
-							disabled={!canEdit}
-							onChooseDemand={chooseDemand}
-							onDragStartDemand={startPlacement}
-							onCancelDrag={finishPlacementDrag}
-							onOpenStructural={openStructuralDialog}
-						/>{/if}
+					{#if controller.editing}<div class="relative min-h-0">
+							<TimetableUnscheduledTray
+								ordinaryDemands={visibleOrdinaryDemands}
+								synchronizedDemands={visibleSynchronizedDemands}
+								groups={controller.workspace.learningGroups}
+								rooms={controller.workspace.rooms}
+								staff={controller.workspace.staff}
+								disabled={!canEdit}
+								onChooseDemand={chooseDemand}
+								onDragStartDemand={startPlacement}
+								onCancelDrag={finishPlacementDrag}
+								onOpenStructural={openStructuralDialog}
+							/>
+						</div>{/if}
 					<TimetableBoard
 						state={controller.board}
 						view={controller.view}

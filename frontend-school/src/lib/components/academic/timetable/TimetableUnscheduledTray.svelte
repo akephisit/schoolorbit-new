@@ -171,15 +171,18 @@
 	}
 </script>
 
-<aside class="overflow-hidden rounded-xl border bg-background" aria-label="คาบที่ยังไม่ได้จัด">
-	<div class="flex items-center justify-between gap-3 border-b px-4 py-3">
+<aside
+	class="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background xl:absolute xl:inset-0"
+	aria-label="คาบที่ยังไม่ได้จัด"
+>
+	<div class="flex items-center justify-between shrink-0 gap-3 border-b px-4 py-3">
 		<div>
 			<h2 class="font-semibold">ถาดคาบที่รอจัด</h2>
 			<p class="text-xs text-muted-foreground">เลือกครูและห้องให้คาบนั้น แล้วลากลงสมุดตาราง</p>
 		</div>
 		<Badge variant="secondary">{visibleOrdinary.length + visibleSynchronized.length} รายการ</Badge>
 	</div>
-	<div class="border-b p-3">
+	<div class="shrink-0 border-b p-3">
 		<Button
 			type="button"
 			variant="outline"
@@ -201,7 +204,10 @@
 			<p class="text-xs">หากเป้าหมายเปลี่ยน ให้ปรับจำนวนคาบจากหน้าจัดการเรียน</p>
 		</div>
 	{:else}
-		<div class="max-h-[42rem] space-y-5 overflow-y-auto p-3">
+		<div
+			class="min-h-0 max-h-[42rem] space-y-5 overflow-y-auto p-3 xl:max-h-none xl:flex-1"
+			data-timetable-tray-scroll
+		>
 			{#if visibleSynchronized.length > 0}
 				<section class="space-y-2">
 					<div class="flex items-center gap-2 px-1">
@@ -228,9 +234,6 @@
 										onChooseDemand(selection.source, selection.candidate);
 									}}
 								>
-									<p class="font-mono text-xs font-semibold text-violet-700 dark:text-violet-300">
-										{demand.offeringCode}
-									</p>
 									<p class="text-sm font-medium">{demand.offeringName}</p>
 									<p class="mt-1 text-[0.7rem] text-muted-foreground">
 										พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง
@@ -293,7 +296,9 @@
 										onChooseDemand(selection.source, selection.candidate);
 									}}
 								>
-									<p class="font-mono text-xs font-semibold text-primary">{demand.offeringCode}</p>
+									{#if groupById.get(demand.learningGroupId)?.offeringKind === 'course'}
+										<p class="text-xs font-semibold text-primary">{demand.offeringCode}</p>
+									{/if}
 									<p class="line-clamp-2 text-sm font-medium">{demand.offeringName}</p>
 								</button>
 							</div>

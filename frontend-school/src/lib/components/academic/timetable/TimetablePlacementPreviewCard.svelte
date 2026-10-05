@@ -29,7 +29,7 @@
 	]}
 >
 	{#if card.code}
-		<p class="truncate font-mono text-[8px] leading-[14px] font-semibold text-primary">
+		<p class="truncate text-[8px] leading-[14px] font-semibold text-primary">
 			{card.code}
 		</p>
 	{/if}

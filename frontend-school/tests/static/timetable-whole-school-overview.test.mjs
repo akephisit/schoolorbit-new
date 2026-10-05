@@ -22,7 +22,7 @@ test('whole-school matrix keeps sticky workbook headers and opens block details 
 
 	assert.match(page, /sticky left-0/);
 	assert.match(page, /overflow-x-auto/);
-	assert.match(page, /onclick=\{\(\) => openEditor\(block\)\}/);
+	assert.match(page, /onSelect=\{openEditor\}/);
 	assert.match(page, /selectedBlock\?\.blockKind/);
 	assert.match(page, /\{#if canEdit\}[\s\S]*บันทึก/);
 });

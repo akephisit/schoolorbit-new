@@ -42,6 +42,8 @@ export interface TimetableMockOptions {
 	permissions?: string[];
 	sourceIssues?: TimetableBlockWorkspace['sourceIssues'];
 	blocks?: MockBlock[];
+	ordinaryDemands?: TimetableBlockWorkspace['ordinaryDemands'];
+	learningGroups?: TimetableBlockWorkspace['learningGroups'];
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
 	blockedPeriodId?: string;
@@ -326,7 +328,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			latestDeliveryVersionId,
 			bellPeriods: periods(options.periodCount),
 			blocks,
-			learningGroups: [
+			learningGroups: options.learningGroups ?? [
 				{
 					id: timetableIds.groupA,
 					learningOfferingId: timetableIds.offeringA,
@@ -376,7 +378,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				{ id: timetableIds.teacherA, displayName: 'ครูคณิตศาสตร์ A', status: 'active' },
 				{ id: timetableIds.teacherB, displayName: 'ครูคณิตศาสตร์ B', status: 'active' }
 			],
-			ordinaryDemands: [
+			ordinaryDemands: options.ordinaryDemands ?? [
 				{
 					learningGroupId: timetableIds.groupA,
 					learningOfferingId: timetableIds.offeringA,

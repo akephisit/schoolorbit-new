@@ -78,7 +78,7 @@
 >
 	<div class="flex items-center justify-between border-b bg-muted/20 px-4 py-3">
 		<div>
-			<p class="font-mono text-xs font-semibold text-primary">{row.code}</p>
+			<p class="text-xs font-semibold text-primary">{row.code}</p>
 			<h2 class="font-semibold">{row.label}</h2>
 		</div>
 		<p class="text-xs text-muted-foreground">
