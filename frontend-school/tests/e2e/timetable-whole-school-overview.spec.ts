@@ -28,7 +28,7 @@ test('derives the read-only school matrix from the same bounded block workspace'
 	await page.goto(wholeSchoolUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
-	await expect(page.getByRole('button', { name: 'ทั้งโรงเรียน' })).toHaveAttribute(
+	await expect(page.getByRole('button', { name: 'โรงเรียน' })).toHaveAttribute(
 		'aria-pressed',
 		'true'
 	);
@@ -71,7 +71,7 @@ test('switches from school overview to the exact editable homeroom board', async
 	await page.goto(wholeSchoolUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
-	await page.getByRole('button', { name: 'ห้องประจำชั้น' }).click();
+	await page.getByRole('button', { name: 'ชั้น' }).click();
 	await expect(page).toHaveURL(new RegExp(`view=homeroom.*ownerId=${timetableIds.homeroom}`));
 	await expect(page.locator(`article[data-block-id="${timetableIds.blockA}"]`)).toBeVisible();
 });

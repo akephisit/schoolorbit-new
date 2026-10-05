@@ -232,8 +232,25 @@ pub struct TimetableBlockWorkspaceRoom {
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct TimetableSubjectGroup {
+    pub id: Uuid,
+    pub name: String,
+    #[schema(required = true)]
+    pub display_order: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimetableOfferingSubjectGroup {
+    pub learning_offering_id: Uuid,
+    pub subject_group: TimetableSubjectGroup,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TimetableBlockWorkspaceStaff {
     pub id: Uuid,
+    pub subject_groups: Vec<TimetableSubjectGroup>,
     pub display_name: String,
     pub status: String,
 }
@@ -295,6 +312,7 @@ pub struct TimetableBlockWorkspace {
     pub homerooms: Vec<TimetableBlockWorkspaceHomeroom>,
     pub rooms: Vec<TimetableBlockWorkspaceRoom>,
     pub staff: Vec<TimetableBlockWorkspaceStaff>,
+    pub offering_subject_groups: Vec<TimetableOfferingSubjectGroup>,
     pub summary: TimetableBlockSummary,
 }
 

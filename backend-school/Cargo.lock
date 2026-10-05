@@ -4157,6 +4157,7 @@ dependencies = [
  "school-authorization",
  "school-errors",
  "school-permissions",
+ "school-staff",
  "school-test-db",
  "serde",
  "serde_json",

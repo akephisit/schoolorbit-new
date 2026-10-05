@@ -96,11 +96,11 @@ test('keeps compact context filters in the top desktop header row', async ({ pag
 	await installTimetableMock(page);
 	await page.goto(timetableUrl(timetableIds.draftVersion));
 	const header = page.locator('header[aria-label="บริบทตารางสอน"]');
-	for (const view of ['ห้องประจำชั้น', 'กลุ่มเรียน', 'ครูผู้สอน', 'ทั้งโรงเรียน']) {
+	for (const view of ['ชั้น', 'กลุ่มเรียน', 'ครู', 'โรงเรียน']) {
 		await header.getByRole('button', { name: view, exact: true }).click();
 		const version = header.getByRole('button', { name: 'เลือกรุ่นตารางสอน', exact: true });
-		const owner = header.getByRole('button', {
-			name: view === 'ทั้งโรงเรียน' ? 'เลือกวันดูภาพรวม' : 'เลือกรายการสำหรับจัดตาราง',
+		const owner = header.getByRole(view === 'โรงเรียน' ? 'button' : 'combobox', {
+			name: view === 'โรงเรียน' ? 'เลือกวันดูภาพรวม' : 'เลือกรายการสำหรับจัดตาราง',
 			exact: true
 		});
 		await expect(owner).toBeVisible();

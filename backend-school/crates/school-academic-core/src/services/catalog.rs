@@ -1369,3 +1369,32 @@ fn map_version_write_error(error: sqlx::Error) -> AppError {
         AppError::DbError(error)
     }
 }
+
+/// Minimal catalogue metadata for already-authorized subject versions.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SubjectVersionSubjectGroup {
+    pub subject_version_id: Uuid,
+    pub subject_group_id: Uuid,
+    pub name: String,
+    pub display_order: Option<i32>,
+}
+
+pub async fn subject_groups_for_versions(
+    pool: &PgPool,
+    version_ids: &[Uuid],
+) -> Result<Vec<SubjectVersionSubjectGroup>, AppError> {
+    if version_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(sqlx::query_as(
+        "SELECT version.id AS subject_version_id, sg.id AS subject_group_id,
+                sg.name_th AS name, sg.display_order
+         FROM subject_versions version
+         JOIN subjects subject ON subject.id = version.subject_id
+         JOIN subject_groups sg ON sg.id = subject.subject_group_id
+         WHERE version.id = ANY($1) ORDER BY version.id",
+    )
+    .bind(version_ids)
+    .fetch_all(pool)
+    .await?)
+}

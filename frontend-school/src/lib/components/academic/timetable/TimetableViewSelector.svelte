@@ -26,7 +26,7 @@
 		onclick={() => onViewChange('homeroom')}
 	>
 		<School class="size-3.5" />
-		ห้องประจำชั้น
+		ชั้น
 	</Button>
 	<Button
 		type="button"
@@ -50,7 +50,7 @@
 		onclick={() => onViewChange('teacher')}
 	>
 		<UsersRound class="size-3.5" />
-		ครูผู้สอน
+		ครู
 	</Button>
 	<Button
 		type="button"
@@ -62,6 +62,6 @@
 		onclick={() => onViewChange('wholeSchool')}
 	>
 		<LayoutGrid class="size-3.5" />
-		ทั้งโรงเรียน
+		โรงเรียน
 	</Button>
 </div>

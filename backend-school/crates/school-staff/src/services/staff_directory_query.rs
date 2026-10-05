@@ -173,3 +173,30 @@ mod tests {
         assert!(validate_directory_filters(&filter).is_err());
     }
 }
+
+/// Current affiliations for an already-authorized, bounded set of users.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct StaffSubjectGroupAssignment {
+    pub user_id: Uuid,
+    pub subject_group_id: Uuid,
+    pub name: String,
+    pub display_order: Option<i32>,
+}
+
+pub async fn subject_groups_for_users(
+    pool: &PgPool,
+    user_ids: &[Uuid],
+) -> Result<Vec<StaffSubjectGroupAssignment>, AppError> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT groups.user_id,groups.id AS subject_group_id,groups.name,sg.display_order FROM (",
+    );
+    query
+        .push(CURRENT_SUBJECT_GROUPS)
+        .push(") groups JOIN subject_groups sg ON sg.id=groups.id WHERE groups.user_id=ANY(")
+        .push_bind(user_ids)
+        .push(") ORDER BY sg.display_order NULLS LAST,groups.name,groups.id");
+    Ok(query.build_query_as().fetch_all(pool).await?)
+}

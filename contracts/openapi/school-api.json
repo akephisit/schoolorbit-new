@@ -14799,6 +14799,12 @@
                 },
                 "type": "array"
               },
+              "offeringSubjectGroups": {
+                "items": {
+                  "$ref": "#/components/schemas/TimetableOfferingSubjectGroup"
+                },
+                "type": "array"
+              },
               "ordinaryDemands": {
                 "items": {
                   "$ref": "#/components/schemas/TimetableOrdinaryDemand"
@@ -14856,6 +14862,7 @@
               "homerooms",
               "rooms",
               "staff",
+              "offeringSubjectGroups",
               "summary"
             ],
             "type": "object"
@@ -49290,6 +49297,12 @@
             },
             "type": "array"
           },
+          "offeringSubjectGroups": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableOfferingSubjectGroup"
+            },
+            "type": "array"
+          },
           "ordinaryDemands": {
             "items": {
               "$ref": "#/components/schemas/TimetableOrdinaryDemand"
@@ -49347,6 +49360,7 @@
           "homerooms",
           "rooms",
           "staff",
+          "offeringSubjectGroups",
           "summary"
         ],
         "type": "object"
@@ -49502,12 +49516,35 @@
           },
           "status": {
             "type": "string"
+          },
+          "subjectGroups": {
+            "items": {
+              "$ref": "#/components/schemas/TimetableSubjectGroup"
+            },
+            "type": "array"
           }
         },
         "required": [
           "id",
+          "subjectGroups",
           "displayName",
           "status"
+        ],
+        "type": "object"
+      },
+      "TimetableOfferingSubjectGroup": {
+        "properties": {
+          "learningOfferingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subjectGroup": {
+            "$ref": "#/components/schemas/TimetableSubjectGroup"
+          }
+        },
+        "required": [
+          "learningOfferingId",
+          "subjectGroup"
         ],
         "type": "object"
       },
@@ -49751,6 +49788,30 @@
         "required": [
           "dayOfWeek",
           "bellSchedulePeriodId"
+        ],
+        "type": "object"
+      },
+      "TimetableSubjectGroup": {
+        "properties": {
+          "displayOrder": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "displayOrder"
         ],
         "type": "object"
       },
