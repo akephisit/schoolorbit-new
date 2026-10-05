@@ -250,7 +250,7 @@ node --experimental-strip-types --test tests/runtime/public-school-seo.test.ts
 npx playwright test tests/e2e/landing-page.spec.ts tests/e2e/admin-landing-page.spec.ts --project=chromium --workers=1
 ```
 
-The homepage spec also checks the first HTML with JavaScript disabled, unique metadata and H1, safe School JSON-LD, a three-second identity timeout, concurrent sibling reads, retries, and crawler endpoints. SEO runtime cases cover tenant-specific canonical/sitemap URLs, the configured base domain, and exclusion of sandbox/local/preview hosts. After release, fetch each production homepage without executing JavaScript and verify its school name, one title/description, its own HTTPS canonical, and its sitemap; check `noindex` on sandbox and login.
+The homepage spec also checks the first HTML with JavaScript disabled, unique metadata and H1, safe School JSON-LD, a three-second identity timeout, concurrent sibling reads, retries, and crawler endpoints. The public logo resolver covers current-crest-only selection, cookie omission, and missing/unavailable files. SEO runtime cases cover tenant-specific canonical/sitemap URLs, the configured base domain, and exclusion of sandbox/local/preview hosts. After release, fetch each production homepage without executing JavaScript and verify its school name, one title/description, its own HTTPS canonical, and its sitemap; check `noindex` on sandbox and login, and fetch its `/school-logo` without Origin or Referer to verify anonymous crawler delivery.
 
 Login and app-header layout fixtures also start their own local servers. They cover small and short viewports, optional school branding failures, pending/rejected login, and the remaining header controls:
 

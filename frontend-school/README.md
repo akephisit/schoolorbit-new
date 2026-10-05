@@ -8,6 +8,8 @@ Its homepage is an anonymous school website using existing branding, current-yea
 
 Homepage indexing, canonical URLs, robots and sitemap share the policy in `src/lib/school-public/seo.ts`. The production tenant domain comes from the configured `PUBLIC_BACKEND_URL` hostname (`school-api.<base-domain>`). Sandbox, local, preview and reserved hosts are not indexable. Only production school homepages enter sitemaps; other HTML responses use `noindex`. Search Console ownership and submissions are described in [Operations](../docs/OPERATIONS.md).
 
+SEO logo URLs use `/school-logo` on the school's own origin. This endpoint resolves only the current school crest through the existing anonymous branding and public file-delivery APIs, then redirects to its public image. It forwards the tenant Origin without session cookies; callers cannot supply a file ID.
+
 Spreadsheet import accepts `.xlsx` and UTF-8 `.csv`. Convert legacy `.xls` files before importing student IDs. ExcelJS owns Excel file reading and writing; SSF preserves displayed cell values such as zero-padded IDs during import.
 
 ## Stack

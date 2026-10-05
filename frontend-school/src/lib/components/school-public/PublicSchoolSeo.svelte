@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { PublicSchoolInfo } from '#lib/api/school.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
-	import { publicFileUrl } from '#lib/api/files.js';
 	import {
 		buildSchoolHomeSeo,
 		type SchoolHomeSeo,
@@ -16,7 +15,11 @@
 		site: SchoolPublicIndexing;
 	} = $props();
 	function metadata(info: PublicSchoolInfo | null): SchoolHomeSeo {
-		return buildSchoolHomeSeo(info, site, info?.logoFileId ? publicFileUrl(info.logoFileId) : null);
+		return buildSchoolHomeSeo(
+			info,
+			site,
+			info?.logoFileId ? new URL('/school-logo', site.homeUrl).href : null
+		);
 	}
 </script>
 

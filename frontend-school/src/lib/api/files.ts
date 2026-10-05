@@ -1,4 +1,4 @@
-import { apiClient, BACKEND_URL, requireApiData } from '#lib/api/client.js';
+import { apiClient, BACKEND_URL, requireApiData, type ApiRequestOptions } from '#lib/api/client.js';
 import type { components } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
@@ -108,6 +108,19 @@ export async function downloadPublicFile(fileId: string, signal?: AbortSignal): 
 	const delivery = requireApiData(response, 'ดาวน์โหลดไฟล์สาธารณะไม่สำเร็จ');
 	signal?.throwIfAborted();
 	return downloadExternalFile(delivery.url, signal);
+}
+
+export async function getPublicFileDelivery(
+	fileId: string,
+	options: ApiRequestOptions = {}
+): Promise<PublicFileDeliveryResponse> {
+	return requireApiData(
+		await apiClient.getPublic<PublicFileDeliveryResponse>(
+			`/api/public/files/${fileId}/delivery`,
+			options
+		),
+		'ไม่สามารถโหลดไฟล์สาธารณะได้'
+	);
 }
 
 export function publicFileUrl(fileId: string): string {

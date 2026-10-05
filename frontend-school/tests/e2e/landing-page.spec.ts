@@ -106,6 +106,15 @@ test.beforeAll(async () => {
 				res.writeHead(404).end();
 				return;
 			}
+			if (endpoint.endsWith('/delivery')) {
+				res.end(
+					JSON.stringify({
+						success: true,
+						data: { url: 'https://public-files.example/fixture-school-logo.svg' }
+					})
+				);
+				return;
+			}
 			res.setHeader('content-type', 'image/svg+xml');
 			res.end(
 				'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="104" viewBox="0 0 80 104"><path fill="#2563eb" d="M40 3 75 23V60Q70 90 40 101 10 90 5 60V23Z"/></svg>'
@@ -242,7 +251,7 @@ test('school identity and SEO are readable without JavaScript in the first HTML 
 			'@type': 'School',
 			name: schoolName,
 			url: `${baseUrl}/`,
-			logo: expect.stringContaining('/api/public/files/')
+			logo: `${baseUrl}/school-logo`
 		});
 		expect(requests.filter((r) => r.path === '/api/school/public')).toHaveLength(1);
 	} finally {
@@ -286,6 +295,31 @@ test('crawler endpoints and non-home HTML apply the local noindex policy without
 		const response = await request.get(`${baseUrl}${route}`);
 		expect(response.headers()['x-robots-tag']).toBe('noindex');
 	}
+});
+
+test('logo crawlers resolve only the current public crest without cookies or caller-selected files', async ({
+	request
+}) => {
+	const response = await request.get(`${baseUrl}/school-logo?fileId=private-file`, {
+		maxRedirects: 0,
+		headers: { Cookie: 'fixture-private-cookie=not-a-real-session' }
+	});
+	expect(response.status()).toBe(307);
+	expect(response.headers().location).toBe('https://public-files.example/fixture-school-logo.svg');
+	expect(response.headers()['cache-control']).toBe('no-store');
+	expect(requests.map((r) => r.path)).toEqual([
+		'/api/school/public',
+		'/api/public/files/11111111-1111-4111-8111-111111111111/delivery'
+	]);
+	expect(requests.every((r) => !r.cookie && r.origin === baseUrl)).toBe(true);
+	logoAvailable = false;
+	expect((await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).status()).toBe(404);
+	logoAvailable = true;
+	brokenLogo = true;
+	expect((await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).status()).toBe(404);
+	brokenLogo = false;
+	failedRegion = '/api/school/public';
+	expect((await request.get(`${baseUrl}/school-logo`, { maxRedirects: 0 })).status()).toBe(503);
 });
 
 test('a slow identity read is bounded while sibling reads start concurrently and retries remain local', async ({
