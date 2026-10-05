@@ -27965,6 +27965,9 @@
               "null"
             ]
           },
+          "createHomeroomGroups": {
+            "type": "boolean"
+          },
           "curriculumActivityRequirementId": {
             "format": "uuid",
             "type": [
@@ -30460,6 +30463,16 @@
           "resourceKind": {
             "$ref": "#/components/schemas/LearningOfferingKind"
           },
+          "schedulingMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActivitySchedulingMode"
+              }
+            ]
+          },
           "targetHomeroomIds": {
             "items": {
               "format": "uuid",
@@ -30472,6 +30485,7 @@
           "proposalId",
           "offeringAction",
           "resourceKind",
+          "schedulingMode",
           "catalogVersionId",
           "requirementIds",
           "targetHomeroomIds",
@@ -31495,6 +31509,16 @@
           "name": {
             "type": "string"
           },
+          "schedulingMode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActivitySchedulingMode"
+              }
+            ]
+          },
           "standardPeriodsPerWeek": {
             "format": "int32",
             "type": [
@@ -31510,6 +31534,7 @@
         "required": [
           "id",
           "kind",
+          "schedulingMode",
           "code",
           "name",
           "versionNo",
@@ -35392,6 +35417,7 @@
       },
       "HomeroomGroupMode": {
         "enum": [
+          "central",
           "missing",
           "normal",
           "combined",
@@ -35535,6 +35561,7 @@
       },
       "HomeroomTeacherState": {
         "enum": [
+          "deferred",
           "missing_primary",
           "assigned"
         ],

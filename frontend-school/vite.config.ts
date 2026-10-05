@@ -85,7 +85,8 @@ export default defineConfig({
 
 			// adapter-cloudflare for Cloudflare Workers deployment
 			adapter: adapter(),
-			version: { pollInterval: 0 }
+			version: { pollInterval: 0 },
+			serviceWorker: { register: false }
 		})
 	],
 	build: {

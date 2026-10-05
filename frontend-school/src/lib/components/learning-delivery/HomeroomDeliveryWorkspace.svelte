@@ -29,10 +29,12 @@
 	let {
 		workspace,
 		canManage = false,
+		activationBusy = false,
 		onPrepareSynchronizedActivity
 	}: {
 		workspace: Workspace;
 		canManage?: boolean;
+		activationBusy?: boolean;
 		onPrepareSynchronizedActivity?: (catalogVersionId: string) => void;
 	} = $props();
 	let search = $state('');
@@ -48,6 +50,7 @@
 	} as const;
 	const groupLabels = {
 		missing: 'ยังไม่จัดกลุ่ม',
+		central: 'คาบกลาง · จัดกลุ่มภายหลังได้',
 		normal: 'แยกตามห้อง',
 		combined: 'เรียนรวมหลายห้อง',
 		split: 'แบ่งหลายกลุ่ม',
@@ -124,11 +127,11 @@
 			<p class="text-xs text-muted-foreground">รายวิชาและกิจกรรมรวมทุกห้อง</p>
 		</div>
 		<div class="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-4 shadow-sm">
-			<p class="text-xs font-medium text-emerald-700 dark:text-emerald-300">มีกลุ่มรองรับแล้ว</p>
+			<p class="text-xs font-medium text-emerald-700 dark:text-emerald-300">เปิดสอนรองรับแล้ว</p>
 			<p class="mt-2 text-2xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">
 				{summary.readyCount}/{summary.expectedCount}
 			</p>
-			<p class="text-xs text-muted-foreground">นับเมื่อมีรายการเปิดสอนและกลุ่มที่เชื่อมห้อง</p>
+			<p class="text-xs text-muted-foreground">นับกลุ่มที่เชื่อมห้องและกิจกรรมคาบกลางที่เปิดแล้ว</p>
 		</div>
 		<div class="rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-4 shadow-sm">
 			<p class="text-xs font-medium text-amber-700 dark:text-amber-300">ห้องที่ต้องตรวจ</p>
@@ -209,7 +212,7 @@
 									<p class="font-mono text-sm font-semibold tabular-nums">
 										{room.readyCount}/{room.expectedCount}
 									</p>
-									<p class="text-xs text-muted-foreground">มีกลุ่มรองรับ</p>
+									<p class="text-xs text-muted-foreground">เปิดสอนรองรับ</p>
 								</div>
 								{#if room.expectedCount > 0 && room.readyCount === room.expectedCount}
 									<Badge class="bg-emerald-600 text-white hover:bg-emerald-600"
@@ -260,10 +263,7 @@
 												<Table.Head class="min-w-[140px]">รายการเปิดสอน</Table.Head>
 												<Table.Head class="min-w-[190px]">กลุ่มเรียน</Table.Head>
 												<Table.Head class="min-w-[130px]">ครูหลัก</Table.Head>
-												<Table.Head class="min-w-[150px]">ตารางสอน</Table.Head>
-												<Table.Head class="min-w-[150px]"
-													><span class="sr-only">จัดการ</span></Table.Head
-												>
+												<Table.Head class="min-w-[150px]">จัดการ</Table.Head>
 											</Table.Row>
 										</Table.Header>
 										<Table.Body>
@@ -323,11 +323,13 @@
 													<Table.Cell>
 														<div class="flex items-center gap-1.5 text-sm">
 															<UsersRound class="size-3.5" />
-															{item.groupMode === 'deferred' && item.groups.length === 0
-																? 'รอจัดกลุ่ม'
-																: item.teacherState === 'assigned'
-																	? 'มอบหมายแล้ว'
-																	: 'ยังไม่มีครูหลัก'}
+															{item.teacherState === 'deferred'
+																? 'กำหนดภายหลัง'
+																: item.groupMode === 'deferred' && item.groups.length === 0
+																	? 'รอจัดกลุ่ม'
+																	: item.teacherState === 'assigned'
+																		? 'มอบหมายแล้ว'
+																		: 'ยังไม่มีครูหลัก'}
 														</div>
 													</Table.Cell>
 													<Table.Cell>
@@ -351,11 +353,12 @@
 																	variant="outline"
 																	onclick={() =>
 																		onPrepareSynchronizedActivity?.(item.catalogVersionId)}
+																	disabled={activationBusy}
 																>
 																	<CirclePlus class="size-3.5" />
 																	{workspace.deliveryVersionStatus === 'published'
-																		? 'สร้างรุ่นร่างและเปิดใช้งาน'
-																		: 'เปิดใช้งาน'}
+																		? 'เพิ่มในร่าง'
+																		: 'เพิ่มกิจกรรม'}
 																</Button>
 															{:else}
 																<span class="text-xs text-muted-foreground">ต้องมีสิทธิ์จัดการ</span

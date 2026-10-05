@@ -558,6 +558,7 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
             change_set_row_version: revision.row_version,
             weekly_period_target: 1,
             offering: CreateActivityOfferingRequest {
+                create_homeroom_groups: false,
                 academic_term_id: term_id,
                 activity_version_id,
                 curriculum_activity_requirement_id: None,

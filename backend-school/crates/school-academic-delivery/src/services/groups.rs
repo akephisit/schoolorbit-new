@@ -242,6 +242,40 @@ pub async fn get(pool: &PgPool, id: Uuid) -> Result<LearningGroup, AppError> {
     hydrate(pool, row).await
 }
 
+/// Reviewed manual activation creates one target-room group in the offering transaction.
+pub(super) async fn create_target_homeroom_groups(
+    transaction: &mut Transaction<'_, Postgres>,
+    offering_id: Uuid,
+    term_id: Uuid,
+    year_id: Uuid,
+) -> Result<(), AppError> {
+    let rooms: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT DISTINCT room.id, room.name FROM homerooms room \
+         JOIN learning_offering_targets target ON target.learning_offering_id = $1 \
+         AND (target.homeroom_id = room.id OR (target.target_kind = 'grade_program' \
+         AND target.grade_level_id = room.grade_level_id AND target.study_program_id = room.study_program_id)) \
+         WHERE room.academic_year_id = $2 AND room.is_active ORDER BY room.id LIMIT 501",
+    ).bind(offering_id).bind(year_id).fetch_all(&mut **transaction).await?;
+    if rooms.is_empty() || rooms.len() > 500 {
+        return Err(AppError::ValidationError(
+            "ต้องมีห้องเป้าหมาย 1 ถึง 500 ห้องสำหรับเปิดพร้อมจัดกลุ่ม".into(),
+        ));
+    }
+    let room_ids: Vec<Uuid> = rooms.iter().map(|room| room.0).collect();
+    let group_ids: Vec<Uuid> = rooms.iter().map(|_| Uuid::new_v4()).collect();
+    let names: Vec<String> = rooms.into_iter().map(|room| room.1).collect();
+    sqlx::query("INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) \
+        SELECT group_id,$1,$2,$3,'ROOM-' || group_id::text,name,'draft','draft' \
+        FROM unnest($4::uuid[],$5::text[]) AS input(group_id,name)")
+        .bind(offering_id).bind(term_id).bind(year_id).bind(&group_ids).bind(&names)
+        .execute(&mut **transaction).await?;
+    sqlx::query("INSERT INTO learning_group_homerooms (id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source) \
+        SELECT gen_random_uuid(),group_id,$1,$2,room_id,'manual' \
+        FROM unnest($3::uuid[],$4::uuid[]) AS input(group_id,room_id)")
+        .bind(term_id).bind(year_id).bind(&group_ids).bind(&room_ids).execute(&mut **transaction).await?;
+    Ok(())
+}
+
 pub async fn create(
     pool: &PgPool,
     actor_user_id: Uuid,

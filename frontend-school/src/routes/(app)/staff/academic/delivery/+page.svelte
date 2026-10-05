@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { untrack, onMount } from 'svelte';
+	import { untrack, onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { registerDeliveryDraftReconcile } from '#lib/academic/delivery-draft-reconcile.js';
 	import { ApiClientError } from '#lib/api/client.js';
@@ -20,6 +20,7 @@
 	} from '#lib/academic/learning-delivery-page.js';
 	import {
 		buildSynchronizedActivityPreparationTarget,
+		activityDraftCandidates,
 		type SynchronizedActivityPreparationTarget
 	} from '#lib/academic/synchronized-activity-delivery.js';
 	import {
@@ -50,6 +51,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { RefreshCw } from '@lucide/svelte';
 	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -139,6 +141,23 @@
 	let pendingDeliveryAction = $state.raw<{ kind: 'activate'; catalogVersionId: string } | null>(
 		null
 	);
+	let activationBusy = $state(false);
+	let activationError = $state('');
+	let draftChoices = $state<DeliveryVersionSummary[]>([]);
+	let chooseDraftOpen = $state(false);
+	let sourceNotice = $state('');
+	let activationContext = '';
+	$effect(() => {
+		const context = `${academicYearId}:${academicTermId}`;
+		untrack(() => {
+			if (context !== activationContext) {
+				activationContext = context;
+				pendingDeliveryAction = null;
+				activationError = '';
+				chooseDraftOpen = false;
+			}
+		});
+	});
 	let initialKind = $derived<'all' | 'activity'>(
 		page.url.searchParams.get('kind') === 'activity' ? 'activity' : 'all'
 	);
@@ -338,38 +357,102 @@
 		void refreshDeliveryRegions();
 	}
 
-	function prepareSynchronizedActivity(catalogVersionId: string) {
-		if (!workspace || !offeringDialog) return;
-		if (workspace.deliveryVersionStatus === 'published') {
-			pendingDeliveryAction = { kind: 'activate', catalogVersionId };
-			deliveryRevisionDialog?.openDialog();
+	async function continueActivityInDraft(versionId: string) {
+		const pending = pendingDeliveryAction;
+		const context = activationContext;
+		if (!pending || !canManage || !academicYearId || !academicTermId) return;
+		activationBusy = true;
+		activationError = '';
+		chooseDraftOpen = false;
+		await tick();
+		try {
+			let selected = workspace;
+			if (selected?.deliveryVersionId !== versionId) {
+				const url = new URL(page.url.href);
+				url.searchParams.set('deliveryVersionId', versionId);
+				url.searchParams.delete('changeSetId');
+				await goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`));
+				await tick();
+				const result = await data.homerooms;
+				if (!result?.ok) throw new Error(result?.error ?? 'โหลดแบบร่างไม่สำเร็จ');
+				selected = result.data;
+			}
+			if (context !== activationContext || !canManage || pending !== pendingDeliveryAction) return;
+			if (
+				!selected ||
+				selected.deliveryVersionStatus !== 'draft' ||
+				selected.deliveryVersionId !== versionId
+			)
+				throw new Error('แบบร่างนี้ไม่พร้อมแก้ไข กรุณาโหลดล่าสุดแล้วลองอีกครั้ง');
+			const existing = selected.homerooms
+				.flatMap((room) => room.items)
+				.find(
+					(item) =>
+						item.catalogVersionId === pending.catalogVersionId &&
+						item.resourceKind === 'activity' &&
+						item.offeringId
+				);
+			if (existing?.offeringId) {
+				await goto(
+					resolve(`staff/academic/delivery/${existing.offeringId}?deliveryVersionId=${versionId}`)
+				);
+			} else {
+				const target = buildSynchronizedActivityPreparationTarget(
+					selected,
+					pending.catalogVersionId
+				);
+				if (!target || !offeringDialog)
+					throw new Error('ไม่พบกิจกรรมในหลักสูตรของร่างนี้ กรุณาตรวจรายการอีกครั้ง');
+				await offeringDialog.openCurriculumPreparation(target, versionId);
+			}
+			pendingDeliveryAction = null;
+			chooseDraftOpen = false;
+		} catch (error) {
+			if (context === activationContext)
+				activationError = error instanceof Error ? error.message : 'เปิดกิจกรรมในร่างไม่สำเร็จ';
+		} finally {
+			activationBusy = false;
+		}
+	}
+
+	async function prepareSynchronizedActivity(catalogVersionId: string) {
+		if (activationBusy || !workspace || !canManage || !academicTermId) return;
+		pendingDeliveryAction = { kind: 'activate', catalogVersionId };
+		activationError = '';
+		if (workspace.deliveryVersionStatus === 'draft' && workspace.deliveryVersionId) {
+			await continueActivityInDraft(workspace.deliveryVersionId);
 			return;
 		}
-		const target = buildSynchronizedActivityPreparationTarget(workspace, catalogVersionId);
-		if (!target) return;
-		void offeringDialog.openCurriculumPreparation(
-			target,
-			workspace.deliveryVersionStatus === 'draft' ? workspace.deliveryVersionId : null
-		);
+		const context = activationContext;
+		activationBusy = true;
+		try {
+			const versions = await listDeliveryVersions(academicTermId);
+			if (context !== activationContext || !canManage) return;
+			const { source, drafts } = activityDraftCandidates(versions);
+			if (!source) throw new Error('ไม่พบรุ่นเปิดสอนที่เผยแพร่แล้ว กรุณาสร้างรุ่นเปิดสอนก่อน');
+			deliveryVersions = versions;
+			sourceNotice =
+				workspace.deliveryVersionId !== source.id
+					? 'กำลังดูรุ่นย้อนหลัง ร่างสำหรับเพิ่มกิจกรรมจะใช้ข้อมูลจากรุ่นเผยแพร่ล่าสุด'
+					: 'เพิ่มกิจกรรมในร่างจากรุ่นเผยแพร่ล่าสุด รุ่นที่เผยแพร่แล้วจะคงข้อมูลเดิม';
+			draftChoices = drafts;
+			if (drafts.length === 1) {
+				if (workspace.deliveryVersionId !== source.id) toast.info(sourceNotice);
+				await continueActivityInDraft(drafts[0].id);
+			} else if (drafts.length > 1) chooseDraftOpen = true;
+			else if (deliveryRevisionDialog) deliveryRevisionDialog.openDialog();
+			else throw new Error('หน้าต่างสร้างร่างยังไม่พร้อม กรุณาลองอีกครั้ง');
+		} catch (error) {
+			if (context === activationContext)
+				activationError = error instanceof Error ? error.message : 'ค้นหาแบบร่างไม่สำเร็จ';
+		} finally {
+			activationBusy = false;
+		}
 	}
 
 	async function handleDeliveryRevisionCreated(created: AcademicTermChangeSet) {
-		const pending = pendingDeliveryAction;
-		pendingDeliveryAction = null;
-		addChangeSet(created);
-		if (!academicYearId || !academicTermId) return;
-		const url = new URL(page.url.href);
-		url.searchParams.set('deliveryVersionId', created.targetDeliveryVersionId);
-		url.searchParams.set('changeSetId', created.id);
-		goto(resolve(`staff/academic/delivery?${url.searchParams.toString()}`), {
-			replace: true,
-			state: page.state
-		});
-		await loadHomerooms();
-		if (pending?.kind !== 'activate' || !workspace || !offeringDialog) return;
-		const target = buildSynchronizedActivityPreparationTarget(workspace, pending.catalogVersionId);
-		if (!target) return;
-		await offeringDialog.openCurriculumPreparation(target, created.targetDeliveryVersionId);
+		if (pendingDeliveryAction) await continueActivityInDraft(created.targetDeliveryVersionId);
+		else addChangeSet(created);
 	}
 
 	function addChangeSet(created: AcademicTermChangeSet) {
@@ -565,9 +648,10 @@
 				<RefreshCw class="size-4" />โหลดล่าสุด
 			</Button>{/if}
 		{#if canManage && academicTermId}
-			{#if workspace?.deliveryVersionStatus === 'draft'}
+			{#key academicTermId}
 				<OfferingCreateDialog
 					bind:this={offeringDialog}
+					showTrigger={workspace?.deliveryVersionStatus === 'draft'}
 					{academicTermId}
 					onCreated={addCreated}
 					onApplied={() => refreshDeliveryRegions(true)}
@@ -575,16 +659,18 @@
 						? workspace.deliveryVersionId
 						: null}
 				/>
-			{/if}
-			<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
-			{#if canManage}
-				<AcademicChangeSetDialog
-					bind:this={deliveryRevisionDialog}
-					{academicTermId}
-					showTrigger={false}
-					onCreated={handleDeliveryRevisionCreated}
-				/>
-			{/if}
+				<AcademicChangeSetDialog {academicTermId} onCreated={addChangeSet} />
+				{#if canManage}
+					<AcademicChangeSetDialog
+						bind:this={deliveryRevisionDialog}
+						{academicTermId}
+						showTrigger={false}
+						onCreated={handleDeliveryRevisionCreated}
+						{sourceNotice}
+						onCancelled={() => (pendingDeliveryAction = null)}
+					/>
+				{/if}
+			{/key}
 		{/if}
 	{/snippet}
 
@@ -592,6 +678,23 @@
 		<AcademicPrerequisiteNotice prerequisite={missingTermPrerequisite} />
 	{:else}
 		<div class="space-y-4">
+			{#if activationBusy}<p role="status" class="text-sm text-muted-foreground">
+					กำลังเปิดกิจกรรมในแบบร่าง
+				</p>{/if}
+			{#if activationError}<div
+					role="alert"
+					class="rounded-xl border border-destructive/40 p-3 text-sm"
+				>
+					<p>{activationError}</p>
+					<Button
+						variant="outline"
+						disabled={activationBusy}
+						onclick={() => {
+							if (pendingDeliveryAction)
+								void prepareSynchronizedActivity(pendingDeliveryAction.catalogVersionId);
+						}}>ลองอีกครั้ง</Button
+					>
+				</div>{/if}
 			<section
 				class="rounded-xl border bg-card p-3 sm:p-4"
 				aria-label="รุ่นเปิดสอน"
@@ -723,6 +826,7 @@
 							<HomeroomDeliveryWorkspace
 								{workspace}
 								{canManage}
+								{activationBusy}
 								onPrepareSynchronizedActivity={prepareSynchronizedActivity}
 							/>
 						{/if}
@@ -780,3 +884,26 @@
 		</div>
 	{/if}
 </PageShell>
+
+<Dialog.Root bind:open={chooseDraftOpen}>
+	<Dialog.Content>
+		<Dialog.Header
+			><Dialog.Title>เลือกร่างที่จะเพิ่มกิจกรรม</Dialog.Title><Dialog.Description
+				>{sourceNotice}</Dialog.Description
+			></Dialog.Header
+		>
+		<div class="space-y-2">
+			{#each draftChoices as draft (draft.id)}
+				<Button
+					class="h-auto w-full justify-start whitespace-normal text-start"
+					variant="outline"
+					disabled={activationBusy}
+					onclick={() => continueActivityInDraft(draft.id)}
+					>{changeSets.find((item) => item.id === draft.changeSetId)?.reason || 'แบบร่าง'} · {draft.offeringCount}
+					รายการ</Button
+				>
+			{/each}
+		</div>
+		{#if activationError}<p role="alert" class="text-sm text-destructive">{activationError}</p>{/if}
+	</Dialog.Content>
+</Dialog.Root>

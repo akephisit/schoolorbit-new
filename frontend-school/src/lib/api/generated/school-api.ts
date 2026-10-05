@@ -13698,6 +13698,7 @@ export interface components {
 			attendanceRequirement: components['schemas']['ActivityAttendanceRequirement'];
 			/** Format: int32 */
 			capacity?: number | null;
+			createHomeroomGroups?: boolean;
 			/** Format: uuid */
 			curriculumActivityRequirementId?: string | null;
 			passCriteria: components['schemas']['ActivityPassCriteria'];
@@ -14313,6 +14314,7 @@ export interface components {
 			proposalId: string;
 			requirementIds: string[];
 			resourceKind: components['schemas']['LearningOfferingKind'];
+			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
 			targetHomeroomIds: string[];
 		};
 		/** @enum {string} */
@@ -14613,6 +14615,7 @@ export interface components {
 			kind: components['schemas']['LearningOfferingKind'];
 			label: string;
 			name: string;
+			schedulingMode: null | components['schemas']['ActivitySchedulingMode'];
 			/** Format: int32 */
 			standardPeriodsPerWeek: number | null;
 			/** Format: int32 */
@@ -15743,7 +15746,7 @@ export interface components {
 			unlinked: components['schemas']['UnlinkedDeliveryItem'][];
 		};
 		/** @enum {string} */
-		HomeroomGroupMode: 'missing' | 'normal' | 'combined' | 'split' | 'deferred';
+		HomeroomGroupMode: 'central' | 'missing' | 'normal' | 'combined' | 'split' | 'deferred';
 		/** @description Homeroom lookup item for a caller-selected academic year. */
 		HomeroomLookupItem: {
 			gradeLevel?: string;
@@ -15788,7 +15791,7 @@ export interface components {
 			replayed: boolean;
 		};
 		/** @enum {string} */
-		HomeroomTeacherState: 'missing_primary' | 'assigned';
+		HomeroomTeacherState: 'deferred' | 'missing_primary' | 'assigned';
 		/** @enum {string} */
 		ImageAlignment: 'left' | 'center' | 'right';
 		ImageElement: {

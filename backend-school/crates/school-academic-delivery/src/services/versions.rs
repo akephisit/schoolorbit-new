@@ -339,7 +339,8 @@ pub fn readiness(snapshot: &DeliverySnapshot) -> Vec<DeliveryReadinessFinding> {
         if offering.targets.is_empty() {
             record(DeliveryReadinessCode::MissingTargets, None);
         }
-        if offering.groups.is_empty() {
+        let central = matches!(&offering.catalog, LearningOfferingSnapshot::Activity(activity) if activity.scheduling_mode == crate::models::ActivitySchedulingMode::Synchronized);
+        if offering.groups.is_empty() && !central {
             record(DeliveryReadinessCode::MissingGroups, None);
         }
         for group in &offering.groups {
@@ -437,6 +438,79 @@ mod tests {
             DeliveryReadinessCode::MissingPrimaryTeacher
         );
         assert_eq!(findings[1].learning_group_id, Some(Uuid::from_u128(9)));
+    }
+
+    fn central_snapshot() -> DeliverySnapshot {
+        let mut snapshot = ready_snapshot();
+        let offering = &mut snapshot.offerings[0];
+        offering.kind = LearningOfferingKind::Activity;
+        offering.catalog =
+            LearningOfferingSnapshot::Activity(crate::models::ActivityOfferingSnapshot {
+                activity_version_id: Uuid::from_u128(3),
+                activity_id: Uuid::from_u128(4),
+                curriculum_activity_requirement_id: None,
+                registration_type: crate::models::ActivityRegistrationType::Assigned,
+                scheduling_mode: crate::models::ActivitySchedulingMode::Synchronized,
+                hours: "1".into(),
+                capacity: None,
+                attendance_requirement: crate::models::ActivityAttendanceRequirement {
+                    minimum_percent: Some("80".into()),
+                    required_sessions: None,
+                },
+                pass_criteria: crate::models::ActivityPassCriteria {
+                    require_attendance: true,
+                    require_teacher_confirmation: true,
+                    outcomes: vec!["pass".into(), "fail".into()],
+                },
+            });
+        offering.groups.clear();
+        snapshot
+    }
+
+    #[test]
+    fn central_activity_publishes_before_groups_but_keeps_target_and_count_validation() {
+        let mut snapshot = central_snapshot();
+        assert!(readiness(&snapshot).is_empty());
+        snapshot.offerings[0].weekly_period_target = 0;
+        snapshot.offerings[0].targets.clear();
+        let codes: Vec<_> = readiness(&snapshot)
+            .into_iter()
+            .map(|finding| finding.code)
+            .collect();
+        assert_eq!(
+            codes,
+            vec![
+                DeliveryReadinessCode::InvalidWeeklyTarget,
+                DeliveryReadinessCode::MissingTargets
+            ]
+        );
+    }
+
+    #[test]
+    fn independent_activities_and_courses_still_require_groups_and_existing_groups_require_primary_teachers(
+    ) {
+        let mut independent = central_snapshot();
+        if let LearningOfferingSnapshot::Activity(activity) = &mut independent.offerings[0].catalog
+        {
+            activity.scheduling_mode = crate::models::ActivitySchedulingMode::Independent;
+        }
+        assert_eq!(
+            readiness(&independent)[0].code,
+            DeliveryReadinessCode::MissingGroups
+        );
+        let mut course = ready_snapshot();
+        course.offerings[0].groups.clear();
+        assert_eq!(
+            readiness(&course)[0].code,
+            DeliveryReadinessCode::MissingGroups
+        );
+        let mut central = central_snapshot();
+        central.offerings[0].groups = ready_snapshot().offerings[0].groups.clone();
+        central.offerings[0].groups[0].teachers.clear();
+        assert_eq!(
+            readiness(&central)[0].code,
+            DeliveryReadinessCode::MissingPrimaryTeacher
+        );
     }
 
     #[test]

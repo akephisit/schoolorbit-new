@@ -8,16 +8,21 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { tick } from 'svelte';
 	import { CalendarClock, TriangleAlert } from '@lucide/svelte';
 
 	let {
 		academicTermId,
 		onCreated,
-		showTrigger = true
+		showTrigger = true,
+		sourceNotice = '',
+		onCancelled
 	}: {
 		academicTermId: string;
 		onCreated: (changeSet: AcademicTermChangeSet) => void | Promise<void>;
 		showTrigger?: boolean;
+		sourceNotice?: string;
+		onCancelled?: () => void;
 	} = $props();
 
 	let open = $state(false);
@@ -47,9 +52,10 @@
 				reason: reason.trim(),
 				idempotencyKey: creationKey
 			});
-			await onCreated(changeSet);
 			reason = '';
 			open = false;
+			await tick();
+			await onCreated(changeSet);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างแบบร่างรุ่นเปิดสอนไม่สำเร็จ';
 		} finally {
@@ -62,7 +68,12 @@
 		><CalendarClock class="size-4" />สร้างรุ่นเปิดสอน</Button
 	>{/if}
 
-<Dialog.Root bind:open>
+<Dialog.Root
+	bind:open
+	onOpenChange={(next) => {
+		if (!next && !saving) onCancelled?.();
+	}}
+>
 	<Dialog.Content
 		showCloseButton={!saving}
 		escapeKeydownBehavior={saving ? 'ignore' : 'close'}
@@ -82,6 +93,7 @@
 			</p>
 		</div>
 
+		{#if sourceNotice}<p class="text-sm text-muted-foreground">{sourceNotice}</p>{/if}
 		<form class="space-y-4" onsubmit={createDraft}>
 			<div class="space-y-2">
 				<Label for="academic-change-reason">ชื่อหรือเหตุผลของรุ่น</Label><Textarea

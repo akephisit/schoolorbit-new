@@ -2,6 +2,7 @@ import {
 	createVisibilityIdle,
 	browserVisibilityDependencies
 } from '#lib/realtime/visibility-idle.js';
+import { getServiceWorkerRegistration } from '#lib/pwa/service-worker-registration.js';
 import { PUBLIC_VAPID_KEY } from '$app/env/public';
 import { apiClient, BACKEND_URL, getSchoolSubdomainHint } from '#lib/api/client.js';
 import type { components } from '#lib/api/generated/school-api.js';
@@ -52,8 +53,7 @@ function isPushMessagingSupported() {
 }
 
 async function getPushRegistration() {
-	await navigator.serviceWorker.register('/service-worker.js');
-	return navigator.serviceWorker.ready;
+	return getServiceWorkerRegistration();
 }
 
 function subscriptionPayload(subscription: PushSubscription) {

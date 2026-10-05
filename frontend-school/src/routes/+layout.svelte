@@ -11,6 +11,7 @@
 		startDeploymentMonitor,
 		stopDeploymentMonitor
 	} from '#lib/deployment/maintenance.js';
+	import { getServiceWorkerRegistration } from '#lib/pwa/service-worker-registration.js';
 	import { initPWA } from '#lib/stores/pwa.js';
 
 	let { children } = $props();
@@ -18,6 +19,11 @@
 	// Initialize PWA listeners once
 	onMount(() => {
 		initPWA();
+		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+			void getServiceWorkerRegistration().catch((error: unknown) => {
+				console.warn('ระบบแจ้งเตือนยังไม่พร้อม สามารถใช้เว็บและลองเปิดแจ้งเตือนอีกครั้งได้', error);
+			});
+		}
 		document.documentElement.dataset.schoolorbitAppMounted = 'true';
 		void startDeploymentMonitor();
 		return () => {

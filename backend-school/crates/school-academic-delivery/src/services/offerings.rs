@@ -112,6 +112,7 @@ struct ActivityDetailRow {
 #[derive(Debug, sqlx::FromRow)]
 struct PreviewRequirementRow {
     resource_kind: LearningOfferingKind,
+    scheduling_mode: Option<crate::models::ActivitySchedulingMode>,
     catalog_version_id: Uuid,
     requirement_id: Uuid,
     study_program_id: Uuid,
@@ -529,6 +530,27 @@ pub async fn preview_term_preparation(
     build_curriculum_preview_for_term(transaction, target_term_id, &program_ids, term, false).await
 }
 
+fn default_preparation_choice(
+    proposal: &CurriculumPreparationProposal,
+) -> CurriculumPreparationChoice {
+    let central =
+        proposal.scheduling_mode == Some(crate::models::ActivitySchedulingMode::Synchronized);
+    let apply_groups = !central && !proposal.default_groups.is_empty();
+    CurriculumPreparationChoice {
+        proposal_id: proposal.proposal_id.clone(),
+        action: if apply_groups {
+            PreparationAction::Apply
+        } else {
+            PreparationAction::DeferGroups
+        },
+        groups: if apply_groups {
+            proposal.default_groups.clone()
+        } else {
+            Vec::new()
+        },
+    }
+}
+
 pub async fn apply_term_preparation(
     transaction: &mut Transaction<'_, Postgres>,
     actor: Uuid,
@@ -538,15 +560,7 @@ pub async fn apply_term_preparation(
     let choices = preview
         .proposals
         .iter()
-        .map(|proposal| CurriculumPreparationChoice {
-            proposal_id: proposal.proposal_id.clone(),
-            action: if proposal.default_groups.is_empty() {
-                PreparationAction::DeferGroups
-            } else {
-                PreparationAction::Apply
-            },
-            groups: proposal.default_groups.clone(),
-        })
+        .map(default_preparation_choice)
         .collect::<Vec<_>>();
     validate_preparation_choices(&preview.proposals, &choices)?;
     let applied = apply_preview_in_transaction(transaction, &term, preview, &choices).await?;
@@ -1103,6 +1117,7 @@ pub(super) async fn insert_activity(
             "รูปแบบตารางกิจกรรมต้องตรงกับเวอร์ชันกิจกรรม".to_string(),
         ));
     }
+    let create_homeroom_groups = request.create_homeroom_groups;
     let hours = if let Some(requirement_id) = request.curriculum_activity_requirement_id {
         let requirement: (Uuid, Uuid, Uuid, String, i32, String) = sqlx::query_as(
             "SELECT requirement.activity_version_id, requirement.grade_level_id, \
@@ -1174,7 +1189,17 @@ pub(super) async fn insert_activity(
     .bind(sqlx::types::Json(request.pass_criteria))
     .execute(&mut **transaction)
     .await?;
-    insert_targets(transaction, id, term, &request.targets).await
+    insert_targets(transaction, id, term, &request.targets).await?;
+    if create_homeroom_groups {
+        super::groups::create_target_homeroom_groups(
+            transaction,
+            id,
+            term.id,
+            term.academic_year_id,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 async fn course_version_source(
@@ -1659,7 +1684,7 @@ async fn build_curriculum_preview_for_term(
         ));
     }
     let rows: Vec<PreviewRequirementRow> = sqlx::query_as(
-        r#"SELECT 'course'::text AS resource_kind,
+        r#"SELECT 'course'::text AS resource_kind, NULL::text AS scheduling_mode,
                   requirement.subject_version_id AS catalog_version_id,
                   requirement.id AS requirement_id, requirement.study_program_id,
                   requirement.grade_level_id, requirement.requirement_kind,
@@ -1674,7 +1699,7 @@ async fn build_curriculum_preview_for_term(
              AND slot.term_type = $2
              AND slot.type_occurrence = $3
            UNION ALL
-           SELECT 'activity'::text AS resource_kind,
+           SELECT 'activity'::text AS resource_kind, version.scheduling_mode,
                   requirement.activity_version_id AS catalog_version_id,
                   requirement.id AS requirement_id, requirement.study_program_id,
                   requirement.grade_level_id, requirement.requirement_kind,
@@ -1746,6 +1771,7 @@ async fn build_curriculum_preview_for_term(
                     CurriculumPreviewAction::Create
                 },
                 resource_kind: row.resource_kind,
+                scheduling_mode: row.scheduling_mode,
                 catalog_version_id: row.catalog_version_id,
                 requirement_ids: Vec::new(),
                 target_homeroom_ids: Vec::new(),
@@ -2119,11 +2145,41 @@ mod preparation_choice_tests {
     use super::*;
 
     #[test]
+    fn automatic_preparation_defers_central_groups_without_sending_unapplied_alternatives() {
+        let proposal = CurriculumPreparationProposal {
+            proposal_id: "central".into(),
+            offering_action: CurriculumPreviewAction::Create,
+            resource_kind: LearningOfferingKind::Activity,
+            scheduling_mode: Some(crate::models::ActivitySchedulingMode::Synchronized),
+            catalog_version_id: Uuid::new_v4(),
+            requirement_ids: vec![Uuid::new_v4()],
+            target_homeroom_ids: vec![Uuid::new_v4()],
+            code: "CLUB".into(),
+            name: "ชุมนุม".into(),
+            credit: None,
+            hours: Some("1.00".into()),
+            existing_offering_id: None,
+            grouping_state: PreparationGroupingState::Proposed,
+            default_groups: vec![crate::models::CurriculumGroupProposal {
+                group_key: "a".repeat(64),
+                name: "ม.1/1".into(),
+                homeroom_ids: vec![Uuid::new_v4()],
+            }],
+            conflicts: vec![],
+        };
+        let choice = default_preparation_choice(&proposal);
+        assert_eq!(choice.action, PreparationAction::DeferGroups);
+        assert!(choice.groups.is_empty());
+        assert!(validate_preparation_choices(&[proposal], &[choice]).is_ok());
+    }
+
+    #[test]
     fn apply_action_requires_a_reviewed_group_even_when_defaults_are_deferred() {
         let proposal = CurriculumPreparationProposal {
             proposal_id: "proposal".to_string(),
             offering_action: CurriculumPreviewAction::Create,
             resource_kind: LearningOfferingKind::Course,
+            scheduling_mode: None,
             catalog_version_id: Uuid::new_v4(),
             requirement_ids: vec![Uuid::new_v4()],
             target_homeroom_ids: vec![Uuid::new_v4()],

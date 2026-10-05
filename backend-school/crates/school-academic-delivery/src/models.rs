@@ -746,6 +746,8 @@ pub struct CreateCourseOfferingRequest {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateActivityOfferingRequest {
+    #[serde(default)]
+    pub create_homeroom_groups: bool,
     pub academic_term_id: Uuid,
     pub activity_version_id: Uuid,
     pub curriculum_activity_requirement_id: Option<Uuid>,
@@ -990,6 +992,7 @@ pub enum HomeroomOfferingState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomGroupMode {
+    Central,
     Missing,
     Normal,
     Combined,
@@ -1000,6 +1003,7 @@ pub enum HomeroomGroupMode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HomeroomTeacherState {
+    Deferred,
     MissingPrimary,
     Assigned,
 }
@@ -1119,6 +1123,8 @@ pub struct HomeroomDeliveryWorkspace {
 pub struct DeliveryCatalogVersionOption {
     pub id: Uuid,
     pub kind: LearningOfferingKind,
+    #[schema(required = true)]
+    pub scheduling_mode: Option<ActivitySchedulingMode>,
     pub code: String,
     pub name: String,
     pub version_no: i32,
@@ -1164,6 +1170,8 @@ pub struct CurriculumPreparationProposal {
     pub proposal_id: String,
     pub offering_action: CurriculumPreviewAction,
     pub resource_kind: LearningOfferingKind,
+    #[schema(required = true)]
+    pub scheduling_mode: Option<ActivitySchedulingMode>,
     pub catalog_version_id: Uuid,
     pub requirement_ids: Vec<Uuid>,
     pub target_homeroom_ids: Vec<Uuid>,

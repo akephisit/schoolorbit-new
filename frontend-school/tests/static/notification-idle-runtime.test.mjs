@@ -53,6 +53,11 @@ test('notification hidden pause suppresses recovery and resumes authoritative st
 			}
 		},
 		'#lib/realtime/auth-recovery.js': { realtimeAuthRecovery },
+		'#lib/pwa/service-worker-registration.js': {
+			getServiceWorkerRegistration: () => {
+				throw new Error('push registration is not part of idle reconciliation');
+			}
+		},
 		'#lib/realtime/visibility-idle.js': {
 			createVisibilityIdle,
 			browserVisibilityDependencies: () => ({

@@ -2352,6 +2352,7 @@ async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_
             change_set_row_version: without_course.row_version,
             weekly_period_target: 2,
             offering: CreateActivityOfferingRequest {
+                create_homeroom_groups: false,
                 academic_term_id: context.term_id,
                 activity_version_id,
                 curriculum_activity_requirement_id: None,
@@ -4797,6 +4798,7 @@ async fn self_registration_activity_uses_common_delivery() {
         &pool,
         context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
             curriculum_activity_requirement_id: None,
@@ -4956,6 +4958,7 @@ async fn student_activity_registration_is_term_scoped_eligible_and_revisioned() 
         &pool,
         context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
             curriculum_activity_requirement_id: None,
@@ -5434,7 +5437,18 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         .find(|room| room.homeroom.id == context.homeroom_id)
         .expect("selected homeroom should appear");
     assert!(room.expected_count > 0);
-    assert_eq!(room.ready_count, 0);
+    let central_count = room
+        .items
+        .iter()
+        .filter(|item| item.group_mode == super::models::HomeroomGroupMode::Central)
+        .count();
+    assert!(central_count > 0);
+    assert_eq!(room.ready_count, central_count);
+    assert!(room
+        .items
+        .iter()
+        .filter(|item| item.group_mode == super::models::HomeroomGroupMode::Central)
+        .all(|item| item.teacher_state == super::models::HomeroomTeacherState::Deferred));
     assert!(room.items.iter().all(|item| match item.resource_kind {
         LearningOfferingKind::Course => {
             item.standard_periods_per_week
@@ -5448,6 +5462,7 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     let offering_id = room
         .items
         .iter()
+        .filter(|item| item.resource_kind == LearningOfferingKind::Course)
         .find_map(|item| item.offering_id)
         .expect("curriculum apply should create an applicable offering");
 
@@ -5490,7 +5505,7 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         .iter()
         .find(|room| room.homeroom.id == context.homeroom_id)
         .unwrap();
-    assert_eq!(room.ready_count, 1);
+    assert_eq!(room.ready_count, central_count + 1);
     assert!(room
         .items
         .iter()
@@ -5933,6 +5948,7 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         &pool,
         context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
             curriculum_activity_requirement_id: None,
@@ -6637,4 +6653,77 @@ async fn opening_preview_dates_are_read_only_bound_to_hash_and_validate_teacher_
     .await
     .unwrap_err();
     assert!(matches!(stale, AppError::Conflict(_)));
+}
+
+#[tokio::test]
+async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_central() {
+    let pool = prepare_delivery_runtime_fixture("academic_delivery_manual_activity_groups").await;
+    let context = planning_runtime_context(&pool).await;
+    let activity_version_id: Uuid = sqlx::query_scalar("SELECT version.id FROM activity_versions version JOIN academic_terms term ON term.id=$1 WHERE version.status='published' AND version.scheduling_mode='synchronized' AND version.effective_from <= term.start_date AND (version.effective_until IS NULL OR version.effective_until > term.start_date) ORDER BY version.id LIMIT 1")
+        .bind(context.term_id).fetch_one(&pool).await.unwrap();
+    let request = CreateActivityOfferingRequest {
+        create_homeroom_groups: false,
+        academic_term_id: context.term_id,
+        activity_version_id,
+        curriculum_activity_requirement_id: None,
+        targets: vec![OfferingTargetInput {
+            target_kind: OfferingTargetKind::Homeroom,
+            homeroom_id: Some(context.homeroom_id),
+            grade_level_id: context.grade_level_id,
+            study_program_id: context.study_program_id,
+        }],
+        registration_type: ActivityRegistrationType::Assigned,
+        scheduling_mode: ActivitySchedulingMode::Synchronized,
+        capacity: None,
+        attendance_requirement: ActivityAttendanceRequirement {
+            minimum_percent: Some("80.00".into()),
+            required_sessions: None,
+        },
+        pass_criteria: ActivityPassCriteria {
+            require_attendance: true,
+            require_teacher_confirmation: true,
+            outcomes: vec!["pass".into(), "fail".into()],
+        },
+    };
+    let central = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(request.clone()),
+    )
+    .await
+    .unwrap();
+    assert!(groups::list(&pool, central.id).await.unwrap().is_empty());
+    let mut grouped = request.clone();
+    grouped.create_homeroom_groups = true;
+    let grouped = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(grouped),
+    )
+    .await
+    .unwrap();
+    let created = groups::list(&pool, grouped.id).await.unwrap();
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].homeroom_ids, vec![context.homeroom_id]);
+    assert!(created[0].teacher_assignments.is_empty());
+    assert!(!created[0].name.trim().is_empty());
+    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let mut invalid = request;
+    invalid.create_homeroom_groups = true;
+    invalid.targets[0].homeroom_id = Some(Uuid::new_v4());
+    assert!(offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(invalid)
+    )
+    .await
+    .is_err());
+    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
 }

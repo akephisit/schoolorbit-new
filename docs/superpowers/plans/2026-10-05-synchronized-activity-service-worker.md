@@ -1,0 +1,7 @@
+# Implementation plan
+
+1. Extend delivery preparation/catalog DTOs and queries with authoritative scheduling mode. Default synchronized preparation to central activation; permit empty groups only for synchronized readiness. Add central homeroom states/counts while retaining existing group validations. Regenerate and verify contracts.
+2. Repair the published-to-draft intent workflow, including no/one/multiple drafts, latest-source explanation, already-created offerings, bounded pending actions and retry. Mount the offering dialog independently of selected version status. Align the six-column table and central labels.
+3. Implement a shared module worker registration owner with a ten-second deadline and retry. Disable Kit auto-registration, use the owner from layout/push, and remove network fetch interception without unregistering existing subscriptions.
+4. Add meaningful Rust readiness/preparation and integration coverage; pure intent/default/worker tests; mocked opening workflow browser tests; real worker production-preview Chromium/WebKit tests and sanitized responsive/theme inspection.
+5. Run frontend lint/check/static/menu-sync/route-loading, worker type check, API generation/check/tests, focused Rust and integration tests, architecture tests, workspace all-targets check, and diff checks. Review the tested tree, squash into current main, push normally, and wait for coordinated release/CI. Run authenticated deployed smoke and read-only SNWSB acceptance. Do not create/publish real school data.

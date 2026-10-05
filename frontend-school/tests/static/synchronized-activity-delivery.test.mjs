@@ -170,3 +170,46 @@ test('focused curriculum preparation applies only the selected activity and skip
 		[targetProposal]
 	);
 });
+
+test('synchronized activities default to central activation but retain reviewed group alternatives', () => {
+	const proposal = {
+		proposalId: 'central',
+		resourceKind: 'activity',
+		schedulingMode: 'synchronized',
+		catalogVersionId: 'club',
+		groupingState: 'proposed',
+		conflicts: [],
+		defaultGroups: [{ groupKey: 'a', name: 'ชุมนุม', homeroomIds: ['a'] }]
+	};
+	assert.deepEqual(deliveryModule.buildFocusedCurriculumPreparationChoices([proposal], null), [
+		{ proposalId: 'central', action: 'defer_groups', groups: [] }
+	]);
+	assert.equal(proposal.defaultGroups.length, 1);
+	assert.equal(
+		deliveryModule.buildFocusedCurriculumPreparationChoices(
+			[{ ...proposal, schedulingMode: 'independent' }],
+			null
+		)[0].action,
+		'apply'
+	);
+});
+
+test('only drafts from the latest published opening are candidates, regardless of current historical view', () => {
+	const old = { id: 'old', status: 'published', effectiveFrom: '2026-05-01' };
+	const latest = { id: 'new', status: 'published', effectiveFrom: '2026-09-01' };
+	const oldDraft = { id: 'old-draft', status: 'draft', sourceVersionId: old.id };
+	const draft = { id: 'draft', status: 'draft', sourceVersionId: latest.id };
+	assert.deepEqual(deliveryModule.activityDraftCandidates([oldDraft, old, latest, draft]), {
+		source: latest,
+		drafts: [draft]
+	});
+	assert.deepEqual(deliveryModule.activityDraftCandidates([old, latest]), {
+		source: latest,
+		drafts: []
+	});
+	assert.equal(
+		deliveryModule.activityDraftCandidates([old, latest, draft, { ...draft, id: 'other' }]).drafts
+			.length,
+		2
+	);
+});

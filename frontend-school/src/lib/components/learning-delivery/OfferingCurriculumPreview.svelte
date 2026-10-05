@@ -54,6 +54,8 @@
 	let preview = $state.raw<CurriculumOfferingPreview | null>(null);
 	let choices = $state.raw<CurriculumPreparationChoice[]>([]);
 	let busy = $state(false);
+	let appliedInput = '';
+	let applicationKey = '';
 	let errorMessage = $state('');
 	let filteredPrograms = $derived.by(() => {
 		const query = programSearch.trim().toLocaleLowerCase('th-TH');
@@ -238,12 +240,23 @@
 		busy = true;
 		errorMessage = '';
 		try {
+			const input = JSON.stringify({
+				academicTermId,
+				studyProgramIds,
+				deliveryVersionId,
+				sourceHash: preview.sourceHash,
+				choices
+			});
+			if (!applicationKey || input !== appliedInput) {
+				appliedInput = input;
+				applicationKey = crypto.randomUUID();
+			}
 			await applyLearningOfferingsFromCurriculum({
 				academicTermId,
 				studyProgramIds,
 				deliveryVersionId,
 				sourceHash: preview.sourceHash,
-				idempotencyKey: crypto.randomUUID(),
+				idempotencyKey: applicationKey,
 				choices
 			});
 			await onApplied();
@@ -270,7 +283,7 @@
 				<p class="mt-1 text-sm text-muted-foreground">
 					{preparationTarget
 						? `ระบบจะรวมข้อกำหนดของ ${preparationTarget.homeroomCount} ห้องเป็นรายการเปิดสอนกลางเพียงรายการเดียว`
-						: 'ระบบเสนอหนึ่งกลุ่มต่อห้องสำหรับรายการบังคับ ส่วนรายการเลือกจะรอให้จัดกลุ่มภายหลัง'}
+						: 'กิจกรรมพร้อมกันเริ่มจากเปิดแบบกลาง และเลือกเปิดพร้อมจัดกลุ่มได้ รายวิชาบังคับเสนอหนึ่งกลุ่มต่อห้อง'}
 				</p>
 			</div>
 		</div>
@@ -393,14 +406,20 @@
 										>{choice.action === 'apply'
 											? 'เปิดสอนและจัดกลุ่ม'
 											: choice.action === 'defer_groups'
-												? 'เปิดสอน รอจัดกลุ่ม'
+												? proposal.schedulingMode === 'synchronized'
+													? 'เปิดแบบกลาง'
+													: 'เปิดสอน รอจัดกลุ่ม'
 												: 'ข้ามรายการนี้'}</Select.Trigger
 									>
 									<Select.Content>
 										{#if proposal.conflicts.length === 0}<Select.Item value="apply"
 												>เปิดสอนและจัดกลุ่ม</Select.Item
 											>{/if}
-										<Select.Item value="defer_groups">เปิดสอน รอจัดกลุ่ม</Select.Item>
+										<Select.Item value="defer_groups"
+											>{proposal.schedulingMode === 'synchronized'
+												? 'เปิดแบบกลาง'
+												: 'เปิดสอน รอจัดกลุ่ม'}</Select.Item
+										>
 										{#if !preparationTarget}<Select.Item value="skip">ข้ามรายการนี้</Select.Item
 											>{/if}
 									</Select.Content>

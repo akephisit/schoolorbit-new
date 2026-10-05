@@ -66,6 +66,7 @@ struct OfferingAggregateRow {
 #[derive(Debug, sqlx::FromRow)]
 struct CatalogVersionRow {
     id: Uuid,
+    scheduling_mode: Option<ActivitySchedulingMode>,
     kind: LearningOfferingKind,
     code: String,
     name: String,
@@ -598,8 +599,17 @@ pub async fn homeroom_delivery_workspace_with_timing(
                 offering_state: applicable_offering
                     .map(|offering| offering_state(offering.status))
                     .unwrap_or(HomeroomOfferingState::Missing),
-                group_mode: classify_group_mode(expected.requirement_kind, &coverage_counts),
-                teacher_state: classify_teacher_state(&primary_counts),
+                group_mode: classify_opening_group_mode(
+                    offering_id.is_some(),
+                    expected.scheduling_mode,
+                    expected.requirement_kind,
+                    &coverage_counts,
+                ),
+                teacher_state: classify_opening_teacher_state(
+                    offering_id.is_some(),
+                    expected.scheduling_mode,
+                    &primary_counts,
+                ),
                 alignment_states: classify_expected_alignment(
                     applicable_offering,
                     expected.standard_periods_per_week,
@@ -644,7 +654,10 @@ pub async fn homeroom_delivery_workspace_with_timing(
         });
         let ready_count = items
             .iter()
-            .filter(|item| item.offering_id.is_some() && !item.groups.is_empty())
+            .filter(|item| {
+                item.offering_id.is_some()
+                    && (!item.groups.is_empty() || item.group_mode == HomeroomGroupMode::Central)
+            })
             .count();
         let blockers = if items.is_empty() {
             vec![DeliveryPrerequisite {
@@ -812,6 +825,33 @@ fn offering_state(status: LearningOfferingStatus) -> HomeroomOfferingState {
         LearningOfferingStatus::Published => HomeroomOfferingState::Published,
         LearningOfferingStatus::Cancelled => HomeroomOfferingState::Closed,
         LearningOfferingStatus::Closed => HomeroomOfferingState::Closed,
+    }
+}
+
+fn classify_opening_group_mode(
+    offered: bool,
+    scheduling_mode: Option<ActivitySchedulingMode>,
+    requirement_kind: RequirementKind,
+    counts: &[i64],
+) -> HomeroomGroupMode {
+    if offered && counts.is_empty() && scheduling_mode == Some(ActivitySchedulingMode::Synchronized)
+    {
+        HomeroomGroupMode::Central
+    } else {
+        classify_group_mode(requirement_kind, counts)
+    }
+}
+
+fn classify_opening_teacher_state(
+    offered: bool,
+    scheduling_mode: Option<ActivitySchedulingMode>,
+    counts: &[i64],
+) -> HomeroomTeacherState {
+    if offered && counts.is_empty() && scheduling_mode == Some(ActivitySchedulingMode::Synchronized)
+    {
+        HomeroomTeacherState::Deferred
+    } else {
+        classify_teacher_state(counts)
     }
 }
 
@@ -1070,11 +1110,11 @@ pub async fn delivery_management_options(
     let catalog_rows: Vec<CatalogVersionRow> = sqlx::query_as(
         r#"
         SELECT option.id, option.kind, option.code, option.name, option.version_no,
-               option.standard_periods_per_week
+               option.standard_periods_per_week, option.scheduling_mode
         FROM (
             SELECT version.id, 'course'::text AS kind, subject.code,
                    version.name_th AS name, version.version_no,
-                   version.periods_per_week AS standard_periods_per_week
+                   version.periods_per_week AS standard_periods_per_week, NULL::text AS scheduling_mode
             FROM subject_versions version
             JOIN subjects subject ON subject.id = version.subject_id
             WHERE version.status = 'published'
@@ -1084,7 +1124,7 @@ pub async fn delivery_management_options(
             UNION ALL
             SELECT version.id, 'activity'::text AS kind, activity.code,
                    version.name, version.version_no,
-                   NULL::integer AS standard_periods_per_week
+                   NULL::integer AS standard_periods_per_week, version.scheduling_mode
             FROM activity_versions version
             JOIN activities activity ON activity.id = version.activity_id
             WHERE version.status = 'published'
@@ -1112,6 +1152,7 @@ pub async fn delivery_management_options(
         .map(|row| DeliveryCatalogVersionOption {
             id: row.id,
             kind: row.kind,
+            scheduling_mode: row.scheduling_mode,
             label: format!("{} — {} (ฉบับ {})", row.code, row.name, row.version_no),
             code: row.code,
             name: row.name,
@@ -1283,6 +1324,40 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::Barrier;
     use tokio::time::{timeout, Duration};
+
+    #[test]
+    fn central_states_require_an_open_synchronized_activity_without_applicable_groups() {
+        let mode = Some(ActivitySchedulingMode::Synchronized);
+        assert_eq!(
+            classify_opening_group_mode(true, mode, RequirementKind::Required, &[]),
+            HomeroomGroupMode::Central
+        );
+        assert_eq!(
+            classify_opening_teacher_state(true, mode, &[]),
+            HomeroomTeacherState::Deferred
+        );
+        assert_eq!(
+            classify_opening_group_mode(false, mode, RequirementKind::Required, &[]),
+            HomeroomGroupMode::Missing
+        );
+        assert_eq!(
+            classify_opening_group_mode(
+                true,
+                Some(ActivitySchedulingMode::Independent),
+                RequirementKind::Required,
+                &[]
+            ),
+            HomeroomGroupMode::Missing
+        );
+        assert_eq!(
+            classify_opening_group_mode(true, mode, RequirementKind::Required, &[1]),
+            HomeroomGroupMode::Normal
+        );
+        assert_eq!(
+            classify_opening_teacher_state(true, mode, &[0]),
+            HomeroomTeacherState::MissingPrimary
+        );
+    }
 
     #[tokio::test]
     async fn context_and_homeroom_reads_start_concurrently() {

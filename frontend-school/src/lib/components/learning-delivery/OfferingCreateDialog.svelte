@@ -6,6 +6,8 @@
 		type LearningOfferingOverviewItem
 	} from '#lib/api/learning-delivery.js';
 	import type { SynchronizedActivityPreparationTarget } from '#lib/academic/synchronized-activity-delivery.js';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -19,12 +21,14 @@
 		academicTermId,
 		onCreated,
 		onApplied,
-		defaultDeliveryVersionId = null
+		defaultDeliveryVersionId = null,
+		showTrigger = true
 	}: {
 		academicTermId: string;
 		onCreated: (item: LearningOfferingOverviewItem) => void;
 		onApplied: () => Promise<void>;
 		defaultDeliveryVersionId?: string | null;
+		showTrigger?: boolean;
 	} = $props();
 
 	let open = $state(false);
@@ -35,6 +39,7 @@
 	let options = $state.raw<DeliveryManagementOptions | null>(null);
 	let optionsLoading = $state(false);
 	let saving = $state(false);
+	let activityOpeningMode = $state<'central' | 'groups'>('central');
 	let errorMessage = $state('');
 	let draft = $state({
 		kind: 'course' as 'course' | 'activity',
@@ -92,6 +97,11 @@
 		saving = true;
 		errorMessage = '';
 		try {
+			const catalog = options.catalogVersions.find(
+				(item) => item.id === draft.catalogVersionId && item.kind === draft.kind
+			);
+			if (!catalog || (draft.kind === 'activity' && !catalog.schedulingMode))
+				throw new Error('ไม่พบรูปแบบกิจกรรม กรุณาโหลดตัวเลือกอีกครั้ง');
 			const targets = [
 				{
 					targetKind: 'grade_program' as const,
@@ -116,7 +126,8 @@
 							activityVersionId: draft.catalogVersionId,
 							curriculumActivityRequirementId: null,
 							registrationType: 'assigned',
-							schedulingMode: 'synchronized',
+							schedulingMode: catalog.schedulingMode!,
+							createHomeroomGroups: activityOpeningMode === 'groups',
 							capacity: null,
 							attendanceRequirement: { minimumPercent: '80.00', requiredSessions: null },
 							passCriteria: {
@@ -141,6 +152,12 @@
 			});
 			draft = { ...draft, catalogVersionId: '' };
 			open = false;
+			if (draft.kind === 'activity' && activityOpeningMode === 'groups')
+				await goto(
+					resolve(
+						`staff/academic/delivery/${offering.id}?deliveryVersionId=${deliveryVersionId ?? ''}`
+					)
+				);
 		} catch (error) {
 			errorMessage = error instanceof Error ? error.message : 'สร้างรายการเปิดสอนไม่สำเร็จ';
 		} finally {
@@ -154,14 +171,16 @@
 	}
 </script>
 
-<Button onclick={() => showDialog(null)}><Plus class="size-4" /> เปิดการเรียนการสอน</Button>
+{#if showTrigger}<Button onclick={() => showDialog(null)}
+		><Plus class="size-4" /> เปิดการเรียนการสอน</Button
+	>{/if}
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
 		<Dialog.Header>
 			<Dialog.Title>
 				{preparationTarget
-					? `เปิดใช้งาน ${preparationTarget.code} · ${preparationTarget.name}`
+					? `เพิ่มกิจกรรม ${preparationTarget.code} · ${preparationTarget.name}`
 					: 'เปิดการเรียนการสอนในภาคเรียนนี้'}
 			</Dialog.Title>
 			<Dialog.Description
@@ -264,9 +283,31 @@
 							/>
 						</div>
 					</div>
+					{#if draft.kind === 'activity' && options.catalogVersions.find((item) => item.id === draft.catalogVersionId)?.schedulingMode === 'synchronized'}
+						<div class="space-y-2">
+							<Label for="activity-opening-mode">รูปแบบการเปิด</Label><Select.Root
+								type="single"
+								bind:value={activityOpeningMode}
+								><Select.Trigger id="activity-opening-mode" class="w-full"
+									>{activityOpeningMode === 'central'
+										? 'เปิดแบบกลาง'
+										: 'เปิดพร้อมจัดกลุ่ม'}</Select.Trigger
+								><Select.Content
+									><Select.Item value="central">เปิดแบบกลาง</Select.Item><Select.Item value="groups"
+										>เปิดพร้อมจัดกลุ่ม</Select.Item
+									></Select.Content
+								></Select.Root
+							>
+							<p class="text-xs text-muted-foreground">
+								เปิดแบบกลางจัดคาบร่วมกันได้ทันที เปิดพร้อมจัดกลุ่มสร้างหนึ่งกลุ่มต่อห้องเป้าหมาย
+								แล้วมอบหมายครูก่อนเผยแพร่
+							</p>
+						</div>
+					{/if}
 					<p class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
 						ระบบจะใช้กลุ่มสาระหรือกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ และสร้างเป็นฉบับร่าง
-						คุณยังต้องเพิ่มกลุ่มเรียน มอบหมายครู และตรวจรายชื่อก่อนเผยแพร่
+						กิจกรรมกลางจัดกลุ่มและกำหนดครูภายหลังได้
+						ส่วนรายวิชาและกลุ่มที่สร้างแล้วต้องตรวจกลุ่มและครูก่อนเผยแพร่
 					</p>
 					{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 					<Dialog.Footer

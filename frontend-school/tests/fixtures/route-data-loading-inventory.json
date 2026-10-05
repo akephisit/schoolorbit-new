@@ -294,7 +294,7 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-delivery",
-			"notes": "Route loads opening versions and its delivery journal independently; selected immutable opening identity precedes homeroom graph hydration. Offering graph stays tab-lazy; explicit refresh updates only visible regions and their version/journal references.",
+			"notes": "Route loads opening versions and its delivery journal independently; selected immutable opening identity precedes homeroom graph hydration. Offering graph stays tab-lazy; explicit refresh updates only visible regions and their version/journal references. Published activity actions refresh eligible drafts only on demand, then reuse the selected draft route promises; management options remain lazy and term-scoped.",
 			"browserMount": {
 				"reason": "Realtime changes reconcile the selected unpublished opening only; initial route reads stay in the loader. Visibility and focus reconcile missed deletion events, with a visible-only interval for readers outside school-wide timetable socket scope.",
 				"tests": [

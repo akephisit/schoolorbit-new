@@ -336,6 +336,14 @@ node --test ../scripts/tests/school-release-scope.test.mjs \
 node --test ../scripts/tests/worker-release-candidates.test.mjs
 ```
 
+The push worker browser harness reads the production-built `service-worker.js` unchanged and serves it on an isolated local origin. Build `frontend-school` first, install Playwright Chromium and WebKit with their Linux dependencies, then run:
+
+```bash
+npx playwright test tests/e2e/service-worker-production.spec.ts --project=chromium --workers=1
+```
+
+This harness launches both browser engines for fresh direct navigation, reload, offline recovery and replacement of an old intercepting worker without losing entered data. Its Push test uses Chromium's full browser channel; Linux WebKit does not expose Playwright's worker evaluation API. Opening activity fixtures in `homeroom-delivery-workspace.spec.ts` block workers and cover central/grouped activation separately. Do not build while a production preview or browser suite is running; restart the preview after changing its build output.
+
 ## Frontend Admin
 
 From `frontend-admin`:
