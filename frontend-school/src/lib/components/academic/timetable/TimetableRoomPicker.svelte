@@ -9,11 +9,13 @@
 		rooms,
 		value,
 		disabled = false,
+		size = 'default',
 		onValueChange
 	}: {
 		rooms: TimetableBlockWorkspaceRoom[];
 		value: string | null;
 		disabled?: boolean;
+		size?: 'sm' | 'default';
 		onValueChange: (roomId: string | null) => void;
 	} = $props();
 
@@ -31,7 +33,11 @@
 	{disabled}
 	onValueChange={(next) => onValueChange(next === noRoomValue ? null : next)}
 >
-	<Select.Trigger class="w-full min-w-0" aria-label="เลือกห้องเรียน">
+	<Select.Trigger
+		{size}
+		class={['w-full min-w-0', size === 'sm' && 'text-xs']}
+		aria-label="เลือกห้องเรียน"
+	>
 		<span class="flex min-w-0 items-center gap-1.5">
 			<Building2 class="size-3.5 shrink-0" />
 			<span class="truncate">{selectedRoom ? roomLabel(selectedRoom) : 'ไม่ระบุห้อง'}</span>

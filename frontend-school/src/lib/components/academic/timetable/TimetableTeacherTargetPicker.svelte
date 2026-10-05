@@ -10,6 +10,7 @@
 		value = [],
 		lockedIds = [],
 		disabled = false,
+		size = 'default',
 		label = 'ครูที่กันเวลาไว้',
 		showLabel = true,
 		onValueChange
@@ -18,6 +19,7 @@
 		value?: string[];
 		lockedIds?: string[];
 		disabled?: boolean;
+		size?: 'sm' | 'default';
 		label?: string;
 		showLabel?: boolean;
 		onValueChange: (value: string[]) => void;
@@ -66,7 +68,8 @@
 					{...props}
 					type="button"
 					variant="outline"
-					class="w-full justify-between"
+					{size}
+					class={['w-full justify-between', size === 'sm' && 'text-xs']}
 					{disabled}
 				>
 					<span class="flex min-w-0 items-center gap-1.5">

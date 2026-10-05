@@ -44,6 +44,8 @@ export interface TimetableMockOptions {
 	blocks?: MockBlock[];
 	ordinaryDemands?: TimetableBlockWorkspace['ordinaryDemands'];
 	learningGroups?: TimetableBlockWorkspace['learningGroups'];
+	homerooms?: TimetableBlockWorkspace['homerooms'];
+	staff?: TimetableBlockWorkspace['staff'];
 	requiredPeriods?: number;
 	eligibleInstructorIds?: string[];
 	blockedPeriodId?: string;
@@ -358,7 +360,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 					eligibleInstructors: instructors([timetableIds.teacherB])
 				}
 			],
-			homerooms: [
+			homerooms: options.homerooms ?? [
 				{
 					id: timetableIds.homeroom,
 					code: 'M1-1',
@@ -374,7 +376,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				{ id: timetableIds.room, code: 'MATH-1', name: 'ห้องคณิตศาสตร์', status: 'ACTIVE' },
 				{ id: timetableIds.roomB, code: 'LAB-2', name: 'ห้องปฏิบัติการ 2', status: 'ACTIVE' }
 			],
-			staff: [
+			staff: options.staff ?? [
 				{ id: timetableIds.teacherA, displayName: 'ครูคณิตศาสตร์ A', status: 'active' },
 				{ id: timetableIds.teacherB, displayName: 'ครูคณิตศาสตร์ B', status: 'active' }
 			],

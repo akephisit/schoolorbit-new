@@ -266,7 +266,7 @@ test('keeps teacher-view card typography compact and inside its period column', 
 	expect(cardBox).not.toBeNull();
 	expect(cardBox!.x).toBeGreaterThanOrEqual(cellBox!.x + 5);
 	expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(cellBox!.x + cellBox!.width - 5);
-	expect(Math.max(...textMetrics.map((metric) => metric.fontSize))).toBeLessThanOrEqual(9);
+	expect(Math.max(...textMetrics.map((metric) => metric.fontSize))).toBe(11);
 	for (const metric of textMetrics) {
 		expect(metric.lineHeight - metric.fontSize).toBeGreaterThanOrEqual(4);
 	}

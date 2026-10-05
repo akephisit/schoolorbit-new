@@ -172,27 +172,30 @@
 </script>
 
 <aside
-	class="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background xl:absolute xl:inset-0"
+	class="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background text-xs xl:absolute xl:inset-0"
 	aria-label="คาบที่ยังไม่ได้จัด"
 >
-	<div class="flex items-center justify-between shrink-0 gap-3 border-b px-4 py-3">
+	<div class="flex items-center justify-between shrink-0 gap-2 border-b px-3 py-2">
 		<div>
-			<h2 class="font-semibold">ถาดคาบที่รอจัด</h2>
-			<p class="text-xs text-muted-foreground">เลือกครูและห้องให้คาบนั้น แล้วลากลงสมุดตาราง</p>
+			<h2 class="text-sm font-semibold">ถาดคาบที่รอจัด</h2>
+			<p class="text-[0.65rem] text-muted-foreground">
+				เลือกครูและห้องให้คาบนั้น แล้วลากลงสมุดตาราง
+			</p>
 		</div>
 		<Badge variant="secondary">{visibleOrdinary.length + visibleSynchronized.length} รายการ</Badge>
 	</div>
-	<div class="shrink-0 border-b p-3">
+	<div class="shrink-0 border-b p-2">
 		<Button
 			type="button"
 			variant="outline"
-			class="w-full justify-start"
+			size="sm"
+			class="w-full justify-start text-xs"
 			{disabled}
 			onclick={onOpenStructural}
 		>
 			<Plus class="size-4 text-amber-600" /> เพิ่มคาบพิเศษ
 		</Button>
-		<p class="mt-1.5 text-[0.7rem] text-muted-foreground">
+		<p class="mt-1.5 text-[0.65rem] text-muted-foreground">
 			หน้าเสาธง โฮมรูม พัก ประชุมครู หรือกิจกรรมอื่นที่ไม่ใช่รายวิชา
 		</p>
 	</div>
@@ -200,28 +203,28 @@
 	{#if visibleOrdinary.length === 0 && visibleSynchronized.length === 0}
 		<div class="flex flex-col items-center gap-2 px-5 py-10 text-center text-muted-foreground">
 			<Inbox class="size-7" />
-			<p class="text-sm font-medium text-foreground">จัดครบตามเป้าหมายแล้ว</p>
+			<p class="text-xs font-medium text-foreground">จัดครบตามเป้าหมายแล้ว</p>
 			<p class="text-xs">หากเป้าหมายเปลี่ยน ให้ปรับจำนวนคาบจากหน้าจัดการเรียน</p>
 		</div>
 	{:else}
 		<div
-			class="min-h-0 max-h-[42rem] space-y-5 overflow-y-auto p-3 xl:max-h-none xl:flex-1"
+			class="min-h-0 max-h-[42rem] space-y-3 overflow-y-auto p-2 xl:max-h-none xl:flex-1"
 			data-timetable-tray-scroll
 		>
 			{#if visibleSynchronized.length > 0}
 				<section class="space-y-2">
 					<div class="flex items-center gap-2 px-1">
 						<div class="h-4 w-1 rounded-full bg-violet-500"></div>
-						<h3 class="text-xs font-semibold">กิจกรรมพร้อมกัน</h3>
+						<h3 class="text-[0.65rem] font-semibold">กิจกรรมพร้อมกัน</h3>
 					</div>
 					{#each visibleSynchronized as demand (demand.learningOfferingId)}
 						<article
 							draggable={!disabled}
-							class="relative cursor-grab rounded-lg border border-l-4 border-l-violet-500 bg-violet-50/40 p-3 active:cursor-grabbing dark:bg-violet-950/10"
+							class="relative cursor-grab rounded-lg border border-l-4 border-l-violet-500 bg-violet-50/40 p-2 active:cursor-grabbing dark:bg-violet-950/10"
 							ondragstart={(event) => dragSynchronized(demand, event)}
 							ondragend={onCancelDrag}
 						>
-							<Badge variant="secondary" class="absolute right-3 top-3">
+							<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
 								{demand.requiredPeriods - demand.scheduledPeriods}/{demand.requiredPeriods}
 							</Badge>
 							<div class="flex items-start pr-12">
@@ -234,15 +237,16 @@
 										onChooseDemand(selection.source, selection.candidate);
 									}}
 								>
-									<p class="text-sm font-medium">{demand.offeringName}</p>
-									<p class="mt-1 text-[0.7rem] text-muted-foreground">
+									<p class="text-xs font-medium">{demand.offeringName}</p>
+									<p class="mt-1 text-[0.65rem] text-muted-foreground">
 										พร้อมกัน {demand.intendedHomeroomIds.length} ห้อง
 									</p>
 								</button>
 							</div>
-							<div class="mt-3 space-y-2" data-timetable-tray-settings>
+							<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
 								<div class="min-w-0">
 									<TimetableTeacherTargetPicker
+										size="sm"
 										{staff}
 										value={synchronizedTeacherChoices[demand.learningOfferingId] ?? []}
 										label="ครูที่กันเวลาไว้"
@@ -253,6 +257,7 @@
 								</div>
 								<div class="min-w-0">
 									<TimetableRoomPicker
+										size="sm"
 										{rooms}
 										value={selectedSynchronizedRoomId(demand)}
 										{disabled}
@@ -273,17 +278,17 @@
 				<section class="space-y-2">
 					<div class="flex items-center gap-2 px-1">
 						<div class="h-4 w-1 rounded-full bg-primary"></div>
-						<h3 class="text-xs font-semibold">รายวิชาและกิจกรรมรายกลุ่ม</h3>
+						<h3 class="text-[0.65rem] font-semibold">รายวิชาและกิจกรรมรายกลุ่ม</h3>
 					</div>
 					{#each visibleOrdinary as demand (demand.learningGroupId)}
 						{@const selectedIds = selectedInstructorIds(demand)}
 						<article
 							draggable={!disabled && selectedIds.length > 0}
-							class="relative rounded-lg border border-l-4 border-l-primary bg-muted/15 p-3"
+							class="relative rounded-lg border border-l-4 border-l-primary bg-muted/15 p-2"
 							ondragstart={(event) => dragOrdinary(demand, event)}
 							ondragend={onCancelDrag}
 						>
-							<Badge variant="secondary" class="absolute right-3 top-3">
+							<Badge variant="secondary" class="absolute right-2 top-2 px-1.5 text-[0.65rem]">
 								{demand.remainingPeriods}/{demand.requiredPeriods}
 							</Badge>
 							<div class="flex items-start pr-12">
@@ -297,12 +302,12 @@
 									}}
 								>
 									{#if groupById.get(demand.learningGroupId)?.offeringKind === 'course'}
-										<p class="text-xs font-semibold text-primary">{demand.offeringCode}</p>
+										<p class="text-[0.65rem] font-semibold text-primary">{demand.offeringCode}</p>
 									{/if}
-									<p class="line-clamp-2 text-sm font-medium">{demand.offeringName}</p>
+									<p class="line-clamp-2 text-xs font-medium">{demand.offeringName}</p>
 								</button>
 							</div>
-							<div class="mt-3 space-y-2" data-timetable-tray-settings>
+							<div class="mt-2 space-y-1.5" data-timetable-tray-settings>
 								<div class="min-w-0">
 									<Popover.Root>
 										<Popover.Trigger>
@@ -311,7 +316,8 @@
 													{...props}
 													type="button"
 													variant="outline"
-													class="w-full justify-between"
+													size="sm"
+													class="w-full justify-between text-xs"
 													disabled={disabled || demand.eligibleInstructors.length === 0}
 												>
 													<span class="flex min-w-0 items-center gap-1.5">
@@ -370,6 +376,7 @@
 								</div>
 								<div class="min-w-0">
 									<TimetableRoomPicker
+										size="sm"
 										{rooms}
 										value={selectedOrdinaryRoomId(demand)}
 										{disabled}

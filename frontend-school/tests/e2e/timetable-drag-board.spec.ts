@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { CreateStructuralTimetableBlocksRequest } from '../../src/lib/api/timetable';
 
 import {
 	installTimetableMock,
@@ -156,6 +157,97 @@ test('preserves multiline special-period titles while creating, editing, and dis
 	expect(await createTitle.evaluate((element) => element.tagName)).toBe('TEXTAREA');
 	await createTitle.fill(title);
 	await expect(createTitle).toHaveValue(title);
+});
+
+test('preserves a custom special-period title when its type changes', async ({ page }) => {
+	await installTimetableMock(page);
+	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
+	const dialog = page.getByRole('dialog', { name: 'เพิ่มคาบพิเศษ' });
+	const kind = dialog.getByRole('button', { name: 'เลือกประเภทคาบพิเศษ' });
+	const title = dialog.getByLabel('ชื่อที่แสดง');
+	await kind.click();
+	await page.getByRole('option', { name: 'โฮมรูม', exact: true }).click();
+	await expect(title).toHaveValue('โฮมรูม');
+	await title.fill('โฮมรูม');
+	await kind.click();
+	await page.getByRole('option', { name: 'กิจกรรมอื่น', exact: true }).click();
+	await expect(title).toHaveValue('โฮมรูม');
+	await title.fill('พบครูที่ปรึกษา\nและเตรียมกิจกรรม');
+	for (const name of ['กิจกรรมอื่น', 'กิจกรรมวิชาการ']) {
+		await kind.click();
+		await page.getByRole('option', { name, exact: true }).click();
+		await expect(kind).toHaveText(name);
+		await expect(title).toHaveValue('พบครูที่ปรึกษา\nและเตรียมกิจกรรม');
+	}
+});
+
+test('keeps all room and teacher choices visible and submits all except the unchecked targets', async ({
+	page
+}) => {
+	const secondHomeroom = '81000000-0000-4000-8000-000000000202';
+	await installTimetableMock(page, {
+		homerooms: [timetableIds.homeroom, secondHomeroom].map((id, index) => ({
+			id,
+			code: `M1-${index + 1}`,
+			name: `ม.1/${index + 1}`,
+			gradeLevelId: '81000000-0000-4000-8000-000000000301',
+			gradeLevelType: 'secondary',
+			gradeLevelYear: 1,
+			roomNumber: String(index + 1),
+			isActive: true
+		}))
+	});
+	let submitted: CreateStructuralTimetableBlocksRequest | undefined;
+	await page.route('**/api/academic/timetable-blocks/structural', async (route) => {
+		submitted = route.request().postDataJSON();
+		await route.fulfill({ json: { success: true, data: [] } });
+	});
+	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มคาบพิเศษ' }).click();
+	const dialog = page.getByRole('dialog', { name: 'เพิ่มคาบพิเศษ' });
+	const allRooms = dialog.getByRole('button', { name: 'ทุกห้อง', exact: true });
+	const rooms = dialog.getByRole('group', { name: 'เลือกห้องประจำชั้น' });
+	const teachers = dialog.getByRole('group', { name: 'เลือกครู', exact: true });
+	await expect(allRooms).toHaveAttribute('aria-pressed', 'true');
+	await expect(rooms.getByRole('button')).toHaveCount(2);
+	await allRooms.click();
+	await expect(rooms.getByRole('button', { pressed: true })).toHaveCount(0);
+	await allRooms.click();
+	await expect(rooms.getByRole('button', { pressed: true })).toHaveCount(2);
+	await rooms.getByRole('button', { name: 'ม.1/1', exact: true }).click();
+	await expect(allRooms).toHaveAttribute('aria-pressed', 'false');
+	await expect(rooms.getByRole('button', { name: 'ม.1/2', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	const allTeachers = dialog.getByRole('button', { name: 'ครูทุกคน', exact: true });
+	await allTeachers.click();
+	await expect(teachers.getByRole('button', { pressed: true })).toHaveCount(2);
+	const teacherA = teachers.getByRole('button', { name: 'ครูคณิตศาสตร์ A', exact: true });
+	await teacherA.focus();
+	await teacherA.press('Space');
+	await expect(teacherA).toHaveAttribute('aria-pressed', 'false');
+	await expect(allTeachers).toHaveAttribute('aria-pressed', 'false');
+	await expect(
+		teachers.getByRole('button', { name: 'ครูคณิตศาสตร์ B', exact: true })
+	).toHaveAttribute('aria-pressed', 'true');
+	await dialog.getByLabel('ชื่อที่แสดง').fill('กิจกรรมทดสอบ');
+	await dialog.getByRole('button', { name: 'เลือก', exact: true }).first().click();
+	await dialog.getByRole('button', { name: 'เพิ่ม 1 ช่อง', exact: true }).click();
+	await expect
+		.poll(() => submitted)
+		.toMatchObject({
+			timetableVersionId: timetableIds.draftVersion,
+			title: 'กิจกรรมทดสอบ',
+			allHomerooms: false,
+			allTeachers: false,
+			homeroomIds: [secondHomeroom],
+			teacherIds: [timetableIds.teacherB],
+			slots: [{ dayOfWeek: 'MON', bellSchedulePeriodId: timetableIds.period1 }]
+		});
 });
 
 test('keeps timetable and tray cards draggable without drag icons or structural badges', async ({

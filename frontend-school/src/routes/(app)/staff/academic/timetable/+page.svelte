@@ -149,13 +149,20 @@
 	type StructuralForm = {
 		kind: TimetableStructuralKind;
 		title: string;
+		titleEdited: boolean;
 		note: string;
 		roomId: string;
-		allHomerooms: boolean;
-		allTeachers: boolean;
 		homeroomIds: string[];
 		teacherIds: string[];
 		slots: string[];
+	};
+	const structuralTitles: Record<TimetableStructuralKind, string> = {
+		break: 'พัก',
+		homeroom: 'โฮมรูม',
+		flag_ceremony: 'กิจกรรมหน้าเสาธง',
+		teacher_meeting: 'ประชุมครู',
+		academic: 'กิจกรรมวิชาการ',
+		other: 'กิจกรรมอื่น'
 	};
 	const missingGroupsPrerequisite: AcademicPrerequisite = {
 		key: 'timetable-learning-groups',
@@ -263,6 +270,18 @@
 	let removeMode = $state<RemovalMode>('block');
 	let structuralOpen = $state(false);
 	let structuralForm = $state<StructuralForm>(newStructuralForm());
+	const allStructuralHomeroomsSelected = $derived(
+		(controller?.workspace.homerooms.length ?? 0) > 0 &&
+			(controller?.workspace.homerooms ?? []).every((item) =>
+				structuralForm.homeroomIds.includes(item.id)
+			)
+	);
+	const allStructuralTeachersSelected = $derived(
+		(controller?.workspace.staff.length ?? 0) > 0 &&
+			(controller?.workspace.staff ?? []).every((item) =>
+				structuralForm.teacherIds.includes(item.id)
+			)
+	);
 	let overviewDay = $state('MON');
 	onDestroy(() => {
 		request.abort();
@@ -348,11 +367,10 @@
 		return {
 			kind: 'flag_ceremony',
 			title: 'กิจกรรมหน้าเสาธง',
+			titleEdited: false,
 			note: '',
 			roomId: noRoomValue,
-			allHomerooms: true,
-			allTeachers: false,
-			homeroomIds: [],
+			homeroomIds: controller?.workspace.homerooms.map((item) => item.id) ?? [],
 			teacherIds: [],
 			slots: []
 		};
@@ -1601,20 +1619,22 @@
 	}
 
 	function setStructuralKind(kind: TimetableStructuralKind): void {
-		const titles: Record<TimetableStructuralKind, string> = {
-			break: 'พัก',
-			homeroom: 'โฮมรูม',
-			flag_ceremony: 'กิจกรรมหน้าเสาธง',
-			teacher_meeting: 'ประชุมครู',
-			academic: 'กิจกรรมวิชาการ',
-			other: 'กิจกรรมอื่น'
-		};
-		structuralForm.kind = kind;
-		structuralForm.title = titles[kind];
-		if (kind === 'teacher_meeting') {
-			structuralForm.allTeachers = true;
-			structuralForm.allHomerooms = false;
+		if (!structuralForm.titleEdited) {
+			structuralForm.title = structuralTitles[kind];
 		}
+		structuralForm.kind = kind;
+		if (kind === 'teacher_meeting') {
+			structuralForm.teacherIds = controller?.workspace.staff.map((item) => item.id) ?? [];
+			structuralForm.homeroomIds = [];
+		}
+	}
+
+	function toggleAllStructuralTargets(key: 'homeroomIds' | 'teacherIds'): void {
+		const options =
+			key === 'homeroomIds' ? controller?.workspace.homerooms : controller?.workspace.staff;
+		const allSelected =
+			key === 'homeroomIds' ? allStructuralHomeroomsSelected : allStructuralTeachersSelected;
+		structuralForm[key] = allSelected ? [] : (options ?? []).map((item) => item.id);
 	}
 
 	function toggleListValue(key: 'homeroomIds' | 'teacherIds' | 'slots', value: string): void {
@@ -1630,12 +1650,7 @@
 			toast.error('กรอกชื่อและเลือกอย่างน้อย 1 ช่องเวลา');
 			return;
 		}
-		if (
-			!structuralForm.allHomerooms &&
-			!structuralForm.allTeachers &&
-			structuralForm.homeroomIds.length === 0 &&
-			structuralForm.teacherIds.length === 0
-		) {
+		if (structuralForm.homeroomIds.length === 0 && structuralForm.teacherIds.length === 0) {
 			toast.error('เลือกห้องหรือครูอย่างน้อย 1 รายการ');
 			return;
 		}
@@ -1646,8 +1661,8 @@
 			title: structuralForm.title.trim(),
 			note: structuralForm.note.trim() || null,
 			roomId: structuralForm.roomId === noRoomValue ? null : structuralForm.roomId,
-			allHomerooms: structuralForm.allHomerooms,
-			allTeachers: structuralForm.allTeachers,
+			allHomerooms: false,
+			allTeachers: false,
 			homeroomIds: structuralForm.homeroomIds,
 			teacherIds: structuralForm.teacherIds,
 			slots: structuralForm.slots.map((slot) => {
@@ -1932,7 +1947,7 @@
 					</div>
 					{#if activeView === 'wholeSchool'}
 						<div class="space-y-1.5">
-							<Label class="text-xs text-muted-foreground">วันที่ดูภาพรวม</Label>
+							<Label class="text-sm text-muted-foreground">วันที่ดูภาพรวม</Label>
 							<Select.Root type="single" bind:value={overviewDay}>
 								<Select.Trigger class="w-full" aria-label="เลือกวันดูภาพรวม">
 									{days.find((day) => day.id === overviewDay)?.label ?? 'เลือกวัน'}
@@ -1946,7 +1961,7 @@
 						</div>
 					{:else}
 						<div class="space-y-1.5">
-							<Label class="text-xs text-muted-foreground">
+							<Label class="text-sm text-muted-foreground">
 								{controller.view === 'homeroom'
 									? 'ห้องประจำชั้น'
 									: controller.view === 'teacher'
@@ -2062,56 +2077,25 @@
 				<AcademicPrerequisiteNotice prerequisite={missingRoomsPrerequisite} />
 			{/if}
 
-			<div class="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-				<div class="rounded-lg border bg-background px-3 py-2">
-					<p class="text-[0.68rem] text-muted-foreground">คาบบนตาราง</p>
-					<p class="text-lg font-semibold">{controller.workspace.summary.blockCount}</p>
-				</div>
-				<div class="rounded-lg border bg-background px-3 py-2">
-					<p class="text-[0.68rem] text-muted-foreground">รายวิชารอจัด</p>
-					<p class="text-lg font-semibold">{controller.workspace.summary.ordinaryDemandCount}</p>
-				</div>
-				<div
-					class="rounded-lg border border-violet-500/25 bg-violet-50/40 px-3 py-2 dark:bg-violet-950/10"
-				>
-					<p class="text-[0.68rem] text-muted-foreground">กิจกรรมพร้อมกัน</p>
-					<p class="text-lg font-semibold">
-						{controller.workspace.summary.synchronizedDemandCount}
-					</p>
-				</div>
-				<div class="rounded-lg border bg-background px-3 py-2">
-					<p class="text-[0.68rem] text-muted-foreground">กลุ่มเชื่อมแล้ว</p>
-					<p class="text-lg font-semibold">{controller.workspace.summary.linkedGroupCount}</p>
-				</div>
-				<div class="rounded-lg border bg-background px-3 py-2">
-					<p class="text-[0.68rem] text-muted-foreground">รอข้อมูลกลุ่ม</p>
-					<p class="text-lg font-semibold">{controller.workspace.summary.waitingGroupCount}</p>
-				</div>
-				<div class="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2">
-					<p class="text-[0.68rem] text-muted-foreground">กลุ่มมีปัญหา</p>
-					<p class="text-lg font-semibold">{controller.workspace.summary.conflictGroupCount}</p>
-				</div>
-			</div>
-
 			{#if activeView === 'wholeSchool'}
 				<section class="min-w-0 overflow-hidden rounded-xl border bg-background">
 					<div class="border-b bg-muted/20 px-4 py-3">
 						<h2 class="font-semibold">
 							ภาพรวมทั้งโรงเรียน · วัน{days.find((day) => day.id === overviewDay)?.label}
 						</h2>
-						<p class="text-xs text-muted-foreground">
+						<p class="text-sm text-muted-foreground">
 							มุมมองนี้ใช้ตรวจภาพรวม หากต้องการจัดให้เปิดมุมมองห้องหรือครู
 						</p>
 					</div>
 					<div class="overflow-x-auto">
-						<table class="w-full min-w-[70rem] table-fixed border-collapse text-left text-xs">
+						<table class="w-full min-w-[70rem] table-fixed border-collapse text-left text-sm">
 							<thead>
 								<tr class="bg-muted/35">
 									<th class="sticky left-0 z-10 w-16 border-b border-r bg-muted px-2 py-2">ห้อง</th>
 									{#each controller.workspace.bellPeriods as period (period.id)}
 										<th class="border-b border-r px-1.5 py-2 text-center">
 											<p class="font-semibold">{periodLabel(period)}</p>
-											<p class="font-mono text-[0.65rem] font-normal text-muted-foreground">
+											<p class="font-mono text-xs font-normal text-muted-foreground">
 												{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
 											</p>
 										</th>
@@ -2318,7 +2302,7 @@
 								onValueChange={(value) => setStructuralKind(value as TimetableStructuralKind)}
 							>
 								<Select.Trigger class="w-full" aria-label="เลือกประเภทคาบพิเศษ">
-									{structuralForm.title}
+									{structuralTitles[structuralForm.kind]}
 								</Select.Trigger>
 								<Select.Content>
 									<Select.Item value="flag_ceremony">กิจกรรมหน้าเสาธง</Select.Item>
@@ -2335,6 +2319,7 @@
 							<Textarea
 								id="structural-title"
 								bind:value={structuralForm.title}
+								oninput={() => (structuralForm.titleEdited = true)}
 								rows={3}
 								placeholder="กด Enter เพื่อขึ้นบรรทัดใหม่"
 							/>
@@ -2371,28 +2356,35 @@
 								<Button
 									type="button"
 									size="sm"
-									variant={structuralForm.allHomerooms ? 'default' : 'outline'}
-									onclick={() => (structuralForm.allHomerooms = !structuralForm.allHomerooms)}
+									variant={allStructuralHomeroomsSelected ? 'default' : 'outline'}
+									aria-pressed={allStructuralHomeroomsSelected}
+									onclick={() => toggleAllStructuralTargets('homeroomIds')}
 								>
-									{#if structuralForm.allHomerooms}<Check class="size-3.5" />{/if} ทุกห้อง
+									{#if allStructuralHomeroomsSelected}<Check class="size-3.5" />{/if} ทุกห้อง
 								</Button>
 							</div>
-							{#if !structuralForm.allHomerooms}
-								<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
-									{#each controller?.workspace.homerooms ?? [] as homeroom (homeroom.id)}
-										<Button
-											type="button"
-											size="sm"
-											variant={structuralForm.homeroomIds.includes(homeroom.id)
-												? 'default'
-												: 'outline'}
-											onclick={() => toggleListValue('homeroomIds', homeroom.id)}
-										>
-											{homeroom.name}
-										</Button>
-									{/each}
-								</div>
-							{/if}
+							<div
+								role="group"
+								aria-label="เลือกห้องประจำชั้น"
+								class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2"
+							>
+								{#each controller?.workspace.homerooms ?? [] as homeroom (homeroom.id)}
+									<Button
+										type="button"
+										size="sm"
+										variant={structuralForm.homeroomIds.includes(homeroom.id)
+											? 'default'
+											: 'outline'}
+										aria-pressed={structuralForm.homeroomIds.includes(homeroom.id)}
+										onclick={() => toggleListValue('homeroomIds', homeroom.id)}
+									>
+										{#if structuralForm.homeroomIds.includes(homeroom.id)}<Check
+												class="size-3.5"
+											/>{/if}
+										{homeroom.name}
+									</Button>
+								{/each}
+							</div>
 						</section>
 						<section class="space-y-2">
 							<div class="flex items-center justify-between gap-2">
@@ -2400,28 +2392,33 @@
 								<Button
 									type="button"
 									size="sm"
-									variant={structuralForm.allTeachers ? 'default' : 'outline'}
-									onclick={() => (structuralForm.allTeachers = !structuralForm.allTeachers)}
+									variant={allStructuralTeachersSelected ? 'default' : 'outline'}
+									aria-pressed={allStructuralTeachersSelected}
+									onclick={() => toggleAllStructuralTargets('teacherIds')}
 								>
-									{#if structuralForm.allTeachers}<Check class="size-3.5" />{/if} ครูทุกคน
+									{#if allStructuralTeachersSelected}<Check class="size-3.5" />{/if} ครูทุกคน
 								</Button>
 							</div>
-							{#if !structuralForm.allTeachers}
-								<div class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
-									{#each controller?.workspace.staff ?? [] as teacher (teacher.id)}
-										<Button
-											type="button"
-											size="sm"
-											variant={structuralForm.teacherIds.includes(teacher.id)
-												? 'default'
-												: 'outline'}
-											onclick={() => toggleListValue('teacherIds', teacher.id)}
-										>
-											{teacher.displayName}
-										</Button>
-									{/each}
-								</div>
-							{/if}
+							<div
+								role="group"
+								aria-label="เลือกครู"
+								class="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2"
+							>
+								{#each controller?.workspace.staff ?? [] as teacher (teacher.id)}
+									<Button
+										type="button"
+										size="sm"
+										variant={structuralForm.teacherIds.includes(teacher.id) ? 'default' : 'outline'}
+										aria-pressed={structuralForm.teacherIds.includes(teacher.id)}
+										onclick={() => toggleListValue('teacherIds', teacher.id)}
+									>
+										{#if structuralForm.teacherIds.includes(teacher.id)}<Check
+												class="size-3.5"
+											/>{/if}
+										{teacher.displayName}
+									</Button>
+								{/each}
+							</div>
 						</section>
 					</div>
 				</div>

@@ -29,9 +29,9 @@
 	]}
 >
 	{#if card.code}
-		<p class="truncate text-[8px] leading-[14px] font-semibold text-primary">
+		<p class="truncate text-[10px] leading-[16px] font-semibold text-primary">
 			{card.code}
 		</p>
 	{/if}
-	<p class="truncate text-[9px] leading-[14px] font-semibold">{card.title}</p>
+	<p class="truncate text-[11px] leading-[16px] font-semibold">{card.title}</p>
 </article>

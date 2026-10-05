@@ -117,7 +117,7 @@
 			{#if showCode}
 				<p
 					data-timetable-card-line
-					class="truncate text-[8px] leading-[14px] font-semibold text-primary"
+					class="truncate text-[10px] leading-[16px] font-semibold text-primary"
 				>
 					{code}
 				</p>
@@ -126,7 +126,7 @@
 				data-timetable-card-line
 				data-timetable-card-title
 				class={[
-					'text-[9px] leading-[14px] font-semibold',
+					'text-[11px] leading-[16px] font-semibold',
 					block.blockKind === 'structural' ? 'line-clamp-3 whitespace-pre-line' : 'truncate'
 				]}
 			>
@@ -135,7 +135,7 @@
 			{#if resolvedTargetLabel}
 				<p
 					data-timetable-card-line
-					class="mt-1 truncate text-[8px] leading-[14px] text-muted-foreground"
+					class="mt-1 truncate text-[10px] leading-[16px] text-muted-foreground"
 				>
 					{resolvedTargetLabel}
 				</p>
@@ -144,7 +144,7 @@
 	</div>
 	<div
 		class={[
-			'mt-1 min-w-0 space-y-1 text-[8px] leading-[14px] text-muted-foreground',
+			'mt-1 min-w-0 space-y-1 text-[10px] leading-[16px] text-muted-foreground',
 			canEdit && 'pr-5'
 		]}
 	>
