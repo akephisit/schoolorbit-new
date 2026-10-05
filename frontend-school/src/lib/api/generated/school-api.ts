@@ -10119,6 +10119,7 @@ export interface components {
 				/** Format: uuid */
 				latestDeliveryVersionId: string;
 				learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
+				offeringSubjectGroups: components['schemas']['TimetableOfferingSubjectGroup'][];
 				ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
 				rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
 				sourceIssues: components['schemas']['TimetableSourceIssue'][];
@@ -19607,6 +19608,7 @@ export interface components {
 			/** Format: uuid */
 			latestDeliveryVersionId: string;
 			learningGroups: components['schemas']['TimetableBlockWorkspaceLearningGroup'][];
+			offeringSubjectGroups: components['schemas']['TimetableOfferingSubjectGroup'][];
 			ordinaryDemands: components['schemas']['TimetableOrdinaryDemand'][];
 			rooms: components['schemas']['TimetableBlockWorkspaceRoom'][];
 			sourceIssues: components['schemas']['TimetableSourceIssue'][];
@@ -19658,6 +19660,12 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			status: string;
+			subjectGroups: components['schemas']['TimetableSubjectGroup'][];
+		};
+		TimetableOfferingSubjectGroup: {
+			/** Format: uuid */
+			learningOfferingId: string;
+			subjectGroup: components['schemas']['TimetableSubjectGroup'];
 		};
 		TimetableOrdinaryDemand: {
 			eligibleInstructors: components['schemas']['TimetableBlockInstructor'][];
@@ -19741,6 +19749,13 @@ export interface components {
 			/** Format: uuid */
 			bellSchedulePeriodId: string;
 			dayOfWeek: string;
+		};
+		TimetableSubjectGroup: {
+			/** Format: int32 */
+			displayOrder: number | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
 		};
 		TimetableSynchronizedDemand: {
 			/** Format: int32 */

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import TimetableOwnerSelector from '#lib/components/academic/timetable/TimetableOwnerSelector.svelte';
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -311,9 +312,7 @@
 	const canEdit = $derived(Boolean(canManage && controller?.canEdit && !busy));
 	const selectedVersion = $derived(controller?.workspace.version ?? null);
 	let versionSelectValue = $derived(selectedVersion?.id ?? '');
-	const selectedOwner = $derived(
-		controller?.rows.find((row) => row.id === controller?.selectedOwnerId) ?? null
-	);
+
 	const selectedBlock = $derived(
 		controller?.workspace.blocks.find((block) => block.id === selectedBlockId) ?? null
 	);
@@ -1087,20 +1086,17 @@
 	async function exportTeacherLoad(): Promise<void> {
 		if (!controller || exportingTeacherLoad) return;
 		exportingTeacherLoad = true;
+		const workspace = controller.workspace;
+		const selectedTerm = $academicContext.options?.terms.find((term) => term.id === academicTermId);
+		const selectedYear = $academicContext.options?.years.find((year) => year.id === academicYearId);
 		try {
 			const { downloadTeacherLoadWorkbook } =
 				await import('#lib/utils/timetable-teacher-load-workbook.js');
-			const selectedTerm = $academicContext.options?.terms.find(
-				(term) => term.id === academicTermId
-			);
-			const selectedYear = $academicContext.options?.years.find(
-				(year) => year.id === academicYearId
-			);
 			const teacherCount = await downloadTeacherLoadWorkbook(
-				controller.workspace.blocks,
+				workspace,
 				`สรุปคาบสอนครู-${selectedTerm?.name ?? 'ภาคเรียน'}-${selectedYear?.name ?? 'ปีการศึกษา'}`
 			);
-			if (teacherCount === 0) toast.error('ไม่พบคาบสอนสำหรับภาคเรียนนี้');
+			if (teacherCount === 0) toast.error('ไม่พบคาบที่มีครูผู้รับผิดชอบในรุ่นตารางที่เลือก');
 			else toast.success(`ดาวน์โหลดสรุปคาบสอน ${teacherCount} คนแล้ว`);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งออกสรุปคาบสอนไม่สำเร็จ');
@@ -1970,25 +1966,15 @@
 												? 'ครูผู้สอน'
 												: 'กลุ่มเรียน'}
 									</Label>
-									<Select.Root
-										type="single"
+									<TimetableOwnerSelector
 										value={controller.selectedOwnerId ?? ''}
+										options={controller.rows}
 										onValueChange={changeOwner}
 										disabled={busy}
-									>
-										<Select.Trigger class="w-full" aria-label="เลือกรายการสำหรับจัดตาราง">
-											<span class="min-w-0 truncate"
-												>{selectedOwner
-													? `${selectedOwner.code} · ${selectedOwner.label}`
-													: 'เลือกรายการ'}</span
-											>
-										</Select.Trigger>
-										<Select.Content>
-											{#each controller.rows as row (row.id)}
-												<Select.Item value={row.id}>{row.code} · {row.label}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
+										placeholder="เลือกรายการ"
+										searchPlaceholder="ค้นหาชั้น กลุ่มเรียน หรือชื่อครู..."
+										ariaLabel="เลือกรายการสำหรับจัดตาราง"
+									/>
 								</div>
 							{/if}
 						</div>

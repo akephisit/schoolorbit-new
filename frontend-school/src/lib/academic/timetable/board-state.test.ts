@@ -119,9 +119,10 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 		] as TimetableBlockWorkspace['homerooms'],
 		rooms: [],
 		staff: [
-			{ id: 'teacher-1', displayName: 'ครูหนึ่ง', status: 'active' },
-			{ id: 'teacher-2', displayName: 'ครูสอง', status: 'active' }
+			{ id: 'teacher-1', displayName: 'ครูหนึ่ง', subjectGroups: [], status: 'active' },
+			{ id: 'teacher-2', displayName: 'ครูสอง', subjectGroups: [], status: 'active' }
 		],
+		offeringSubjectGroups: [],
 		blocks,
 		ordinaryDemands: [
 			{

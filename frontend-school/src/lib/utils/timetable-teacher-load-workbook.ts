@@ -1,11 +1,12 @@
 import type { Cell, Row, Workbook, Worksheet } from 'exceljs';
 
-import type { TimetableBlock } from '#lib/api/timetable.js';
+import type { TimetableBlockWorkspace } from '#lib/api/timetable.js';
 import {
 	buildTeacherLoadExportRows,
 	calculateTeacherLoadColumnWidths,
 	TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS,
 	TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS,
+	type TeacherLoadColumnWidthOptions,
 	type TeacherLoadExportRows
 } from '#lib/utils/timetable-teacher-load-export.js';
 
@@ -23,7 +24,6 @@ function styleCell(cell: Cell, emphasized = false): void {
 }
 
 function styleRow(row: Row, kind: 'header' | 'group' | 'detail'): void {
-	row.height = kind === 'header' ? 28 : 24;
 	row.eachCell({ includeEmpty: true }, (cell) => {
 		styleCell(cell, kind !== 'detail');
 		if (kind !== 'detail') {
@@ -40,9 +40,7 @@ function appendSheet(
 	workbook: Workbook,
 	name: string,
 	rows: Array<Array<string | number>>,
-	widthOptions:
-		| typeof TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS
-		| typeof TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS
+	widthOptions: TeacherLoadColumnWidthOptions
 ): Worksheet {
 	const worksheet = workbook.addWorksheet(name);
 	worksheet.columns = calculateTeacherLoadColumnWidths(rows, widthOptions).map((width) => ({
@@ -54,6 +52,22 @@ function appendSheet(
 		const row = worksheet.addRow(values);
 		const firstCell = String(values[0] ?? '');
 		styleRow(row, index === 0 ? 'header' : firstCell.startsWith('กลุ่มสาระ:') ? 'group' : 'detail');
+		const lines = Math.max(
+			...values.map((value, column) =>
+				String(value)
+					.split(/\r?\n/)
+					.reduce(
+						(count, line) =>
+							count +
+							Math.max(
+								1,
+								Math.ceil(Array.from(line).length / (worksheet.getColumn(column + 1).width ?? 12))
+							),
+						0
+					)
+			)
+		);
+		row.height = Math.max(index === 0 ? 56 : 28, lines * 20 + 8);
 	}
 
 	worksheet.views = [{ state: 'frozen', ySplit: 1 }];
@@ -105,10 +119,10 @@ function saveBuffer(buffer: ArrayBuffer, fileName: string): void {
 }
 
 export async function downloadTeacherLoadWorkbook(
-	entries: TimetableBlock[],
+	workspace: TimetableBlockWorkspace,
 	fileLabel: string
 ): Promise<number> {
-	const rows = buildTeacherLoadExportRows(entries);
+	const rows = buildTeacherLoadExportRows(workspace);
 	if (rows.summaryRows.length === 0) return 0;
 
 	const ExcelJSModule = await import('exceljs');
@@ -118,6 +132,23 @@ export async function downloadTeacherLoadWorkbook(
 	workbook.created = new Date();
 	workbook.modified = new Date();
 	appendSheets(workbook, rows);
+	appendSheet(
+		workbook,
+		'ข้อมูลรายงาน',
+		[
+			['ข้อมูล', 'ค่า'],
+			['ชื่อรายงาน', fileLabel],
+			['รุ่นตารางสอน', workspace.version.id],
+			['สถานะรุ่น', workspace.version.status === 'published' ? 'เผยแพร่แล้ว' : 'แบบร่าง'],
+			['เริ่มใช้', workspace.version.effectiveFrom ?? 'ยังไม่กำหนด'],
+			['สร้างรายงาน', workbook.created.toISOString()],
+			['ขอบเขต', 'คาบที่จัดแล้วของรุ่นที่เลือก ภายในสิทธิ์การเข้าถึง'],
+			['กลุ่มสาระ', 'ใช้สังกัดกลุ่มสาระครูและกลุ่มสาระรายวิชาปัจจุบัน'],
+			['การนับ', 'นับครูแต่ละคนครั้งเดียวต่อคาบ รวมครูหลัก ครูรอง กิจกรรมและคาบพิเศษ'],
+			['ข้อมูลไม่ครบ', 'วิชาที่ไม่มีข้อมูลกลุ่มสาระครูหรือรายวิชาแยกไว้ในวิชายังไม่ทราบกลุ่มสาระ']
+		],
+		{ minWidths: [18, 32], maxWidths: [24, 80] }
+	);
 	const buffer = await workbook.xlsx.writeBuffer();
 	saveBuffer(buffer, `${safeFileName(fileLabel)}.xlsx`);
 	return rows.summaryRows.length;

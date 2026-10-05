@@ -4565,3 +4565,90 @@ async fn migration_059_makes_academic_catalog_affiliation_authoritative() {
     .expect("catalog affiliation nullability must be queryable");
     assert_eq!(nullable_affiliation_columns, 0);
 }
+
+#[tokio::test]
+async fn migration_060_subject_group_projections_support_timetable_load() {
+    let pool = release_two_fixture("academic_060_timetable_subject_groups").await;
+    release_two_migrate(&pool).await;
+    let teacher = Uuid::new_v4();
+    let outside_teacher = Uuid::new_v4();
+    for id in [teacher, outside_teacher] {
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type) VALUES($1,$2,'!','Fixture','Teacher','staff')")
+            .bind(id).bind(id.to_string()).execute(&pool).await.unwrap();
+    }
+    let group = Uuid::new_v4();
+    let future_group = Uuid::new_v4();
+    for (id, name, order) in [
+        (group, "Fixture Math", 3_i32),
+        (future_group, "Fixture Future", 7_i32),
+    ] {
+        sqlx::query("INSERT INTO subject_groups(id,code,name_th,name_en,display_order,is_active) VALUES($1,$2,$3,$3,$4,true)")
+            .bind(id).bind(id.simple().to_string()[..20].to_string()).bind(name).bind(order).execute(&pool).await.unwrap();
+    }
+    let mut owner = Uuid::nil();
+    let mut units = std::collections::HashMap::new();
+    for (group_id, active, start, end) in [
+        (group, true, "2000-01-01", None),
+        (group, true, "2001-01-01", None),
+        (future_group, true, "2100-01-01", None),
+        (future_group, true, "2000-01-01", Some("2001-01-01")),
+        (future_group, false, "2000-01-01", None),
+    ] {
+        let unit = if let Some(unit) = units.get(&(group_id, active)) {
+            *unit
+        } else {
+            let unit = Uuid::new_v4();
+            sqlx::query("INSERT INTO organization_units(id,code,name,category,unit_type,subject_group_id,is_active) VALUES($1,$2,'Fixture Unit','academic','subject_group',$3,$4)")
+                .bind(unit).bind(unit.to_string()).bind(group_id).bind(active).execute(&pool).await.unwrap();
+            units.insert((group_id, active), unit);
+            unit
+        };
+        sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at,ended_at) VALUES($1,$2,'member',$3::text::date,$4::text::date)")
+            .bind(teacher).bind(unit).bind(start).bind(end).execute(&pool).await.unwrap();
+        if group_id == group {
+            owner = unit;
+        }
+    }
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at) VALUES($1,$2,'member','2000-01-01')")
+        .bind(outside_teacher).bind(owner).execute(&pool).await.unwrap();
+    let subject = Uuid::new_v4();
+    let version = Uuid::new_v4();
+    sqlx::query("INSERT INTO subjects(id,code,identity_key,subject_group_id,owning_organization_unit_id) VALUES($1,$2,$2,$3,$4)")
+        .bind(subject).bind(format!("FIX-{}", &subject.simple().to_string()[..12])).bind(group).bind(owner).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO subject_versions(id,subject_id,version_no,code,name_th,credit,type,start_academic_year_id,effective_from,status,is_active) SELECT $1,$2,1,$3,'Fixture Course',credit,type,start_academic_year_id,effective_from,'draft',true FROM subject_versions LIMIT 1")
+        .bind(version).bind(subject).bind(format!("FIX-{}", &subject.simple().to_string()[..12])).execute(&pool).await.unwrap();
+    let courses = school_academic_core::services::catalog::subject_groups_for_versions(
+        &pool,
+        &[version, Uuid::new_v4()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(courses.len(), 1);
+    assert_eq!(courses[0].subject_version_id, version);
+    assert_eq!(courses[0].subject_group_id, group);
+    assert_eq!(courses[0].name, "Fixture Math");
+    assert_eq!(courses[0].display_order, Some(3));
+    let teachers = school_staff::services::subject_groups_for_users(&pool, &[teacher])
+        .await
+        .unwrap();
+    assert_eq!(teachers.len(), 1);
+    assert_eq!(teachers[0].user_id, teacher);
+    assert_eq!(teachers[0].subject_group_id, group);
+    assert_eq!(teachers[0].display_order, Some(3));
+    assert!(
+        school_staff::services::subject_groups_for_users(&pool, &[Uuid::new_v4()])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(school_staff::services::subject_groups_for_users(&pool, &[])
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(
+        school_academic_core::services::catalog::subject_groups_for_versions(&pool, &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}

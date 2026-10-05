@@ -1554,6 +1554,8 @@ struct SchoolApiDoc;
         TimetableBlockWorkspaceHomeroom,
         TimetableBlockWorkspaceRoom,
         TimetableBlockWorkspaceStaff,
+        TimetableSubjectGroup,
+        TimetableOfferingSubjectGroup,
         TimetableOrdinaryDemand,
         TimetableSynchronizedDemand,
         TimetableBlockSummary,

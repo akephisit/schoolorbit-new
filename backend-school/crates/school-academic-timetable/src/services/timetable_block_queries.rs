@@ -9,8 +9,9 @@ use crate::models::timetable_block::{
     TimetableBlockKind, TimetableBlockSummary, TimetableBlockSyncState, TimetableBlockSyncStatus,
     TimetableBlockTeacher, TimetableBlockWorkspace, TimetableBlockWorkspaceHomeroom,
     TimetableBlockWorkspaceLearningGroup, TimetableBlockWorkspaceQuery,
-    TimetableBlockWorkspaceRoom, TimetableBlockWorkspaceStaff, TimetableOrdinaryDemand,
-    TimetableStructuralKind, TimetableSynchronizedDemand,
+    TimetableBlockWorkspaceRoom, TimetableBlockWorkspaceStaff, TimetableOfferingSubjectGroup,
+    TimetableOrdinaryDemand, TimetableStructuralKind, TimetableSubjectGroup,
+    TimetableSynchronizedDemand,
 };
 use crate::policy::TimetableAccessFilter;
 use school_academic_delivery::models::ActivitySchedulingMode;
@@ -495,14 +496,57 @@ pub(crate) async fn get_workspace(
             "จำนวนครูในพื้นที่จัดตารางเกิน 2000 คน".to_string(),
         ));
     }
+    let affiliations = school_staff::services::subject_groups_for_users(pool, &staff_ids).await?;
+    let mut subject_groups_by_staff = BTreeMap::<Uuid, Vec<TimetableSubjectGroup>>::new();
+    for affiliation in affiliations {
+        subject_groups_by_staff
+            .entry(affiliation.user_id)
+            .or_default()
+            .push(TimetableSubjectGroup {
+                id: affiliation.subject_group_id,
+                name: affiliation.name,
+                display_order: affiliation.display_order,
+            });
+    }
     let staff = staff
         .into_iter()
         .map(|row| TimetableBlockWorkspaceStaff {
             id: row.0,
             display_name: row.1,
             status: row.2,
+            subject_groups: subject_groups_by_staff.remove(&row.0).unwrap_or_default(),
         })
         .collect::<Vec<_>>();
+
+    let offering_versions = source
+        .snapshot
+        .offerings
+        .iter()
+        .filter(|offering| {
+            visible_offerings
+                .iter()
+                .any(|visible| visible.id == offering.id)
+                || blocks
+                    .iter()
+                    .any(|block| block.learning_offering_id == Some(offering.id))
+        })
+        .filter_map(|offering| match &offering.catalog {
+            school_academic_delivery::models::LearningOfferingSnapshot::Course(course) => {
+                Some((offering.id, course.subject_version_id))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let version_ids = offering_versions
+        .iter()
+        .map(|(_, id)| *id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let subject_groups =
+        school_academic_core::services::catalog::subject_groups_for_versions(pool, &version_ids)
+            .await?;
+    let offering_subject_groups = map_offering_subject_groups(&offering_versions, subject_groups);
 
     let summary = TimetableBlockSummary {
         block_count: blocks.len() as i32,
@@ -566,6 +610,7 @@ pub(crate) async fn get_workspace(
         homerooms,
         rooms,
         staff,
+        offering_subject_groups,
         summary,
     })
 }
@@ -915,4 +960,65 @@ fn parse_sync_status(value: &str) -> Result<TimetableBlockSyncStatus, AppError> 
 
 fn invalid_stored_value(field: &str, value: &str) -> AppError {
     AppError::InternalServerError(format!("ข้อมูลตารางสอนภายในไม่ถูกต้อง: {field}={value}"))
+}
+
+fn map_offering_subject_groups(
+    offering_versions: &[(Uuid, Uuid)],
+    subject_groups: Vec<school_academic_core::services::catalog::SubjectVersionSubjectGroup>,
+) -> Vec<TimetableOfferingSubjectGroup> {
+    let groups_by_version = subject_groups
+        .into_iter()
+        .map(|group| (group.subject_version_id, group))
+        .collect::<BTreeMap<_, _>>();
+    offering_versions
+        .iter()
+        .filter_map(|(offering_id, version_id)| {
+            let group = groups_by_version.get(version_id)?;
+            Some(TimetableOfferingSubjectGroup {
+                learning_offering_id: *offering_id,
+                subject_group: TimetableSubjectGroup {
+                    id: group.subject_group_id,
+                    name: group.name.clone(),
+                    display_order: group.display_order,
+                },
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod teacher_load_metadata_tests {
+    use super::*;
+    #[test]
+    fn preserves_offering_identity_and_uses_its_exact_subject_version() {
+        let offering_a = Uuid::new_v4();
+        let offering_b = Uuid::new_v4();
+        let missing = Uuid::new_v4();
+        let version = Uuid::new_v4();
+        let group = Uuid::new_v4();
+        let result = map_offering_subject_groups(
+            &[
+                (offering_a, version),
+                (offering_b, version),
+                (missing, Uuid::new_v4()),
+            ],
+            vec![
+                school_academic_core::services::catalog::SubjectVersionSubjectGroup {
+                    subject_version_id: version,
+                    subject_group_id: group,
+                    name: "คณิตศาสตร์".into(),
+                    display_order: Some(2),
+                },
+            ],
+        );
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].learning_offering_id, offering_a);
+        assert_eq!(result[1].learning_offering_id, offering_b);
+        assert!(
+            result
+                .iter()
+                .all(|row| row.subject_group.id == group
+                    && row.subject_group.display_order == Some(2))
+        );
+    }
 }

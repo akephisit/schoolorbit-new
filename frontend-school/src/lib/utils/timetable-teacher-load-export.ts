@@ -1,7 +1,15 @@
-import type { TimetableBlock, TimetableBlockInstructor } from '#lib/api/timetable.js';
+import type {
+	TimetableBlock,
+	TimetableBlockInstructor,
+	TimetableBlockWorkspace
+} from '#lib/api/timetable.js';
 
 export type TeacherLoadCategory =
-	'course' | 'independentActivity' | 'synchronizedActivity' | 'unspecifiedActivity';
+	| 'course'
+	| 'independentActivity'
+	| 'synchronizedActivity'
+	| 'unspecifiedActivity'
+	| 'specialPeriod';
 
 export type TeacherLoadDetailKind =
 	| 'homeGroupPrimaryCourse'
@@ -10,7 +18,9 @@ export type TeacherLoadDetailKind =
 	| 'sharedSecondaryCourse'
 	| 'independentActivity'
 	| 'synchronizedActivity'
-	| 'unspecifiedActivity';
+	| 'unspecifiedActivity'
+	| 'unclassifiedCourse'
+	| 'specialPeriod';
 
 export type TeacherLoadEntry = TimetableBlock;
 
@@ -27,6 +37,8 @@ export interface TeacherLoadSummaryRow {
 	independentActivityPeriods: number;
 	synchronizedActivityPeriods: number;
 	unspecifiedActivityPeriods: number;
+	unclassifiedCoursePeriods: number;
+	specialPeriods: number;
 	totalPeriods: number;
 }
 
@@ -49,6 +61,7 @@ export interface TeacherLoadDetailRow {
 	periodOrderIndex: number | null;
 	timeLabel: string;
 	homeroomName: string;
+	roomName: string;
 	title: string;
 }
 
@@ -65,6 +78,8 @@ export interface TeacherLoadSummaryGroup {
 		independentActivityPeriods: number;
 		synchronizedActivityPeriods: number;
 		unspecifiedActivityPeriods: number;
+		unclassifiedCoursePeriods: number;
+		specialPeriods: number;
 		totalPeriods: number;
 	};
 }
@@ -94,14 +109,14 @@ export interface TeacherLoadColumnWidthOptions {
 }
 
 export const TEACHER_LOAD_SUMMARY_COLUMN_WIDTH_OPTIONS = {
-	minWidths: [12, 14, 8, 8, 8, 8, 8, 8, 8, 8],
-	maxWidths: [20, 24, 14, 14, 14, 14, 14, 14, 14, 10],
+	minWidths: [12, 14, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8],
+	maxWidths: [20, 24, 14, 14, 14, 14, 14, 14, 14, 14, 14, 12],
 	padding: 2
 } satisfies TeacherLoadColumnWidthOptions;
 
 export const TEACHER_LOAD_DETAIL_COLUMN_WIDTH_OPTIONS = {
-	minWidths: [12, 14, 12, 12, 7, 7, 9, 10, 16],
-	maxWidths: [20, 24, 20, 22, 10, 12, 13, 18, 42],
+	minWidths: [12, 14, 12, 12, 8, 7, 7, 9, 10, 10, 16],
+	maxWidths: [20, 24, 20, 22, 14, 10, 12, 13, 24, 24, 42],
 	padding: 2
 } satisfies TeacherLoadColumnWidthOptions;
 
@@ -113,9 +128,11 @@ const CATEGORY_LABELS: Record<TeacherLoadDetailKind, string> = {
 	homeGroupSecondaryCourse: 'วิชาในกลุ่มสาระ (ครูรอง)',
 	sharedPrimaryCourse: 'วิชานอกกลุ่มสาระ (ครูหลัก)',
 	sharedSecondaryCourse: 'วิชานอกกลุ่มสาระ (ครูรอง)',
-	independentActivity: 'กิจกรรม independent',
-	synchronizedActivity: 'กิจกรรม synchronized',
-	unspecifiedActivity: 'กิจกรรมไม่ระบุประเภท'
+	independentActivity: 'กิจกรรมอิสระ',
+	synchronizedActivity: 'กิจกรรมพร้อมกัน',
+	unspecifiedActivity: 'กิจกรรมไม่ระบุประเภท',
+	unclassifiedCourse: 'วิชายังไม่ทราบกลุ่มสาระ',
+	specialPeriod: 'คาบพิเศษ/ภารกิจ'
 };
 
 const DETAIL_KIND_ORDER: Record<TeacherLoadDetailKind, number> = {
@@ -125,7 +142,9 @@ const DETAIL_KIND_ORDER: Record<TeacherLoadDetailKind, number> = {
 	sharedSecondaryCourse: 4,
 	independentActivity: 5,
 	synchronizedActivity: 6,
-	unspecifiedActivity: 7
+	unspecifiedActivity: 7,
+	unclassifiedCourse: 8,
+	specialPeriod: 9
 };
 
 const DAY_LABELS: Record<string, string> = {
@@ -150,37 +169,58 @@ const DAY_ORDER: Record<string, number> = {
 
 export function teacherLoadCategoryForEntry(entry: TeacherLoadEntry): TeacherLoadCategory | null {
 	if (entry.blockKind === 'course') return 'course';
-	if (entry.blockKind !== 'activity') return null;
+	if (entry.blockKind === 'structural') return 'specialPeriod';
 	if (entry.schedulingMode === 'independent') return 'independentActivity';
 	if (entry.schedulingMode === 'synchronized') return 'synchronizedActivity';
 	return 'unspecifiedActivity';
 }
 
-export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): TeacherLoadExportRows {
+export type TeacherLoadWorkspace = Pick<
+	TimetableBlockWorkspace,
+	'blocks' | 'staff' | 'offeringSubjectGroups' | 'homerooms' | 'rooms' | 'bellPeriods'
+>;
+
+export function buildTeacherLoadExportRows(workspace: TeacherLoadWorkspace): TeacherLoadExportRows {
+	const { blocks: entries } = workspace;
+	const staffById = new Map(workspace.staff.map((teacher) => [teacher.id, teacher]));
+	const offeringGroups = new Map(
+		workspace.offeringSubjectGroups.map((offering) => [
+			offering.learningOfferingId,
+			offering.subjectGroup
+		])
+	);
+	const homerooms = new Map(workspace.homerooms.map((room) => [room.id, room.name]));
+	const rooms = new Map(workspace.rooms.map((room) => [room.id, room.name]));
+	const periodOrders = new Map(
+		workspace.bellPeriods.map((period) => [period.id, period.orderIndex])
+	);
 	const summaries = new Map<string, TeacherLoadSummaryRow>();
 	const details = new Map<string, TeacherLoadDetailRow & { homeroomNames: string[] }>();
 
 	for (const entry of entries) {
+		if (!entry.isActive) continue;
 		const category = teacherLoadCategoryForEntry(entry);
 		if (!category) continue;
 
 		for (const instructor of instructorsForBlock(entry)) {
 			const teacherId = instructor.teacherId;
 			const teacherName = instructor.displayName;
-			const teacherSubjectGroup = teacherSubjectGroupForInstructor(instructor);
-			const instructorRole = instructor.role === 'primary' ? 'primary' : 'secondary';
+			const teacherGroups = staffById.get(teacherId)?.subjectGroups ?? [];
+			const teacherSubjectGroup = teacherSubjectGroupForInstructor(teacherGroups);
+			const itemSubjectGroup = itemSubjectGroupForEntry(entry, category, offeringGroups);
+			const targetNames = blockTargetNames(entry, teacherId, homerooms);
+			const instructorRole = instructor.role;
 			const detailKind = detailKindForEntry(
-				entry,
 				category,
-				teacherSubjectGroup.id,
+				teacherGroups.map((group) => group.id),
+				itemSubjectGroup.id,
 				instructorRole
 			);
-			const detailKey = teacherLoadDetailKey(entry, category, teacherId);
+			const detailKey = `${teacherId}|${entry.id}`;
 			const existingDetail = details.get(detailKey);
 
 			if (existingDetail) {
-				for (const name of blockTargetNames(entry))
-					appendUnique(existingDetail.homeroomNames, name);
+				for (const name of targetNames) appendUnique(existingDetail.homeroomNames, name);
 				existingDetail.homeroomName = existingDetail.homeroomNames.join(', ');
 				continue;
 			}
@@ -188,8 +228,7 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 			const summary = getOrCreateSummary(summaries, teacherId, teacherName, teacherSubjectGroup);
 			incrementSummary(summary, detailKind);
 
-			const itemSubjectGroup = itemSubjectGroupForEntry(entry, category);
-			const homeroomNames = uniqueNonEmpty(blockTargetNames(entry));
+			const homeroomNames = uniqueNonEmpty(targetNames);
 			details.set(detailKey, {
 				teacherId,
 				teacherName,
@@ -206,9 +245,10 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 				dayOfWeek: entry.dayOfWeek,
 				dayLabel: DAY_LABELS[entry.dayOfWeek] ?? entry.dayOfWeek,
 				periodName: entry.periodName ?? '',
-				periodOrderIndex: null,
+				periodOrderIndex: periodOrders.get(entry.bellSchedulePeriodId) ?? null,
 				timeLabel: formatTimeRange(entry.startTime, entry.endTime),
 				homeroomName: homeroomNames.join(', '),
+				roomName: blockRoomNames(entry, teacherId, rooms).join(', '),
 				title: entryTitle(entry, category),
 				homeroomNames
 			});
@@ -225,7 +265,9 @@ export function buildTeacherLoadExportRows(entries: TeacherLoadEntry[]): Teacher
 				row.sharedSecondaryCoursePeriods +
 				row.independentActivityPeriods +
 				row.synchronizedActivityPeriods +
-				row.unspecifiedActivityPeriods
+				row.unspecifiedActivityPeriods +
+				row.unclassifiedCoursePeriods +
+				row.specialPeriods
 		}))
 		.sort(compareSummaryRows);
 
@@ -296,6 +338,8 @@ function getOrCreateSummary(
 		independentActivityPeriods: 0,
 		synchronizedActivityPeriods: 0,
 		unspecifiedActivityPeriods: 0,
+		unclassifiedCoursePeriods: 0,
+		specialPeriods: 0,
 		totalPeriods: 0
 	};
 	summaries.set(teacherId, row);
@@ -309,38 +353,24 @@ function incrementSummary(summary: TeacherLoadSummaryRow, detailKind: TeacherLoa
 	else if (detailKind === 'sharedSecondaryCourse') summary.sharedSecondaryCoursePeriods += 1;
 	else if (detailKind === 'independentActivity') summary.independentActivityPeriods += 1;
 	else if (detailKind === 'synchronizedActivity') summary.synchronizedActivityPeriods += 1;
-	else summary.unspecifiedActivityPeriods += 1;
-}
-
-function teacherLoadDetailKey(
-	entry: TeacherLoadEntry,
-	category: TeacherLoadCategory,
-	teacherId: string
-): string {
-	if (category === 'synchronizedActivity' || category === 'unspecifiedActivity') {
-		const logicalActivityId = entry.learningOfferingId || entry.id;
-		return [
-			teacherId,
-			category,
-			logicalActivityId,
-			entry.dayOfWeek,
-			entry.bellSchedulePeriodId
-		].join('|');
-	}
-	return [teacherId, category, entry.id].join('|');
+	else if (detailKind === 'unspecifiedActivity') summary.unspecifiedActivityPeriods += 1;
+	else if (detailKind === 'unclassifiedCourse') summary.unclassifiedCoursePeriods += 1;
+	else summary.specialPeriods += 1;
 }
 
 function detailKindForEntry(
-	entry: TeacherLoadEntry,
 	category: TeacherLoadCategory,
-	teacherSubjectGroupId: string | null,
+	teacherSubjectGroupIds: string[],
+	itemSubjectGroupId: string | null,
 	instructorRole: string
 ): TeacherLoadDetailKind {
 	if (category === 'independentActivity') return 'independentActivity';
 	if (category === 'synchronizedActivity') return 'synchronizedActivity';
 	if (category === 'unspecifiedActivity') return 'unspecifiedActivity';
 
-	const isHomeGroup = false;
+	if (category === 'specialPeriod') return 'specialPeriod';
+	if (!itemSubjectGroupId || teacherSubjectGroupIds.length === 0) return 'unclassifiedCourse';
+	const isHomeGroup = teacherSubjectGroupIds.includes(itemSubjectGroupId);
 	const isPrimary = instructorRole === 'primary';
 
 	if (isHomeGroup && isPrimary) return 'homeGroupPrimaryCourse';
@@ -355,34 +385,44 @@ interface SubjectGroupMeta {
 	displayOrder: number | null;
 }
 
-function teacherSubjectGroupForInstructor(_instructor: TimetableBlockInstructor): SubjectGroupMeta {
+function teacherSubjectGroupForInstructor(
+	groups: TimetableBlockWorkspace['staff'][number]['subjectGroups']
+): SubjectGroupMeta {
+	const unique = [...new Map(groups.map((group) => [group.id, group])).values()].sort(
+		(a, b) =>
+			(a.displayOrder ?? 9999) - (b.displayOrder ?? 9999) ||
+			a.name.localeCompare(b.name, 'th') ||
+			a.id.localeCompare(b.id)
+	);
 	return {
-		id: null,
-		name: UNKNOWN_SUBJECT_GROUP_NAME,
-		displayOrder: null
+		id: unique.length ? unique.map((group) => group.id).join('|') : null,
+		name: unique.length ? unique.map((group) => group.name).join(', ') : UNKNOWN_SUBJECT_GROUP_NAME,
+		displayOrder: unique[0]?.displayOrder ?? null
 	};
 }
 
 function itemSubjectGroupForEntry(
 	entry: TeacherLoadEntry,
-	category: TeacherLoadCategory
+	category: TeacherLoadCategory,
+	groups: Map<string, TimetableBlockWorkspace['offeringSubjectGroups'][number]['subjectGroup']>
 ): SubjectGroupMeta {
-	if (category !== 'course') {
+	if (category !== 'course')
 		return {
 			id: null,
-			name: ACTIVITY_SUBJECT_GROUP_NAME,
+			name: category === 'specialPeriod' ? 'คาบพิเศษ/ภารกิจ' : ACTIVITY_SUBJECT_GROUP_NAME,
 			displayOrder: null
 		};
-	}
-
-	return {
-		id: null,
-		name: UNKNOWN_SUBJECT_GROUP_NAME,
-		displayOrder: null
-	};
+	return (
+		groups.get(entry.learningOfferingId ?? '') ?? {
+			id: null,
+			name: UNKNOWN_SUBJECT_GROUP_NAME,
+			displayOrder: null
+		}
+	);
 }
 
 function entryTitle(entry: TeacherLoadEntry, category: TeacherLoadCategory): string {
+	if (category === 'specialPeriod') return entry.title || 'คาบพิเศษ/ภารกิจ';
 	if (category === 'course') {
 		return [entry.offeringCode, entry.offeringName].filter(Boolean).join(' - ');
 	}
@@ -391,18 +431,59 @@ function entryTitle(entry: TeacherLoadEntry, category: TeacherLoadCategory): str
 
 function instructorsForBlock(entry: TeacherLoadEntry): TimetableBlockInstructor[] {
 	const byTeacher = new Map<string, TimetableBlockInstructor>();
-	for (const instructor of entry.groups.flatMap((group) => group.instructors)) {
+	for (const instructor of entry.groups
+		.filter((group) => group.isActive)
+		.flatMap((group) => group.instructors)) {
 		const current = byTeacher.get(instructor.teacherId);
 		if (!current || instructor.role === 'primary') byTeacher.set(instructor.teacherId, instructor);
+	}
+	for (const teacher of entry.teachers.filter((target) => target.isActive)) {
+		if (!byTeacher.has(teacher.teacherId))
+			byTeacher.set(teacher.teacherId, {
+				teacherId: teacher.teacherId,
+				displayName: teacher.displayName,
+				role: 'target',
+				orderIndex: 0
+			});
 	}
 	return [...byTeacher.values()];
 }
 
-function blockTargetNames(entry: TeacherLoadEntry): string[] {
-	return [
-		...entry.groups.map((group) => group.name),
-		...entry.homerooms.map((homeroom) => homeroom.name)
-	];
+function teacherGroups(entry: TeacherLoadEntry, teacherId: string) {
+	return entry.groups.filter(
+		(group) =>
+			group.isActive && group.instructors.some((teacher) => teacher.teacherId === teacherId)
+	);
+}
+
+function blockTargetNames(
+	entry: TeacherLoadEntry,
+	teacherId: string,
+	homerooms: Map<string, string>
+): string[] {
+	const groups = teacherGroups(entry, teacherId);
+	if (groups.length)
+		return groups.flatMap((group) => {
+			const names = group.homeroomIds.flatMap((id) =>
+				homerooms.has(id) ? [homerooms.get(id)!] : []
+			);
+			return names.length ? names : [group.name];
+		});
+	return entry.homerooms.filter((target) => target.isActive).map((target) => target.name);
+}
+
+function blockRoomNames(
+	entry: TeacherLoadEntry,
+	teacherId: string,
+	rooms: Map<string, string>
+): string[] {
+	const groups = teacherGroups(entry, teacherId);
+	const targets = groups.length ? groups : entry.homerooms.filter((target) => target.isActive);
+	return uniqueNonEmpty(
+		targets.flatMap((target) =>
+			target.roomId ? [rooms.get(target.roomId) ?? target.roomCode ?? ''] : []
+		)
+	);
 }
 
 function formatTimeRange(start?: string | null, end?: string | null): string {
@@ -446,6 +527,8 @@ function groupSummaryRows(rows: TeacherLoadSummaryRow[]): TeacherLoadSummaryGrou
 		group.totals.independentActivityPeriods += row.independentActivityPeriods;
 		group.totals.synchronizedActivityPeriods += row.synchronizedActivityPeriods;
 		group.totals.unspecifiedActivityPeriods += row.unspecifiedActivityPeriods;
+		group.totals.unclassifiedCoursePeriods += row.unclassifiedCoursePeriods;
+		group.totals.specialPeriods += row.specialPeriods;
 		group.totals.totalPeriods += row.totalPeriods;
 		groups.set(key, group);
 	}
@@ -471,6 +554,8 @@ function createSummaryGroup(
 			independentActivityPeriods: 0,
 			synchronizedActivityPeriods: 0,
 			unspecifiedActivityPeriods: 0,
+			unclassifiedCoursePeriods: 0,
+			specialPeriods: 0,
 			totalPeriods: 0
 		}
 	};
@@ -509,10 +594,12 @@ function buildSummarySheetRows(groups: TeacherLoadSummaryGroup[]): Array<Array<s
 			'วิชาในกลุ่มสาระ (ครูรอง)',
 			'วิชานอกกลุ่มสาระ (ครูหลัก)',
 			'วิชานอกกลุ่มสาระ (ครูรอง)',
-			'กิจกรรม independent (คาบ)',
-			'กิจกรรม synchronized (คาบ)',
+			'กิจกรรมอิสระ (คาบ)',
+			'กิจกรรมพร้อมกัน (คาบ)',
 			'กิจกรรมไม่ระบุประเภท (คาบ)',
-			'รวม (คาบ)'
+			'วิชายังไม่ทราบกลุ่มสาระ (คาบ)',
+			'คาบพิเศษ/ภารกิจ (คาบ)',
+			'รวมคาบที่รับผิดชอบ'
 		],
 		...groups.flatMap((group) => [
 			[
@@ -525,6 +612,8 @@ function buildSummarySheetRows(groups: TeacherLoadSummaryGroup[]): Array<Array<s
 				group.totals.independentActivityPeriods,
 				group.totals.synchronizedActivityPeriods,
 				group.totals.unspecifiedActivityPeriods,
+				group.totals.unclassifiedCoursePeriods,
+				group.totals.specialPeriods,
 				group.totals.totalPeriods
 			],
 			...group.rows.map((row) => [
@@ -537,6 +626,8 @@ function buildSummarySheetRows(groups: TeacherLoadSummaryGroup[]): Array<Array<s
 				row.independentActivityPeriods,
 				row.synchronizedActivityPeriods,
 				row.unspecifiedActivityPeriods,
+				row.unclassifiedCoursePeriods,
+				row.specialPeriods,
 				row.totalPeriods
 			])
 		])
@@ -550,23 +641,31 @@ function buildDetailSheetRows(groups: TeacherLoadDetailGroup[]): Array<Array<str
 			'ครูผู้สอน',
 			'กลุ่มสาระรายการ',
 			'ประเภท',
+			'บทบาท',
 			'วัน',
 			'คาบ',
 			'เวลา',
-			'ห้อง',
+			'ชั้น/กลุ่มเรียน',
+			'ห้องเรียน',
 			'รายการ'
 		],
 		...groups.flatMap((group) => [
-			[`กลุ่มสาระ: ${group.subjectGroupName}`, '', '', '', '', '', '', '', ''],
+			[`กลุ่มสาระ: ${group.subjectGroupName}`, '', '', '', '', '', '', '', '', '', ''],
 			...group.rows.map((row) => [
 				row.teacherSubjectGroupName,
 				row.teacherName,
 				row.subjectGroupName,
 				row.categoryLabel,
+				row.instructorRole === 'target'
+					? 'ผู้รับผิดชอบ'
+					: row.instructorRole === 'primary'
+						? 'ครูหลัก'
+						: 'ครูรอง',
 				row.dayLabel,
 				row.periodName,
 				row.timeLabel,
 				row.homeroomName,
+				row.roomName,
 				row.title
 			])
 		])
