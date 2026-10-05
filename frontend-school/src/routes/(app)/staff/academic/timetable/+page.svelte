@@ -2107,9 +2107,7 @@
 						<table class="w-full min-w-[70rem] table-fixed border-collapse text-left text-xs">
 							<thead>
 								<tr class="bg-muted/35">
-									<th class="sticky left-0 z-10 w-24 border-b border-r bg-muted/70 px-2 py-2"
-										>ห้อง</th
-									>
+									<th class="sticky left-0 z-10 w-16 border-b border-r bg-muted px-2 py-2">ห้อง</th>
 									{#each controller.workspace.bellPeriods as period (period.id)}
 										<th class="border-b border-r px-1.5 py-2 text-center">
 											<p class="font-semibold">{periodLabel(period)}</p>
@@ -2123,7 +2121,8 @@
 							<tbody>
 								{#each controller.workspace.homerooms as homeroom (homeroom.id)}
 									<tr>
-										<th class="sticky left-0 z-10 border-b border-r bg-background px-3 py-2"
+										<th
+											class="sticky left-0 z-10 border-b border-r bg-background px-2 py-2 whitespace-nowrap"
 											>{homeroom.name}</th
 										>
 										{#each controller.workspace.bellPeriods as period (period.id)}
