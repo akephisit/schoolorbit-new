@@ -1,190 +1,104 @@
 <script lang="ts">
 	import {
 		createCurriculum,
-		getCurriculumCreateOptions,
-		type CurriculumCreateOptions,
-		type CurriculumOverviewItem
+		updateCurriculum,
+		type CurriculumEdition
 	} from '#lib/api/academic-core.js';
-	import { catalogOwnerValue } from '#lib/academic-core/catalog-presentation.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
-	import AcademicPrerequisiteNotice from '#lib/components/academic-workflow/AcademicPrerequisiteNotice.svelte';
-	import type { AcademicPrerequisite } from '#lib/components/academic-workflow/prerequisite.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
-	import { Plus } from '@lucide/svelte';
-	import GradeLevelMultiSelect from './GradeLevelMultiSelect.svelte';
-
-	let { onCreated }: { onCreated: (item: CurriculumOverviewItem) => void } = $props();
-
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	let {
+		edition = null,
+		onSaved
+	}: { edition?: CurriculumEdition | null; onSaved: (edition: CurriculumEdition) => void } =
+		$props();
 	let open = $state(false);
-	let options = $state.raw<CurriculumCreateOptions | null>(null);
-	let optionsLoading = $state(false);
 	let saving = $state(false);
-	let errorMessage = $state('');
-	let ownerValue = $state('');
-	let draft = $state({
-		code: '',
-		nameTh: '',
-		nameEn: '',
-		gradeLevelIds: [] as string[]
-	});
-
-	const noGradeLevels: AcademicPrerequisite = {
-		key: 'curriculum-grade-levels',
-		status: 'missing',
-		title: 'ยังไม่มีระดับชั้นให้เลือก',
-		description: 'กรุณาติดต่อผู้ดูแลระบบให้ตั้งค่าระดับชั้นก่อนสร้างหลักสูตร'
-	};
-	const noOwners: AcademicPrerequisite = {
-		key: 'curriculum-owner-options',
-		status: 'missing',
-		title: 'ยังไม่มีหน่วยงานเจ้าของที่เลือกได้',
-		description: 'กรุณาตรวจสอบขอบเขตสิทธิ์และสถานะหน่วยงานก่อนสร้างหลักสูตร'
-	};
-
-	let selectedOwner = $derived(
-		options?.ownerOptions.find((option) => catalogOwnerValue(option) === ownerValue) ?? null
-	);
-
-	async function showDialog() {
+	let error = $state('');
+	let year = $state<number | undefined>(2569);
+	let name = $state('');
+	let description = $state('');
+	function show() {
+		year = edition?.revisionYear ?? new Date().getFullYear() + 543;
+		name = edition?.name ?? '';
+		description = edition?.description ?? '';
+		error = '';
 		open = true;
-		if (options || optionsLoading) return;
-		optionsLoading = true;
-		errorMessage = '';
-		try {
-			options = await getCurriculumCreateOptions();
-			ownerValue = options.ownerOptions[0] ? catalogOwnerValue(options.ownerOptions[0]) : '';
-		} catch (error) {
-			errorMessage =
-				error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับสร้างหลักสูตรไม่สำเร็จ';
-		} finally {
-			optionsLoading = false;
-		}
 	}
-
-	async function submit(event: SubmitEvent) {
+	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		if (!options || !selectedOwner || draft.gradeLevelIds.length === 0) return;
+		if (year === undefined || !Number.isInteger(year) || year < 2400 || year > 2999) {
+			error = 'ระบุปีปรับปรุงเป็นพุทธศักราชระหว่าง 2400–2999';
+			return;
+		}
 		saving = true;
-		errorMessage = '';
+		error = '';
 		try {
-			const curriculum = await createCurriculum({
-				code: draft.code.trim(),
-				nameTh: draft.nameTh.trim(),
-				nameEn: draft.nameEn.trim() || null,
-				description: null,
-				gradeLevelIds: draft.gradeLevelIds,
-				owningOrganizationUnitId: selectedOwner.organizationUnitId
-			});
-			onCreated({
-				curriculum,
-				displayVersion: null,
-				displayState: 'unpublished',
-				gradeLevels: options.gradeLevels.filter((level) => draft.gradeLevelIds.includes(level.id)),
-				studyProgramCount: 0,
-				draftCount: 0
-			});
-			draft = { code: '', nameTh: '', nameEn: '', gradeLevelIds: [] };
-			ownerValue = options.ownerOptions[0] ? catalogOwnerValue(options.ownerOptions[0]) : '';
+			const body = {
+				name: name.trim() || `ฉบับปรับปรุง พุทธศักราช ${year}`,
+				revisionYear: year,
+				description: description.trim() || null
+			};
+			const result = edition
+				? await updateCurriculum(edition.id, { ...body, rowVersion: edition.rowVersion })
+				: await createCurriculum(body);
+			onSaved(result);
 			open = false;
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'สร้างหลักสูตรไม่สำเร็จ';
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'บันทึกฉบับหลักสูตรไม่สำเร็จ';
 		} finally {
 			saving = false;
 		}
 	}
 </script>
 
-<Button onclick={showDialog}><Plus class="size-4" /> เพิ่มระดับ/กลุ่มหลักสูตร</Button>
-
-<Dialog.Root bind:open>
-	<Dialog.Content class="sm:max-w-xl">
-		<Dialog.Header>
-			<Dialog.Title>เพิ่มระดับ/กลุ่มหลักสูตร</Dialog.Title>
-			<Dialog.Description>
-				กำหนดระดับหรือกลุ่มหลักสูตรก่อน แล้วเพิ่มฉบับปรับปรุงและแผนการเรียนในหน้ารายละเอียด
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if optionsLoading}
-			<div class="space-y-3 py-3" aria-label="กำลังโหลดตัวเลือก">
-				<div class="h-10 animate-pulse rounded-md bg-muted"></div>
-				<div class="h-10 animate-pulse rounded-md bg-muted"></div>
-				<div class="h-10 animate-pulse rounded-md bg-muted"></div>
+<Button variant={edition ? 'outline' : 'default'} onclick={show}
+	>{edition ? 'แก้ไขฉบับหลักสูตร' : 'เพิ่มฉบับหลักสูตร'}</Button
+>
+<Dialog.Root bind:open
+	><Dialog.Content class="sm:max-w-xl">
+		<Dialog.Header
+			><Dialog.Title>{edition ? 'แก้ไขฉบับหลักสูตร' : 'เพิ่มฉบับหลักสูตร'}</Dialog.Title
+			><Dialog.Description
+				>ระบุปีปรับปรุงเพื่อใช้เลือกฉบับหลักสูตร ปีนี้ไม่จำกัดปีการศึกษาที่นำไปใช้</Dialog.Description
+			></Dialog.Header
+		>
+		<form class="space-y-4 py-2" onsubmit={save}>
+			<div class="space-y-2">
+				<Label for="edition-year">ปีปรับปรุง (พุทธศักราช) *</Label><Input
+					id="edition-year"
+					type="number"
+					min={2400}
+					max={2999}
+					step={1}
+					bind:value={year}
+					required
+				/>
 			</div>
-		{:else if options}
-			{#if options.ownerOptions.length === 0}
-				<AcademicPrerequisiteNotice prerequisite={noOwners} class="my-2" />
-			{:else if options.gradeLevels.length === 0}
-				<AcademicPrerequisiteNotice prerequisite={noGradeLevels} class="my-2" />
-			{:else}
-				<form class="space-y-4 py-2" onsubmit={submit}>
-					<div class="grid gap-4 sm:grid-cols-2">
-						<div class="space-y-2">
-							<Label for="curriculum-code">รหัสหลักสูตร</Label>
-							<Input id="curriculum-code" bind:value={draft.code} required />
-						</div>
-						<div class="space-y-2">
-							<Label for="curriculum-name-th">ชื่อระดับ/กลุ่มหลักสูตร</Label>
-							<Input
-								id="curriculum-name-th"
-								bind:value={draft.nameTh}
-								placeholder="เช่น ระดับมัธยมศึกษาตอนต้น"
-								required
-							/>
-						</div>
-					</div>
-					<div class="space-y-2">
-						<Label for="curriculum-name-en">ชื่อภาษาอังกฤษ (ถ้ามี)</Label>
-						<Input id="curriculum-name-en" bind:value={draft.nameEn} />
-					</div>
-					<div class="space-y-2">
-						<Label>หน่วยงานเจ้าของหลักสูตร</Label>
-						<Select.Root type="single" bind:value={ownerValue}>
-							<Select.Trigger class="w-full">
-								{selectedOwner?.name ?? 'เลือกหน่วยงานเจ้าของ'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each options.ownerOptions as option (catalogOwnerValue(option))}
-									<Select.Item value={catalogOwnerValue(option)}>
-										{option.name}{option.code ? ` · ${option.code}` : ''}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="space-y-2">
-						<Label>ระดับชั้นที่หลักสูตรครอบคลุม</Label>
-						<GradeLevelMultiSelect
-							bind:value={draft.gradeLevelIds}
-							options={options.gradeLevels}
-							ariaLabel="เลือกระดับชั้นของหลักสูตร"
-						/>
-					</div>
-					{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
-					<Dialog.Footer>
-						<Button type="button" variant="outline" onclick={() => (open = false)}>ยกเลิก</Button>
-						<LoadingButton
-							type="submit"
-							loading={saving}
-							loadingLabel="กำลังสร้าง"
-							disabled={!selectedOwner ||
-								!draft.code.trim() ||
-								!draft.nameTh.trim() ||
-								draft.gradeLevelIds.length === 0}
-						>
-							สร้างระดับ/กลุ่มหลักสูตร
-						</LoadingButton>
-					</Dialog.Footer>
-				</form>
-			{/if}
-		{:else}
-			<div class="space-y-3 py-4">
-				<p role="alert" class="text-sm text-destructive">{errorMessage}</p>
-				<Button type="button" variant="outline" onclick={showDialog}>ลองโหลดอีกครั้ง</Button>
+			<div class="space-y-2">
+				<Label for="edition-name">ชื่อฉบับเพิ่มเติม (ถ้ามี)</Label><Input
+					id="edition-name"
+					bind:value={name}
+					placeholder={`ฉบับปรับปรุง พุทธศักราช ${year ?? '2569'}`}
+				/>
 			</div>
-		{/if}
-	</Dialog.Content>
-</Dialog.Root>
+			<div class="space-y-2">
+				<Label for="edition-description">รายละเอียด (ถ้ามี)</Label><Textarea
+					id="edition-description"
+					bind:value={description}
+				/>
+			</div>
+			{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
+			<Dialog.Footer
+				><Button variant="outline" type="button" disabled={saving} onclick={() => (open = false)}
+					>ยกเลิก</Button
+				><LoadingButton type="submit" loading={saving} loadingLabel="กำลังบันทึก"
+					>{edition ? 'บันทึก' : 'สร้างฉบับร่าง'}</LoadingButton
+				></Dialog.Footer
+			>
+		</form>
+	</Dialog.Content></Dialog.Root
+>

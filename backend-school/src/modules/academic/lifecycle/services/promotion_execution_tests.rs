@@ -20,7 +20,7 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
             "promotion_execution_partial",
         )
         .await;
-    apply_migrations_through(&pool, 92).await.unwrap();
+    apply_migrations_through(&pool, 94).await.unwrap();
     assert_eq!(calc.items.len(), 2);
     let mut reviewed = Vec::new();
     let mut run = calc.run.clone();
@@ -301,7 +301,7 @@ pub(crate) async fn approved_fixture(
     PromotionRun,
 ) {
     let (pool, reviewer, results_actor, context, calc) = ready_run(name).await;
-    apply_migrations_through(&pool, 92).await.unwrap();
+    apply_migrations_through(&pool, 94).await.unwrap();
     let mut decision = hold(1);
     decision.decision.outcome = outcome;
     if outcome == PromotionDecisionOutcome::Promote {
@@ -311,14 +311,12 @@ pub(crate) async fn approved_fixture(
         .fetch_one(&pool)
         .await
         .unwrap();
-        let curriculum: Uuid = sqlx::query_scalar("INSERT INTO curricula(code,identity_key,name_th,grade_level_ids) VALUES('E2E-IMPACT','E2E-IMPACT','E2E-LIFECYCLE-next-grade',$1) RETURNING id")
-            .bind(sqlx::types::Json(vec![grade])).fetch_one(&pool).await.unwrap();
-        let version: Uuid = sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status) VALUES($1,'E2E-LIFECYCLE-target',2569,'draft') RETURNING id")
-            .bind(curriculum).fetch_one(&pool).await.unwrap();
-        let program: Uuid = sqlx::query_scalar("INSERT INTO study_programs(id,curriculum_version_id,code,name_th,status) VALUES(uuid_generate_v4(),$1,'E2E-IMPACT','E2E-LIFECYCLE-target','published') RETURNING id")
+        let edition:Uuid=sqlx::query_scalar("INSERT INTO curriculum_editions(name,revision_year) VALUES('E2E-LIFECYCLE-test',2569) RETURNING id").fetch_one(&pool).await.unwrap();
+        let version:Uuid=sqlx::query_scalar("INSERT INTO curriculum_levels(edition_id,code,name_th,grade_level_ids,is_active) VALUES($1,$2,'E2E-LIFECYCLE-target',$3,true) RETURNING id").bind(edition).bind(Uuid::new_v4().to_string()).bind(sqlx::types::Json(vec![grade])).fetch_one(&pool).await.unwrap();
+        let program: Uuid = sqlx::query_scalar("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) VALUES(uuid_generate_v4(),$1,'E2E-IMPACT','E2E-LIFECYCLE-target','published') RETURNING id")
             .bind(version).fetch_one(&pool).await.unwrap();
         sqlx::query(
-            "UPDATE curriculum_versions SET status='published',published_at=now() WHERE id=$1",
+            "UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT edition_id FROM curriculum_levels WHERE id=$1)",
         )
         .bind(version)
         .execute(&pool)
@@ -563,7 +561,7 @@ async fn promotion_execution_can_finish_after_reload_when_all_item_receipts_alre
 #[tokio::test]
 async fn promotion_execution_requires_approval_and_exact_permission_then_replays_hold_receipt() {
     let (pool, reviewer, _, _, calc) = ready_run("promotion_execution_hold").await;
-    apply_migrations_through(&pool, 92).await.unwrap();
+    apply_migrations_through(&pool, 94).await.unwrap();
     let executor = ActorContext {
         user_id: reviewer.user_id,
         permissions: vec![

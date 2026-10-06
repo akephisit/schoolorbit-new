@@ -1,150 +1,86 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import test from 'node:test';
-
-const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
-
-async function readProjectFile(relativePath) {
-	return readFile(join(projectRoot, relativePath), 'utf8');
-}
-
-test('curriculum workspace clients use generated contracts', async () => {
-	const api = await readProjectFile('src/lib/api/academic-core.ts');
-	const openapi = JSON.parse(await readProjectFile('../contracts/openapi/school-api.json'));
-
-	assert.match(api, /getCurriculumOverview/);
-	assert.match(api, /getCurriculumCreateOptions/);
-	assert.match(api, /getCurriculumManagementOptions/);
-	assert.match(api, /operations\['getCurriculumOverview'\]/);
-	assert.match(api, /operations\['cloneCurriculumVersionDraft'\]/);
-	assert.match(api, /cloneCurriculumVersionDraft/);
-	assert.doesNotMatch(api, /ApiResponse<unknown>|Record<string, unknown>| as Curriculum/);
-	assert.ok(openapi.paths['/api/academic/curriculum-versions/{curriculumVersionId}/structure']);
-	assert.ok(openapi.paths['/api/academic/curriculum-versions/{curriculumVersionId}/term-slots']);
-	assert.ok(openapi.paths['/api/academic/study-programs/{studyProgramId}/structure']);
-	assert.equal(openapi.paths['/api/academic/study-programs/{id}/requirements'], undefined);
-	const input = openapi.components.schemas.CurriculumStructureRequirementInput.properties;
-	assert.ok(input.termSlotId);
-	assert.equal(input.credit, undefined);
-	assert.equal(input.hours, undefined);
-	assert.equal(input.recommendedTermCode, undefined);
-});
-
-test('curriculum overview is read-first and uses labeled grade selection', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/curricula/+page.svelte');
-	const loader = await readProjectFile('src/routes/(app)/staff/academic/curricula/+page.ts');
-	const table = await readProjectFile(
-		'src/lib/components/academic-core/CurriculumOverviewTable.svelte'
-	).catch(() => '');
-
-	assert.match(loader, /getCurriculumOverview/);
-	assert.match(loader, /captureRouteLoad/);
-	assert.match(page, /data\.overview/);
-	assert.doesNotMatch(page, /getCurriculumOverview\(/);
-	assert.match(page, /canManageAcademicCurriculum/);
-	assert.doesNotMatch(page, /getCurriculumCreateOptions\([\s\S]*onMount/);
-	assert.doesNotMatch(page, /gradeLevelIds:\s*''/);
-	assert.doesNotMatch(page, /รหัสระดับชั้น/);
-	assert.doesNotMatch(table, /startAcademicYearName|endAcademicYearName/);
-	assert.match(page, /groupCurriculaByRevision/);
-	assert.match(table, /studyProgramCount/);
-});
-
-test('curriculum detail is deep-linked and uses labeled management options', async () => {
-	const meta = await readProjectFile(
-		'src/routes/(app)/staff/academic/curricula/[id]/+page.ts'
-	).catch(() => '');
-	const page = await readProjectFile(
-		'src/routes/(app)/staff/academic/curricula/[id]/+page.svelte'
-	).catch(() => '');
-	const editor = await readProjectFile(
-		'src/lib/components/academic-core/CurriculumStructureEditor.svelte'
+const root = path.resolve(import.meta.dirname, '../..');
+const read = (name) => readFile(path.join(root, name), 'utf8');
+test('canonical curriculum contracts retire nested editions and owner inputs', async () => {
+	const api = await read('src/lib/api/academic-core.ts');
+	const document = JSON.parse(await read('../contracts/openapi/school-api.json'));
+	assert.match(api, /Schemas\['CopyStudyProgramRequest'\]/);
+	for (const endpoint of [
+		'/api/academic/curricula/{id}/levels',
+		'/api/academic/curricula/{id}/publish',
+		'/api/academic/curriculum-levels/{id}/structure',
+		'/api/academic/curriculum-levels/{id}/copy-program'
+	])
+		assert.ok(document.paths[endpoint], endpoint);
+	assert.ok(!Object.keys(document.paths).some((p) => p.includes('curriculum-versions')));
+	assert.doesNotMatch(
+		api,
+		/cloneCurriculumVersion|listCurriculumVersions|ApiResponse<unknown>| as Curriculum/
 	);
-	const comparison = await readProjectFile(
-		'src/lib/components/academic-core/CurriculumProgramComparison.svelte'
-	);
-	const documentView = await readProjectFile(
-		'src/lib/components/academic-core/CurriculumTermDocument.svelte'
-	);
-	const versionPanel = await readProjectFile(
-		'src/lib/components/academic-core/CurriculumVersionPanel.svelte'
-	);
-	const createDialog = await readProjectFile(
-		'src/lib/components/academic-core/CurriculumCreateDialog.svelte'
-	);
-	const alignment = await readProjectFile(
-		'src/lib/components/academic-core/CurriculumDeliveryAlignmentPanel.svelte'
-	).catch(() => '');
-
-	assert.match(meta, /_meta\s*=\s*\{[\s\S]*access:/);
-	assert.doesNotMatch(meta, /menu:/);
-	assert.match(page, /getCurriculumStructureWorkspace/);
-	assert.match(page, /getCurriculumManagementOptions/);
-	assert.doesNotMatch(page, /listAcademicYears/);
-	assert.match(page, /CurriculumVersionView/);
-	assert.match(versionPanel, /revisionYear/);
-	assert.doesNotMatch(versionPanel, /startAcademicYearName|endAcademicYearName/);
-	assert.match(versionPanel, /สร้างฉบับปรับปรุงแบบร่าง/);
-	assert.match(versionPanel, /ต้นฉบับที่เผยแพร่จะไม่เปลี่ยน/);
-	assert.match(versionPanel, /sourceRowVersion/);
-	assert.match(page, /getHomeroomDeliveryWorkspace/);
-	assert.match(page, /CurriculumDeliveryAlignmentPanel/);
-	assert.match(page, /cloneCurriculumVersionDraft/);
-	assert.match(alignment, /ตรงกับหลักสูตร/);
-	assert.match(alignment, /หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน/);
-	assert.match(alignment, /เปิดสอนเพิ่มเติมนอกหลักสูตร/);
-	assert.match(alignment, /หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล/);
-	assert.match(alignment, /คาบจริงต่างจากค่ามาตรฐานในหลักสูตร/);
-	assert.doesNotMatch(alignment, /getLearningOffering|getLearningGroup|listLearningGroups/);
-	assert.match(editor, /selectedCatalogIds/);
-	assert.match(editor, /CurriculumTermSlotEditor/);
-	assert.match(editor, /ย้อนกลับ/);
-	assert.doesNotMatch(editor, /recommendedTermCode|credit:\s|hours:\s/);
-	assert.match(comparison, /ภาพรวมทุกแผนการเรียน/);
-	assert.match(documentView, /โครงสร้างหลักสูตรสถานศึกษา/);
-	assert.match(createDialog, /ownerOptions/);
-	assert.match(createDialog, /owningOrganizationUnitId:\s*selectedOwner\.organizationUnitId/);
-	assert.doesNotMatch(createDialog, /owningOrganizationUnitId:\s*null/);
-});
-
-test('curriculum detail starts independent visible regions in its route loader', async () => {
-	const loader = await readProjectFile('src/routes/(app)/staff/academic/curricula/[id]/+page.ts');
-	const page = await readProjectFile('src/routes/(app)/staff/academic/curricula/[id]/+page.svelte');
-
 	for (const name of [
-		'getCurriculum',
-		'listCurriculumVersions',
-		'getCurriculumStructureWorkspace',
-		'getHomeroomDeliveryWorkspace'
+		'CreateCurriculumRequest',
+		'CreateCurriculumLevelRequest',
+		'CreateStudyProgramRequest'
 	]) {
-		assert.match(loader, new RegExp(`\\b${name}\\b`));
+		const fields = document.components.schemas[name].properties;
+		for (const field of [
+			'code',
+			'nameEn',
+			'owningOrganizationUnitId',
+			'startAcademicYearId',
+			'endAcademicYearId'
+		])
+			assert.equal(fields[field], undefined);
 	}
-	assert.match(loader, /captureRouteLoad/);
-	assert.match(loader, /requestFetch:\s*fetch/);
-	assert.match(page, /data\.curriculum/);
-	assert.match(page, /data\.versions/);
-	assert.match(page, /data\.structure/);
-	assert.match(page, /data\.alignment/);
-	assert.doesNotMatch(page, /\bonMount\s*\(/);
-	assert.doesNotMatch(page, /\binvalidateAll\s*\(/);
+	const fields = document.components.schemas.CurriculumStructureRequirementInput.properties;
+	assert.ok(fields.termSlotId);
+	assert.equal(fields.credit, undefined);
+	assert.equal(fields.hours, undefined);
 });
-
-test('curriculum detail keeps retained-region refresh errors actionable', async () => {
-	const page = await readProjectFile('src/routes/(app)/staff/academic/curricula/[id]/+page.svelte');
-	for (const [error, retained] of [
-		['curriculumError', 'curriculum'],
-		['versionsError', 'versions.length'],
-		['alignmentError', 'alignmentWorkspace'],
-		['workspaceError', 'workspace']
+test('editions and level structures have separate route-owned reads and management gates', async () => {
+	const main = await read('src/routes/(app)/staff/academic/curricula/+page.svelte');
+	const edition = await read('src/routes/(app)/staff/academic/curricula/[id]/+page.svelte');
+	const level = await read(
+		'src/routes/(app)/staff/academic/curricula/[id]/levels/[levelId]/+page.svelte'
+	);
+	const loader = await read(
+		'src/routes/(app)/staff/academic/curricula/[id]/levels/[levelId]/+page.ts'
+	);
+	assert.match(main, /data\.overview/);
+	assert.doesNotMatch(main, /groupCurriculaByRevision/);
+	assert.match(edition, /CurriculumLevelCreateDialog/);
+	assert.match(edition, /publishCurriculum/);
+	assert.match(loader, /workspace\.level\.editionId !== params\.id/);
+	assert.match(level, /data\.structure/);
+	assert.match(level, /getCurriculumManagementOptions/);
+	assert.match(level, /CurriculumProgramCopyDialog/);
+	assert.match(level, /ACADEMIC_CURRICULUM_MANAGE_SCHOOL/);
+	assert.match(level, /level\.status === 'draft'/);
+	for (const page of [main, edition, level])
+		assert.doesNotMatch(page, /\bonMount\s*\(|\binvalidateAll\s*\(/);
+});
+test('curriculum forms use names and grade choices; copying and room selection preserve edition context', async () => {
+	for (const file of [
+		'CurriculumCreateDialog',
+		'CurriculumLevelCreateDialog',
+		'CurriculumProgramCreateDialog',
+		'CurriculumStructureEditor'
 	]) {
-		assert.match(
-			page,
-			new RegExp(
-				`\\{#if ${error} && ${retained.replace('.', '\\.')}\\}[\\s\\S]{0,450}role="alert"`
-			),
-			`${error} must remain visible with retained data and offer retry`
+		const form = await read(`src/lib/components/academic-core/${file}.svelte`);
+		assert.doesNotMatch(
+			form,
+			/owningOrganizationUnitId|ownerOptions|programDraft\.code|nameEn:|credit:\s|hours:\s/
 		);
 	}
+	const copy = await read('src/lib/components/academic-core/CurriculumProgramCopyDialog.svelte');
+	assert.match(copy, /sourceRowVersion/);
+	assert.match(copy, /destinationRowVersion/);
+	assert.match(copy, /status === 'published'/);
+	const room = await read('src/lib/components/academic-core/HomeroomEditor.svelte');
+	assert.match(room, /homeroom-edition/);
+	assert.match(room, /program\.editionId === editionId/);
+	assert.match(room, /programsForGrade/);
 });

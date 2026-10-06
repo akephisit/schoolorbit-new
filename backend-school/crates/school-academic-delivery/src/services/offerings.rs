@@ -1372,10 +1372,10 @@ pub(super) async fn validate_targets(
                 let valid: bool = sqlx::query_scalar(
                     "SELECT EXISTS (
                          SELECT 1 FROM study_programs program
-                         JOIN curriculum_versions version ON version.id = program.curriculum_version_id
-                         JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+                         JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+                         JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
                          WHERE program.id = $1 AND $2 = ANY(
-                             SELECT jsonb_array_elements_text(curriculum.grade_level_ids)::uuid
+                             SELECT jsonb_array_elements_text(version.grade_level_ids)::uuid
                          )
                      )",
                 )
@@ -1663,10 +1663,10 @@ async fn build_curriculum_preview_for_term(
 ) -> Result<CurriculumOfferingPreview, AppError> {
     let valid_program_query = format!(
         "SELECT program.id FROM study_programs program \
-         JOIN curriculum_versions version ON version.id = program.curriculum_version_id \
-         WHERE program.id = ANY($1) AND program.status = 'published' \
-           AND version.status = 'published' \
-           AND EXISTS (SELECT 1 FROM curricula curriculum WHERE curriculum.id=version.curriculum_id AND curriculum.is_active IS TRUE){}",
+         JOIN curriculum_levels version ON version.id=program.curriculum_level_id \
+         JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id \
+         WHERE program.id=ANY($1) AND program.status='published' \
+           AND curriculum.status='published' AND curriculum.is_active AND version.is_active{}",
         if lock_rows { " FOR SHARE" } else { "" }
     );
     let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(sqlx::AssertSqlSafe(valid_program_query))

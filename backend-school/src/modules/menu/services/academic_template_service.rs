@@ -31,7 +31,7 @@ const RECOMMENDED_SECTIONS: [RecommendedSectionDefinition; 7] = [
     RecommendedSectionDefinition {
         code: "academic_curriculum",
         name: "งานหลักสูตรและกลุ่มสาระ",
-        name_en: "Curriculum and Learning Areas",
+        name_en: "CurriculumEdition and Learning Areas",
         icon: "book-open",
         display_order: 10,
     },

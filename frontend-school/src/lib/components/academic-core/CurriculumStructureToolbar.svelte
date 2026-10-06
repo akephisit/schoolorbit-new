@@ -71,7 +71,7 @@
 					ต้องแก้ {workspace.validation.blockers.length} จุดก่อนเผยแพร่
 				</Badge>
 			{/if}
-			{#if canManage && workspace.curriculumVersion.status === 'draft'}
+			{#if canManage && workspace.level.status === 'draft'}
 				<Button onclick={onEdit}><PencilLine class="size-4" /> จัดโครงสร้าง</Button>
 			{/if}
 		</div>

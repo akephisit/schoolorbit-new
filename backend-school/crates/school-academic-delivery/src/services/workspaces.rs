@@ -84,10 +84,10 @@ struct HomeroomDeliveryBaseRow {
     study_program_id: Uuid,
     study_program_code: String,
     study_program_name: String,
-    curriculum_id: Uuid,
-    curriculum_name: String,
-    curriculum_version_id: Uuid,
-    version_name: String,
+    edition_id: Uuid,
+    level_name: String,
+    curriculum_level_id: Uuid,
+    edition_name: String,
     revision_year: Option<i32>,
     grade_level_ids: Vec<Uuid>,
 }
@@ -266,10 +266,10 @@ pub async fn homeroom_delivery_workspace_with_timing(
                   program.id AS study_program_id,
                   program.code AS study_program_code,
                   program.name_th AS study_program_name,
-                  curriculum.id AS curriculum_id,
-                  curriculum.name_th AS curriculum_name,
-                  version.id AS curriculum_version_id,
-                  version.version_name, version.revision_year,
+                  curriculum.id AS edition_id,
+                  version.name_th AS level_name,
+                  version.id AS curriculum_level_id,
+                  curriculum.name AS edition_name, curriculum.revision_year,
                   ARRAY(SELECT DISTINCT requirement.grade_level_id FROM (
                       SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id = program.id
                       UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id = program.id
@@ -277,8 +277,8 @@ pub async fn homeroom_delivery_workspace_with_timing(
            FROM homerooms homeroom
            JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
            JOIN study_programs program ON program.id = homeroom.study_program_id
-           JOIN curriculum_versions version ON version.id = program.curriculum_version_id
-           JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+           JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+           JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE homeroom.academic_year_id = $1
              AND homeroom.is_active
            ORDER BY CASE grade.level_type
@@ -354,7 +354,7 @@ pub async fn homeroom_delivery_workspace_with_timing(
             AND requirement.grade_level_id = homeroom.grade_level_id
            JOIN curriculum_term_slots slot
              ON slot.id = requirement.term_slot_id
-            AND slot.curriculum_version_id = program.curriculum_version_id
+            AND slot.curriculum_level_id = program.curriculum_level_id
             AND slot.term_type = $2
             AND slot.type_occurrence = $3
            JOIN subject_versions version ON version.id = requirement.subject_version_id
@@ -378,7 +378,7 @@ pub async fn homeroom_delivery_workspace_with_timing(
             AND requirement.grade_level_id = homeroom.grade_level_id
            JOIN curriculum_term_slots slot
              ON slot.id = requirement.term_slot_id
-            AND slot.curriculum_version_id = program.curriculum_version_id
+            AND slot.curriculum_level_id = program.curriculum_level_id
             AND slot.term_type = $2
             AND slot.type_occurrence = $3
            JOIN activity_versions version ON version.id = requirement.activity_version_id
@@ -550,10 +550,10 @@ pub async fn homeroom_delivery_workspace_with_timing(
             id: room.study_program_id,
             code: room.study_program_code,
             name: room.study_program_name,
-            curriculum_id: room.curriculum_id,
-            curriculum_name: room.curriculum_name,
-            curriculum_version_id: room.curriculum_version_id,
-            version_name: room.version_name,
+            edition_id: room.edition_id,
+            level_name: room.level_name,
+            curriculum_level_id: room.curriculum_level_id,
+            edition_name: room.edition_name,
             revision_year: room.revision_year,
             grade_level_ids: room.grade_level_ids,
         };
@@ -684,7 +684,7 @@ pub async fn homeroom_delivery_workspace_with_timing(
             homeroom,
             grade_level,
             study_program,
-            curriculum_version_id: room.curriculum_version_id,
+            curriculum_level_id: room.curriculum_level_id,
             expected_count: items.len(),
             ready_count,
             items,
@@ -966,17 +966,17 @@ pub async fn delivery_overview(
     let program_rows: Vec<StudyProgramOption> = sqlx::query_as(
         r#"
         SELECT program.id, program.code, program.name_th AS name,
-               curriculum.id AS curriculum_id, curriculum.name_th AS curriculum_name,
-               version.id AS curriculum_version_id, version.version_name, version.revision_year,
+               curriculum.id AS edition_id, version.name_th AS level_name,
+               version.id AS curriculum_level_id, curriculum.name AS edition_name, curriculum.revision_year,
                ARRAY(SELECT DISTINCT requirement.grade_level_id FROM (
                    SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id = program.id
                    UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id = program.id
                ) requirement ORDER BY requirement.grade_level_id) AS grade_level_ids
         FROM study_programs program
-        JOIN curriculum_versions version ON version.id = program.curriculum_version_id
-        JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+        JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+        JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
         WHERE program.id = ANY($1)
-        ORDER BY curriculum.code, program.code, program.id
+        ORDER BY version.code, program.code, program.id
         "#,
     )
     .bind(&study_program_ids)
@@ -1089,8 +1089,8 @@ pub async fn delivery_overview(
             .filter_map(|id| programs_by_id.get(&id).cloned())
             .collect();
         study_programs.sort_by(|left, right| {
-            left.curriculum_name
-                .cmp(&right.curriculum_name)
+            left.level_name
+                .cmp(&right.level_name)
                 .then_with(|| left.code.cmp(&right.code))
                 .then_with(|| left.id.cmp(&right.id))
         });

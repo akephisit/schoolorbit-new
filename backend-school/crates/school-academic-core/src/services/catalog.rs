@@ -9,13 +9,13 @@ use school_errors::AppError;
 
 use super::super::models::{
     ActivityVersion, CatalogActivity, CatalogActivityOverview, CatalogActivityOverviewItem,
-    CatalogDisplayState, CatalogOwnerOption, CatalogSubject, CatalogSubjectGroupOption,
-    CatalogSubjectOverview, CatalogSubjectOverviewItem, CreateActivityVersionRequest,
-    CreateCatalogActivityRequest, CreateCatalogSubjectRequest, CreateSubjectGroupRequest,
-    CreateSubjectVersionRequest, DefaultTeacher, PublishVersionRequest,
-    ReplaceDefaultTeachersRequest, SubjectGroup, SubjectVersion, UpdateActivityVersionRequest,
-    UpdateCatalogActivityRequest, UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest,
-    UpdateSubjectVersionRequest, VersionStatus,
+    CatalogDisplayState, CatalogSubject, CatalogSubjectGroupOption, CatalogSubjectOverview,
+    CatalogSubjectOverviewItem, CreateActivityVersionRequest, CreateCatalogActivityRequest,
+    CreateCatalogSubjectRequest, CreateSubjectGroupRequest, CreateSubjectVersionRequest,
+    DefaultTeacher, PublishVersionRequest, ReplaceDefaultTeachersRequest, SubjectGroup,
+    SubjectVersion, UpdateActivityVersionRequest, UpdateCatalogActivityRequest,
+    UpdateCatalogSubjectRequest, UpdateSubjectGroupRequest, UpdateSubjectVersionRequest,
+    VersionStatus,
 };
 use super::{ensure_draft_version, parse_row_version, validate_canonical_decimal};
 
@@ -843,13 +843,6 @@ struct CatalogSubjectGroupRow {
     name: String,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-struct CatalogOwnerRow {
-    id: Uuid,
-    code: String,
-    name: String,
-}
-
 async fn list_catalog_grade_levels(pool: &PgPool) -> Result<Vec<CatalogGradeLevel>, AppError> {
     let rows = sqlx::query_as::<_, CatalogGradeLevelRow>(
         r#"
@@ -914,43 +907,6 @@ pub(super) async fn list_catalog_subject_group_options(
             can_manage: owner_allowed(manage_filter, Some(row.organization_unit_id)),
         })
         .collect())
-}
-
-pub(super) async fn list_catalog_owner_options(
-    pool: &PgPool,
-    filter: &AcademicResourceListFilter,
-) -> Result<Vec<CatalogOwnerOption>, AppError> {
-    let owner_ids = filter.allowed_organization_unit_ids();
-    if !filter.includes_school_owned && owner_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let rows = sqlx::query_as::<_, CatalogOwnerRow>(
-        r#"
-        SELECT id, code, name
-        FROM organization_units
-        WHERE is_active = true
-          AND ($1 OR id = ANY($2))
-        ORDER BY display_order, name, id
-        "#,
-    )
-    .bind(filter.includes_school_owned)
-    .bind(owner_ids)
-    .fetch_all(pool)
-    .await?;
-    let mut options = Vec::with_capacity(rows.len() + usize::from(filter.includes_school_owned));
-    if filter.includes_school_owned {
-        options.push(CatalogOwnerOption {
-            organization_unit_id: None,
-            code: None,
-            name: "ส่วนกลางของโรงเรียน".to_string(),
-        });
-    }
-    options.extend(rows.into_iter().map(|row| CatalogOwnerOption {
-        organization_unit_id: Some(row.id),
-        code: Some(row.code),
-        name: row.name,
-    }));
-    Ok(options)
 }
 
 pub async fn resolve_subject_group_owner(

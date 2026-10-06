@@ -255,31 +255,17 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
             .fetch_one(&pool)
             .await
             .unwrap();
-    let curriculum: Uuid = sqlx::query_scalar(
-        "INSERT INTO curricula(code,identity_key,name_th,grade_level_ids)
-         VALUES('E2E-OPEN-ROOM','E2E-OPEN-ROOM','E2E-LIFECYCLE-room',$1) RETURNING id",
-    )
-    .bind(sqlx::types::Json(vec![grade]))
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let version: Uuid = sqlx::query_scalar(
-        "INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status)
-         VALUES($1,'E2E-OPEN-ROOM',2569,'draft') RETURNING id",
-    )
-    .bind(curriculum)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let edition:Uuid=sqlx::query_scalar("INSERT INTO curriculum_editions(name,revision_year) VALUES('E2E-LIFECYCLE-test',2569) RETURNING id").fetch_one(&pool).await.unwrap();
+    let version:Uuid=sqlx::query_scalar("INSERT INTO curriculum_levels(edition_id,code,name_th,grade_level_ids,is_active) VALUES($1,$2,'E2E-LIFECYCLE-target',$3,true) RETURNING id").bind(edition).bind(Uuid::new_v4().to_string()).bind(sqlx::types::Json(vec![grade])).fetch_one(&pool).await.unwrap();
     let program: Uuid = sqlx::query_scalar(
-        "INSERT INTO study_programs(id,curriculum_version_id,code,name_th,status)
+        "INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status)
          VALUES(uuid_generate_v4(),$1,'E2E-OPEN-ROOM','E2E-LIFECYCLE-room','published') RETURNING id",
     )
     .bind(version)
     .fetch_one(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE curriculum_versions SET status='published',published_at=now() WHERE id=$1")
+    sqlx::query("UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT edition_id FROM curriculum_levels WHERE id=$1)")
         .bind(version)
         .execute(&pool)
         .await

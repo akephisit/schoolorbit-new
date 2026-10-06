@@ -39,7 +39,7 @@
 				fromGradeLevelId: mapping.fromGradeLevelId,
 				toGradeLevelId: mapping.toGradeLevelId ?? null,
 				transitionKind: mapping.transitionKind,
-				curriculumId: mapping.curriculumId ?? null,
+				curriculumLevelId: mapping.curriculumLevelId ?? null,
 				isActive: mapping.isActive
 			} satisfies GradeProgressionInput
 		}))
@@ -57,7 +57,7 @@
 	const curricula = $derived.by(() => {
 		const labels = new SvelteMap<string, string>();
 		for (const program of options.programs)
-			labels.set(program.curriculumId, program.curriculumName);
+			labels.set(program.curriculumLevelId, program.levelName);
 		return [
 			{ value: 'all', label: 'ทุกหลักสูตร' },
 			...Array.from(labels, ([value, label]) => ({ value, label }))
@@ -66,7 +66,7 @@
 	const keys = $derived(
 		rows.map(
 			({ input }) =>
-				`${input.fromGradeLevelId}/${input.toGradeLevelId ?? ''}/${input.transitionKind}/${input.curriculumId ?? ''}`
+				`${input.fromGradeLevelId}/${input.toGradeLevelId ?? ''}/${input.transitionKind}/${input.curriculumLevelId ?? ''}`
 		)
 	);
 	const valid = $derived(
@@ -90,7 +90,7 @@
 				fromGradeLevelId: '',
 				toGradeLevelId: null,
 				transitionKind: 'promote',
-				curriculumId: null,
+				curriculumLevelId: null,
 				isActive: true
 			}
 		});
@@ -187,9 +187,9 @@
 						)}{/if}
 					{@render choice(
 						`หลักสูตรของกฎ ${index + 1}`,
-						row.input.curriculumId ?? 'all',
+						row.input.curriculumLevelId ?? 'all',
 						curricula,
-						(value) => (row.input.curriculumId = value === 'all' ? null : value)
+						(value) => (row.input.curriculumLevelId = value === 'all' ? null : value)
 					)}
 				</div>
 				<div class="mt-3 flex items-center justify-between">

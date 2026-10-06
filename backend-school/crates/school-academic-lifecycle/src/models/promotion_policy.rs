@@ -57,9 +57,9 @@ pub struct PromotionProgramReference {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    pub curriculum_id: Uuid,
-    pub curriculum_name: String,
-    pub version_name: String,
+    pub curriculum_level_id: Uuid,
+    pub level_name: String,
+    pub edition_name: String,
     pub status: school_academic_core::models::VersionStatus,
 }
 

@@ -15,13 +15,13 @@ pub(crate) async fn policy_options(
         "SELECT id,level_type,year,is_active IS TRUE AS is_active FROM grade_levels ORDER BY CASE level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 WHEN 'secondary' THEN 3 ELSE 4 END,year,id LIMIT 501"
     ).fetch_all(&mut **tx).await?;
     let programs: Vec<crate::models::PromotionProgramReference> = sqlx::query_as(
-        "SELECT program.id,program.code,program.name_th AS name,version.curriculum_id,curriculum.name_th AS curriculum_name,version.version_name,program.status FROM study_programs program JOIN curriculum_versions version ON version.id=program.curriculum_version_id JOIN curricula curriculum ON curriculum.id=version.curriculum_id ORDER BY curriculum.name_th,version.version_name,program.code,program.id LIMIT 5001"
+        "SELECT program.id,program.code,program.name_th AS name,version.id AS curriculum_level_id,version.name_th AS level_name,curriculum.name AS edition_name,program.status FROM study_programs program JOIN curriculum_levels version ON version.id=program.curriculum_level_id JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id ORDER BY version.name_th,curriculum.name,program.code,program.id LIMIT 5001"
     ).fetch_all(&mut **tx).await?;
     let row_version =
         sqlx::query_scalar("SELECT row_version FROM grade_level_progression_sets WHERE id=1")
             .fetch_one(&mut **tx)
             .await?;
-    let progressions: Vec<GradeProgression>=sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_id,is_active,created_at,updated_at FROM grade_level_progressions ORDER BY from_grade_level_id,transition_kind,id LIMIT 5001")
+    let progressions: Vec<GradeProgression>=sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions ORDER BY from_grade_level_id,transition_kind,id LIMIT 5001")
         .fetch_all(&mut **tx).await?;
     if grades.len() > 500 || programs.len() > 5000 || progressions.len() > 5000 {
         return Err(AppError::ValidationError(
@@ -76,7 +76,7 @@ pub(crate) async fn validate_promotion_rules(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let found: Vec<(Uuid,Uuid)> = sqlx::query_as("SELECT program.id,version.curriculum_id FROM study_programs program JOIN curriculum_versions version ON version.id=program.curriculum_version_id WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF program,version")
+    let found: Vec<(Uuid,Uuid)> = sqlx::query_as("SELECT program.id,version.id FROM study_programs program JOIN curriculum_levels version ON version.id=program.curriculum_level_id WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF program,version")
         .bind(&programs).fetch_all(&mut **tx).await?;
     if found.len() != programs.len() {
         return Err(AppError::ValidationError(
@@ -84,7 +84,7 @@ pub(crate) async fn validate_promotion_rules(
         ));
     }
     let curricula: HashMap<Uuid, Uuid> = found.into_iter().collect();
-    let progressions: Vec<GradeProgression> = sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE is_active AND from_grade_level_id=ANY($1) ORDER BY id")
+    let progressions: Vec<GradeProgression> = sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE is_active AND from_grade_level_id=ANY($1) ORDER BY id")
         .bind(&grades).fetch_all(&mut **tx).await?;
     for rule in rules {
         let curriculum = curricula
@@ -96,7 +96,9 @@ pub(crate) async fn validate_promotion_rules(
             .filter(|mapping| {
                 mapping.from_grade_level_id == rule.from_grade_level_id
                     && mapping.transition_kind == kind
-                    && mapping.curriculum_id.is_none_or(|id| id == *curriculum)
+                    && mapping
+                        .curriculum_level_id
+                        .is_none_or(|id| id == *curriculum)
             })
             .collect();
         if applicable.len() != 1 || applicable[0].to_grade_level_id != rule.target_grade_level_id {

@@ -29,7 +29,7 @@
 						<Table.Head class="min-w-52 border-l align-top">
 							<div class="font-semibold text-foreground">{program.name}</div>
 							<div class="mt-0.5 font-mono text-xs font-normal text-muted-foreground">
-								{program.code}{program.isDefault ? ' · แผนเริ่มต้น' : ''}
+								{program.isDefault ? 'แผนเริ่มต้น' : ''}
 							</div>
 						</Table.Head>
 					{/each}

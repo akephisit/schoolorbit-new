@@ -43,7 +43,7 @@
 		for (const item of items)
 			for (const program of item.studyPrograms)
 				if (!values.some(([id]) => id === program.id))
-					values.push([program.id, `${program.curriculumName} · ${program.name}`]);
+					values.push([program.id, `${program.levelName} · ${program.name}`]);
 		return values.sort((left, right) =>
 			left[1].localeCompare(right[1], 'th-TH', { numeric: true })
 		);
@@ -65,7 +65,7 @@
 				item.offering.codeSnapshot,
 				item.offering.nameSnapshot,
 				...item.gradeLevels.flatMap((grade) => [grade.name, grade.short_name ?? '']),
-				...item.studyPrograms.flatMap((program) => [program.name, program.curriculumName])
+				...item.studyPrograms.flatMap((program) => [program.name, program.levelName])
 			].some((value) => value.toLocaleLowerCase('th-TH').includes(query));
 		});
 	});

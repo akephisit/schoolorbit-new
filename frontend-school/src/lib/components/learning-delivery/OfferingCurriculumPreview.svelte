@@ -61,7 +61,7 @@
 		const query = programSearch.trim().toLocaleLowerCase('th-TH');
 		if (!query) return options.studyPrograms;
 		return options.studyPrograms.filter((program) =>
-			`${program.curriculumName} ${program.code} ${program.name}`
+			`${program.levelName} ${program.code} ${program.name}`
 				.toLocaleLowerCase('th-TH')
 				.includes(query)
 		);
@@ -329,7 +329,7 @@
 									>{:else}<Command.Group>
 										{#each filteredPrograms as program (program.id)}
 											<Command.Item
-												value={`${program.curriculumName} ${program.code} ${program.name}`}
+												value={`${program.levelName} ${program.code} ${program.name}`}
 												onSelect={() => toggleProgram(program.id)}
 											>
 												<Checkbox
@@ -340,7 +340,7 @@
 												<div class="min-w-0">
 													<p class="truncate">{program.name}</p>
 													<p class="truncate text-xs text-muted-foreground">
-														{program.curriculumName} · {program.code}
+														{program.levelName} · {program.code}
 													</p>
 												</div>
 											</Command.Item>

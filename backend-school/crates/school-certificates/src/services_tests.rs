@@ -4041,41 +4041,11 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
             .await
             .unwrap();
     let study_program_id: Uuid = sqlx::query_scalar(
-        "WITH curriculum AS (
-             INSERT INTO curricula (code, name_th, identity_key)
-             VALUES ('PURGE-FIXTURE', 'หลักสูตรทดสอบผู้ใช้ไฟล์', 'purge-fixture')
-             RETURNING id
-         ), curriculum_version AS (
-             INSERT INTO curriculum_versions (
-                 curriculum_id, version_name, revision_year,
-                 is_active, status
-             )
-             SELECT id, 'ฉบับทดสอบผู้ใช้ไฟล์', 2569, true, 'draft'
-             FROM curriculum
-             RETURNING id
-         )
-         INSERT INTO study_programs (
-             id, curriculum_version_id, code, name_th, is_default, status
-         )
-         SELECT gen_random_uuid(), id, 'PURGE-FIXTURE',
-                'แผนทดสอบผู้ใช้ไฟล์', true, 'published'
-         FROM curriculum_version
-         RETURNING id",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "UPDATE curriculum_versions
-         SET status = 'published', published_at = NOW()
-         WHERE id = (
-             SELECT curriculum_version_id FROM study_programs WHERE id = $1
-         )",
-    )
-    .bind(study_program_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+        "WITH edition AS (INSERT INTO curriculum_editions(name,revision_year) VALUES('Purge fixture',2569) RETURNING id),
+         level AS (INSERT INTO curriculum_levels(edition_id,code,name_th,grade_level_ids,is_active) SELECT id,'PURGE-FIXTURE','แผนทดสอบผู้ใช้ไฟล์',$1,true FROM edition RETURNING id)
+         INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) SELECT gen_random_uuid(),id,'PURGE-FIXTURE','แผนทดสอบผู้ใช้ไฟล์',true,'published' FROM level RETURNING id",
+    ).bind(sqlx::types::Json(vec![grade_level_id])).fetch_one(&pool).await.unwrap();
+    sqlx::query("UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT l.edition_id FROM study_programs p JOIN curriculum_levels l ON l.id=p.curriculum_level_id WHERE p.id=$1)").bind(study_program_id).execute(&pool).await.unwrap();
     let admission_round_id: Uuid = sqlx::query_scalar(
         "INSERT INTO admission_rounds (
             academic_year_id, grade_level_id, name, apply_start_date, apply_end_date

@@ -277,7 +277,7 @@
 								options={options.studyPrograms.map((program) => ({
 									id: program.id,
 									label: program.name,
-									description: `${program.curriculumName} · ${program.code}`
+									description: `${program.levelName} · ${program.code}`
 								}))}
 								placeholder="เลือกแผนการเรียน"
 							/>

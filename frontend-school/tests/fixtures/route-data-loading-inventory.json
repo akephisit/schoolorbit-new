@@ -283,8 +283,18 @@
 			"preload": "hover",
 			"context": "none",
 			"status": "complete",
+			"backendOwner": "school-academic-core",
+			"notes": "Route starts edition and level listing independently; mutations patch the affected region. Level details own plan structure and optional delivery alignment."
+		},
+		{
+			"route": "staff/academic/curricula/[id]/levels/[levelId]",
+			"wave": "academic-foundation",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
 			"backendOwner": "school-academic-core + school-academic-delivery",
-			"notes": "Route starts curriculum and version list together, explicit structure and optional alignment independently; absent version waits only for list selection. Create/management options remain permission-gated and action-lazy, with focused regional retry and shallow version URL updates."
+			"notes": "Route starts edition, complete level structure and optional delivery alignment independently. Management and copy sources remain permission-gated and action-lazy; refresh cancels stale reads."
 		},
 		{
 			"route": "staff/academic/delivery",

@@ -106,11 +106,11 @@ async fn validate_destinations_with_owned_target(
         .into_iter()
         .collect();
     let programs:Vec<ProgramReference>=sqlx::query_as(
-        "SELECT program.id,version.curriculum_id,COALESCE(curriculum.grade_level_ids,'[]'::jsonb) AS grade_level_ids,
-         (program.status='published' AND version.status='published' AND curriculum.is_active IS TRUE
+        "SELECT program.id,version.id AS curriculum_level_id,COALESCE(version.grade_level_ids,'[]'::jsonb) AS grade_level_ids,
+         (program.status='published' AND curriculum.status='published' AND (curriculum.is_active IS TRUE AND version.is_active)
 ) AS is_applicable
-         FROM study_programs program JOIN curriculum_versions version ON version.id=program.curriculum_version_id
-         JOIN curricula curriculum ON curriculum.id=version.curriculum_id
+         FROM study_programs program JOIN curriculum_levels version ON version.id=program.curriculum_level_id
+         JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
          WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF program,version,curriculum"
     ).bind(program_ids).fetch_all(&mut **tx).await?;
     let programs: BTreeMap<_, _> = programs.into_iter().map(|row| (row.id, row)).collect();
@@ -121,7 +121,7 @@ async fn validate_destinations_with_owned_target(
     .fetch_all(&mut **tx)
     .await?;
     let grades: BTreeSet<_> = grades.into_iter().collect();
-    let mappings:Vec<GradeProgression>=sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE from_grade_level_id=ANY($1) AND is_active ORDER BY id").bind(grade_ids).fetch_all(&mut **tx).await?;
+    let mappings:Vec<GradeProgression>=sqlx::query_as("SELECT id,from_grade_level_id,to_grade_level_id,transition_kind,curriculum_level_id,is_active,created_at,updated_at FROM grade_level_progressions WHERE from_grade_level_id=ANY($1) AND is_active ORDER BY id").bind(grade_ids).fetch_all(&mut **tx).await?;
     let rooms:Vec<RoomReference>=sqlx::query_as("SELECT id,academic_year_id,grade_level_id,study_program_id,is_active IS TRUE AS is_active FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE").bind(room_ids).fetch_all(&mut **tx).await?;
     let rooms: BTreeMap<_, _> = rooms.into_iter().map(|row| (row.id, row)).collect();
     let references = References {
@@ -145,7 +145,7 @@ async fn validate_destinations_with_owned_target(
 #[derive(sqlx::FromRow)]
 struct ProgramReference {
     id: Uuid,
-    curriculum_id: Uuid,
+    curriculum_level_id: Uuid,
     grade_level_ids: Json<Vec<Uuid>>,
     is_applicable: bool,
 }
@@ -229,8 +229,8 @@ fn validate_reference(
             && mapping.from_grade_level_id == source.grade_level_id
             && mapping.to_grade_level_id == decision.target_grade_level_id
             && mapping
-                .curriculum_id
-                .is_none_or(|id| id == source_program.curriculum_id)
+                .curriculum_level_id
+                .is_none_or(|id| id == source_program.curriculum_level_id)
     });
     if !mapped {
         return Err(AppError::ValidationError(

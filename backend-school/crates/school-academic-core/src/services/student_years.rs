@@ -945,10 +945,10 @@ async fn validate_homeroom_context(
             .ok_or_else(|| AppError::ValidationError("ระดับชั้นไม่ถูกต้อง".to_string()))?;
     let valid_program: Option<i32> = sqlx::query_scalar(
         r#"SELECT 1 FROM study_programs program
-           JOIN curriculum_versions version ON version.id = program.curriculum_version_id
-           JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+           JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+           JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE program.id = $1 AND program.status = 'published'
-             AND version.status = 'published' AND curriculum.is_active IS TRUE
+             AND curriculum.status = 'published' AND (curriculum.is_active IS TRUE AND version.is_active)
              AND (EXISTS (SELECT 1 FROM curriculum_course_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2)
                   OR EXISTS (SELECT 1 FROM curriculum_activity_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2))"#,
     ).bind(study_program_id).bind(grade_level_id).fetch_optional(&mut **transaction).await?;

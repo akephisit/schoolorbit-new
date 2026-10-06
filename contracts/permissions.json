@@ -446,37 +446,9 @@
     {
       "module": "academic_curriculum",
       "action": "read",
-      "scope": "organization_unit",
-      "name": "ดูหลักสูตรของหน่วยงาน",
-      "description": "ดูหลักสูตรที่หน่วยงานของตนเป็นเจ้าของ"
-    },
-    {
-      "module": "academic_curriculum",
-      "action": "read",
-      "scope": "organization_tree",
-      "name": "ดูหลักสูตรในสายงาน",
-      "description": "ดูหลักสูตรที่หน่วยงานของตนหรือหน่วยงานย่อยเป็นเจ้าของ"
-    },
-    {
-      "module": "academic_curriculum",
-      "action": "read",
       "scope": "school",
       "name": "ดูหลักสูตรทั้งโรงเรียน",
       "description": "ดูหลักสูตรทั้งหมดของโรงเรียน"
-    },
-    {
-      "module": "academic_curriculum",
-      "action": "manage",
-      "scope": "organization_unit",
-      "name": "จัดการหลักสูตรของหน่วยงาน",
-      "description": "จัดการหลักสูตรที่หน่วยงานของตนเป็นเจ้าของ"
-    },
-    {
-      "module": "academic_curriculum",
-      "action": "manage",
-      "scope": "organization_tree",
-      "name": "จัดการหลักสูตรในสายงาน",
-      "description": "จัดการหลักสูตรที่หน่วยงานของตนหรือหน่วยงานย่อยเป็นเจ้าของ"
     },
     {
       "module": "academic_curriculum",

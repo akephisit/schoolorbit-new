@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 92).await.unwrap();
+    apply_migrations_through(&pool, 94).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 92).await.unwrap();
+    apply_migrations_through(&pool, 94).await.unwrap();
     pool
 }
 
@@ -4450,7 +4450,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let earlier_edition_program_id: Uuid = sqlx::query_scalar(
         r#"SELECT program.id
            FROM study_programs program
-           JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+           JOIN curriculum_levels version ON version.id = program.curriculum_level_id
            JOIN academic_years former_ending_year ON former_ending_year.id =
                (version.migration_provenance->'revisionSelection'->>'legacyEndAcademicYearId')::uuid
            JOIN academic_years selected_year ON selected_year.id = $1

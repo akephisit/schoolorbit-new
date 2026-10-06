@@ -86,7 +86,6 @@
 
 	function curriculumHref(room: Workspace['homerooms'][number]): string {
 		const query = new SvelteURLSearchParams({
-			versionId: room.curriculumVersionId,
 			academicYearId: workspace.academicYearId,
 			academicTermId: workspace.academicTermId,
 			studyProgramId: room.studyProgram.id
@@ -94,7 +93,7 @@
 		if (workspace.deliveryVersionId) {
 			query.set('deliveryVersionId', workspace.deliveryVersionId);
 		}
-		return `/staff/academic/curricula/${room.studyProgram.curriculumId}?${query.toString()}`;
+		return `/staff/academic/curricula/${room.studyProgram.editionId}/levels/${room.curriculumLevelId}?${query.toString()}`;
 	}
 
 	function groupSummary(item: HomeroomDeliveryItem) {
@@ -203,7 +202,7 @@
 										>
 									</div>
 									<p class="mt-1 text-sm text-muted-foreground">
-										{room.studyProgram.name} · {room.studyProgram.curriculumName}
+										{room.studyProgram.name} · {room.studyProgram.levelName}
 									</p>
 								</div>
 							</div>
