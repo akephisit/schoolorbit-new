@@ -15,7 +15,8 @@ For first-time production server bootstrap, follow [Podman server setup](./PODMA
 
 ## Zero course timetable targets
 
-Migration 090 permits nonnegative actual weekly course targets and change-item targets.
+Migration 090 permits nonnegative actual weekly targets in the opening change journal.
+The canonical opening snapshot owns the effective target; no retired catalog column is restored.
 Courses set to zero remain opened with their curriculum, credits, groups, teachers and assessment;
 only standalone timetable demand becomes zero. Activities retain a positive target.
 Publish the opening revision and explicitly update a timetable draft's opening source before the
