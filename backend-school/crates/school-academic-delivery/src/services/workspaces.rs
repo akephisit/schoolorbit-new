@@ -1116,6 +1116,7 @@ pub async fn delivery_management_options(
     pool: &PgPool,
     academic_term_id: Uuid,
     filter: &AcademicResourceListFilter,
+    curriculum_filter: &AcademicResourceListFilter,
 ) -> Result<DeliveryManagementOptions, AppError> {
     let (academic_year_id, term_start): (Uuid, chrono::NaiveDate) =
         sqlx::query_as("SELECT academic_year_id, start_date FROM academic_terms WHERE id = $1")
@@ -1200,8 +1201,12 @@ pub async fn delivery_management_options(
         .into_iter()
         .map(grade_level_lookup_item)
         .collect();
-    let study_programs =
-        curriculum::list_study_program_options_for_year(pool, academic_year_id, filter).await?;
+    let study_programs = if curriculum_filter.includes_school_owned {
+        curriculum::list_study_program_options_for_year(pool, academic_year_id, curriculum_filter)
+            .await?
+    } else {
+        Vec::new()
+    };
     let homeroom_rows: Vec<HomeroomOptionRow> = sqlx::query_as(
         r#"SELECT homeroom.id, homeroom.name, grade.level_type, grade.year,
                   homeroom.grade_level_id

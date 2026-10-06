@@ -5778,6 +5778,10 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
             includes_school_owned: true,
             ..Default::default()
         },
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
     )
     .await
     .expect("management options should load");
@@ -5827,10 +5831,41 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
             organization_unit_ids: vec![context.owner_id],
             ..Default::default()
         },
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
     )
     .await
     .expect("organization-scoped options should load");
     assert!(scoped
+        .catalog_versions
+        .iter()
+        .all(|item| item.id == context.subject_version_id));
+    assert!(
+        scoped
+            .study_programs
+            .iter()
+            .any(|item| item.id == context.study_program_id),
+        "school curriculum choices must not be filtered by the offering owner's organization"
+    );
+    let without_curriculum = workspaces::delivery_management_options(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![context.owner_id],
+            ..Default::default()
+        },
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .expect("a limited offering manager can still load their non-curriculum options");
+    assert!(
+        without_curriculum.study_programs.is_empty(),
+        "offering scope must not authorize school curriculum choices"
+    );
+    assert!(!without_curriculum.catalog_versions.is_empty());
+    assert!(without_curriculum
         .catalog_versions
         .iter()
         .all(|item| item.id == context.subject_version_id));

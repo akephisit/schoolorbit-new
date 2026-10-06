@@ -7,6 +7,8 @@ test.describe.configure({ mode: 'serial' });
 const yearId = '10000000-0000-4000-8000-000000000001';
 const termId = '20000000-0000-4000-8000-000000000001';
 const nextTermId = '20000000-0000-4000-8000-000000000002';
+const versionId = '70000000-0000-4000-8000-000000000001';
+const nextVersionId = '70000000-0000-4000-8000-000000000002';
 const deliveryPath = `/staff/academic/delivery?academicYearId=${yearId}&academicTermId=${termId}`;
 
 function deferred() {
@@ -56,9 +58,9 @@ function homeroomWorkspace(academicTermId: string) {
 	return {
 		academicYearId: yearId,
 		academicTermId,
-		timetableVersionId: null,
-		timetableVersionStatus: null,
-		timetableVersionEffectiveFrom: null,
+		deliveryVersionId: academicTermId === termId ? versionId : nextVersionId,
+		deliveryVersionStatus: 'published',
+		deliveryVersionEffectiveFrom: '2026-05-01',
 		homerooms: [
 			{
 				homeroom: {
@@ -80,7 +82,11 @@ function homeroomWorkspace(academicTermId: string) {
 					code: 'DEFAULT',
 					name: 'แผนมาตรฐาน',
 					editionId: '50000000-0000-4000-8000-000000000001',
-					levelName: 'หลักสูตรทดสอบ'
+					levelName: 'ระดับมัธยมศึกษาตอนต้น',
+					editionName: 'ฉบับปรับปรุง พุทธศักราช 2569',
+					curriculumLevelId: '50000000-0000-4000-8000-000000000001',
+					revisionYear: 2569,
+					gradeLevelIds: ['30000000-0000-4000-8000-000000000001']
 				},
 				curriculumLevelId: '50000000-0000-4000-8000-000000000001',
 				expectedCount: 0,
@@ -100,6 +106,7 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 		homerooms: 0,
 		changes: 0,
 		workspace: 0,
+		selectedVersion: 0,
 		pageView: 0,
 		oldHomeroomSettled: oldHomeroomSettled.promise
 	};
@@ -148,6 +155,45 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 					return;
 				case '/api/menu/user':
 					await fulfill(route, { groups: [] });
+					return;
+				case '/api/academic/delivery-versions': {
+					const selectedTerm = url.searchParams.get('academicTermId') ?? termId;
+					await fulfill(route, [
+						{
+							id: selectedTerm === termId ? versionId : nextVersionId,
+							academicYearId: yearId,
+							academicTermId: selectedTerm,
+							status: 'published',
+							rowVersion: 1,
+							effectiveFrom: '2026-05-01',
+							effectiveUntil: null,
+							changeSetId: null,
+							sourceVersionId: null,
+							offeringCount: 0,
+							groupCount: 0,
+							teacherAssignmentCount: 0,
+							updatedAt: '2026-05-01T00:00:00Z'
+						}
+					]);
+					return;
+				}
+				case `/api/academic/delivery-versions/${versionId}`:
+				case `/api/academic/delivery-versions/${nextVersionId}`:
+					requests.selectedVersion++;
+					await fulfill(route, {
+						id: url.pathname.endsWith(nextVersionId) ? nextVersionId : versionId,
+						academicYearId: yearId,
+						academicTermId: url.pathname.endsWith(nextVersionId) ? nextTermId : termId,
+						status: 'published',
+						rowVersion: 1,
+						effectiveFrom: '2026-05-01',
+						effectiveUntil: null,
+						sourceVersionId: null,
+						createdAt: '2026-05-01T00:00:00Z',
+						updatedAt: '2026-05-01T00:00:00Z',
+						publishedAt: '2026-05-01T00:00:00Z',
+						snapshot: { offerings: [] }
+					});
 					return;
 				case '/api/academic/delivery/homerooms': {
 					requests.homerooms += 1;
@@ -204,7 +250,8 @@ for (const delayed of ['homerooms', 'changes'] as const) {
 		}
 		await expect(page.getByTestId(waitingTestId)).toBeVisible();
 		await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม' }).click();
-		await expect.poll(() => requests.workspace).toBe(1);
+		await expect.poll(() => requests.selectedVersion).toBe(1);
+		expect(requests.workspace).toBe(0);
 		expect(requests.pageView).toBe(0);
 	});
 }

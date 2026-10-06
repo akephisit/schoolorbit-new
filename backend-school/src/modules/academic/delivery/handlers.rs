@@ -7,6 +7,7 @@ use axum::{
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+use crate::policies::academic_curriculum_access_policy::{self, CurriculumAction};
 use crate::policies::learning_offering_access_policy::{self, OfferingAction};
 use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
@@ -401,10 +402,17 @@ pub async fn get_delivery_management_options(
         OfferingAction::Manage,
     )
     .await?;
+    let curriculum_filter = academic_curriculum_access_policy::academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
     Ok(ok(workspaces::delivery_management_options(
         &context.tenant.pool,
         query.academic_term_id,
         &filter,
+        &curriculum_filter,
     )
     .await?))
 }
