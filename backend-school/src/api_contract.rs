@@ -516,13 +516,13 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::create_curriculum,
         crate::modules::academic::core::handlers::get_curriculum,
         crate::modules::academic::core::handlers::update_curriculum,
-        crate::modules::academic::core::handlers::list_curriculum_versions,
-        crate::modules::academic::core::handlers::create_curriculum_version,
-        crate::modules::academic::core::handlers::clone_curriculum_version_draft,
-        crate::modules::academic::core::handlers::get_curriculum_version,
+        crate::modules::academic::core::handlers::list_curriculum_levels,
+        crate::modules::academic::core::handlers::create_curriculum_level,
+        crate::modules::academic::core::handlers::copy_study_program,
+        crate::modules::academic::core::handlers::get_curriculum_level,
         crate::modules::academic::core::handlers::get_curriculum_management_options,
-        crate::modules::academic::core::handlers::update_curriculum_version,
-        crate::modules::academic::core::handlers::publish_curriculum_version,
+        crate::modules::academic::core::handlers::update_curriculum_level,
+        crate::modules::academic::core::handlers::publish_curriculum,
         crate::modules::academic::core::handlers::get_curriculum_structure_workspace,
         crate::modules::academic::core::handlers::replace_curriculum_term_slots,
         crate::modules::academic::core::handlers::list_study_programs,
@@ -1034,16 +1034,15 @@ struct SchoolApiDoc;
         SubjectGroup,
         CreateSubjectGroupRequest,
         UpdateSubjectGroupRequest,
-        Curriculum,
-        CurriculumDisplayState,
-        CurriculumOverviewItem,
+        CurriculumEdition,
+                CurriculumOverviewItem,
         CurriculumOverview,
         CreateCurriculumRequest,
         UpdateCurriculumRequest,
-        CurriculumVersion,
-        CurriculumVersionView,
-        CreateCurriculumVersionRequest,
-        UpdateCurriculumVersionRequest,
+        CurriculumLevel,
+        CurriculumLevelView,
+        CreateCurriculumLevelRequest,
+        UpdateCurriculumLevelRequest,
         StudyProgram,
         StudyProgramOption,
         CreateStudyProgramRequest,
@@ -1106,13 +1105,13 @@ struct SchoolApiDoc;
         ApiResponse<CatalogActivity>,
         ApiResponse<Vec<ActivityVersion>>,
         ApiResponse<ActivityVersion>,
-        ApiResponse<Vec<Curriculum>>,
+        ApiResponse<Vec<CurriculumEdition>>,
         ApiResponse<CurriculumOverview>,
         ApiResponse<CurriculumCreateOptions>,
         ApiResponse<CurriculumManagementOptions>,
-        ApiResponse<Curriculum>,
-        ApiResponse<Vec<CurriculumVersion>>,
-        ApiResponse<CurriculumVersion>,
+        ApiResponse<CurriculumEdition>,
+        ApiResponse<Vec<CurriculumLevel>>,
+        ApiResponse<CurriculumLevel>,
         ApiResponse<Vec<StudyProgram>>,
         ApiResponse<Vec<StudyProgramOption>>,
         ApiResponse<StudyProgram>,
@@ -3396,12 +3395,12 @@ mod tests {
                 "#/components/schemas/ApiResponse_CurriculumCreateOptions",
             ),
             (
-                "/api/academic/curriculum-versions/{id}/management-options",
+                "/api/academic/curriculum-levels/{id}/management-options",
                 "getCurriculumManagementOptions",
                 "#/components/schemas/ApiResponse_CurriculumManagementOptions",
             ),
             (
-                "/api/academic/curriculum-versions/{curriculumVersionId}/structure",
+                "/api/academic/curriculum-levels/{id}/structure",
                 "getCurriculumStructureWorkspace",
                 "#/components/schemas/ApiResponse_CurriculumStructureWorkspace",
             ),
@@ -3445,12 +3444,12 @@ mod tests {
             );
         }
         assert_eq!(
-            document["paths"]["/api/academic/curriculum-versions/{curriculumVersionId}/structure"]
-                ["get"]["responses"]["404"]["content"]["application/json"]["schema"]["$ref"],
+            document["paths"]["/api/academic/curriculum-levels/{id}/structure"]["get"]["responses"]
+                ["404"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
         assert_eq!(
-            document["paths"]["/api/academic/curriculum-versions/{id}/management-options"]["get"]
+            document["paths"]["/api/academic/curriculum-levels/{id}/management-options"]["get"]
                 ["responses"]["404"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
@@ -3476,7 +3475,7 @@ mod tests {
     }
 
     #[test]
-    fn curriculum_alignment_and_clone_handoff_are_typed() {
+    fn curriculum_alignment_and_selected_program_copy_are_typed() {
         let document = school_api_value().expect("document should serialize");
         assert!(document["paths"]["/api/academic/delivery/page-view"].is_null());
         assert!(document["components"]["schemas"]["LearningDeliveryPageView"].is_null());
@@ -3503,7 +3502,7 @@ mod tests {
             "HomeroomDeliveryItem",
             "HomeroomDeliveryRoom",
             "HomeroomDeliveryWorkspace",
-            "CloneCurriculumVersionRequest",
+            "CopyStudyProgramRequest",
         ] {
             assert!(
                 !document["components"]["schemas"][schema].is_null(),
@@ -3512,15 +3511,15 @@ mod tests {
         }
 
         let operation =
-            &document["paths"]["/api/academic/curriculum-versions/{id}/clone-draft"]["post"];
-        assert_eq!(operation["operationId"], "cloneCurriculumVersionDraft");
+            &document["paths"]["/api/academic/curriculum-levels/{id}/copy-program"]["post"];
+        assert_eq!(operation["operationId"], "copyStudyProgram");
         assert_eq!(
             operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/CloneCurriculumVersionRequest"
+            "#/components/schemas/CopyStudyProgramRequest"
         );
         assert_eq!(
             operation["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_CurriculumVersion"
+            "#/components/schemas/ApiResponse_StudyProgram"
         );
         for status in ["400", "401", "403", "404", "409"] {
             assert_eq!(

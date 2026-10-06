@@ -45,7 +45,7 @@ struct SeedSummary {
     academic_year_id: Uuid,
     active_term_id: Uuid,
     grade_level_id: Uuid,
-    curriculum_version_id: Uuid,
+    curriculum_level_id: Uuid,
     study_program_id: Uuid,
     homeroom_id: Uuid,
 }
@@ -94,7 +94,7 @@ async fn main() -> SeedResult<()> {
     println!("  academic year id: {}", summary.academic_year_id);
     println!("  active term id: {}", summary.active_term_id);
     println!("  grade level id: {}", summary.grade_level_id);
-    println!("  curriculum version id: {}", summary.curriculum_version_id);
+    println!("  curriculum level id: {}", summary.curriculum_level_id);
     println!("  study program id: {}", summary.study_program_id);
     println!("  homeroom id: {}", summary.homeroom_id);
 
@@ -246,7 +246,7 @@ async fn seed_database(pool: &PgPool, config: &SeedConfig) -> SeedResult<SeedSum
     let active_term_id = upsert_terms(&mut tx, config.academic_year, academic_year_id).await?;
     let grade_level_id = upsert_grade_level(&mut tx).await?;
     ensure_year_grade_level(&mut tx, academic_year_id, grade_level_id).await?;
-    let (curriculum_version_id, study_program_id) = upsert_curriculum_program(
+    let (curriculum_level_id, study_program_id) = upsert_curriculum_program(
         &mut tx,
         academic_year_id,
         grade_level_id,
@@ -282,7 +282,7 @@ async fn seed_database(pool: &PgPool, config: &SeedConfig) -> SeedResult<SeedSum
         academic_year_id,
         active_term_id,
         grade_level_id,
-        curriculum_version_id,
+        curriculum_level_id,
         study_program_id,
         homeroom_id,
     })
@@ -719,108 +719,32 @@ async fn ensure_year_grade_level(
 
 async fn upsert_curriculum_program(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    academic_year_id: Uuid,
+    _academic_year_id: Uuid,
     grade_level_id: Uuid,
     academic_year: i32,
 ) -> SeedResult<(Uuid, Uuid)> {
-    let grade_ids = json!([grade_level_id]);
-    let curriculum_id = sqlx::query_scalar::<_, Uuid>(
-        r#"
-        INSERT INTO curricula (
-            code, identity_key, name_th, name_en, description, grade_level_ids, is_active
-        )
-        VALUES ('SBX-GEN', 'sbx-gen', 'Sandbox General', 'Sandbox General',
-                'Minimal sandbox fixture for smoke and E2E tests', $1, true)
-        ON CONFLICT (code) DO UPDATE SET
-            identity_key = EXCLUDED.identity_key,
-            name_th = EXCLUDED.name_th,
-            name_en = EXCLUDED.name_en,
-            description = EXCLUDED.description,
-            grade_level_ids = EXCLUDED.grade_level_ids,
-            is_active = true,
-            updated_at = NOW()
-        RETURNING id
-        "#,
-    )
-    .bind(grade_ids)
-    .fetch_one(&mut **tx)
-    .await?;
-
-    let version_name = format!("Sandbox {}", academic_year);
-    sqlx::query(
-        r#"
-        INSERT INTO curriculum_versions (
-            curriculum_id, version_name, start_academic_year_id, description, is_active, status
-        )
-        VALUES ($1, $2, $3, 'Seeded sandbox curriculum version', true, 'draft')
-        ON CONFLICT (curriculum_id, version_name) DO NOTHING
-        "#,
-    )
-    .bind(curriculum_id)
-    .bind(&version_name)
-    .bind(academic_year_id)
-    .execute(&mut **tx)
-    .await?;
-
-    let curriculum_version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM curriculum_versions
-         WHERE curriculum_id = $1 AND version_name = $2",
-    )
-    .bind(curriculum_id)
-    .bind(&version_name)
-    .fetch_one(&mut **tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        INSERT INTO study_programs (
-            id, curriculum_version_id, code, name_th, name_en, is_default, status
-        )
-        SELECT $1, $2, 'GENERAL', 'แผนการเรียนทั่วไป Sandbox',
-               'Sandbox General', true, 'draft'
-        WHERE NOT EXISTS (
-            SELECT 1 FROM study_programs
-            WHERE curriculum_version_id = $2 AND code = 'GENERAL'
-        )
-        ON CONFLICT (curriculum_version_id, code) DO NOTHING
-        "#,
-    )
-    .bind(Uuid::new_v5(
-        &Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?,
-        format!("sandbox-study-program:{curriculum_version_id}:GENERAL").as_bytes(),
-    ))
-    .bind(curriculum_version_id)
-    .execute(&mut **tx)
-    .await?;
-
-    let study_program_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM study_programs
-         WHERE curriculum_version_id = $1 AND code = 'GENERAL'",
-    )
-    .bind(curriculum_version_id)
-    .fetch_one(&mut **tx)
-    .await?;
-
-    sqlx::query(
-        "UPDATE study_programs
-         SET status = 'published', row_version = row_version + 1, updated_at = NOW()
-         WHERE id = $1 AND status = 'draft'",
-    )
-    .bind(study_program_id)
-    .execute(&mut **tx)
-    .await?;
-
-    sqlx::query(
-        "UPDATE curriculum_versions
-         SET status = 'published', published_at = NOW(),
-             row_version = row_version + 1, updated_at = NOW()
-         WHERE id = $1 AND status = 'draft'",
-    )
-    .bind(curriculum_version_id)
-    .execute(&mut **tx)
-    .await?;
-
-    Ok((curriculum_version_id, study_program_id))
+    let namespace = Uuid::parse_str("5c33b984-10df-58db-bf80-62dbc4a03d1b")?;
+    let edition_id = Uuid::new_v5(
+        &namespace,
+        format!("sandbox-edition:{academic_year}").as_bytes(),
+    );
+    let level_id = Uuid::new_v5(
+        &namespace,
+        format!("sandbox-level:{academic_year}:SBX-GEN").as_bytes(),
+    );
+    let program_id = Uuid::new_v5(
+        &namespace,
+        format!("sandbox-study-program:{level_id}:GENERAL").as_bytes(),
+    );
+    sqlx::query("INSERT INTO curriculum_editions(id,name,revision_year,description) VALUES($1,$2,$3,'Minimal sandbox fixture for smoke and E2E tests') ON CONFLICT(id) DO NOTHING")
+        .bind(edition_id).bind(format!("Sandbox {academic_year}")).bind(academic_year+543).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO curriculum_levels(id,edition_id,code,name_th,grade_level_ids,is_active) SELECT $1,$2,'SBX-GEN','Sandbox General',$3,true WHERE NOT EXISTS(SELECT 1 FROM curriculum_levels WHERE id=$1)")
+        .bind(level_id).bind(edition_id).bind(json!([grade_level_id])).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) SELECT $1,$2,'GENERAL','แผนการเรียนทั่วไป Sandbox',true,'draft' WHERE NOT EXISTS(SELECT 1 FROM study_programs WHERE id=$1)")
+        .bind(program_id).bind(level_id).execute(&mut **tx).await?;
+    sqlx::query("UPDATE study_programs SET status='published',row_version=row_version+1,updated_at=now() WHERE id=$1 AND status='draft'").bind(program_id).execute(&mut **tx).await?;
+    sqlx::query("UPDATE curriculum_editions SET status='published',published_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1 AND status='draft'").bind(edition_id).execute(&mut **tx).await?;
+    Ok((level_id, program_id))
 }
 
 async fn upsert_homeroom(

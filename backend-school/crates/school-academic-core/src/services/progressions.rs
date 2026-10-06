@@ -17,9 +17,9 @@ pub async fn list(pool: &PgPool) -> Result<GradeProgressionSet, AppError> {
     let progressions = sqlx::query_as(
         r#"
         SELECT id, from_grade_level_id, to_grade_level_id, transition_kind,
-               curriculum_id, is_active, created_at, updated_at
+               curriculum_level_id, is_active, created_at, updated_at
         FROM grade_level_progressions
-        ORDER BY from_grade_level_id, curriculum_id NULLS FIRST, transition_kind, to_grade_level_id
+        ORDER BY from_grade_level_id, curriculum_level_id NULLS FIRST, transition_kind, to_grade_level_id
         "#,
     )
     .fetch_all(pool)
@@ -62,7 +62,7 @@ pub async fn replace(
             r#"
             INSERT INTO grade_level_progressions (
                 id, from_grade_level_id, to_grade_level_id, transition_kind,
-                curriculum_id, is_active
+                curriculum_level_id, is_active
             ) VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
@@ -70,7 +70,7 @@ pub async fn replace(
         .bind(progression.from_grade_level_id)
         .bind(progression.to_grade_level_id)
         .bind(progression.transition_kind)
-        .bind(progression.curriculum_id)
+        .bind(progression.curriculum_level_id)
         .bind(progression.is_active)
         .execute(&mut *transaction)
         .await?;
@@ -97,7 +97,7 @@ fn validate_input_duplicates(progressions: &[GradeProgressionInput]) -> Result<(
             progression.from_grade_level_id,
             progression.to_grade_level_id,
             progression.transition_kind as u8,
-            progression.curriculum_id,
+            progression.curriculum_level_id,
         );
         if !seen.insert(key) {
             return Err(AppError::ValidationError("กฎการเลื่อนระดับชั้นซ้ำกัน".to_string()));
@@ -136,11 +136,11 @@ async fn validate_scope(
             "ระดับชั้นในกฎการเลื่อนไม่ถูกต้อง".to_string(),
         ));
     }
-    if let Some(curriculum_id) = progression.curriculum_id {
+    if let Some(curriculum_level_id) = progression.curriculum_level_id {
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM curricula WHERE id = $1 AND is_active IS TRUE)",
+            "SELECT EXISTS (SELECT 1 FROM curriculum_levels WHERE id = $1 AND is_active IS TRUE)",
         )
-        .bind(curriculum_id)
+        .bind(curriculum_level_id)
         .fetch_one(&mut **transaction)
         .await?;
         if !exists {

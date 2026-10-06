@@ -1095,7 +1095,7 @@ pub struct HomeroomDeliveryRoom {
     pub homeroom: HomeroomLookupItem,
     pub grade_level: GradeLevelLookupItem,
     pub study_program: StudyProgramOption,
-    pub curriculum_version_id: Uuid,
+    pub curriculum_level_id: Uuid,
     pub expected_count: usize,
     pub ready_count: usize,
     pub items: Vec<HomeroomDeliveryItem>,

@@ -12,10 +12,14 @@ const now = '2026-08-29T00:00:00Z';
 
 function workspace(): CurriculumStructureWorkspace {
 	return {
-		curriculumVersion: {
+		level: {
 			id: 'version-1',
-			curriculumId: 'curriculum-1',
-			versionName: 'ฉบับ 2570',
+			editionId: 'curriculum-1',
+			code: 'J',
+			nameTh: 'ระดับมัธยมศึกษาตอนต้น',
+			gradeLevelIds: ['grade-1'],
+			isActive: true,
+			editionName: 'ฉบับ 2570',
 			revisionYear: 2570,
 			status: 'draft',
 			rowVersion: 1,
@@ -26,7 +30,7 @@ function workspace(): CurriculumStructureWorkspace {
 		termSlots: [
 			{
 				id: 'term-1',
-				curriculumVersionId: 'version-1',
+				curriculumLevelId: 'version-1',
 				sequence: 1,
 				termType: 'regular',
 				typeOccurrence: 1,
@@ -35,7 +39,7 @@ function workspace(): CurriculumStructureWorkspace {
 			},
 			{
 				id: 'term-2',
-				curriculumVersionId: 'version-1',
+				curriculumLevelId: 'version-1',
 				sequence: 2,
 				termType: 'regular',
 				typeOccurrence: 2,
@@ -44,7 +48,7 @@ function workspace(): CurriculumStructureWorkspace {
 			},
 			{
 				id: 'summer',
-				curriculumVersionId: 'version-1',
+				curriculumLevelId: 'version-1',
 				sequence: 3,
 				termType: 'summer',
 				typeOccurrence: 1,
@@ -55,7 +59,7 @@ function workspace(): CurriculumStructureWorkspace {
 		programs: [
 			{
 				id: 'program-a',
-				curriculumVersionId: 'version-1',
+				curriculumLevelId: 'version-1',
 				code: 'GENERAL',
 				nameTh: 'แผนทั่วไป',
 				isDefault: true,
@@ -66,7 +70,7 @@ function workspace(): CurriculumStructureWorkspace {
 			},
 			{
 				id: 'program-b',
-				curriculumVersionId: 'version-1',
+				curriculumLevelId: 'version-1',
 				code: 'SCI-MATH',
 				nameTh: 'วิทย์–คณิต',
 				isDefault: false,

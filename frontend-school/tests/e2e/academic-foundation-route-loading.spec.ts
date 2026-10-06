@@ -85,41 +85,24 @@ async function mockRoute(
 	return requests;
 }
 
-test('curriculum creation loads options on open and survives a stale initial overview', async ({
+test('edition creation needs no owner or grade reads and survives a stale overview', async ({
 	page
 }) => {
 	const entry = routes[1];
-	const curriculumId = '50000000-0000-4000-8000-000000000001';
-	const gradeLevelId = '60000000-0000-4000-8000-000000000001';
-	let writes = 0;
-	const initialGate = deferred();
-	const requests = await mockRoute(page, entry, initialGate.promise, false, async (route, url) => {
-		if (url.pathname === '/api/academic/curricula/management-options') {
-			await fulfill(route, {
-				ownerOptions: [{ organizationUnitId: null, name: 'โรงเรียน', code: null }],
-				gradeLevels: [
-					{
-						id: gradeLevelId,
-						name: 'มัธยมศึกษาปีที่ 1',
-						short_name: 'ม.1',
-						code: 'M1',
-						level_type: 'secondary',
-						year: 1
-					}
-				]
-			});
-			return true;
-		}
+	let body: Record<string, unknown> | null = null;
+	const gate = deferred();
+	const requests = await mockRoute(page, entry, gate.promise, false, async (route, url) => {
 		if (url.pathname === '/api/academic/curricula' && route.request().method() === 'POST') {
-			writes += 1;
+			body = route.request().postDataJSON();
 			await fulfill(route, {
-				id: curriculumId,
-				code: 'CUR2570',
-				nameTh: 'หลักสูตรทดสอบ',
-				nameEn: null,
-				gradeLevelIds: [gradeLevelId],
-				owningOrganizationUnitId: null,
-				rowVersion: 1
+				...body,
+				id: '50000000-0000-4000-8000-000000000001',
+				status: 'draft',
+				isActive: true,
+				rowVersion: 1,
+				publishedAt: null,
+				createdAt: '2026-05-01T00:00:00Z',
+				updatedAt: '2026-05-01T00:00:00Z'
 			});
 			return true;
 		}
@@ -128,23 +111,28 @@ test('curriculum creation loads options on open and survives a stale initial ove
 	await page.goto(entry.path);
 	try {
 		await expect.poll(() => requests.primary).toBe(1);
-		await expect(page.getByTestId(entry.readyTestId)).toHaveCount(0);
-		expect(requests.optional).toBe(0);
-		await page.getByRole('button', { name: 'เพิ่มระดับ/กลุ่มหลักสูตร' }).click();
-		await expect(page.getByRole('dialog')).toBeVisible();
-		await expect.poll(() => requests.optional).toBe(1);
-		await page.getByLabel('รหัสหลักสูตร').fill('CUR2570');
-		await page.getByLabel('ชื่อระดับ/กลุ่มหลักสูตร').fill('หลักสูตรทดสอบ');
-		await page.getByRole('combobox', { name: 'เลือกระดับชั้นของหลักสูตร' }).click();
-		await page.getByRole('button', { name: 'เลือกทั้งหมด' }).click();
-		await page.getByRole('button', { name: 'สร้างระดับ/กลุ่มหลักสูตร' }).click();
-		await expect(page.getByRole('link', { name: 'เปิดหลักสูตร หลักสูตรทดสอบ' })).toBeVisible();
+		await page.getByRole('button', { name: 'เพิ่มฉบับหลักสูตร', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByLabel('ปีปรับปรุง (พุทธศักราช) *').fill('2570');
+		await expect(dialog.getByLabel('รหัสหลักสูตร')).toHaveCount(0);
+		await expect(dialog.getByLabel('หน่วยงานเจ้าของหลักสูตร')).toHaveCount(0);
+		await dialog.getByRole('button', { name: 'สร้างฉบับร่าง' }).click();
+		await expect(
+			page.getByRole('link', { name: 'ฉบับปรับปรุง พุทธศักราช 2570', exact: true })
+		).toBeVisible();
 	} finally {
-		initialGate.release();
+		gate.release();
 	}
-	await expect(page.getByRole('link', { name: 'เปิดหลักสูตร หลักสูตรทดสอบ' })).toBeVisible();
-	expect(writes).toBe(1);
+	await expect(
+		page.getByRole('link', { name: 'ฉบับปรับปรุง พุทธศักราช 2570', exact: true })
+	).toBeVisible();
+	expect(body).toEqual({
+		name: 'ฉบับปรับปรุง พุทธศักราช 2570',
+		revisionYear: 2570,
+		description: null
+	});
 	expect(requests.primary).toBe(1);
+	expect(requests.optional).toBe(0);
 });
 
 for (const entry of routes) {

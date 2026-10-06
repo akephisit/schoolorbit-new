@@ -5973,13 +5973,39 @@
         ],
         "type": "object"
       },
-      "ApiResponse_Curriculum": {
+      "ApiResponse_CurriculumCreateOptions": {
         "properties": {
           "data": {
             "properties": {
-              "code": {
-                "type": "string"
-              },
+              "gradeLevels": {
+                "items": {
+                  "$ref": "#/components/schemas/GradeLevelLookupItem"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "gradeLevels"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CurriculumEdition": {
+        "properties": {
+          "data": {
+            "properties": {
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -5990,42 +6016,39 @@
                   "null"
                 ]
               },
-              "gradeLevelIds": {
-                "items": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "type": "array"
-              },
               "id": {
                 "format": "uuid",
                 "type": "string"
               },
               "isActive": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
+                "type": "boolean"
               },
-              "nameEn": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+              "migrated": {
+                "type": "boolean"
               },
-              "nameTh": {
+              "name": {
                 "type": "string"
               },
-              "owningOrganizationUnitId": {
-                "format": "uuid",
+              "publishedAt": {
+                "format": "date-time",
                 "type": [
                   "string",
+                  "null"
+                ]
+              },
+              "revisionYear": {
+                "format": "int32",
+                "type": [
+                  "integer",
                   "null"
                 ]
               },
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
+              },
+              "status": {
+                "$ref": "#/components/schemas/VersionStatus"
               },
               "updatedAt": {
                 "format": "date-time",
@@ -6034,10 +6057,11 @@
             },
             "required": [
               "id",
-              "code",
-              "nameTh",
-              "gradeLevelIds",
+              "name",
+              "status",
+              "isActive",
               "rowVersion",
+              "migrated",
               "createdAt",
               "updatedAt"
             ],
@@ -6056,26 +6080,88 @@
         ],
         "type": "object"
       },
-      "ApiResponse_CurriculumCreateOptions": {
+      "ApiResponse_CurriculumLevel": {
         "properties": {
           "data": {
             "properties": {
-              "gradeLevels": {
+              "code": {
+                "type": "string"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "editionId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "editionName": {
+                "type": "string"
+              },
+              "gradeLevelIds": {
                 "items": {
-                  "$ref": "#/components/schemas/GradeLevelLookupItem"
+                  "format": "uuid",
+                  "type": "string"
                 },
                 "type": "array"
               },
-              "ownerOptions": {
-                "items": {
-                  "$ref": "#/components/schemas/CatalogOwnerOption"
-                },
-                "type": "array"
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "isActive": {
+                "type": "boolean"
+              },
+              "migrated": {
+                "type": "boolean"
+              },
+              "nameEn": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nameTh": {
+                "type": "string"
+              },
+              "revisionYear": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "status": {
+                "$ref": "#/components/schemas/VersionStatus"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
               }
             },
             "required": [
-              "gradeLevels",
-              "ownerOptions"
+              "id",
+              "editionId",
+              "code",
+              "nameTh",
+              "gradeLevelIds",
+              "isActive",
+              "rowVersion",
+              "migrated",
+              "createdAt",
+              "updatedAt",
+              "editionName",
+              "status"
             ],
             "type": "object"
           },
@@ -6199,14 +6285,14 @@
         "properties": {
           "data": {
             "properties": {
-              "curriculumVersion": {
-                "$ref": "#/components/schemas/CurriculumVersion"
-              },
               "gradeLevels": {
                 "items": {
                   "$ref": "#/components/schemas/GradeLevelLookupItem"
                 },
                 "type": "array"
+              },
+              "level": {
+                "$ref": "#/components/schemas/CurriculumLevel"
               },
               "programs": {
                 "items": {
@@ -6235,92 +6321,13 @@
               }
             },
             "required": [
-              "curriculumVersion",
+              "level",
               "termSlots",
               "programs",
               "gradeLevels",
               "requirements",
               "validation",
               "rowVersion"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_CurriculumVersion": {
-        "properties": {
-          "data": {
-            "properties": {
-              "createdAt": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "curriculumId": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "description": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "id": {
-                "format": "uuid",
-                "type": "string"
-              },
-              "migrated": {
-                "type": "boolean"
-              },
-              "publishedAt": {
-                "format": "date-time",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "revisionYear": {
-                "format": "int32",
-                "type": [
-                  "integer",
-                  "null"
-                ]
-              },
-              "rowVersion": {
-                "format": "int64",
-                "type": "integer"
-              },
-              "status": {
-                "$ref": "#/components/schemas/VersionStatus"
-              },
-              "updatedAt": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "versionName": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "curriculumId",
-              "versionName",
-              "status",
-              "rowVersion",
-              "migrated",
-              "createdAt",
-              "updatedAt"
             ],
             "type": "object"
           },
@@ -13001,7 +13008,7 @@
                 "format": "date-time",
                 "type": "string"
               },
-              "curriculumVersionId": {
+              "curriculumLevelId": {
                 "format": "uuid",
                 "type": "string"
               },
@@ -13021,13 +13028,6 @@
               "nameTh": {
                 "type": "string"
               },
-              "owningOrganizationUnitId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
@@ -13042,7 +13042,7 @@
             },
             "required": [
               "id",
-              "curriculumVersionId",
+              "curriculumLevelId",
               "code",
               "nameTh",
               "isDefault",
@@ -18003,14 +18003,11 @@
         ],
         "type": "object"
       },
-      "ApiResponse_Vec_Curriculum": {
+      "ApiResponse_Vec_CurriculumEdition": {
         "properties": {
           "data": {
             "items": {
               "properties": {
-                "code": {
-                  "type": "string"
-                },
                 "createdAt": {
                   "format": "date-time",
                   "type": "string"
@@ -18020,100 +18017,19 @@
                     "string",
                     "null"
                   ]
-                },
-                "gradeLevelIds": {
-                  "items": {
-                    "format": "uuid",
-                    "type": "string"
-                  },
-                  "type": "array"
                 },
                 "id": {
                   "format": "uuid",
                   "type": "string"
                 },
                 "isActive": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "nameEn": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "nameTh": {
-                  "type": "string"
-                },
-                "owningOrganizationUnitId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "rowVersion": {
-                  "format": "int64",
-                  "type": "integer"
-                },
-                "updatedAt": {
-                  "format": "date-time",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "code",
-                "nameTh",
-                "gradeLevelIds",
-                "rowVersion",
-                "createdAt",
-                "updatedAt"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_Vec_CurriculumVersion": {
-        "properties": {
-          "data": {
-            "items": {
-              "properties": {
-                "createdAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                "curriculumId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "description": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "id": {
-                  "format": "uuid",
-                  "type": "string"
+                  "type": "boolean"
                 },
                 "migrated": {
                   "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
                 },
                 "publishedAt": {
                   "format": "date-time",
@@ -18139,16 +18055,13 @@
                 "updatedAt": {
                   "format": "date-time",
                   "type": "string"
-                },
-                "versionName": {
-                  "type": "string"
                 }
               },
               "required": [
                 "id",
-                "curriculumId",
-                "versionName",
+                "name",
                 "status",
+                "isActive",
                 "rowVersion",
                 "migrated",
                 "createdAt",
@@ -18171,17 +18084,118 @@
         ],
         "type": "object"
       },
-      "ApiResponse_Vec_CurriculumVersionView": {
+      "ApiResponse_Vec_CurriculumLevel": {
         "properties": {
           "data": {
             "items": {
               "properties": {
-                "version": {
-                  "$ref": "#/components/schemas/CurriculumVersion"
+                "code": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "editionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "editionName": {
+                  "type": "string"
+                },
+                "gradeLevelIds": {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "isActive": {
+                  "type": "boolean"
+                },
+                "migrated": {
+                  "type": "boolean"
+                },
+                "nameEn": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nameTh": {
+                  "type": "string"
+                },
+                "revisionYear": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/VersionStatus"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "type": "string"
                 }
               },
               "required": [
-                "version"
+                "id",
+                "editionId",
+                "code",
+                "nameTh",
+                "gradeLevelIds",
+                "isActive",
+                "rowVersion",
+                "migrated",
+                "createdAt",
+                "updatedAt",
+                "editionName",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_CurriculumLevelView": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "level": {
+                  "$ref": "#/components/schemas/CurriculumLevel"
+                }
+              },
+              "required": [
+                "level"
               ],
               "type": "object"
             },
@@ -21559,7 +21573,7 @@
                   "format": "date-time",
                   "type": "string"
                 },
-                "curriculumVersionId": {
+                "curriculumLevelId": {
                   "format": "uuid",
                   "type": "string"
                 },
@@ -21579,13 +21593,6 @@
                 "nameTh": {
                   "type": "string"
                 },
-                "owningOrganizationUnitId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "rowVersion": {
                   "format": "int64",
                   "type": "integer"
@@ -21600,7 +21607,7 @@
               },
               "required": [
                 "id",
-                "curriculumVersionId",
+                "curriculumLevelId",
                 "code",
                 "nameTh",
                 "isDefault",
@@ -21634,15 +21641,15 @@
                 "code": {
                   "type": "string"
                 },
-                "curriculumId": {
+                "curriculumLevelId": {
                   "format": "uuid",
                   "type": "string"
                 },
-                "curriculumName": {
+                "editionId": {
+                  "format": "uuid",
                   "type": "string"
                 },
-                "curriculumVersionId": {
-                  "format": "uuid",
+                "editionName": {
                   "type": "string"
                 },
                 "gradeLevelIds": {
@@ -21656,6 +21663,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "levelName": {
+                  "type": "string"
+                },
                 "name": {
                   "type": "string"
                 },
@@ -21665,19 +21675,16 @@
                     "integer",
                     "null"
                   ]
-                },
-                "versionName": {
-                  "type": "string"
                 }
               },
               "required": [
                 "id",
                 "code",
                 "name",
-                "curriculumId",
-                "curriculumName",
-                "curriculumVersionId",
-                "versionName",
+                "editionId",
+                "editionName",
+                "curriculumLevelId",
+                "levelName",
                 "gradeLevelIds"
               ],
               "type": "object"
@@ -27133,34 +27140,6 @@
         ],
         "type": "object"
       },
-      "CloneCurriculumVersionRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "revisionYear": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "sourceRowVersion": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "versionName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "versionName",
-          "revisionYear",
-          "sourceRowVersion"
-        ],
-        "type": "object"
-      },
       "CloneTimetableVersionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -27403,6 +27382,35 @@
         "required": [
           "entryEnabled",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "CopyStudyProgramRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "destinationRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "nameTh": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceProgramId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sourceProgramId",
+          "sourceRowVersion",
+          "destinationRowVersion"
         ],
         "type": "object"
       },
@@ -28223,12 +28231,9 @@
         ],
         "type": "object"
       },
-      "CreateCurriculumRequest": {
+      "CreateCurriculumLevelRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "type": "string"
-          },
           "description": {
             "type": [
               "string",
@@ -28242,31 +28247,17 @@
             },
             "type": "array"
           },
-          "nameEn": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "nameTh": {
             "type": "string"
-          },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
-          "code",
           "nameTh",
           "gradeLevelIds"
         ],
         "type": "object"
       },
-      "CreateCurriculumVersionRequest": {
+      "CreateCurriculumRequest": {
         "additionalProperties": false,
         "properties": {
           "description": {
@@ -28275,16 +28266,16 @@
               "null"
             ]
           },
+          "name": {
+            "type": "string"
+          },
           "revisionYear": {
             "format": "int32",
             "type": "integer"
-          },
-          "versionName": {
-            "type": "string"
           }
         },
         "required": [
-          "versionName",
+          "name",
           "revisionYear"
         ],
         "type": "object"
@@ -29419,31 +29410,14 @@
       "CreateStudyProgramRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "type": "string"
-          },
           "isDefault": {
             "type": "boolean"
           },
-          "nameEn": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "nameTh": {
             "type": "string"
-          },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
-          "code",
           "nameTh",
           "isDefault"
         ],
@@ -29994,74 +29968,6 @@
         ],
         "type": "object"
       },
-      "Curriculum": {
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "gradeLevelIds": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "isActive": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "nameEn": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "nameTh": {
-            "type": "string"
-          },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "rowVersion": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "code",
-          "nameTh",
-          "gradeLevelIds",
-          "rowVersion",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
       "CurriculumCatalogVersionOption": {
         "properties": {
           "code": {
@@ -30110,17 +30016,10 @@
               "$ref": "#/components/schemas/GradeLevelLookupItem"
             },
             "type": "array"
-          },
-          "ownerOptions": {
-            "items": {
-              "$ref": "#/components/schemas/CatalogOwnerOption"
-            },
-            "type": "array"
           }
         },
         "required": [
-          "gradeLevels",
-          "ownerOptions"
+          "gradeLevels"
         ],
         "type": "object"
       },
@@ -30194,13 +30093,6 @@
         ],
         "type": "object"
       },
-      "CurriculumDisplayState": {
-        "enum": [
-          "published",
-          "unpublished"
-        ],
-        "type": "string"
-      },
       "CurriculumDocumentSection": {
         "enum": [
           "basic_course",
@@ -30208,6 +30100,69 @@
           "student_development"
         ],
         "type": "string"
+      },
+      "CurriculumEdition": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "migrated": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revisionYear": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VersionStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "isActive",
+          "rowVersion",
+          "migrated",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
       },
       "CurriculumGroupProposal": {
         "additionalProperties": false,
@@ -30230,6 +30185,100 @@
           "groupKey",
           "name",
           "homeroomIds"
+        ],
+        "type": "object"
+      },
+      "CurriculumLevel": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "editionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "editionName": {
+            "type": "string"
+          },
+          "gradeLevelIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "migrated": {
+            "type": "boolean"
+          },
+          "nameEn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nameTh": {
+            "type": "string"
+          },
+          "revisionYear": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VersionStatus"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "editionId",
+          "code",
+          "nameTh",
+          "gradeLevelIds",
+          "isActive",
+          "rowVersion",
+          "migrated",
+          "createdAt",
+          "updatedAt",
+          "editionName",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CurriculumLevelView": {
+        "properties": {
+          "level": {
+            "$ref": "#/components/schemas/CurriculumLevel"
+          }
+        },
+        "required": [
+          "level"
         ],
         "type": "object"
       },
@@ -30293,31 +30342,12 @@
       },
       "CurriculumOverviewItem": {
         "properties": {
-          "curriculum": {
-            "$ref": "#/components/schemas/Curriculum"
+          "edition": {
+            "$ref": "#/components/schemas/CurriculumEdition"
           },
-          "displayState": {
-            "$ref": "#/components/schemas/CurriculumDisplayState"
-          },
-          "displayVersion": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/CurriculumVersion"
-              }
-            ]
-          },
-          "draftCount": {
+          "levelCount": {
             "format": "int64",
             "type": "integer"
-          },
-          "gradeLevels": {
-            "items": {
-              "$ref": "#/components/schemas/GradeLevelLookupItem"
-            },
-            "type": "array"
           },
           "studyProgramCount": {
             "format": "int64",
@@ -30325,11 +30355,9 @@
           }
         },
         "required": [
-          "curriculum",
-          "displayState",
-          "gradeLevels",
-          "studyProgramCount",
-          "draftCount"
+          "edition",
+          "levelCount",
+          "studyProgramCount"
         ],
         "type": "object"
       },
@@ -30579,14 +30607,14 @@
       },
       "CurriculumStructureWorkspace": {
         "properties": {
-          "curriculumVersion": {
-            "$ref": "#/components/schemas/CurriculumVersion"
-          },
           "gradeLevels": {
             "items": {
               "$ref": "#/components/schemas/GradeLevelLookupItem"
             },
             "type": "array"
+          },
+          "level": {
+            "$ref": "#/components/schemas/CurriculumLevel"
           },
           "programs": {
             "items": {
@@ -30615,7 +30643,7 @@
           }
         },
         "required": [
-          "curriculumVersion",
+          "level",
           "termSlots",
           "programs",
           "gradeLevels",
@@ -30627,7 +30655,7 @@
       },
       "CurriculumTermSlot": {
         "properties": {
-          "curriculumVersionId": {
+          "curriculumLevelId": {
             "format": "uuid",
             "type": "string"
           },
@@ -30656,7 +30684,7 @@
         },
         "required": [
           "id",
-          "curriculumVersionId",
+          "curriculumLevelId",
           "sequence",
           "termType",
           "typeOccurrence",
@@ -30717,81 +30745,6 @@
         "required": [
           "code",
           "message"
-        ],
-        "type": "object"
-      },
-      "CurriculumVersion": {
-        "properties": {
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "curriculumId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "migrated": {
-            "type": "boolean"
-          },
-          "publishedAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "revisionYear": {
-            "format": "int32",
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "rowVersion": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/VersionStatus"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "versionName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "curriculumId",
-          "versionName",
-          "status",
-          "rowVersion",
-          "migrated",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "CurriculumVersionView": {
-        "properties": {
-          "version": {
-            "$ref": "#/components/schemas/CurriculumVersion"
-          }
-        },
-        "required": [
-          "version"
         ],
         "type": "object"
       },
@@ -34615,7 +34568,7 @@
             "format": "date-time",
             "type": "string"
           },
-          "curriculumId": {
+          "curriculumLevelId": {
             "format": "uuid",
             "type": [
               "string",
@@ -34661,7 +34614,7 @@
       "GradeProgressionInput": {
         "additionalProperties": false,
         "properties": {
-          "curriculumId": {
+          "curriculumLevelId": {
             "format": "uuid",
             "type": [
               "string",
@@ -35250,7 +35203,7 @@
             },
             "type": "array"
           },
-          "curriculumVersionId": {
+          "curriculumLevelId": {
             "format": "uuid",
             "type": "string"
           },
@@ -35288,7 +35241,7 @@
           "homeroom",
           "gradeLevel",
           "studyProgram",
-          "curriculumVersionId",
+          "curriculumLevelId",
           "expectedCount",
           "readyCount",
           "items",
@@ -39789,15 +39742,18 @@
           "code": {
             "type": "string"
           },
-          "curriculumId": {
+          "curriculumLevelId": {
             "format": "uuid",
             "type": "string"
           },
-          "curriculumName": {
+          "editionName": {
             "type": "string"
           },
           "id": {
             "format": "uuid",
+            "type": "string"
+          },
+          "levelName": {
             "type": "string"
           },
           "name": {
@@ -39805,18 +39761,15 @@
           },
           "status": {
             "$ref": "#/components/schemas/VersionStatus"
-          },
-          "versionName": {
-            "type": "string"
           }
         },
         "required": [
           "id",
           "code",
           "name",
-          "curriculumId",
-          "curriculumName",
-          "versionName",
+          "curriculumLevelId",
+          "levelName",
+          "editionName",
           "status"
         ],
         "type": "object"
@@ -45426,7 +45379,7 @@
             "format": "date-time",
             "type": "string"
           },
-          "curriculumVersionId": {
+          "curriculumLevelId": {
             "format": "uuid",
             "type": "string"
           },
@@ -45446,13 +45399,6 @@
           "nameTh": {
             "type": "string"
           },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -45467,7 +45413,7 @@
         },
         "required": [
           "id",
-          "curriculumVersionId",
+          "curriculumLevelId",
           "code",
           "nameTh",
           "isDefault",
@@ -45483,15 +45429,15 @@
           "code": {
             "type": "string"
           },
-          "curriculumId": {
+          "curriculumLevelId": {
             "format": "uuid",
             "type": "string"
           },
-          "curriculumName": {
+          "editionId": {
+            "format": "uuid",
             "type": "string"
           },
-          "curriculumVersionId": {
-            "format": "uuid",
+          "editionName": {
             "type": "string"
           },
           "gradeLevelIds": {
@@ -45505,6 +45451,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "levelName": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -45514,19 +45463,16 @@
               "integer",
               "null"
             ]
-          },
-          "versionName": {
-            "type": "string"
           }
         },
         "required": [
           "id",
           "code",
           "name",
-          "curriculumId",
-          "curriculumName",
-          "curriculumVersionId",
-          "versionName",
+          "editionId",
+          "editionName",
+          "curriculumLevelId",
+          "levelName",
           "gradeLevelIds"
         ],
         "type": "object"
@@ -50861,12 +50807,9 @@
         ],
         "type": "object"
       },
-      "UpdateCurriculumRequest": {
+      "UpdateCurriculumLevelRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "type": "string"
-          },
           "description": {
             "type": [
               "string",
@@ -50880,21 +50823,8 @@
             },
             "type": "array"
           },
-          "nameEn": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "nameTh": {
             "type": "string"
-          },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "rowVersion": {
             "format": "int64",
@@ -50902,14 +50832,13 @@
           }
         },
         "required": [
-          "code",
           "nameTh",
           "gradeLevelIds",
           "rowVersion"
         ],
         "type": "object"
       },
-      "UpdateCurriculumVersionRequest": {
+      "UpdateCurriculumRequest": {
         "additionalProperties": false,
         "properties": {
           "description": {
@@ -50918,6 +50847,9 @@
               "null"
             ]
           },
+          "name": {
+            "type": "string"
+          },
           "revisionYear": {
             "format": "int32",
             "type": "integer"
@@ -50925,13 +50857,10 @@
           "rowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "versionName": {
-            "type": "string"
           }
         },
         "required": [
-          "versionName",
+          "name",
           "revisionYear",
           "rowVersion"
         ],
@@ -51872,27 +51801,11 @@
       "UpdateStudyProgramRequest": {
         "additionalProperties": false,
         "properties": {
-          "code": {
-            "type": "string"
-          },
           "isDefault": {
             "type": "boolean"
           },
-          "nameEn": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "nameTh": {
             "type": "string"
-          },
-          "owningOrganizationUnitId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "rowVersion": {
             "format": "int64",
@@ -51900,7 +51813,6 @@
           }
         },
         "required": [
-          "code",
           "nameTh",
           "isDefault",
           "rowVersion"
@@ -56155,7 +56067,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_Curriculum"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CurriculumEdition"
                 }
               }
             },
@@ -56203,11 +56115,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Curriculum"
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumEdition"
                 }
               }
             },
-            "description": "Curriculum created"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -56217,7 +56129,7 @@
                 }
               }
             },
-            "description": "Invalid curriculum"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -56237,7 +56149,17 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -56247,7 +56169,7 @@
                 }
               }
             },
-            "description": "Curriculum conflict"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -56260,7 +56182,7 @@
         "operationId": "getCurriculum",
         "parameters": [
           {
-            "description": "Curriculum ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -56275,11 +56197,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Curriculum"
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumEdition"
                 }
               }
             },
-            "description": "Curriculum"
+            "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -56299,7 +56231,7 @@
                 }
               }
             },
-            "description": "Academic curriculum read permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -56309,7 +56241,17 @@
                 }
               }
             },
-            "description": "Curriculum not found"
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -56320,7 +56262,7 @@
         "operationId": "updateCurriculum",
         "parameters": [
           {
-            "description": "Curriculum ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -56345,11 +56287,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Curriculum"
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumEdition"
                 }
               }
             },
-            "description": "Curriculum updated"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -56359,7 +56301,7 @@
                 }
               }
             },
-            "description": "Invalid curriculum"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -56379,7 +56321,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -56389,7 +56331,7 @@
                 }
               }
             },
-            "description": "Curriculum not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -56399,7 +56341,7 @@
                 }
               }
             },
-            "description": "Curriculum row version conflict"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -56407,12 +56349,12 @@
         ]
       }
     },
-    "/api/academic/curricula/{id}/versions": {
+    "/api/academic/curricula/{id}/levels": {
       "get": {
-        "operationId": "listCurriculumVersions",
+        "operationId": "listCurriculumLevels",
         "parameters": [
           {
-            "description": "Curriculum ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -56427,11 +56369,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_Vec_CurriculumVersionView"
+                  "$ref": "#/components/schemas/ApiResponse_Vec_CurriculumLevelView"
                 }
               }
             },
-            "description": "Curriculum versions with readable academic-year labels"
+            "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -56451,7 +56403,7 @@
                 }
               }
             },
-            "description": "Academic curriculum read permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -56461,7 +56413,17 @@
                 }
               }
             },
-            "description": "Curriculum not found"
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -56469,10 +56431,10 @@
         ]
       },
       "post": {
-        "operationId": "createCurriculumVersion",
+        "operationId": "createCurriculumLevel",
         "parameters": [
           {
-            "description": "Curriculum ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -56486,7 +56448,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateCurriculumVersionRequest"
+                "$ref": "#/components/schemas/CreateCurriculumLevelRequest"
               }
             }
           },
@@ -56497,11 +56459,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CurriculumVersion"
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumLevel"
                 }
               }
             },
-            "description": "Curriculum version created"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -56511,7 +56473,7 @@
                 }
               }
             },
-            "description": "Invalid curriculum version"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -56531,7 +56493,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -56541,7 +56503,7 @@
                 }
               }
             },
-            "description": "Curriculum not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -56551,7 +56513,99 @@
                 }
               }
             },
-            "description": "Curriculum version conflict"
+            "description": "Revision or publication conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/curricula/{id}/publish": {
+      "post": {
+        "operationId": "publishCurriculum",
+        "parameters": [
+          {
+            "description": "Resource identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumEdition"
+                }
+              }
+            },
+            "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -56581,7 +56635,7 @@
                 }
               }
             },
-            "description": "Curriculum options exceed the supported size"
+            "description": "CurriculumEdition options exceed the supported size"
           },
           "401": {
             "content": {
@@ -56621,7 +56675,7 @@
                 }
               }
             },
-            "description": "Curriculum overview with the most relevant version for each curriculum"
+            "description": "CurriculumEdition overview with the most relevant version for each curriculum"
           },
           "400": {
             "content": {
@@ -56631,7 +56685,7 @@
                 }
               }
             },
-            "description": "Curriculum overview exceeds the supported size"
+            "description": "CurriculumEdition overview exceeds the supported size"
           },
           "401": {
             "content": {
@@ -56659,176 +56713,12 @@
         ]
       }
     },
-    "/api/academic/curriculum-versions/{curriculumVersionId}/structure": {
+    "/api/academic/curriculum-levels/{id}": {
       "get": {
-        "operationId": "getCurriculumStructureWorkspace",
+        "operationId": "getCurriculumLevel",
         "parameters": [
           {
-            "description": "Curriculum version ID",
-            "in": "path",
-            "name": "curriculumVersionId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CurriculumStructureWorkspace"
-                }
-              }
-            },
-            "description": "Curriculum structure workspace"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Curriculum structure cannot be represented"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Academic curriculum read permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Curriculum version not found"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/curriculum-versions/{curriculumVersionId}/term-slots": {
-      "put": {
-        "operationId": "replaceCurriculumTermSlots",
-        "parameters": [
-          {
-            "description": "Curriculum version ID",
-            "in": "path",
-            "name": "curriculumVersionId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReplaceCurriculumTermSlotsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CurriculumStructureWorkspace"
-                }
-              }
-            },
-            "description": "Curriculum term slots replaced"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid or immutable term slots"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Academic curriculum management permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Curriculum version not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Curriculum version row version conflict"
-          }
-        },
-        "tags": [
-          "academic"
-        ]
-      }
-    },
-    "/api/academic/curriculum-versions/{id}": {
-      "get": {
-        "operationId": "getCurriculumVersion",
-        "parameters": [
-          {
-            "description": "Curriculum version ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -56843,11 +56733,21 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CurriculumVersion"
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumLevel"
                 }
               }
             },
-            "description": "Curriculum version"
+            "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -56867,7 +56767,7 @@
                 }
               }
             },
-            "description": "Academic curriculum read permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -56877,7 +56777,17 @@
                 }
               }
             },
-            "description": "Curriculum version not found"
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -56885,10 +56795,10 @@
         ]
       },
       "patch": {
-        "operationId": "updateCurriculumVersion",
+        "operationId": "updateCurriculumLevel",
         "parameters": [
           {
-            "description": "Curriculum version ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -56902,7 +56812,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateCurriculumVersionRequest"
+                "$ref": "#/components/schemas/UpdateCurriculumLevelRequest"
               }
             }
           },
@@ -56913,11 +56823,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CurriculumVersion"
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumLevel"
                 }
               }
             },
-            "description": "Curriculum version updated"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -56927,7 +56837,7 @@
                 }
               }
             },
-            "description": "Invalid or immutable curriculum version"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -56947,7 +56857,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -56957,7 +56867,7 @@
                 }
               }
             },
-            "description": "Curriculum version not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -56967,7 +56877,7 @@
                 }
               }
             },
-            "description": "Curriculum version row version conflict"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -56975,12 +56885,12 @@
         ]
       }
     },
-    "/api/academic/curriculum-versions/{id}/clone-draft": {
+    "/api/academic/curriculum-levels/{id}/copy-program": {
       "post": {
-        "operationId": "cloneCurriculumVersionDraft",
+        "operationId": "copyStudyProgram",
         "parameters": [
           {
-            "description": "Published source curriculum version ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -56994,7 +56904,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CloneCurriculumVersionRequest"
+                "$ref": "#/components/schemas/CopyStudyProgramRequest"
               }
             }
           },
@@ -57005,11 +56915,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CurriculumVersion"
+                  "$ref": "#/components/schemas/ApiResponse_StudyProgram"
                 }
               }
             },
-            "description": "Complete curriculum structure cloned into a future draft"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -57019,7 +56929,7 @@
                 }
               }
             },
-            "description": "Invalid future curriculum effectiveness"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -57039,7 +56949,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -57049,7 +56959,7 @@
                 }
               }
             },
-            "description": "Source curriculum version not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -57059,7 +56969,7 @@
                 }
               }
             },
-            "description": "Source version is stale or not published"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -57067,12 +56977,12 @@
         ]
       }
     },
-    "/api/academic/curriculum-versions/{id}/management-options": {
+    "/api/academic/curriculum-levels/{id}/management-options": {
       "get": {
         "operationId": "getCurriculumManagementOptions",
         "parameters": [
           {
-            "description": "Curriculum version ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -57091,7 +57001,7 @@
                 }
               }
             },
-            "description": "Options for managing a curriculum version"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -57101,7 +57011,7 @@
                 }
               }
             },
-            "description": "Curriculum management options exceed the supported size"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -57121,7 +57031,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -57131,7 +57041,17 @@
                 }
               }
             },
-            "description": "Curriculum version not found"
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -57139,12 +57059,12 @@
         ]
       }
     },
-    "/api/academic/curriculum-versions/{id}/programs": {
+    "/api/academic/curriculum-levels/{id}/programs": {
       "get": {
         "operationId": "listStudyPrograms",
         "parameters": [
           {
-            "description": "Curriculum version ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -57163,7 +57083,17 @@
                 }
               }
             },
-            "description": "Study programs"
+            "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -57183,7 +57113,7 @@
                 }
               }
             },
-            "description": "Academic curriculum read permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -57193,7 +57123,17 @@
                 }
               }
             },
-            "description": "Curriculum version not found"
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -57204,7 +57144,7 @@
         "operationId": "createStudyProgram",
         "parameters": [
           {
-            "description": "Curriculum version ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -57233,7 +57173,7 @@
                 }
               }
             },
-            "description": "Study program created"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -57243,7 +57183,7 @@
                 }
               }
             },
-            "description": "Invalid study program"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -57263,7 +57203,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -57273,7 +57213,7 @@
                 }
               }
             },
-            "description": "Curriculum version not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -57283,7 +57223,7 @@
                 }
               }
             },
-            "description": "Study program conflict"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -57291,12 +57231,94 @@
         ]
       }
     },
-    "/api/academic/curriculum-versions/{id}/publish": {
-      "post": {
-        "operationId": "publishCurriculumVersion",
+    "/api/academic/curriculum-levels/{id}/structure": {
+      "get": {
+        "operationId": "getCurriculumStructureWorkspace",
         "parameters": [
           {
-            "description": "Curriculum version ID",
+            "description": "Resource identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumStructureWorkspace"
+                }
+              }
+            },
+            "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/curriculum-levels/{id}/term-slots": {
+      "put": {
+        "operationId": "replaceCurriculumTermSlots",
+        "parameters": [
+          {
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -57310,7 +57332,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PublishVersionRequest"
+                "$ref": "#/components/schemas/ReplaceCurriculumTermSlotsRequest"
               }
             }
           },
@@ -57321,11 +57343,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_CurriculumVersion"
+                  "$ref": "#/components/schemas/ApiResponse_CurriculumStructureWorkspace"
                 }
               }
             },
-            "description": "Curriculum version published"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -57335,7 +57357,7 @@
                 }
               }
             },
-            "description": "Curriculum version cannot be published"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -57355,7 +57377,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -57365,7 +57387,7 @@
                 }
               }
             },
-            "description": "Curriculum version not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -57375,7 +57397,7 @@
                 }
               }
             },
-            "description": "Curriculum version row version conflict"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -65972,7 +65994,7 @@
                 }
               }
             },
-            "description": "Curriculum offerings applied"
+            "description": "CurriculumEdition offerings applied"
           },
           "400": {
             "content": {
@@ -66012,7 +66034,7 @@
                 }
               }
             },
-            "description": "Curriculum source hash conflict"
+            "description": "CurriculumEdition source hash conflict"
           }
         },
         "tags": [
@@ -66042,7 +66064,7 @@
                 }
               }
             },
-            "description": "Curriculum offering preview"
+            "description": "CurriculumEdition offering preview"
           },
           "400": {
             "content": {
@@ -66082,7 +66104,7 @@
                 }
               }
             },
-            "description": "Curriculum source conflict"
+            "description": "CurriculumEdition source conflict"
           }
         },
         "tags": [
@@ -69474,7 +69496,7 @@
         "operationId": "getStudyProgram",
         "parameters": [
           {
-            "description": "Study program ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -69493,7 +69515,17 @@
                 }
               }
             },
-            "description": "Study program"
+            "description": "Curriculum resource"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -69513,7 +69545,7 @@
                 }
               }
             },
-            "description": "Academic curriculum read permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -69523,7 +69555,17 @@
                 }
               }
             },
-            "description": "Study program not found"
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -69534,7 +69576,7 @@
         "operationId": "updateStudyProgram",
         "parameters": [
           {
-            "description": "Study program ID",
+            "description": "Resource identity",
             "in": "path",
             "name": "id",
             "required": true,
@@ -69563,7 +69605,7 @@
                 }
               }
             },
-            "description": "Study program updated"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -69573,7 +69615,7 @@
                 }
               }
             },
-            "description": "Invalid or immutable study program"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -69593,7 +69635,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -69603,7 +69645,7 @@
                 }
               }
             },
-            "description": "Study program not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -69613,7 +69655,7 @@
                 }
               }
             },
-            "description": "Study program row version conflict"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [
@@ -69621,14 +69663,14 @@
         ]
       }
     },
-    "/api/academic/study-programs/{studyProgramId}/structure": {
+    "/api/academic/study-programs/{id}/structure": {
       "put": {
         "operationId": "replaceCurriculumStructure",
         "parameters": [
           {
-            "description": "Study program ID",
+            "description": "Resource identity",
             "in": "path",
-            "name": "studyProgramId",
+            "name": "id",
             "required": true,
             "schema": {
               "format": "uuid",
@@ -69655,7 +69697,7 @@
                 }
               }
             },
-            "description": "Study program curriculum structure replaced"
+            "description": "Curriculum resource"
           },
           "400": {
             "content": {
@@ -69665,7 +69707,7 @@
                 }
               }
             },
-            "description": "Invalid or immutable curriculum structure"
+            "description": "Validation failed"
           },
           "401": {
             "content": {
@@ -69685,7 +69727,7 @@
                 }
               }
             },
-            "description": "Academic curriculum management permission denied"
+            "description": "Permission denied"
           },
           "404": {
             "content": {
@@ -69695,7 +69737,7 @@
                 }
               }
             },
-            "description": "Study program not found"
+            "description": "Resource not found"
           },
           "409": {
             "content": {
@@ -69705,7 +69747,7 @@
                 }
               }
             },
-            "description": "Study program row version conflict"
+            "description": "Revision or publication conflict"
           }
         },
         "tags": [

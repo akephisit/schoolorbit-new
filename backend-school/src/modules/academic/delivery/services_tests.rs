@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 92).await.unwrap();
+    apply_migrations_through(&pool, 94).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 92).await.unwrap();
+    apply_migrations_through(&pool, 94).await.unwrap();
     pool
 }
 
@@ -4450,7 +4450,7 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let earlier_edition_program_id: Uuid = sqlx::query_scalar(
         r#"SELECT program.id
            FROM study_programs program
-           JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+           JOIN curriculum_levels version ON version.id = program.curriculum_level_id
            JOIN academic_years former_ending_year ON former_ending_year.id =
                (version.migration_provenance->'revisionSelection'->>'legacyEndAcademicYearId')::uuid
            JOIN academic_years selected_year ON selected_year.id = $1
@@ -5753,7 +5753,21 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
 #[tokio::test]
 async fn delivery_management_options_are_scoped_and_human_readable() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_management_options").await;
-    let context = planning_runtime_context(&pool).await;
+    let mut context = planning_runtime_context(&pool).await;
+    context.owner_id = sqlx::query_scalar(
+        "SELECT subject.owning_organization_unit_id FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id WHERE version.id=$1",
+    )
+    .bind(context.subject_version_id)
+    .fetch_one(&pool)
+    .await
+    .expect("selected catalog fixture must have an organization owner");
+    let owned_catalog_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT version.id FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id WHERE subject.owning_organization_unit_id=$1 UNION ALL SELECT version.id FROM activity_versions version JOIN activities activity ON activity.id=version.activity_id WHERE activity.owning_organization_unit_id=$1",
+    )
+    .bind(context.owner_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
     let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
         .await
         .expect("offering should be created for management options");
@@ -5774,6 +5788,10 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     let options = workspaces::delivery_management_options(
         &pool,
         context.term_id,
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()
@@ -5827,13 +5845,60 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
             organization_unit_ids: vec![context.owner_id],
             ..Default::default()
         },
+        &AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
     )
     .await
     .expect("organization-scoped options should load");
     assert!(scoped
         .catalog_versions
         .iter()
-        .all(|item| item.id == context.subject_version_id));
+        .all(|item| owned_catalog_ids.contains(&item.id)));
+    assert!(scoped
+        .catalog_versions
+        .iter()
+        .any(|item| item.id == context.subject_version_id));
+    assert!(
+        scoped
+            .study_programs
+            .iter()
+            .any(|item| item.id == context.study_program_id),
+        "school curriculum choices must not be filtered by the offering owner's organization"
+    );
+    let without_curriculum = workspaces::delivery_management_options(
+        &pool,
+        context.term_id,
+        &AcademicResourceListFilter {
+            organization_unit_ids: vec![context.owner_id],
+            ..Default::default()
+        },
+        &AcademicResourceListFilter::default(),
+    )
+    .await
+    .expect("a limited offering manager can still load their non-curriculum options");
+    assert!(
+        without_curriculum.study_programs.is_empty(),
+        "offering scope must not authorize school curriculum choices"
+    );
+    assert!(!without_curriculum.catalog_versions.is_empty());
+    assert!(without_curriculum
+        .catalog_versions
+        .iter()
+        .all(|item| owned_catalog_ids.contains(&item.id)));
+    assert_eq!(
+        without_curriculum
+            .catalog_versions
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        scoped
+            .catalog_versions
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[tokio::test]

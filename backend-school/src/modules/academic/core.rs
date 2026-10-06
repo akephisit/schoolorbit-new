@@ -188,43 +188,43 @@ pub fn routes() -> Router<AppState> {
             get(handlers::get_curriculum).patch(handlers::update_curriculum),
         )
         .route(
-            "/curricula/{id}/versions",
-            get(handlers::list_curriculum_versions).post(handlers::create_curriculum_version),
+            "/curricula/{id}/publish",
+            post(handlers::publish_curriculum),
         )
         .route(
-            "/curriculum-versions/{id}",
-            get(handlers::get_curriculum_version).patch(handlers::update_curriculum_version),
+            "/curricula/{id}/levels",
+            get(handlers::list_curriculum_levels).post(handlers::create_curriculum_level),
         )
         .route(
-            "/curriculum-versions/{id}/management-options",
+            "/curriculum-levels/{id}",
+            get(handlers::get_curriculum_level).patch(handlers::update_curriculum_level),
+        )
+        .route(
+            "/curriculum-levels/{id}/management-options",
             get(handlers::get_curriculum_management_options),
         )
         .route(
-            "/curriculum-versions/{id}/clone-draft",
-            post(handlers::clone_curriculum_version_draft),
-        )
-        .route(
-            "/curriculum-versions/{id}/publish",
-            post(handlers::publish_curriculum_version),
-        )
-        .route(
-            "/curriculum-versions/{curriculum_version_id}/structure",
+            "/curriculum-levels/{id}/structure",
             get(handlers::get_curriculum_structure_workspace),
         )
         .route(
-            "/curriculum-versions/{curriculum_version_id}/term-slots",
+            "/curriculum-levels/{id}/term-slots",
             put(handlers::replace_curriculum_term_slots),
         )
         .route(
-            "/curriculum-versions/{id}/programs",
+            "/curriculum-levels/{id}/programs",
             get(handlers::list_study_programs).post(handlers::create_study_program),
+        )
+        .route(
+            "/curriculum-levels/{id}/copy-program",
+            post(handlers::copy_study_program),
         )
         .route(
             "/study-programs/{id}",
             get(handlers::get_study_program).patch(handlers::update_study_program),
         )
         .route(
-            "/study-programs/{study_program_id}/structure",
+            "/study-programs/{id}/structure",
             put(handlers::replace_curriculum_structure),
         )
         .route(

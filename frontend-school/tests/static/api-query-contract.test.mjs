@@ -252,7 +252,7 @@ test('academic batch wrappers send generated camelCase queries and preserve abor
 	await academicCore.getCurriculumStructureWorkspace('version/1', options);
 	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
 		method: 'get',
-		endpoint: '/api/academic/curriculum-versions/version%2F1/structure',
+		endpoint: '/api/academic/curriculum-levels/version%2F1/structure',
 		options
 	});
 	await academicCore.getAcademicSetupWorkspace(options);

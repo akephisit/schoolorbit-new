@@ -47,7 +47,7 @@ struct RequirementRow {
 
 #[derive(sqlx::FromRow)]
 struct ProgramLockRow {
-    curriculum_version_id: Uuid,
+    curriculum_level_id: Uuid,
     row_version: i64,
     version_status: VersionStatus,
 }
@@ -62,25 +62,25 @@ pub async fn get_workspace(
     pool: &PgPool,
     version_id: Uuid,
 ) -> Result<CurriculumStructureWorkspace, AppError> {
-    let curriculum_version = curriculum::get_version(pool, version_id).await?;
+    let level = curriculum::get_level(pool, version_id).await?;
     let term_slots = sqlx::query_as::<_, CurriculumTermSlot>(
-        r#"SELECT id, curriculum_version_id, sequence, term_type, type_occurrence,
+        r#"SELECT id, curriculum_level_id, sequence, term_type, type_occurrence,
                   name, row_version
            FROM curriculum_term_slots
-           WHERE curriculum_version_id = $1
+           WHERE curriculum_level_id = $1
            ORDER BY sequence, id"#,
     )
     .bind(version_id)
     .fetch_all(pool)
     .await?;
-    let programs = curriculum::list_programs_for_version(pool, version_id).await?;
+    let programs = curriculum::list_programs_for_level(pool, version_id).await?;
     let grade_levels = sqlx::query_as::<_, GradeLevelRow>(
         r#"SELECT grade.id, grade.level_type, grade.year
-           FROM curriculum_versions version
-           JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+           FROM curriculum_levels version
+           JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            JOIN grade_levels grade ON grade.id IN (
                SELECT jsonb_array_elements_text(
-                   COALESCE(curriculum.grade_level_ids, '[]'::jsonb)
+                   COALESCE(version.grade_level_ids, '[]'::jsonb)
                )::uuid
            )
            WHERE version.id = $1
@@ -122,7 +122,7 @@ pub async fn get_workspace(
            JOIN grade_levels grade ON grade.id = requirement.grade_level_id
            JOIN subject_versions version ON version.id = requirement.subject_version_id
            JOIN subjects subject ON subject.id = version.subject_id
-           WHERE program.curriculum_version_id = $1
+           WHERE program.curriculum_level_id = $1
            UNION ALL
            SELECT requirement.id,
                   requirement.study_program_id,
@@ -146,7 +146,7 @@ pub async fn get_workspace(
            JOIN grade_levels grade ON grade.id = requirement.grade_level_id
            JOIN activity_versions version ON version.id = requirement.activity_version_id
            JOIN activities activity ON activity.id = version.activity_id
-           WHERE program.curriculum_version_id = $1
+           WHERE program.curriculum_level_id = $1
            ORDER BY study_program_id, grade_level_year, term_slot_id,
                     display_order, resource_kind, catalog_version_id"#,
     )
@@ -187,9 +187,9 @@ pub async fn get_workspace(
             requirement.catalog_version_id,
         )
     });
-    let row_version = curriculum_version.row_version;
+    let row_version = level.row_version;
     Ok(CurriculumStructureWorkspace {
-        curriculum_version,
+        level,
         term_slots,
         programs,
         grade_levels,
@@ -208,14 +208,22 @@ pub async fn replace_program_structure(
     validate_requirement_inputs(&request.requirements)?;
 
     let mut transaction = pool.begin().await?;
+    let level_id: Uuid =
+        sqlx::query_scalar("SELECT curriculum_level_id FROM study_programs WHERE id=$1")
+            .bind(program_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?;
+    super::curriculum::require_draft_level(&mut transaction, level_id).await?;
     let program = sqlx::query_as::<_, ProgramLockRow>(
-        r#"SELECT program.curriculum_version_id,
+        r#"SELECT program.curriculum_level_id,
                   program.row_version,
-                  version.status AS version_status
+                  curriculum.status AS version_status
            FROM study_programs program
-           JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+           JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+           JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE program.id = $1
-           FOR UPDATE OF program, version"#,
+           FOR UPDATE OF program"#,
     )
     .bind(program_id)
     .fetch_optional(&mut *transaction)
@@ -234,7 +242,7 @@ pub async fn replace_program_structure(
 
     validate_requirement_ownership(
         &mut transaction,
-        program.curriculum_version_id,
+        program.curriculum_level_id,
         &request.requirements,
     )
     .await?;
@@ -255,14 +263,14 @@ pub async fn replace_program_structure(
         .collect::<Vec<_>>();
     if !course_requirements.is_empty() {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO curriculum_course_requirements (id, curriculum_version_id, \
+            "INSERT INTO curriculum_course_requirements (id, curriculum_level_id, \
              study_program_id, subject_version_id, grade_level_id, term_slot_id, \
              requirement_kind, display_order) ",
         );
         builder.push_values(course_requirements, |mut values, requirement| {
             values
                 .push_bind(Uuid::new_v4())
-                .push_bind(program.curriculum_version_id)
+                .push_bind(program.curriculum_level_id)
                 .push_bind(program_id)
                 .push_bind(requirement.catalog_version_id)
                 .push_bind(requirement.grade_level_id)
@@ -280,14 +288,14 @@ pub async fn replace_program_structure(
         .collect::<Vec<_>>();
     if !activity_requirements.is_empty() {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO curriculum_activity_requirements (id, curriculum_version_id, \
+            "INSERT INTO curriculum_activity_requirements (id, curriculum_level_id, \
              study_program_id, activity_version_id, grade_level_id, term_slot_id, \
              requirement_kind, display_order) ",
         );
         builder.push_values(activity_requirements, |mut values, requirement| {
             values
                 .push_bind(Uuid::new_v4())
-                .push_bind(program.curriculum_version_id)
+                .push_bind(program.curriculum_level_id)
                 .push_bind(program_id)
                 .push_bind(requirement.catalog_version_id)
                 .push_bind(requirement.grade_level_id)
@@ -306,7 +314,7 @@ pub async fn replace_program_structure(
     .await?;
     transaction.commit().await?;
 
-    get_workspace(pool, program.curriculum_version_id).await
+    get_workspace(pool, program.curriculum_level_id).await
 }
 
 pub async fn replace_term_slots(
@@ -344,8 +352,9 @@ pub async fn replace_term_slots(
     }
 
     let mut transaction = pool.begin().await?;
+    super::curriculum::require_draft_level(&mut transaction, version_id).await?;
     let (status, current_row_version): (VersionStatus, i64) = sqlx::query_as(
-        "SELECT status, row_version FROM curriculum_versions WHERE id = $1 FOR UPDATE",
+        "SELECT e.status,l.row_version FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1 FOR UPDATE OF l",
     )
     .bind(version_id)
     .fetch_optional(&mut *transaction)
@@ -363,7 +372,7 @@ pub async fn replace_term_slots(
     }
 
     let existing_ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM curriculum_term_slots WHERE curriculum_version_id = $1 ORDER BY id FOR UPDATE",
+        "SELECT id FROM curriculum_term_slots WHERE curriculum_level_id = $1 ORDER BY id FOR UPDATE",
     )
     .bind(version_id)
     .fetch_all(&mut *transaction)
@@ -420,13 +429,13 @@ pub async fn replace_term_slots(
         r#"UPDATE curriculum_term_slots
            SET sequence = sequence + 100000,
                type_occurrence = type_occurrence + 100000
-           WHERE curriculum_version_id = $1"#,
+           WHERE curriculum_level_id = $1"#,
     )
     .bind(version_id)
     .execute(&mut *transaction)
     .await?;
     sqlx::query(
-        "DELETE FROM curriculum_term_slots WHERE curriculum_version_id = $1 AND NOT (id = ANY($2))",
+        "DELETE FROM curriculum_term_slots WHERE curriculum_level_id = $1 AND NOT (id = ANY($2))",
     )
     .bind(version_id)
     .bind(&retained_ids)
@@ -435,7 +444,7 @@ pub async fn replace_term_slots(
 
     if !normalized_slots.is_empty() {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO curriculum_term_slots (id, curriculum_version_id, sequence, \
+            "INSERT INTO curriculum_term_slots (id, curriculum_level_id, sequence, \
              term_type, type_occurrence, name) ",
         );
         builder.push_values(
@@ -460,7 +469,7 @@ pub async fn replace_term_slots(
     }
 
     sqlx::query(
-        "UPDATE curriculum_versions SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
+        "UPDATE curriculum_levels SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
     )
     .bind(version_id)
     .execute(&mut *transaction)
@@ -509,7 +518,7 @@ async fn validate_requirement_ownership(
         .into_iter()
         .collect::<Vec<_>>();
     let slot_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM curriculum_term_slots WHERE curriculum_version_id = $1 AND id = ANY($2)",
+        "SELECT count(*) FROM curriculum_term_slots WHERE curriculum_level_id = $1 AND id = ANY($2)",
     )
     .bind(version_id)
     .bind(&slot_ids)
@@ -522,9 +531,9 @@ async fn validate_requirement_ownership(
     }
 
     let supported_grade_ids: sqlx::types::Json<Vec<Uuid>> = sqlx::query_scalar(
-        r#"SELECT COALESCE(curriculum.grade_level_ids, '[]'::jsonb)
-           FROM curriculum_versions version
-           JOIN curricula curriculum ON curriculum.id = version.curriculum_id
+        r#"SELECT COALESCE(version.grade_level_ids, '[]'::jsonb)
+           FROM curriculum_levels version
+           JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE version.id = $1"#,
     )
     .bind(version_id)

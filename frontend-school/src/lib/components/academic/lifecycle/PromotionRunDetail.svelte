@@ -631,7 +631,7 @@
 						><Select.Content
 							>{#each options?.programs.filter((program) => program.status === 'published') ?? [] as program (program.id)}<Select.Item
 									value={program.id}
-									>{program.name} · {program.curriculumName} · {program.versionName}</Select.Item
+									>{program.name} · {program.levelName} · {program.editionName}</Select.Item
 								>{/each}</Select.Content
 						></Select.Root
 					>

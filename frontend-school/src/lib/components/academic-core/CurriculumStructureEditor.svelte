@@ -87,7 +87,7 @@
 	let resourceKind = $state<'all' | 'course' | 'activity'>('all');
 	let search = $state('');
 	let selectedCatalogIds = $state.raw<string[]>([]);
-	let programDraft = $state({ code: '', nameTh: '', isDefault: initialProgramId() === '' });
+	let programDraft = $state({ nameTh: '', isDefault: initialProgramId() === '' });
 	let history = $state.raw<StagedRequirement[][]>([]);
 	let stagedRequirements = $state.raw<StagedRequirement[]>(initialRequirements());
 	let stagedSlots = $state.raw<CurriculumTermSlotInput[]>(initialSlots());
@@ -282,16 +282,13 @@
 	}
 
 	async function createProgram() {
-		if (!programDraft.code.trim() || !programDraft.nameTh.trim()) return;
+		if (!programDraft.nameTh.trim()) return;
 		saving = true;
 		errorMessage = '';
 		try {
 			await onCreateProgram({
-				code: programDraft.code.trim(),
 				nameTh: programDraft.nameTh.trim(),
-				nameEn: null,
-				isDefault: programDraft.isDefault,
-				owningOrganizationUnitId: null
+				isDefault: programDraft.isDefault
 			});
 			onClose();
 		} catch (error) {
@@ -318,9 +315,8 @@
 
 		<div class="space-y-5 py-4">
 			<section
-				class="grid gap-2 rounded-xl border bg-card p-3 sm:grid-cols-[10rem_minmax(14rem,1fr)_auto_auto] sm:items-center"
+				class="grid gap-2 rounded-xl border bg-card p-3 sm:grid-cols-[minmax(14rem,1fr)_auto_auto] sm:items-center"
 			>
-				<Input bind:value={programDraft.code} placeholder="รหัสแผน เช่น GENERAL" />
 				<Input bind:value={programDraft.nameTh} placeholder="ชื่อแผนการเรียน" />
 				<label class="flex items-center gap-2 text-sm">
 					<Checkbox bind:checked={programDraft.isDefault} /> แผนเริ่มต้น

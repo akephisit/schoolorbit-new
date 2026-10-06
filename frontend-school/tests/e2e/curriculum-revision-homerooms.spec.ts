@@ -63,10 +63,10 @@ for (const mobile of [false, true]) {
 								id: planId,
 								name: 'วิทยาศาสตร์-คณิตศาสตร์',
 								code: 'SCI-MATH',
-								curriculumId: '41000000-0000-4000-8000-000000000001',
-								curriculumName: 'ระดับมัธยมศึกษาตอนต้น',
-								curriculumVersionId: '51000000-0000-4000-8000-000000000001',
-								versionName: '2569',
+								editionId: '41000000-0000-4000-8000-000000000001',
+								levelName: 'ระดับมัธยมศึกษาตอนต้น',
+								curriculumLevelId: '51000000-0000-4000-8000-000000000001',
+								editionName: '2569',
 								revisionYear: 2569,
 								gradeLevelIds: [gradeId]
 							},
@@ -74,10 +74,10 @@ for (const mobile of [false, true]) {
 								id: '31000000-0000-4000-8000-000000000004',
 								name: 'วิทยาศาสตร์-คณิตศาสตร์',
 								code: 'SCI-MATH',
-								curriculumId: '41000000-0000-4000-8000-000000000004',
-								curriculumName: 'ระดับมัธยมศึกษาตอนปลาย',
-								curriculumVersionId: '51000000-0000-4000-8000-000000000004',
-								versionName: '2569',
+								editionId: '41000000-0000-4000-8000-000000000004',
+								levelName: 'ระดับมัธยมศึกษาตอนปลาย',
+								curriculumLevelId: '51000000-0000-4000-8000-000000000004',
+								editionName: '2569',
 								revisionYear: 2569,
 								gradeLevelIds: [seniorGradeId]
 							}
@@ -109,7 +109,10 @@ for (const mobile of [false, true]) {
 			const dialog = page.getByRole('dialog');
 			await dialog.getByLabel('ระดับชั้น', { exact: true }).click();
 			await page.getByRole('option', { name: 'มัธยมศึกษาปีที่ 1', exact: true }).click();
-			await dialog.getByLabel('แผนการเรียนและฉบับหลักสูตร').click();
+			await dialog.getByLabel('ฉบับหลักสูตร', { exact: true }).click();
+			await expect(page.getByRole('option')).toHaveCount(1);
+			await page.getByRole('option', { name: '2569', exact: true }).click();
+			await dialog.getByLabel('แผนการเรียน', { exact: true }).click();
 			await expect(page.getByRole('option')).toHaveCount(1);
 			await page.getByRole('option', { name: /ฉบับปรับปรุง พุทธศักราช 2569/ }).click();
 			await dialog.getByLabel('เลขห้อง', { exact: true }).fill('1');

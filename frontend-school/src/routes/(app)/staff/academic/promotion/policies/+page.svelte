@@ -69,7 +69,7 @@
 	const programs = $derived(
 		references?.programs.map((program) => ({
 			value: program.id,
-			label: `${program.code} · ${program.name} · รุ่น ${program.versionName}`
+			label: `${program.code} · ${program.name} · รุ่น ${program.editionName}`
 		})) ?? []
 	);
 	const outcomes: Choice[] = [
@@ -109,7 +109,7 @@
 					mapping.isActive &&
 					mapping.fromGradeLevelId === rule.fromGradeLevelId &&
 					mapping.transitionKind === rule.successOutcome &&
-					(!mapping.curriculumId || mapping.curriculumId === program?.curriculumId)
+					(!mapping.curriculumLevelId || mapping.curriculumLevelId === program?.curriculumLevelId)
 			) ?? [];
 		return (
 			matches.length === 1 &&
@@ -536,10 +536,10 @@
 					>
 						{label(grades, mapping.fromGradeLevelId)} → {mapping.transitionKind === 'graduate'
 							? 'จบการศึกษา'
-							: label(grades, mapping.toGradeLevelId)} · {mapping.curriculumId
+							: label(grades, mapping.toGradeLevelId)} · {mapping.curriculumLevelId
 							? (references.programs.find(
-									(program) => program.curriculumId === mapping.curriculumId
-								)?.curriculumName ?? 'หลักสูตรที่กำหนด')
+									(program) => program.curriculumLevelId === mapping.curriculumLevelId
+								)?.levelName ?? 'หลักสูตรที่กำหนด')
 							: 'ทุกหลักสูตร'}
 					</p>{/each}
 			</div>

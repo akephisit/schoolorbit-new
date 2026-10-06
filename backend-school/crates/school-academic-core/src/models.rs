@@ -89,13 +89,6 @@ pub enum CatalogDisplayState {
     Unpublished,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum CurriculumDisplayState {
-    Published,
-    Unpublished,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
@@ -188,7 +181,7 @@ pub struct GradeProgressionInput {
     pub from_grade_level_id: Uuid,
     pub to_grade_level_id: Option<Uuid>,
     pub transition_kind: GradeProgressionKind,
-    pub curriculum_id: Option<Uuid>,
+    pub curriculum_level_id: Option<Uuid>,
     pub is_active: bool,
 }
 
@@ -330,7 +323,7 @@ pub struct GradeProgression {
     pub from_grade_level_id: Uuid,
     pub to_grade_level_id: Option<Uuid>,
     pub transition_kind: GradeProgressionKind,
-    pub curriculum_id: Option<Uuid>,
+    pub curriculum_level_id: Option<Uuid>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -626,52 +619,13 @@ pub struct UpdateSubjectGroupRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
-pub struct Curriculum {
+pub struct CurriculumEdition {
     pub id: Uuid,
-    pub code: String,
-    pub name_th: String,
-    pub name_en: Option<String>,
-    pub description: Option<String>,
-    pub is_active: Option<bool>,
-    pub grade_level_ids: Vec<Uuid>,
-    pub owning_organization_unit_id: Option<Uuid>,
-    pub row_version: i64,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CreateCurriculumRequest {
-    pub code: String,
-    pub name_th: String,
-    pub name_en: Option<String>,
-    pub description: Option<String>,
-    pub grade_level_ids: Vec<Uuid>,
-    pub owning_organization_unit_id: Option<Uuid>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct UpdateCurriculumRequest {
-    pub code: String,
-    pub name_th: String,
-    pub name_en: Option<String>,
-    pub description: Option<String>,
-    pub grade_level_ids: Vec<Uuid>,
-    pub owning_organization_unit_id: Option<Uuid>,
-    pub row_version: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
-#[serde(rename_all = "camelCase")]
-pub struct CurriculumVersion {
-    pub id: Uuid,
-    pub curriculum_id: Uuid,
-    pub version_name: String,
+    pub name: String,
     pub revision_year: Option<i32>,
     pub description: Option<String>,
     pub status: VersionStatus,
+    pub is_active: bool,
     pub published_at: Option<DateTime<Utc>>,
     pub row_version: i64,
     pub migrated: bool,
@@ -679,15 +633,49 @@ pub struct CurriculumVersion {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateCurriculumRequest {
+    pub name: String,
+    pub revision_year: i32,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateCurriculumRequest {
+    pub name: String,
+    pub revision_year: i32,
+    pub description: Option<String>,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumLevel {
+    pub id: Uuid,
+    pub edition_id: Uuid,
+    pub code: String,
+    pub name_th: String,
+    pub name_en: Option<String>,
+    pub description: Option<String>,
+    pub grade_level_ids: Vec<Uuid>,
+    pub is_active: bool,
+    pub row_version: i64,
+    pub migrated: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub edition_name: String,
+    pub revision_year: Option<i32>,
+    pub status: VersionStatus,
+}
+
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumOverviewItem {
-    pub curriculum: Curriculum,
-    pub display_version: Option<CurriculumVersion>,
-    pub display_state: CurriculumDisplayState,
-    pub grade_levels: Vec<GradeLevelLookupItem>,
+    pub edition: CurriculumEdition,
+    pub level_count: i64,
     pub study_program_count: i64,
-    pub draft_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -698,47 +686,46 @@ pub struct CurriculumOverview {
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct CurriculumVersionView {
-    pub version: CurriculumVersion,
+pub struct CurriculumLevelView {
+    pub level: CurriculumLevel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CreateCurriculumVersionRequest {
-    pub version_name: String,
-    pub revision_year: i32,
+pub struct CreateCurriculumLevelRequest {
+    pub name_th: String,
+    pub grade_level_ids: Vec<Uuid>,
     pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CloneCurriculumVersionRequest {
-    pub version_name: String,
-    pub revision_year: i32,
-    pub description: Option<String>,
-    pub source_row_version: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct UpdateCurriculumVersionRequest {
-    pub version_name: String,
-    pub revision_year: i32,
+pub struct UpdateCurriculumLevelRequest {
+    pub name_th: String,
+    pub grade_level_ids: Vec<Uuid>,
     pub description: Option<String>,
     pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CopyStudyProgramRequest {
+    pub source_program_id: Uuid,
+    pub source_row_version: i64,
+    pub destination_row_version: i64,
+    pub name_th: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct StudyProgram {
     pub id: Uuid,
-    pub curriculum_version_id: Uuid,
+    pub curriculum_level_id: Uuid,
     pub code: String,
     pub name_th: String,
     pub name_en: Option<String>,
     pub is_default: bool,
     pub status: VersionStatus,
-    pub owning_organization_unit_id: Option<Uuid>,
     pub row_version: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -750,32 +737,26 @@ pub struct StudyProgramOption {
     pub id: Uuid,
     pub code: String,
     pub name: String,
-    pub curriculum_id: Uuid,
-    pub curriculum_name: String,
-    pub curriculum_version_id: Uuid,
-    pub version_name: String,
+    pub edition_id: Uuid,
+    pub edition_name: String,
     pub revision_year: Option<i32>,
+    pub curriculum_level_id: Uuid,
+    pub level_name: String,
     pub grade_level_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStudyProgramRequest {
-    pub code: String,
     pub name_th: String,
-    pub name_en: Option<String>,
     pub is_default: bool,
-    pub owning_organization_unit_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateStudyProgramRequest {
-    pub code: String,
     pub name_th: String,
-    pub name_en: Option<String>,
     pub is_default: bool,
-    pub owning_organization_unit_id: Option<Uuid>,
     pub row_version: i64,
 }
 
@@ -812,7 +793,6 @@ pub struct CurriculumCatalogVersionOption {
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumCreateOptions {
     pub grade_levels: Vec<GradeLevelLookupItem>,
-    pub owner_options: Vec<CatalogOwnerOption>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -826,7 +806,7 @@ pub struct CurriculumManagementOptions {
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumTermSlot {
     pub id: Uuid,
-    pub curriculum_version_id: Uuid,
+    pub curriculum_level_id: Uuid,
     pub sequence: i32,
     pub term_type: AcademicTermType,
     pub type_occurrence: i32,
@@ -893,7 +873,7 @@ pub struct CurriculumStructureValidation {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumStructureWorkspace {
-    pub curriculum_version: CurriculumVersion,
+    pub level: CurriculumLevel,
     pub term_slots: Vec<CurriculumTermSlot>,
     pub programs: Vec<StudyProgram>,
     pub grade_levels: Vec<GradeLevelLookupItem>,

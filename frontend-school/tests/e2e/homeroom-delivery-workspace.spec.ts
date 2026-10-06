@@ -57,10 +57,14 @@ function homeroomWorkspace(
 					id: ids.program,
 					code: 'DEFAULT',
 					name: 'แผนมาตรฐาน',
-					curriculumId: ids.curriculum,
-					curriculumName: 'หลักสูตร 2570'
+					editionId: ids.curriculum,
+					curriculumLevelId: ids.curriculum,
+					editionName: 'ฉบับปรับปรุง พุทธศักราช 2570',
+					revisionYear: 2570,
+					gradeLevelIds: [ids.grade],
+					levelName: 'ระดับมัธยมศึกษาตอนต้น'
 				},
-				curriculumVersionId: ids.curriculum,
+				curriculumLevelId: ids.curriculum,
 				expectedCount: 1,
 				readyCount: 1,
 				blockers: [],
@@ -989,8 +993,8 @@ async function mockActivityActivation(
 					id: ids.program,
 					name: 'แผนมาตรฐาน',
 					code: 'DEFAULT',
-					curriculumName: 'หลักสูตร',
-					curriculumId: ids.curriculum
+					levelName: 'หลักสูตร',
+					editionId: ids.curriculum
 				}
 			],
 			gradeLevels: [{ id: ids.grade, name: 'ม.1', code: 'M1' }],

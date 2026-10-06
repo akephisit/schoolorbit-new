@@ -1,62 +1,32 @@
-use super::{curriculum_create_options, curriculum_version_views};
-use crate::modules::academic::cutover_test_support::{
-    apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
-};
+use super::{curriculum_create_options, curriculum_level_views};
+use crate::modules::academic::core::services_tests::prepare_current_core_fixture;
 use school_authorization::AcademicResourceListFilter;
-use school_test_db::create_named_test_pool;
-use uuid::Uuid;
-
 #[tokio::test]
-async fn curriculum_read_views_resolve_years_and_create_options_follow_owner_scope() {
-    let pool = create_named_test_pool("academic_curriculum_workspace_options").await;
-    apply_migrations_through(&pool, 40).await.unwrap();
-    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
+async fn curriculum_read_views_resolve_one_parent_edition_and_options_require_school_scope() {
+    let pool = prepare_current_core_fixture("academic_curriculum_workspace_options").await;
+    let edition_id = sqlx::query_scalar("SELECT id FROM curriculum_editions ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 91).await.unwrap();
-
-    let curriculum_id = Uuid::parse_str("30000000-0000-0000-0000-000000000001").unwrap();
-    let owner_id = Uuid::parse_str("c5e06a47-ebf6-40f6-bbf9-59c509e842f2").unwrap();
-    sqlx::query("UPDATE curricula SET owning_organization_unit_id = $1 WHERE id = $2")
-        .bind(owner_id)
-        .bind(curriculum_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let views = curriculum_version_views(&pool, curriculum_id)
-        .await
-        .unwrap();
+    let views = curriculum_level_views(&pool, edition_id).await.unwrap();
     assert!(!views.is_empty());
     assert!(views
         .iter()
-        .all(|view| !view.version.version_name.trim().is_empty()));
-
-    let unit_filter = AcademicResourceListFilter {
-        organization_unit_ids: vec![owner_id],
-        ..AcademicResourceListFilter::default()
-    };
-    let options = curriculum_create_options(&pool, &unit_filter)
-        .await
-        .unwrap();
-    assert!(!options.grade_levels.is_empty());
-    assert_eq!(options.owner_options.len(), 1);
-    assert_eq!(
-        options.owner_options[0].organization_unit_id,
-        Some(owner_id)
+        .all(|view| view.level.edition_id == edition_id
+            && !view.level.edition_name.trim().is_empty()));
+    assert!(
+        curriculum_create_options(&pool, &AcademicResourceListFilter::default())
+            .await
+            .is_err()
     );
-
-    let school_options = curriculum_create_options(
+    let options = curriculum_create_options(
         &pool,
         &AcademicResourceListFilter {
             includes_school_owned: true,
-            ..AcademicResourceListFilter::default()
+            ..Default::default()
         },
     )
     .await
     .unwrap();
-    assert!(school_options
-        .owner_options
-        .iter()
-        .any(|option| option.organization_unit_id.is_none()));
+    assert!(!options.grade_levels.is_empty());
 }

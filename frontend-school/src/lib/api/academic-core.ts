@@ -26,15 +26,14 @@ export type CatalogActivityOverviewItem = Schemas['CatalogActivityOverviewItem']
 export type CatalogDisplayState = Schemas['CatalogDisplayState'];
 export type CatalogOwnerOption = Schemas['CatalogOwnerOption'];
 export type ActivityVersion = Schemas['ActivityVersion'];
-export type Curriculum = Schemas['Curriculum'];
-export type CurriculumDisplayState = Schemas['CurriculumDisplayState'];
+export type CurriculumEdition = Schemas['CurriculumEdition'];
 export type CurriculumOverviewItem = Schemas['CurriculumOverviewItem'];
 export type CurriculumOverview = Schemas['CurriculumOverview'];
 export type CurriculumCreateOptions = Schemas['CurriculumCreateOptions'];
 export type CurriculumManagementOptions = Schemas['CurriculumManagementOptions'];
 export type CurriculumCatalogVersionOption = Schemas['CurriculumCatalogVersionOption'];
-export type CurriculumVersion = Schemas['CurriculumVersion'];
-export type CurriculumVersionView = Schemas['CurriculumVersionView'];
+export type CurriculumLevel = Schemas['CurriculumLevel'];
+export type CurriculumLevelView = Schemas['CurriculumLevelView'];
 export type StudyProgram = Schemas['StudyProgram'];
 export type CurriculumTermSlot = Schemas['CurriculumTermSlot'];
 export type CatalogWeeklyUnit = Schemas['CatalogWeeklyUnit'];
@@ -77,11 +76,8 @@ export type UpdateActivityVersionRequest = Schemas['UpdateActivityVersionRequest
 export type PublishVersionRequest = Schemas['PublishVersionRequest'];
 export type CreateCurriculumRequest = Schemas['CreateCurriculumRequest'];
 export type UpdateCurriculumRequest = Schemas['UpdateCurriculumRequest'];
-export type CreateCurriculumVersionRequest = Schemas['CreateCurriculumVersionRequest'];
-type CloneCurriculumVersionOperation = operations['cloneCurriculumVersionDraft'];
-export type CloneCurriculumVersionRequest =
-	CloneCurriculumVersionOperation['requestBody']['content']['application/json'];
-export type UpdateCurriculumVersionRequest = Schemas['UpdateCurriculumVersionRequest'];
+export type CreateCurriculumLevelRequest = Schemas['CreateCurriculumLevelRequest'];
+export type UpdateCurriculumLevelRequest = Schemas['UpdateCurriculumLevelRequest'];
 export type CreateStudyProgramRequest = Schemas['CreateStudyProgramRequest'];
 export type UpdateStudyProgramRequest = Schemas['UpdateStudyProgramRequest'];
 export type ReplaceCurriculumTermSlotsRequest = Schemas['ReplaceCurriculumTermSlotsRequest'];
@@ -306,7 +302,7 @@ export const publishActivityVersion = (id: string, body: PublishVersionRequest) 
 
 export const listCurricula = (options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<Curriculum[]>('/api/academic/curricula', options),
+		apiClient.get<CurriculumEdition[]>('/api/academic/curricula', options),
 		'ไม่สามารถโหลดหลักสูตรได้'
 	);
 export const getCurriculumOverview = (options: ApiRequestOptions = {}) =>
@@ -321,12 +317,12 @@ export const getCurriculumCreateOptions = (options: ApiRequestOptions = {}) =>
 	);
 export const createCurriculum = (body: CreateCurriculumRequest) =>
 	academicData(
-		apiClient.post<Curriculum>('/api/academic/curricula', body),
+		apiClient.post<CurriculumEdition>('/api/academic/curricula', body),
 		'สร้างหลักสูตรไม่สำเร็จ'
 	);
 export const getCurriculum = (id: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<Curriculum>(
+		apiClient.get<CurriculumEdition>(
 			`/api/academic/curricula/${requiredContext(id, 'หลักสูตร')}`,
 			options
 		),
@@ -334,68 +330,53 @@ export const getCurriculum = (id: string, options: ApiRequestOptions = {}) =>
 	);
 export const updateCurriculum = (id: string, body: UpdateCurriculumRequest) =>
 	academicData(
-		apiClient.patch<Curriculum>(`/api/academic/curricula/${id}`, body),
+		apiClient.patch<CurriculumEdition>(`/api/academic/curricula/${id}`, body),
 		'แก้ไขหลักสูตรไม่สำเร็จ'
 	);
-export const listCurriculumVersions = (curriculumId: string, options: ApiRequestOptions = {}) =>
+export const listCurriculumLevels = (curriculumId: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<CurriculumVersionView[]>(
-			`/api/academic/curricula/${curriculumId}/versions`,
-			options
-		),
-		'ไม่สามารถโหลดรุ่นหลักสูตรได้'
+		apiClient.get<CurriculumLevelView[]>(`/api/academic/curricula/${curriculumId}/levels`, options),
+		'ไม่สามารถโหลดระดับการศึกษาได้'
 	);
-export const createCurriculumVersion = (
-	curriculumId: string,
-	body: CreateCurriculumVersionRequest
-) =>
+export const createCurriculumLevel = (curriculumId: string, body: CreateCurriculumLevelRequest) =>
 	academicData(
-		apiClient.post<CurriculumVersion>(`/api/academic/curricula/${curriculumId}/versions`, body),
-		'สร้างรุ่นหลักสูตรไม่สำเร็จ'
+		apiClient.post<CurriculumLevel>(`/api/academic/curricula/${curriculumId}/levels`, body),
+		'เพิ่มระดับการศึกษาไม่สำเร็จ'
 	);
-export const cloneCurriculumVersionDraft = (
-	sourceVersionId: CloneCurriculumVersionOperation['parameters']['path']['id'],
-	body: CloneCurriculumVersionRequest
-) =>
+
+export const updateCurriculumLevel = (id: string, body: UpdateCurriculumLevelRequest) =>
 	academicData(
-		apiClient.post<CurriculumVersion>(
-			`/api/academic/curriculum-versions/${requiredContext(sourceVersionId, 'รุ่นหลักสูตรต้นทาง')}/clone-draft`,
-			body
-		),
-		'สร้างหลักสูตรรุ่นใหม่จากรุ่นที่เผยแพร่ไม่สำเร็จ'
+		apiClient.patch<CurriculumLevel>(`/api/academic/curriculum-levels/${id}`, body),
+		'แก้ไขระดับการศึกษาไม่สำเร็จ'
 	);
-export const updateCurriculumVersion = (id: string, body: UpdateCurriculumVersionRequest) =>
+export const publishCurriculum = (id: string, body: PublishVersionRequest) =>
 	academicData(
-		apiClient.patch<CurriculumVersion>(`/api/academic/curriculum-versions/${id}`, body),
-		'แก้ไขรุ่นหลักสูตรไม่สำเร็จ'
-	);
-export const publishCurriculumVersion = (id: string, body: PublishVersionRequest) =>
-	academicData(
-		apiClient.post<CurriculumVersion>(`/api/academic/curriculum-versions/${id}/publish`, body),
+		apiClient.post<CurriculumEdition>(`/api/academic/curricula/${id}/publish`, body),
 		'เผยแพร่รุ่นหลักสูตรไม่สำเร็จ'
 	);
 export const getCurriculumManagementOptions = (
-	curriculumVersionId: string,
+	curriculumLevelId: string,
 	options: ApiRequestOptions = {}
 ) =>
 	academicData(
 		apiClient.get<CurriculumManagementOptions>(
-			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/management-options`,
+			`/api/academic/curriculum-levels/${requiredContext(curriculumLevelId, 'รุ่นหลักสูตร')}/management-options`,
 			options
 		),
 		'ไม่สามารถโหลดตัวเลือกสำหรับจัดการหลักสูตรได้'
 	);
-export const listStudyPrograms = (curriculumVersionId: string) =>
+export const listStudyPrograms = (curriculumLevelId: string, options: ApiRequestOptions = {}) =>
 	academicData(
 		apiClient.get<StudyProgram[]>(
-			`/api/academic/curriculum-versions/${curriculumVersionId}/programs`
+			`/api/academic/curriculum-levels/${curriculumLevelId}/programs`,
+			options
 		),
 		'ไม่สามารถโหลดแผนการเรียนได้'
 	);
-export const createStudyProgram = (curriculumVersionId: string, body: CreateStudyProgramRequest) =>
+export const createStudyProgram = (curriculumLevelId: string, body: CreateStudyProgramRequest) =>
 	academicData(
 		apiClient.post<StudyProgram>(
-			`/api/academic/curriculum-versions/${curriculumVersionId}/programs`,
+			`/api/academic/curriculum-levels/${curriculumLevelId}/programs`,
 			body
 		),
 		'สร้างแผนการเรียนไม่สำเร็จ'
@@ -423,24 +404,24 @@ export const replaceCurriculumStructure = (
 	);
 
 export const getCurriculumStructureWorkspace = (
-	curriculumVersionId: string,
+	curriculumLevelId: string,
 	options: ApiRequestOptions = {}
 ) =>
 	academicData(
 		apiClient.get<CurriculumStructureWorkspace>(
-			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/structure`,
+			`/api/academic/curriculum-levels/${requiredContext(curriculumLevelId, 'รุ่นหลักสูตร')}/structure`,
 			options
 		),
 		'ไม่สามารถโหลดโครงสร้างหลักสูตรได้'
 	);
 
 export const replaceCurriculumTermSlots = (
-	curriculumVersionId: string,
+	curriculumLevelId: string,
 	body: ReplaceCurriculumTermSlotsRequest
 ) =>
 	academicData(
 		apiClient.put<CurriculumStructureWorkspace>(
-			`/api/academic/curriculum-versions/${requiredContext(curriculumVersionId, 'รุ่นหลักสูตร')}/term-slots`,
+			`/api/academic/curriculum-levels/${requiredContext(curriculumLevelId, 'รุ่นหลักสูตร')}/term-slots`,
 			body
 		),
 		'บันทึกภาคเรียนในโครงสร้างหลักสูตรไม่สำเร็จ'
@@ -663,4 +644,11 @@ export const getAcademicSetupWorkspace = (options: ApiRequestOptions = {}) =>
 	academicData(
 		apiClient.get<AcademicSetupWorkspace>('/api/academic/setup/workspace', options),
 		'ไม่สามารถโหลดการตั้งค่าปีการศึกษาได้'
+	);
+
+export type CopyStudyProgramRequest = Schemas['CopyStudyProgramRequest'];
+export const copyStudyProgram = (levelId: string, body: CopyStudyProgramRequest) =>
+	academicData(
+		apiClient.post<StudyProgram>(`/api/academic/curriculum-levels/${levelId}/copy-program`, body),
+		'คัดลอกแผนการเรียนไม่สำเร็จ'
 	);

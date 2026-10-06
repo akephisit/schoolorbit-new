@@ -56,6 +56,7 @@
 	let roomDraft = $state<HomeroomDraft>(emptyRoomDraft());
 	let roomBusy = $state(false);
 	let roomError = $state('');
+	let editionId = $state('');
 
 	let advisorDialogOpen = $state(false);
 	let advisorRoom = $state<Homeroom | null>(null);
@@ -74,7 +75,21 @@
 			: 'ระบบจะสร้างชื่อจากระดับชั้นและเลขห้อง'
 	);
 	const roomPreview = $derived(roomDraft.customName?.trim() || standardRoomName);
-	const eligiblePrograms = $derived(programsForGrade(programOptions, roomDraft.gradeLevelId));
+	const gradePrograms = $derived(programsForGrade(programOptions, roomDraft.gradeLevelId));
+	const editions = $derived([
+		...new Map(
+			gradePrograms.map((program) => [
+				program.editionId,
+				{ id: program.editionId, name: program.editionName }
+			])
+		).values()
+	]);
+	const eligiblePrograms = $derived(
+		gradePrograms.filter((program) => program.editionId === editionId)
+	);
+	$effect(() => {
+		if (editionId && !editions.some((edition) => edition.id === editionId)) editionId = '';
+	});
 	$effect(() => {
 		if (
 			roomDraft.studyProgramId &&
@@ -114,12 +129,15 @@
 	function openCreateDialog() {
 		editingRoom = null;
 		roomDraft = emptyRoomDraft();
+		editionId = '';
 		roomError = '';
 		roomDialogOpen = true;
 	}
 
 	function openEditDialog(room: Homeroom) {
 		editingRoom = room;
+		editionId =
+			programOptions.find((program) => program.id === room.studyProgramId)?.editionId ?? '';
 		roomDraft = {
 			customName: customNameForRoom(room),
 			gradeLevelId: room.gradeLevelId,
@@ -331,10 +349,28 @@
 				</div>
 			</div>
 			<div class="space-y-1.5">
-				<Label for="homeroom-program">แผนการเรียนและฉบับหลักสูตร</Label>
+				<Label for="homeroom-edition">ฉบับหลักสูตร</Label>
+				<Select.Root type="single" bind:value={editionId}>
+					<Select.Trigger
+						id="homeroom-edition"
+						class="h-auto min-h-9 w-full whitespace-normal text-start"
+						disabled={!roomDraft.gradeLevelId}
+						>{editions.find((edition) => edition.id === editionId)?.name ??
+							'เลือกฉบับหลักสูตร'}</Select.Trigger
+					>
+					<Select.Content
+						>{#each editions as edition (edition.id)}<Select.Item value={edition.id}
+								>{edition.name}</Select.Item
+							>{/each}</Select.Content
+					>
+				</Select.Root>
+			</div>
+			<div class="space-y-1.5">
+				<Label for="homeroom-program">แผนการเรียน</Label>
 				<Select.Root type="single" bind:value={roomDraft.studyProgramId}>
 					<Select.Trigger
 						id="homeroom-program"
+						disabled={!editionId}
 						class="h-auto min-h-9 w-full whitespace-normal text-start"
 						><span class="min-w-0 flex-1"
 							>{programLabel(roomDraft.studyProgramId).replace(

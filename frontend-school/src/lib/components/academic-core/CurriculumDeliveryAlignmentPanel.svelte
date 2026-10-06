@@ -10,13 +10,13 @@
 
 	let {
 		workspace,
-		curriculumId,
+		curriculumLevelId,
 		studyProgramId,
 		academicYearId,
 		academicTermId
 	}: {
 		workspace: HomeroomDeliveryWorkspace;
-		curriculumId: string;
+		curriculumLevelId: string;
 		studyProgramId?: string;
 		academicYearId: string;
 		academicTermId: string;
@@ -33,7 +33,7 @@
 	let rooms = $derived(
 		workspace.homerooms.filter(
 			(room) =>
-				room.studyProgram.curriculumId === curriculumId &&
+				room.studyProgram.curriculumLevelId === curriculumLevelId &&
 				(!studyProgramId || room.studyProgram.id === studyProgramId)
 		)
 	);

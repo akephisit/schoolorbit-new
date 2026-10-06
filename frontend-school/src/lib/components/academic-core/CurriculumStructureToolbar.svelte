@@ -12,6 +12,7 @@
 		gradeLevelId = $bindable(''),
 		studyProgramId = $bindable(''),
 		canManage = false,
+		busy = false,
 		onEdit
 	}: {
 		workspace: CurriculumStructureWorkspace;
@@ -19,6 +20,7 @@
 		gradeLevelId?: string;
 		studyProgramId?: string;
 		canManage?: boolean;
+		busy?: boolean;
 		onEdit: () => void;
 	} = $props();
 
@@ -71,8 +73,10 @@
 					ต้องแก้ {workspace.validation.blockers.length} จุดก่อนเผยแพร่
 				</Badge>
 			{/if}
-			{#if canManage && workspace.curriculumVersion.status === 'draft'}
-				<Button onclick={onEdit}><PencilLine class="size-4" /> จัดโครงสร้าง</Button>
+			{#if canManage && workspace.level.status === 'draft'}
+				<Button onclick={onEdit} disabled={busy}
+					><PencilLine class="size-4" /> {busy ? 'กำลังโหลดตัวเลือก…' : 'จัดโครงสร้าง'}</Button
+				>
 			{/if}
 		</div>
 	</div>

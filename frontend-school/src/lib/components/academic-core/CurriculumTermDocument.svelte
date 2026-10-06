@@ -23,7 +23,7 @@
 		<h2 class="mt-1 text-lg font-semibold tracking-tight sm:text-xl">
 			{document.program?.nameTh ?? 'เลือกแผนการเรียน'} · {document.gradeName}
 		</h2>
-		<p class="mt-1 text-sm text-muted-foreground">{workspace.curriculumVersion.versionName}</p>
+		<p class="mt-1 text-sm text-muted-foreground">{workspace.level.editionName}</p>
 	</header>
 
 	<div class="overflow-x-auto p-3 sm:p-5">

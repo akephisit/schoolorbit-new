@@ -31,10 +31,10 @@ function room(id, programId, item) {
 			id: programId,
 			code: programId,
 			name: programId,
-			curriculumId: 'curriculum',
-			curriculumName: 'หลักสูตรทดสอบ'
+			editionId: 'curriculum',
+			levelName: 'หลักสูตรทดสอบ'
 		},
-		curriculumVersionId: 'curriculum-version',
+		curriculumLevelId: 'curriculum-version',
 		expectedCount: 1,
 		readyCount: 0,
 		items: [item],

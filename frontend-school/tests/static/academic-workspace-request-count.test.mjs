@@ -52,8 +52,8 @@ test('homeroom workspace uses one advisor relationship collection', async () => 
 	assert.doesNotMatch(page, /listStudyProgramOptionsForYear/);
 });
 
-test('curriculum workspace loads the complete structure once per version', async () => {
-	const page = await readPage('curricula/[id]');
+test('curriculum workspace loads the complete structure once per level', async () => {
+	const page = await readPage('curricula/[id]/levels/[levelId]');
 	assertCancellable(page, 'curricula');
 	assert.match(page, /getCurriculumStructureWorkspace/);
 	assert.doesNotMatch(page, /listProgramRequirements\(program\.id\)/);

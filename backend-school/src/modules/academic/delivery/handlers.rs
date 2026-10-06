@@ -7,6 +7,7 @@ use axum::{
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+use crate::policies::academic_curriculum_access_policy::{self, CurriculumAction};
 use crate::policies::learning_offering_access_policy::{self, OfferingAction};
 use crate::utils::request_context::{actor_tenant_context_from_session, ActorTenantContext};
 use crate::AppState;
@@ -401,10 +402,17 @@ pub async fn get_delivery_management_options(
         OfferingAction::Manage,
     )
     .await?;
+    let curriculum_filter = academic_curriculum_access_policy::academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
     Ok(ok(workspaces::delivery_management_options(
         &context.tenant.pool,
         query.academic_term_id,
         &filter,
+        &curriculum_filter,
     )
     .await?))
 }
@@ -470,11 +478,11 @@ pub async fn create_offering(
     tag = "academic",
     request_body = PreviewCurriculumOfferingsRequest,
     responses(
-        (status = 200, description = "Curriculum offering preview", body = ApiResponse<CurriculumOfferingPreview>),
+        (status = 200, description = "CurriculumEdition offering preview", body = ApiResponse<CurriculumOfferingPreview>),
         (status = 400, description = "Invalid curriculum offering preview", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Curriculum source conflict", body = ApiErrorResponse)
+        (status = 409, description = "CurriculumEdition source conflict", body = ApiErrorResponse)
     )
 )]
 pub async fn preview_offerings_from_curriculum(
@@ -503,11 +511,11 @@ pub async fn preview_offerings_from_curriculum(
     tag = "academic",
     request_body = ApplyCurriculumOfferingsRequest,
     responses(
-        (status = 200, description = "Curriculum offerings applied", body = ApiResponse<ApplyCurriculumOfferingsResult>),
+        (status = 200, description = "CurriculumEdition offerings applied", body = ApiResponse<ApplyCurriculumOfferingsResult>),
         (status = 400, description = "Invalid curriculum offering request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Curriculum source hash conflict", body = ApiErrorResponse)
+        (status = 409, description = "CurriculumEdition source hash conflict", body = ApiErrorResponse)
     )
 )]
 pub async fn apply_offerings_from_curriculum(

@@ -46,15 +46,13 @@ async fn program(
     published: bool,
 ) -> Uuid {
     let id = Uuid::new_v4();
-    let curriculum:Uuid=sqlx::query_scalar("INSERT INTO curricula(code,identity_key,name_th,grade_level_ids) VALUES ($1,$1,'E2E-LIFECYCLE-target',$2) RETURNING id")
-        .bind(format!("e2e-{}",id.simple())).bind(Json(grades)).fetch_one(pool).await.unwrap();
-    let version:Uuid=sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status) VALUES ($1,'E2E-LIFECYCLE',2569,'draft') RETURNING id")
-        .bind(curriculum).fetch_one(pool).await.unwrap();
-    sqlx::query("INSERT INTO study_programs(id,curriculum_version_id,code,name_th,status) VALUES ($1,$2,'E2E','E2E-LIFECYCLE-target',$3)")
+    let edition:Uuid=sqlx::query_scalar("INSERT INTO curriculum_editions(name,revision_year) VALUES('E2E-LIFECYCLE-target',2569) RETURNING id").fetch_one(pool).await.unwrap();
+    let version:Uuid=sqlx::query_scalar("INSERT INTO curriculum_levels(edition_id,code,name_th,grade_level_ids,is_active) VALUES($1,$2,'E2E-LIFECYCLE-target',$3,true) RETURNING id").bind(edition).bind(format!("e2e-{}",id.simple())).bind(Json(grades)).fetch_one(pool).await.unwrap();
+    sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) VALUES ($1,$2,'E2E','E2E-LIFECYCLE-target',$3)")
         .bind(id).bind(version).bind(if published {"published"} else {"draft"}).execute(pool).await.unwrap();
     if published {
         sqlx::query(
-            "UPDATE curriculum_versions SET status='published',published_at=now() WHERE id=$1",
+            "UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT edition_id FROM curriculum_levels WHERE id=$1)",
         )
         .bind(version)
         .execute(pool)

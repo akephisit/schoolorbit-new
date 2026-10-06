@@ -190,7 +190,7 @@ async fn promotion_policy_storage_rejects_missing_or_ambiguous_core_mappings() {
         create_promotion_policy(&pool, &actor, graduate.clone()).await,
         Err(AppError::ValidationError(_))
     ));
-    sqlx::query("INSERT INTO grade_level_progressions (from_grade_level_id,transition_kind,curriculum_id) SELECT $1,'graduate',version.curriculum_id FROM study_programs program JOIN curriculum_versions version ON version.id=program.curriculum_version_id WHERE program.id=$2").bind(graduate.rules[0].from_grade_level_id).bind(graduate.rules[0].from_study_program_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO grade_level_progressions (from_grade_level_id,transition_kind,curriculum_level_id) SELECT $1,'graduate',version.id FROM study_programs program JOIN curriculum_levels version ON version.id=program.curriculum_level_id WHERE program.id=$2").bind(graduate.rules[0].from_grade_level_id).bind(graduate.rules[0].from_study_program_id).execute(&pool).await.unwrap();
     assert!(create_promotion_policy(&pool, &actor, graduate)
         .await
         .is_ok());
@@ -215,9 +215,9 @@ async fn promotion_policy_storage_does_not_borrow_another_curriculums_progressio
     let (pool, actor, input) = fixture("promotion_policy_curriculum_scope").await;
     let foreign_curriculum = Uuid::new_v4();
     // A separate draft curriculum is a real FK target, not a dangling synthetic ID.
-    sqlx::query("INSERT INTO curricula (id,code,identity_key,name_th,grade_level_ids) VALUES ($1,'E2E-PROMOTION-FOREIGN','e2e-promotion-foreign','Foreign curriculum','[]'::jsonb)")
-        .bind(foreign_curriculum).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE grade_level_progressions SET curriculum_id=$1")
+    let edition_id:Uuid=sqlx::query_scalar("INSERT INTO curriculum_editions(name,revision_year) VALUES('Foreign edition',2570) RETURNING id").fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO curriculum_levels(id,edition_id,code,name_th,grade_level_ids,is_active) VALUES($1,$2,'E2E-PROMOTION-FOREIGN','Foreign level','[]',true)").bind(foreign_curriculum).bind(edition_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE grade_level_progressions SET curriculum_level_id=$1")
         .bind(foreign_curriculum)
         .execute(&pool)
         .await
@@ -226,7 +226,7 @@ async fn promotion_policy_storage_does_not_borrow_another_curriculums_progressio
         create_promotion_policy(&pool, &actor, input.clone()).await,
         Err(AppError::ValidationError(_))
     ));
-    sqlx::query("UPDATE grade_level_progressions SET curriculum_id=NULL,is_active=false")
+    sqlx::query("UPDATE grade_level_progressions SET curriculum_level_id=NULL,is_active=false")
         .execute(&pool)
         .await
         .unwrap();
@@ -300,7 +300,7 @@ async fn promotion_policy_storage_readers_can_resolve_names_without_curriculum_m
         .iter()
         .find(|program| program.id == input.rules[0].from_study_program_id)
         .unwrap();
-    assert!(!program.name.is_empty() && !program.curriculum_name.is_empty());
+    assert!(!program.name.is_empty() && !program.level_name.is_empty());
     assert_eq!(options.progression_set.row_version, 1);
     assert_eq!(options.progression_set.progressions.len(), 1);
     let teacher = ActorContext {

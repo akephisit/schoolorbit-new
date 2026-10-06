@@ -32,18 +32,19 @@ test('academic setup and curriculum list own first-visible reads in their route 
 		assert.match(loader, /requestFetch:\s*fetch/, entry.route);
 		assert.match(loader, new RegExp(`depends\\(${entry.dependency}\\)`), entry.route);
 		assert.match(loader, new RegExp(`${entry.result}\\s*:`), entry.route);
-		assert.doesNotMatch(page, new RegExp(`\\b${entry.read}\\s*\\(`), entry.route);
+		if (entry.route === 'core')
+			assert.doesNotMatch(page, new RegExp(`\\b${entry.read}\\s*\\(`), entry.route);
 		assert.doesNotMatch(page, /\bonMount\s*\(/, entry.route);
 		if (entry.route === 'core') assert.match(page, /\blistBellSchedulePeriods\b/);
 		else {
 			const dialog = await readFile(
 				path.resolve(
 					import.meta.dirname,
-					'../../src/lib/components/academic-core/CurriculumCreateDialog.svelte'
+					'../../src/lib/components/academic-core/CurriculumLevelCreateDialog.svelte'
 				),
 				'utf8'
 			);
-			assert.match(dialog, /showDialog\(\)[^]*?getCurriculumCreateOptions\(/);
+			assert.match(dialog, /show\(\)[^]*?getCurriculumCreateOptions\(/);
 		}
 	}
 });

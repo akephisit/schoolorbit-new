@@ -3,7 +3,7 @@ export type HomeroomReadinessFilter = 'all' | 'ready' | 'attention';
 type DeliveryRoomShape = {
 	homeroom: { name: string };
 	gradeLevel: { name: string };
-	studyProgram: { code: string; name: string; curriculumName: string };
+	studyProgram: { code: string; name: string; levelName: string };
 	expectedCount: number;
 	readyCount: number;
 	items?: ReadonlyArray<{ alignmentStates: readonly string[] }>;
@@ -42,7 +42,7 @@ export function filterHomeroomDeliveryRooms<T extends DeliveryRoomShape>(
 				room.gradeLevel.name,
 				room.studyProgram.code,
 				room.studyProgram.name,
-				room.studyProgram.curriculumName
+				room.studyProgram.levelName
 			].join(' ')
 		).includes(needle);
 	});
