@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { buildAcademicTimetablePdfDownload } from '#lib/utils/academic-timetable-pdf.js';
 	import { selectPreferredBoardVersion } from '#lib/academic/timetable/version-selection.js';
 	import {
 		blockBelongsToRow,
@@ -109,6 +110,7 @@
 		AlertTriangle,
 		Check,
 		FileSpreadsheet,
+		Download,
 		Pencil,
 		MoreHorizontal,
 		Send,
@@ -255,6 +257,7 @@
 		abortController: AbortController;
 	} | null = null;
 	let exportingTeacherLoad = $state(false);
+	let exportingPdf = $state(false);
 	let errorMessage = $state('');
 	let refreshError = $state('');
 	let activeView = $state<TimetablePageView>('homeroom');
@@ -311,6 +314,24 @@
 	);
 	const canEdit = $derived(Boolean(canManage && controller?.canEdit && !busy));
 	const selectedVersion = $derived(controller?.workspace.version ?? null);
+	const canDownloadPdf = $derived(
+		Boolean(
+			canRead &&
+			!loading &&
+			!busy &&
+			!exportingPdf &&
+			pendingOperationCount === 0 &&
+			!controller?.isRefreshing &&
+			controller &&
+			controller.workspace.version.academicYearId === academicYearId &&
+			controller.workspace.version.academicTermId === academicTermId &&
+			controller.workspace.bellPeriods.some((period) => period.isActive) &&
+			controller.workspace.blocks.some((block) => block.isActive) &&
+			(activeView === 'wholeSchool'
+				? controller.workspace.homerooms.length > 0
+				: controller.selectedRow)
+		)
+	);
 	let versionSelectValue = $derived(selectedVersion?.id ?? '');
 
 	const selectedBlock = $derived(
@@ -1083,6 +1104,29 @@
 		void fetchPlacementPreview(dayOfWeek, periodId);
 	}
 
+	async function downloadPdf(): Promise<void> {
+		if (!canDownloadPdf || !controller) return;
+		// Capture the selected version and owner before loading the renderer.
+		const download = buildAcademicTimetablePdfDownload(
+			controller.workspace,
+			activeView,
+			controller.selectedOwnerId,
+			$academicContext.options?.terms.find((term) => term.id === academicTermId)?.name ?? '',
+			$academicContext.options?.years.find((year) => year.id === academicYearId)?.name ?? ''
+		);
+		if (!download.pages.length) return;
+		exportingPdf = true;
+		try {
+			const { generateTimetablePDF } = await import('#lib/utils/pdf.js');
+			await generateTimetablePDF(download.pages, download.fileName, { layout: 'full' });
+			toast.success('ดาวน์โหลดตารางสอนแล้ว');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'ดาวน์โหลดตารางสอนไม่สำเร็จ');
+		} finally {
+			exportingPdf = false;
+		}
+	}
+
 	async function exportTeacherLoad(): Promise<void> {
 		if (!controller || exportingTeacherLoad) return;
 		exportingTeacherLoad = true;
@@ -1839,6 +1883,12 @@
 				disabled={busy}
 				onclick={createFirstTable}><Plus class="size-4" />สร้างตารางสอน</Button
 			>{/if}
+		<Button variant="outline" disabled={!canDownloadPdf} onclick={downloadPdf}>
+			{#if exportingPdf}<LoaderCircle class="size-4 animate-spin" />{:else}<Download
+					class="size-4"
+				/>{/if}
+			ดาวน์โหลด PDF
+		</Button>
 		<Button
 			variant="outline"
 			disabled={exportingTeacherLoad || loading || !controller?.workspace.blocks.length}

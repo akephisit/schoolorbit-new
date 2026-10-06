@@ -58,23 +58,21 @@ function fitTimeRange(
 }
 
 // Helper: Get block
-const getBlock = (blocks: TimetableBlock[], day: string, periodId: string) => {
-	return blocks.find(
+const getBlocks = (blocks: TimetableBlock[], day: string, periodId: string) => {
+	return blocks.filter(
 		(block) => block.dayOfWeek === day && block.bellSchedulePeriodId === periodId && block.isActive
 	);
 };
 
-const blockInstructors = (block: TimetableBlock) =>
-	block.groups.flatMap((group) => group.instructors);
-
-const primaryInstructorName = (block: TimetableBlock) => {
-	const instructors = blockInstructors(block);
-	return (
-		instructors.find((instructor) => instructor.role === 'primary')?.displayName ??
-		instructors[0]?.displayName ??
-		''
-	);
-};
+const instructorNames = (block: TimetableBlock) =>
+	[
+		...new Set([
+			...block.groups.flatMap((group) =>
+				group.instructors.map((instructor) => instructor.displayName)
+			),
+			...block.teachers.filter((teacher) => teacher.isActive).map((teacher) => teacher.displayName)
+		])
+	].join(', ');
 
 const timetableResourceName = (block: TimetableBlock) =>
 	block.offeringName ?? block.title ?? 'กิจกรรม';
@@ -491,75 +489,75 @@ function buildPageContent(
 		});
 
 		periods.forEach((p) => {
-			const block = getBlock(timetableBlocks, day.value, p.id);
-			if (block) {
+			const blocks = getBlocks(timetableBlocks, day.value, p.id);
+			if (blocks.length > 0) {
 				const stack: Content[] = [];
-
-				if (block.blockKind === 'course') {
-					stack.push(
-						{ text: block.offeringCode || '', bold: true, fontSize: 8, color: '#1e3a8a' },
-						{
-							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 7),
-							fontSize: 7,
-							margin: [0, 0]
-						}
-					);
-				} else {
-					stack.push({
-						text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 8),
-						bold: true,
-						fontSize: 8,
-						color: '#047857',
-						margin: [0, 2]
-					});
-				}
-
-				// SLOT-sync activity: ห้อง+ครูไม่ได้ผูกกัน 1-to-1 (sync = ทุกห้องร่วมกัน,
-				// ครูหลายคน) — ซ่อน meta side ที่ไม่ตรงกับ view เพื่อกัน confusion
-				const isSlotSync =
-					block.blockKind === 'activity' && block.schedulingMode === 'synchronized';
-				const instructorName = primaryInstructorName(block).trim();
-
-				if (viewMode === 'CLASSROOM') {
-					// Student PDF — แสดงชื่อครู (ยกเว้น sync activity เพราะมีหลายครู)
-					if (!isSlotSync && instructorName && instructorName !== '-') {
-						const rawName = instructorName;
-						const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
+				for (const block of blocks) {
+					if (block.blockKind === 'course') {
+						stack.push(
+							{ text: block.offeringCode || '', bold: true, fontSize: 8, color: '#1e3a8a' },
+							{
+								text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 7),
+								fontSize: 7,
+								margin: [0, 0]
+							}
+						);
+					} else {
 						stack.push({
-							text: wrapThaiToLines(teacherName, cellContentWidth, 7),
-							fontSize: 7,
-							color: '#4b5563',
-							margin: [0, 1]
-						});
-					}
-				} else {
-					// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
-					if (!isSlotSync && blockGroupName(block)) {
-						stack.push({
-							text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 7),
-							fontSize: 7,
-							color: '#d97706',
+							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 8),
 							bold: true,
-							margin: [0, 1]
+							fontSize: 8,
+							color: '#047857',
+							margin: [0, 2]
+						});
+					}
+
+					// SLOT-sync activity: ห้อง+ครูไม่ได้ผูกกัน 1-to-1 (sync = ทุกห้องร่วมกัน,
+					// ครูหลายคน) — ซ่อน meta side ที่ไม่ตรงกับ view เพื่อกัน confusion
+					const isSlotSync =
+						block.blockKind === 'activity' && block.schedulingMode === 'synchronized';
+					const instructorName = instructorNames(block).trim();
+
+					if (viewMode === 'CLASSROOM') {
+						// Student PDF — แสดงชื่อครู (ยกเว้น sync activity เพราะมีหลายครู)
+						if (!isSlotSync && instructorName && instructorName !== '-') {
+							const rawName = instructorName;
+							const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
+							stack.push({
+								text: wrapThaiToLines(teacherName, cellContentWidth, 7),
+								fontSize: 7,
+								color: '#4b5563',
+								margin: [0, 1]
+							});
+						}
+					} else {
+						// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
+						if (!isSlotSync && blockGroupName(block)) {
+							stack.push({
+								text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 7),
+								fontSize: 7,
+								color: '#d97706',
+								bold: true,
+								margin: [0, 1]
+							});
+						}
+					}
+
+					// ชื่อห้องเต็ม (name_th) ถ้ามี — ไม่งั้น fallback เป็นรหัสสั้น (code)
+					// name_th มักมีคำว่า "ห้อง" อยู่ในชื่ออยู่แล้ว → ไม่ใส่ prefix
+					const room = blockRoom(block);
+					const roomFullName = room.id ? roomNames?.[room.id] : undefined;
+					const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
+					if (roomDisplay) {
+						stack.push({
+							text: wrapThaiToLines(roomDisplay, cellContentWidth, 7),
+							fontSize: 7,
+							background: '#f3f4f6',
+							color: '#1f2937',
+							margin: [0, 2]
 						});
 					}
 				}
-
-				// ชื่อห้องเต็ม (name_th) ถ้ามี — ไม่งั้น fallback เป็นรหัสสั้น (code)
-				// name_th มักมีคำว่า "ห้อง" อยู่ในชื่ออยู่แล้ว → ไม่ใส่ prefix
-				const room = blockRoom(block);
-				const roomFullName = room.id ? roomNames?.[room.id] : undefined;
-				const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
-				if (roomDisplay) {
-					stack.push({
-						text: wrapThaiToLines(roomDisplay, cellContentWidth, 7),
-						fontSize: 7,
-						background: '#f3f4f6',
-						color: '#1f2937',
-						margin: [0, 2]
-					});
-				}
-
 				row.push({ stack, alignment: 'center', margin: [0, 0] });
 			} else {
 				row.push({ text: '' });
@@ -791,74 +789,75 @@ function buildMiniTable(
 		];
 
 		periods.forEach((p) => {
-			const block = getBlock(timetableBlocks, day.value, p.id);
-			if (block) {
+			const blocks = getBlocks(timetableBlocks, day.value, p.id);
+			if (blocks.length > 0) {
 				const stack: Content[] = [];
-				if (block.blockKind === 'course') {
-					// ใน mini mode แสดงแค่ subject code (ตัดชื่อวิชาออกตามที่ user ขอ)
-					stack.push({
-						text: block.offeringCode || '',
-						bold: true,
-						fontSize: 5,
-						color: '#1e3a8a'
-					});
-				} else {
-					stack.push({
-						text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 4),
-						bold: true,
-						fontSize: 4,
-						color: '#047857',
-						lineHeight: 0.9
-					});
-				}
-
-				// SLOT-sync activity (ครูหลายคน, ห้องหลายห้อง) — ซ่อน meta side
-				const isSlotSync =
-					block.blockKind === 'activity' && block.schedulingMode === 'synchronized';
-				const instructorName = primaryInstructorName(block).trim();
-
-				if (viewMode === 'CLASSROOM') {
-					if (!isSlotSync && instructorName && instructorName !== '-') {
-						// ครูในโหมด mini แสดงแค่ชื่อแรก (ไม่มีนามสกุล) ตามที่ user ขอ
-						const rawName = instructorName;
-						const withoutPrefix = rawName.replace(/^ครู\s*/, '');
-						const firstName = withoutPrefix.split(/\s+/)[0];
-						const teacherName = `ครู${firstName}`;
+				for (const block of blocks) {
+					if (block.blockKind === 'course') {
+						// ใน mini mode แสดงแค่ subject code (ตัดชื่อวิชาออกตามที่ user ขอ)
 						stack.push({
-							text: teacherName,
-							fontSize: 3.5,
-							color: '#4b5563',
-							lineHeight: 0.9
-						});
-					}
-				} else {
-					if (!isSlotSync && blockGroupName(block)) {
-						stack.push({
-							text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 3.5),
-							fontSize: 3.5,
-							color: '#d97706',
+							text: block.offeringCode || '',
 							bold: true,
+							fontSize: 5,
+							color: '#1e3a8a'
+						});
+					} else {
+						stack.push({
+							text: wrapThaiToLines(timetableResourceName(block), cellContentWidth, 4),
+							bold: true,
+							fontSize: 4,
+							color: '#047857',
 							lineHeight: 0.9
 						});
 					}
-				}
 
-				// ชื่อห้อง — ใช้ name_th ถ้ามี, fallback เป็น room_code
-				const room = blockRoom(block);
-				const roomFullName = room.id ? roomNames?.[room.id] : undefined;
-				const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
-				if (roomDisplay) {
-					stack.push({
-						text: wrapThaiToLines(roomDisplay, cellContentWidth, 3.5),
-						fontSize: 3.5,
-						background: '#f3f4f6',
-						color: '#1f2937',
-						lineHeight: 0.9,
-						// margin top 1pt → กัน background ทับ สระอู ของ "ครู" บรรทัดบน
-						margin: [0, 1, 0, 0]
-					});
-				}
+					// SLOT-sync activity (ครูหลายคน, ห้องหลายห้อง) — ซ่อน meta side
+					const isSlotSync =
+						block.blockKind === 'activity' && block.schedulingMode === 'synchronized';
+					const instructorName = instructorNames(block).trim();
 
+					if (viewMode === 'CLASSROOM') {
+						if (!isSlotSync && instructorName && instructorName !== '-') {
+							// ครูในโหมด mini แสดงแค่ชื่อแรก (ไม่มีนามสกุล) ตามที่ user ขอ
+							const rawName = instructorName;
+							const withoutPrefix = rawName.replace(/^ครู\s*/, '');
+							const firstName = withoutPrefix.split(/\s+/)[0];
+							const teacherName = `ครู${firstName}`;
+							stack.push({
+								text: teacherName,
+								fontSize: 3.5,
+								color: '#4b5563',
+								lineHeight: 0.9
+							});
+						}
+					} else {
+						if (!isSlotSync && blockGroupName(block)) {
+							stack.push({
+								text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 3.5),
+								fontSize: 3.5,
+								color: '#d97706',
+								bold: true,
+								lineHeight: 0.9
+							});
+						}
+					}
+
+					// ชื่อห้อง — ใช้ name_th ถ้ามี, fallback เป็น room_code
+					const room = blockRoom(block);
+					const roomFullName = room.id ? roomNames?.[room.id] : undefined;
+					const roomDisplay = roomFullName ? roomFullName : room.code ? `ห้อง ${room.code}` : null;
+					if (roomDisplay) {
+						stack.push({
+							text: wrapThaiToLines(roomDisplay, cellContentWidth, 3.5),
+							fontSize: 3.5,
+							background: '#f3f4f6',
+							color: '#1f2937',
+							lineHeight: 0.9,
+							// margin top 1pt → กัน background ทับ สระอู ของ "ครู" บรรทัดบน
+							margin: [0, 1, 0, 0]
+						});
+					}
+				}
 				row.push({ stack, alignment: 'center', margin: [0, 0] });
 			} else {
 				row.push({ text: '' });
@@ -1056,5 +1055,5 @@ export const generateTimetablePDF = async (
 		defaultStyle: { font: 'Sarabun' }
 	};
 
-	pdfMake.createPdf(docDefinition).download(`${fileName ?? pages[0].title}.pdf`);
+	await pdfMake.createPdf(docDefinition).download(`${fileName ?? pages[0].title}.pdf`);
 };
