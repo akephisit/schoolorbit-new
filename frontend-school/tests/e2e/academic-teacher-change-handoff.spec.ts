@@ -56,6 +56,8 @@ function teacherChangeSet() {
 		cancelledAt: null,
 		createdAt: '2026-08-31T00:00:00Z',
 		updatedAt: '2026-08-31T01:00:00Z',
+		changes: [],
+		offeringLabels: [],
 		items: [
 			{
 				...base,

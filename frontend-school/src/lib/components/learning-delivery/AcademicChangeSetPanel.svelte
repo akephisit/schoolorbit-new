@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { buildLearningDeliveryChangeRows } from '#lib/academic/learning-delivery-change-list.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import type { LearningDeliveryRefreshScope } from '#lib/academic/learning-delivery-page.js';
@@ -62,6 +63,7 @@
 		ensureOfferings: () => Promise<void>;
 	} = $props();
 
+	let changeRows = $derived(buildLearningDeliveryChangeRows(changeSet.changes, changeSet.items));
 	let managementOptions = $state.raw<DeliveryManagementOptions | null>(null);
 	let loadingOptions = $state(false);
 	let savingItem = $state(false);
@@ -445,67 +447,83 @@
 			</div>
 
 			<div class="space-y-3" aria-label="ความเปลี่ยนแปลงจากรุ่นต้นทาง">
-				{#each changeSet.changes as change, index (`${change.learningOfferingId}:${change.resourceId}:${change.field}:${index}`)}
+				{#each changeRows as row (row.resourceId)}
+					{@const firstChange = row.changes[0]}
 					<div class="rounded-xl border p-3">
-						<p class="font-medium">
-							{change.kind === 'added' ? 'เพิ่ม' : change.kind === 'removed' ? 'หยุด' : 'เปลี่ยน'}
-							{change.label}
-						</p>
-						<p class="text-sm text-muted-foreground">
-							{change.field}: {change.before ?? 'ยังไม่มี'} → {change.after ?? 'ไม่ใช้ในรุ่นใหม่'}
-						</p>
-					</div>
-				{:else}<p class="text-sm text-muted-foreground">
-						ยังไม่มีข้อมูลที่ต่างจากรุ่นต้นทาง
-					</p>{/each}
-			</div>
-			<p class="text-xs text-muted-foreground">รายการคำสั่งที่บันทึกไว้</p>
-			{#if changeSet.items.length === 0}
-				<div class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-					ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู
-				</div>
-			{:else}
-				<div class="divide-y rounded-xl border">
-					{#each changeSet.items as item (item.id)}
-						<div class="flex items-center justify-between gap-3 p-3">
-							<div class="min-w-0">
-								<p class="font-medium">{itemTitle(item)}</p>
-								<p class="truncate text-sm text-muted-foreground">{itemDescription(item)}</p>
+						<div class="flex flex-wrap items-start justify-between gap-2">
+							<div class="min-w-0 flex-1 space-y-1">
+								{#if firstChange}
+									<p class="font-medium">
+										{firstChange.kind === 'added'
+											? 'เพิ่ม'
+											: firstChange.kind === 'removed'
+												? 'หยุด'
+												: 'เปลี่ยน'}
+										{firstChange.label}
+									</p>
+									{#each row.changes as change, index (index)}
+										<p class="text-sm text-muted-foreground">
+											{#if change.label !== firstChange.label}{change.label} ·
+											{/if}
+											{change.field}: {change.before ?? 'ยังไม่มี'} → {change.after ??
+												'ไม่ใช้ในรุ่นใหม่'}
+										</p>
+									{/each}
+								{:else}
+									{#each row.items as item (item.id)}
+										<p class="font-medium">{itemTitle(item)}</p>
+										<p class="text-sm text-muted-foreground">{itemDescription(item)}</p>
+									{/each}
+								{/if}
 							</div>
-							<div class="flex shrink-0 gap-1">
-								{#if item.actionKind === 'add_offering'}
-									<Button
-										href={`/staff/academic/delivery/${item.learningOfferingId}?deliveryVersionId=${changeSet.targetDeliveryVersionId}`}
-										data-sveltekit-preload-data="tap"
-										size="sm"
-										variant="ghost"
-									>
-										{changeSet.status === 'draft' ? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'}
-										<ExternalLink class="size-3.5" />
-									</Button>
-								{/if}
-								{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'published' && canManage && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
-									<Button size="sm" variant="ghost" onclick={() => showHandoff(item.id)}>
-										จัดการคาบที่ได้รับผลกระทบ
-										<ExternalLink class="size-3.5" />
-									</Button>
-								{/if}
-								{#if canManage && changeSet.status === 'draft'}
-									<Button
-										size="icon"
-										variant="ghost"
-										disabled={deletingItemId === item.id}
-										onclick={() => removeItem(item.id, item.rowVersion)}
-										aria-label="ลบรายการเปลี่ยนแปลง"
-									>
-										<Trash2 class="size-4" />
-									</Button>
-								{/if}
+							<div class="flex max-w-full flex-wrap items-center gap-1">
+								{#each row.items as item (item.id)}
+									{#if item.actionKind === 'add_offering'}
+										<Button
+											href={`/staff/academic/delivery/${item.learningOfferingId}?deliveryVersionId=${changeSet.targetDeliveryVersionId}`}
+											data-sveltekit-preload-data="tap"
+											size="sm"
+											variant="ghost"
+										>
+											{changeSet.status === 'draft' ? 'จัดกลุ่มและครู' : 'ดูรายละเอียด'}
+											<ExternalLink class="size-3.5" />
+										</Button>
+									{/if}
+									{#if item.actionKind === 'stop_group_teacher' && changeSet.status === 'published' && canManage && $can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL)}
+										<Button size="sm" variant="ghost" onclick={() => showHandoff(item.id)}>
+											จัดการคาบที่ได้รับผลกระทบ
+											<ExternalLink class="size-3.5" />
+										</Button>
+									{/if}
+									{#if canManage && changeSet.status === 'draft'}
+										<Button
+											size={row.items.length > 1 ? 'sm' : 'icon'}
+											variant="ghost"
+											disabled={deletingItemId !== ''}
+											onclick={() => removeItem(item.id, item.rowVersion)}
+											aria-label={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
+											title={`ลบ ${itemTitle(item)} · ${itemDescription(item)}`}
+										>
+											<Trash2 class="size-4 shrink-0" />
+											{#if row.items.length > 1}
+												<span class="text-wrap text-left">
+													{itemTitle(item)}{'teacherLabel' in item ? ` · ${item.teacherLabel}` : ''}
+												</span>
+											{/if}
+										</Button>
+									{/if}
+								{/each}
 							</div>
 						</div>
-					{/each}
-				</div>
-			{/if}
+					</div>
+				{:else}
+					<div
+						class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground"
+					>
+						ยังไม่มีรายการเพิ่ม ปรับ หยุด หรือเปลี่ยนครู
+					</div>
+				{/each}
+			</div>
 		</section>
 
 		{#if teacherFormOpen && canManage && changeSet.status === 'draft'}

@@ -1536,3 +1536,192 @@ for (const viewport of [
 		});
 	}
 }
+
+for (const viewport of [
+	{ width: 1440, height: 900 },
+	{ width: 390, height: 844 }
+]) {
+	for (const dark of [false, true]) {
+		test(`single delivery change list deletes the matching command at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}) => {
+			await page.setViewportSize(viewport);
+			await mockDelivery(page);
+			const itemId = '84000000-0000-4000-8000-000000000001';
+			const otherOffering = '80000000-0000-4000-8000-000000000002';
+			const detail = {
+				...changeSetDetail(),
+				rowVersion: 9,
+				offeringLabels: [{ id: ids.offering, code: 'ส22201', name: 'หน้าที่พลเมือง' }],
+				items: [
+					{
+						id: itemId,
+						actionKind: 'adjust_weekly_period_target',
+						learningOfferingId: ids.offering,
+						weeklyPeriodTarget: 0,
+						rowVersion: 4,
+						createdAt: '2027-07-01T00:00:00Z',
+						updatedAt: '2027-07-01T00:00:00Z',
+						createdBy: '90000000-0000-4000-8000-000000000001'
+					}
+				],
+				changes: [ids.offering, otherOffering].map((resourceId, index) => ({
+					resourceId,
+					learningOfferingId: resourceId,
+					kind: 'changed',
+					label: index === 0 ? 'ส22201 — หน้าที่พลเมือง' : 'ค21101 — คณิตศาสตร์พื้นฐาน',
+					field: 'รายการเปิดสอน',
+					before: 'เปิดสอน 1 คาบ/สัปดาห์',
+					after: 'เปิดสอน 0 คาบ/สัปดาห์'
+				}))
+			};
+			await page.route(`**/api/academic/term-change-sets/${ids.changeSet}`, (route) =>
+				fulfill(route, detail)
+			);
+			let attempts = 0;
+			let releaseDelete!: () => void;
+			const deleteGate = new Promise<void>((resolve) => (releaseDelete = resolve));
+			await page.route(
+				`**/api/academic/term-change-sets/${ids.changeSet}/items/${itemId}`,
+				async (route) => {
+					expect(route.request().method()).toBe('DELETE');
+					expect(route.request().postDataJSON()).toEqual({
+						changeSetRowVersion: 9,
+						itemRowVersion: 4
+					});
+					if (++attempts === 1) return fulfill(route, 'ลบไม่สำเร็จ ลองอีกครั้ง', 400);
+					await deleteGate;
+					return fulfill(route, {
+						...detail,
+						rowVersion: 10,
+						items: [],
+						changes: detail.changes.slice(1)
+					});
+				}
+			);
+			await page.goto(
+				`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+			);
+			if (dark) {
+				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+				await expect(page.locator('html')).toHaveClass(/dark/);
+			}
+			const list = page.getByLabel('ความเปลี่ยนแปลงจากรุ่นต้นทาง');
+			await expect(list.locator(':scope > div')).toHaveCount(2);
+			await expect(page.getByText('รายการคำสั่งที่บันทึกไว้', { exact: true })).toHaveCount(0);
+			const card = list.locator(':scope > div').filter({ hasText: 'หน้าที่พลเมือง' });
+			await expect(card).toContainText('เปิดสอน 1 คาบ/สัปดาห์ → เปิดสอน 0 คาบ/สัปดาห์');
+			const remove = card.getByRole('button', { name: /^ลบ ปรับจำนวนคาบต่อสัปดาห์/ });
+			await expect(remove).toBeVisible();
+			await expect(list.getByRole('button')).toHaveCount(1);
+			await card.scrollIntoViewIfNeeded();
+			await page.screenshot({
+				path: `/tmp/delivery-change-list-${viewport.width}-${dark ? 'dark' : 'light'}.png`,
+				fullPage: true
+			});
+			const bounds = await remove.boundingBox();
+			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+			await remove.click();
+			await expect(page.getByRole('alert')).toContainText('ลบไม่สำเร็จ ลองอีกครั้ง');
+			await expect(card).toBeVisible();
+			await remove.click();
+			await expect(remove).toBeDisabled();
+			releaseDelete();
+			await expect(card).toHaveCount(0);
+			await expect(list.locator(':scope > div')).toHaveCount(1);
+			await expect(list).toContainText('คณิตศาสตร์พื้นฐาน');
+		});
+	}
+}
+
+test('teacher commands share one change card and stale deletion retries only the selected command', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockDelivery(page);
+	const addId = '84000000-0000-4000-8000-000000000002';
+	const stopId = '84000000-0000-4000-8000-000000000003';
+	let detail = {
+		...changeSetDetail(),
+		items: [
+			{
+				id: addId,
+				actionKind: 'add_group_teacher',
+				learningGroupId: ids.group,
+				learningGroupLabel: 'ม.1/1',
+				teacherId: '85000000-0000-4000-8000-000000000002',
+				teacherLabel: 'ครูชื่อซ้ำ',
+				teacherRole: 'primary',
+				rowVersion: 1
+			},
+			{
+				id: stopId,
+				actionKind: 'stop_group_teacher',
+				learningGroupId: ids.group,
+				learningGroupLabel: 'ม.1/1',
+				learningGroupTeacherId: '86000000-0000-4000-8000-000000000003',
+				teacherId: '85000000-0000-4000-8000-000000000003',
+				teacherLabel: 'ครูชื่อซ้ำ',
+				teacherRole: 'primary',
+				rowVersion: 2
+			}
+		],
+		changes: [
+			{
+				resourceId: ids.group,
+				learningOfferingId: ids.offering,
+				label: 'คณิตศาสตร์ · ม.1/1 · ครูชื่อซ้ำ',
+				field: 'ครูผู้สอน',
+				kind: 'removed',
+				before: 'ครูหลัก',
+				after: null
+			}
+		]
+	};
+	await page.route(`**/api/academic/term-change-sets/${ids.changeSet}`, (route) =>
+		fulfill(route, detail)
+	);
+	let attempts = 0;
+	await page.route(`**/api/academic/term-change-sets/${ids.changeSet}/items/*`, async (route) => {
+		expect(new URL(route.request().url()).pathname).toBe(
+			`/api/academic/term-change-sets/${ids.changeSet}/items/${stopId}`
+		);
+		const body = route.request().postDataJSON();
+		if (++attempts === 1) {
+			expect(body).toEqual({ changeSetRowVersion: 1, itemRowVersion: 2 });
+			detail = {
+				...detail,
+				rowVersion: 5,
+				items: detail.items.map((item) => ({ ...item, rowVersion: 6 }))
+			};
+			return fulfill(route, 'แบบร่างถูกแก้ไขจากที่อื่น', 409);
+		}
+		expect(body).toEqual({ changeSetRowVersion: 5, itemRowVersion: 6 });
+		detail = {
+			...detail,
+			rowVersion: 6,
+			items: detail.items.filter((item) => item.id !== stopId),
+			changes: []
+		};
+		return fulfill(route, detail);
+	});
+	await page.goto(
+		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+	);
+	const list = page.getByLabel('ความเปลี่ยนแปลงจากรุ่นต้นทาง');
+	await expect(list.locator(':scope > div')).toHaveCount(1);
+	const stop = list.getByRole('button', { name: /^ลบ หยุดความรับผิดชอบของครู/ });
+	const add = list.getByRole('button', { name: /^ลบ เพิ่มครูในกลุ่มเรียน/ });
+	await expect(stop).toBeVisible();
+	await expect(add).toBeVisible();
+	await list.scrollIntoViewIfNeeded();
+	await page.screenshot({ path: '/tmp/delivery-change-list-teachers-mobile.png', fullPage: true });
+	await stop.click();
+	await expect(page.getByRole('alert')).toContainText('แบบร่างถูกแก้ไขจากที่อื่น');
+	await expect(stop).toBeEnabled();
+	await stop.click();
+	await expect(stop).toHaveCount(0);
+	await expect(add).toBeVisible();
+	await expect(list.locator(':scope > div')).toHaveCount(1);
+	await expect(list).toContainText('เพิ่มครูในกลุ่มเรียน');
+});
