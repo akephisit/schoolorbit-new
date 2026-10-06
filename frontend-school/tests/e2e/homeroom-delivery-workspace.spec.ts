@@ -1321,7 +1321,7 @@ for (const viewport of [
 				await expect(page.locator('html')).toHaveClass(/dark/);
 			}
 			await page.getByRole('button', { name: 'เพิ่ม/ปรับรายการสอน', exact: true }).click();
-			await page.getByRole('combobox').filter({ hasText: 'เพิ่มรายวิชา' }).click();
+			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
 			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
 			await page.getByRole('combobox').filter({ hasText: 'เลือกรายวิชาหรือกิจกรรม' }).click();
 			await page.getByRole('option', { name: /ค21101/ }).click();
