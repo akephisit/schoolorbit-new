@@ -36,8 +36,14 @@ test('published cards expose canonical instructor names without edit controls', 
 	const card = await read('src/lib/components/academic/timetable/TimetableLessonCard.svelte');
 	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
 
-	assert.match(card, /group\.instructors\.map\(\(teacher\) => teacher\.displayName\)/);
-	assert.match(card, /block\.teachers\.map\(\(teacher\) => teacher\.displayName\)/);
+	assert.match(
+		card,
+		/group\.instructors\.map\(\(teacher\) => timetableTeacherLabel\(teacher\.displayName\)\)/
+	);
+	assert.match(
+		card,
+		/block\.teachers\.map\(\(teacher\) => timetableTeacherLabel\(teacher\.displayName\)\)/
+	);
 	assert.match(card, /\{#if canEdit\}/);
 	assert.match(page, /controller\?\.canEdit/);
 });

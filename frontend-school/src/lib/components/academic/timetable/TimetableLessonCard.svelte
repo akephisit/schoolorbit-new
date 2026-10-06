@@ -2,6 +2,7 @@
 	import { buildTimetableBlockDisplay } from '#lib/academic/timetable/block-display.js';
 	import { alignDragImageToPointer } from '#lib/academic/timetable/drag-image.js';
 	import type { TimetableBlock } from '#lib/api/timetable.js';
+	import { timetableTeacherLabel } from '#lib/academic/timetable/teacher-label.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { AlertTriangle, DoorOpen, LoaderCircle, Trash2, Users } from '@lucide/svelte';
 
@@ -37,8 +38,10 @@
 	const code = $derived(block.offeringCode ?? structuralLabel(block.structuralKind));
 	const allTeacherNames = $derived(
 		[
-			...block.groups.flatMap((group) => group.instructors.map((teacher) => teacher.displayName)),
-			...block.teachers.map((teacher) => teacher.displayName)
+			...block.groups.flatMap((group) =>
+				group.instructors.map((teacher) => timetableTeacherLabel(teacher.displayName))
+			),
+			...block.teachers.map((teacher) => timetableTeacherLabel(teacher.displayName))
 		].filter((name, index, names) => names.indexOf(name) === index)
 	);
 	const allTargetNames = $derived(
@@ -61,7 +64,7 @@
 			title,
 			needsReview ? 'ต้องตรวจแก้ข้อมูลเปิดสอน' : null,
 			allTargetNames.join(', '),
-			shouldShowTeacher ? `ครู ${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}` : null
+			shouldShowTeacher ? `${allTeacherNames.join(', ') || 'ยังไม่ระบุ'}` : null
 		]
 			.filter(Boolean)
 			.join(' ')

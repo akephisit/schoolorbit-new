@@ -8,10 +8,15 @@ const source = readFileSync(
 	'utf8'
 );
 const moduleCode = stripTypeScriptTypes(
-	source.replace(
-		'#lib/academic/timetable/board-state.js',
-		new URL('../../src/lib/academic/timetable/board-state.ts', import.meta.url).href
-	),
+	source
+		.replace(
+			'../academic/timetable/teacher-label.ts',
+			new URL('../../src/lib/academic/timetable/teacher-label.ts', import.meta.url).href
+		)
+		.replace(
+			'#lib/academic/timetable/board-state.js',
+			new URL('../../src/lib/academic/timetable/board-state.ts', import.meta.url).href
+		),
 	{ mode: 'transform' }
 );
 const { buildAcademicTimetablePdfDownload } = await import(
@@ -176,5 +181,30 @@ test('whole school exports one full week per homeroom from the chosen published 
 	assert.equal(
 		buildAcademicTimetablePdfDownload(input, 'teacher', 'unknown', '', '').pages.length,
 		0
+	);
+});
+
+test('multi-owner exports validate IDs and keep workspace order without repeating owners', () => {
+	const input = workspace();
+	input.staff[0].displayName = 'นายพิสิษฐ ทดสอบ';
+	input.staff[1].displayName = 'นางสาวสายใจ ทดสอบ';
+	const result = buildAcademicTimetablePdfDownload(input, 'teacher', null, '', '', [
+		'teacher-b',
+		'missing',
+		'teacher-a',
+		'teacher-a'
+	]);
+	assert.deepEqual(
+		result.pages.map((page) => page.title),
+		['ตารางสอน ครูพิสิษฐ', 'ตารางสอน ครูสายใจ']
+	);
+	assert.match(result.fileName, /^ตารางสอนครูที่เลือก/);
+	assert.equal(
+		buildAcademicTimetablePdfDownload(input, 'homeroom', null, '', '', []).pages.length,
+		0
+	);
+	assert.equal(
+		buildAcademicTimetablePdfDownload(input, 'homeroom', null, '', '', ['room-b']).pages[0].title,
+		'ตารางเรียน ม.1/2'
 	);
 });

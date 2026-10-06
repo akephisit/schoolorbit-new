@@ -1,3 +1,4 @@
+import { timetableTeacherLabel } from '../academic/timetable/teacher-label.ts';
 import type { TimetableBlock, TimetableBlockWorkspace } from '#lib/api/timetable.js';
 import type { TimetablePage } from '#lib/utils/pdf.js';
 import {
@@ -36,11 +37,15 @@ export function buildAcademicTimetablePdfDownload(
 	view: TimetablePageView,
 	ownerId: string | null,
 	termName: string,
-	yearName: string
+	yearName: string,
+	selectedOwnerIds?: readonly string[]
 ): { pages: TimetablePage[]; fileName: string } {
 	const ownerView = view === 'wholeSchool' ? 'homeroom' : view;
 	const rows = rowsForTimetableView(createTimetableBoardState(workspace), ownerView).filter(
-		(row) => view === 'wholeSchool' || row.id === ownerId
+		(row) =>
+			selectedOwnerIds
+				? selectedOwnerIds.includes(row.id)
+				: view === 'wholeSchool' || row.id === ownerId
 	);
 	const periods = workspace.bellPeriods
 		.filter((period) => period.isActive)
@@ -61,7 +66,7 @@ export function buildAcademicTimetablePdfDownload(
 	const subTitle = `${context} · ${versionLabel}${workspace.version.effectiveFrom ? ` · เริ่ม ${workspace.version.effectiveFrom}` : ''}`;
 	const roomNames = Object.fromEntries(workspace.rooms.map((room) => [room.id, room.name]));
 	const pages: TimetablePage[] = rows.map((row) => ({
-		title: `${ownerView === 'teacher' ? 'ตารางสอน' : 'ตารางเรียน'} ${row.label}`,
+		title: `${ownerView === 'teacher' ? 'ตารางสอน' : 'ตารางเรียน'} ${ownerView === 'teacher' ? timetableTeacherLabel(row.label) : row.label}`,
 		subTitle,
 		dayValues,
 		periods: periods.map((period) => ({
@@ -78,7 +83,7 @@ export function buildAcademicTimetablePdfDownload(
 	return {
 		pages,
 		fileName:
-			`${view === 'wholeSchool' ? 'ตารางเรียนทุกห้อง' : (pages[0]?.title ?? 'ตารางสอน')} ${context} ${versionLabel}`
+			`${view === 'wholeSchool' ? 'ตารางเรียนทุกห้อง' : pages.length > 1 ? (ownerView === 'teacher' ? 'ตารางสอนครูที่เลือก' : 'ตารางเรียนที่เลือก') : (pages[0]?.title ?? 'ตารางสอน')} ${context} ${versionLabel}`
 				.replaceAll('/', '-')
 				.replaceAll('\\', '-')
 	};

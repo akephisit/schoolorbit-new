@@ -168,9 +168,7 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	await downloadButton.click();
 	const download = await downloadPromise;
 
-	expect(download.suggestedFilename()).toBe(
-		'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569.pdf'
-	);
+	expect(download.suggestedFilename()).toBe('ตารางสอน ครูสายใจ ภาคเรียนที่ 1 ปีการศึกษา 2569.pdf');
 	await expect(page.getByText('ดาวน์โหลดตารางสอนแล้ว')).toBeVisible();
 	await expect(downloadButton).toBeEnabled();
 	expect(logoDeliveryRequestCount).toBe(1);

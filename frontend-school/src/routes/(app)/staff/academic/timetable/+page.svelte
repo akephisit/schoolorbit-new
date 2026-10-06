@@ -1,4 +1,6 @@
 <script lang="ts">
+	import TimetablePdfDialog from '#lib/components/academic/timetable/TimetablePdfDialog.svelte';
+	import type { GeneratePdfOptions } from '#lib/utils/pdf.js';
 	import TimetableOwnerSelector from '#lib/components/academic/timetable/TimetableOwnerSelector.svelte';
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
@@ -19,6 +21,7 @@
 		localPlacementPreview,
 		patchTimetableWorkspaceBlocks,
 		setTimetableWorkspaceBlocks,
+		type TimetableBoardView,
 		type TimetablePageView
 	} from '#lib/academic/timetable/board-state.js';
 	import {
@@ -258,6 +261,7 @@
 	} | null = null;
 	let exportingTeacherLoad = $state(false);
 	let exportingPdf = $state(false);
+	let pdfOpen = $state(false);
 	let errorMessage = $state('');
 	let refreshError = $state('');
 	let activeView = $state<TimetablePageView>('homeroom');
@@ -1104,21 +1108,27 @@
 		void fetchPlacementPreview(dayOfWeek, periodId);
 	}
 
-	async function downloadPdf(): Promise<void> {
+	async function downloadPdf(
+		exportView: TimetableBoardView,
+		ownerIds: string[],
+		layout: NonNullable<GeneratePdfOptions['layout']>
+	): Promise<void> {
 		if (!canDownloadPdf || !controller) return;
 		// Capture the selected version and owner before loading the renderer.
 		const download = buildAcademicTimetablePdfDownload(
 			controller.workspace,
-			activeView,
-			controller.selectedOwnerId,
+			exportView,
+			null,
 			$academicContext.options?.terms.find((term) => term.id === academicTermId)?.name ?? '',
-			$academicContext.options?.years.find((year) => year.id === academicYearId)?.name ?? ''
+			$academicContext.options?.years.find((year) => year.id === academicYearId)?.name ?? '',
+			ownerIds
 		);
 		if (!download.pages.length) return;
 		exportingPdf = true;
 		try {
 			const { generateTimetablePDF } = await import('#lib/utils/pdf.js');
-			await generateTimetablePDF(download.pages, download.fileName, { layout: 'full' });
+			await generateTimetablePDF(download.pages, download.fileName, { layout });
+			pdfOpen = false;
 			toast.success('ดาวน์โหลดตารางสอนแล้ว');
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ดาวน์โหลดตารางสอนไม่สำเร็จ');
@@ -1883,7 +1893,7 @@
 				disabled={busy}
 				onclick={createFirstTable}><Plus class="size-4" />สร้างตารางสอน</Button
 			>{/if}
-		<Button variant="outline" disabled={!canDownloadPdf} onclick={downloadPdf}>
+		<Button variant="outline" disabled={!canDownloadPdf} onclick={() => (pdfOpen = true)}>
 			{#if exportingPdf}<LoaderCircle class="size-4 animate-spin" />{:else}<Download
 					class="size-4"
 				/>{/if}
@@ -2676,3 +2686,17 @@
 		</AlertDialog.Content>
 	</AlertDialog.Root>
 </PageShell>
+
+{#if pdfOpen && controller}
+	{#key controller.workspace.version.id}
+		<TimetablePdfDialog
+			bind:open={pdfOpen}
+			workspace={controller.workspace}
+			view={activeView}
+			ownerId={controller.selectedOwnerId}
+			exporting={exportingPdf}
+			ready={canDownloadPdf}
+			onDownload={downloadPdf}
+		/>
+	{/key}
+{/if}

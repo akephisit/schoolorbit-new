@@ -312,8 +312,8 @@ test('hides shared scheduling metadata while preserving course teacher names', a
 	await expect(synchronizedCard.locator('svg.lucide-users')).toHaveCount(0);
 
 	const courseCard = page.locator(`article[data-block-id="${timetableIds.createdBlock}"]`);
-	await expect(courseCard).toContainText('ครูคณิตศาสตร์ A');
-	await expect(courseCard).toHaveAttribute('aria-label', /ครูคณิตศาสตร์ A/);
+	await expect(courseCard).toContainText('ครูคณิตศาสตร์');
+	await expect(courseCard).toHaveAttribute('aria-label', /ครูคณิตศาสตร์/);
 });
 
 test('shows the dragged lesson preview only in the cell currently under the pointer', async ({

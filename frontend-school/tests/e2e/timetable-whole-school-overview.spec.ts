@@ -37,7 +37,7 @@ test('derives the read-only school matrix from the same bounded block workspace'
 	const card = page.locator('[data-timetable-lesson-card]');
 	await expect(card).toHaveCount(1);
 	await expect(card).toHaveAttribute('draggable', 'false');
-	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toBeVisible();
+	await expect(card.getByText('ครูคณิตศาสตร์', { exact: true })).toBeVisible();
 	await expect(card.getByText('MATH-1', { exact: true })).toBeVisible();
 	await expect(card.getByRole('button', { name: /ออกจากตาราง/ })).toHaveCount(0);
 	expect(mock.workspaceRequestCount()).toBe(1);
@@ -99,7 +99,7 @@ test('uses full neutral cards without activity codes in the school overview', as
 	await expect(cards.getByText('OTHER-internal-activity-id', { exact: true })).toHaveCount(0);
 	await expect(cards.getByText('CLUB', { exact: true })).toHaveCount(0);
 	await expect(cards.getByText('กิจกรรมหน้าเสาธง', { exact: true })).toHaveCount(1);
-	await expect(cards.first().getByText('ครูคณิตศาสตร์ A', { exact: true })).toBeVisible();
+	await expect(cards.first().getByText('ครูคณิตศาสตร์', { exact: true })).toBeVisible();
 	await expect(cards.first().getByText('MATH-1', { exact: true })).toBeVisible();
 	const metrics = await cards.evaluateAll((elements) =>
 		elements.map((element) => {

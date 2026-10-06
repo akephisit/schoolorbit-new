@@ -6,6 +6,7 @@
 	} from '#lib/academic/timetable/board-state.js';
 	import { blocksForTimetableCell } from '#lib/academic/timetable/board-state.js';
 	import type { TimetableBlock } from '#lib/api/timetable.js';
+	import { timetableTeacherLabel } from '#lib/academic/timetable/teacher-label.js';
 	import { buildSchedulerTargetLabel } from '#lib/academic/timetable/block-display.js';
 
 	import TimetableCell, { type TimetableCellState } from './TimetableCell.svelte';
@@ -57,6 +58,7 @@
 		{ id: 'THU', label: 'วันพฤหัสบดี', shortLabel: 'พฤ.' },
 		{ id: 'FRI', label: 'วันศุกร์', shortLabel: 'ศ.' }
 	];
+	const rowLabel = $derived(view === 'teacher' ? timetableTeacherLabel(row.label) : row.label);
 	const homeroomNamesById = $derived(
 		new Map(state.workspace.homerooms.map((homeroom) => [homeroom.id, homeroom.name]))
 	);
@@ -74,10 +76,10 @@
 
 <section
 	class="min-w-0 overflow-hidden rounded-xl border bg-background"
-	aria-label={`ตารางของ ${row.label}`}
+	aria-label={`ตารางของ ${rowLabel}`}
 >
 	<div class="flex items-center justify-between border-b bg-muted/20 px-4 py-3">
-		<h2 class="text-lg font-semibold">{row.label}</h2>
+		<h2 class="text-lg font-semibold">{rowLabel}</h2>
 		<p class="text-sm text-muted-foreground">
 			{canEdit ? 'ลากคาบไปยังช่องใหม่ · ครั้งละ 1 คาบ' : 'กดคาบเพื่อดูรายละเอียด'}
 		</p>

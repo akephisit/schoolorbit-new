@@ -1,3 +1,4 @@
+import { timetableTeacherLabel } from './teacher-label.ts';
 import type { TimetableBlock } from '../../api/timetable';
 
 export type TimetableBlockDisplaySurface = 'scheduler' | 'personal';
@@ -33,7 +34,7 @@ function teacherNames(block: TimetableBlock): string[] {
 			(teacher, index, all) =>
 				all.findIndex((candidate) => candidate.teacherId === teacher.teacherId) === index
 		)
-		.map((teacher) => teacher.displayName);
+		.map((teacher) => timetableTeacherLabel(teacher.displayName));
 }
 
 function targetHomeroomCount(block: TimetableBlock): number {

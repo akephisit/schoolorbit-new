@@ -244,7 +244,7 @@ test('keeps teacher-view card typography compact and inside its period column', 
 	await page.goto(teacherBoardUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
-	const board = page.getByRole('region', { name: 'ตารางของ ครูคณิตศาสตร์ A' });
+	const board = page.getByRole('region', { name: 'ตารางของ ครูคณิตศาสตร์' });
 	const cell = board.locator(
 		`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period2}"]`
 	);
@@ -300,13 +300,13 @@ test('hides the redundant teacher row only in teacher view', async ({ page }) =>
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	let card = page.locator(`[data-block-id="${timetableIds.blockA}"]`);
-	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toBeVisible();
+	await expect(card.getByText('ครูคณิตศาสตร์', { exact: true })).toBeVisible();
 
 	await page.goto(teacherBoardUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	card = page.locator(`[data-block-id="${timetableIds.blockA}"]`);
 	await expect(card).toBeVisible();
-	await expect(card.getByText('ครูคณิตศาสตร์ A', { exact: true })).toHaveCount(0);
+	await expect(card.getByText('ครูคณิตศาสตร์', { exact: true })).toHaveCount(0);
 });
 
 test('uses the app font for course codes and drag previews', async ({ page }) => {

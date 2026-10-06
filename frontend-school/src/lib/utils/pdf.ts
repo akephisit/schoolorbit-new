@@ -1,3 +1,4 @@
+import { timetableTeacherLabel } from '../academic/timetable/teacher-label.ts';
 import type {
 	TDocumentDefinitions,
 	CustomTableLayout,
@@ -64,15 +65,19 @@ const getBlocks = (blocks: TimetableBlock[], day: string, periodId: string) => {
 	);
 };
 
-const instructorNames = (block: TimetableBlock) =>
-	[
-		...new Set([
-			...block.groups.flatMap((group) =>
-				group.instructors.map((instructor) => instructor.displayName)
-			),
-			...block.teachers.filter((teacher) => teacher.isActive).map((teacher) => teacher.displayName)
-		])
-	].join(', ');
+const instructorNames = (block: TimetableBlock) => {
+	const teachers = [
+		...block.groups.flatMap((group) => group.instructors),
+		...block.teachers.filter((teacher) => teacher.isActive)
+	];
+	return teachers
+		.filter(
+			(teacher, index) =>
+				teachers.findIndex((candidate) => candidate.teacherId === teacher.teacherId) === index
+		)
+		.map((teacher) => timetableTeacherLabel(teacher.displayName))
+		.join(', ');
+};
 
 const timetableResourceName = (block: TimetableBlock) =>
 	block.offeringName ?? block.title ?? 'กิจกรรม';
@@ -526,8 +531,7 @@ function buildPageContent(
 							instructorName &&
 							instructorName !== '-'
 						) {
-							const rawName = instructorName;
-							const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
+							const teacherName = instructorName;
 							stack.push({
 								text: wrapThaiToLines(teacherName, cellContentWidth, 7),
 								fontSize: 7,
@@ -828,13 +832,9 @@ function buildMiniTable(
 							instructorName &&
 							instructorName !== '-'
 						) {
-							// ครูในโหมด mini แสดงแค่ชื่อแรก (ไม่มีนามสกุล) ตามที่ user ขอ
-							const rawName = instructorName;
-							const withoutPrefix = rawName.replace(/^ครู\s*/, '');
-							const firstName = withoutPrefix.split(/\s+/)[0];
-							const teacherName = `ครู${firstName}`;
+							const teacherName = instructorName;
 							stack.push({
-								text: teacherName,
+								text: wrapThaiToLines(teacherName, cellContentWidth, 3.5),
 								fontSize: 3.5,
 								color: '#4b5563',
 								lineHeight: 0.9

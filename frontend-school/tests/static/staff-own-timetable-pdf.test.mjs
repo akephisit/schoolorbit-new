@@ -24,10 +24,10 @@ test('builds one instructor PDF page from the loaded self-service timetable', as
 		]
 	});
 
-	assert.equal(result.fileName, 'ตารางสอน ครูสายใจ - วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569');
+	assert.equal(result.fileName, 'ตารางสอน ครูสายใจ ภาคเรียนที่ 1 ปีการศึกษา 2569');
 	assert.deepEqual(result.pages, [
 		{
-			title: 'ตารางสอน ครูสายใจ / วิทยา',
+			title: 'ตารางสอน ครูสายใจ',
 			subTitle: 'ภาคเรียนที่ 1 ปีการศึกษา 2569',
 			dayValues: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
 			periods: [
