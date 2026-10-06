@@ -49,6 +49,8 @@ DO $$ BEGIN
                OR p.status<>'published' OR NOT c.is_active
                OR c.name_th<>m.program_name||CASE WHEN left(m.old_code,1)='J' THEN ' ม.ต้น' ELSE ' ม.ปลาย' END
                OR jsonb_array_length(c.grade_level_ids)<>3
+               OR (SELECT count(DISTINCT selected.id)
+                   FROM jsonb_array_elements_text(c.grade_level_ids) selected(id))<>3
                OR EXISTS (
                    SELECT 1 FROM jsonb_array_elements_text(c.grade_level_ids) selected(id)
                    LEFT JOIN grade_levels grade ON grade.id=selected.id::uuid

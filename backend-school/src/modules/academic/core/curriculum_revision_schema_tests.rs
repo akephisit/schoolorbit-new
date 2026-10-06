@@ -134,3 +134,23 @@ async fn migration_092_refuses_ambiguous_mapping_atomically() {
     .unwrap();
     assert_eq!(renamed, 0);
 }
+
+#[tokio::test]
+async fn migration_092_refuses_partial_roots_and_duplicate_grade_coverage() {
+    for (name, mutation) in [
+        ("curriculum_092_partial", "UPDATE curricula SET code='OTHER-CAR-TECH' WHERE code='J-CAR-TECH'"),
+        ("curriculum_092_duplicate_grade", "UPDATE curricula SET grade_level_ids=jsonb_build_array(grade_level_ids->0,grade_level_ids->0,grade_level_ids->1) WHERE code='J-ART-LANG'"),
+    ] {
+        let pool = predecessor(name).await;
+        let programs = seed_hierarchy(&pool).await;
+        apply_migrations_through(&pool, 91).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(mutation)).execute(&pool).await.unwrap();
+        assert!(apply_migrations_through(&pool, 92).await.is_err());
+        let retained: i64 = sqlx::query_scalar("SELECT count(DISTINCT curriculum_version_id) FROM study_programs WHERE id=ANY($1)")
+            .bind(&programs).fetch_one(&pool).await.unwrap();
+        assert_eq!(retained, 5);
+        let protected: bool = sqlx::query_scalar("SELECT bool_and(tgenabled='O') FROM pg_trigger WHERE tgname LIKE '%published%immutable'")
+            .fetch_one(&pool).await.unwrap();
+        assert!(protected);
+    }
+}
