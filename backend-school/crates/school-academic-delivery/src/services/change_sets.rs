@@ -10,8 +10,8 @@ use crate::models::{
     AcademicChangeImpactCounts, AcademicTermChangeActionKind, AcademicTermChangeItem,
     AcademicTermChangeSet, AcademicTermChangeSetPreview, AcademicTermChangeSetStatus,
     AcademicTermChangeSetSummary, CreateAcademicTermChangeSetRequest,
-    DeleteAcademicTermChangeItemRequest, LearningOfferingStatus, LearningTeacherRole,
-    PublishAcademicTermChangeSetRequest, UpdateAcademicTermChangeSetRequest,
+    DeleteAcademicTermChangeItemRequest, LearningOfferingKind, LearningOfferingStatus,
+    LearningTeacherRole, PublishAcademicTermChangeSetRequest, UpdateAcademicTermChangeSetRequest,
     UpsertAcademicTermChangeItemRequest,
 };
 use school_academic_core::{
@@ -1535,7 +1535,7 @@ pub async fn upsert_change_item(
             offering,
             ..
         } => {
-            validate_weekly_period_target(weekly_period_target)?;
+            validate_weekly_period_target(LearningOfferingKind::Activity, weekly_period_target)?;
             if offering.academic_term_id != term.id {
                 return Err(AppError::ValidationError(
                     "รายการเปิดสอนต้องอยู่ในภาคเรียนเดียวกับชุดการเปลี่ยนแปลง".to_string(),
@@ -1616,7 +1616,6 @@ pub async fn upsert_change_item(
             weekly_period_target,
             ..
         } => {
-            validate_weekly_period_target(weekly_period_target)?;
             ensure_no_action(
                 &mut transaction,
                 change_set_id,
@@ -1625,12 +1624,13 @@ pub async fn upsert_change_item(
                 "หยุดและปรับจำนวนคาบของรายการเดียวกันในชุดเดียวไม่ได้",
             )
             .await?;
-            require_snapshot_offering(
+            let kind = require_snapshot_offering(
                 &mut transaction,
                 row.target_delivery_version_id,
                 learning_offering_id,
             )
             .await?;
+            validate_weekly_period_target(kind, weekly_period_target)?;
             if let Some(existing) = find_change_item(
                 &mut transaction,
                 change_set_id,
@@ -2044,23 +2044,19 @@ async fn require_snapshot_offering(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Option<Uuid>,
     offering_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<LearningOfferingKind, AppError> {
     let version_id = required_version_id(version_id, "ไม่พบรุ่นเปิดสอนแบบร่าง")?;
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM academic_delivery_versions version,
+    sqlx::query_scalar(
+        "SELECT offering->>'kind'
+        FROM academic_delivery_versions version,
         jsonb_array_elements(version.snapshot->'offerings') offering
-        WHERE version.id=$1 AND version.status='draft' AND (offering->>'id')::uuid=$2)",
+        WHERE version.id=$1 AND version.status='draft' AND (offering->>'id')::uuid=$2",
     )
     .bind(version_id)
     .bind(offering_id)
-    .fetch_one(&mut **transaction)
-    .await?;
-    if !exists {
-        return Err(AppError::Conflict(
-            "รายการเปิดสอนนี้ไม่ได้อยู่ในรุ่นเปิดสอนแบบร่าง".into(),
-        ));
-    }
-    Ok(())
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or_else(|| AppError::Conflict("รายการเปิดสอนนี้ไม่ได้อยู่ในรุ่นเปิดสอนแบบร่าง".into()))
 }
 
 async fn create_default_draft_groups(
@@ -2592,10 +2588,15 @@ async fn require_unpublished_only_delete(
     Ok(())
 }
 
-fn validate_weekly_period_target(value: i32) -> Result<(), AppError> {
-    if value <= 0 {
+fn validate_weekly_period_target(kind: LearningOfferingKind, value: i32) -> Result<(), AppError> {
+    if !versions::valid_weekly_period_target(kind, value) {
         Err(AppError::ValidationError(
-            "จำนวนคาบต่อสัปดาห์ต้องมากกว่าศูนย์".to_string(),
+            if kind == LearningOfferingKind::Course {
+                "จำนวนคาบที่จัดจริงต่อสัปดาห์ต้องเป็นศูนย์หรือมากกว่า"
+            } else {
+                "จำนวนคาบกิจกรรมต่อสัปดาห์ต้องมากกว่าศูนย์"
+            }
+            .to_string(),
         ))
     } else {
         Ok(())

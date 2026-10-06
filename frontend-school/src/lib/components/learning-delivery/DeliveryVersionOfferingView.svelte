@@ -24,7 +24,9 @@
 			<Badge variant="secondary">เผยแพร่แล้ว</Badge>
 		</div>
 		<p class="text-sm">
-			เปิดสอน {offering.weeklyPeriodTarget} คาบ/สัปดาห์ · {offering.groups.length} กลุ่มเรียน
+			จัดตาราง {offering.weeklyPeriodTarget} คาบ/สัปดาห์{offering.weeklyPeriodTarget === 0
+				? ' (ไม่จัดคาบแยก)'
+				: ''} · {offering.groups.length} กลุ่มเรียน
 		</p>
 		<p class="text-sm text-muted-foreground">
 			ข้อมูลในรุ่นนี้เก็บไว้สำหรับอ้างอิงและดูย้อนหลัง หากต้องการแก้ไข

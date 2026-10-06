@@ -81,6 +81,11 @@
 		managementOptions?.catalogVersions.find((item) => item.id === catalogVersionId) ?? null
 	);
 	let selectedOffering = $derived(offerings.find((item) => item.id === learningOfferingId) ?? null);
+	$effect(() => {
+		if (action === 'adjust_weekly_period_target' && selectedOffering) {
+			weeklyPeriodTarget = selectedOffering.weeklyPeriodTarget;
+		}
+	});
 	let catalogOptions = $derived(
 		(managementOptions?.catalogVersions ?? [])
 			.filter((item) => item.kind === (action === 'add_activity' ? 'activity' : 'course'))
@@ -276,7 +281,12 @@
 			};
 		}
 		if (action === 'adjust_weekly_period_target') {
-			if (!learningOfferingId || weeklyPeriodTarget <= 0) return null;
+			if (
+				!selectedOffering ||
+				!Number.isInteger(weeklyPeriodTarget) ||
+				weeklyPeriodTarget < (selectedOffering.kind === 'course' ? 0 : 1)
+			)
+				return null;
 			return {
 				action,
 				changeSetRowVersion: changeSet.rowVersion,
@@ -299,7 +309,7 @@
 				}
 			};
 		}
-		if (weeklyPeriodTarget <= 0) return null;
+		if (!Number.isInteger(weeklyPeriodTarget) || weeklyPeriodTarget <= 0) return null;
 		return {
 			action,
 			changeSetRowVersion: changeSet.rowVersion,
@@ -656,13 +666,21 @@
 								</p>
 							</div>
 							<div class="space-y-1">
-								<Label for="adjust-weekly-period-target">จัดจริงภาคเรียนนี้</Label>
+								<Label for="adjust-weekly-period-target">คาบที่จัดจริงต่อสัปดาห์</Label>
 								<Input
 									id="adjust-weekly-period-target"
 									type="number"
-									min="1"
+									min={selectedOffering?.kind === 'course' ? 0 : 1}
+									step="1"
 									bind:value={weeklyPeriodTarget}
 								/>
+								{#if selectedOffering?.kind === 'course'}
+									<p class="text-xs text-muted-foreground">
+										0 คาบ = เปิดรายวิชาโดยไม่จัดคาบแยกในตารางสอน
+										ใช้กับทุกกลุ่มเรียนของรายวิชานี้ในภาคเรียนนี้
+										โดยหน่วยกิตและคาบตามหลักสูตรยังคงเดิม
+									</p>
+								{/if}
 							</div>
 						</div>
 					{:else if selectedOffering}

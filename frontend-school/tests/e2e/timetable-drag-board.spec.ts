@@ -896,3 +896,14 @@ test('keeps synchronized group instructors managed by delivery when editing rese
 		clearRoom: true
 	});
 });
+
+test('zero period courses have no waiting card while their existing lessons stay visible', async ({
+	page
+}) => {
+	const existing = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+	await installTimetableMock(page, { requiredPeriods: 0, blocks: [existing] });
+	await page.goto(timetableUrl());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(page.locator('aside article[draggable="true"]')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: /ดูรายละเอียด ค21101/ })).toBeVisible();
+});

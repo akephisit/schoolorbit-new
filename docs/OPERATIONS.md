@@ -13,6 +13,19 @@ Local source-build topology is defined in [`compose.local.yml`](../compose.local
 
 For first-time production server bootstrap, follow [Podman server setup](./PODMAN_SETUP.md).
 
+## Zero course timetable targets
+
+Migration 090 permits nonnegative actual weekly course targets and change-item targets.
+Courses set to zero remain opened with their curriculum, credits, groups, teachers and assessment;
+only standalone timetable demand becomes zero. Activities retain a positive target.
+Publish the opening revision and explicitly update a timetable draft's opening source before the
+new target applies there. Existing placed lessons and published history are preserved; remove
+zero-target lessons from the draft before publishing it.
+
+The migration expands constraints without rewriting data. Older binaries remain compatible until
+zero targets are stored in opening revisions. After that point, use a roll-forward fix: older
+validation rejects those revisions. Do not roll back by deleting opening or timetable history.
+
 ## Required Environment and Secrets
 
 All secrets and environment-specific URLs come from the runtime environment or deployment secret store. Example files are templates only.

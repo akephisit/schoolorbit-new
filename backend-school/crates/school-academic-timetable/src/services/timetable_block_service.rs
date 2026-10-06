@@ -185,6 +185,11 @@ pub async fn create_ordinary_block(
                 .map(|group| (offering, group))
         })
         .ok_or_else(|| AppError::ValidationError("กลุ่มเรียนไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?;
+    if offering.weekly_period_target == 0 {
+        return Err(AppError::ValidationError(
+            "รายวิชานี้ตั้งเป็น 0 คาบต่อสัปดาห์ จึงไม่ต้องจัดคาบแยกในตารางสอน".into(),
+        ));
+    }
     let scheduling_mode = match &offering.catalog {
         school_academic_delivery::models::LearningOfferingSnapshot::Course(_) => {
             Some("independent")

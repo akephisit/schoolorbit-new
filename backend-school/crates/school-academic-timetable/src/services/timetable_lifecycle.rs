@@ -623,7 +623,11 @@ pub fn readiness(
                 if count != offering.weekly_period_target {
                     findings.push(finding(
                         Code::PeriodCountMismatch,
-                        "จำนวนคาบกลุ่มเรียนไม่ตรงกับจำนวนที่เปิดสอน",
+                        if offering.weekly_period_target == 0 {
+                            "รายวิชานี้ตั้งเป็น 0 คาบต่อสัปดาห์ กรุณาถอดคาบเดิมออกจากตารางก่อนเผยแพร่"
+                        } else {
+                            "จำนวนคาบกลุ่มเรียนไม่ตรงกับจำนวนที่เปิดสอน"
+                        },
                         None,
                         Some(offering.id),
                         Some(group.id),
