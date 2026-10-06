@@ -1,4 +1,5 @@
 import { expect, test, type Route } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { makeTimetableBlock, timetableIds } from './timetable-test-harness';
@@ -169,6 +170,11 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const download = await downloadPromise;
 
 	expect(download.suggestedFilename()).toBe('ตารางสอน ครูสายใจ ภาคเรียนที่ 1 ปีการศึกษา 2569.pdf');
+	const text = execFileSync('pdftotext', ['-raw', (await download.path())!, '-'], {
+		encoding: 'utf8'
+	}).replace(/\s/g, '');
+	expect(text).toContain('ม.1/1');
+	expect(text).not.toContain('ม.1/1คณิตศาสตร์');
 	await expect(page.getByText('ดาวน์โหลดตารางสอนแล้ว')).toBeVisible();
 	await expect(downloadButton).toBeEnabled();
 	expect(logoDeliveryRequestCount).toBe(1);

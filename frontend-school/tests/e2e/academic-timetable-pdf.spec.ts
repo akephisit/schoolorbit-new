@@ -145,19 +145,31 @@ for (const width of [1543, 390]) {
 					expect(text.match(/ครูพิสิษฐ/g)).toHaveLength(1);
 					expect(text).toContain('ประชุมครู');
 				}
-				if (view === 'ครู') expect(text).toContain('ประชุมครู');
+				if (view === 'ครู') {
+					expect(text).toContain('ประชุมครู');
+					expect(text.match(/ม\.1\/1/g)).toHaveLength(1);
+					expect(text).not.toContain('ม.1/1คณิตศาสตร์');
+				}
+				expect(text).not.toContain('แบบร่าง');
+				expect(text).not.toContain('เผยแพร่แล้ว');
 				expect(text).not.toContain('CLUB-');
 				expect(text).not.toContain('สกุลทดสอบ');
 				await expect(downloadButton).toBeEnabled();
-				if (view === 'ชั้น') {
+				if (view === 'ชั้น' || view === 'ครู') {
 					const dialog = await openDownload(page);
 					await dialog.getByRole('button', { name: '6 ตารางต่อหน้า', exact: true }).click();
 					const compactPending = page.waitForEvent('download');
 					await confirmDownload(page);
 					const compactDownload = await compactPending;
-					await compactDownload.saveAs(`/tmp/pdf-options-${width}-${theme}-room.pdf`);
+					await compactDownload.saveAs(`/tmp/pdf-options-${width}-${theme}-${view}.pdf`);
 					const compactText = await pdfText(compactDownload);
-					expect(compactText).toContain('ครูพิสิษฐ,ครูสายใจ');
+					if (view === 'ชั้น') {
+						expect(compactText).toContain('ครูพิสิษฐ,ครูสายใจ');
+					} else {
+						expect(compactText.match(/ม\.1\/1/g)).toHaveLength(1);
+						expect(compactText).not.toContain('ม.1/1คณิตศาสตร์');
+					}
+					expect(compactText).not.toContain('แบบร่าง');
 					expect(compactText).not.toContain('สกุลทดสอบ');
 					expect(compactText.match(/ครูพิสิษฐ/g)).toHaveLength(1);
 					expect(compactText).toContain('ประชุมครู');
@@ -196,7 +208,10 @@ test('PDF failure preserves the table and permits retry', async ({ page }) => {
 	await confirmDownload(page);
 	const download = await pending;
 	expect(download.suggestedFilename()).toMatch(/เผยแพร่แล้ว\.pdf$/);
-	expect(await pdfText(download)).toContain('เริ่ม2026-05-01');
+	const text = await pdfText(download);
+	expect(text).toContain('ภาคเรียนที่1');
+	expect(text).not.toContain('เผยแพร่แล้ว');
+	expect(text).not.toContain('2026-05-01');
 });
 
 test('PDF captures the requested owner and version before its lazy renderer loads', async ({
@@ -241,7 +256,9 @@ test('PDF captures the requested owner and version before its lazy renderer load
 	release();
 	const download = await pending;
 	expect(download.suggestedFilename()).toMatch(/^ตารางเรียน ม\.1-1 .*แบบร่าง\.pdf$/);
-	expect(await pdfText(download)).toContain('แบบร่าง');
+	const text = await pdfText(download);
+	expect(text).toContain('ม.1/1');
+	expect(text).not.toContain('แบบร่าง');
 	await expect(button).toBeEnabled();
 });
 

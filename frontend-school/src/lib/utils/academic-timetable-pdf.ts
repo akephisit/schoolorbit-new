@@ -63,8 +63,9 @@ export function buildAcademicTimetablePdfDownload(
 	];
 	const context = `${termName || 'ภาคเรียน'} ${yearName || 'ปีการศึกษา'}`;
 	const versionLabel = workspace.version.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว';
-	const subTitle = `${context} · ${versionLabel}${workspace.version.effectiveFrom ? ` · เริ่ม ${workspace.version.effectiveFrom}` : ''}`;
+	const subTitle = context;
 	const roomNames = Object.fromEntries(workspace.rooms.map((room) => [room.id, room.name]));
+	const homeroomNames = Object.fromEntries(workspace.homerooms.map((room) => [room.id, room.name]));
 	const pages: TimetablePage[] = rows.map((row) => ({
 		title: `${ownerView === 'teacher' ? 'ตารางสอน' : 'ตารางเรียน'} ${ownerView === 'teacher' ? timetableTeacherLabel(row.label) : row.label}`,
 		subTitle,
@@ -78,7 +79,8 @@ export function buildAcademicTimetablePdfDownload(
 		})),
 		timetableBlocks: blocksForOwner(workspace.blocks, ownerView, row.id),
 		viewMode: ownerView === 'teacher' ? 'INSTRUCTOR' : 'CLASSROOM',
-		roomNames
+		roomNames,
+		homeroomNames
 	}));
 	return {
 		pages,

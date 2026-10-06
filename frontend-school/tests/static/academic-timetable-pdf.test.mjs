@@ -129,6 +129,8 @@ test('homeroom PDF keeps course, synchronized and special periods with only that
 	);
 	assert.ok(pages[0].dayValues.includes('SAT'));
 	assert.equal(pages[0].roomNames['classroom-a'], 'ห้องคณิตศาสตร์');
+	assert.deepEqual(pages[0].homeroomNames, { 'room-a': 'ม.1/1', 'room-b': 'ม.1/2' });
+	assert.equal(pages[0].subTitle, 'ภาคเรียนที่ 1 2569');
 	assert.equal(fileName, 'ตารางเรียน ม.1-1 ภาคเรียนที่ 1 2569 แบบร่าง');
 	assert.deepEqual(input, original);
 });
@@ -176,7 +178,7 @@ test('whole school exports one full week per homeroom from the chosen published 
 		pages[1].timetableBlocks.map((b) => b.id),
 		['sync']
 	);
-	assert.match(pages[0].subTitle, /เผยแพร่แล้ว · เริ่ม 2026-05-18/);
+	assert.equal(pages[0].subTitle, 'ภาคเรียนที่ 1 2569');
 	assert.match(fileName, /^ตารางเรียนทุกห้อง/);
 	assert.equal(
 		buildAcademicTimetablePdfDownload(input, 'teacher', 'unknown', '', '').pages.length,

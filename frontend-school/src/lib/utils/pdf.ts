@@ -1,3 +1,4 @@
+import { timetablePdfClassLabel } from './timetable-pdf-class-label.ts';
 import { timetableTeacherLabel } from '../academic/timetable/teacher-label.ts';
 import type {
 	TDocumentDefinitions,
@@ -81,11 +82,6 @@ const instructorNames = (block: TimetableBlock) => {
 
 const timetableResourceName = (block: TimetableBlock) =>
 	block.offeringName ?? block.title ?? 'กิจกรรม';
-
-const blockGroupName = (block: TimetableBlock) =>
-	[...block.groups.map((group) => group.name), ...block.homerooms.map((room) => room.name)].join(
-		', '
-	);
 
 const blockRoom = (block: TimetableBlock) => {
 	const group = block.groups.find((item) => item.roomId || item.roomCode);
@@ -313,6 +309,8 @@ export interface TimetablePage {
 	/** room_id → name_th — ใช้แสดงชื่อห้องเต็ม (เช่น "ห้องคณิตศาสตร์ 1")
 	 *  ถ้าไม่ส่งมาจะ fallback ไปใช้ block roomCode (รหัสสั้น) */
 	roomNames?: Record<string, string>;
+	/** Homeroom ID → short class name, separate from the learning group name. */
+	homeroomNames?: Record<string, string>;
 }
 
 function buildPageContent(
@@ -327,7 +325,8 @@ function buildPageContent(
 		periods,
 		timetableBlocks,
 		viewMode = 'CLASSROOM',
-		roomNames
+		roomNames,
+		homeroomNames
 	} = page;
 	const tableBody: TableCell[][] = [];
 	const resolvedDayValues = new Set(resolveTimetablePdfDayValues(dayValues));
@@ -540,10 +539,11 @@ function buildPageContent(
 							});
 						}
 					} else {
-						// Teacher PDF — แสดงห้อง (ยกเว้น sync activity เพราะเป็นกิจกรรมรวมทุกห้อง)
-						if (!isSlotSync && blockGroupName(block)) {
+						// Teacher PDF — show short homeroom names for ordinary periods.
+						const classLabel = timetablePdfClassLabel(block, homeroomNames);
+						if (classLabel) {
 							stack.push({
-								text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 7),
+								text: wrapThaiToLines(classLabel, cellContentWidth, 7),
 								fontSize: 7,
 								color: '#d97706',
 								bold: true,
@@ -655,7 +655,15 @@ function buildMiniTable(
 	miniAreaWidth: number = 400,
 	logoDataUrl: string | null = null
 ): Content {
-	const { dayValues, periods, timetableBlocks, title, viewMode = 'CLASSROOM', roomNames } = page;
+	const {
+		dayValues,
+		periods,
+		timetableBlocks,
+		title,
+		viewMode = 'CLASSROOM',
+		roomNames,
+		homeroomNames
+	} = page;
 	const tableBody: TableCell[][] = [];
 	const resolvedDayValues = new Set(resolveTimetablePdfDayValues(dayValues));
 	const renderedDays = DAYS.filter((day) => resolvedDayValues.has(day.value));
@@ -841,9 +849,10 @@ function buildMiniTable(
 							});
 						}
 					} else {
-						if (!isSlotSync && blockGroupName(block)) {
+						const classLabel = timetablePdfClassLabel(block, homeroomNames);
+						if (classLabel) {
 							stack.push({
-								text: wrapThaiToLines(blockGroupName(block), cellContentWidth, 3.5),
+								text: wrapThaiToLines(classLabel, cellContentWidth, 3.5),
 								fontSize: 3.5,
 								color: '#d97706',
 								bold: true,
