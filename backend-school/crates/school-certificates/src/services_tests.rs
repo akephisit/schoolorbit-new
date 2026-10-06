@@ -4047,10 +4047,10 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
              RETURNING id
          ), curriculum_version AS (
              INSERT INTO curriculum_versions (
-                 curriculum_id, version_name, start_academic_year_id,
+                 curriculum_id, version_name, revision_year,
                  is_active, status
              )
-             SELECT id, 'ฉบับทดสอบผู้ใช้ไฟล์', $1, true, 'draft'
+             SELECT id, 'ฉบับทดสอบผู้ใช้ไฟล์', 2569, true, 'draft'
              FROM curriculum
              RETURNING id
          )
@@ -4058,11 +4058,10 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
              id, curriculum_version_id, code, name_th, is_default, status
          )
          SELECT gen_random_uuid(), id, 'PURGE-FIXTURE',
-                'แผนทดสอบผู้ใช้ไฟล์', true, 'draft'
+                'แผนทดสอบผู้ใช้ไฟล์', true, 'published'
          FROM curriculum_version
          RETURNING id",
     )
-    .bind(academic_year_id)
     .fetch_one(&pool)
     .await
     .unwrap();

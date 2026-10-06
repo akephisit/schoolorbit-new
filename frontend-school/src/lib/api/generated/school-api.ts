@@ -7771,7 +7771,6 @@ export interface components {
 		};
 		ApiResponse_CurriculumCreateOptions: {
 			data: {
-				academicYears: components['schemas']['AcademicYearLookupItem'][];
 				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 				ownerOptions: components['schemas']['CatalogOwnerOption'][];
 			};
@@ -7780,7 +7779,6 @@ export interface components {
 		};
 		ApiResponse_CurriculumManagementOptions: {
 			data: {
-				academicYears: components['schemas']['AcademicYearLookupItem'][];
 				catalogVersions: components['schemas']['CurriculumCatalogVersionOption'][];
 				gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 			};
@@ -7826,16 +7824,14 @@ export interface components {
 				curriculumId: string;
 				description?: string | null;
 				/** Format: uuid */
-				endAcademicYearId?: string | null;
-				/** Format: uuid */
 				id: string;
 				migrated: boolean;
 				/** Format: date-time */
 				publishedAt?: string | null;
+				/** Format: int32 */
+				revisionYear?: number | null;
 				/** Format: int64 */
 				rowVersion: number;
-				/** Format: uuid */
-				startAcademicYearId: string;
 				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
 				updatedAt: string;
@@ -11021,16 +11017,14 @@ export interface components {
 				curriculumId: string;
 				description?: string | null;
 				/** Format: uuid */
-				endAcademicYearId?: string | null;
-				/** Format: uuid */
 				id: string;
 				migrated: boolean;
 				/** Format: date-time */
 				publishedAt?: string | null;
+				/** Format: int32 */
+				revisionYear?: number | null;
 				/** Format: int64 */
 				rowVersion: number;
-				/** Format: uuid */
-				startAcademicYearId: string;
 				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
 				updatedAt: string;
@@ -11041,8 +11035,6 @@ export interface components {
 		};
 		ApiResponse_Vec_CurriculumVersionView: {
 			data: {
-				endAcademicYearName?: string | null;
-				startAcademicYearName: string;
 				version: components['schemas']['CurriculumVersion'];
 			}[];
 			message?: string;
@@ -11984,8 +11976,14 @@ export interface components {
 				curriculumId: string;
 				curriculumName: string;
 				/** Format: uuid */
+				curriculumVersionId: string;
+				gradeLevelIds: string[];
+				/** Format: uuid */
 				id: string;
 				name: string;
+				/** Format: int32 */
+				revisionYear?: number | null;
+				versionName: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -13472,12 +13470,10 @@ export interface components {
 		};
 		CloneCurriculumVersionRequest: {
 			description?: string | null;
-			/** Format: uuid */
-			endAcademicYearId?: string | null;
+			/** Format: int32 */
+			revisionYear: number;
 			/** Format: int64 */
 			sourceRowVersion: number;
-			/** Format: uuid */
-			startAcademicYearId: string;
 			versionName: string;
 		};
 		CloneTimetableVersionRequest: {
@@ -13776,10 +13772,8 @@ export interface components {
 		};
 		CreateCurriculumVersionRequest: {
 			description?: string | null;
-			/** Format: uuid */
-			endAcademicYearId?: string | null;
-			/** Format: uuid */
-			startAcademicYearId: string;
+			/** Format: int32 */
+			revisionYear: number;
 			versionName: string;
 		};
 		CreateDelegationRequest: {
@@ -14232,7 +14226,6 @@ export interface components {
 			versionNo: number;
 		};
 		CurriculumCreateOptions: {
-			academicYears: components['schemas']['AcademicYearLookupItem'][];
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 			ownerOptions: components['schemas']['CatalogOwnerOption'][];
 		};
@@ -14260,7 +14253,7 @@ export interface components {
 			weeklyPeriodTarget: number | null;
 		};
 		/** @enum {string} */
-		CurriculumDisplayState: 'current' | 'upcoming' | 'expired' | 'unpublished';
+		CurriculumDisplayState: 'published' | 'unpublished';
 		/** @enum {string} */
 		CurriculumDocumentSection: 'basic_course' | 'additional_course' | 'student_development';
 		CurriculumGroupProposal: {
@@ -14269,7 +14262,6 @@ export interface components {
 			name: string;
 		};
 		CurriculumManagementOptions: {
-			academicYears: components['schemas']['AcademicYearLookupItem'][];
 			catalogVersions: components['schemas']['CurriculumCatalogVersionOption'][];
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
 		};
@@ -14288,9 +14280,7 @@ export interface components {
 			displayVersion?: null | components['schemas']['CurriculumVersion'];
 			/** Format: int64 */
 			draftCount: number;
-			endAcademicYearName?: string | null;
 			gradeLevels: components['schemas']['GradeLevelLookupItem'][];
-			startAcademicYearName?: string | null;
 			/** Format: int64 */
 			studyProgramCount: number;
 		};
@@ -14402,24 +14392,20 @@ export interface components {
 			curriculumId: string;
 			description?: string | null;
 			/** Format: uuid */
-			endAcademicYearId?: string | null;
-			/** Format: uuid */
 			id: string;
 			migrated: boolean;
 			/** Format: date-time */
 			publishedAt?: string | null;
+			/** Format: int32 */
+			revisionYear?: number | null;
 			/** Format: int64 */
 			rowVersion: number;
-			/** Format: uuid */
-			startAcademicYearId: string;
 			status: components['schemas']['VersionStatus'];
 			/** Format: date-time */
 			updatedAt: string;
 			versionName: string;
 		};
 		CurriculumVersionView: {
-			endAcademicYearName?: string | null;
-			startAcademicYearName: string;
 			version: components['schemas']['CurriculumVersion'];
 		};
 		DailyTeachingEntry: {
@@ -18540,8 +18526,14 @@ export interface components {
 			curriculumId: string;
 			curriculumName: string;
 			/** Format: uuid */
+			curriculumVersionId: string;
+			gradeLevelIds: string[];
+			/** Format: uuid */
 			id: string;
 			name: string;
+			/** Format: int32 */
+			revisionYear?: number | null;
+			versionName: string;
 		};
 		SubjectEvaluationSummary: {
 			average: components['schemas']['ExactAverage'];
@@ -20065,12 +20057,10 @@ export interface components {
 		};
 		UpdateCurriculumVersionRequest: {
 			description?: string | null;
-			/** Format: uuid */
-			endAcademicYearId?: string | null;
+			/** Format: int32 */
+			revisionYear: number;
 			/** Format: int64 */
 			rowVersion: number;
-			/** Format: uuid */
-			startAcademicYearId: string;
 			versionName: string;
 		};
 		UpdateExamInvigilatorsRequest: {
@@ -32530,7 +32520,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Published study programs effective in the selected year */
+			/** @description Published curriculum editions available for explicit selection in the academic year */
 			200: {
 				headers: {
 					[name: string]: unknown;

@@ -92,9 +92,7 @@ pub enum CatalogDisplayState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CurriculumDisplayState {
-    Current,
-    Upcoming,
-    Expired,
+    Published,
     Unpublished,
 }
 
@@ -671,8 +669,7 @@ pub struct CurriculumVersion {
     pub id: Uuid,
     pub curriculum_id: Uuid,
     pub version_name: String,
-    pub start_academic_year_id: Uuid,
-    pub end_academic_year_id: Option<Uuid>,
+    pub revision_year: Option<i32>,
     pub description: Option<String>,
     pub status: VersionStatus,
     pub published_at: Option<DateTime<Utc>>,
@@ -689,8 +686,6 @@ pub struct CurriculumOverviewItem {
     pub display_version: Option<CurriculumVersion>,
     pub display_state: CurriculumDisplayState,
     pub grade_levels: Vec<GradeLevelLookupItem>,
-    pub start_academic_year_name: Option<String>,
-    pub end_academic_year_name: Option<String>,
     pub study_program_count: i64,
     pub draft_count: i64,
 }
@@ -705,16 +700,13 @@ pub struct CurriculumOverview {
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumVersionView {
     pub version: CurriculumVersion,
-    pub start_academic_year_name: String,
-    pub end_academic_year_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCurriculumVersionRequest {
     pub version_name: String,
-    pub start_academic_year_id: Uuid,
-    pub end_academic_year_id: Option<Uuid>,
+    pub revision_year: i32,
     pub description: Option<String>,
 }
 
@@ -722,8 +714,7 @@ pub struct CreateCurriculumVersionRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CloneCurriculumVersionRequest {
     pub version_name: String,
-    pub start_academic_year_id: Uuid,
-    pub end_academic_year_id: Option<Uuid>,
+    pub revision_year: i32,
     pub description: Option<String>,
     pub source_row_version: i64,
 }
@@ -732,8 +723,7 @@ pub struct CloneCurriculumVersionRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCurriculumVersionRequest {
     pub version_name: String,
-    pub start_academic_year_id: Uuid,
-    pub end_academic_year_id: Option<Uuid>,
+    pub revision_year: i32,
     pub description: Option<String>,
     pub row_version: i64,
 }
@@ -762,6 +752,10 @@ pub struct StudyProgramOption {
     pub name: String,
     pub curriculum_id: Uuid,
     pub curriculum_name: String,
+    pub curriculum_version_id: Uuid,
+    pub version_name: String,
+    pub revision_year: Option<i32>,
+    pub grade_level_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -817,7 +811,6 @@ pub struct CurriculumCatalogVersionOption {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumCreateOptions {
-    pub academic_years: Vec<AcademicYearLookupItem>,
     pub grade_levels: Vec<GradeLevelLookupItem>,
     pub owner_options: Vec<CatalogOwnerOption>,
 }
@@ -825,7 +818,6 @@ pub struct CurriculumCreateOptions {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumManagementOptions {
-    pub academic_years: Vec<AcademicYearLookupItem>,
     pub grade_levels: Vec<GradeLevelLookupItem>,
     pub catalog_versions: Vec<CurriculumCatalogVersionOption>,
 }

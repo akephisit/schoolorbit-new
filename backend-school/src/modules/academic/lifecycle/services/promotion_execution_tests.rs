@@ -8,8 +8,7 @@ use super::{
         tests::{hold, ready_run},
     },
 };
-use crate::modules::academic::cutover_test_support::apply_migrations_through;
-use crate::modules::academic::results;
+use crate::modules::academic::{cutover_test_support::apply_migrations_through, results};
 use school_permissions::registry::codes;
 
 #[tokio::test]
@@ -21,6 +20,7 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
             "promotion_execution_partial",
         )
         .await;
+    apply_migrations_through(&pool, 92).await.unwrap();
     assert_eq!(calc.items.len(), 2);
     let mut reviewed = Vec::new();
     let mut run = calc.run.clone();
@@ -301,7 +301,7 @@ pub(crate) async fn approved_fixture(
     PromotionRun,
 ) {
     let (pool, reviewer, results_actor, context, calc) = ready_run(name).await;
-    apply_migrations_through(&pool, 76).await.unwrap();
+    apply_migrations_through(&pool, 92).await.unwrap();
     let mut decision = hold(1);
     decision.decision.outcome = outcome;
     if outcome == PromotionDecisionOutcome::Promote {
@@ -313,8 +313,8 @@ pub(crate) async fn approved_fixture(
         .unwrap();
         let curriculum: Uuid = sqlx::query_scalar("INSERT INTO curricula(code,identity_key,name_th,grade_level_ids) VALUES('E2E-IMPACT','E2E-IMPACT','E2E-LIFECYCLE-next-grade',$1) RETURNING id")
             .bind(sqlx::types::Json(vec![grade])).fetch_one(&pool).await.unwrap();
-        let version: Uuid = sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,start_academic_year_id,status) VALUES($1,'E2E-LIFECYCLE-target',$2,'draft') RETURNING id")
-            .bind(curriculum).bind(calc.run.target_year_id).fetch_one(&pool).await.unwrap();
+        let version: Uuid = sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status) VALUES($1,'E2E-LIFECYCLE-target',2569,'draft') RETURNING id")
+            .bind(curriculum).fetch_one(&pool).await.unwrap();
         let program: Uuid = sqlx::query_scalar("INSERT INTO study_programs(id,curriculum_version_id,code,name_th,status) VALUES(uuid_generate_v4(),$1,'E2E-IMPACT','E2E-LIFECYCLE-target','published') RETURNING id")
             .bind(version).fetch_one(&pool).await.unwrap();
         sqlx::query(
@@ -563,7 +563,7 @@ async fn promotion_execution_can_finish_after_reload_when_all_item_receipts_alre
 #[tokio::test]
 async fn promotion_execution_requires_approval_and_exact_permission_then_replays_hold_receipt() {
     let (pool, reviewer, _, _, calc) = ready_run("promotion_execution_hold").await;
-    apply_migrations_through(&pool, 76).await.unwrap();
+    apply_migrations_through(&pool, 92).await.unwrap();
     let executor = ActorContext {
         user_id: reviewer.user_id,
         permissions: vec![

@@ -13,7 +13,7 @@ async fn curriculum_read_views_resolve_years_and_create_options_follow_owner_sco
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
-    apply_migrations_through(&pool, 43).await.unwrap();
+    apply_migrations_through(&pool, 91).await.unwrap();
 
     let curriculum_id = Uuid::parse_str("30000000-0000-0000-0000-000000000001").unwrap();
     let owner_id = Uuid::parse_str("c5e06a47-ebf6-40f6-bbf9-59c509e842f2").unwrap();
@@ -30,7 +30,7 @@ async fn curriculum_read_views_resolve_years_and_create_options_follow_owner_sco
     assert!(!views.is_empty());
     assert!(views
         .iter()
-        .all(|view| !view.start_academic_year_name.trim().is_empty()));
+        .all(|view| !view.version.version_name.trim().is_empty()));
 
     let unit_filter = AcademicResourceListFilter {
         organization_unit_ids: vec![owner_id],
@@ -39,7 +39,6 @@ async fn curriculum_read_views_resolve_years_and_create_options_follow_owner_sco
     let options = curriculum_create_options(&pool, &unit_filter)
         .await
         .unwrap();
-    assert!(!options.academic_years.is_empty());
     assert!(!options.grade_levels.is_empty());
     assert_eq!(options.owner_options.len(), 1);
     assert_eq!(

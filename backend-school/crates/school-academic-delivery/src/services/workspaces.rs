@@ -87,6 +87,9 @@ struct HomeroomDeliveryBaseRow {
     curriculum_id: Uuid,
     curriculum_name: String,
     curriculum_version_id: Uuid,
+    version_name: String,
+    revision_year: Option<i32>,
+    grade_level_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -265,7 +268,12 @@ pub async fn homeroom_delivery_workspace_with_timing(
                   program.name_th AS study_program_name,
                   curriculum.id AS curriculum_id,
                   curriculum.name_th AS curriculum_name,
-                  version.id AS curriculum_version_id
+                  version.id AS curriculum_version_id,
+                  version.version_name, version.revision_year,
+                  ARRAY(SELECT DISTINCT requirement.grade_level_id FROM (
+                      SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id = program.id
+                      UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id = program.id
+                  ) requirement ORDER BY requirement.grade_level_id) AS grade_level_ids
            FROM homerooms homeroom
            JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
            JOIN study_programs program ON program.id = homeroom.study_program_id
@@ -544,6 +552,10 @@ pub async fn homeroom_delivery_workspace_with_timing(
             name: room.study_program_name,
             curriculum_id: room.curriculum_id,
             curriculum_name: room.curriculum_name,
+            curriculum_version_id: room.curriculum_version_id,
+            version_name: room.version_name,
+            revision_year: room.revision_year,
+            grade_level_ids: room.grade_level_ids,
         };
         let mut items = Vec::new();
         let expected_rows_for_room = expected_by_homeroom
@@ -954,7 +966,12 @@ pub async fn delivery_overview(
     let program_rows: Vec<StudyProgramOption> = sqlx::query_as(
         r#"
         SELECT program.id, program.code, program.name_th AS name,
-               curriculum.id AS curriculum_id, curriculum.name_th AS curriculum_name
+               curriculum.id AS curriculum_id, curriculum.name_th AS curriculum_name,
+               version.id AS curriculum_version_id, version.version_name, version.revision_year,
+               ARRAY(SELECT DISTINCT requirement.grade_level_id FROM (
+                   SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id = program.id
+                   UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id = program.id
+               ) requirement ORDER BY requirement.grade_level_id) AS grade_level_ids
         FROM study_programs program
         JOIN curriculum_versions version ON version.id = program.curriculum_version_id
         JOIN curricula curriculum ON curriculum.id = version.curriculum_id

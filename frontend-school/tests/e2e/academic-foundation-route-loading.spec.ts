@@ -130,14 +130,14 @@ test('curriculum creation loads options on open and survives a stale initial ove
 		await expect.poll(() => requests.primary).toBe(1);
 		await expect(page.getByTestId(entry.readyTestId)).toHaveCount(0);
 		expect(requests.optional).toBe(0);
-		await page.getByRole('button', { name: 'เพิ่มหลักสูตร' }).click();
+		await page.getByRole('button', { name: 'เพิ่มระดับ/กลุ่มหลักสูตร' }).click();
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await expect.poll(() => requests.optional).toBe(1);
 		await page.getByLabel('รหัสหลักสูตร').fill('CUR2570');
-		await page.getByLabel('ชื่อหลักสูตรภาษาไทย').fill('หลักสูตรทดสอบ');
+		await page.getByLabel('ชื่อระดับ/กลุ่มหลักสูตร').fill('หลักสูตรทดสอบ');
 		await page.getByRole('combobox', { name: 'เลือกระดับชั้นของหลักสูตร' }).click();
 		await page.getByRole('button', { name: 'เลือกทั้งหมด' }).click();
-		await page.getByRole('button', { name: 'สร้างหลักสูตร' }).click();
+		await page.getByRole('button', { name: 'สร้างระดับ/กลุ่มหลักสูตร' }).click();
 		await expect(page.getByRole('link', { name: 'เปิดหลักสูตร หลักสูตรทดสอบ' })).toBeVisible();
 	} finally {
 		initialGate.release();

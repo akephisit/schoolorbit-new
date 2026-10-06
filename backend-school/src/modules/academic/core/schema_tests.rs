@@ -13,6 +13,9 @@ use uuid::Uuid;
 
 const ACADEMIC_CORE_NAMESPACE: Uuid = Uuid::from_u128(0x5c33_b984_10df_58db_bf80_62db_c4a0_3d1b);
 
+#[path = "curriculum_revision_schema_tests.rs"]
+mod curriculum_revision_schema_tests;
+
 fn stable_uuid(name: &str) -> Uuid {
     Uuid::new_v5(&ACADEMIC_CORE_NAMESPACE, name.as_bytes())
 }

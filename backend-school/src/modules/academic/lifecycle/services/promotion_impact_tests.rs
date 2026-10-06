@@ -35,7 +35,7 @@ async fn promotion_impact_projection_preserves_executed_hold_transfer_and_planne
     ] {
         let (pool, executor, corrector, context, calc, approved) =
             super::promotion_execution::tests::approved_fixture(name, outcome).await;
-        crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
+        crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 92)
             .await
             .unwrap();
         let done = execute_run(
@@ -136,7 +136,7 @@ async fn promotion_impact_projection_ignores_unexecuted_stale_items_and_requires
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 92)
         .await
         .unwrap();
     let course: Uuid = sqlx::query_scalar("SELECT id FROM academic_course_results WHERE student_academic_year_id=$1 ORDER BY id LIMIT 1").bind(calc.items[0].student_academic_year_id).fetch_one(&pool).await.unwrap();

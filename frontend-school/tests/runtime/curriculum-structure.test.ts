@@ -16,7 +16,7 @@ function workspace(): CurriculumStructureWorkspace {
 			id: 'version-1',
 			curriculumId: 'curriculum-1',
 			versionName: 'ฉบับ 2570',
-			startAcademicYearId: 'year-1',
+			revisionYear: 2570,
 			status: 'draft',
 			rowVersion: 1,
 			migrated: false,

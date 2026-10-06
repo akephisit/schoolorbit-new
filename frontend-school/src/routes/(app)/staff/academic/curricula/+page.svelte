@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
+	import { groupCurriculaByRevision } from '#lib/academic-core/curriculum-presentation.js';
 	import { untrack } from 'svelte';
 	import { type CurriculumOverview, type CurriculumOverviewItem } from '#lib/api/academic-core.js';
 	import { CURRICULUM_OVERVIEW_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
@@ -25,6 +26,7 @@
 		)
 	);
 	let items = $derived(overview?.items ?? []);
+	let revisionGroups = $derived(groupCurriculaByRevision(items));
 
 	function loadOverview() {
 		return invalidate(CURRICULUM_OVERVIEW_DEPENDENCY);
@@ -70,7 +72,7 @@
 
 <PageShell
 	title="หลักสูตรและแผนการเรียน"
-	description="เห็นหลักสูตร รุ่นที่ใช้อยู่ ระดับชั้น และจำนวนแผนการเรียนในภาพรวม ก่อนเปิดจัดการรายละเอียด"
+	description="เลือกฉบับปรับปรุงหลักสูตร ระดับการศึกษา และแผนการเรียน โรงเรียนกำหนดฉบับที่ใช้ตอนจัดห้อง"
 >
 	{#snippet actions()}
 		{#if canManageAcademicCurriculum}
@@ -99,27 +101,29 @@
 			{#if items.length === 0}
 				<PageState
 					title="ยังไม่มีหลักสูตร"
-					description="เพิ่มหลักสูตรแรกเพื่อเริ่มจัดรุ่น แผนการเรียน และรายวิชาในหลักสูตร"
+					description="เพิ่มระดับ/กลุ่มหลักสูตร แล้วจัดฉบับปรับปรุง แผนการเรียน และรายวิชาในแต่ละระดับ"
 				/>
 			{:else}
-				<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
-					<div class="flex items-start justify-between gap-4 border-b bg-muted/25 p-4">
-						<div>
-							<h2 class="font-semibold">ภาพรวมหลักสูตร</h2>
-							<p class="mt-1 text-sm text-muted-foreground">
-								เลือกหลักสูตรเพื่อจัดรุ่น แผนการเรียน และข้อกำหนดรายวิชา
+				{#each revisionGroups as group (group.label)}
+					<section class="overflow-hidden rounded-2xl border bg-card">
+						<div class="flex items-start justify-between gap-4 border-b bg-muted/25 p-4">
+							<div>
+								<h2 class="font-semibold">หลักสูตรสถานศึกษา · {group.label}</h2>
+								<p class="mt-1 text-sm text-muted-foreground">
+									เลือกระดับ/กลุ่มหลักสูตรเพื่อจัดฉบับปรับปรุง แผนการเรียน และรายวิชา
+								</p>
+							</div>
+							<p
+								class="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary"
+							>
+								{group.items.length} ระดับ/กลุ่มหลักสูตร
 							</p>
 						</div>
-						<p
-							class="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary"
-						>
-							{items.length} หลักสูตร
-						</p>
-					</div>
-					<CurriculumOverviewTable {items} />
-				</section>
+						<CurriculumOverviewTable items={group.items} />
+					</section>
+				{/each}
 				<p class="text-xs text-muted-foreground">
-					หลักสูตรเป็นข้อมูลกลางของโรงเรียนและไม่เปลี่ยนตามภาคเรียนบนแถบด้านบน
+					ปีปรับปรุงระบุฉบับหลักสูตร ส่วนปีการศึกษาบนแถบด้านบนใช้กับห้องเรียนและการเปิดสอน
 				</p>
 			{/if}
 			{#if errorMessage}<div

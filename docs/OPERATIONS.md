@@ -464,6 +464,12 @@ promotion succeeds.
 
 The one-time legacy rebaseline is complete and its operational scripts are retired. If a tenant with legacy `_sqlx_migrations` history is discovered, stop the rollout and prepare a new reviewed recovery plan. Never point the current release at that database, copy migration history, or edit SQLx checksum records.
 
+### Curriculum revision selection and migrated hierarchy
+
+Migrations 091/092 replace curriculum calendar bounds with an explicit Buddhist revision year and reconcile only the verified complete five-plan secondary-school migration shape into junior/senior level roots. Program and requirement UUIDs, requirement content and existing room/student/offering references are preserved; incomplete or ambiguous source mappings refuse migration. Published plans remain selectable in later academic years when they cover the chosen grade, and publishing an edition does not change existing assignments.
+
+Before release, rehearse the central runner on disposable copies of every active tenant and preserve recovery evidence using the seven-day procedure under Personnel data cutover. Deploy migrations, backend, generated contracts and frontend together through a coordinated `full` school release under maintenance. Require every tenant at migration 092 or the repository's later latest version, restored publication immutability, expected hierarchy/content counts, readiness and authenticated smoke before opening traffic. After migration 091 removes the calendar columns, older school binaries are prohibited; keep maintenance active and repair forward if acceptance fails.
+
 ### Academic Core Phase B cleanup and rollback boundary
 
 Migration `045_academic_core_legacy_cleanup.sql` is the destructive Academic Core cleanup boundary.

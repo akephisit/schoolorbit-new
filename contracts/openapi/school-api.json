@@ -6060,12 +6060,6 @@
         "properties": {
           "data": {
             "properties": {
-              "academicYears": {
-                "items": {
-                  "$ref": "#/components/schemas/AcademicYearLookupItem"
-                },
-                "type": "array"
-              },
               "gradeLevels": {
                 "items": {
                   "$ref": "#/components/schemas/GradeLevelLookupItem"
@@ -6080,7 +6074,6 @@
               }
             },
             "required": [
-              "academicYears",
               "gradeLevels",
               "ownerOptions"
             ],
@@ -6103,12 +6096,6 @@
         "properties": {
           "data": {
             "properties": {
-              "academicYears": {
-                "items": {
-                  "$ref": "#/components/schemas/AcademicYearLookupItem"
-                },
-                "type": "array"
-              },
               "catalogVersions": {
                 "items": {
                   "$ref": "#/components/schemas/CurriculumCatalogVersionOption"
@@ -6123,7 +6110,6 @@
               }
             },
             "required": [
-              "academicYears",
               "gradeLevels",
               "catalogVersions"
             ],
@@ -6290,13 +6276,6 @@
                   "null"
                 ]
               },
-              "endAcademicYearId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -6311,13 +6290,16 @@
                   "null"
                 ]
               },
+              "revisionYear": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "rowVersion": {
                 "format": "int64",
                 "type": "integer"
-              },
-              "startAcademicYearId": {
-                "format": "uuid",
-                "type": "string"
               },
               "status": {
                 "$ref": "#/components/schemas/VersionStatus"
@@ -6334,7 +6316,6 @@
               "id",
               "curriculumId",
               "versionName",
-              "startAcademicYearId",
               "status",
               "rowVersion",
               "migrated",
@@ -18127,13 +18108,6 @@
                     "null"
                   ]
                 },
-                "endAcademicYearId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -18148,13 +18122,16 @@
                     "null"
                   ]
                 },
+                "revisionYear": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "rowVersion": {
                   "format": "int64",
                   "type": "integer"
-                },
-                "startAcademicYearId": {
-                  "format": "uuid",
-                  "type": "string"
                 },
                 "status": {
                   "$ref": "#/components/schemas/VersionStatus"
@@ -18171,7 +18148,6 @@
                 "id",
                 "curriculumId",
                 "versionName",
-                "startAcademicYearId",
                 "status",
                 "rowVersion",
                 "migrated",
@@ -18200,22 +18176,12 @@
           "data": {
             "items": {
               "properties": {
-                "endAcademicYearName": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "startAcademicYearName": {
-                  "type": "string"
-                },
                 "version": {
                   "$ref": "#/components/schemas/CurriculumVersion"
                 }
               },
               "required": [
-                "version",
-                "startAcademicYearName"
+                "version"
               ],
               "type": "object"
             },
@@ -21675,11 +21641,32 @@
                 "curriculumName": {
                   "type": "string"
                 },
+                "curriculumVersionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "gradeLevelIds": {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
                 },
                 "name": {
+                  "type": "string"
+                },
+                "revisionYear": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "versionName": {
                   "type": "string"
                 }
               },
@@ -21688,7 +21675,10 @@
                 "code",
                 "name",
                 "curriculumId",
-                "curriculumName"
+                "curriculumName",
+                "curriculumVersionId",
+                "versionName",
+                "gradeLevelIds"
               ],
               "type": "object"
             },
@@ -27152,20 +27142,13 @@
               "null"
             ]
           },
-          "endAcademicYearId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+          "revisionYear": {
+            "format": "int32",
+            "type": "integer"
           },
           "sourceRowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "startAcademicYearId": {
-            "format": "uuid",
-            "type": "string"
           },
           "versionName": {
             "type": "string"
@@ -27173,7 +27156,7 @@
         },
         "required": [
           "versionName",
-          "startAcademicYearId",
+          "revisionYear",
           "sourceRowVersion"
         ],
         "type": "object"
@@ -28292,16 +28275,9 @@
               "null"
             ]
           },
-          "endAcademicYearId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "startAcademicYearId": {
-            "format": "uuid",
-            "type": "string"
+          "revisionYear": {
+            "format": "int32",
+            "type": "integer"
           },
           "versionName": {
             "type": "string"
@@ -28309,7 +28285,7 @@
         },
         "required": [
           "versionName",
-          "startAcademicYearId"
+          "revisionYear"
         ],
         "type": "object"
       },
@@ -30129,12 +30105,6 @@
       },
       "CurriculumCreateOptions": {
         "properties": {
-          "academicYears": {
-            "items": {
-              "$ref": "#/components/schemas/AcademicYearLookupItem"
-            },
-            "type": "array"
-          },
           "gradeLevels": {
             "items": {
               "$ref": "#/components/schemas/GradeLevelLookupItem"
@@ -30149,7 +30119,6 @@
           }
         },
         "required": [
-          "academicYears",
           "gradeLevels",
           "ownerOptions"
         ],
@@ -30227,9 +30196,7 @@
       },
       "CurriculumDisplayState": {
         "enum": [
-          "current",
-          "upcoming",
-          "expired",
+          "published",
           "unpublished"
         ],
         "type": "string"
@@ -30268,12 +30235,6 @@
       },
       "CurriculumManagementOptions": {
         "properties": {
-          "academicYears": {
-            "items": {
-              "$ref": "#/components/schemas/AcademicYearLookupItem"
-            },
-            "type": "array"
-          },
           "catalogVersions": {
             "items": {
               "$ref": "#/components/schemas/CurriculumCatalogVersionOption"
@@ -30288,7 +30249,6 @@
           }
         },
         "required": [
-          "academicYears",
           "gradeLevels",
           "catalogVersions"
         ],
@@ -30353,23 +30313,11 @@
             "format": "int64",
             "type": "integer"
           },
-          "endAcademicYearName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "gradeLevels": {
             "items": {
               "$ref": "#/components/schemas/GradeLevelLookupItem"
             },
             "type": "array"
-          },
-          "startAcademicYearName": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "studyProgramCount": {
             "format": "int64",
@@ -30788,13 +30736,6 @@
               "null"
             ]
           },
-          "endAcademicYearId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -30809,13 +30750,16 @@
               "null"
             ]
           },
+          "revisionYear": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "startAcademicYearId": {
-            "format": "uuid",
-            "type": "string"
           },
           "status": {
             "$ref": "#/components/schemas/VersionStatus"
@@ -30832,7 +30776,6 @@
           "id",
           "curriculumId",
           "versionName",
-          "startAcademicYearId",
           "status",
           "rowVersion",
           "migrated",
@@ -30843,22 +30786,12 @@
       },
       "CurriculumVersionView": {
         "properties": {
-          "endAcademicYearName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "startAcademicYearName": {
-            "type": "string"
-          },
           "version": {
             "$ref": "#/components/schemas/CurriculumVersion"
           }
         },
         "required": [
-          "version",
-          "startAcademicYearName"
+          "version"
         ],
         "type": "object"
       },
@@ -45557,11 +45490,32 @@
           "curriculumName": {
             "type": "string"
           },
+          "curriculumVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "gradeLevelIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
           },
           "name": {
+            "type": "string"
+          },
+          "revisionYear": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "versionName": {
             "type": "string"
           }
         },
@@ -45570,7 +45524,10 @@
           "code",
           "name",
           "curriculumId",
-          "curriculumName"
+          "curriculumName",
+          "curriculumVersionId",
+          "versionName",
+          "gradeLevelIds"
         ],
         "type": "object"
       },
@@ -50961,20 +50918,13 @@
               "null"
             ]
           },
-          "endAcademicYearId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+          "revisionYear": {
+            "format": "int32",
+            "type": "integer"
           },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
-          },
-          "startAcademicYearId": {
-            "format": "uuid",
-            "type": "string"
           },
           "versionName": {
             "type": "string"
@@ -50982,7 +50932,7 @@
         },
         "required": [
           "versionName",
-          "startAcademicYearId",
+          "revisionYear",
           "rowVersion"
         ],
         "type": "object"
@@ -69471,7 +69421,7 @@
                 }
               }
             },
-            "description": "Published study programs effective in the selected year"
+            "description": "Published curriculum editions available for explicit selection in the academic year"
           },
           "400": {
             "content": {

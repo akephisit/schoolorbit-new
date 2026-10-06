@@ -37,13 +37,21 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
+    prepare_core_fixture_through(name, 60).await
+}
+
+pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
+    prepare_core_fixture_through(name, 92).await
+}
+
+async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 60).await.unwrap();
+    apply_migrations_through(&pool, version).await.unwrap();
     pool
 }
 
@@ -56,7 +64,7 @@ async fn fixture_actor(pool: &PgPool) -> Uuid {
 
 #[tokio::test]
 async fn promotion_policy_repeat_progression_accepts_the_same_existing_grade() {
-    let pool = prepare_core_fixture("promotion_repeat_progression").await;
+    let pool = prepare_current_core_fixture("promotion_repeat_progression").await;
     let actor = fixture_actor(&pool).await;
     let grade: Uuid = sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY id LIMIT 1")
         .fetch_one(&pool)
@@ -89,8 +97,7 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture(name).await;
-    apply_migrations_through(&pool, 67).await.unwrap();
+    let pool = prepare_core_fixture_through(name, 67).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -289,7 +296,7 @@ async fn lifecycle_student_deactivation_rolls_back_account_and_academic_records_
 #[tokio::test]
 async fn lifecycle_year_advisor_replacement_rejects_closed_years_and_retains_history() {
     use school_academic_core::models::ReplaceHomeroomAdvisorsRequest;
-    let pool = prepare_core_fixture("lifecycle_year_advisors").await;
+    let pool = prepare_current_core_fixture("lifecycle_year_advisors").await;
     let homeroom: Uuid = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
     )
@@ -396,7 +403,7 @@ async fn lifecycle_year_advisor_replacement_rejects_closed_years_and_retains_his
 #[tokio::test]
 async fn lifecycle_guard_rejects_closed_contexts_without_an_admin_override() {
     use school_academic_core::services::lifecycle_guard::require_term_write;
-    let pool = prepare_core_fixture("lifecycle_guard_states").await;
+    let pool = prepare_current_core_fixture("lifecycle_guard_states").await;
     let term: Uuid = sqlx::query_scalar(
         "SELECT id FROM academic_terms WHERE academic_year_id=$1 AND status='active'",
     )
@@ -588,8 +595,8 @@ async fn lifecycle_exclusive_term_writers_serialize_without_shared_lock_upgrades
 async fn create_published_program_option_fixture(
     pool: &PgPool,
     owner_id: Uuid,
-    start_academic_year_id: Uuid,
-    end_academic_year_id: Option<Uuid>,
+    _legacy_start_academic_year_id: Uuid,
+    _legacy_end_academic_year_id: Option<Uuid>,
     code: &str,
 ) -> (Uuid, Uuid) {
     let grade_level_id: Uuid =
@@ -630,8 +637,7 @@ async fn create_published_program_option_fixture(
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: format!("ฉบับ {code}"),
-            start_academic_year_id,
-            end_academic_year_id,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -707,8 +713,8 @@ async fn create_curriculum_overview_fixture(
     grade_level_id: Uuid,
     subject_version_id: Uuid,
     code: &str,
-    start_academic_year_id: Uuid,
-    end_academic_year_id: Option<Uuid>,
+    _legacy_start_academic_year_id: Uuid,
+    _legacy_end_academic_year_id: Option<Uuid>,
     publish: bool,
     program_count: usize,
 ) -> (Uuid, Uuid) {
@@ -730,8 +736,7 @@ async fn create_curriculum_overview_fixture(
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: format!("ฉบับ {code}"),
-            start_academic_year_id,
-            end_academic_year_id,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -816,7 +821,7 @@ async fn create_curriculum_overview_fixture(
 
 #[tokio::test]
 async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_draft() {
-    let pool = prepare_core_fixture("academic_core_curriculum_clone_draft").await;
+    let pool = prepare_current_core_fixture("academic_core_curriculum_clone_draft").await;
     let owner_id: Uuid =
         sqlx::query_scalar("SELECT id FROM organization_units WHERE is_active ORDER BY id LIMIT 1")
             .fetch_one(&pool)
@@ -925,8 +930,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
         source_version_id,
         CloneCurriculumVersionRequest {
             version_name: "ฉบับอนาคต stale".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: Some("ไม่ควรถูกสร้าง".to_string()),
             source_row_version: published.row_version + 1,
         },
@@ -940,8 +944,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
         source_version_id,
         CloneCurriculumVersionRequest {
             version_name: "ฉบับอนาคต".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: Some("คัดลอกจากฉบับที่เผยแพร่".to_string()),
             source_row_version: published.row_version,
         },
@@ -950,7 +953,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
     .unwrap();
     assert_eq!(cloned.curriculum_id, curriculum_id);
     assert_eq!(cloned.status, VersionStatus::Draft);
-    assert_eq!(cloned.start_academic_year_id, FUTURE_YEAR_ID);
+    assert_eq!(cloned.revision_year, Some(2569));
     let cloned_workspace = curriculum_structure::get_workspace(&pool, cloned.id)
         .await
         .unwrap();
@@ -1051,8 +1054,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
         cloned.id,
         CloneCurriculumVersionRequest {
             version_name: "ซ้อนแบบร่าง".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
             source_row_version: cloned.row_version,
         },
@@ -1067,7 +1069,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
 
 #[tokio::test]
 async fn curriculum_structure_workspace_reads_catalog_metrics_and_dynamic_term_slots() {
-    let pool = prepare_core_fixture("academic_core_structure_workspace").await;
+    let pool = prepare_current_core_fixture("academic_core_structure_workspace").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
             .fetch_one(&pool)
@@ -1113,8 +1115,7 @@ async fn curriculum_structure_workspace_reads_catalog_metrics_and_dynamic_term_s
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับโครงสร้าง".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -1177,7 +1178,7 @@ async fn curriculum_structure_workspace_reads_catalog_metrics_and_dynamic_term_s
 
 #[tokio::test]
 async fn curriculum_term_slots_are_draft_only_and_cannot_remove_a_referenced_slot() {
-    let pool = prepare_core_fixture("academic_core_term_slot_replace").await;
+    let pool = prepare_current_core_fixture("academic_core_term_slot_replace").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
             .fetch_one(&pool)
@@ -1225,8 +1226,7 @@ async fn curriculum_term_slots_are_draft_only_and_cannot_remove_a_referenced_slo
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับภาคเรียนยืดหยุ่น".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -1592,7 +1592,7 @@ fn flat_version_update_contract_rejects_unknown_fields() {
 
 #[tokio::test]
 async fn context_options_keep_closing_term_as_current_for_staff_and_students() {
-    let pool = prepare_core_fixture("context_closing_current").await;
+    let pool = prepare_current_core_fixture("context_closing_current").await;
     let (year, term): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
             .fetch_one(&pool)
@@ -1624,10 +1624,7 @@ async fn context_options_keep_closing_term_as_current_for_staff_and_students() {
 
 #[tokio::test]
 async fn context_options_keep_closing_year_as_current_for_staff_and_students() {
-    let pool = prepare_core_fixture("context_closing_year_current").await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 70)
-        .await
-        .unwrap();
+    let pool = prepare_core_fixture_through("context_closing_year_current", 70).await;
     let year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE status='active'")
         .fetch_one(&pool)
         .await
@@ -1657,7 +1654,7 @@ async fn context_options_keep_closing_year_as_current_for_staff_and_students() {
 
 #[tokio::test]
 async fn context_options_are_read_only_and_keep_active_state_unchanged() {
-    let pool = prepare_core_fixture("academic_core_context_read_only").await;
+    let pool = prepare_current_core_fixture("academic_core_context_read_only").await;
     let audit_before: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_audit_events")
         .fetch_one(&pool)
         .await
@@ -1697,7 +1694,7 @@ async fn context_options_are_read_only_and_keep_active_state_unchanged() {
 
 #[tokio::test]
 async fn create_term_seeds_phase_controls() {
-    let pool = prepare_core_fixture("academic_term_all_controls").await;
+    let pool = prepare_current_core_fixture("academic_term_all_controls").await;
     let actor = fixture_actor(&pool).await;
     let bell_schedule_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM bell_schedules WHERE academic_year_id = $1 AND is_default",
@@ -1768,7 +1765,7 @@ async fn create_term_seeds_phase_controls() {
 
 #[tokio::test]
 async fn future_term_planning_in_active_year_does_not_activate_or_open_windows() {
-    let pool = prepare_core_fixture("future_term_active_year").await;
+    let pool = prepare_current_core_fixture("future_term_active_year").await;
     let actor = fixture_actor(&pool).await;
     let year = years_terms::get_year(&pool, CURRENT_YEAR_ID).await.unwrap();
     assert_eq!(year.status, AcademicYearStatus::Active);
@@ -1882,7 +1879,7 @@ async fn future_term_planning_in_active_year_does_not_activate_or_open_windows()
 
 #[tokio::test]
 async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flags() {
-    let pool = prepare_core_fixture("future_term_annual_inclusion").await;
+    let pool = prepare_core_fixture_through("future_term_annual_inclusion", 60).await;
     let actor = fixture_actor(&pool).await;
     let year = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
     let schedule: Uuid = sqlx::query_scalar(
@@ -1955,7 +1952,7 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
 
 #[tokio::test]
 async fn future_term_configuration_rejects_ready_closing_closed_and_archived_years() {
-    let pool = prepare_core_fixture("future_term_year_guards").await;
+    let pool = prepare_current_core_fixture("future_term_year_guards").await;
     let actor = fixture_actor(&pool).await;
     let year = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
     let schedule: Uuid = sqlx::query_scalar(
@@ -1978,6 +1975,15 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
     let created = years_terms::create_term(&pool, actor, request.clone())
         .await
         .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=COALESCE(planned_end_date,start_date) WHERE academic_year_id<>$1 AND status IN ('active','closing')")
+        .bind(year.id).execute(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE academic_years SET status='closed' WHERE id<>$1 AND status IN ('active','closing')",
+    )
+    .bind(year.id)
+    .execute(&pool)
+    .await
+    .unwrap();
     for status in ["ready", "closing", "closed", "archived"] {
         sqlx::query("UPDATE academic_years SET status=$1 WHERE id=$2")
             .bind(status)
@@ -2033,7 +2039,7 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
 
 #[tokio::test]
 async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_deletes() {
-    let pool = prepare_core_fixture("academic_core_year_term_mutations").await;
+    let pool = prepare_current_core_fixture("academic_core_year_term_mutations").await;
     let actor = fixture_actor(&pool).await;
     let future = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
     let update_year = UpdateAcademicYearRequest {
@@ -2157,7 +2163,7 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
 
 #[tokio::test]
 async fn student_year_read_models_are_human_readable() {
-    let pool = prepare_core_fixture("academic_core_student_year_read_model").await;
+    let pool = prepare_current_core_fixture("academic_core_student_year_read_model").await;
     let records = student_years::list_student_years(
         &pool,
         StudentAcademicYearFilter {
@@ -2180,7 +2186,7 @@ async fn student_year_read_models_are_human_readable() {
 
 #[tokio::test]
 async fn student_year_candidates_include_only_students_missing_the_target_year() {
-    let pool = prepare_core_fixture("academic_core_student_year_candidates").await;
+    let pool = prepare_current_core_fixture("academic_core_student_year_candidates").await;
     let candidate_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO users (id, username, password_hash, first_name, last_name, user_type, status) \
@@ -2219,16 +2225,13 @@ async fn student_year_candidates_include_only_students_missing_the_target_year()
         FROM grade_levels grade
         CROSS JOIN study_programs program
         JOIN curriculum_versions version ON version.id = program.curriculum_version_id
-        JOIN academic_years starts ON starts.id = version.start_academic_year_id
-        JOIN academic_years target ON target.id = $1
-        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
-        WHERE starts.start_date <= target.start_date
-          AND (ends.end_date IS NULL OR ends.end_date >= target.end_date)
+        JOIN curricula curriculum ON curriculum.id=version.curriculum_id
+        WHERE program.status='published' AND version.status='published'
+          AND curriculum.grade_level_ids @> jsonb_build_array(grade.id::text)
         ORDER BY grade.level_type, grade.year, program.id
         LIMIT 1
         "#,
     )
-    .bind(FUTURE_YEAR_ID)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -2253,7 +2256,7 @@ async fn student_year_candidates_include_only_students_missing_the_target_year()
 
 #[tokio::test]
 async fn grade_progression_replacement_uses_one_optimistic_set_revision() {
-    let pool = prepare_core_fixture("academic_core_progression_revision").await;
+    let pool = prepare_current_core_fixture("academic_core_progression_revision").await;
     let actor = fixture_actor(&pool).await;
     let before = progressions::list(&pool).await.unwrap();
     let after = progressions::replace(
@@ -2284,7 +2287,7 @@ async fn grade_progression_replacement_uses_one_optimistic_set_revision() {
 
 #[tokio::test]
 async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions() {
-    let pool = prepare_core_fixture("academic_core_bell_schedule_runtime").await;
+    let pool = prepare_current_core_fixture("academic_core_bell_schedule_runtime").await;
     let actor = fixture_actor(&pool).await;
     let schedule = bell_schedules::create(
         &pool,
@@ -2428,7 +2431,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
 
 #[tokio::test]
 async fn subject_group_updates_use_optimistic_revisions() {
-    let pool = prepare_core_fixture("academic_core_subject_group_revision").await;
+    let pool = prepare_current_core_fixture("academic_core_subject_group_revision").await;
     let group = catalog::create_subject_group(
         &pool,
         CreateSubjectGroupRequest {
@@ -2463,7 +2466,7 @@ async fn subject_group_updates_use_optimistic_revisions() {
 #[tokio::test]
 async fn lifecycle_year_future_student_preparation_preserves_current_year_and_idempotent_transfers()
 {
-    let pool = prepare_core_fixture("academic_core_student_year_transfer").await;
+    let pool = prepare_current_core_fixture("academic_core_student_year_transfer").await;
     let actor = fixture_actor(&pool).await;
     let existing_context: (Uuid, Uuid, Uuid) = sqlx::query_as(
         r#"SELECT student_year.grade_level_id, student_year.study_program_id, placement.homeroom_id
@@ -2742,7 +2745,7 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
 
 #[tokio::test]
 async fn year_relationship_collections_do_not_leak_across_years() {
-    let pool = prepare_core_fixture("academic_core_year_relationship_collections").await;
+    let pool = prepare_current_core_fixture("academic_core_year_relationship_collections").await;
     let (grade_level_id, study_program_id, current_homeroom_id): (Uuid, Uuid, Uuid) =
         sqlx::query_as(
             "SELECT grade_level_id, study_program_id, id FROM homerooms \
@@ -2897,7 +2900,7 @@ async fn year_relationship_collections_do_not_leak_across_years() {
 
 #[tokio::test]
 async fn year_relationship_collections_reject_oversized_workspaces() {
-    let pool = prepare_core_fixture("academic_core_year_relationship_limits").await;
+    let pool = prepare_current_core_fixture("academic_core_year_relationship_limits").await;
     let (homeroom_id, grade_level_id, study_program_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT id, grade_level_id, study_program_id FROM homerooms \
          WHERE academic_year_id = $1 ORDER BY id LIMIT 1",
@@ -2987,7 +2990,7 @@ async fn year_relationship_collections_reject_oversized_workspaces() {
 
 #[tokio::test]
 async fn study_program_options_are_published_effective_and_authorized() {
-    let pool = prepare_core_fixture("academic_core_program_options").await;
+    let pool = prepare_current_core_fixture("academic_core_program_options").await;
     let owner_ids: Vec<Uuid> =
         sqlx::query_scalar("SELECT id FROM organization_units WHERE is_active ORDER BY id LIMIT 2")
             .fetch_all(&pool)
@@ -3049,8 +3052,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
         draft_curriculum.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับร่าง".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -3088,7 +3090,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
     assert_eq!(current_option.name, "แผนการเรียน CURRENT");
     assert_eq!(current_option.curriculum_id, current_curriculum_id);
     assert_eq!(current_option.curriculum_name, "หลักสูตรตัวเลือก CURRENT");
-    assert!(!school_options
+    assert!(school_options
         .iter()
         .any(|option| option.id == future_program_id));
     assert!(!school_options
@@ -3131,7 +3133,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
     assert!(owner_tree
         .iter()
         .any(|option| option.id == current_program_id));
-    assert!(!owner_tree
+    assert!(owner_tree
         .iter()
         .any(|option| option.id == future_program_id));
     assert!(!owner_tree
@@ -3151,7 +3153,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
     assert!(future_options
         .iter()
         .any(|option| option.id == future_program_id));
-    assert!(!future_options
+    assert!(future_options
         .iter()
         .any(|option| option.id == expired_program_id));
 
@@ -3187,7 +3189,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
 
 #[tokio::test]
 async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutable() {
-    let pool = prepare_core_fixture("academic_core_catalog_runtime").await;
+    let pool = prepare_current_core_fixture("academic_core_catalog_runtime").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
             .fetch_one(&pool)
@@ -3291,7 +3293,7 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
 
 #[tokio::test]
 async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
-    let pool = prepare_core_fixture("academic_core_activity_catalog_runtime").await;
+    let pool = prepare_current_core_fixture("academic_core_activity_catalog_runtime").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
             .fetch_one(&pool)
@@ -3383,7 +3385,7 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
 
 #[tokio::test]
 async fn activity_catalog_requires_total_hours_before_publishing_a_new_version() {
-    let pool = prepare_core_fixture("academic_core_activity_total_hours_publish").await;
+    let pool = prepare_current_core_fixture("academic_core_activity_total_hours_publish").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
             .fetch_one(&pool)
@@ -3433,7 +3435,7 @@ async fn activity_catalog_requires_total_hours_before_publishing_a_new_version()
 
 #[tokio::test]
 async fn catalog_publication_requires_positive_official_workload() {
-    let pool = prepare_core_fixture("academic_core_catalog_workload_publish").await;
+    let pool = prepare_current_core_fixture("academic_core_catalog_workload_publish").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
             .fetch_one(&pool)
@@ -3603,7 +3605,7 @@ async fn create_overview_subject_version(
 
 #[tokio::test]
 async fn catalog_overview_selects_effective_versions_without_promoting_drafts() {
-    let pool = prepare_core_fixture("catalog_overview_version_states").await;
+    let pool = prepare_current_core_fixture("catalog_overview_version_states").await;
     let today = NaiveDate::from_ymd_opt(2026, 8, 27).unwrap();
     let grade_level_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM grade_levels WHERE is_active = true ORDER BY level_type, year, id LIMIT 1",
@@ -3786,7 +3788,7 @@ async fn catalog_overview_selects_effective_versions_without_promoting_drafts() 
 
 #[tokio::test]
 async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
-    let pool = prepare_core_fixture("catalog_overview_activity_scope").await;
+    let pool = prepare_current_core_fixture("catalog_overview_activity_scope").await;
     let today = NaiveDate::from_ymd_opt(2026, 8, 27).unwrap();
     let grade_level_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM grade_levels WHERE is_active = true ORDER BY level_type, year, id LIMIT 1",
@@ -3888,7 +3890,7 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
 
 #[tokio::test]
 async fn curriculum_overview_resolves_display_versions_and_labels() {
-    let pool = prepare_core_fixture("academic_core_curriculum_overview").await;
+    let pool = prepare_current_core_fixture("academic_core_curriculum_overview").await;
     let grade_level_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM grade_levels WHERE is_active = true AND level_type = 'secondary' \
          AND year = 1 ORDER BY id LIMIT 1",
@@ -3937,8 +3939,7 @@ async fn curriculum_overview_resolves_display_versions_and_labels() {
         current_id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับร่าง CUR-A".to_string(),
-            start_academic_year_id: next_year_id,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4020,22 +4021,26 @@ async fn curriculum_overview_resolves_display_versions_and_labels() {
     assert_eq!(overview.items[0].curriculum.code, "CUR-A");
     assert_eq!(
         overview.items[0].display_state,
-        CurriculumDisplayState::Current
+        CurriculumDisplayState::Published
     );
     assert_eq!(overview.items[0].study_program_count, 2);
     assert_eq!(overview.items[0].draft_count, 1);
     assert_eq!(overview.items[0].grade_levels[0].name, "มัธยมศึกษาปีที่ 1");
     assert_eq!(
-        overview.items[0].start_academic_year_name.as_deref(),
-        Some("ปีการศึกษา 2026")
+        overview.items[0]
+            .display_version
+            .as_ref()
+            .unwrap()
+            .revision_year,
+        Some(2569)
     );
     assert_eq!(
         overview.items[1].display_state,
-        CurriculumDisplayState::Upcoming
+        CurriculumDisplayState::Published
     );
     assert_eq!(
         overview.items[2].display_state,
-        CurriculumDisplayState::Expired
+        CurriculumDisplayState::Published
     );
     assert_eq!(
         overview.items[3].display_state,
@@ -4049,7 +4054,7 @@ async fn curriculum_overview_resolves_display_versions_and_labels() {
 
 #[tokio::test]
 async fn curriculum_management_options_are_published_scoped_and_ordered() {
-    let pool = prepare_core_fixture("academic_core_curriculum_management_options").await;
+    let pool = prepare_current_core_fixture("academic_core_curriculum_management_options").await;
     let affiliations: Vec<(Uuid, Uuid)> = sqlx::query_as(
         r#"SELECT subject_group.id, owner.id
            FROM subject_groups subject_group
@@ -4093,8 +4098,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับตัวเลือก".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4241,10 +4245,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
         .await
         .unwrap();
     assert!(options
-        .academic_years
-        .windows(2)
-        .all(|pair| pair[0].year >= pair[1].year));
-    assert!(options
         .catalog_versions
         .iter()
         .any(|option| option.id == subject_version.id
@@ -4271,7 +4271,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
 
 #[tokio::test]
 async fn curriculum_program_workspace_resolves_requirement_labels() {
-    let pool = prepare_core_fixture("academic_core_workspace_reads").await;
+    let pool = prepare_current_core_fixture("academic_core_workspace_reads").await;
     let actor_user_id = fixture_actor(&pool).await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
@@ -4347,8 +4347,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับ workspace".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4451,8 +4450,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         other_curriculum.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับอื่น".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4640,7 +4638,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
 
 #[tokio::test]
 async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publish() {
-    let pool = prepare_core_fixture("academic_core_curriculum_runtime").await;
+    let pool = prepare_current_core_fixture("academic_core_curriculum_runtime").await;
     let grade_level_id: Uuid =
         sqlx::query_scalar("SELECT id FROM grade_levels ORDER BY level_type, year, id LIMIT 1")
             .fetch_one(&pool)
@@ -4679,8 +4677,7 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับ 2026".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4802,7 +4799,7 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
 
 #[tokio::test]
 async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
-    let pool = prepare_core_fixture("academic_core_curriculum_metric_blocker").await;
+    let pool = prepare_current_core_fixture("academic_core_curriculum_metric_blocker").await;
     let (activity_version_id, grade_level_id): (Uuid, Uuid) = sqlx::query_as(
         r#"SELECT version.id, grade.value::uuid
            FROM activity_versions version
@@ -4849,8 +4846,7 @@ async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับข้อมูลไม่ครบ".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )

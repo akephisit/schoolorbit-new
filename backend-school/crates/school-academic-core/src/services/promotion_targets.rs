@@ -108,13 +108,11 @@ async fn validate_destinations_with_owned_target(
     let programs:Vec<ProgramReference>=sqlx::query_as(
         "SELECT program.id,version.curriculum_id,COALESCE(curriculum.grade_level_ids,'[]'::jsonb) AS grade_level_ids,
          (program.status='published' AND version.status='published' AND curriculum.is_active IS TRUE
-          AND starts.start_date<=target.start_date AND (ends.end_date IS NULL OR ends.end_date>=target.end_date)) AS is_applicable
+) AS is_applicable
          FROM study_programs program JOIN curriculum_versions version ON version.id=program.curriculum_version_id
          JOIN curricula curriculum ON curriculum.id=version.curriculum_id
-         JOIN academic_years starts ON starts.id=version.start_academic_year_id
-         JOIN academic_years target ON target.id=$1 LEFT JOIN academic_years ends ON ends.id=version.end_academic_year_id
-         WHERE program.id=ANY($2) ORDER BY program.id FOR SHARE OF program,version,curriculum"
-    ).bind(target_year).bind(program_ids).fetch_all(&mut **tx).await?;
+         WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF program,version,curriculum"
+    ).bind(program_ids).fetch_all(&mut **tx).await?;
     let programs: BTreeMap<_, _> = programs.into_iter().map(|row| (row.id, row)).collect();
     let grades: Vec<Uuid> = sqlx::query_scalar(
         "SELECT id FROM grade_levels WHERE id=ANY($1) AND is_active IS TRUE ORDER BY id FOR SHARE",

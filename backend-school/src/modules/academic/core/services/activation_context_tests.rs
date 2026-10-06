@@ -12,7 +12,7 @@ pub(crate) async fn empty_school(name: &str) -> (PgPool, Uuid) {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 77).await.unwrap();
+    apply_migrations_through(&pool, 92).await.unwrap();
     let actor: Uuid = sqlx::query_scalar("INSERT INTO users(username,password_hash,first_name,last_name,user_type) VALUES('E2E-LIFECYCLE-opening','!','ฝ่ายวิชาการ','ทดสอบ','staff') RETURNING id")
         .fetch_one(&pool).await.unwrap();
     (pool, actor)
@@ -267,8 +267,8 @@ async fn activation_context_validates_planned_curriculum_placement_capacity_and_
             .unwrap();
     let curriculum: Uuid = sqlx::query_scalar("INSERT INTO curricula(code,identity_key,name_th,grade_level_ids) VALUES('E2E-OPEN','E2E-OPEN','E2E-LIFECYCLE-opening',$1) RETURNING id")
         .bind(sqlx::types::Json(vec![grade])).fetch_one(&pool).await.unwrap();
-    let version: Uuid = sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,start_academic_year_id,status) VALUES($1,'E2E-OPEN',$2,'draft') RETURNING id")
-        .bind(curriculum).bind(year.id).fetch_one(&pool).await.unwrap();
+    let version: Uuid = sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status) VALUES($1,'E2E-OPEN',2569,'draft') RETURNING id")
+        .bind(curriculum).fetch_one(&pool).await.unwrap();
     let program: Uuid = sqlx::query_scalar("INSERT INTO study_programs(id,curriculum_version_id,code,name_th,status) VALUES(uuid_generate_v4(),$1,'E2E-OPEN','E2E-LIFECYCLE-opening','published') RETURNING id")
         .bind(version).fetch_one(&pool).await.unwrap();
     sqlx::query("UPDATE curriculum_versions SET status='published',published_at=now() WHERE id=$1")

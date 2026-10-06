@@ -443,6 +443,8 @@ Commit the contract, `contracts/permissions.lock.json`, backend registry, fronte
 
 ## API Contract
 
+The API Contract workflow also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the native rootless Podman database runner. Frontend validation includes full lint; all jobs remain independent and pull requests do not save the shared Rust cache.
+
 Rust DTOs and OpenAPI annotations own the wire contract. The tracked output is `contracts/openapi/school-api.json`; generated TypeScript lives under `frontend-school/src/lib/api/generated/`. These are generated files; do not edit generated files directly.
 
 After a documented DTO or endpoint changes, from `frontend-school`:

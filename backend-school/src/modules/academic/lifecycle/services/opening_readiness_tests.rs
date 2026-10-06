@@ -111,9 +111,13 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .await
     .unwrap();
     let version = Uuid::new_v4();
+    let delivery_version = Uuid::new_v4();
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES($1,$2,$3,$4,'published','{\"offerings\":[]}', $5,now(),uuid_generate_v4(),repeat('0',64))")
+        .bind(delivery_version).bind(term.id).bind(year.id).bind(term.start_date).bind(actor)
+        .execute(&mut *setup).await.unwrap();
     sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now())",
+        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
+         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7)",
     )
     .bind(version)
     .bind(term.id)
@@ -121,12 +125,13 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(term.start_date)
     .bind(term.bell_schedule_id)
     .bind(actor)
+    .bind(delivery_version)
     .execute(&mut *setup)
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now())",
+        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
+         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7)",
     )
     .bind(Uuid::new_v4())
     .bind(term.id)
@@ -134,6 +139,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(term.start_date.succ_opt().unwrap())
     .bind(term.bell_schedule_id)
     .bind(actor)
+    .bind(delivery_version)
     .execute(&mut *setup)
     .await
     .unwrap();
@@ -258,11 +264,10 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
     .await
     .unwrap();
     let version: Uuid = sqlx::query_scalar(
-        "INSERT INTO curriculum_versions(curriculum_id,version_name,start_academic_year_id,status)
-         VALUES($1,'E2E-OPEN-ROOM',$2,'draft') RETURNING id",
+        "INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status)
+         VALUES($1,'E2E-OPEN-ROOM',2569,'draft') RETURNING id",
     )
     .bind(curriculum)
-    .bind(year.id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -365,9 +370,6 @@ async fn promotion_opening_requires_executed_coverage_and_surfaces_later_result_
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let mut tx = pool.begin().await.unwrap();
     let before = super::promotion_opening::read_in_transaction(
         &mut tx,
@@ -447,9 +449,6 @@ async fn promotion_opening_requires_executed_coverage_and_surfaces_later_result_
 async fn promotion_opening_reports_inflight_runs_and_receipt_owned_target_drift() {
     let (pool, _, calculation, _) =
         super::promotion_execution::tests::started_run_fixture("promotion_opening_inflight").await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let mut tx = pool.begin().await.unwrap();
     let inflight = super::promotion_opening::read_in_transaction(
         &mut tx,
@@ -467,9 +466,6 @@ async fn promotion_opening_reports_inflight_runs_and_receipt_owned_target_drift(
             PromotionDecisionOutcome::Promote,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let executed = super::execute_run(
         &pool,
         &executor,
@@ -509,9 +505,6 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let source_end: NaiveDate =
         sqlx::query_scalar("SELECT end_date FROM academic_years WHERE id=$1")
             .bind(calculation.run.source_year_id)

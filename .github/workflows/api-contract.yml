@@ -9,6 +9,8 @@ on:
       - "backend-school/Cargo.toml"
       - "backend-school/Cargo.lock"
       - "backend-school/crates/**"
+      - "backend-school/migrations/**"
+      - "scripts/test_backend_school.sh"
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
       - "backend-school/src/main.rs"
@@ -31,6 +33,8 @@ on:
       - "backend-school/Cargo.toml"
       - "backend-school/Cargo.lock"
       - "backend-school/crates/**"
+      - "backend-school/migrations/**"
+      - "scripts/test_backend_school.sh"
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
       - "backend-school/src/main.rs"
@@ -189,3 +193,57 @@ jobs:
       - name: Check frontend
         working-directory: frontend-school
         run: npm run check
+
+      - name: Lint frontend
+        working-directory: frontend-school
+        run: npm run lint
+
+  academic-database:
+    name: Academic database and migration verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.98.1
+
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          shared-key: backend-school-contracts
+          workspaces: backend-school -> target
+          save-if: "false"
+
+      - name: Install native Podman
+        run: sudo apt-get update && sudo apt-get install -y podman
+
+      - name: Verify rootless Podman
+        run: test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+
+      - name: Test curriculum migration preservation and refusal
+        run: ./scripts/test_backend_school.sh curriculum_revision_schema_tests -- --test-threads=1
+
+      - name: Test Academic Core consumers
+        run: ./scripts/test_backend_school.sh modules::academic::core::services_tests -- --test-threads=4
+
+      - name: Test activation and promotion placement
+        run: |
+          ./scripts/test_backend_school.sh activation_context_tests -- --test-threads=4
+          ./scripts/test_backend_school.sh promotion_targets::tests -- --test-threads=4
+
+      - name: Test academic lifecycle consumers
+        run: |
+          ./scripts/test_backend_school.sh opening_readiness_tests -- --test-threads=4
+          ./scripts/test_backend_school.sh promotion_execution_tests -- --test-threads=4
+
+      - name: Test delivery and certificate consumers
+        run: |
+          ./scripts/test_backend_school.sh curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes -- --test-threads=1
+          ./scripts/test_backend_school.sh delivery_management_options_are_scoped_and_human_readable -- --test-threads=1
+          ./scripts/test_backend_school.sh --integration delivery_versions -- --test-threads=4
+          ./scripts/test_backend_school.sh --package school-certificates purge_rejects_admission_logo_and_question_bank_file_consumers -- --test-threads=1
