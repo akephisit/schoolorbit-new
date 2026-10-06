@@ -989,15 +989,22 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
     )
     .await
     .unwrap();
+    let group_id: Uuid = sqlx::query_scalar(
+        "SELECT placed.learning_group_id FROM academic_timetable_block_groups placed
+        JOIN academic_timetable_blocks block ON block.id=placed.block_id
+        WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active
+          AND block.block_kind='COURSE' ORDER BY block.id,placed.id LIMIT 1",
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let offering = base
         .snapshot
         .offerings
         .iter()
-        .find(|offering| {
-            offering.kind == school_academic_delivery::models::LearningOfferingKind::Course
-        })
+        .find(|offering| offering.groups.iter().any(|group| group.id == group_id))
         .unwrap();
-    let group_id = offering.groups[0].id;
     let rejected = change_sets::upsert_change_item(
         &pool,
         actor,
@@ -1150,6 +1157,32 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         demand.scheduled_periods > 0,
         "existing lessons preserved for explicit removal"
     );
+    // Positive targets still require an exact count; zero does not bypass the rule.
+    let mut positive_source = zero_draft.snapshot.clone();
+    let positive_offering = positive_source
+        .offerings
+        .iter_mut()
+        .find(|row| row.id == offering.id)
+        .unwrap();
+    positive_offering.weekly_period_target = demand.scheduled_periods;
+    assert!(
+        !timetable_lifecycle::readiness(&positive_source, &workspace.blocks)
+            .iter()
+            .any(|finding| finding.learning_group_id == Some(group_id)
+                && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch)
+    );
+    positive_source
+        .offerings
+        .iter_mut()
+        .find(|row| row.id == offering.id)
+        .unwrap()
+        .weekly_period_target += 1;
+    assert!(
+        timetable_lifecycle::readiness(&positive_source, &workspace.blocks)
+            .iter()
+            .any(|finding| finding.learning_group_id == Some(group_id)
+                && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch)
+    );
     let block = workspace
         .blocks
         .iter()
@@ -1170,7 +1203,11 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
             day_of_week: block.day_of_week.clone(),
             bell_schedule_period_id: block.bell_schedule_period_id,
             room_id: None,
-            instructor_ids: offering.groups[0]
+            instructor_ids: offering
+                .groups
+                .iter()
+                .find(|group| group.id == group_id)
+                .unwrap()
                 .teachers
                 .iter()
                 .map(|teacher| teacher.teacher_id)
