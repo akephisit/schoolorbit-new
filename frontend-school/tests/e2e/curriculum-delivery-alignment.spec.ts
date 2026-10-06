@@ -434,7 +434,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 						{ id: ids.futureYear, name: 'ปีการศึกษา 2570', year: 2570, status: 'planning' },
 						{ id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }
 					],
-					gradeLevels: []
+					gradeLevels: curriculumStructure().gradeLevels
 				});
 				return;
 			}

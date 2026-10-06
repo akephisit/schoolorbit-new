@@ -365,9 +365,12 @@ export const getCurriculumManagementOptions = (
 		),
 		'ไม่สามารถโหลดตัวเลือกสำหรับจัดการหลักสูตรได้'
 	);
-export const listStudyPrograms = (curriculumLevelId: string) =>
+export const listStudyPrograms = (curriculumLevelId: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<StudyProgram[]>(`/api/academic/curriculum-levels/${curriculumLevelId}/programs`),
+		apiClient.get<StudyProgram[]>(
+			`/api/academic/curriculum-levels/${curriculumLevelId}/programs`,
+			options
+		),
 		'ไม่สามารถโหลดแผนการเรียนได้'
 	);
 export const createStudyProgram = (curriculumLevelId: string, body: CreateStudyProgramRequest) =>
