@@ -1271,12 +1271,24 @@ for (const viewport of [
 	{ width: 390, height: 844 }
 ]) {
 	for (const dark of [false, true]) {
-		test(`zero course period setting preserves curriculum at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
+		test(`zero course period dialog preserves curriculum and retries failed saves at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
 			page
 		}) => {
 			await page.setViewportSize(viewport);
 			await mockDelivery(page);
-			const detail = { ...changeSetDetail(), items: [] };
+			const detail = {
+				...changeSetDetail(),
+				items: [],
+				changes: Array.from({ length: 40 }, (_, index) => ({
+					kind: 'changed',
+					learningOfferingId: ids.offering,
+					resourceId: ids.offering,
+					label: `รายการที่ ${index + 1}`,
+					field: 'จำนวนคาบต่อสัปดาห์',
+					before: '4',
+					after: '0'
+				}))
+			};
 			const offering = {
 				id: ids.offering,
 				kind: 'course',
@@ -1309,8 +1321,14 @@ for (const viewport of [
 				})
 			);
 			let submitted: Record<string, unknown> | null = null;
+			let saveAttempts = 0;
+			let releaseSave!: () => void;
+			const saveGate = new Promise<void>((resolve) => (releaseSave = resolve));
 			await page.route(`**/api/academic/term-change-sets/${ids.changeSet}/items`, async (route) => {
 				submitted = route.request().postDataJSON();
+				saveAttempts++;
+				if (saveAttempts === 1) return fulfill(route, 'บันทึกไม่สำเร็จ ลองอีกครั้ง', 400);
+				await saveGate;
 				await fulfill(route, { ...detail, rowVersion: 2 });
 			});
 			await page.goto(
@@ -1320,7 +1338,14 @@ for (const viewport of [
 				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
 				await expect(page.locator('html')).toHaveClass(/dark/);
 			}
-			await page.getByRole('button', { name: 'เพิ่ม/ปรับรายการสอน', exact: true }).click();
+			const trigger = page.getByRole('button', { name: 'เพิ่ม/ปรับรายการสอน', exact: true });
+			await trigger.scrollIntoViewIfNeeded();
+			const initialScroll = await page.evaluate(() => window.scrollY);
+			await trigger.focus();
+			await page.keyboard.press('Enter');
+			const dialog = page.getByRole('dialog', { name: 'เพิ่ม/ปรับรายการสอน', exact: true });
+			await expect(dialog).toBeVisible();
+			await expect(dialog.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeVisible();
 			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
 			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
 			await page.getByRole('combobox').filter({ hasText: 'เลือกรายวิชาหรือกิจกรรม' }).click();
@@ -1347,13 +1372,42 @@ for (const viewport of [
 					learningOfferingId: ids.offering,
 					weeklyPeriodTarget: 0
 				});
+			await expect(dialog.getByRole('alert')).toHaveText('บันทึกไม่สำเร็จ ลองอีกครั้ง');
+			await expect(periods).toHaveValue('0');
+			await page.screenshot({
+				path: `/tmp/delivery-dialog-error-${viewport.width}-${dark ? 'dark' : 'light'}.png`
+			});
+			await dialog.getByRole('button', { name: 'บันทึกรายการ', exact: true }).click();
+			await expect.poll(() => saveAttempts).toBe(2);
+			await expect(periods).toBeDisabled();
+			await expect(dialog.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
+			await page.screenshot({
+				path: `/tmp/delivery-dialog-saving-${viewport.width}-${dark ? 'dark' : 'light'}.png`
+			});
+			await page.keyboard.press('Escape');
+			await expect(dialog).toBeVisible();
+			await page.mouse.click(5, 5);
+			await expect(dialog).toBeVisible();
+			releaseSave();
+			await expect(dialog).toHaveCount(0);
+			await expect(trigger).toBeFocused();
+			await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(initialScroll);
+			await trigger.click();
+			await expect(dialog).toBeVisible();
+			await expect(dialog.getByRole('alert')).toHaveCount(0);
+			await expect(dialog.getByRole('combobox', { name: 'เลือกรายวิชาหรือกิจกรรม' })).toHaveText(
+				'เลือกรายวิชาหรือกิจกรรม'
+			);
+			await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+			await expect(dialog).toHaveCount(0);
+			await expect(trigger).toBeFocused();
 		});
 	}
 }
 
 for (const viewport of [
 	{ width: 1440, height: 900 },
-	{ width: 390, height: 844 }
+	{ width: 390, height: 600 }
 ]) {
 	for (const dark of [false, true]) {
 		test(`delivery picker sorts course codes and hides activity codes at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
@@ -1417,7 +1471,34 @@ for (const viewport of [
 			await page.getByRole('combobox', { name: 'เลือกรายวิชา', exact: true }).click();
 			const courses = [/ส21201/, /ส23201/, /ส32201/, /ส33201/];
 			await expect(page.getByRole('option')).toHaveText(courses);
-			await page.keyboard.press('Escape');
+			await page.getByRole('option', { name: /ส21201/ }).click();
+			await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(0);
+			const formBody = page.getByRole('dialog').locator('fieldset').locator('..');
+			if (viewport.height === 600) {
+				await expect
+					.poll(() => formBody.evaluate((element) => element.scrollHeight > element.clientHeight))
+					.toBe(true);
+				await formBody.evaluate((element) => (element.scrollTop = element.scrollHeight));
+				await expect
+					.poll(async () => {
+						const bodyBounds = await formBody.boundingBox();
+						const footerBounds = await page
+							.getByRole('dialog')
+							.locator('[data-slot="dialog-footer"]')
+							.boundingBox();
+						return Boolean(
+							bodyBounds && footerBounds && bodyBounds.y + bodyBounds.height <= footerBounds.y
+						);
+					})
+					.toBe(true);
+			}
+			await expect(
+				page.getByRole('button', { name: 'บันทึกรายการ', exact: true })
+			).toBeInViewport();
+			await page.screenshot({
+				path: `/tmp/delivery-dialog-add-${viewport.width}-${dark ? 'dark' : 'light'}.png`
+			});
+			await formBody.evaluate((element) => (element.scrollTop = 0));
 			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
 			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
 			const picker = page.getByRole('combobox', { name: 'เลือกรายวิชาหรือกิจกรรม', exact: true });
