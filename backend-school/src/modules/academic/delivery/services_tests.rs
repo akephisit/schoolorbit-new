@@ -5753,7 +5753,21 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
 #[tokio::test]
 async fn delivery_management_options_are_scoped_and_human_readable() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_management_options").await;
-    let context = planning_runtime_context(&pool).await;
+    let mut context = planning_runtime_context(&pool).await;
+    context.owner_id = sqlx::query_scalar(
+        "SELECT subject.owning_organization_unit_id FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id WHERE version.id=$1",
+    )
+    .bind(context.subject_version_id)
+    .fetch_one(&pool)
+    .await
+    .expect("selected catalog fixture must have an organization owner");
+    let owned_catalog_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT version.id FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id WHERE subject.owning_organization_unit_id=$1 UNION ALL SELECT version.id FROM activity_versions version JOIN activities activity ON activity.id=version.activity_id WHERE activity.owning_organization_unit_id=$1",
+    )
+    .bind(context.owner_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
     let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
         .await
         .expect("offering should be created for management options");
@@ -5841,7 +5855,11 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     assert!(scoped
         .catalog_versions
         .iter()
-        .all(|item| item.id == context.subject_version_id));
+        .all(|item| owned_catalog_ids.contains(&item.id)));
+    assert!(scoped
+        .catalog_versions
+        .iter()
+        .any(|item| item.id == context.subject_version_id));
     assert!(
         scoped
             .study_programs
@@ -5868,7 +5886,19 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     assert!(without_curriculum
         .catalog_versions
         .iter()
-        .all(|item| item.id == context.subject_version_id));
+        .all(|item| owned_catalog_ids.contains(&item.id)));
+    assert_eq!(
+        without_curriculum
+            .catalog_versions
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        scoped
+            .catalog_versions
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[tokio::test]
