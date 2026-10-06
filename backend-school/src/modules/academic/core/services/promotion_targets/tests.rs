@@ -1,5 +1,5 @@
 use super::*;
-use crate::modules::academic::core::services_tests::prepare_core_fixture;
+use crate::modules::academic::core::services_tests::prepare_current_core_fixture as prepare_core_fixture;
 use school_academic_core::models::{
     PromotionDestinationCommand as PromotionDecisionInput, PromotionDestinationOutcome as Outcome,
 };

@@ -239,5 +239,7 @@ jobs:
 
       - name: Test delivery and certificate consumers
         run: |
+          ./scripts/test_backend_school.sh curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes -- --test-threads=1
+          ./scripts/test_backend_school.sh delivery_management_options_are_scoped_and_human_readable -- --test-threads=1
           ./scripts/test_backend_school.sh --integration delivery_versions -- --test-threads=4
           ./scripts/test_backend_school.sh --package school-certificates services_tests -- --test-threads=4

@@ -1008,7 +1008,7 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 	assert.ok(jobsStart >= 0);
 	const jobs = workflow.slice(jobsStart + '\njobs:\n'.length);
 	const jobNames = [...jobs.matchAll(/^ {2}([a-z][a-z0-9_-]*):\s*$/gm)].map((match) => match[1]);
-	assert.deepEqual(jobNames, ['artifacts', 'backend', 'frontend']);
+	assert.deepEqual(jobNames, ['artifacts', 'backend', 'frontend', 'academic-database']);
 	assert.doesNotMatch(jobs, /^ {4}needs:/gm);
 
 	const jobBlock = (name, nextName) => {
@@ -1020,7 +1020,13 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 	};
 	const artifacts = jobBlock('artifacts', 'backend');
 	const backend = jobBlock('backend', 'frontend');
-	const frontend = jobBlock('frontend');
+	const frontend = jobBlock('frontend', 'academic-database');
+	const database = jobBlock('academic-database');
+	assert.match(database, /sudo apt-get install -y podman/);
+	assert.match(database, /podman info --format '\{\{\.Host\.Security\.Rootless\}\}'/);
+	assert.match(database, /test_backend_school\.sh curriculum_revision_schema_tests/);
+	assert.match(database, /test_backend_school\.sh modules::academic::core::services_tests/);
+	assert.match(database, /test_backend_school\.sh --integration delivery_versions/);
 
 	for (const command of [
 		'npm run test:api-contracts',
@@ -1039,7 +1045,8 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 	}
 	for (const command of [
 		'node --test tests/static/api-response-contract.test.mjs',
-		'npm run check'
+		'npm run check',
+		'npm run lint'
 	]) {
 		assert.ok(frontend.includes(command), `frontend must retain ${command}`);
 	}
@@ -1064,12 +1071,13 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 	}
 	assert.match(artifacts, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
 	assert.match(backend, /save-if: "false"/);
+	assert.match(database, /save-if: "false"/);
 	assert.doesNotMatch(frontend, /Swatinem\/rust-cache/);
 	assert.equal(
 		(jobs.match(/save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/g) ?? []).length,
 		1
 	);
-	assert.equal((jobs.match(/save-if: "false"/g) ?? []).length, 1);
+	assert.equal((jobs.match(/save-if: "false"/g) ?? []).length, 2);
 
 	const rules = await readRepo('.rules');
 	assert.match(

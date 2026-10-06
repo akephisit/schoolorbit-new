@@ -364,9 +364,6 @@ async fn promotion_opening_requires_executed_coverage_and_surfaces_later_result_
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let mut tx = pool.begin().await.unwrap();
     let before = super::promotion_opening::read_in_transaction(
         &mut tx,
@@ -446,9 +443,6 @@ async fn promotion_opening_requires_executed_coverage_and_surfaces_later_result_
 async fn promotion_opening_reports_inflight_runs_and_receipt_owned_target_drift() {
     let (pool, _, calculation, _) =
         super::promotion_execution::tests::started_run_fixture("promotion_opening_inflight").await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let mut tx = pool.begin().await.unwrap();
     let inflight = super::promotion_opening::read_in_transaction(
         &mut tx,
@@ -466,9 +460,6 @@ async fn promotion_opening_reports_inflight_runs_and_receipt_owned_target_drift(
             PromotionDecisionOutcome::Promote,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let executed = super::execute_run(
         &pool,
         &executor,
@@ -508,9 +499,6 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 78)
-        .await
-        .unwrap();
     let source_end: NaiveDate =
         sqlx::query_scalar("SELECT end_date FROM academic_years WHERE id=$1")
             .bind(calculation.run.source_year_id)

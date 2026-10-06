@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 89).await.unwrap();
+    apply_migrations_through(&pool, 92).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 89).await.unwrap();
+    apply_migrations_through(&pool, 92).await.unwrap();
     pool
 }
 
@@ -4447,13 +4447,12 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_curriculum").await;
     let context = planning_runtime_context(&pool).await;
 
-    let expired_program_id: Uuid = sqlx::query_scalar(
+    let earlier_edition_program_id: Uuid = sqlx::query_scalar(
         r#"SELECT program.id
            FROM study_programs program
            JOIN curriculum_versions version ON version.id = program.curriculum_version_id
-           JOIN academic_years ending_year ON ending_year.id = version.end_academic_year_id
            JOIN academic_years selected_year ON selected_year.id = $1
-           WHERE ending_year.end_date < selected_year.start_date
+           WHERE version.revision_year < selected_year.year
            ORDER BY program.id
            LIMIT 1"#,
     )
@@ -4461,15 +4460,18 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     .fetch_one(&pool)
     .await
     .unwrap();
-    let expired_program = offerings::preview_from_curriculum(
+    let earlier_edition = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
-            study_program_ids: vec![expired_program_id],
+            study_program_ids: vec![earlier_edition_program_id],
         },
     )
     .await;
-    assert!(matches!(expired_program, Err(AppError::ValidationError(_))));
+    assert!(
+        earlier_edition.is_ok(),
+        "an explicitly selected earlier edition remains usable: {earlier_edition:?}"
+    );
 
     let preview = offerings::preview_from_curriculum(
         &pool,
