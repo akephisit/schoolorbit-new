@@ -211,9 +211,9 @@ async function mock(
 							id: id(12),
 							code: 'SCI',
 							name: 'วิทย์–คณิต',
-							curriculumId: id(13),
-							curriculumName: 'หลักสูตรสถานศึกษา',
-							versionName: '2569',
+							curriculumLevelId: id(13),
+							levelName: 'หลักสูตรสถานศึกษา',
+							editionName: '2569',
 							status: 'published'
 						}
 					],

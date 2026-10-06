@@ -232,11 +232,11 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 						id: id(5),
 						name: 'วิทย์–คณิต',
 						code: 'SCI',
-						curriculumId: id(7),
-						curriculumName: 'หลักสูตร',
-						versionName: '2569',
+						editionId: id(7),
+						levelName: 'หลักสูตร',
+						editionName: '2569',
 						revisionYear: 2569,
-						curriculumVersionId: id(8),
+						curriculumLevelId: id(8),
 						gradeLevelIds: [],
 						status: 'published'
 					}

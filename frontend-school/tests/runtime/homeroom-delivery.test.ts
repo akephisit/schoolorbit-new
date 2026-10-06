@@ -20,7 +20,7 @@ const rooms = [
 			id: 'program-1',
 			code: 'SCI',
 			name: 'วิทย์-คณิต',
-			curriculumId: 'curriculum-1',
+			editionId: 'curriculum-1',
 			levelName: 'หลักสูตร 2569'
 		},
 		expectedCount: 2,
@@ -41,7 +41,7 @@ const rooms = [
 			id: 'program-2',
 			code: 'ART',
 			name: 'ศิลป์ภาษา',
-			curriculumId: 'curriculum-1',
+			editionId: 'curriculum-1',
 			levelName: 'หลักสูตร 2569'
 		},
 		expectedCount: 1,

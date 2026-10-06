@@ -236,6 +236,7 @@ interface MockOptions {
 	secondStructureGate?: Promise<void>;
 
 	failStructureOnce?: boolean;
+	includeDraftLevel?: boolean;
 }
 
 async function mockShell(page: Page, options: MockOptions = {}) {
@@ -246,6 +247,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 	let createOptionsRequests = 0;
 	let managementOptionsRequests = 0;
 	let structureRequests = 0;
+	let publishBody: Record<string, unknown> | null = null;
 	let levelBody: Record<string, unknown> | null = null;
 	let programBody: Record<string, unknown> | null = null;
 	await page.route(
@@ -350,6 +352,19 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				await fulfill(route, edition());
 				return;
 			}
+			if (
+				url.pathname === `/api/academic/curricula/${ids.futureYear}/publish` &&
+				method === 'POST'
+			) {
+				publishBody = route.request().postDataJSON();
+				await fulfill(route, {
+					...edition(ids.futureYear, 'draft'),
+					status: 'published',
+					publishedAt: '2026-10-06T00:00:00Z',
+					rowVersion: 5
+				});
+				return;
+			}
 			if (url.pathname === `/api/academic/curricula/${ids.futureYear}` && method === 'GET') {
 				await fulfill(route, edition(ids.futureYear, 'draft'));
 				return;
@@ -367,7 +382,13 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 						{ ...curriculumVersion(ids.clonedVersion, 'draft'), ...levelBody },
 						201
 					);
-				} else await fulfill(route, []);
+				} else
+					await fulfill(
+						route,
+						options.includeDraftLevel
+							? [{ level: curriculumVersion(ids.clonedVersion, 'draft') }]
+							: []
+					);
 				return;
 			}
 			if (
@@ -508,7 +529,8 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 		managementOptionsRequestCount: () => managementOptionsRequests,
 		structureRequestCount: () => structureRequests,
 		levelRequest: () => levelBody,
-		programRequest: () => programBody
+		programRequest: () => programBody,
+		publishRequest: () => publishBody
 	};
 }
 
@@ -714,4 +736,32 @@ test('create a level with covered grades within an edition, then create its plan
 	await expect(dialog).toBeHidden();
 	expect(mocked.programRequest()).toEqual({ nameTh: 'วิทยาศาสตร์-คณิตศาสตร์', isDefault: false });
 	expect(mocked.managementOptionsRequestCount()).toBe(0);
+});
+
+test('publishes the selected edition once and keeps its educational-level link', async ({
+	page
+}) => {
+	const mocked = await mockShell(page, { includeDraftLevel: true });
+	await page.goto(`/staff/academic/curricula/${ids.futureYear}`);
+	await expect(
+		page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น', exact: true })
+	).toBeVisible();
+	await page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร', exact: true })).toHaveCount(
+		0
+	);
+	await expect(page.getByText('เผยแพร่แล้ว', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true })).toHaveCount(
+		0
+	);
+	await expect(
+		page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น', exact: true })
+	).toHaveAttribute(
+		'href',
+		`/staff/academic/curricula/${ids.futureYear}/levels/${ids.clonedVersion}`
+	);
+	expect(mocked.publishRequest()).toEqual({ rowVersion: 4 });
+	expect(mocked.academicRequests.filter((r) => r.startsWith('POST'))).toEqual([
+		`POST /api/academic/curricula/${ids.futureYear}/publish`
+	]);
 });

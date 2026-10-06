@@ -71,9 +71,9 @@ async function mock(
 							id: program,
 							code: 'SCI',
 							name: 'วิทย์–คณิต',
-							curriculumId: curriculum,
-							curriculumName: 'หลักสูตรสถานศึกษา',
-							versionName: '2569',
+							curriculumLevelId: curriculum,
+							levelName: 'หลักสูตรสถานศึกษา',
+							editionName: '2569',
 							status: 'published'
 						}
 					],
@@ -85,7 +85,7 @@ async function mock(
 								fromGradeLevelId: source,
 								toGradeLevelId: target,
 								transitionKind: 'promote',
-								curriculumId: null,
+								curriculumLevelId: null,
 								isActive: true,
 								createdAt: timestamp,
 								updatedAt: timestamp
@@ -95,7 +95,7 @@ async function mock(
 								fromGradeLevelId: source,
 								toGradeLevelId: null,
 								transitionKind: 'graduate',
-								curriculumId: null,
+								curriculumLevelId: null,
 								isActive: true,
 								createdAt: timestamp,
 								updatedAt: timestamp
@@ -298,7 +298,7 @@ test('school year managers explicitly update progression configuration without a
 					fromGradeLevelId: source,
 					toGradeLevelId: target,
 					transitionKind: 'promote',
-					curriculumId: null,
+					curriculumLevelId: null,
 					isActive: true
 				}
 			]

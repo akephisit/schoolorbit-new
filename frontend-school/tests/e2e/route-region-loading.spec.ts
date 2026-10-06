@@ -79,10 +79,10 @@ function homeroomWorkspace(academicTermId: string) {
 					id: '40000000-0000-4000-8000-000000000001',
 					code: 'DEFAULT',
 					name: 'แผนมาตรฐาน',
-					curriculumId: '50000000-0000-4000-8000-000000000001',
-					curriculumName: 'หลักสูตรทดสอบ'
+					editionId: '50000000-0000-4000-8000-000000000001',
+					levelName: 'หลักสูตรทดสอบ'
 				},
-				curriculumVersionId: '50000000-0000-4000-8000-000000000001',
+				curriculumLevelId: '50000000-0000-4000-8000-000000000001',
 				expectedCount: 0,
 				readyCount: 0,
 				blockers: [],
