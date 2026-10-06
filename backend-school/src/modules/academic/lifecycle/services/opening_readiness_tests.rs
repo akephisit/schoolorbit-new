@@ -111,9 +111,13 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .await
     .unwrap();
     let version = Uuid::new_v4();
+    let delivery_version = Uuid::new_v4();
+    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) VALUES($1,$2,$3,$4,'published','{\"offerings\":[]}', $5,now(),uuid_generate_v4(),repeat('0',64))")
+        .bind(delivery_version).bind(term.id).bind(year.id).bind(term.start_date).bind(actor)
+        .execute(&mut *setup).await.unwrap();
     sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now())",
+        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
+         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7)",
     )
     .bind(version)
     .bind(term.id)
@@ -121,12 +125,13 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(term.start_date)
     .bind(term.bell_schedule_id)
     .bind(actor)
+    .bind(delivery_version)
     .execute(&mut *setup)
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now())",
+        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id)
+         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7)",
     )
     .bind(Uuid::new_v4())
     .bind(term.id)
@@ -134,6 +139,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     .bind(term.start_date.succ_opt().unwrap())
     .bind(term.bell_schedule_id)
     .bind(actor)
+    .bind(delivery_version)
     .execute(&mut *setup)
     .await
     .unwrap();
