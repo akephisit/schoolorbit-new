@@ -1,6 +1,6 @@
-import { timetableTeacherLabel } from '../academic/timetable/teacher-label.ts';
+import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
 import type { TimetableBlock, TimetableBlockWorkspace } from '#lib/api/timetable.js';
-import type { TimetablePage } from '#lib/utils/pdf.js';
+import type { GeneratePdfOptions, TimetablePage } from '#lib/utils/pdf.js';
 import {
 	blockBelongsToRow,
 	createTimetableBoardState,
@@ -38,7 +38,8 @@ export function buildAcademicTimetablePdfDownload(
 	ownerId: string | null,
 	termName: string,
 	yearName: string,
-	selectedOwnerIds?: readonly string[]
+	selectedOwnerIds?: readonly string[],
+	layout: NonNullable<GeneratePdfOptions['layout']> = 'full'
 ): { pages: TimetablePage[]; fileName: string } {
 	const ownerView = view === 'wholeSchool' ? 'homeroom' : view;
 	const rows = rowsForTimetableView(createTimetableBoardState(workspace), ownerView).filter(
@@ -67,7 +68,7 @@ export function buildAcademicTimetablePdfDownload(
 	const roomNames = Object.fromEntries(workspace.rooms.map((room) => [room.id, room.name]));
 	const homeroomNames = Object.fromEntries(workspace.homerooms.map((room) => [room.id, room.name]));
 	const pages: TimetablePage[] = rows.map((row) => ({
-		title: `${ownerView === 'teacher' ? 'ตารางสอน' : 'ตารางเรียน'} ${ownerView === 'teacher' ? timetableTeacherLabel(row.label) : row.label}`,
+		title: `${ownerView === 'teacher' ? 'ตารางสอน' : 'ตารางเรียน'} ${ownerView === 'teacher' ? timetableTeacherFullLabel(row.label) : row.label}`,
 		subTitle,
 		dayValues,
 		periods: periods.map((period) => ({
@@ -82,11 +83,26 @@ export function buildAcademicTimetablePdfDownload(
 		roomNames,
 		homeroomNames
 	}));
+	// A compact selection key distinguishes batches without putting every name in the filename.
+	let selectionKey = 2166136261;
+	for (const char of [workspace.version.id, ownerView, ...rows.map((row) => row.id)].join(':')) {
+		selectionKey = Math.imul(selectionKey ^ char.charCodeAt(0), 16777619) >>> 0;
+	}
+	const batchLabel =
+		ownerView === 'teacher'
+			? 'ตารางสอนครูที่เลือก'
+			: ownerView === 'learning_group'
+				? 'ตารางเรียนกลุ่มที่เลือก'
+				: 'ตารางเรียนห้องที่เลือก';
+	const fileTitle =
+		pages.length > 1
+			? `${batchLabel} ${pages.length} (${selectionKey.toString(16)})`
+			: (pages[0]?.title ?? 'ตารางสอน');
+	const layoutLabel = layout === 'portrait-2col' ? '6ต่อหน้า' : '1ต่อหน้า';
 	return {
 		pages,
-		fileName:
-			`${view === 'wholeSchool' ? 'ตารางเรียนทุกห้อง' : pages.length > 1 ? (ownerView === 'teacher' ? 'ตารางสอนครูที่เลือก' : 'ตารางเรียนที่เลือก') : (pages[0]?.title ?? 'ตารางสอน')} ${context} ${versionLabel}`
-				.replaceAll('/', '-')
-				.replaceAll('\\', '-')
+		fileName: `${fileTitle} ${context} ${layoutLabel} ${versionLabel}`
+			.replaceAll('/', '-')
+			.replaceAll('\\', '-')
 	};
 }

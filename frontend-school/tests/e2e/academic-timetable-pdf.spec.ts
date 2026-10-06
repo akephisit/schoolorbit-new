@@ -140,12 +140,14 @@ for (const width of [1543, 390]) {
 				expect(text).toContain('ห้องคณิตศาสตร์');
 				if (view === 'ชั้น' || view === 'โรงเรียน') {
 					expect(text).toContain('ว21101');
-					expect(text).toContain('ครูพิสิษฐ,ครูสายใจ');
+					expect(text).toContain('ครูพิสิษฐสกุลทดสอบ,ครูสายใจสกุลทดสอบ');
 					// Teacher A appears on the course, but not again on the special period.
 					expect(text.match(/ครูพิสิษฐ/g)).toHaveLength(1);
 					expect(text).toContain('ประชุมครู');
 				}
 				if (view === 'ครู') {
+					expect(download.suggestedFilename()).toContain('ครูพิสิษฐ สกุลทดสอบ');
+					expect(text).toContain('ตารางสอนครูพิสิษฐสกุลทดสอบ');
 					expect(text).toContain('ประชุมครู');
 					expect(text.match(/ม\.1\/1/g)).toHaveLength(1);
 					expect(text).not.toContain('ม.1/1คณิตศาสตร์');
@@ -153,7 +155,7 @@ for (const width of [1543, 390]) {
 				expect(text).not.toContain('แบบร่าง');
 				expect(text).not.toContain('เผยแพร่แล้ว');
 				expect(text).not.toContain('CLUB-');
-				expect(text).not.toContain('สกุลทดสอบ');
+				expect(text).toContain('สกุลทดสอบ');
 				await expect(downloadButton).toBeEnabled();
 				if (view === 'ชั้น' || view === 'ครู') {
 					const dialog = await openDownload(page);
@@ -161,16 +163,18 @@ for (const width of [1543, 390]) {
 					const compactPending = page.waitForEvent('download');
 					await confirmDownload(page);
 					const compactDownload = await compactPending;
+					expect(compactDownload.suggestedFilename()).not.toBe(download.suggestedFilename());
+					expect(compactDownload.suggestedFilename()).toContain('6ต่อหน้า');
 					await compactDownload.saveAs(`/tmp/pdf-options-${width}-${theme}-${view}.pdf`);
 					const compactText = await pdfText(compactDownload);
 					if (view === 'ชั้น') {
-						expect(compactText).toContain('ครูพิสิษฐ,ครูสายใจ');
+						expect(compactText).toContain('ครูพิสิษฐสกุลทดสอบ,ครูสายใจสกุลทดสอบ');
 					} else {
 						expect(compactText.match(/ม\.1\/1/g)).toHaveLength(1);
 						expect(compactText).not.toContain('ม.1/1คณิตศาสตร์');
 					}
 					expect(compactText).not.toContain('แบบร่าง');
-					expect(compactText).not.toContain('สกุลทดสอบ');
+					expect(compactText).toContain('สกุลทดสอบ');
 					expect(compactText.match(/ครูพิสิษฐ/g)).toHaveLength(1);
 					expect(compactText).toContain('ประชุมครู');
 				}
@@ -377,7 +381,7 @@ for (const width of [1543, 390]) {
 			expect(pdf.getPageCount()).toBe(1);
 			let text = await pdfText(download);
 			expect(text).toContain('ครูพิสิษฐ');
-			expect(text).not.toContain('สกุลทดสอบ');
+			expect(text).toContain('สกุลทดสอบ');
 			expect(text).not.toContain('ครูผู้สอน6');
 			dialog = await openDownload(page);
 			await dialog.getByRole('button', { name: 'ครู', exact: true }).click();

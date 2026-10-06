@@ -131,7 +131,7 @@ test('homeroom PDF keeps course, synchronized and special periods with only that
 	assert.equal(pages[0].roomNames['classroom-a'], 'ห้องคณิตศาสตร์');
 	assert.deepEqual(pages[0].homeroomNames, { 'room-a': 'ม.1/1', 'room-b': 'ม.1/2' });
 	assert.equal(pages[0].subTitle, 'ภาคเรียนที่ 1 2569');
-	assert.equal(fileName, 'ตารางเรียน ม.1-1 ภาคเรียนที่ 1 2569 แบบร่าง');
+	assert.equal(fileName, 'ตารางเรียน ม.1-1 ภาคเรียนที่ 1 2569 1ต่อหน้า แบบร่าง');
 	assert.deepEqual(input, original);
 });
 
@@ -179,7 +179,7 @@ test('whole school exports one full week per homeroom from the chosen published 
 		['sync']
 	);
 	assert.equal(pages[0].subTitle, 'ภาคเรียนที่ 1 2569');
-	assert.match(fileName, /^ตารางเรียนทุกห้อง/);
+	assert.match(fileName, /^ตารางเรียนห้องที่เลือก 2/);
 	assert.equal(
 		buildAcademicTimetablePdfDownload(input, 'teacher', 'unknown', '', '').pages.length,
 		0
@@ -198,7 +198,7 @@ test('multi-owner exports validate IDs and keep workspace order without repeatin
 	]);
 	assert.deepEqual(
 		result.pages.map((page) => page.title),
-		['ตารางสอน ครูพิสิษฐ', 'ตารางสอน ครูสายใจ']
+		['ตารางสอน ครูพิสิษฐ ทดสอบ', 'ตารางสอน ครูสายใจ ทดสอบ']
 	);
 	assert.match(result.fileName, /^ตารางสอนครูที่เลือก/);
 	assert.equal(
@@ -209,4 +209,21 @@ test('multi-owner exports validate IDs and keep workspace order without repeatin
 		buildAcademicTimetablePdfDownload(input, 'homeroom', null, '', '', ['room-b']).pages[0].title,
 		'ตารางเรียน ม.1/2'
 	);
+});
+
+test('PDF filenames distinguish teachers, selected batches, versions and page layouts', () => {
+	const input = workspace();
+	input.staff[0].displayName = 'นายพิสิษฐ หนึ่ง';
+	input.staff[1].displayName = 'นายพิสิษฐ สอง';
+	const build = (ids, layout = 'full') =>
+		buildAcademicTimetablePdfDownload(input, 'teacher', null, 'ภาคเรียนที่ 1', '2569', ids, layout);
+	assert.match(build(['teacher-a']).fileName, /ครูพิสิษฐ หนึ่ง/);
+	assert.notEqual(build(['teacher-a']).fileName, build(['teacher-b']).fileName);
+	assert.notEqual(build(['teacher-a']).fileName, build(['teacher-a'], 'portrait-2col').fileName);
+	const batch = build(['teacher-a', 'teacher-b']).fileName;
+	assert.equal(batch, build(['teacher-b', 'teacher-a', 'teacher-a']).fileName);
+	input.staff.push({ ...input.staff[1], id: 'teacher-c' });
+	assert.notEqual(batch, build(['teacher-a', 'teacher-c']).fileName);
+	input.version.id = 'other-version';
+	assert.notEqual(batch, build(['teacher-a', 'teacher-b']).fileName);
 });

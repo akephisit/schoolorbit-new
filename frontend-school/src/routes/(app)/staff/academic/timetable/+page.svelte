@@ -1121,7 +1121,8 @@
 			null,
 			$academicContext.options?.terms.find((term) => term.id === academicTermId)?.name ?? '',
 			$academicContext.options?.years.find((year) => year.id === academicYearId)?.name ?? '',
-			ownerIds
+			ownerIds,
+			layout
 		);
 		if (!download.pages.length) return;
 		exportingPdf = true;

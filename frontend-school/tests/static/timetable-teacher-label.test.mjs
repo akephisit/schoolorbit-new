@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { timetableTeacherLabel } from '../../src/lib/academic/timetable/teacher-label.ts';
+import {
+	timetableTeacherLabel,
+	timetableTeacherFullLabel
+} from '../../src/lib/academic/timetable/teacher-label.ts';
 import { buildTimetableBlockDisplay } from '../../src/lib/academic/timetable/block-display.ts';
 
 test('timetable labels strip Thai titles and surnames without doubling the teacher prefix', () => {
@@ -41,4 +44,20 @@ test('teachers with the same first name remain separate responsibilities', () =>
 	};
 	assert.equal(buildTimetableBlockDisplay(block, 'scheduler').teacherLabel, 'ครูพิสิษฐ +1');
 	assert.equal(buildTimetableBlockDisplay(block, 'personal').teacherLabel, 'ครูพิสิษฐ, ครูพิสิษฐ');
+});
+
+test('PDF teacher labels preserve full names while replacing honorifics', () => {
+	for (const name of [
+		'นายพิสิษฐ ชนามุยา',
+		'นาย พิสิษฐ ชนามุยา',
+		'ครูพิสิษฐ ชนามุยา',
+		'ครู นายพิสิษฐ ชนามุยา',
+		' พิสิษฐ  ชนามุยา '
+	]) {
+		assert.equal(timetableTeacherFullLabel(name), 'ครูพิสิษฐ ชนามุยา');
+	}
+	assert.equal(timetableTeacherFullLabel('นางนัฎฐา สอดโคกสูง'), 'ครูนัฎฐา สอดโคกสูง');
+	assert.equal(timetableTeacherFullLabel('Mrs. Mary Smith'), 'ครูMary Smith');
+	assert.equal(timetableTeacherFullLabel('-'), '-');
+	assert.equal(timetableTeacherFullLabel(''), '-');
 });

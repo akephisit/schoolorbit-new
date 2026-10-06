@@ -1,5 +1,5 @@
 import { timetablePdfClassLabel } from './timetable-pdf-class-label.ts';
-import { timetableTeacherLabel } from '../academic/timetable/teacher-label.ts';
+import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
 import type {
 	TDocumentDefinitions,
 	CustomTableLayout,
@@ -76,7 +76,7 @@ const instructorNames = (block: TimetableBlock) => {
 			(teacher, index) =>
 				teachers.findIndex((candidate) => candidate.teacherId === teacher.teacherId) === index
 		)
-		.map((teacher) => timetableTeacherLabel(teacher.displayName))
+		.map((teacher) => timetableTeacherFullLabel(teacher.displayName))
 		.join(', ');
 };
 

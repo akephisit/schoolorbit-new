@@ -1,4 +1,4 @@
-import { timetableTeacherLabel } from '../academic/timetable/teacher-label.ts';
+import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
 import type { TimetableBlock, TimetablePeriodSummary } from '#lib/api/timetable.js';
 import type { GeneratePdfOptions, TimetablePage } from '#lib/utils/pdf.js';
 
@@ -78,7 +78,9 @@ export async function runStaffOwnTimetablePdfDownload(
 export function buildStaffOwnTimetablePdfDownload(
 	input: StaffOwnTimetablePdfInput
 ): StaffOwnTimetablePdfDownload {
-	const teacherLabel = input.teacherName.trim() ? timetableTeacherLabel(input.teacherName) : 'ครู';
+	const teacherLabel = input.teacherName.trim()
+		? timetableTeacherFullLabel(input.teacherName)
+		: 'ครู';
 	const termName = input.termName?.trim();
 	const termCode = input.termCode?.trim();
 	const termLabel = termName || (termCode ? `ภาคเรียนที่ ${termCode}` : 'ภาคเรียน');
