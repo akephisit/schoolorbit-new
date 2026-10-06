@@ -3131,26 +3131,33 @@ fn effective_permissions_do_not_inherit_child_organization_grants() {
 }
 
 #[test]
-fn academic_curriculum_tree_scope_is_explicitly_registered() {
+fn academic_curriculum_school_permissions_replace_owner_scopes() {
     let backend_registry =
         read_source(manifest_dir().join("crates/school-permissions/src/registry_generated.rs"));
-    let frontend_registry = read_source(
-        repo_root()
-            .join("frontend-school")
-            .join("src/lib/permissions/registry.generated.ts"),
-    );
-    let migration_path = active_baseline_migration_path();
-    let migration = read_source(&migration_path);
-
+    let frontend_registry =
+        read_source(repo_root().join("frontend-school/src/lib/permissions/registry.generated.ts"));
+    let migration =
+        read_source(manifest_dir().join("migrations/094_curriculum_school_permissions.sql"));
     for source in [&backend_registry, &frontend_registry, &migration] {
-        assert!(
-            source.contains("academic_curriculum.read.organization_tree"),
-            "curriculum tree read permission must be registered across backend/frontend/migration"
-        );
-        assert!(
-            source.contains("academic_curriculum.manage.organization_tree"),
-            "curriculum tree manage permission must be registered across backend/frontend/migration"
-        );
+        for code in [
+            "academic_curriculum.read.school",
+            "academic_curriculum.manage.school",
+        ] {
+            assert!(
+                source.contains(code),
+                "school curriculum permission must be registered: {code}"
+            );
+        }
+    }
+    for registry in [&backend_registry, &frontend_registry] {
+        for scope in ["organization_unit", "organization_tree"] {
+            for action in ["read", "manage"] {
+                assert!(
+                    !registry.contains(&format!("academic_curriculum.{action}.{scope}")),
+                    "retired curriculum ownership permission must not return"
+                );
+            }
+        }
     }
 }
 
@@ -3558,11 +3565,11 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
     let cases = [
         ("get_curriculum", "CurriculumAction::Read"),
         ("update_curriculum", "CurriculumAction::Manage"),
-        ("list_curriculum_versions", "CurriculumAction::Read"),
-        ("create_curriculum_version", "CurriculumAction::Manage"),
-        ("get_curriculum_version", "CurriculumAction::Read"),
-        ("update_curriculum_version", "CurriculumAction::Manage"),
-        ("publish_curriculum_version", "CurriculumAction::Manage"),
+        ("list_curriculum_levels", "CurriculumAction::Read"),
+        ("create_curriculum_level", "CurriculumAction::Manage"),
+        ("get_curriculum_level", "CurriculumAction::Read"),
+        ("update_curriculum_level", "CurriculumAction::Manage"),
+        ("publish_curriculum", "CurriculumAction::Manage"),
         (
             "get_curriculum_structure_workspace",
             "CurriculumAction::Read",
@@ -3570,6 +3577,7 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
         ("replace_curriculum_term_slots", "CurriculumAction::Manage"),
         ("list_study_programs", "CurriculumAction::Read"),
         ("create_study_program", "CurriculumAction::Manage"),
+        ("copy_study_program", "CurriculumAction::Manage"),
         ("get_study_program", "CurriculumAction::Read"),
         ("update_study_program", "CurriculumAction::Manage"),
         ("replace_curriculum_structure", "CurriculumAction::Manage"),
@@ -3580,7 +3588,9 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}("), false);
         assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
         assert!(
-            handler.contains("require_academic_curriculum_access") && handler.contains(action),
+            (handler.contains("require_academic_curriculum_access")
+                || handler.contains("require_academic_curriculum_list_access"))
+                && handler.contains(action),
             "{handler_name} must use the curriculum resource policy with {action}"
         );
     }
@@ -3591,7 +3601,7 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
     assert!(list_handler.contains("CurriculumAction::Read"));
     assert!(create_handler.contains("require_academic_curriculum_list_access"));
     assert!(create_handler.contains("CurriculumAction::Manage"));
-    assert!(create_handler.contains("owner_allowed"));
+    assert!(!create_handler.contains("owner_allowed"));
 
     for (handler_name, action) in [
         ("get_curriculum_overview", "CurriculumAction::Read"),
@@ -3615,7 +3625,7 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
         "pub async fn get_curriculum_management_options(",
         false,
     );
-    assert!(management_handler.contains("require_academic_curriculum_access"));
+    assert!(management_handler.contains("require_academic_curriculum_list_access"));
 }
 
 #[test]
@@ -3878,13 +3888,16 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
 }
 
 #[test]
-fn academic_curriculum_access_uses_resource_policy_tree_resolution() {
+fn academic_curriculum_access_uses_school_permission_policy() {
     let curriculum_policy = strip_comments(&read_source(
         manifest_dir().join("src/policies/academic_curriculum_access_policy.rs"),
     ));
 
-    assert!(curriculum_policy.contains("resolve_academic_resource_list_filter"));
-    assert!(curriculum_policy.contains("academic_resource_access_for"));
+    assert!(curriculum_policy.contains("ACADEMIC_CURRICULUM_READ_SCHOOL"));
+    assert!(curriculum_policy.contains("ACADEMIC_CURRICULUM_MANAGE_SCHOOL"));
+    assert!(curriculum_policy.contains("AcademicResourceAccess::School"));
+    assert!(!curriculum_policy.contains("resolve_academic_resource_list_filter"));
+    assert!(!curriculum_policy.contains("academic_resource_access_for"));
     assert!(!curriculum_policy.contains("WITH RECURSIVE"));
     assert!(!curriculum_policy.contains("JOIN organization_tree parent_tree"));
 }
@@ -3950,7 +3963,9 @@ fn academic_core_resource_policies_preserve_independent_scopes() {
         );
     }
 
-    for policy in [&catalog_policy, &curriculum_policy, &offering_policy] {
+    assert!(curriculum_policy.contains("AcademicResourceAccess::School"));
+    assert!(!curriculum_policy.contains("organization_scope"));
+    for policy in [&catalog_policy, &offering_policy] {
         assert!(policy.contains("resolve_academic_resource_list_filter"));
         assert!(policy.contains("academic_resource_access_for"));
     }
@@ -7487,9 +7502,9 @@ fn academic_core_registers_only_clean_replacement_routes() {
         "/catalog/subjects",
         "/catalog/activities",
         "/curricula",
-        "/curriculum-versions/{curriculum_version_id}/structure",
-        "/curriculum-versions/{curriculum_version_id}/term-slots",
-        "/study-programs/{study_program_id}/structure",
+        "/curriculum-levels/{id}/structure",
+        "/curriculum-levels/{id}/term-slots",
+        "/study-programs/{id}/structure",
         "/homerooms",
         "/student-years",
         "/placements/{id}/transfer",
@@ -7504,6 +7519,9 @@ fn academic_core_registers_only_clean_replacement_routes() {
         .split_whitespace()
         .collect::<String>()
         .contains("core::routes().merge("));
+    assert!(!core_routes.contains("/curriculum-versions/"));
+    assert!(core_routes.contains("/curricula/{id}/levels"));
+    assert!(core_routes.contains("/curriculum-levels/{id}/copy-program"));
     for removed in [
         "\"/structure\"",
         "\"/levels\"",

@@ -1956,9 +1956,12 @@ pub async fn create_curriculum(
     Json(request): Json<CreateCurriculumRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::create(&context.tenant.pool, request).await?;
     signal_core_changed(
         &state,
@@ -1998,9 +2001,12 @@ pub async fn update_curriculum(
     Json(request): Json<UpdateCurriculumRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::update(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2022,9 +2028,12 @@ pub async fn publish_curriculum(
     Json(request): Json<PublishVersionRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::publish(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2045,10 +2054,12 @@ pub async fn list_curriculum_levels(
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context.actor.require_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_SCHOOL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
-    ])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
     let value = workspaces::curriculum_level_views(&context.tenant.pool, id).await?;
     Ok(ok(value))
 }
@@ -2061,9 +2072,12 @@ pub async fn create_curriculum_level(
     Json(request): Json<CreateCurriculumLevelRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::create_level(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2084,10 +2098,12 @@ pub async fn get_curriculum_level(
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context.actor.require_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_SCHOOL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
-    ])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
     let value = curriculum::get_level(&context.tenant.pool, id).await?;
     Ok(ok(value))
 }
@@ -2100,9 +2116,12 @@ pub async fn update_curriculum_level(
     Json(request): Json<UpdateCurriculumLevelRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::update_level(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2123,18 +2142,14 @@ pub async fn get_curriculum_management_options(
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
-    let value = workspaces::curriculum_management_options(
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
         &context.tenant.pool,
-        id,
-        &school_authorization::AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
+        &context.actor,
+        CurriculumAction::Manage,
     )
     .await?;
+    let value =
+        workspaces::curriculum_management_options(&context.tenant.pool, id, &filter).await?;
     Ok(ok(value))
 }
 
@@ -2145,10 +2160,12 @@ pub async fn get_curriculum_structure_workspace(
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context.actor.require_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_SCHOOL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
-    ])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
     let value = curriculum_structure::get_workspace(&context.tenant.pool, id).await?;
     Ok(ok(value))
 }
@@ -2161,9 +2178,12 @@ pub async fn replace_curriculum_term_slots(
     Json(request): Json<ReplaceCurriculumTermSlotsRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum_structure::replace_term_slots(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2184,10 +2204,12 @@ pub async fn list_study_programs(
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context.actor.require_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_SCHOOL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
-    ])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
     let value = curriculum::list_programs(&context.tenant.pool, id).await?;
     Ok(ok(value))
 }
@@ -2200,9 +2222,12 @@ pub async fn create_study_program(
     Json(request): Json<CreateStudyProgramRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::create_program(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2224,9 +2249,12 @@ pub async fn copy_study_program(
     Json(request): Json<CopyStudyProgramRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::copy_program(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2247,10 +2275,12 @@ pub async fn get_study_program(
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context.actor.require_any_permission(&[
-        codes::ACADEMIC_CURRICULUM_READ_SCHOOL,
-        codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL,
-    ])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
     let value = curriculum::get_program(&context.tenant.pool, id).await?;
     Ok(ok(value))
 }
@@ -2263,9 +2293,12 @@ pub async fn update_study_program(
     Json(request): Json<UpdateStudyProgramRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value = curriculum::update_program(&context.tenant.pool, id, request).await?;
     signal_core_changed(
         &state,
@@ -2287,9 +2320,12 @@ pub async fn replace_curriculum_structure(
     Json(request): Json<ReplaceCurriculumStructureRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
-    context
-        .actor
-        .require_any_permission(&[codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL])?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
     let value =
         curriculum_structure::replace_program_structure(&context.tenant.pool, id, request).await?;
     signal_core_changed(

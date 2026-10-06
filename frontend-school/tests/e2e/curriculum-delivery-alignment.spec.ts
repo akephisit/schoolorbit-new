@@ -60,10 +60,12 @@ function homeroomWorkspace() {
 					id: ids.program,
 					code: 'DEFAULT',
 					name: 'แผนการเรียนพื้นฐาน',
-					curriculumId: ids.curriculum,
-					curriculumName: 'หลักสูตรสถานศึกษา 2569'
+					editionId: ids.curriculum,
+					editionName: 'ฉบับปรับปรุง พุทธศักราช 2569',
+					curriculumLevelId: ids.curriculumVersion,
+					levelName: 'ระดับมัธยมศึกษาตอนต้น'
 				},
-				curriculumVersionId: ids.curriculumVersion,
+				curriculumLevelId: ids.curriculumVersion,
 				expectedCount: 1,
 				readyCount: 1,
 				blockers: [],
@@ -118,32 +120,44 @@ function homeroomWorkspace() {
 	};
 }
 
-function curriculumVersion(
-	id: string,
-	status: 'draft' | 'published',
-	versionName: string,
-	revisionYear = 2569
-) {
+function edition(id = ids.curriculum, status: 'draft' | 'published' = 'published') {
 	return {
 		id,
-		curriculumId: ids.curriculum,
-		versionName,
-		revisionYear,
+		name: `ฉบับปรับปรุง พุทธศักราช ${status === 'draft' ? 2570 : 2569}`,
+		revisionYear: status === 'draft' ? 2570 : 2569,
 		description: null,
 		status,
-		rowVersion: status === 'published' ? 4 : 1,
+		isActive: true,
+		rowVersion: 4,
 		migrated: false,
 		publishedAt: status === 'published' ? '2026-05-01T00:00:00Z' : null,
 		createdAt: '2026-04-01T00:00:00Z',
 		updatedAt: '2026-08-30T00:00:00Z'
 	};
 }
-
-function curriculumStructure(
-	version = curriculumVersion(ids.curriculumVersion, 'published', 'ฉบับ 2569')
-) {
+function curriculumVersion(id: string, status: 'draft' | 'published' = 'published') {
 	return {
-		curriculumVersion: version,
+		id,
+		editionId: status === 'draft' ? ids.futureYear : ids.curriculum,
+		editionName: edition(ids.curriculum, status).name,
+		revisionYear: status === 'draft' ? 2570 : 2569,
+		code: 'LEVEL-M1',
+		nameTh: 'ระดับมัธยมศึกษาตอนต้น',
+		nameEn: null,
+		gradeLevelIds: [ids.grade],
+		description: null,
+		status,
+		isActive: true,
+		rowVersion: 4,
+		migrated: false,
+		createdAt: '2026-04-01T00:00:00Z',
+		updatedAt: '2026-08-30T00:00:00Z'
+	};
+}
+
+function curriculumStructure(version = curriculumVersion(ids.curriculumVersion)) {
+	return {
+		level: version,
 		rowVersion: version.rowVersion,
 		gradeLevels: [
 			{
@@ -158,7 +172,7 @@ function curriculumStructure(
 		termSlots: [
 			{
 				id: 'e2000000-0000-4000-8000-000000000401',
-				curriculumVersionId: version.id,
+				curriculumLevelId: version.id,
 				sequence: 1,
 				name: 'ภาคเรียนที่ 1',
 				termType: 'regular',
@@ -169,12 +183,11 @@ function curriculumStructure(
 		programs: [
 			{
 				id: ids.program,
-				curriculumVersionId: version.id,
+				curriculumLevelId: version.id,
 				code: 'DEFAULT',
 				nameTh: 'แผนการเรียนพื้นฐาน',
 				nameEn: null,
 				isDefault: true,
-				owningOrganizationUnitId: null,
 				status: version.status,
 				rowVersion: 1,
 				createdAt: '2026-04-01T00:00:00Z',
@@ -221,7 +234,7 @@ interface MockOptions {
 	structureGate?: Promise<void>;
 	firstStructureGate?: Promise<void>;
 	secondStructureGate?: Promise<void>;
-	includeSecondVersion?: boolean;
+
 	failStructureOnce?: boolean;
 }
 
@@ -233,6 +246,8 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 	let createOptionsRequests = 0;
 	let managementOptionsRequests = 0;
 	let structureRequests = 0;
+	let levelBody: Record<string, unknown> | null = null;
+	let programBody: Record<string, unknown> | null = null;
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -332,42 +347,61 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 			}
 			if (url.pathname === `/api/academic/curricula/${ids.curriculum}` && method === 'GET') {
 				if (options.curriculumGate) await options.curriculumGate;
+				await fulfill(route, edition());
+				return;
+			}
+			if (url.pathname === `/api/academic/curricula/${ids.futureYear}` && method === 'GET') {
+				await fulfill(route, edition(ids.futureYear, 'draft'));
+				return;
+			}
+			if (url.pathname === `/api/academic/curricula/${ids.curriculum}/levels` && method === 'GET') {
+				if (options.versionsGate) await options.versionsGate;
+				await fulfill(route, [{ level: curriculumVersion(ids.curriculumVersion) }]);
+				return;
+			}
+			if (url.pathname === `/api/academic/curricula/${ids.futureYear}/levels`) {
+				if (method === 'POST') {
+					levelBody = route.request().postDataJSON();
+					await fulfill(
+						route,
+						{ ...curriculumVersion(ids.clonedVersion, 'draft'), ...levelBody },
+						201
+					);
+				} else await fulfill(route, []);
+				return;
+			}
+			if (
+				url.pathname === `/api/academic/curriculum-levels/${ids.clonedVersion}/programs` &&
+				method === 'POST'
+			) {
+				programBody = route.request().postDataJSON();
+				await fulfill(
+					route,
+					{
+						...curriculumStructure().programs[0],
+						...programBody,
+						status: 'draft',
+						curriculumLevelId: ids.clonedVersion
+					},
+					201
+				);
+				return;
+			}
+			if (url.pathname === '/api/academic/curricula/overview') {
 				await fulfill(route, {
-					id: ids.curriculum,
-					code: 'CURR-2569',
-					nameTh: 'หลักสูตรสถานศึกษา 2569',
-					nameEn: null,
-					description: null,
-					gradeLevelIds: [ids.grade],
-					owningOrganizationUnitId: null,
-					isActive: true,
-					rowVersion: 1,
-					createdAt: '2026-04-01T00:00:00Z',
-					updatedAt: '2026-08-30T00:00:00Z'
+					items: [
+						{ edition: edition(), levelCount: 1, studyProgramCount: 1 },
+						{ edition: edition(ids.futureYear, 'draft'), levelCount: 1, studyProgramCount: 0 }
+					]
 				});
 				return;
 			}
-			if (
-				url.pathname === `/api/academic/curricula/${ids.curriculum}/versions` &&
-				method === 'GET'
-			) {
-				if (options.versionsGate) await options.versionsGate;
-				await fulfill(route, [
-					{
-						version: curriculumVersion(ids.curriculumVersion, 'published', 'ฉบับ 2569')
-					},
-					...(options.includeSecondVersion
-						? [
-								{
-									version: curriculumVersion(ids.clonedVersion, 'draft', 'ฉบับ 2570', 2570)
-								}
-							]
-						: [])
-				]);
+			if (url.pathname === `/api/academic/curriculum-levels/${ids.curriculumVersion}/programs`) {
+				await fulfill(route, curriculumStructure().programs);
 				return;
 			}
 			if (
-				url.pathname.startsWith('/api/academic/curriculum-versions/') &&
+				url.pathname.startsWith('/api/academic/curriculum-levels/') &&
 				url.pathname.endsWith('/structure') &&
 				method === 'GET'
 			) {
@@ -379,7 +413,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				if (options.structureGate) await options.structureGate;
 				const versionId = url.pathname.split('/')[4] ?? '';
 				if (versionId !== ids.curriculumVersion && versionId !== ids.clonedVersion) {
-					await fulfill(route, 'ไม่พบรุ่นหลักสูตร', 404);
+					await fulfill(route, 'ไม่พบระดับการศึกษา', 404);
 					return;
 				}
 				if (versionId === ids.curriculumVersion && options.firstStructureGate)
@@ -388,8 +422,8 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 					await options.secondStructureGate;
 				const version =
 					versionId === ids.clonedVersion
-						? curriculumVersion(ids.clonedVersion, 'draft', 'ฉบับ 2570', 2570)
-						: curriculumVersion(ids.curriculumVersion, 'published', 'ฉบับ 2569');
+						? curriculumVersion(ids.clonedVersion, 'draft')
+						: curriculumVersion(ids.curriculumVersion);
 				await fulfill(route, curriculumStructure(version));
 				return;
 			}
@@ -400,14 +434,13 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 						{ id: ids.futureYear, name: 'ปีการศึกษา 2570', year: 2570, status: 'planning' },
 						{ id: ids.year, name: 'ปีการศึกษา 2569', year: 2569, status: 'active' }
 					],
-					gradeLevels: [],
-					ownerOptions: []
+					gradeLevels: []
 				});
 				return;
 			}
 			if (
 				url.pathname.endsWith('/management-options') &&
-				url.pathname.includes('/api/academic/curriculum-versions/') &&
+				url.pathname.includes('/api/academic/curriculum-levels/') &&
 				method === 'GET'
 			) {
 				managementOptionsRequests += 1;
@@ -415,23 +448,23 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				return;
 			}
 			if (
-				url.pathname === `/api/academic/curriculum-versions/${ids.curriculumVersion}/clone-draft` &&
+				url.pathname === `/api/academic/curriculum-levels/${ids.clonedVersion}/copy-program` &&
 				method === 'POST'
 			) {
-				cloneAttempts += 1;
+				cloneAttempts++;
 				cloneBody = route.request().postDataJSON() as Record<string, unknown>;
 				if (options.cloneConflictsOnce && cloneAttempts === 1) {
-					await fulfill(route, 'ข้อมูลรุ่นต้นทางถูกแก้ไขโดยผู้ใช้อื่น กรุณาโหลดข้อมูลล่าสุด', 409);
+					await fulfill(route, 'ข้อมูลต้นทางเปลี่ยน กรุณาโหลดข้อมูลล่าสุด', 409);
 					return;
 				}
 				await fulfill(
 					route,
-					curriculumVersion(
-						ids.clonedVersion,
-						'draft',
-						String(cloneBody.versionName),
-						Number(cloneBody.revisionYear)
-					),
+					{
+						...curriculumStructure().programs[0],
+						id: ids.clonedVersion,
+						curriculumLevelId: ids.clonedVersion,
+						status: 'draft'
+					},
 					201
 				);
 				return;
@@ -473,310 +506,212 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 		cloneAttemptCount: () => cloneAttempts,
 		createOptionsRequestCount: () => createOptionsRequests,
 		managementOptionsRequestCount: () => managementOptionsRequests,
-		structureRequestCount: () => structureRequests
+		structureRequestCount: () => structureRequests,
+		levelRequest: () => levelBody,
+		programRequest: () => programBody
 	};
 }
 
-test('delivery requests and links the exact selected opening version without row fan-out', async ({
+const levelPath = `/staff/academic/curricula/${ids.curriculum}/levels/${ids.curriculumVersion}`;
+const alignmentQuery = `academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&deliveryVersionId=${ids.deliveryVersion}`;
+
+test('delivery links the selected opening to the exact edition and educational level without row fan-out', async ({
 	page
 }) => {
 	const mocked = await mockShell(page);
-	await page.goto(
-		`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.deliveryVersion}`
-	);
-
+	await page.goto(`/staff/academic/delivery?${alignmentQuery}`);
 	await expect(page.getByText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร')).toBeVisible();
 	await expect(page.getByText('วิทยาศาสตร์เสริม')).toBeVisible();
 	await expect(page.getByRole('link', { name: /ตรวจในหลักสูตร/ })).toHaveAttribute(
 		'href',
-		`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}&academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&deliveryVersionId=${ids.deliveryVersion}`
+		`${levelPath}?${alignmentQuery}`
 	);
 	expect(mocked.workspaceQueries).toHaveLength(1);
-	expect(mocked.workspaceQueries[0]?.get('academicYearId')).toBe(ids.year);
-	expect(mocked.workspaceQueries[0]?.get('academicTermId')).toBe(ids.term);
 	expect(mocked.workspaceQueries[0]?.get('deliveryVersionId')).toBe(ids.deliveryVersion);
-	expect(mocked.workspaceQueries[0]?.has('timetableVersionId')).toBe(false);
 	expect(
 		mocked.academicRequests.filter(
-			(request) => request.includes('/offerings/') || request.includes('/learning-groups')
+			(r) => r.includes('/offerings/') || r.includes('/learning-groups')
 		)
 	).toEqual([]);
 });
 
-test('read-only curriculum context inspects one workspace without management or row requests', async ({
+test('read-only level context inspects the selected opening without loading management options', async ({
 	page
 }) => {
 	const mocked = await mockShell(page, {
 		permissions: ['academic_curriculum.read.school', 'learning_offering.read.school']
 	});
-	await page.goto(
-		`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}&academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&deliveryVersionId=${ids.deliveryVersion}`
-	);
-
+	await page.goto(`${levelPath}?${alignmentQuery}`);
 	await expect(page.getByRole('heading', { name: 'เทียบการเปิดสอนกับหลักสูตร' })).toBeVisible();
-	await expect(page.getByText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร')).toBeVisible();
 	await expect(page.getByText('วิทยาศาสตร์เสริม')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'เพิ่มแผนการเรียน' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'คัดลอกแผนจากฉบับเดิม' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'จัดโครงสร้าง' })).toHaveCount(0);
 	expect(mocked.workspaceQueries).toHaveLength(1);
-	expect(mocked.workspaceQueries[0]?.get('deliveryVersionId')).toBe(ids.deliveryVersion);
-	expect(mocked.workspaceQueries[0]?.has('timetableVersionId')).toBe(false);
-	expect(mocked.createOptionsRequestCount()).toBe(0);
 	expect(mocked.managementOptionsRequestCount()).toBe(0);
-	expect(
-		mocked.academicRequests.filter(
-			(request) => request.includes('/offerings/') || request.includes('/learning-groups')
-		)
-	).toEqual([]);
+	expect(mocked.createOptionsRequestCount()).toBe(0);
 });
 
-test('curriculum detail starts version structure before the version list resolves', async ({
+test('a slow edition summary does not hide the ready educational-level structure', async ({
 	page
 }) => {
-	const versionsGate = deferred();
-	const structureGate = deferred();
-	const mocked = await mockShell(page, {
-		versionsGate: versionsGate.promise,
-		structureGate: structureGate.promise
-	});
+	const gate = deferred();
+	await mockShell(page, { curriculumGate: gate.promise });
 	try {
-		await page.goto(
-			`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`
-		);
-		await expect
-			.poll(
-				() =>
-					mocked.academicRequests.filter((request) =>
-						request.includes(`/curriculum-versions/${ids.curriculumVersion}/structure`)
-					).length
-			)
-			.toBe(1);
-		await expect(page.getByRole('heading', { name: 'หลักสูตรสถานศึกษา 2569' })).toBeVisible();
-		await expect(page.locator('main [data-slot="skeleton"]')).not.toHaveCount(0);
-		expect(mocked.createOptionsRequestCount()).toBe(0);
-		expect(mocked.managementOptionsRequestCount()).toBe(0);
-	} finally {
-		versionsGate.release();
-		structureGate.release();
-	}
-	await expect(page.getByRole('button', { name: /ฉบับ 2569/ })).toBeVisible();
-	expect(
-		mocked.academicRequests.filter((request) =>
-			request.includes(`/curriculum-versions/${ids.curriculumVersion}/structure`)
-		)
-	).toHaveLength(1);
-});
-
-test('a slow curriculum summary does not hide a ready structure region', async ({ page }) => {
-	const curriculumGate = deferred();
-	await mockShell(page, { curriculumGate: curriculumGate.promise });
-	try {
-		await page.goto(
-			`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`
-		);
+		await page.goto(levelPath);
 		await expect(page.getByRole('heading', { name: 'ภาพรวมทุกแผนการเรียน' })).toBeVisible();
-		await expect(page.locator('main [data-slot="skeleton"]')).not.toHaveCount(0);
+		await expect(page.getByTestId('curriculum-level-ready')).toBeVisible();
 	} finally {
-		curriculumGate.release();
+		gate.release();
 	}
-	await expect(
-		page.getByTestId('curriculum-detail-ready').getByRole('heading', {
-			name: 'หลักสูตรสถานศึกษา 2569'
-		})
-	).toBeVisible();
 });
 
-test('an explicit version structure renders before version-list metadata', async ({ page }) => {
-	const versionsGate = deferred();
-	await mockShell(page, { versionsGate: versionsGate.promise });
-	try {
-		await page.goto(
-			`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`
-		);
-		await expect(page.getByRole('heading', { name: 'ภาพรวมทุกแผนการเรียน' })).toBeVisible();
-		await expect(page.locator('main [data-slot="skeleton"]')).not.toHaveCount(0);
-	} finally {
-		versionsGate.release();
-	}
-	await expect(page.getByRole('button', { name: /ฉบับ 2569/ })).toBeVisible();
-});
-
-test('an invalid deep-linked version falls back to the first authorized version', async ({
+test('edition metadata renders while its independent educational-level list is loading', async ({
 	page
 }) => {
-	const invalidVersionId = '52000000-0000-4000-8000-000000000499';
-	const mocked = await mockShell(page);
-	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${invalidVersionId}`);
-	await expect(page).toHaveURL(new RegExp(`versionId=${ids.curriculumVersion}`));
-	await expect(page.getByRole('heading', { name: 'ภาพรวมทุกแผนการเรียน' })).toBeVisible();
-	expect(mocked.structureRequestCount()).toBe(2);
-});
-
-test('curriculum detail waits only for the version identifier when the URL omits it', async ({
-	page
-}) => {
-	const versionsGate = deferred();
-	const mocked = await mockShell(page, { versionsGate: versionsGate.promise });
+	const gate = deferred();
+	const mocked = await mockShell(page, { versionsGate: gate.promise });
 	try {
 		await page.goto(`/staff/academic/curricula/${ids.curriculum}`);
-		await expect(page.getByRole('heading', { name: 'หลักสูตรสถานศึกษา 2569' })).toBeVisible();
-		expect(mocked.structureRequestCount()).toBe(0);
+		await expect(page.getByTestId('curriculum-edition-ready')).toBeVisible();
 		await expect(page.locator('main [data-slot="skeleton"]')).not.toHaveCount(0);
+		expect(mocked.structureRequestCount()).toBe(0);
 	} finally {
-		versionsGate.release();
+		gate.release();
 	}
-	await expect(page.getByRole('button', { name: /ฉบับ 2569/ })).toBeVisible();
-	await expect.poll(mocked.structureRequestCount).toBe(1);
-	await expect(page).toHaveURL(new RegExp(`versionId=${ids.curriculumVersion}`));
+	await expect(page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น' })).toHaveAttribute(
+		'href',
+		levelPath
+	);
 });
 
-test('curriculum structure failure retries only the structure region', async ({ page }) => {
+test('an invalid level deep link refuses rather than silently switching to another level', async ({
+	page
+}) => {
+	const mocked = await mockShell(page);
+	const invalid = '52000000-0000-4000-8000-000000000499';
+	await page.goto(`/staff/academic/curricula/${ids.curriculum}/levels/${invalid}`);
+	await expect(page.getByText('ไม่พบระดับการศึกษา', { exact: true })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(invalid));
+	expect(mocked.structureRequestCount()).toBe(1);
+});
+
+test('a level under the wrong edition is refused', async ({ page }) => {
+	await mockShell(page);
+	await page.goto(`/staff/academic/curricula/${ids.futureYear}/levels/${ids.curriculumVersion}`);
+	await expect(page.getByText('ระดับการศึกษาไม่อยู่ในฉบับที่เลือก', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('curriculum-level-ready')).toHaveCount(0);
+});
+
+test('structure retry requests only the failed region', async ({ page }) => {
 	const mocked = await mockShell(page, { failStructureOnce: true });
-	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
-	await expect(page.getByText('โครงสร้างยังไม่พร้อม')).toBeVisible();
-	const curriculumReads = mocked.academicRequests.filter(
-		(request) => request === `GET /api/academic/curricula/${ids.curriculum}`
-	).length;
-	const versionReads = mocked.academicRequests.filter((request) =>
-		request.endsWith(`/api/academic/curricula/${ids.curriculum}/versions`)
+	await page.goto(levelPath);
+	await expect(page.getByText('โครงสร้างยังไม่พร้อม', { exact: true })).toBeVisible();
+	const reads = mocked.academicRequests.filter(
+		(r) => r === `GET /api/academic/curricula/${ids.curriculum}`
 	).length;
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect(page.getByRole('heading', { name: 'ภาพรวมทุกแผนการเรียน' })).toBeVisible();
 	expect(mocked.structureRequestCount()).toBe(2);
 	expect(
-		mocked.academicRequests.filter(
-			(request) => request === `GET /api/academic/curricula/${ids.curriculum}`
-		).length
-	).toBe(curriculumReads);
-	expect(
-		mocked.academicRequests.filter((request) =>
-			request.endsWith(`/api/academic/curricula/${ids.curriculum}/versions`)
-		).length
-	).toBe(versionReads);
+		mocked.academicRequests.filter((r) => r === `GET /api/academic/curricula/${ids.curriculum}`)
+	).toHaveLength(reads);
 });
 
-test('switching versions clears the old workspace and shallow history restores it', async ({
-	page
-}) => {
-	const secondGate = deferred();
-	const mocked = await mockShell(page, {
-		includeSecondVersion: true,
-		secondStructureGate: secondGate.promise
-	});
-	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
-	await expect(page.getByRole('heading', { name: 'ภาพรวมทุกแผนการเรียน' })).toBeVisible();
-	try {
-		await page.getByRole('button', { name: /ฉบับ 2570/ }).click();
-		await expect(page.locator('main [data-slot="skeleton"]')).not.toHaveCount(0);
-		await expect(page.getByRole('heading', { name: 'ภาพรวมทุกแผนการเรียน' })).toHaveCount(0);
-	} finally {
-		secondGate.release();
+for (const mobile of [false, true])
+	for (const dark of [false, true]) {
+		test(`copy one published plan into a selected draft level (${mobile ? 'mobile' : 'desktop'}, ${dark ? 'dark' : 'light'})`, async ({
+			page
+		}) => {
+			await page.setViewportSize({ width: mobile ? 390 : 1440, height: 900 });
+			const mocked = await mockShell(page);
+			await page.goto(`/staff/academic/curricula/${ids.futureYear}/levels/${ids.clonedVersion}`);
+			await expect(page.getByTestId('curriculum-level-ready')).toBeVisible();
+			if (dark) {
+				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+				await expect(page.locator('html')).toHaveClass(/dark/);
+			}
+			expect(mocked.createOptionsRequestCount()).toBe(0);
+			await page.getByRole('button', { name: 'คัดลอกแผนจากฉบับเดิม' }).click();
+			const dialog = page.getByRole('dialog');
+			await dialog.getByLabel('ฉบับต้นทาง *', { exact: true }).click();
+			await expect(page.getByRole('option')).toHaveCount(1);
+			await page.getByRole('option', { name: edition().name, exact: true }).click();
+			await dialog.getByLabel('ระดับการศึกษาต้นทาง *', { exact: true }).click();
+			await page.getByRole('option', { name: 'ระดับมัธยมศึกษาตอนต้น', exact: true }).click();
+			await dialog.getByLabel('แผนต้นทาง *', { exact: true }).click();
+			await page.getByRole('option', { name: 'แผนการเรียนพื้นฐาน', exact: true }).click();
+			await dialog.getByLabel('ชื่อแผนในฉบับใหม่ (ถ้าต้องการเปลี่ยน)').fill('แผนใหม่');
+			await expect.poll(() => dialog.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+			await page.screenshot({
+				path: `test-results/curriculum-copy-${mobile ? 'mobile' : 'desktop'}-${dark ? 'dark' : 'light'}.png`
+			});
+			await dialog.getByRole('button', { name: 'คัดลอกเป็นแผนร่าง', exact: true }).click();
+			await expect(dialog).toBeHidden();
+			expect(mocked.cloneRequest()).toEqual({
+				sourceProgramId: ids.program,
+				sourceRowVersion: 1,
+				destinationRowVersion: 4,
+				nameTh: 'แผนใหม่'
+			});
+			expect(mocked.cloneAttemptCount()).toBe(1);
+			expect(
+				mocked.academicRequests.filter((r) => r.startsWith('POST') || r.startsWith('PATCH'))
+			).toEqual([`POST /api/academic/curriculum-levels/${ids.clonedVersion}/copy-program`]);
+		});
 	}
-	await expect(page).toHaveURL(new RegExp(`versionId=${ids.clonedVersion}`));
-	await expect(page.getByRole('heading', { name: 'ภาพรวมทุกแผนการเรียน' })).toBeVisible();
-	await page.goBack();
-	await expect(page).toHaveURL(new RegExp(`versionId=${ids.curriculumVersion}`));
-	await expect
-		.poll(
-			() =>
-				mocked.academicRequests.filter((request) =>
-					request.includes(`/curriculum-versions/${ids.curriculumVersion}/structure`)
-				).length
-		)
-		.toBe(2);
-});
 
-test('a late first-version route response cannot replace a newly selected version', async ({
+test('copy conflict keeps the draft dialog open without reporting a saved plan', async ({
 	page
 }) => {
-	const firstGate = deferred();
-	const firstResponse = page.waitForResponse(
-		(response) =>
-			new URL(response.url()).pathname ===
-			`/api/academic/curriculum-versions/${ids.curriculumVersion}/structure`
-	);
-	const mocked = await mockShell(page, {
-		includeSecondVersion: true,
-		firstStructureGate: firstGate.promise
-	});
-	try {
-		await page.goto(
-			`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`
-		);
-		await expect(page.getByRole('button', { name: /ฉบับ 2570/ })).toBeVisible();
-		await page.getByRole('button', { name: /ฉบับ 2570/ }).click();
-		await expect(page).toHaveURL(new RegExp(`versionId=${ids.clonedVersion}`));
-		await expect(page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร' })).toBeVisible();
-	} finally {
-		firstGate.release();
-	}
-	await firstResponse;
-	await expect.poll(() => mocked.structureRequestCount()).toBe(2);
-	await expect(page.getByRole('button', { name: 'จัดโครงสร้าง' })).toBeVisible();
-});
-
-test('manager clones the published source into a selected future draft and keeps the source visible', async ({
-	page
-}) => {
-	const mocked = await mockShell(page);
-	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
-
-	await page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' }).click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByText('ต้นฉบับที่เผยแพร่จะไม่เปลี่ยน')).toBeVisible();
-	await dialog.getByLabel('ปีปรับปรุงหลักสูตร (พุทธศักราช)').fill('2570');
-	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2570');
-	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
-
-	await expect(page.getByRole('button', { name: /ฉบับ 2570/ })).toBeVisible();
-	await expect(page.getByRole('button', { name: /ฉบับ 2569/ })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร' })).toBeVisible();
-	expect(mocked.cloneRequest()).toEqual({
-		versionName: 'ฉบับ 2570',
-		revisionYear: 2570,
-		description: null,
-		sourceRowVersion: 4
-	});
-	expect(mocked.cloneAttemptCount()).toBe(1);
-	expect(mocked.createOptionsRequestCount()).toBe(0);
-});
-
-test('a same-year revision needs a distinct edition name before cloning', async ({ page }) => {
-	const mocked = await mockShell(page);
-	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
-	await page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' }).click();
-	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('ปีปรับปรุงหลักสูตร (พุทธศักราช)').fill('2569');
-	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2569');
-	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
-	await expect(
-		dialog.getByText('ชื่อฉบับนี้มีอยู่แล้ว กรุณาระบุชื่อฉบับให้แตกต่างจากเดิม')
-	).toBeVisible();
-	expect(mocked.cloneAttemptCount()).toBe(0);
-	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2569 ปรับรายวิชา');
-	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
-	await expect(page.getByRole('button', { name: /ฉบับ 2569 ปรับรายวิชา/ })).toBeVisible();
-	expect(mocked.cloneRequest()?.revisionYear).toBe(2569);
-	expect(mocked.cloneAttemptCount()).toBe(1);
-});
-
-test('stale clone keeps the draft intact and succeeds on an explicit retry', async ({ page }) => {
 	const mocked = await mockShell(page, { cloneConflictsOnce: true });
-	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
-
-	await page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' }).click();
+	await page.goto(`/staff/academic/curricula/${ids.futureYear}/levels/${ids.clonedVersion}`);
+	await page.getByRole('button', { name: 'คัดลอกแผนจากฉบับเดิม' }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2570 ปรับปรุง');
-	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
+	await dialog.getByLabel('ฉบับต้นทาง *', { exact: true }).click();
+	await page.getByRole('option', { name: edition().name, exact: true }).click();
+	await dialog.getByLabel('ระดับการศึกษาต้นทาง *', { exact: true }).click();
+	await page.getByRole('option', { name: 'ระดับมัธยมศึกษาตอนต้น', exact: true }).click();
+	await dialog.getByLabel('แผนต้นทาง *', { exact: true }).click();
+	await page.getByRole('option', { name: 'แผนการเรียนพื้นฐาน', exact: true }).click();
+	await dialog.getByRole('button', { name: 'คัดลอกเป็นแผนร่าง', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toContainText(
+		'ข้อมูลต้นทางเปลี่ยน กรุณาโหลดข้อมูลล่าสุด'
+	);
+	await expect(dialog).toBeVisible();
+	expect(mocked.cloneAttemptCount()).toBe(1);
+});
 
-	await expect(dialog.getByRole('alert')).toContainText('กรุณาโหลดข้อมูลล่าสุด');
-	await expect(dialog.getByLabel('ชื่อฉบับ (ถ้ามี)')).toHaveValue('ฉบับ 2570 ปรับปรุง');
-	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
-
-	await expect(page.getByRole('button', { name: /ฉบับ 2570 ปรับปรุง/ })).toBeVisible();
-	await expect(page.getByRole('button', { name: /ฉบับ 2569/ })).toBeVisible();
-	expect(mocked.cloneAttemptCount()).toBe(2);
-	expect(mocked.cloneRequest()).toMatchObject({
-		versionName: 'ฉบับ 2570 ปรับปรุง',
-		sourceRowVersion: 4
+test('create a level with covered grades within an edition, then create its plan without owner fields', async ({
+	page
+}) => {
+	const mocked = await mockShell(page);
+	await page.goto(`/staff/academic/curricula/${ids.futureYear}`);
+	await expect(page.getByTestId('curriculum-edition-ready')).toBeVisible();
+	expect(mocked.createOptionsRequestCount()).toBe(0);
+	await page.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('ชื่อระดับการศึกษา *').fill('ระดับมัธยมศึกษาตอนต้น');
+	await page.getByRole('combobox', { name: 'เลือกระดับชั้นที่ครอบคลุม' }).click();
+	await page.getByRole('button', { name: 'เลือกทั้งหมด', exact: true }).click();
+	await page.keyboard.press('Escape');
+	await dialog.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true }).click();
+	await expect(dialog).toBeHidden();
+	expect(mocked.levelRequest()).toEqual({
+		nameTh: 'ระดับมัธยมศึกษาตอนต้น',
+		gradeLevelIds: [ids.grade],
+		description: null
 	});
+	expect(mocked.createOptionsRequestCount()).toBe(1);
+	await page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(`/levels/${ids.clonedVersion}`));
+	await page.getByRole('button', { name: 'เพิ่มแผนการเรียน', exact: true }).click();
+	await dialog.getByLabel('ชื่อแผนการเรียน *').fill('วิทยาศาสตร์-คณิตศาสตร์');
+	await expect(dialog.getByLabel('รหัสหลักสูตร')).toHaveCount(0);
+	await expect(dialog.getByLabel('ชื่อภาษาอังกฤษ')).toHaveCount(0);
+	await expect(dialog.getByLabel('หน่วยงานเจ้าของหลักสูตร')).toHaveCount(0);
+	await dialog.getByRole('button', { name: 'สร้างแผนการเรียน', exact: true }).click();
+	await expect(dialog).toBeHidden();
+	expect(mocked.programRequest()).toEqual({ nameTh: 'วิทยาศาสตร์-คณิตศาสตร์', isDefault: false });
+	expect(mocked.managementOptionsRequestCount()).toBe(0);
 });

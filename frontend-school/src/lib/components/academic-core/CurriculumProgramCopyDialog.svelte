@@ -8,6 +8,8 @@
 		type CurriculumLevel,
 		type StudyProgram
 	} from '#lib/api/academic-core.js';
+	import { onDestroy } from 'svelte';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -26,23 +28,34 @@
 	let sourceLevelId = $state('');
 	let sourceProgramId = $state('');
 	let name = $state('');
-	let requestNo = 0;
+	const sourceRequest = new LatestRequest();
+	$effect(() => {
+		if (!open) sourceRequest.abort();
+	});
+	onDestroy(() => sourceRequest.abort());
 	let sourceProgram = $derived(programs.find((p) => p.id === sourceProgramId));
 	async function show() {
 		open = true;
+		sourceEditionId = '';
+		sourceLevelId = '';
+		sourceProgramId = '';
+		levels = [];
+		programs = [];
+		name = '';
 		error = '';
 		loading = true;
-		const current = ++requestNo;
+		const { revision, signal } = sourceRequest.begin();
 		try {
-			const result = await getCurriculumOverview();
-			if (current === requestNo)
+			const result = await getCurriculumOverview({ signal });
+			if (sourceRequest.isCurrent(revision))
 				editions = result.items
 					.map((item) => item.edition)
 					.filter((edition) => edition.status === 'published' && edition.isActive);
 		} catch (e) {
-			if (current === requestNo) error = e instanceof Error ? e.message : 'โหลดฉบับต้นทางไม่สำเร็จ';
+			if (sourceRequest.isCurrent(revision) && !isAbortError(e))
+				error = e instanceof Error ? e.message : 'โหลดฉบับต้นทางไม่สำเร็จ';
 		} finally {
-			if (current === requestNo) loading = false;
+			if (sourceRequest.isCurrent(revision)) loading = false;
 		}
 	}
 	async function chooseEdition(id: string) {
@@ -51,37 +64,38 @@
 		levels = [];
 		programs = [];
 		name = '';
-		if (!id) return;
-		loading = true;
+		const { revision, signal } = sourceRequest.begin();
+		loading = !!id;
 		error = '';
-		const current = ++requestNo;
+		if (!id) return;
 		try {
-			const result = await listCurriculumLevels(id);
-			if (current === requestNo)
+			const result = await listCurriculumLevels(id, { signal });
+			if (sourceRequest.isCurrent(revision))
 				levels = result.map((view) => view.level).filter((level) => level.isActive);
 		} catch (e) {
-			if (current === requestNo)
+			if (sourceRequest.isCurrent(revision) && !isAbortError(e))
 				error = e instanceof Error ? e.message : 'โหลดระดับต้นทางไม่สำเร็จ';
 		} finally {
-			if (current === requestNo) loading = false;
+			if (sourceRequest.isCurrent(revision)) loading = false;
 		}
 	}
 	async function chooseLevel(id: string) {
 		sourceProgramId = '';
 		programs = [];
 		name = '';
-		if (!id) return;
-		loading = true;
+		const { revision, signal } = sourceRequest.begin();
+		loading = !!id;
 		error = '';
-		const current = ++requestNo;
+		if (!id) return;
 		try {
-			const result = await listStudyPrograms(id);
-			if (current === requestNo)
+			const result = await listStudyPrograms(id, { signal });
+			if (sourceRequest.isCurrent(revision))
 				programs = result.filter((program) => program.status === 'published');
 		} catch (e) {
-			if (current === requestNo) error = e instanceof Error ? e.message : 'โหลดแผนต้นทางไม่สำเร็จ';
+			if (sourceRequest.isCurrent(revision) && !isAbortError(e))
+				error = e instanceof Error ? e.message : 'โหลดแผนต้นทางไม่สำเร็จ';
 		} finally {
-			if (current === requestNo) loading = false;
+			if (sourceRequest.isCurrent(revision)) loading = false;
 		}
 	}
 	async function save(event: SubmitEvent) {
@@ -116,11 +130,11 @@
 		>
 		<form class="space-y-4 py-2" onsubmit={save}>
 			<div class="space-y-2">
-				<Label>ฉบับต้นทาง *</Label><Select.Root
+				<Label for="copy-source-edition">ฉบับต้นทาง *</Label><Select.Root
 					type="single"
 					bind:value={sourceEditionId}
 					onValueChange={chooseEdition}
-					><Select.Trigger class="w-full"
+					><Select.Trigger id="copy-source-edition" class="w-full"
 						>{editions.find((e) => e.id === sourceEditionId)?.name ??
 							'เลือกฉบับหลักสูตร'}</Select.Trigger
 					><Select.Content
@@ -131,11 +145,14 @@
 				>
 			</div>
 			<div class="space-y-2">
-				<Label>ระดับการศึกษาต้นทาง *</Label><Select.Root
+				<Label for="copy-source-level">ระดับการศึกษาต้นทาง *</Label><Select.Root
 					type="single"
 					bind:value={sourceLevelId}
 					onValueChange={chooseLevel}
-					><Select.Trigger class="w-full" disabled={!sourceEditionId || loading}
+					><Select.Trigger
+						id="copy-source-level"
+						class="w-full"
+						disabled={!sourceEditionId || loading}
 						>{levels.find((l) => l.id === sourceLevelId)?.nameTh ??
 							'เลือกระดับการศึกษา'}</Select.Trigger
 					><Select.Content
@@ -146,8 +163,13 @@
 				>
 			</div>
 			<div class="space-y-2">
-				<Label>แผนต้นทาง *</Label><Select.Root type="single" bind:value={sourceProgramId}
-					><Select.Trigger class="w-full" disabled={!sourceLevelId || loading}
+				<Label for="copy-source-program">แผนต้นทาง *</Label><Select.Root
+					type="single"
+					bind:value={sourceProgramId}
+					><Select.Trigger
+						id="copy-source-program"
+						class="w-full"
+						disabled={!sourceLevelId || loading}
 						>{sourceProgram?.nameTh ?? 'เลือกแผนการเรียน'}</Select.Trigger
 					><Select.Content
 						>{#each programs as program (program.id)}<Select.Item value={program.id}
@@ -172,7 +194,7 @@
 					variant="outline"
 					disabled={saving}
 					onclick={() => {
-						requestNo++;
+						sourceRequest.abort();
 						open = false;
 					}}>ยกเลิก</Button
 				><LoadingButton

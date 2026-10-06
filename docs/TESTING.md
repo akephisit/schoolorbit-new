@@ -329,8 +329,8 @@ The readonly live spec also accepts `SMOKE_USERNAME/PASSWORD` for its staff logi
 
 The Delivery spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.
 The catalog spec checks the three route-owned list regions, focused retry, local group patching, and lazy history after create.
-The foundation spec checks route-first setup/curriculum regions, focused retry, lazy period/create-option reads, and a create mutation surviving a stale overview response.
-The curriculum detail spec checks concurrent explicit-version reads, default-version dependency, regional skeleton/retry, lazy management options, and clone behavior without per-row requests.
+The foundation spec checks route-first setup/curriculum regions, focused retry, lazy period reads, and edition creation without owner/grade lookups surviving a stale overview response.
+The curriculum detail spec checks independent edition/level reads, regional retry, invalid or mismatched level refusal, read-only alignment, covered-grade level creation, plan creation and copying a selected published program with conflict handling. Copy and later-year room-selection scenarios cover desktop/mobile in light/dark themes. Database tests additionally verify whole-edition atomic publication, source preservation, semantic term-slot copying, uncovered-grade and stale-revision refusal, migration retry and permission-grant metadata preservation.
 
 For coordinated school release behavior, run:
 

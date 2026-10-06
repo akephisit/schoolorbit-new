@@ -74,6 +74,7 @@
 			alignmentLoading = !!ap;
 			studyProgramId = data.studyProgramId;
 			editorOpen = false;
+			editorLoading = false;
 			loading = true;
 			error = '';
 		});
@@ -180,18 +181,21 @@
 	async function retryAlignment() {
 		const context = data.alignmentContext;
 		if (!context) return;
+		const { revision, signal } = alignmentRequest.begin();
 		alignmentLoading = true;
 		alignmentError = '';
 		try {
-			alignment = await getHomeroomDeliveryWorkspace(
+			const result = await getHomeroomDeliveryWorkspace(
 				context.academicYearId,
 				context.academicTermId,
-				{ deliveryVersionId: context.deliveryVersionId }
+				{ deliveryVersionId: context.deliveryVersionId, signal }
 			);
+			if (alignmentRequest.isCurrent(revision)) alignment = result;
 		} catch (e) {
-			alignmentError = e instanceof Error ? e.message : 'โหลดข้อมูลเทียบการเปิดสอนไม่สำเร็จ';
+			if (alignmentRequest.isCurrent(revision) && !isAbortError(e))
+				alignmentError = e instanceof Error ? e.message : 'โหลดข้อมูลเทียบการเปิดสอนไม่สำเร็จ';
 		} finally {
-			alignmentLoading = false;
+			if (alignmentRequest.isCurrent(revision)) alignmentLoading = false;
 		}
 	}
 </script>
@@ -266,6 +270,7 @@
 					bind:studyProgramId
 					{canManage}
 					onEdit={edit}
+					busy={editorLoading}
 				/>{#if viewMode === 'comparison'}<CurriculumProgramComparison
 						{workspace}
 						{gradeLevelId}

@@ -336,18 +336,18 @@ export const updateCurriculum = (id: string, body: UpdateCurriculumRequest) =>
 export const listCurriculumLevels = (curriculumId: string, options: ApiRequestOptions = {}) =>
 	academicData(
 		apiClient.get<CurriculumLevelView[]>(`/api/academic/curricula/${curriculumId}/levels`, options),
-		'ไม่สามารถโหลดรุ่นหลักสูตรได้'
+		'ไม่สามารถโหลดระดับการศึกษาได้'
 	);
 export const createCurriculumLevel = (curriculumId: string, body: CreateCurriculumLevelRequest) =>
 	academicData(
 		apiClient.post<CurriculumLevel>(`/api/academic/curricula/${curriculumId}/levels`, body),
-		'สร้างรุ่นหลักสูตรไม่สำเร็จ'
+		'เพิ่มระดับการศึกษาไม่สำเร็จ'
 	);
 
 export const updateCurriculumLevel = (id: string, body: UpdateCurriculumLevelRequest) =>
 	academicData(
 		apiClient.patch<CurriculumLevel>(`/api/academic/curriculum-levels/${id}`, body),
-		'แก้ไขรุ่นหลักสูตรไม่สำเร็จ'
+		'แก้ไขระดับการศึกษาไม่สำเร็จ'
 	);
 export const publishCurriculum = (id: string, body: PublishVersionRequest) =>
 	academicData(

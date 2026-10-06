@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		getCurriculum,
 		listCurriculumLevels,
@@ -29,6 +30,8 @@
 	let actionError = $state('');
 	let editionRevision = 0;
 	let levelsRevision = 0;
+	const editionRequest = new LatestRequest();
+	const levelsRequest = new LatestRequest();
 	let canManage = $derived($can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL));
 	$effect.pre(() => {
 		const ep = data.edition;
@@ -44,6 +47,7 @@
 			editionError = '';
 			levelsError = '';
 			actionError = '';
+			publishing = false;
 		});
 		void ep.then((r) => {
 			if (!current) return;
@@ -61,6 +65,8 @@
 		});
 		return () => {
 			current = false;
+			editionRequest.abort();
+			levelsRequest.abort();
 		};
 	});
 	function saved(result: CurriculumEdition) {
@@ -72,38 +78,59 @@
 		levels = [...levels, { level }];
 	}
 	async function retryEdition() {
+		const id = data.editionId;
+		const mutation = editionRevision;
+		const { revision, signal } = editionRequest.begin();
 		editionLoading = true;
 		editionError = '';
 		try {
-			edition = await getCurriculum(data.editionId);
+			const result = await getCurriculum(id, { signal });
+			if (
+				editionRequest.isCurrent(revision) &&
+				id === data.editionId &&
+				mutation === editionRevision
+			)
+				edition = result;
 		} catch (e) {
-			editionError = e instanceof Error ? e.message : 'โหลดฉบับไม่สำเร็จ';
+			if (editionRequest.isCurrent(revision) && !isAbortError(e))
+				editionError = e instanceof Error ? e.message : 'โหลดฉบับไม่สำเร็จ';
 		} finally {
-			editionLoading = false;
+			if (editionRequest.isCurrent(revision)) editionLoading = false;
 		}
 	}
 	async function retryLevels() {
+		const id = data.editionId;
+		const mutation = levelsRevision;
+		const { revision, signal } = levelsRequest.begin();
 		levelsLoading = true;
 		levelsError = '';
 		try {
-			levels = await listCurriculumLevels(data.editionId);
+			const result = await listCurriculumLevels(id, { signal });
+			if (levelsRequest.isCurrent(revision) && id === data.editionId && mutation === levelsRevision)
+				levels = result;
 		} catch (e) {
-			levelsError = e instanceof Error ? e.message : 'โหลดระดับไม่สำเร็จ';
+			if (levelsRequest.isCurrent(revision) && !isAbortError(e))
+				levelsError = e instanceof Error ? e.message : 'โหลดระดับไม่สำเร็จ';
 		} finally {
-			levelsLoading = false;
+			if (levelsRequest.isCurrent(revision)) levelsLoading = false;
 		}
 	}
 	async function publish() {
-		if (!edition) return;
+		if (!edition || publishing) return;
+		const selected = edition;
 		publishing = true;
 		actionError = '';
 		try {
-			saved(await publishCurriculum(edition.id, { rowVersion: edition.rowVersion }));
+			const result = await publishCurriculum(selected.id, { rowVersion: selected.rowVersion });
+			if (data.editionId !== selected.id) return;
+			saved(result);
+			levelsRevision++;
 			levels = levels.map(({ level }) => ({ level: { ...level, status: 'published' } }));
 		} catch (e) {
-			actionError = e instanceof Error ? e.message : 'เผยแพร่ไม่สำเร็จ';
+			if (data.editionId === selected.id)
+				actionError = e instanceof Error ? e.message : 'เผยแพร่ไม่สำเร็จ';
 		} finally {
-			publishing = false;
+			if (data.editionId === selected.id) publishing = false;
 		}
 	}
 </script>

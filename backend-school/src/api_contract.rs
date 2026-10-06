@@ -3400,7 +3400,7 @@ mod tests {
                 "#/components/schemas/ApiResponse_CurriculumManagementOptions",
             ),
             (
-                "/api/academic/curriculum-levels/{curriculumLevelId}/structure",
+                "/api/academic/curriculum-levels/{id}/structure",
                 "getCurriculumStructureWorkspace",
                 "#/components/schemas/ApiResponse_CurriculumStructureWorkspace",
             ),
@@ -3444,8 +3444,8 @@ mod tests {
             );
         }
         assert_eq!(
-            document["paths"]["/api/academic/curriculum-levels/{curriculumLevelId}/structure"]
-                ["get"]["responses"]["404"]["content"]["application/json"]["schema"]["$ref"],
+            document["paths"]["/api/academic/curriculum-levels/{id}/structure"]["get"]["responses"]
+                ["404"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiErrorResponse"
         );
         assert_eq!(
@@ -3475,7 +3475,7 @@ mod tests {
     }
 
     #[test]
-    fn curriculum_alignment_and_clone_handoff_are_typed() {
+    fn curriculum_alignment_and_selected_program_copy_are_typed() {
         let document = school_api_value().expect("document should serialize");
         assert!(document["paths"]["/api/academic/delivery/page-view"].is_null());
         assert!(document["components"]["schemas"]["LearningDeliveryPageView"].is_null());
@@ -3511,15 +3511,15 @@ mod tests {
         }
 
         let operation =
-            &document["paths"]["/api/academic/curriculum-levels/{id}/clone-draft"]["post"];
-        assert_eq!(operation["operationId"], "cloneCurriculumLevelDraft");
+            &document["paths"]["/api/academic/curriculum-levels/{id}/copy-program"]["post"];
+        assert_eq!(operation["operationId"], "copyStudyProgram");
         assert_eq!(
             operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/CopyStudyProgramRequest"
         );
         assert_eq!(
             operation["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_CurriculumLevel"
+            "#/components/schemas/ApiResponse_StudyProgram"
         );
         for status in ["400", "401", "403", "404", "409"] {
             assert_eq!(
