@@ -4451,8 +4451,10 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         r#"SELECT program.id
            FROM study_programs program
            JOIN curriculum_versions version ON version.id = program.curriculum_version_id
+           JOIN academic_years former_ending_year ON former_ending_year.id =
+               (version.migration_provenance->'revisionSelection'->>'legacyEndAcademicYearId')::uuid
            JOIN academic_years selected_year ON selected_year.id = $1
-           WHERE version.revision_year < selected_year.year
+           WHERE former_ending_year.end_date < selected_year.start_date
            ORDER BY program.id
            LIMIT 1"#,
     )
@@ -4469,8 +4471,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     )
     .await;
     assert!(
-        earlier_edition.is_ok(),
-        "an explicitly selected earlier edition remains usable: {earlier_edition:?}"
+        matches!(&earlier_edition, Err(AppError::ValidationError(message))
+            if message == "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก"),
+        "the earlier plan passes selection, while its expired catalog version remains guarded: {earlier_edition:?}"
     );
 
     let preview = offerings::preview_from_curriculum(

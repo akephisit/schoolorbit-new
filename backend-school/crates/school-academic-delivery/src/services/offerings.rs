@@ -1671,7 +1671,6 @@ async fn build_curriculum_preview_for_term(
     );
     let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(sqlx::AssertSqlSafe(valid_program_query))
         .bind(program_ids)
-        .bind(term.academic_year_id)
         .fetch_all(&mut **transaction)
         .await?;
     if valid_program_ids.len() != program_ids.len() {
