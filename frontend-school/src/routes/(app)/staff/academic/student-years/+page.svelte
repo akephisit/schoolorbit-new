@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { untrack } from 'svelte';
+	import { studyProgramLabel } from '#lib/academic-core/curriculum-presentation.js';
 	import {
 		createHomeroomPlacement,
 		createStudentAcademicYear,
@@ -444,13 +445,13 @@
 							>{@const program = programOptions.find(
 								(option) => option.id === createDraft.studyProgramId
 							)}{program
-								? `${program.curriculumName} · ${program.name}`
+								? studyProgramLabel(program)
 								: createOptionsLoading
 									? 'กำลังโหลดแผนการเรียน…'
 									: 'เลือกแผนการเรียน'}</Select.Trigger
 						><Select.Content
 							>{#each programOptions as option (option.id)}<Select.Item value={option.id}
-									>{option.curriculumName} · {option.name}</Select.Item
+									>{studyProgramLabel(option)}</Select.Item
 								>{/each}</Select.Content
 						></Select.Root
 					>

@@ -47,7 +47,8 @@ test('curriculum overview is read-first and uses labeled grade selection', async
 	assert.doesNotMatch(page, /getCurriculumCreateOptions\([\s\S]*onMount/);
 	assert.doesNotMatch(page, /gradeLevelIds:\s*''/);
 	assert.doesNotMatch(page, /รหัสระดับชั้น/);
-	assert.match(table, /startAcademicYearName/);
+	assert.doesNotMatch(table, /startAcademicYearName|endAcademicYearName/);
+	assert.match(page, /groupCurriculaByRevision/);
 	assert.match(table, /studyProgramCount/);
 });
 
@@ -83,9 +84,9 @@ test('curriculum detail is deep-linked and uses labeled management options', asy
 	assert.match(page, /getCurriculumManagementOptions/);
 	assert.doesNotMatch(page, /listAcademicYears/);
 	assert.match(page, /CurriculumVersionView/);
-	assert.match(versionPanel, /startAcademicYearName/);
-	assert.match(versionPanel, /endAcademicYearName/);
-	assert.match(versionPanel, /สร้างหลักสูตรรุ่นใหม่แบบร่าง/);
+	assert.match(versionPanel, /revisionYear/);
+	assert.doesNotMatch(versionPanel, /startAcademicYearName|endAcademicYearName/);
+	assert.match(versionPanel, /สร้างฉบับปรับปรุงแบบร่าง/);
 	assert.match(versionPanel, /ต้นฉบับที่เผยแพร่จะไม่เปลี่ยน/);
 	assert.match(versionPanel, /sourceRowVersion/);
 	assert.match(page, /getHomeroomDeliveryWorkspace/);

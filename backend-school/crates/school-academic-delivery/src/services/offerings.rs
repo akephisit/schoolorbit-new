@@ -1666,11 +1666,7 @@ async fn build_curriculum_preview_for_term(
          JOIN curriculum_versions version ON version.id = program.curriculum_version_id \
          WHERE program.id = ANY($1) AND program.status = 'published' \
            AND version.status = 'published' \
-           AND (SELECT start_date FROM academic_years WHERE id = version.start_academic_year_id) \
-               <= (SELECT start_date FROM academic_years WHERE id = $2) \
-           AND (version.end_academic_year_id IS NULL OR \
-                (SELECT end_date FROM academic_years WHERE id = version.end_academic_year_id) \
-                    >= (SELECT start_date FROM academic_years WHERE id = $2)){}",
+           AND EXISTS (SELECT 1 FROM curricula curriculum WHERE curriculum.id=version.curriculum_id AND curriculum.is_active IS TRUE){}",
         if lock_rows { " FOR SHARE" } else { "" }
     );
     let valid_program_ids: Vec<Uuid> = sqlx::query_scalar(sqlx::AssertSqlSafe(valid_program_query))

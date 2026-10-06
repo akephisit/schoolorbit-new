@@ -43,7 +43,7 @@ pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 60).await.unwrap();
+    apply_migrations_through(&pool, 92).await.unwrap();
     pool
 }
 
@@ -588,8 +588,8 @@ async fn lifecycle_exclusive_term_writers_serialize_without_shared_lock_upgrades
 async fn create_published_program_option_fixture(
     pool: &PgPool,
     owner_id: Uuid,
-    start_academic_year_id: Uuid,
-    end_academic_year_id: Option<Uuid>,
+    _legacy_start_academic_year_id: Uuid,
+    _legacy_end_academic_year_id: Option<Uuid>,
     code: &str,
 ) -> (Uuid, Uuid) {
     let grade_level_id: Uuid =
@@ -630,8 +630,7 @@ async fn create_published_program_option_fixture(
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: format!("ฉบับ {code}"),
-            start_academic_year_id,
-            end_academic_year_id,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -707,8 +706,8 @@ async fn create_curriculum_overview_fixture(
     grade_level_id: Uuid,
     subject_version_id: Uuid,
     code: &str,
-    start_academic_year_id: Uuid,
-    end_academic_year_id: Option<Uuid>,
+    _legacy_start_academic_year_id: Uuid,
+    _legacy_end_academic_year_id: Option<Uuid>,
     publish: bool,
     program_count: usize,
 ) -> (Uuid, Uuid) {
@@ -730,8 +729,7 @@ async fn create_curriculum_overview_fixture(
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: format!("ฉบับ {code}"),
-            start_academic_year_id,
-            end_academic_year_id,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -925,8 +923,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
         source_version_id,
         CloneCurriculumVersionRequest {
             version_name: "ฉบับอนาคต stale".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: Some("ไม่ควรถูกสร้าง".to_string()),
             source_row_version: published.row_version + 1,
         },
@@ -940,8 +937,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
         source_version_id,
         CloneCurriculumVersionRequest {
             version_name: "ฉบับอนาคต".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: Some("คัดลอกจากฉบับที่เผยแพร่".to_string()),
             source_row_version: published.row_version,
         },
@@ -950,7 +946,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
     .unwrap();
     assert_eq!(cloned.curriculum_id, curriculum_id);
     assert_eq!(cloned.status, VersionStatus::Draft);
-    assert_eq!(cloned.start_academic_year_id, FUTURE_YEAR_ID);
+    assert_eq!(cloned.revision_year, Some(2569));
     let cloned_workspace = curriculum_structure::get_workspace(&pool, cloned.id)
         .await
         .unwrap();
@@ -1051,8 +1047,7 @@ async fn published_curriculum_clone_copies_the_complete_structure_into_a_future_
         cloned.id,
         CloneCurriculumVersionRequest {
             version_name: "ซ้อนแบบร่าง".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
             source_row_version: cloned.row_version,
         },
@@ -1113,8 +1108,7 @@ async fn curriculum_structure_workspace_reads_catalog_metrics_and_dynamic_term_s
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับโครงสร้าง".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -1225,8 +1219,7 @@ async fn curriculum_term_slots_are_draft_only_and_cannot_remove_a_referenced_slo
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับภาคเรียนยืดหยุ่น".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -2219,16 +2212,13 @@ async fn student_year_candidates_include_only_students_missing_the_target_year()
         FROM grade_levels grade
         CROSS JOIN study_programs program
         JOIN curriculum_versions version ON version.id = program.curriculum_version_id
-        JOIN academic_years starts ON starts.id = version.start_academic_year_id
-        JOIN academic_years target ON target.id = $1
-        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
-        WHERE starts.start_date <= target.start_date
-          AND (ends.end_date IS NULL OR ends.end_date >= target.end_date)
+        JOIN curricula curriculum ON curriculum.id=version.curriculum_id
+        WHERE program.status='published' AND version.status='published'
+          AND curriculum.grade_level_ids @> jsonb_build_array(grade.id::text)
         ORDER BY grade.level_type, grade.year, program.id
         LIMIT 1
         "#,
     )
-    .bind(FUTURE_YEAR_ID)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -3049,8 +3039,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
         draft_curriculum.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับร่าง".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -3088,7 +3077,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
     assert_eq!(current_option.name, "แผนการเรียน CURRENT");
     assert_eq!(current_option.curriculum_id, current_curriculum_id);
     assert_eq!(current_option.curriculum_name, "หลักสูตรตัวเลือก CURRENT");
-    assert!(!school_options
+    assert!(school_options
         .iter()
         .any(|option| option.id == future_program_id));
     assert!(!school_options
@@ -3131,7 +3120,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
     assert!(owner_tree
         .iter()
         .any(|option| option.id == current_program_id));
-    assert!(!owner_tree
+    assert!(owner_tree
         .iter()
         .any(|option| option.id == future_program_id));
     assert!(!owner_tree
@@ -3151,7 +3140,7 @@ async fn study_program_options_are_published_effective_and_authorized() {
     assert!(future_options
         .iter()
         .any(|option| option.id == future_program_id));
-    assert!(!future_options
+    assert!(future_options
         .iter()
         .any(|option| option.id == expired_program_id));
 
@@ -3937,8 +3926,7 @@ async fn curriculum_overview_resolves_display_versions_and_labels() {
         current_id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับร่าง CUR-A".to_string(),
-            start_academic_year_id: next_year_id,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4020,22 +4008,26 @@ async fn curriculum_overview_resolves_display_versions_and_labels() {
     assert_eq!(overview.items[0].curriculum.code, "CUR-A");
     assert_eq!(
         overview.items[0].display_state,
-        CurriculumDisplayState::Current
+        CurriculumDisplayState::Published
     );
     assert_eq!(overview.items[0].study_program_count, 2);
     assert_eq!(overview.items[0].draft_count, 1);
     assert_eq!(overview.items[0].grade_levels[0].name, "มัธยมศึกษาปีที่ 1");
     assert_eq!(
-        overview.items[0].start_academic_year_name.as_deref(),
-        Some("ปีการศึกษา 2026")
+        overview.items[0]
+            .display_version
+            .as_ref()
+            .unwrap()
+            .revision_year,
+        Some(2569)
     );
     assert_eq!(
         overview.items[1].display_state,
-        CurriculumDisplayState::Upcoming
+        CurriculumDisplayState::Published
     );
     assert_eq!(
         overview.items[2].display_state,
-        CurriculumDisplayState::Expired
+        CurriculumDisplayState::Published
     );
     assert_eq!(
         overview.items[3].display_state,
@@ -4093,8 +4085,7 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับตัวเลือก".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4241,10 +4232,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
         .await
         .unwrap();
     assert!(options
-        .academic_years
-        .windows(2)
-        .all(|pair| pair[0].year >= pair[1].year));
-    assert!(options
         .catalog_versions
         .iter()
         .any(|option| option.id == subject_version.id
@@ -4347,8 +4334,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับ workspace".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4451,8 +4437,7 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         other_curriculum.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับอื่น".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4679,8 +4664,7 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับ 2026".to_string(),
-            start_academic_year_id: FUTURE_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )
@@ -4849,8 +4833,7 @@ async fn curriculum_publication_rejects_missing_official_catalog_metrics() {
         curriculum_row.id,
         CreateCurriculumVersionRequest {
             version_name: "ฉบับข้อมูลไม่ครบ".to_string(),
-            start_academic_year_id: CURRENT_YEAR_ID,
-            end_academic_year_id: None,
+            revision_year: 2569,
             description: None,
         },
     )

@@ -14,7 +14,6 @@
 		createCurriculumVersion,
 		createStudyProgram,
 		getCurriculum,
-		getCurriculumCreateOptions,
 		getCurriculumManagementOptions,
 		getCurriculumStructureWorkspace,
 		listCurriculumVersions,
@@ -25,7 +24,6 @@
 		type CloneCurriculumVersionRequest,
 		type CreateStudyProgramRequest,
 		type Curriculum,
-		type CurriculumCreateOptions,
 		type CurriculumManagementOptions,
 		type CurriculumStructureRequirementInput,
 		type CurriculumStructureWorkspace,
@@ -62,7 +60,6 @@
 	let versions = $state.raw<CurriculumVersionView[]>([]);
 	let selectedVersion = $state.raw<CurriculumVersionView | null>(null);
 	let workspace = $state.raw<CurriculumStructureWorkspace | null>(null);
-	let createOptions = $state.raw<CurriculumCreateOptions | null>(null);
 	let alignmentWorkspace = $state.raw<HomeroomDeliveryWorkspace | null>(null);
 	let curriculumLoading = $state(true);
 	let versionsLoading = $state(true);
@@ -151,7 +148,7 @@
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (versionsRequest.isCurrent(revision))
-				versionsError = error instanceof Error ? error.message : 'โหลดรายการรุ่นหลักสูตรไม่สำเร็จ';
+				versionsError = error instanceof Error ? error.message : 'โหลดรายการฉบับหลักสูตรไม่สำเร็จ';
 		} finally {
 			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
 		}
@@ -164,13 +161,13 @@
 		try {
 			const loadedWorkspace = await getCurriculumStructureWorkspace(versionId, { signal });
 			if (loadedWorkspace.curriculumVersion.curriculumId !== curriculumId)
-				throw new Error('รุ่นหลักสูตรไม่อยู่ในหลักสูตรที่เลือก');
+				throw new Error('ฉบับหลักสูตรไม่อยู่ในหลักสูตรที่เลือก');
 			if (!versionRequest.isCurrent(revision)) return;
 			applyWorkspace(loadedWorkspace);
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (versionRequest.isCurrent(revision)) {
-				workspaceError = error instanceof Error ? error.message : 'โหลดรุ่นหลักสูตรไม่สำเร็จ';
+				workspaceError = error instanceof Error ? error.message : 'โหลดฉบับหลักสูตรไม่สำเร็จ';
 			}
 		} finally {
 			if (versionRequest.isCurrent(revision)) workspaceLoading = false;
@@ -233,42 +230,17 @@
 		return loaded;
 	}
 
-	async function requestCreateOptions() {
-		if (!canManageAcademicCurriculum) return null;
-		if (createOptions) return createOptions;
-		createOptions = await getCurriculumCreateOptions();
-		return createOptions;
-	}
-
 	async function createVersion(draft: CreateCurriculumVersionRequest) {
-		const options = await requestCreateOptions();
-		if (!options) throw new Error('ไม่มีสิทธิ์สร้างรุ่นหลักสูตร');
 		const created = await createCurriculumVersion(curriculumId, draft);
-		const start = options.academicYears.find((year) => year.id === created.startAcademicYearId);
-		const end = options.academicYears.find((year) => year.id === created.endAcademicYearId);
-		if (!start) throw new Error('สร้างรุ่นสำเร็จแต่ไม่พบชื่อปีเริ่มใช้ กรุณาโหลดหน้าใหม่');
-		const createdView: CurriculumVersionView = {
-			version: created,
-			startAcademicYearName: start.name,
-			endAcademicYearName: end?.name ?? null
-		};
+		const createdView: CurriculumVersionView = { version: created };
 		mutationRevision += 1;
 		versions = [createdView, ...versions];
 		await loadVersion(createdView);
 	}
 
 	async function cloneVersion(sourceVersionId: string, draft: CloneCurriculumVersionRequest) {
-		const options = await requestCreateOptions();
-		if (!options) throw new Error('ไม่มีสิทธิ์สร้างรุ่นหลักสูตร');
 		const created = await cloneCurriculumVersionDraft(sourceVersionId, draft);
-		const start = options.academicYears.find((year) => year.id === created.startAcademicYearId);
-		const end = options.academicYears.find((year) => year.id === created.endAcademicYearId);
-		if (!start) throw new Error('สร้างรุ่นสำเร็จแต่ไม่พบชื่อปีเริ่มใช้ กรุณาโหลดหน้าใหม่');
-		const createdView: CurriculumVersionView = {
-			version: created,
-			startAcademicYearName: start.name,
-			endAcademicYearName: end?.name ?? null
-		};
+		const createdView: CurriculumVersionView = { version: created };
 		mutationRevision += 1;
 		versions = [createdView, ...versions.filter((view) => view.version.id !== created.id)];
 		await loadVersion(createdView);
@@ -340,7 +312,6 @@
 				versions = [];
 				selectedVersion = null;
 				applyWorkspace(null);
-				createOptions = null;
 				managementCache.clear();
 				activeCurriculumId = id;
 			}
@@ -441,7 +412,7 @@
 
 <PageShell
 	title={curriculum?.nameTh ?? 'รายละเอียดหลักสูตร'}
-	description="จัดรุ่น แผนการเรียน และรายการรายวิชาหรือกิจกรรมด้วยชื่อที่อ่านเข้าใจได้"
+	description="จัดฉบับหลักสูตร แผนการเรียน และรายการรายวิชาหรือกิจกรรมด้วยชื่อที่อ่านเข้าใจได้"
 >
 	{#snippet actions()}
 		<Button href="/staff/academic/curricula" variant="outline">
@@ -479,21 +450,20 @@
 				{:else if versionsError && versions.length === 0}
 					<PageState
 						variant="error"
-						title="โหลดรายการรุ่นหลักสูตรไม่สำเร็จ"
+						title="โหลดรายการฉบับหลักสูตรไม่สำเร็จ"
 						description={versionsError}
 						actionLabel="ลองอีกครั้ง"
 						onaction={retryVersions}
 					/>
 				{:else}
 					<div class="relative" aria-busy={versionsLoading}>
-						{#if versionsLoading}<RegionUpdatingState label="กำลังอัปเดตรายการรุ่นหลักสูตร" />{/if}
+						{#if versionsLoading}<RegionUpdatingState label="กำลังอัปเดตรายการฉบับหลักสูตร" />{/if}
 						<CurriculumVersionPanel
 							{curriculum}
 							{versions}
 							{selectedVersion}
 							canManage={canManageAcademicCurriculum}
 							onSelectVersion={loadVersion}
-							onRequestCreateOptions={requestCreateOptions}
 							onCreateVersion={createVersion}
 							onCloneVersion={cloneVersion}
 						/>
@@ -609,7 +579,7 @@
 								onclick={() =>
 									void publishVersion(workspace!.curriculumVersion.id, workspace!.rowVersion)}
 							>
-								เผยแพร่รุ่นหลักสูตร
+								เผยแพร่ฉบับหลักสูตร
 							</Button>
 						</div>
 					{/if}
@@ -628,8 +598,8 @@
 			{/key}
 		{:else if !versionsLoading && !versionsError}
 			<PageState
-				title="ยังไม่มีรุ่นหลักสูตร"
-				description="สร้างรุ่นแบบร่างเพื่อเริ่มกำหนดแผนการเรียนและรายการในแผน"
+				title="ยังไม่มีฉบับหลักสูตร"
+				description="สร้างฉบับแบบร่างเพื่อเริ่มกำหนดแผนการเรียนและรายการในแผน"
 			/>
 		{/if}
 	</div>

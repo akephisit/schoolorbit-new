@@ -122,14 +122,13 @@ function curriculumVersion(
 	id: string,
 	status: 'draft' | 'published',
 	versionName: string,
-	startAcademicYearId = ids.year
+	revisionYear = 2569
 ) {
 	return {
 		id,
 		curriculumId: ids.curriculum,
 		versionName,
-		startAcademicYearId,
-		endAcademicYearId: null,
+		revisionYear,
 		description: null,
 		status,
 		rowVersion: status === 'published' ? 4 : 1,
@@ -355,21 +354,12 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				if (options.versionsGate) await options.versionsGate;
 				await fulfill(route, [
 					{
-						version: curriculumVersion(ids.curriculumVersion, 'published', 'ฉบับ 2569'),
-						startAcademicYearName: 'ปีการศึกษา 2569',
-						endAcademicYearName: null
+						version: curriculumVersion(ids.curriculumVersion, 'published', 'ฉบับ 2569')
 					},
 					...(options.includeSecondVersion
 						? [
 								{
-									version: curriculumVersion(
-										ids.clonedVersion,
-										'draft',
-										'ฉบับ 2570',
-										ids.futureYear
-									),
-									startAcademicYearName: 'ปีการศึกษา 2570',
-									endAcademicYearName: null
+									version: curriculumVersion(ids.clonedVersion, 'draft', 'ฉบับ 2570', 2570)
 								}
 							]
 						: [])
@@ -398,7 +388,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 					await options.secondStructureGate;
 				const version =
 					versionId === ids.clonedVersion
-						? curriculumVersion(ids.clonedVersion, 'draft', 'ฉบับ 2570', ids.futureYear)
+						? curriculumVersion(ids.clonedVersion, 'draft', 'ฉบับ 2570', 2570)
 						: curriculumVersion(ids.curriculumVersion, 'published', 'ฉบับ 2569');
 				await fulfill(route, curriculumStructure(version));
 				return;
@@ -440,7 +430,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 						ids.clonedVersion,
 						'draft',
 						String(cloneBody.versionName),
-						ids.futureYear
+						Number(cloneBody.revisionYear)
 					),
 					201
 				);
@@ -526,7 +516,7 @@ test('read-only curriculum context inspects one workspace without management or 
 	await expect(page.getByRole('heading', { name: 'เทียบการเปิดสอนกับหลักสูตร' })).toBeVisible();
 	await expect(page.getByText('คาบจริงต่างจากค่ามาตรฐานในหลักสูตร')).toBeVisible();
 	await expect(page.getByText('วิทยาศาสตร์เสริม')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'สร้างหลักสูตรรุ่นใหม่แบบร่าง' })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' })).toHaveCount(0);
 	expect(mocked.workspaceQueries).toHaveLength(1);
 	expect(mocked.workspaceQueries[0]?.get('deliveryVersionId')).toBe(ids.deliveryVersion);
 	expect(mocked.workspaceQueries[0]?.has('timetableVersionId')).toBe(false);
@@ -715,7 +705,7 @@ test('a late first-version route response cannot replace a newly selected versio
 		await expect(page.getByRole('button', { name: /ฉบับ 2570/ })).toBeVisible();
 		await page.getByRole('button', { name: /ฉบับ 2570/ }).click();
 		await expect(page).toHaveURL(new RegExp(`versionId=${ids.clonedVersion}`));
-		await expect(page.getByRole('button', { name: 'เผยแพร่รุ่นหลักสูตร' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร' })).toBeVisible();
 	} finally {
 		firstGate.release();
 	}
@@ -730,38 +720,37 @@ test('manager clones the published source into a selected future draft and keeps
 	const mocked = await mockShell(page);
 	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
 
-	await page.getByRole('button', { name: 'สร้างหลักสูตรรุ่นใหม่แบบร่าง' }).click();
+	await page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' }).click();
 	const dialog = page.getByRole('dialog');
 	await expect(dialog.getByText('ต้นฉบับที่เผยแพร่จะไม่เปลี่ยน')).toBeVisible();
-	await expect(dialog.getByText('ปีการศึกษา 2570')).toBeVisible();
-	await dialog.getByLabel('ชื่อรุ่น').fill('ฉบับ 2570');
+	await dialog.getByLabel('ปีปรับปรุงหลักสูตร (พุทธศักราช)').fill('2570');
+	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2570');
 	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
 
 	await expect(page.getByRole('button', { name: /ฉบับ 2570/ })).toBeVisible();
 	await expect(page.getByRole('button', { name: /ฉบับ 2569/ })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'เผยแพร่รุ่นหลักสูตร' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร' })).toBeVisible();
 	expect(mocked.cloneRequest()).toEqual({
 		versionName: 'ฉบับ 2570',
-		startAcademicYearId: ids.futureYear,
-		endAcademicYearId: null,
+		revisionYear: 2570,
 		description: null,
 		sourceRowVersion: 4
 	});
 	expect(mocked.cloneAttemptCount()).toBe(1);
-	expect(mocked.createOptionsRequestCount()).toBe(1);
+	expect(mocked.createOptionsRequestCount()).toBe(0);
 });
 
 test('stale clone keeps the draft intact and succeeds on an explicit retry', async ({ page }) => {
 	const mocked = await mockShell(page, { cloneConflictsOnce: true });
 	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
 
-	await page.getByRole('button', { name: 'สร้างหลักสูตรรุ่นใหม่แบบร่าง' }).click();
+	await page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('ชื่อรุ่น').fill('ฉบับ 2570 ปรับปรุง');
+	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2570 ปรับปรุง');
 	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
 
 	await expect(dialog.getByRole('alert')).toContainText('กรุณาโหลดข้อมูลล่าสุด');
-	await expect(dialog.getByLabel('ชื่อรุ่น')).toHaveValue('ฉบับ 2570 ปรับปรุง');
+	await expect(dialog.getByLabel('ชื่อฉบับ (ถ้ามี)')).toHaveValue('ฉบับ 2570 ปรับปรุง');
 	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
 
 	await expect(page.getByRole('button', { name: /ฉบับ 2570 ปรับปรุง/ })).toBeVisible();

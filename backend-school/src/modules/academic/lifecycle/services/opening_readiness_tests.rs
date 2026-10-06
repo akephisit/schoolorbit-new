@@ -258,11 +258,10 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
     .await
     .unwrap();
     let version: Uuid = sqlx::query_scalar(
-        "INSERT INTO curriculum_versions(curriculum_id,version_name,start_academic_year_id,status)
-         VALUES($1,'E2E-OPEN-ROOM',$2,'draft') RETURNING id",
+        "INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status)
+         VALUES($1,'E2E-OPEN-ROOM',2569,'draft') RETURNING id",
     )
     .bind(curriculum)
-    .bind(year.id)
     .fetch_one(&pool)
     .await
     .unwrap();

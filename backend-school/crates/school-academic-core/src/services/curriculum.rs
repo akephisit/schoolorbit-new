@@ -13,7 +13,7 @@ use super::super::models::{
 use super::{ensure_draft_version, parse_row_version};
 
 const VERSION_COLUMNS: &str = r#"
-    id, curriculum_id, version_name, start_academic_year_id, end_academic_year_id,
+    id, curriculum_id, version_name, revision_year,
     description, status, published_at, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
@@ -146,49 +146,35 @@ pub async fn create_version(
     curriculum_id: Uuid,
     request: CreateCurriculumVersionRequest,
 ) -> Result<CurriculumVersion, AppError> {
-    validate_version_fields(pool, &request).await?;
+    validate_version_fields(&request)?;
     get(pool, curriculum_id).await?;
     let id = Uuid::new_v4();
     let mut transaction = pool.begin().await?;
     sqlx::query(
         r#"
         INSERT INTO curriculum_versions (
-            id, curriculum_id, version_name, start_academic_year_id,
-            end_academic_year_id, description, is_active, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, true, 'draft')
+            id, curriculum_id, version_name, revision_year, description, is_active, status
+        ) VALUES ($1, $2, $3, $4, $5, true, 'draft')
         "#,
     )
     .bind(id)
     .bind(curriculum_id)
     .bind(request.version_name.trim())
-    .bind(request.start_academic_year_id)
-    .bind(request.end_academic_year_id)
+    .bind(request.revision_year)
     .bind(request.description)
     .execute(&mut *transaction)
     .await?;
     sqlx::query(
         r#"
-        WITH ordered_terms AS (
-            SELECT sequence_no,
-                   term_type,
-                   name,
-                   row_number() OVER (
-                       PARTITION BY term_type
-                       ORDER BY sequence_no, id
-                   )::integer AS type_occurrence
-            FROM academic_terms
-            WHERE academic_year_id = $2
-        )
         INSERT INTO curriculum_term_slots (
             id, curriculum_version_id, sequence, term_type, type_occurrence, name
         )
-        SELECT gen_random_uuid(), $1, sequence_no, term_type, type_occurrence, name
-        FROM ordered_terms
-        ORDER BY sequence_no
+        SELECT gen_random_uuid(), $1, occurrence, 'regular', occurrence,
+               'ภาคเรียนที่ ' || occurrence::text
+        FROM generate_series(1, 2) AS occurrence
         "#,
     )
     .bind(id)
-    .bind(request.start_academic_year_id)
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
@@ -203,11 +189,10 @@ pub async fn clone_version_draft(
     parse_row_version(request.source_row_version)?;
     let version_fields = CreateCurriculumVersionRequest {
         version_name: request.version_name,
-        start_academic_year_id: request.start_academic_year_id,
-        end_academic_year_id: request.end_academic_year_id,
+        revision_year: request.revision_year,
         description: request.description,
     };
-    validate_version_fields(pool, &version_fields).await?;
+    validate_version_fields(&version_fields)?;
 
     let mut transaction = pool.begin().await?;
     let source: CurriculumVersion = {
@@ -229,21 +214,6 @@ pub async fn clone_version_draft(
             "รุ่นหลักสูตรต้นทางถูกแก้ไขแล้ว (expected {}, actual {})",
             request.source_row_version, source.row_version
         )));
-    }
-    let (source_start, requested_start): (chrono::NaiveDate, chrono::NaiveDate) = sqlx::query_as(
-        r#"SELECT source_year.start_date, requested_year.start_date
-               FROM academic_years source_year
-               JOIN academic_years requested_year ON requested_year.id = $2
-               WHERE source_year.id = $1"#,
-    )
-    .bind(source.start_academic_year_id)
-    .bind(version_fields.start_academic_year_id)
-    .fetch_one(&mut *transaction)
-    .await?;
-    if requested_start <= source_start {
-        return Err(AppError::ValidationError(
-            "ปีเริ่มใช้ของรุ่นใหม่ต้องอยู่หลังปีเริ่มใช้ของหลักสูตรต้นทาง".to_string(),
-        ));
     }
 
     let child_count: i64 = sqlx::query_scalar(
@@ -268,15 +238,13 @@ pub async fn clone_version_draft(
     let cloned_id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO curriculum_versions (
-               id, curriculum_id, version_name, start_academic_year_id,
-               end_academic_year_id, description, is_active, status
-           ) VALUES ($1, $2, $3, $4, $5, $6, true, 'draft')"#,
+               id, curriculum_id, version_name, revision_year, description, is_active, status
+           ) VALUES ($1, $2, $3, $4, $5, true, 'draft')"#,
     )
     .bind(cloned_id)
     .bind(source.curriculum_id)
     .bind(version_fields.version_name.trim())
-    .bind(version_fields.start_academic_year_id)
-    .bind(version_fields.end_academic_year_id)
+    .bind(version_fields.revision_year)
     .bind(version_fields.description)
     .execute(&mut *transaction)
     .await?;
@@ -371,12 +339,11 @@ pub async fn update_version(
     let row_version = request.row_version;
     let values = CreateCurriculumVersionRequest {
         version_name: request.version_name,
-        start_academic_year_id: request.start_academic_year_id,
-        end_academic_year_id: request.end_academic_year_id,
+        revision_year: request.revision_year,
         description: request.description,
     };
     parse_row_version(row_version)?;
-    validate_version_fields(pool, &values).await?;
+    validate_version_fields(&values)?;
     let status: VersionStatus =
         sqlx::query_scalar("SELECT status FROM curriculum_versions WHERE id = $1")
             .bind(id)
@@ -386,15 +353,13 @@ pub async fn update_version(
     ensure_draft_version(status)?;
     let result = sqlx::query(
         r#"
-        UPDATE curriculum_versions SET version_name = $1, start_academic_year_id = $2,
-            end_academic_year_id = $3, description = $4,
+        UPDATE curriculum_versions SET version_name = $1, revision_year = $2, description = $3,
             row_version = row_version + 1, updated_at = now()
-        WHERE id = $5 AND row_version = $6 AND status = 'draft'
+        WHERE id = $4 AND row_version = $5 AND status = 'draft'
         "#,
     )
     .bind(values.version_name.trim())
-    .bind(values.start_academic_year_id)
-    .bind(values.end_academic_year_id)
+    .bind(values.revision_year)
     .bind(values.description)
     .bind(id)
     .bind(row_version)
@@ -473,34 +438,35 @@ pub async fn list_study_program_options_for_year(
     academic_year_id: Uuid,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<StudyProgramOption>, AppError> {
-    let target_year: (chrono::NaiveDate, chrono::NaiveDate) =
-        sqlx::query_as("SELECT start_date, end_date FROM academic_years WHERE id = $1")
-            .bind(academic_year_id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
+    let _target_year: Uuid = sqlx::query_scalar("SELECT id FROM academic_years WHERE id = $1")
+        .bind(academic_year_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".to_string()))?;
     let owner_ids = filter.allowed_organization_unit_ids();
     let options: Vec<StudyProgramOption> = sqlx::query_as(
         r#"
         SELECT program.id, program.code, program.name_th AS name,
-               curriculum.id AS curriculum_id, curriculum.name_th AS curriculum_name
+               curriculum.id AS curriculum_id, curriculum.name_th AS curriculum_name,
+               version.id AS curriculum_version_id, version.version_name, version.revision_year,
+               ARRAY(SELECT DISTINCT requirement.grade_level_id
+                     FROM (SELECT grade_level_id FROM curriculum_course_requirements
+                           WHERE study_program_id = program.id
+                           UNION SELECT grade_level_id FROM curriculum_activity_requirements
+                           WHERE study_program_id = program.id) requirement
+                     ORDER BY requirement.grade_level_id) AS grade_level_ids
         FROM study_programs program
         JOIN curriculum_versions version ON version.id = program.curriculum_version_id
         JOIN curricula curriculum ON curriculum.id = version.curriculum_id
-        JOIN academic_years starts ON starts.id = version.start_academic_year_id
-        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
         WHERE program.status = 'published'
           AND version.status = 'published'
           AND curriculum.is_active IS TRUE
-          AND starts.start_date <= $1
-          AND (ends.end_date IS NULL OR ends.end_date >= $2)
-          AND ($3 OR curriculum.owning_organization_unit_id = ANY($4))
-        ORDER BY curriculum.code, curriculum.id, program.is_default DESC, program.code, program.id
-        LIMIT $5
+          AND ($1 OR curriculum.owning_organization_unit_id = ANY($2))
+        ORDER BY curriculum.code, curriculum.id, version.revision_year DESC NULLS LAST,
+                 version.created_at DESC, program.is_default DESC, program.code, program.id
+        LIMIT $3
         "#,
     )
-    .bind(target_year.0)
-    .bind(target_year.1)
     .bind(filter.includes_school_owned)
     .bind(owner_ids)
     .bind((MAX_STUDY_PROGRAM_OPTIONS + 1) as i64)
@@ -622,33 +588,16 @@ fn validate_program_fields(code: &str, name_th: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn validate_version_fields(
-    pool: &PgPool,
-    request: &CreateCurriculumVersionRequest,
-) -> Result<(), AppError> {
+fn validate_version_fields(request: &CreateCurriculumVersionRequest) -> Result<(), AppError> {
     if request.version_name.trim().is_empty() {
         return Err(AppError::ValidationError(
             "ชื่อเวอร์ชันหลักสูตรห้ามว่าง".to_string(),
         ));
     }
-    let start: chrono::NaiveDate =
-        sqlx::query_scalar("SELECT start_date FROM academic_years WHERE id = $1")
-            .bind(request.start_academic_year_id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::ValidationError("ไม่พบปีเริ่มใช้หลักสูตร".to_string()))?;
-    if let Some(end_id) = request.end_academic_year_id {
-        let end: chrono::NaiveDate =
-            sqlx::query_scalar("SELECT end_date FROM academic_years WHERE id = $1")
-                .bind(end_id)
-                .fetch_optional(pool)
-                .await?
-                .ok_or_else(|| AppError::ValidationError("ไม่พบปีสิ้นสุดหลักสูตร".to_string()))?;
-        if end < start {
-            return Err(AppError::ValidationError(
-                "ช่วงปีของหลักสูตรไม่ถูกต้อง".to_string(),
-            ));
-        }
+    if !(2400..=2999).contains(&request.revision_year) {
+        return Err(AppError::ValidationError(
+            "ระบุปีปรับปรุงหลักสูตรเป็นพุทธศักราชระหว่าง 2400–2999".to_string(),
+        ));
     }
     Ok(())
 }

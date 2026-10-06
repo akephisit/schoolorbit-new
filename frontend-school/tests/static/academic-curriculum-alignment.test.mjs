@@ -56,6 +56,7 @@ test('curriculum alignment context remains read-only and cloning is an explicit 
 	assert.match(versions, /selectedVersion\?\.version\.status === 'published'/);
 	assert.match(versions, /sourceRowVersion/);
 	assert.match(versions, /ต้นฉบับที่เผยแพร่จะไม่เปลี่ยน/);
-	assert.match(versions, /เริ่มใช้ในปีการศึกษา/);
+	assert.match(versions, /revisionYear/);
+	assert.doesNotMatch(versions, /startAcademicYearId|endAcademicYearId/);
 	assert.doesNotMatch(versions, /onCloneVersion\([\s\S]*as unknown/);
 });

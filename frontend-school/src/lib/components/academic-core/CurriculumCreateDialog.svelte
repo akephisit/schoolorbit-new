@@ -84,8 +84,6 @@
 				displayVersion: null,
 				displayState: 'unpublished',
 				gradeLevels: options.gradeLevels.filter((level) => draft.gradeLevelIds.includes(level.id)),
-				startAcademicYearName: null,
-				endAcademicYearName: null,
 				studyProgramCount: 0,
 				draftCount: 0
 			});

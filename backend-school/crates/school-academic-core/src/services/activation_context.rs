@@ -298,14 +298,12 @@ async fn read_enrollment(
          COALESCE(person.user_type='student' AND person.status='active' AND grade.is_active IS TRUE
           AND program.status='published' AND version.status='published' AND curriculum.is_active IS TRUE
           AND curriculum.grade_level_ids @> jsonb_build_array(student.grade_level_id::text)
-          AND starts.start_date<=target.start_date AND (ends.end_date IS NULL OR ends.end_date>=target.end_date),false) AS reference_valid
+,false) AS reference_valid
          FROM student_academic_years student JOIN academic_years target ON target.id=student.academic_year_id
          JOIN users person ON person.id=student.student_id LEFT JOIN grade_levels grade ON grade.id=student.grade_level_id
          LEFT JOIN study_programs program ON program.id=student.study_program_id
          LEFT JOIN curriculum_versions version ON version.id=program.curriculum_version_id
          LEFT JOIN curricula curriculum ON curriculum.id=version.curriculum_id
-         LEFT JOIN academic_years starts ON starts.id=version.start_academic_year_id
-         LEFT JOIN academic_years ends ON ends.id=version.end_academic_year_id
          WHERE student.academic_year_id=$1 ORDER BY student.id LIMIT 10001"
     ).bind(context.academic_year_id).fetch_all(&mut **tx).await?;
     let placements: Vec<ActivationPlacement> = sqlx::query_as(

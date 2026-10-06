@@ -10,6 +10,10 @@
 		UpdateHomeroomRequest
 	} from '#lib/api/academic-core.js';
 	import { customNameFromStored } from '#lib/academic-core/foundation-presentation.js';
+	import {
+		programsForGrade,
+		studyProgramLabel
+	} from '#lib/academic-core/curriculum-presentation.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -70,6 +74,15 @@
 			: 'ระบบจะสร้างชื่อจากระดับชั้นและเลขห้อง'
 	);
 	const roomPreview = $derived(roomDraft.customName?.trim() || standardRoomName);
+	const eligiblePrograms = $derived(programsForGrade(programOptions, roomDraft.gradeLevelId));
+	$effect(() => {
+		if (
+			roomDraft.studyProgramId &&
+			!eligiblePrograms.some((program) => program.id === roomDraft.studyProgramId)
+		) {
+			roomDraft.studyProgramId = '';
+		}
+	});
 
 	function emptyRoomDraft(): HomeroomDraft {
 		return {
@@ -87,7 +100,7 @@
 
 	function programLabel(id: string): string {
 		const program = programOptions.find((option) => option.id === id);
-		return program ? `${program.curriculumName} · ${program.name}` : 'ไม่พบแผนการเรียนที่อ้างอิง';
+		return program ? studyProgramLabel(program) : 'ไม่พบแผนการเรียนที่อ้างอิง';
 	}
 
 	function customNameForRoom(room: Homeroom): string | null {
@@ -293,7 +306,7 @@
 				>เลือกระดับชั้น เลขห้อง และแผนการเรียน ระบบจะสร้างชื่อกับรหัสให้ตรงกัน</Dialog.Description
 			>
 		</Dialog.Header>
-		<form class="space-y-4" onsubmit={saveRoom}>
+		<form class="min-w-0 space-y-4" onsubmit={saveRoom}>
 			<div class="rounded-xl border border-primary/20 bg-primary/[0.04] p-3">
 				<p class="text-xs font-medium text-primary">ชื่อห้องที่จะแสดง</p>
 				<p class="mt-1 font-semibold">{roomPreview}</p>
@@ -318,20 +331,28 @@
 				</div>
 			</div>
 			<div class="space-y-1.5">
-				<Label for="homeroom-program">แผนการเรียน</Label>
+				<Label for="homeroom-program">แผนการเรียนและฉบับหลักสูตร</Label>
 				<Select.Root type="single" bind:value={roomDraft.studyProgramId}>
-					<Select.Trigger id="homeroom-program" class="w-full"
-						>{programLabel(roomDraft.studyProgramId).replace(
-							'ไม่พบแผนการเรียนที่อ้างอิง',
-							'เลือกแผนการเรียน'
-						)}</Select.Trigger
+					<Select.Trigger
+						id="homeroom-program"
+						class="h-auto min-h-9 w-full whitespace-normal text-start"
+						><span class="min-w-0 flex-1"
+							>{programLabel(roomDraft.studyProgramId).replace(
+								'ไม่พบแผนการเรียนที่อ้างอิง',
+								'เลือกแผนการเรียน'
+							)}</span
+						></Select.Trigger
 					>
-					<Select.Content
-						>{#each programOptions as option (option.id)}<Select.Item value={option.id}
-								>{option.curriculumName} · {option.name}</Select.Item
+					<Select.Content class="max-w-[calc(100vw-2rem)]"
+						>{#each eligiblePrograms as option (option.id)}<Select.Item
+								value={option.id}
+								class="whitespace-normal">{studyProgramLabel(option)}</Select.Item
 							>{/each}</Select.Content
 					>
 				</Select.Root>
+				<p class="text-xs text-muted-foreground">
+					เลือกฉบับที่โรงเรียนกำหนดให้ห้องนี้ใช้ ปีปรับปรุงหลักสูตรอาจต่างจากปีการศึกษาของห้อง
+				</p>
 			</div>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="space-y-1.5">

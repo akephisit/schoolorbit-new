@@ -235,6 +235,9 @@ async function mock(page: Page, manager = false, reportMode: 'zone' | null = nul
 						curriculumId: id(7),
 						curriculumName: 'หลักสูตร',
 						versionName: '2569',
+						revisionYear: 2569,
+						curriculumVersionId: id(8),
+						gradeLevelIds: [],
 						status: 'published'
 					}
 				]);

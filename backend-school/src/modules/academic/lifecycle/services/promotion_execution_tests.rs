@@ -313,8 +313,8 @@ pub(crate) async fn approved_fixture(
         .unwrap();
         let curriculum: Uuid = sqlx::query_scalar("INSERT INTO curricula(code,identity_key,name_th,grade_level_ids) VALUES('E2E-IMPACT','E2E-IMPACT','E2E-LIFECYCLE-next-grade',$1) RETURNING id")
             .bind(sqlx::types::Json(vec![grade])).fetch_one(&pool).await.unwrap();
-        let version: Uuid = sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,start_academic_year_id,status) VALUES($1,'E2E-LIFECYCLE-target',$2,'draft') RETURNING id")
-            .bind(curriculum).bind(calc.run.target_year_id).fetch_one(&pool).await.unwrap();
+        let version: Uuid = sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status) VALUES($1,'E2E-LIFECYCLE-target',2569,'draft') RETURNING id")
+            .bind(curriculum).fetch_one(&pool).await.unwrap();
         let program: Uuid = sqlx::query_scalar("INSERT INTO study_programs(id,curriculum_version_id,code,name_th,status) VALUES(uuid_generate_v4(),$1,'E2E-IMPACT','E2E-LIFECYCLE-target','published') RETURNING id")
             .bind(version).fetch_one(&pool).await.unwrap();
         sqlx::query(

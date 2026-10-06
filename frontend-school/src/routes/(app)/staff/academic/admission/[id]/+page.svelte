@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { studyProgramLabel } from '#lib/academic-core/curriculum-presentation.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -77,6 +78,10 @@
 	let tracks: AdmissionTrack[] = $state([]);
 	let subjects: AdmissionExamSubject[] = $state([]);
 	let studyPrograms = $state<StudyProgramOption[]>([]);
+	const selectedTrackProgramLabel = $derived.by(() => {
+		const program = studyPrograms.find((item) => item.id === trackForm.studyProgramId);
+		return program ? studyProgramLabel(program) : '-- เลือก --';
+	});
 	let loading = $state(false);
 	let error = $state('');
 	let loaded = $state(false);
@@ -993,14 +998,11 @@
 											disabled={loadingPrograms}
 										>
 											<Select.Trigger id="track-plan" class="w-full">
-												{loadingPrograms
-													? 'กำลังโหลด...'
-													: (studyPrograms.find((s) => s.id === trackForm.studyProgramId)?.name ??
-														'-- เลือก --')}
+												{loadingPrograms ? 'กำลังโหลด...' : selectedTrackProgramLabel}
 											</Select.Trigger>
 											<Select.Content>
 												{#each studyPrograms as sp (sp.id)}
-													<Select.Item value={sp.id}>{sp.name}</Select.Item>
+													<Select.Item value={sp.id}>{studyProgramLabel(sp)}</Select.Item>
 												{/each}
 											</Select.Content>
 										</Select.Root>

@@ -28,7 +28,7 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 	);
 	const versions = captureRouteLoad(
 		listCurriculumVersions(curriculumId, { requestFetch: fetch }),
-		'โหลดรายการรุ่นหลักสูตรไม่สำเร็จ'
+		'โหลดรายการฉบับหลักสูตรไม่สำเร็จ'
 	);
 	const loadStructure = (
 		versionId: string
@@ -36,7 +36,7 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 		captureRouteLoad(
 			getCurriculumStructureWorkspace(versionId, { requestFetch: fetch }).then((workspace) => {
 				if (workspace.curriculumVersion.curriculumId !== curriculumId)
-					throw new Error('รุ่นหลักสูตรไม่อยู่ในหลักสูตรที่เลือก');
+					throw new Error('ฉบับหลักสูตรไม่อยู่ในหลักสูตรที่เลือก');
 				return workspace;
 			}),
 			'โหลดแผนการเรียนไม่สำเร็จ'

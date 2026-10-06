@@ -1920,7 +1920,7 @@ pub async fn get_curriculum_create_options(
     tag = "academic",
     params(AcademicYearQuery),
     responses(
-        (status = 200, description = "Published study programs effective in the selected year", body = ApiResponse<Vec<StudyProgramOption>>),
+        (status = 200, description = "Published curriculum editions available for explicit selection in the academic year", body = ApiResponse<Vec<StudyProgramOption>>),
         (status = 400, description = "Invalid academic year query or workspace exceeds the supported size", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),

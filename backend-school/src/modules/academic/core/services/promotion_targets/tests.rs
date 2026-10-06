@@ -40,16 +40,16 @@ async fn promotion_destination_batch_rejects_empty_duplicate_oversized_and_mixed
 
 async fn program(
     pool: &PgPool,
-    start: Uuid,
-    end: Option<Uuid>,
+    _legacy_start: Uuid,
+    _legacy_end: Option<Uuid>,
     grades: Vec<Uuid>,
     published: bool,
 ) -> Uuid {
     let id = Uuid::new_v4();
     let curriculum:Uuid=sqlx::query_scalar("INSERT INTO curricula(code,identity_key,name_th,grade_level_ids) VALUES ($1,$1,'E2E-LIFECYCLE-target',$2) RETURNING id")
         .bind(format!("e2e-{}",id.simple())).bind(Json(grades)).fetch_one(pool).await.unwrap();
-    let version:Uuid=sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,start_academic_year_id,end_academic_year_id,status) VALUES ($1,'E2E-LIFECYCLE',$2,$3,'draft') RETURNING id")
-        .bind(curriculum).bind(start).bind(end).fetch_one(pool).await.unwrap();
+    let version:Uuid=sqlx::query_scalar("INSERT INTO curriculum_versions(curriculum_id,version_name,revision_year,status) VALUES ($1,'E2E-LIFECYCLE',2569,'draft') RETURNING id")
+        .bind(curriculum).fetch_one(pool).await.unwrap();
     sqlx::query("INSERT INTO study_programs(id,curriculum_version_id,code,name_th,status) VALUES ($1,$2,'E2E','E2E-LIFECYCLE-target',$3)")
         .bind(id).bind(version).bind(if published {"published"} else {"draft"}).execute(pool).await.unwrap();
     if published {
@@ -140,12 +140,17 @@ async fn promotion_destination_requires_published_applicable_program_and_explici
     let grade = input.target_grade_level_id.unwrap();
     let invalid_programs = [
         program(&pool, target, None, vec![grade], false).await,
-        program(&pool, source_year, Some(source_year), vec![grade], true).await,
         program(&pool, target, None, vec![source.grade_level_id], true).await,
         program(&pool, target, None, vec![], true).await,
         Uuid::new_v4(),
     ];
+    let reusable_program = program(&pool, source_year, Some(source_year), vec![grade], true).await;
     let mut tx = pool.begin().await.unwrap();
+    let mut reusable = input.clone();
+    reusable.target_study_program_id = Some(reusable_program);
+    assert!(validate_destination(&mut tx, &source, target, &reusable)
+        .await
+        .is_ok());
     assert!(validate_destination(&mut tx, &source, target, &input)
         .await
         .is_ok());

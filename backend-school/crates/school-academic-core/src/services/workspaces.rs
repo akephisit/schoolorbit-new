@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -11,13 +11,12 @@ use school_authorization::{
 use school_errors::AppError;
 use school_permissions::registry::codes;
 
-use crate::models::{AcademicYearLookupItem, GradeLevelLookupItem};
+use crate::models::GradeLevelLookupItem;
 
 use super::super::models::{
-    AcademicSetupWorkspace, AcademicYearStatus, CurriculumCatalogVersionOption,
-    CurriculumCreateOptions, CurriculumDisplayState, CurriculumManagementOptions,
-    CurriculumOverview, CurriculumOverviewItem, CurriculumVersion, CurriculumVersionView,
-    VersionStatus,
+    AcademicSetupWorkspace, CurriculumCatalogVersionOption, CurriculumCreateOptions,
+    CurriculumDisplayState, CurriculumManagementOptions, CurriculumOverview,
+    CurriculumOverviewItem, CurriculumVersion, CurriculumVersionView, VersionStatus,
 };
 use super::{bell_schedules, catalog, curriculum, years_terms};
 
@@ -25,7 +24,6 @@ const MAX_SETUP_YEARS: usize = 100;
 const MAX_SETUP_TERMS: usize = 2_000;
 const MAX_SETUP_BELL_SCHEDULES: usize = 1_000;
 const MAX_CURRICULUM_OVERVIEW_VERSIONS: usize = 5_000;
-const MAX_CURRICULUM_OPTION_YEARS: usize = 100;
 const MAX_CURRICULUM_OPTION_GRADES: usize = 500;
 const MAX_CURRICULUM_CATALOG_OPTIONS: usize = 5_000;
 
@@ -39,8 +37,7 @@ struct CurriculumOverviewVersionRow {
     id: Uuid,
     curriculum_id: Uuid,
     version_name: String,
-    start_academic_year_id: Uuid,
-    end_academic_year_id: Option<Uuid>,
+    revision_year: Option<i32>,
     description: Option<String>,
     status: VersionStatus,
     published_at: Option<DateTime<Utc>>,
@@ -48,10 +45,6 @@ struct CurriculumOverviewVersionRow {
     migrated: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
-    start_academic_year_name: String,
-    start_academic_year_date: NaiveDate,
-    end_academic_year_name: Option<String>,
-    end_academic_year_date: Option<NaiveDate>,
 }
 
 impl CurriculumOverviewVersionRow {
@@ -60,8 +53,7 @@ impl CurriculumOverviewVersionRow {
             id: self.id,
             curriculum_id: self.curriculum_id,
             version_name: self.version_name.clone(),
-            start_academic_year_id: self.start_academic_year_id,
-            end_academic_year_id: self.end_academic_year_id,
+            revision_year: self.revision_year,
             description: self.description.clone(),
             status: self.status,
             published_at: self.published_at,
@@ -75,8 +67,6 @@ impl CurriculumOverviewVersionRow {
     fn view(&self) -> CurriculumVersionView {
         CurriculumVersionView {
             version: self.version(),
-            start_academic_year_name: self.start_academic_year_name.clone(),
-            end_academic_year_name: self.end_academic_year_name.clone(),
         }
     }
 }
@@ -94,14 +84,6 @@ struct VersionProgramCountRow {
     count: i64,
 }
 
-#[derive(sqlx::FromRow)]
-struct WorkspaceAcademicYearRow {
-    id: Uuid,
-    name: String,
-    year: i32,
-    status: AcademicYearStatus,
-}
-
 pub async fn curriculum_overview(
     pool: &PgPool,
     filter: &AcademicResourceListFilter,
@@ -117,18 +99,12 @@ pub async fn curriculum_overview(
     let versions = sqlx::query_as::<_, CurriculumOverviewVersionRow>(
         r#"
         SELECT version.id, version.curriculum_id, version.version_name,
-               version.start_academic_year_id, version.end_academic_year_id,
+               version.revision_year,
                version.description, version.status, version.published_at,
                version.row_version,
                version.migration_provenance <> '{}'::jsonb AS migrated,
-               version.created_at, version.updated_at,
-               starts.name AS start_academic_year_name,
-               starts.start_date AS start_academic_year_date,
-               ends.name AS end_academic_year_name,
-               ends.end_date AS end_academic_year_date
+               version.created_at, version.updated_at
         FROM curriculum_versions version
-        JOIN academic_years starts ON starts.id = version.start_academic_year_id
-        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
         WHERE version.curriculum_id = ANY($1)
         ORDER BY version.curriculum_id, version.created_at DESC, version.id
         LIMIT $2
@@ -195,9 +171,6 @@ pub async fn curriculum_overview(
         .map(workspace_grade_level_item)
         .collect::<Vec<_>>()
     };
-    let today: NaiveDate = sqlx::query_scalar("SELECT CURRENT_DATE")
-        .fetch_one(pool)
-        .await?;
     let mut versions_by_curriculum: HashMap<Uuid, Vec<&CurriculumOverviewVersionRow>> =
         HashMap::new();
     for version in &versions {
@@ -215,17 +188,13 @@ pub async fn curriculum_overview(
                 .map(Vec::as_slice)
                 .unwrap_or_default();
             let (display, display_state, draft_count) =
-                select_curriculum_display(candidate_versions, today);
+                select_curriculum_display(candidate_versions);
             let resolved_grade_levels = grade_levels
                 .iter()
                 .filter(|level| curriculum.grade_level_ids.contains(&level.id))
                 .cloned()
                 .collect();
             CurriculumOverviewItem {
-                start_academic_year_name: display
-                    .map(|version| version.start_academic_year_name.clone()),
-                end_academic_year_name: display
-                    .and_then(|version| version.end_academic_year_name.clone()),
                 study_program_count: display
                     .and_then(|version| program_counts.get(&version.id).copied())
                     .unwrap_or(0),
@@ -242,7 +211,6 @@ pub async fn curriculum_overview(
 
 fn select_curriculum_display<'a>(
     versions: &[&'a CurriculumOverviewVersionRow],
-    today: NaiveDate,
 ) -> (
     Option<&'a CurriculumOverviewVersionRow>,
     CurriculumDisplayState,
@@ -256,63 +224,13 @@ fn select_curriculum_display<'a>(
         .iter()
         .copied()
         .filter(|version| version.status == VersionStatus::Published)
-        .collect::<Vec<_>>();
-    if let Some(current) = published
-        .iter()
-        .copied()
-        .filter(|version| {
-            version.start_academic_year_date <= today
-                && version
-                    .end_academic_year_date
-                    .is_none_or(|end| end >= today)
-        })
-        .max_by_key(|version| {
-            (
-                version.start_academic_year_date,
-                version.created_at,
-                version.id,
-            )
-        })
-    {
-        return (Some(current), CurriculumDisplayState::Current, draft_count);
-    }
-    if let Some(upcoming) = published
-        .iter()
-        .copied()
-        .filter(|version| version.start_academic_year_date > today)
-        .min_by_key(|version| {
-            (
-                version.start_academic_year_date,
-                version.created_at,
-                version.id,
-            )
-        })
-    {
-        return (
-            Some(upcoming),
-            CurriculumDisplayState::Upcoming,
-            draft_count,
-        );
-    }
-    if let Some(expired) = published
-        .into_iter()
-        .filter(|version| {
-            version
-                .end_academic_year_date
-                .is_some_and(|end| end < today)
-        })
-        .max_by_key(|version| {
-            (
-                version.end_academic_year_date,
-                version.start_academic_year_date,
-                version.created_at,
-                version.id,
-            )
-        })
-    {
-        return (Some(expired), CurriculumDisplayState::Expired, draft_count);
-    }
-    (None, CurriculumDisplayState::Unpublished, draft_count)
+        .max_by_key(|version| (version.revision_year, version.created_at, version.id));
+    let state = if published.is_some() {
+        CurriculumDisplayState::Published
+    } else {
+        CurriculumDisplayState::Unpublished
+    };
+    (published, state, draft_count)
 }
 
 fn workspace_grade_level_item(row: WorkspaceGradeLevelRow) -> GradeLevelLookupItem {
@@ -358,7 +276,6 @@ pub async fn curriculum_create_options(
 ) -> Result<CurriculumCreateOptions, AppError> {
     require_filter_scope(filter)?;
     Ok(CurriculumCreateOptions {
-        academic_years: curriculum_academic_year_options(pool).await?,
         grade_levels: active_workspace_grade_levels(pool).await?,
         owner_options: catalog::list_catalog_owner_options(pool, filter).await?,
     })
@@ -372,18 +289,12 @@ pub async fn curriculum_version_views(
     let rows = sqlx::query_as::<_, CurriculumOverviewVersionRow>(
         r#"
         SELECT version.id, version.curriculum_id, version.version_name,
-               version.start_academic_year_id, version.end_academic_year_id,
+               version.revision_year,
                version.description, version.status, version.published_at,
                version.row_version,
                version.migration_provenance <> '{}'::jsonb AS migrated,
-               version.created_at, version.updated_at,
-               starts.name AS start_academic_year_name,
-               starts.start_date AS start_academic_year_date,
-               ends.name AS end_academic_year_name,
-               ends.end_date AS end_academic_year_date
+               version.created_at, version.updated_at
         FROM curriculum_versions version
-        JOIN academic_years starts ON starts.id = version.start_academic_year_id
-        LEFT JOIN academic_years ends ON ends.id = version.end_academic_year_id
         WHERE version.curriculum_id = $1
         ORDER BY version.created_at DESC, version.id
         LIMIT $2
@@ -407,7 +318,6 @@ pub async fn curriculum_management_options(
     filter: &AcademicResourceListFilter,
 ) -> Result<CurriculumManagementOptions, AppError> {
     require_curriculum_version_access(pool, version_id, filter).await?;
-    let academic_years = curriculum_academic_year_options(pool).await?;
     let grade_levels = active_workspace_grade_levels(pool).await?;
     let owner_ids = filter.allowed_organization_unit_ids();
     let catalog_versions = sqlx::query_as::<_, CurriculumCatalogVersionOption>(
@@ -446,40 +356,9 @@ pub async fn curriculum_management_options(
         "จำนวนตัวเลือกวิชาและกิจกรรมสำหรับหลักสูตร",
     )?;
     Ok(CurriculumManagementOptions {
-        academic_years,
         grade_levels,
         catalog_versions,
     })
-}
-
-async fn curriculum_academic_year_options(
-    pool: &PgPool,
-) -> Result<Vec<AcademicYearLookupItem>, AppError> {
-    let rows = sqlx::query_as::<_, WorkspaceAcademicYearRow>(
-        r#"
-        SELECT id, name, year, status
-        FROM academic_years
-        ORDER BY year DESC, id
-        LIMIT $1
-        "#,
-    )
-    .bind((MAX_CURRICULUM_OPTION_YEARS + 1) as i64)
-    .fetch_all(pool)
-    .await?;
-    ensure_workspace_size(
-        rows.len(),
-        MAX_CURRICULUM_OPTION_YEARS,
-        "จำนวนปีการศึกษาสำหรับจัดการหลักสูตร",
-    )?;
-    Ok(rows
-        .into_iter()
-        .map(|row| AcademicYearLookupItem {
-            id: row.id,
-            name: row.name,
-            year: row.year,
-            status: row.status,
-        })
-        .collect())
 }
 
 fn require_filter_scope(filter: &AcademicResourceListFilter) -> Result<(), AppError> {
@@ -586,7 +465,37 @@ fn ensure_workspace_size(actual: usize, maximum: usize, label: &str) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::ensure_workspace_size;
+    use super::{ensure_workspace_size, select_curriculum_display, CurriculumOverviewVersionRow};
+    use crate::models::{CurriculumDisplayState, VersionStatus};
+    use chrono::{TimeZone, Utc};
+    use uuid::Uuid;
+
+    #[test]
+    fn overview_prefers_the_latest_published_amendment_and_keeps_drafts_out_of_selection() {
+        let version = |year, status, day| CurriculumOverviewVersionRow {
+            id: Uuid::new_v4(),
+            curriculum_id: Uuid::nil(),
+            version_name: format!("{year}"),
+            revision_year: Some(year),
+            description: None,
+            status,
+            published_at: None,
+            row_version: 1,
+            migrated: false,
+            created_at: Utc.with_ymd_and_hms(2026, 10, day, 0, 0, 0).unwrap(),
+            updated_at: Utc::now(),
+        };
+        let old = version(2569, VersionStatus::Published, 3);
+        let amendment = version(2569, VersionStatus::Published, 4);
+        let draft = version(2572, VersionStatus::Draft, 5);
+        let (selected, state, drafts) = select_curriculum_display(&[&old, &draft, &amendment]);
+        assert_eq!(selected.unwrap().id, amendment.id);
+        assert_eq!(state, CurriculumDisplayState::Published);
+        assert_eq!(drafts, 1);
+        let (selected, state, _) = select_curriculum_display(&[&draft]);
+        assert!(selected.is_none());
+        assert_eq!(state, CurriculumDisplayState::Unpublished);
+    }
 
     #[test]
     fn oversized_workspace_collections_are_rejected() {
