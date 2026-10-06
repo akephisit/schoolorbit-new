@@ -1265,3 +1265,88 @@ test('curriculum synchronized activation can explicitly create its reviewed home
 		choices: [{ action: 'apply', groups: [{ name: 'ม.1/1', homeroomIds: [ids.homeroom] }] }]
 	});
 });
+
+for (const viewport of [
+	{ width: 1440, height: 900 },
+	{ width: 390, height: 844 }
+]) {
+	for (const dark of [false, true]) {
+		test(`zero course period setting preserves curriculum at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}) => {
+			await page.setViewportSize(viewport);
+			await mockDelivery(page);
+			const detail = { ...changeSetDetail(), items: [] };
+			const offering = {
+				id: ids.offering,
+				kind: 'course',
+				code: 'ค21101',
+				name: 'คณิตศาสตร์พื้นฐาน',
+				weeklyPeriodTarget: 4,
+				groups: [],
+				targets: [],
+				homeroomIds: [],
+				catalog: { kind: 'course', standardPeriodsPerWeek: 4, credit: '2.0' }
+			};
+			await page.route(`**/api/academic/term-change-sets/${ids.changeSet}`, (route) =>
+				fulfill(route, detail)
+			);
+			await page.route(`**/api/academic/delivery-versions/${ids.version}`, (route) =>
+				fulfill(route, {
+					id: ids.version,
+					academicTermId: ids.term,
+					sourceVersionId: null,
+					status: 'draft',
+					snapshot: { offerings: [offering] }
+				})
+			);
+			await page.route('**/api/academic/delivery/management-options?*', (route) =>
+				fulfill(route, {
+					catalogVersions: [],
+					gradeLevels: [],
+					studyPrograms: [],
+					teachers: []
+				})
+			);
+			let submitted: Record<string, unknown> | null = null;
+			await page.route(`**/api/academic/term-change-sets/${ids.changeSet}/items`, async (route) => {
+				submitted = route.request().postDataJSON();
+				await fulfill(route, { ...detail, rowVersion: 2 });
+			});
+			await page.goto(
+				`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+			);
+			if (dark) {
+				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+				await expect(page.locator('html')).toHaveClass(/dark/);
+			}
+			await page.getByRole('button', { name: 'เพิ่ม/ปรับรายการสอน', exact: true }).click();
+			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
+			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
+			await page.getByRole('combobox').filter({ hasText: 'เลือกรายวิชาหรือกิจกรรม' }).click();
+			await page.getByRole('option', { name: /ค21101/ }).click();
+			const periods = page.getByLabel('คาบที่จัดจริงต่อสัปดาห์');
+			await expect(periods).toHaveValue('4');
+			await expect(periods).toHaveAttribute('min', '0');
+			await expect(page.getByText('4 คาบ/สัปดาห์', { exact: true })).toBeVisible();
+			await periods.fill('-1');
+			await expect(page.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeDisabled();
+			await periods.fill('0.5');
+			await expect(page.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeDisabled();
+			await periods.fill('0');
+			await expect(page.getByText(/0 คาบ = เปิดรายวิชา/)).toBeVisible();
+			await expect(page.getByRole('button', { name: 'บันทึกรายการ', exact: true })).toBeEnabled();
+			await page.screenshot({
+				path: `/tmp/zero-periods-${viewport.width}-${dark ? 'dark' : 'light'}.png`
+			});
+			await page.getByRole('button', { name: 'บันทึกรายการ', exact: true }).click();
+			await expect
+				.poll(() => submitted)
+				.toMatchObject({
+					action: 'adjust_weekly_period_target',
+					learningOfferingId: ids.offering,
+					weeklyPeriodTarget: 0
+				});
+		});
+	}
+}

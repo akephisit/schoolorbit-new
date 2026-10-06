@@ -925,3 +925,357 @@ async fn publication_preview(
     )
     .await
 }
+
+#[tokio::test]
+async fn zero_course_periods_preserve_delivery_and_require_removing_existing_lessons() {
+    use chrono::Duration;
+    use school_academic_delivery::models::{
+        CreateAcademicTermChangeSetRequest, PublishAcademicTermChangeSetRequest,
+        UpsertAcademicTermChangeItemRequest,
+    };
+    use school_academic_delivery::services::change_sets;
+    use school_academic_timetable::models::timetable_version::{
+        CloneTimetableVersionRequest, UpdateTimetableDeliverySourceRequest,
+    };
+    use school_academic_timetable::services::{
+        timetable_lifecycle, timetable_version_service as tables,
+    };
+    let pool = predecessor("zero_course_periods").await;
+    apply_migrations_through(&pool, 90).await.unwrap();
+    let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
+        .await
+        .unwrap();
+    let base = versions::get_version(&pool, source.delivery_version_id)
+        .await
+        .unwrap();
+    let draft = tables::clone_draft(
+        &pool,
+        actor,
+        source_id,
+        CloneTimetableVersionRequest {
+            source_row_version: source.row_version,
+            resume_draft_id: None,
+            draft_row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    let before: Vec<(Uuid, i64)> =
+        sqlx::query_as("SELECT id,row_version FROM academic_timetable_blocks ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    // Exercise an active lifecycle with the preserved historical fixture IDs.
+    // Publication dates follow the current clock rather than a stale fixture date.
+    let publish_date = std::cmp::max(
+        chrono::Utc::now().date_naive(),
+        base.effective_from.unwrap() + Duration::days(1),
+    );
+    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$2) WHERE id=$1")
+        .bind(source.academic_year_id)
+        .bind(publish_date + Duration::days(30))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let revision = change_sets::create_change_set(
+        &pool,
+        actor,
+        CreateAcademicTermChangeSetRequest {
+            academic_term_id: source.academic_term_id,
+            reason: "ปรับจำนวนคาบ โดยยังไม่จัดตารางใหม่".into(),
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let group_id: Uuid = sqlx::query_scalar(
+        "SELECT placed.learning_group_id FROM academic_timetable_block_groups placed
+        JOIN academic_timetable_blocks block ON block.id=placed.block_id
+        WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active
+          AND block.block_kind='COURSE' ORDER BY block.id,placed.id LIMIT 1",
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let offering = base
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| offering.groups.iter().any(|group| group.id == group_id))
+        .unwrap();
+    let rejected = change_sets::upsert_change_item(
+        &pool,
+        actor,
+        revision.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: revision.row_version,
+            item_row_version: None,
+            learning_offering_id: offering.id,
+            weekly_period_target: -1,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(rejected.to_string().contains("ศูนย์"));
+    let updated = change_sets::upsert_change_item(
+        &pool,
+        actor,
+        revision.id,
+        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+            change_set_row_version: revision.row_version,
+            item_row_version: None,
+            learning_offering_id: offering.id,
+            weekly_period_target: 0,
+        },
+    )
+    .await
+    .unwrap();
+    let zero_draft = versions::get_version(&pool, updated.target_delivery_version_id)
+        .await
+        .unwrap();
+    let zero_offering = zero_draft
+        .snapshot
+        .offerings
+        .iter()
+        .find(|row| row.id == offering.id)
+        .unwrap();
+    assert_eq!(zero_offering.weekly_period_target, 0);
+    assert_eq!(
+        serde_json::to_value(&zero_offering.catalog).unwrap(),
+        serde_json::to_value(&offering.catalog).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&zero_offering.groups).unwrap(),
+        serde_json::to_value(&offering.groups).unwrap()
+    );
+    let constraint = sqlx::query("UPDATE academic_term_change_items SET weekly_period_target=-1 WHERE change_set_id=$1 AND learning_offering_id=$2")
+        .bind(updated.id).bind(offering.id).execute(&pool).await.unwrap_err();
+    assert!(constraint
+        .to_string()
+        .contains("academic_term_change_items_weekly_period_target_check"));
+    let preview = publication_preview(&pool, revision.id).await.unwrap();
+    assert!(
+        preview.findings.iter().all(|finding| finding.severity
+            != school_academic_delivery::models::AcademicChangeFindingSeverity::Blocking),
+        "delivery readiness must not demand placed lessons: {:?}",
+        preview.findings
+    );
+    let receipt = change_sets::publish_change_set(
+        &pool,
+        actor,
+        updated.id,
+        PublishAcademicTermChangeSetRequest {
+            effective_from: preview.effective_from,
+            row_version: preview.change_set_row_version,
+            target_delivery_version_row_version: preview.target_delivery_version_row_version,
+            preview_hash: preview.preview_hash,
+            acknowledged_warning_codes: vec![],
+            idempotency_key: Uuid::new_v4(),
+        },
+    )
+    .await
+    .unwrap();
+    let after: Vec<(Uuid, i64)> =
+        sqlx::query_as("SELECT id,row_version FROM academic_timetable_blocks ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(
+        source.delivery_version_id,
+        tables::get_version(&pool, source.id, chrono::Utc::now().date_naive())
+            .await
+            .unwrap()
+            .delivery_version_id
+    );
+    assert_eq!(
+        draft.delivery_version_id,
+        tables::get_version(&pool, draft.id, chrono::Utc::now().date_naive())
+            .await
+            .unwrap()
+            .delivery_version_id,
+        "a running draft never silently upgrades"
+    );
+    let reloaded = tables::get_version(&pool, draft.id, chrono::Utc::now().date_naive())
+        .await
+        .unwrap();
+    let updated = timetable_lifecycle::update_source(
+        &pool,
+        actor,
+        draft.id,
+        UpdateTimetableDeliverySourceRequest {
+            row_version: reloaded.row_version,
+            delivery_version_id: receipt.target_delivery_version_id,
+        },
+    )
+    .await
+    .unwrap();
+    assert_ne!(updated.delivery_version_id, source.delivery_version_id);
+    assert_eq!(
+        before,
+        sqlx::query_as::<_, (Uuid, i64)>(
+            "SELECT id,row_version FROM academic_timetable_blocks ORDER BY id"
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+    );
+    let base_after = versions::get_version(&pool, base.id).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&base.snapshot).unwrap(),
+        serde_json::to_value(base_after.snapshot).unwrap()
+    );
+
+    use school_academic_timetable::{
+        models::{timetable_block::*, timetable_publication::*},
+        services::timetable_block_service as blocks,
+    };
+    let workspace = blocks::get_workspace(
+        &pool,
+        TimetableBlockWorkspaceQuery {
+            academic_year_id: source.academic_year_id,
+            academic_term_id: source.academic_term_id,
+            timetable_version_id: draft.id,
+        },
+        &school_academic_timetable::policy::TimetableAccessFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let demand = workspace
+        .ordinary_demands
+        .iter()
+        .find(|demand| demand.learning_group_id == group_id)
+        .unwrap();
+    assert_eq!(demand.required_periods, 0);
+    assert_eq!(demand.remaining_periods, 0);
+    assert!(
+        demand.scheduled_periods > 0,
+        "existing lessons preserved for explicit removal"
+    );
+    // Positive targets still require an exact count; zero does not bypass the rule.
+    let mut positive_source = zero_draft.snapshot.clone();
+    let positive_offering = positive_source
+        .offerings
+        .iter_mut()
+        .find(|row| row.id == offering.id)
+        .unwrap();
+    positive_offering.weekly_period_target = demand.scheduled_periods;
+    assert!(
+        !timetable_lifecycle::readiness(&positive_source, &workspace.blocks)
+            .iter()
+            .any(|finding| finding.learning_group_id == Some(group_id)
+                && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch)
+    );
+    positive_source
+        .offerings
+        .iter_mut()
+        .find(|row| row.id == offering.id)
+        .unwrap()
+        .weekly_period_target += 1;
+    assert!(
+        timetable_lifecycle::readiness(&positive_source, &workspace.blocks)
+            .iter()
+            .any(|finding| finding.learning_group_id == Some(group_id)
+                && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch)
+    );
+    let block = workspace
+        .blocks
+        .iter()
+        .find(|block| {
+            block
+                .groups
+                .iter()
+                .any(|group| group.learning_group_id == group_id)
+        })
+        .unwrap();
+    let create_error = blocks::create_ordinary_block(
+        &pool,
+        actor,
+        CreateOrdinaryTimetableBlockRequest {
+            timetable_version_id: draft.id,
+            academic_term_id: source.academic_term_id,
+            learning_group_id: group_id,
+            day_of_week: block.day_of_week.clone(),
+            bell_schedule_period_id: block.bell_schedule_period_id,
+            room_id: None,
+            instructor_ids: offering
+                .groups
+                .iter()
+                .find(|group| group.id == group_id)
+                .unwrap()
+                .teachers
+                .iter()
+                .map(|teacher| teacher.teacher_id)
+                .collect(),
+            note: None,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(create_error.to_string().contains("0 คาบ"));
+    let preview = timetable_lifecycle::preview(
+        &pool,
+        draft.id,
+        PreviewTimetablePublicationRequest {
+            row_version: updated.row_version,
+            effective_from: publish_date,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(preview
+        .findings
+        .iter()
+        .any(|finding| finding.learning_offering_id == Some(offering.id)
+            && finding.message.contains("ถอดคาบเดิม")));
+    for block in workspace.blocks.iter().filter(|block| {
+        block.is_active
+            && block
+                .groups
+                .iter()
+                .any(|group| group.learning_offering_id == offering.id && group.is_active)
+    }) {
+        let target = block
+            .groups
+            .iter()
+            .find(|group| group.learning_offering_id == offering.id && group.is_active)
+            .unwrap();
+        blocks::remove_target(
+            &pool,
+            actor,
+            block.id,
+            RemoveTimetableBlockTargetRequest {
+                timetable_version_id: draft.id,
+                block_row_version: block.row_version,
+                target_kind: TimetableTargetKind::Group,
+                target_id: target.id,
+                target_row_version: target.row_version,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let reloaded = tables::get_version(&pool, draft.id, chrono::Utc::now().date_naive())
+        .await
+        .unwrap();
+    let preview = timetable_lifecycle::preview(
+        &pool,
+        draft.id,
+        PreviewTimetablePublicationRequest {
+            row_version: reloaded.row_version,
+            effective_from: publish_date,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!preview
+        .findings
+        .iter()
+        .any(|finding| finding.learning_offering_id == Some(offering.id)
+            && finding.code == TimetablePublicationFindingCode::PeriodCountMismatch));
+}

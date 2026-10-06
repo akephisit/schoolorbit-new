@@ -16,6 +16,7 @@ on:
         options:
           - full
           - timetable-subject-groups
+          - course-zero-periods
 
 permissions:
   contents: read
@@ -137,6 +138,9 @@ jobs:
               ;;
             timetable-subject-groups)
               run_nonempty_tests cargo test modules::academic::core::schema_tests::migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture
+              ;;
+            course-zero-periods)
+              run_nonempty_tests cargo test --test delivery_versions zero_course_periods_preserve_delivery_and_require_removing_existing_lessons -- --exact --nocapture
               ;;
             *)
               echo 'ERROR: unknown Neon compatibility selection' >&2

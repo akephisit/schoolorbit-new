@@ -42,7 +42,7 @@ test('compatibility preserves Cargo failures and accepts actual passing test out
     assert.equal(passing.calls.length, 5);
 });
 test('every declared compatibility selection discovers real tests in its current Rust owner', async () => {
-    const calls = [...(await runStub('positive')).calls, ...(await runStub('positive', 'timetable-subject-groups')).calls];
+    const calls = [...(await runStub('positive')).calls, ...(await runStub('positive', 'timetable-subject-groups')).calls, ...(await runStub('positive', 'course-zero-periods')).calls];
     const missing = [];
     for (const args of calls) {
         const separator = args.indexOf('--');
@@ -64,4 +64,13 @@ test('timetable subject group scope selects its real database regression and rej
     assert.deepEqual(passing.calls[0], ['test', 'modules::academic::core::schema_tests::migration_060_subject_group_projections_support_timetable_load', '--bin', 'backend-school', '--', '--exact', '--nocapture']);
     assert.notEqual((await runStub('zero', 'timetable-subject-groups')).status, 0);
     assert.equal((await runStub('failure', 'timetable-subject-groups')).status, 47);
+});
+
+
+test('zero course periods scope selects its database lifecycle and refuses empty or failed tests', async () => {
+    const passing = await runStub('positive', 'course-zero-periods');
+    assert.equal(passing.status, 0, passing.stderr);
+    assert.deepEqual(passing.calls, [['test', '--test', 'delivery_versions', 'zero_course_periods_preserve_delivery_and_require_removing_existing_lessons', '--', '--exact', '--nocapture']]);
+    assert.notEqual((await runStub('zero', 'course-zero-periods')).status, 0);
+    assert.equal((await runStub('failure', 'course-zero-periods')).status, 47);
 });

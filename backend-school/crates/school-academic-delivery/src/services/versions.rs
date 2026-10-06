@@ -305,6 +305,10 @@ pub fn contains_date(version: &DeliveryVersion, date: NaiveDate) -> bool {
         && version.effective_until.is_none_or(|last| date <= last)
 }
 
+pub(crate) fn valid_weekly_period_target(kind: LearningOfferingKind, value: i32) -> bool {
+    value > 0 || (value == 0 && kind == LearningOfferingKind::Course)
+}
+
 /// This check deliberately has no timetable input: delivery publishes before scheduling.
 pub fn readiness(snapshot: &DeliverySnapshot) -> Vec<DeliveryReadinessFinding> {
     let mut findings = Vec::new();
@@ -321,7 +325,7 @@ pub fn readiness(snapshot: &DeliverySnapshot) -> Vec<DeliveryReadinessFinding> {
         if !offering_ids.insert(offering.id) {
             record(DeliveryReadinessCode::DuplicateOffering, None);
         }
-        if offering.weekly_period_target <= 0 {
+        if !valid_weekly_period_target(offering.kind, offering.weekly_period_target) {
             record(DeliveryReadinessCode::InvalidWeeklyTarget, None);
         }
         if !matches!(
@@ -426,9 +430,26 @@ mod tests {
     }
 
     #[test]
-    fn invalid_graph_reports_resource_ids_without_guessing_replacements() {
+    fn zero_course_target_keeps_curriculum_and_delivery_requirements() {
         let mut snapshot = ready_snapshot();
         snapshot.offerings[0].weekly_period_target = 0;
+        assert!(readiness(&snapshot).is_empty());
+        let LearningOfferingSnapshot::Course(catalog) = &snapshot.offerings[0].catalog else {
+            panic!("course catalog preserved");
+        };
+        assert_eq!(catalog.standard_periods_per_week, 3);
+        assert_eq!(catalog.credit, "1.5");
+        snapshot.offerings[0].groups[0].teachers.clear();
+        assert_eq!(
+            readiness(&snapshot)[0].code,
+            DeliveryReadinessCode::MissingPrimaryTeacher
+        );
+    }
+
+    #[test]
+    fn invalid_graph_reports_resource_ids_without_guessing_replacements() {
+        let mut snapshot = ready_snapshot();
+        snapshot.offerings[0].weekly_period_target = -1;
         snapshot.offerings[0].groups[0].teachers.clear();
         let findings = readiness(&snapshot);
         assert_eq!(findings.len(), 2);

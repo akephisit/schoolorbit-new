@@ -93,6 +93,7 @@ migration and concurrent writers against disposable PostgreSQL using:
 
 ```bash
 ./scripts/test_backend_school.sh --integration delivery_versions -- --nocapture
+./scripts/test_backend_school.sh --integration delivery_versions zero_course_periods_preserve_delivery_and_require_removing_existing_lessons -- --exact --nocapture
 ./scripts/test_backend_school.sh --integration delivery_draft_lifecycle -- --nocapture
 ./scripts/test_backend_school.sh modules::academic::delivery::services_tests -- --nocapture
 ./scripts/test_backend_school.sh modules::academic::services::timetable_ -- --nocapture
@@ -653,7 +654,7 @@ Variables: NEON_TEST_PROJECT_ID
 
 The project and parent branch must be dedicated to testing and contain no production data. Each confirmed run creates a unique ordinary copy-on-write child branch from that parent, retrieves a direct non-pooled connection URI, and provisions `uuid-ossp` plus `pg_trgm` explicitly in the child's `public` schema before migration/schema tests. The tests then create isolated schemas and run the active migrations themselves, so the parent needs only the configured empty database and an owner role allowed to create those Neon-supported extensions. The create request deliberately omits `suspend_timeout_seconds` because the test account owns that setting and rejects attempts to modify it. Branch ownership outputs are published before connection retrieval so later failures still clean up; the two-hour expiration is a fallback if finalization cannot run. API failures expose only bounded, sanitized code/message fields. The gate never requests a pooled URI because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
 
-The manual workflow defaults to `test_scope=full`, which retains all staff, auth, file, and academic compatibility selections. Select `test_scope=timetable-subject-groups` for the focused timetable report metadata regression; it exercises the real course and current staff affiliation queries after migration 060 and retains nonempty-test enforcement, disposable branch creation, expiry, and cleanup.
+The manual workflow defaults to `test_scope=full`, which retains all staff, auth, file, and academic compatibility selections. Select `test_scope=course-zero-periods` for migration 090 and the zero-course opening/publication lifecycle, including rejection of negative targets, preserved curriculum/teachers/history, zero waiting demand, refused new placement and explicit removal of existing lessons. Select `test_scope=timetable-subject-groups` for the focused timetable report metadata regression; it exercises the real course and current staff affiliation queries after migration 060 and retains nonempty-test enforcement, disposable branch creation, expiry, and cleanup.
 
 The backend static architecture suite validates that active migrations remain a contiguous timeline beginning at `001_baseline.sql`. Runtime rollout and all-tenant migration verification are documented in [Operations](./OPERATIONS.md).
 
