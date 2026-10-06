@@ -104,6 +104,8 @@ for (const width of [1543, 390]) {
 				if (view === 'ชั้น' || view === 'โรงเรียน') {
 					expect(text).toContain('ว21101');
 					expect(text).toContain('ครูคณิตศาสตร์A,ครูคณิตศาสตร์B');
+					// Teacher A appears on the course, but not again on the special period.
+					expect(text.match(/ครูคณิตศาสตร์A/g)).toHaveLength(1);
 					expect(text).toContain('ประชุมครู');
 				}
 				if (view === 'ครู') expect(text).toContain('ประชุมครู');

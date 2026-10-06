@@ -519,8 +519,13 @@ function buildPageContent(
 					const instructorName = instructorNames(block).trim();
 
 					if (viewMode === 'CLASSROOM') {
-						// Student PDF — แสดงชื่อครู (ยกเว้น sync activity เพราะมีหลายครู)
-						if (!isSlotSync && instructorName && instructorName !== '-') {
+						// Student PDF — แสดงชื่อครูเฉพาะคาบเรียนที่ไม่ได้จัดพร้อมกัน
+						if (
+							block.blockKind !== 'structural' &&
+							!isSlotSync &&
+							instructorName &&
+							instructorName !== '-'
+						) {
 							const rawName = instructorName;
 							const teacherName = rawName.startsWith('ครู') ? rawName : `ครู${rawName}`;
 							stack.push({
@@ -817,7 +822,12 @@ function buildMiniTable(
 					const instructorName = instructorNames(block).trim();
 
 					if (viewMode === 'CLASSROOM') {
-						if (!isSlotSync && instructorName && instructorName !== '-') {
+						if (
+							block.blockKind !== 'structural' &&
+							!isSlotSync &&
+							instructorName &&
+							instructorName !== '-'
+						) {
 							// ครูในโหมด mini แสดงแค่ชื่อแรก (ไม่มีนามสกุล) ตามที่ user ขอ
 							const rawName = instructorName;
 							const withoutPrefix = rawName.replace(/^ครู\s*/, '');
