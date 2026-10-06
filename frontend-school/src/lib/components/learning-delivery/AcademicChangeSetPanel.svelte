@@ -89,14 +89,15 @@
 	let catalogOptions = $derived(
 		(managementOptions?.catalogVersions ?? [])
 			.filter((item) => item.kind === (action === 'add_activity' ? 'activity' : 'course'))
+			.sort(compareOfferingOptions)
 			.map((item) => ({
 				id: item.id,
-				label: item.label,
+				label: item.kind === 'activity' ? item.name : item.label,
 				description:
 					item.kind === 'course' && item.standardPeriodsPerWeek
 						? `มาตรฐาน ${item.standardPeriodsPerWeek} คาบ/สัปดาห์`
 						: item.kind === 'activity'
-							? 'กิจกรรมพัฒนาผู้เรียน'
+							? `กิจกรรมพัฒนาผู้เรียน · ฉบับ ${item.versionNo}`
 							: undefined
 			}))
 	);
@@ -109,12 +110,26 @@
 							change.actionKind === 'add_offering' && change.learningOfferingId === item.id
 					)
 			)
+			.sort(compareOfferingOptions)
 			.map((item) => ({
 				id: item.id,
-				label: `${item.code} — ${item.name}`,
+				label: item.kind === 'activity' ? item.name : `${item.code} — ${item.name}`,
 				description: item.kind === 'course' ? 'รายวิชา' : 'กิจกรรมพัฒนาผู้เรียน'
 			}))
 	);
+
+	function compareOfferingOptions(
+		left: { kind: 'course' | 'activity'; code: string; name: string },
+		right: { kind: 'course' | 'activity'; code: string; name: string }
+	): number {
+		if (left.kind !== right.kind) return left.kind === 'course' ? -1 : 1;
+		const leftLabel = left.kind === 'course' ? left.code : left.name;
+		const rightLabel = right.kind === 'course' ? right.code : right.name;
+		return (
+			leftLabel.localeCompare(rightLabel, 'th-TH', { numeric: true }) ||
+			left.name.localeCompare(right.name, 'th-TH')
+		);
+	}
 	let activeHandoffItem = $derived(
 		changeSet.items.find(
 			(item): item is StopTeacherItem =>

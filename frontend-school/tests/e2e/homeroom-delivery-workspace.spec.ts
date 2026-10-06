@@ -1350,3 +1350,108 @@ for (const viewport of [
 		});
 	}
 }
+
+for (const viewport of [
+	{ width: 1440, height: 900 },
+	{ width: 390, height: 844 }
+]) {
+	for (const dark of [false, true]) {
+		test(`delivery picker sorts course codes and hides activity codes at ${viewport.width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}) => {
+			await page.setViewportSize(viewport);
+			await mockDelivery(page);
+			const offerings = [
+				{ code: 'ส33201', name: 'หน้าที่พลเมือง', kind: 'course' },
+				{ code: 'OTHER-cf1520d73a57', name: 'รักการอ่าน', kind: 'activity' },
+				{ code: 'ส23201', name: 'หน้าที่พลเมือง', kind: 'course' },
+				{ code: 'ส21201', name: 'หน้าที่พลเมือง', kind: 'course' },
+				{ code: 'CLUB-cac2ff31b415', name: 'ชุมนุม', kind: 'activity' },
+				{ code: 'ส32201', name: 'หน้าที่พลเมือง', kind: 'course' }
+			].map((item, index) => ({
+				...item,
+				id: `80000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+				weeklyPeriodTarget: 1,
+				groups: [],
+				targets: [],
+				homeroomIds: [],
+				catalog: { kind: item.kind, standardPeriodsPerWeek: 1, credit: '1.0' }
+			}));
+			await page.route(`**/api/academic/term-change-sets/${ids.changeSet}`, (route) =>
+				fulfill(route, changeSetDetail())
+			);
+			await page.route(`**/api/academic/delivery-versions/${ids.version}`, (route) =>
+				fulfill(route, {
+					id: ids.version,
+					academicTermId: ids.term,
+					sourceVersionId: null,
+					status: 'draft',
+					snapshot: { offerings }
+				})
+			);
+			await page.route('**/api/academic/delivery/management-options?*', (route) =>
+				fulfill(route, {
+					catalogVersions: offerings.map((item) => ({
+						id: item.id,
+						kind: item.kind,
+						code: item.code,
+						name: item.name,
+						label: `${item.code} — ${item.name} (ฉบับ 1)`,
+						versionNo: 1,
+						standardPeriodsPerWeek: item.kind === 'course' ? 1 : null,
+						schedulingMode: item.kind === 'activity' ? 'independent' : null
+					})),
+					gradeLevels: [],
+					studyPrograms: [],
+					teachers: []
+				})
+			);
+			await page.goto(
+				`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&deliveryVersionId=${ids.version}`
+			);
+			if (dark) {
+				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+				await expect(page.locator('html')).toHaveClass(/dark/);
+			}
+			await page.getByRole('button', { name: 'เพิ่ม/ปรับรายการสอน', exact: true }).click();
+			await page.getByRole('combobox', { name: 'เลือกรายวิชา', exact: true }).click();
+			const courses = [/ส21201/, /ส23201/, /ส32201/, /ส33201/];
+			await expect(page.getByRole('option')).toHaveText(courses);
+			await page.keyboard.press('Escape');
+			await page.getByRole('button', { name: 'เพิ่มรายวิชา', exact: true }).click();
+			await page.getByRole('option', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
+			const picker = page.getByRole('combobox', { name: 'เลือกรายวิชาหรือกิจกรรม', exact: true });
+			await picker.click();
+			await expect(page.getByRole('option')).toHaveText([
+				...courses,
+				/^\s*ชุมนุม\s+กิจกรรมพัฒนาผู้เรียน\s*$/,
+				/^\s*รักการอ่าน\s+กิจกรรมพัฒนาผู้เรียน\s*$/
+			]);
+			const search = page.getByPlaceholder('ค้นหารหัสหรือชื่อ...');
+			await search.fill('หน้าที่');
+			await expect(page.getByRole('option')).toHaveText(courses);
+			await search.fill('กิจกรรม');
+			await expect(page.getByRole('option')).toHaveText([
+				/^\s*ชุมนุม\s+กิจกรรมพัฒนาผู้เรียน\s*$/,
+				/^\s*รักการอ่าน\s+กิจกรรมพัฒนาผู้เรียน\s*$/
+			]);
+			await page.screenshot({
+				path: `/tmp/delivery-picker-${viewport.width}-${dark ? 'dark' : 'light'}.png`
+			});
+			await search.fill('รักการอ่าน');
+			await page.getByRole('option', { name: /รักการอ่าน/ }).click();
+			await expect(picker).toHaveText('รักการอ่าน');
+			await expect(page.getByLabel('คาบที่จัดจริงต่อสัปดาห์')).toHaveAttribute('min', '1');
+			await page.getByRole('button', { name: 'ปรับคาบต่อสัปดาห์', exact: true }).click();
+			await page.getByRole('option', { name: 'เพิ่มกิจกรรมพัฒนาผู้เรียน', exact: true }).click();
+			const activityPicker = page.getByRole('combobox', { name: 'เลือกกิจกรรม', exact: true });
+			await activityPicker.click();
+			await expect(page.getByRole('option')).toHaveText([
+				/^\s*ชุมนุม\s+กิจกรรมพัฒนาผู้เรียน · ฉบับ 1\s*$/,
+				/^\s*รักการอ่าน\s+กิจกรรมพัฒนาผู้เรียน · ฉบับ 1\s*$/
+			]);
+			await page.getByRole('option', { name: /ชุมนุม/ }).click();
+			await expect(activityPicker).toHaveText('ชุมนุม');
+		});
+	}
+}
