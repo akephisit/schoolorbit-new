@@ -70,10 +70,12 @@
 		};
 	});
 	function saved(result: CurriculumEdition) {
+		if (result.id !== data.editionId) return;
 		editionRevision++;
 		edition = result;
 	}
 	function created(level: CurriculumLevel) {
+		if (level.editionId !== data.editionId) return;
 		levelsRevision++;
 		levels = [...levels, { level }];
 	}
