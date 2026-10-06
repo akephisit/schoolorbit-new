@@ -98,14 +98,14 @@
 	}
 </script>
 
-<Button onclick={showDialog}><Plus class="size-4" /> เพิ่มหลักสูตร</Button>
+<Button onclick={showDialog}><Plus class="size-4" /> เพิ่มระดับ/กลุ่มหลักสูตร</Button>
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-xl">
 		<Dialog.Header>
-			<Dialog.Title>เพิ่มหลักสูตร</Dialog.Title>
+			<Dialog.Title>เพิ่มระดับ/กลุ่มหลักสูตร</Dialog.Title>
 			<Dialog.Description>
-				สร้างตัวตนหลักสูตรก่อน แล้วจึงเพิ่มรุ่นและแผนการเรียนในหน้ารายละเอียด
+				กำหนดระดับหรือกลุ่มหลักสูตรก่อน แล้วเพิ่มฉบับปรับปรุงและแผนการเรียนในหน้ารายละเอียด
 			</Dialog.Description>
 		</Dialog.Header>
 		{#if optionsLoading}
@@ -127,8 +127,13 @@
 							<Input id="curriculum-code" bind:value={draft.code} required />
 						</div>
 						<div class="space-y-2">
-							<Label for="curriculum-name-th">ชื่อหลักสูตรภาษาไทย</Label>
-							<Input id="curriculum-name-th" bind:value={draft.nameTh} required />
+							<Label for="curriculum-name-th">ชื่อระดับ/กลุ่มหลักสูตร</Label>
+							<Input
+								id="curriculum-name-th"
+								bind:value={draft.nameTh}
+								placeholder="เช่น ระดับมัธยมศึกษาตอนต้น"
+								required
+							/>
 						</div>
 					</div>
 					<div class="space-y-2">
@@ -170,7 +175,7 @@
 								!draft.nameTh.trim() ||
 								draft.gradeLevelIds.length === 0}
 						>
-							สร้างหลักสูตร
+							สร้างระดับ/กลุ่มหลักสูตร
 						</LoadingButton>
 					</Dialog.Footer>
 				</form>

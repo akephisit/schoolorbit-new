@@ -101,7 +101,7 @@
 			{#if items.length === 0}
 				<PageState
 					title="ยังไม่มีหลักสูตร"
-					description="เพิ่มหลักสูตรแรกเพื่อเริ่มจัดฉบับหลักสูตร แผนการเรียน และรายวิชาในหลักสูตร"
+					description="เพิ่มระดับ/กลุ่มหลักสูตร แล้วจัดฉบับปรับปรุง แผนการเรียน และรายวิชาในแต่ละระดับ"
 				/>
 			{:else}
 				{#each revisionGroups as group (group.label)}
@@ -110,13 +110,13 @@
 							<div>
 								<h2 class="font-semibold">หลักสูตรสถานศึกษา · {group.label}</h2>
 								<p class="mt-1 text-sm text-muted-foreground">
-									เลือกหลักสูตรเพื่อจัดฉบับหลักสูตร แผนการเรียน และข้อกำหนดรายวิชา
+									เลือกระดับ/กลุ่มหลักสูตรเพื่อจัดฉบับปรับปรุง แผนการเรียน และรายวิชา
 								</p>
 							</div>
 							<p
 								class="shrink-0 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary"
 							>
-								{group.items.length} หลักสูตร
+								{group.items.length} ระดับ/กลุ่มหลักสูตร
 							</p>
 						</div>
 						<CurriculumOverviewTable items={group.items} />
