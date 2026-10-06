@@ -69,11 +69,16 @@
 	async function createVersion(event: SubmitEvent) {
 		event.preventDefault();
 		if (!validRevisionYear || draft.revisionYear === undefined) return;
+		const versionName = draft.versionName.trim() || `ฉบับปรับปรุง พุทธศักราช ${draft.revisionYear}`;
+		if (versions.some((view) => view.version.versionName === versionName)) {
+			errorMessage = 'ชื่อฉบับนี้มีอยู่แล้ว กรุณาระบุชื่อฉบับให้แตกต่างจากเดิม';
+			return;
+		}
 		saving = true;
 		errorMessage = '';
 		try {
 			const versionDraft: CreateCurriculumVersionRequest = {
-				versionName: draft.versionName.trim() || `ฉบับปรับปรุง พุทธศักราช ${draft.revisionYear}`,
+				versionName,
 				revisionYear: draft.revisionYear,
 				description: draft.description.trim() || null
 			};
@@ -182,6 +187,9 @@
 					bind:value={draft.versionName}
 					placeholder={`ฉบับปรับปรุง พุทธศักราช ${draft.revisionYear ?? '2569'}`}
 				/>
+				<p class="text-xs text-muted-foreground">
+					ใช้ปีปรับปรุงเดิมได้ โดยตั้งชื่อฉบับให้แตกต่างกัน
+				</p>
 			</div>
 			<div class="space-y-2">
 				<Label for="curriculum-version-description">คำอธิบาย (ถ้ามี)</Label><Input

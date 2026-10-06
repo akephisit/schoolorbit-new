@@ -740,6 +740,25 @@ test('manager clones the published source into a selected future draft and keeps
 	expect(mocked.createOptionsRequestCount()).toBe(0);
 });
 
+test('a same-year revision needs a distinct edition name before cloning', async ({ page }) => {
+	const mocked = await mockShell(page);
+	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);
+	await page.getByRole('button', { name: 'สร้างฉบับปรับปรุงจากฉบับนี้' }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('ปีปรับปรุงหลักสูตร (พุทธศักราช)').fill('2569');
+	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2569');
+	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
+	await expect(
+		dialog.getByText('ชื่อฉบับนี้มีอยู่แล้ว กรุณาระบุชื่อฉบับให้แตกต่างจากเดิม')
+	).toBeVisible();
+	expect(mocked.cloneAttemptCount()).toBe(0);
+	await dialog.getByLabel('ชื่อฉบับ (ถ้ามี)').fill('ฉบับ 2569 ปรับรายวิชา');
+	await dialog.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
+	await expect(page.getByRole('button', { name: /ฉบับ 2569 ปรับรายวิชา/ })).toBeVisible();
+	expect(mocked.cloneRequest()?.revisionYear).toBe(2569);
+	expect(mocked.cloneAttemptCount()).toBe(1);
+});
+
 test('stale clone keeps the draft intact and succeeds on an explicit retry', async ({ page }) => {
 	const mocked = await mockShell(page, { cloneConflictsOnce: true });
 	await page.goto(`/staff/academic/curricula/${ids.curriculum}?versionId=${ids.curriculumVersion}`);

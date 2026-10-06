@@ -4058,7 +4058,7 @@ async fn purge_rejects_admission_logo_and_question_bank_file_consumers() {
              id, curriculum_version_id, code, name_th, is_default, status
          )
          SELECT gen_random_uuid(), id, 'PURGE-FIXTURE',
-                'แผนทดสอบผู้ใช้ไฟล์', true, 'draft'
+                'แผนทดสอบผู้ใช้ไฟล์', true, 'published'
          FROM curriculum_version
          RETURNING id",
     )
