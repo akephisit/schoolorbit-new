@@ -332,6 +332,9 @@ The catalog spec checks the three route-owned list regions, focused retry, local
 The foundation spec checks route-first setup/curriculum regions, focused retry, lazy period reads, and edition creation without owner/grade lookups surviving a stale overview response.
 The publication spec covers a published edition opening an amendment, adding term two, publishing the whole edition, reading the baseline unchanged, stale-edition refusal, read-only permissions, independent history retry and superseded selection. History layouts run at desktop/mobile sizes in light/dark themes. Native Academic Core service tests additionally verify baseline preservation, live requirement references, concurrent draft reuse, stale tokens, atomic validation failure, immutable snapshots and deferred completeness. The delivery apply test verifies source metadata in previews, applied runs and snapshots while retained legacy offerings keep unknown provenance.
 
+Run the pure publication token/source and semantic comparison checks with `cargo test -p school-academic-core curriculum_publication --lib` from `backend-school`. Run the native database cases with `./scripts/test_backend_school.sh curriculum_publication -- --test-threads=4` from the repository root; the CI Academic Core consumer gate includes them in the full service suite.
+
+
 The curriculum detail spec checks independent edition/level reads, regional retry, invalid or mismatched level refusal, read-only alignment, covered-grade level creation, plan creation and copying a selected published program with conflict handling. Copy and later-year room-selection scenarios cover desktop/mobile in light/dark themes. Database tests additionally verify whole-edition atomic publication, source preservation, semantic term-slot copying, uncovered-grade and stale-revision refusal, migration retry and permission-grant metadata preservation.
 
 For coordinated school release behavior, run:

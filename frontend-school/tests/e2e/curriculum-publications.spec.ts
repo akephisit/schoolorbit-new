@@ -8,7 +8,6 @@ import {
 
 test.use({ serviceWorkers: 'block' });
 const root = `/staff/academic/curricula/${ids.curriculum}`;
-const levelPath = `${root}/levels/${ids.curriculumVersion}`;
 const draftId = 'f2000000-0000-4000-8000-000000000402';
 const publicationIds = [
 	'f2000000-0000-4000-8000-000000000401',
