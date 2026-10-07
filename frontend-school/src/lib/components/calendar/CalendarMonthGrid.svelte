@@ -28,13 +28,15 @@
 		pendingRequests = [],
 		selectedDate = '',
 		onselect,
+		oneventselect,
 		fillHeight = false
 	}: {
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
 		pendingRequests?: CalendarDisplayEvent[];
 		selectedDate?: string;
-		onselect?: (date: string) => void;
+		onselect?: (date: string, anchor: HTMLElement) => void;
+		oneventselect?: (event: CalendarDisplayEvent, date: string, anchor: HTMLElement) => void;
 		fillHeight?: boolean;
 	} = $props();
 
@@ -83,14 +85,16 @@
 					<button
 						type="button"
 						class={cn(
-							'group relative flex h-20 min-w-0 flex-col border-b border-r p-1.5 text-left transition-colors hover:bg-muted/50 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:h-28 sm:p-2',
+							'group relative flex h-20 min-w-0 flex-col border-b border-r p-1.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:h-28 sm:p-2',
 							fillHeight && 'h-full min-h-0 sm:h-full',
+							!oneventselect && 'focus-visible:z-20',
 							!cell.inCurrentMonth && 'bg-muted/30 text-muted-foreground',
 							selectedDate === cell.date && 'bg-primary/5 ring-2 ring-inset ring-primary'
 						)}
 						aria-pressed={selectedDate === cell.date}
+						data-calendar-date={cell.date}
 						aria-label={`${formatCalendarDate(cell.date)}, ${dayEvents.length} กิจกรรม${dayRequests.length ? `, ${dayRequests.length} คำร้องรออนุมัติ` : ''}`}
-						onclick={() => onselect?.(cell.date)}
+						onclick={(event) => onselect?.(cell.date, event.currentTarget)}
 					>
 						<span
 							class={cn(
@@ -118,13 +122,22 @@
 						fillHeight &&
 							'top-7 auto-rows-[10px] gap-y-px sm:top-9 sm:auto-rows-[18px] sm:gap-y-0.5'
 					)}
-					aria-hidden="true"
+					aria-hidden={!oneventselect}
 				>
 					{#each week.segments as segment (`${segment.event.id}-${weekIndex}-${segment.startColumn}`)}
 						{@const timed = segment.event.allDay === false && !segment.event.pending}
-						<div
+						<button
+							type="button"
+							tabindex={oneventselect ? 0 : -1}
+							aria-label={`ดูรายละเอียด ${segment.event.title}, ${formatCalendarDate(week.cells[segment.startColumn]?.date ?? segment.event.startDate)}${segment.event.pending ? ', รออนุมัติ' : ''}`}
+							onclick={(event) => {
+								const date = week.cells[segment.startColumn]?.date ?? segment.event.startDate;
+								if (oneventselect) oneventselect(segment.event, date, event.currentTarget);
+								else onselect?.(date, event.currentTarget);
+							}}
 							class={cn(
-								'min-w-0 overflow-hidden',
+								'min-w-0 overflow-hidden text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+								oneventselect && 'pointer-events-auto cursor-pointer hover:brightness-95',
 								timed ? 'flex items-center gap-1 px-1 text-foreground' : 'shadow-sm',
 								segment.event.pending
 									? 'outline-1 outline-dashed -outline-offset-1 outline-primary bg-background text-primary'
@@ -164,7 +177,7 @@
 							>
 								{segmentLabel(segment)}
 							</span>
-						</div>
+						</button>
 					{/each}
 				</div>
 			</div>

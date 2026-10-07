@@ -23,12 +23,14 @@
 		events = [],
 		canManage = false,
 		showFullDescription = false,
+		variant = 'card',
 		onedit,
 		ondelete
 	}: {
 		events?: CalendarListEvent[];
 		canManage?: boolean;
 		showFullDescription?: boolean;
+		variant?: 'card' | 'plain';
 		onedit?: (event: CalendarListEvent) => void;
 		ondelete?: (event: CalendarListEvent) => void;
 	} = $props();
@@ -64,8 +66,12 @@
 	<div class="space-y-3">
 		{#each events as event (event.id)}
 			<article
-				class="rounded-xl border border-l-4 bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
-				style:border-left-color={event.categoryColor ?? fallbackColor}
+				class={variant === 'plain'
+					? 'space-y-3'
+					: 'rounded-xl border border-l-4 bg-card p-4 shadow-sm transition-shadow hover:shadow-md'}
+				style:border-left-color={variant === 'plain'
+					? undefined
+					: (event.categoryColor ?? fallbackColor)}
 			>
 				<div class="flex items-start justify-between gap-3">
 					<div class="min-w-0 flex-1 space-y-3">

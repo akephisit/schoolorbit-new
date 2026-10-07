@@ -114,6 +114,10 @@ test('opened event options start together, retry locally, and retain its input d
 	const api = await mockCalendar(page, { fail: 'options' });
 	await page.goto(calendarPath());
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+	await page
+		.getByRole('button', { name: /^ดูรายละเอียด กิจกรรมแรก,/ })
+		.first()
+		.click();
 	await page.getByRole('button', { name: 'แก้ไข กิจกรรมแรก', exact: true }).click();
 	await page.getByLabel('ชื่อกิจกรรม', { exact: true }).fill('ร่างแก้ไข');
 	await expect(page.getByTestId('calendar-target-options')).toContainText(
@@ -135,6 +139,10 @@ test('typed event save patches only events and never rereads catalogs', async ({
 	const api = await mockCalendar(page);
 	await page.goto(calendarPath());
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+	await page
+		.getByRole('button', { name: /^ดูรายละเอียด กิจกรรมแรก,/ })
+		.first()
+		.click();
 	await page.getByRole('button', { name: 'แก้ไข กิจกรรมแรก', exact: true }).click();
 	await page.getByLabel('ชื่อกิจกรรม', { exact: true }).fill('กิจกรรมแก้ไข');
 	await page.getByRole('button', { name: 'บันทึกและเผยแพร่', exact: true }).click();
@@ -145,11 +153,19 @@ test('late closed event save cannot close or reset a reopened draft', async ({ p
 	const api = await mockCalendar(page, { hold: 'mutation' });
 	await page.goto(calendarPath());
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+	await page
+		.getByRole('button', { name: /^ดูรายละเอียด กิจกรรมแรก,/ })
+		.first()
+		.click();
 	await page.getByRole('button', { name: 'แก้ไข กิจกรรมแรก', exact: true }).click();
 	await page.getByLabel('ชื่อกิจกรรม', { exact: true }).fill('กิจกรรมบันทึก');
 	await page.getByRole('button', { name: 'บันทึกและเผยแพร่', exact: true }).click();
 	await expect.poll(() => api.writes.length).toBe(1);
 	await page.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	await page
+		.getByRole('button', { name: /^ดูรายละเอียด กิจกรรมแรก,/ })
+		.first()
+		.click();
 	await page.getByRole('button', { name: 'แก้ไข กิจกรรมแรก', exact: true }).click();
 	await page.getByLabel('ชื่อกิจกรรม', { exact: true }).fill('ร่างใหม่');
 	api.release();

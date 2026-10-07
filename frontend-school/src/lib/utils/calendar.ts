@@ -246,7 +246,8 @@ export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
 		const segments: CalendarWeekEventSegment<EventType>[] = [];
 
 		for (const visibleEvent of visibleEvents) {
-			const preferredLane = preferredLaneByEventId.get(visibleEvent.event.id);
+			const timed = visibleEvent.event.allDay === false && !visibleEvent.event.pending;
+			const preferredLane = timed ? undefined : preferredLaneByEventId.get(visibleEvent.event.id);
 			const laneCandidates = Array.from({ length: visibleLaneCount }, (_, lane) => lane);
 			if (preferredLane !== undefined && preferredLane < visibleLaneCount) {
 				laneCandidates.splice(preferredLane, 1);
@@ -271,7 +272,7 @@ export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
 				if (occupiedColumnsByLane[lane]) occupiedColumnsByLane[lane][column] = true;
 			}
 
-			preferredLaneByEventId.set(visibleEvent.event.id, lane);
+			if (!timed) preferredLaneByEventId.set(visibleEvent.event.id, lane);
 			segments.push({
 				event: visibleEvent.event,
 				startColumn: visibleEvent.startColumn,

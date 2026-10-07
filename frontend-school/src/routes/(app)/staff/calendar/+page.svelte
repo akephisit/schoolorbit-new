@@ -20,7 +20,9 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
-	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
+	import CalendarMonthGrid, {
+		type CalendarDisplayEvent
+	} from '#lib/components/calendar/CalendarMonthGrid.svelte';
 	import CalendarEventList from '#lib/components/calendar/CalendarEventList.svelte';
 	import CalendarEventDialog from '#lib/components/calendar/CalendarEventDialog.svelte';
 	import CalendarCategoryDialog from '#lib/components/calendar/CalendarCategoryDialog.svelte';
@@ -77,7 +79,8 @@
 		Plus,
 		RefreshCw,
 		Search,
-		SlidersHorizontal
+		SlidersHorizontal,
+		X
 	} from '@lucide/svelte';
 
 	type VisibilityFilter = '' | 'public' | 'private';
@@ -99,6 +102,10 @@
 	let loading = $state(true);
 	const selectedMonth = $derived(committed.month);
 	let selectedDate = $state(todayDate);
+	let detailOpen = $state(false);
+	let detailKind = $state<'day' | 'event' | 'request'>('day');
+	let detailId = $state('');
+	let detailAnchor = $state.raw<HTMLElement | null>(null);
 	let search = $state('');
 	let categoryId = $state('');
 	let tagId = $state('');
@@ -192,6 +199,12 @@
 		showPendingRequests && canViewPendingRequests
 			? pendingRequests.filter((request) => eventOverlapsDate(request, selectedDate))
 			: []
+	);
+	const detailEvent = $derived(events.find((event) => event.id === detailId));
+	const detailRequests = $derived(
+		detailKind === 'request'
+			? selectedDateRequests.filter((request) => request.id === detailId)
+			: selectedDateRequests
 	);
 	const activeCategories = $derived(categories.filter((category) => category.isActive));
 	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
@@ -353,6 +366,8 @@
 			requesting = false;
 			showPendingRequests = false;
 			filterOpen = false;
+			detailOpen = false;
+			detailAnchor = null;
 			reviewTarget = null;
 			reviewOpen = false;
 			categoryDialogOpen = false;
@@ -370,6 +385,7 @@
 		untrack(() => {
 			if (pendingOwner === owner) return;
 			pendingOwner = owner;
+			if (detailKind === 'request') detailOpen = false;
 			pendingRequest.abort();
 			pendingRequests = [];
 			pendingLoading = false;
@@ -387,6 +403,8 @@
 			const changed = activeEventOwner !== key;
 			if (changed) {
 				activeEventOwner = key;
+				detailOpen = false;
+				detailAnchor = null;
 				ownerEpoch++;
 				events = [];
 				eventsLoaded = false;
@@ -495,8 +513,37 @@
 		pendingRequest.abort();
 	});
 
+	$effect(() => {
+		if (!detailOpen) return;
+		if (detailKind === 'event' && eventsLoaded && !detailEvent) detailOpen = false;
+		if (detailKind === 'request' && pendingLoaded && !pendingLoading && !detailRequests.length)
+			detailOpen = false;
+	});
+
+	function openDayDetails(date: string, anchor: HTMLElement) {
+		selectedDate = date;
+		detailKind = 'day';
+		detailId = '';
+		detailAnchor = anchor;
+		detailOpen = true;
+	}
+	function openEntryDetails(event: CalendarDisplayEvent, date: string, anchor: HTMLElement) {
+		selectedDate = date;
+		detailKind = event.pending ? 'request' : 'event';
+		detailId = event.pending ? event.id.slice('request:'.length) : event.id;
+		detailAnchor = anchor;
+		detailOpen = true;
+	}
+	function restoreDetailFocus(event: Event) {
+		event.preventDefault();
+		if (eventDialogOpen || requestDialogOpen || reviewOpen || deleteDialogOpen) return;
+		if (detailAnchor?.isConnected) detailAnchor.focus();
+		else
+			document.querySelector<HTMLButtonElement>(`[data-calendar-date="${selectedDate}"]`)?.focus();
+	}
 	function reviewPendingRequest(request: PendingCalendarRequest, mode: 'approve' | 'reject') {
 		if (!canReadCalendar || !canManageCalendar) return;
+		detailOpen = false;
 		reviewIdentity = identityOwner;
 		reviewTarget = request;
 		reviewMode = mode;
@@ -617,6 +664,7 @@
 	function requestDeleteEvent(event: { id: string }) {
 		const target = events.find((item) => item.id === event.id);
 		if (!target || !canManageCalendar) return;
+		detailOpen = false;
 		deletingEvent = target;
 		deleteDialogOpen = true;
 	}
@@ -885,6 +933,7 @@
 		if (!canManageCalendar || !categoriesLoaded || !tagsLoaded || categoriesError || tagsError)
 			return;
 
+		detailOpen = false;
 		editingEvent = event ? (events.find((item) => item.id === event.id) ?? null) : null;
 
 		optionsDate = editingEvent?.startDate ?? selectedDate;
@@ -1103,6 +1152,8 @@
 								onsubmit={(submitEvent) => {
 									submitEvent.preventDefault();
 									filterOpen = false;
+									detailOpen = false;
+									detailAnchor = null;
 									commitFilters();
 								}}
 							>
@@ -1241,40 +1292,77 @@
 			{#if loading && !eventsLoaded}<div role="status" aria-label="กำลังโหลดกิจกรรม">
 					<PageSkeleton variant="detail" />
 				</div>{:else if eventsLoaded}
-				<div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
-					<div class="min-w-0 space-y-3">
-						<CalendarMonthGrid
-							monthDate={selectedMonth}
-							{events}
-							pendingRequests={pendingDisplayEvents}
-							{selectedDate}
-							onselect={(date) => (selectedDate = date)}
-						/>
-						{#if activeCategories.length > 0}
-							<CalendarColorKey items={activeCategories} />
-						{/if}
-					</div>
-					<section class="space-y-3">
-						<div class="flex items-center gap-3 rounded-xl border bg-card p-4">
-							<div
-								class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+				<div class="min-w-0 space-y-3">
+					{#if showPendingRequests && canViewPendingRequests && (!detailOpen || detailKind === 'event')}
+						{#if pendingLoading}<p role="status" class="text-sm text-muted-foreground">
+								กำลังโหลดคำร้องรออนุมัติ...
+							</p>{/if}
+						{#if pendingError}<PageState
+								variant="error"
+								title="โหลดคำร้องรออนุมัติไม่สำเร็จ"
+								description={pendingError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={loadPendingRequests}
+							/>{/if}
+						{#if pendingHasMore}<p role="status" class="text-sm text-muted-foreground">
+								มีคำร้องมากกว่า 500 รายการ แสดงบนปฏิทินเพียง 500 รายการแรก
+								กรุณาเปิดคิวคำร้องเพื่อดูทั้งหมด
+							</p>{/if}
+					{/if}
+					<CalendarMonthGrid
+						monthDate={selectedMonth}
+						{events}
+						pendingRequests={pendingDisplayEvents}
+						{selectedDate}
+						onselect={openDayDetails}
+						oneventselect={openEntryDetails}
+					/>
+					{#if events.length === 0}<PageState
+							variant="empty"
+							title="ยังไม่มีกิจกรรม"
+							description="ไม่มีรายการในช่วงวันที่หรือเงื่อนไขที่เลือก"
+						/>{/if}
+					{#if activeCategories.length > 0}<CalendarColorKey items={activeCategories} />{/if}
+				</div>
+				<Popover.Root bind:open={detailOpen}>
+					<Popover.Content
+						customAnchor={detailAnchor}
+						side="bottom"
+						align="start"
+						collisionPadding={12}
+						sideOffset={8}
+						onCloseAutoFocus={restoreDetailFocus}
+						role={detailOpen ? 'dialog' : undefined}
+						aria-hidden={!detailOpen}
+						aria-label="รายละเอียดปฏิทิน"
+						class="max-h-[min(80dvh,var(--bits-popover-content-available-height))] w-md max-w-[calc(100vw-2rem)] space-y-4 overflow-y-auto"
+					>
+						<div class="flex items-center justify-between gap-3">
+							<h2 class="font-semibold">
+								{detailKind === 'day' ? formatCalendarDate(selectedDate) : 'รายละเอียดกิจกรรม'}
+							</h2>
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label="ปิดรายละเอียดกิจกรรม"
+								onclick={() => (detailOpen = false)}><X class="size-4" /></Button
 							>
-								<CalendarDays class="size-5" />
-							</div>
-							<div class="min-w-0">
-								<h2 class="truncate font-semibold">{formatCalendarDate(selectedDate)}</h2>
-								<p class="text-sm text-muted-foreground">
-									{selectedDateEvents.length} รายการในวันที่เลือก
-								</p>
-							</div>
 						</div>
-						<CalendarEventList
-							events={selectedDateEvents}
-							canManage={canManageCalendar}
-							onedit={openEventDialog}
-							ondelete={requestDeleteEvent}
-						/>
-						{#if showPendingRequests && canViewPendingRequests}
+						{#if detailKind !== 'request'}
+							<CalendarEventList
+								events={detailKind === 'event'
+									? detailEvent
+										? [detailEvent]
+										: []
+									: selectedDateEvents}
+								variant="plain"
+								showFullDescription
+								canManage={canManageCalendar}
+								onedit={openEventDialog}
+								ondelete={requestDeleteEvent}
+							/>
+						{/if}
+						{#if showPendingRequests && canViewPendingRequests && detailKind !== 'event'}
 							<section
 								aria-label="คำร้องในวันที่เลือก"
 								aria-busy={pendingLoading}
@@ -1305,7 +1393,7 @@
 										มีคำร้องมากกว่า 500 รายการ แสดงบนปฏิทินเพียง 500 รายการแรก
 										กรุณาเปิดคิวคำร้องเพื่อดูทั้งหมด
 									</p>{/if}
-								{#each selectedDateRequests as request (request.id)}
+								{#each detailRequests as request (request.id)}
 									<article class="space-y-1 rounded-lg border border-dashed bg-background p-3">
 										<div class="flex items-start justify-between gap-2">
 											<h4 class="min-w-0 break-words font-medium">{request.title}</h4>
@@ -1343,8 +1431,8 @@
 								{/each}
 							</section>
 						{/if}
-					</section>
-				</div>
+					</Popover.Content>
+				</Popover.Root>
 			{/if}
 		{/if}
 	</section>

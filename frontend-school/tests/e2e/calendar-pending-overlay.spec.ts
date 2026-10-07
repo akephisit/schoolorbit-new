@@ -112,7 +112,7 @@ for (const width of [1280, 375]) {
 			name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ',
 			exact: true
 		});
-		await day.click();
+		await day.click({ position: { x: 5, y: 5 } });
 		const selected = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 		await expect(selected).toContainText('คำร้องเวลาเช้า');
 		await expect(selected).toContainText('08:00 – 09:00');
@@ -145,9 +145,10 @@ for (const width of [1280, 375]) {
 		).toBe(true);
 		await page
 			.getByRole('button', { name: '2 ต.ค. 2569, 0 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
-			.click();
+			.click({ position: { x: 5, y: 5 } });
 		await expect(selected).toContainText('คำร้องหลายวัน');
 		await expect(selected).not.toContainText('คำร้องเวลาเช้า');
+		await page.keyboard.press('Escape');
 		await toggle(page).click();
 		await expect(selected).toHaveCount(0);
 		await expect(
@@ -204,6 +205,9 @@ test('pending failures and overflow stay local while confirmed events remain usa
 	const overlay = await mockOverlay(page, { failFirst: true, hasMore: true });
 	await page.goto(calendarPath());
 	await toggle(page).click();
+	await page
+		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
+		.click({ position: { x: 5, y: 5 } });
 	const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 	await expect(region).toContainText('คำร้องไม่พร้อม ลองใหม่');
 	await expect(
@@ -321,6 +325,9 @@ test('own pending requests and a successful submission patch markers without rer
 	);
 	await page.goto(calendarPath());
 	await toggle(page).click();
+	await page
+		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
+		.click({ position: { x: 5, y: 5 } });
 	await expect(
 		page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 	).toContainText('คำร้องของฉัน');
@@ -335,6 +342,7 @@ test('own pending requests and a successful submission patch markers without rer
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
 	).toBeVisible();
+	await page.getByRole('button', { name: /^ดูรายละเอียด คำร้องของฉันใหม่,/ }).click();
 	await expect(
 		page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 	).toContainText('คำร้องของฉันใหม่');
@@ -417,11 +425,7 @@ for (const width of [1280, 375]) {
 		const decisions = await mockInlineDecisions(page, { failDecision: true });
 		await page.goto(calendarPath());
 		await toggle(page).click();
-		const day = page.getByRole('button', {
-			name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ',
-			exact: true
-		});
-		await day.click();
+		await page.getByRole('button', { name: /^ดูรายละเอียด คำร้องเวลาเช้า,/ }).click();
 		const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 		expect(decisions.details).toHaveLength(0);
 		expect(api.count('/api/calendar/target-options')).toBe(0);
@@ -452,6 +456,9 @@ for (const width of [1280, 375]) {
 		await expect(region.getByRole('heading', { name: 'คำร้องเวลาเช้า', exact: true })).toHaveCount(
 			0
 		);
+		await page
+			.getByRole('button', { name: '1 ต.ค. 2569, 2 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
+			.click({ position: { x: 5, y: 5 } });
 		await expect(region).toContainText('คำร้องหลายวัน');
 		await expect(
 			page.getByRole('button', { name: '1 ต.ค. 2569, 2 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
@@ -474,7 +481,7 @@ for (const width of [1280, 375]) {
 		await toggle(page).click();
 		await page
 			.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
-			.click();
+			.click({ position: { x: 5, y: 5 } });
 		const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 		await region
 			.getByRole('article')
@@ -557,11 +564,14 @@ test('request detail retry stays local and closing a delayed review cannot repla
 	await toggle(page).click();
 	await page
 		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
-		.click();
+		.click({ position: { x: 5, y: 5 } });
 	const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 	await region.getByRole('button', { name: 'ตรวจและอนุมัติ', exact: true }).first().click();
 	await expect(page.getByRole('dialog').getByRole('status')).toBeVisible();
 	await page.keyboard.press('Escape');
+	await page
+		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
+		.click({ position: { x: 5, y: 5 } });
 	await region.getByRole('button', { name: 'ตรวจและอนุมัติ', exact: true }).last().click();
 	await expect(page.getByLabel('ชื่อกิจกรรม', { exact: true })).toHaveValue('คำร้องหลายวัน');
 	decisions.release();
@@ -578,7 +588,7 @@ test('calendar review details can fail and retry without affecting event or pend
 	await toggle(page).click();
 	await page
 		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
-		.click();
+		.click({ position: { x: 5, y: 5 } });
 	await page
 		.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 		.getByRole('button', { name: 'ตรวจและอนุมัติ', exact: true })
@@ -602,7 +612,7 @@ test('requesters see their request dates but no manager actions or detail reads'
 	await toggle(page).click();
 	await page
 		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
-		.click();
+		.click({ position: { x: 5, y: 5 } });
 	const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 	await expect(region).toContainText('คำร้องของฉัน');
 	await expect(region.getByRole('button', { name: 'ตรวจและอนุมัติ', exact: true })).toHaveCount(0);

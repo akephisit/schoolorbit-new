@@ -199,6 +199,21 @@ describe('calendar helpers', () => {
 				.every((segment) => segment.lane > bar.lane)
 		);
 	});
+	it('packs timed entries independently each day below continuous all-day bars', () => {
+		const shared = { startDate: '2026-10-01', endDate: '2026-10-03', title: 'Activity' };
+		const weeks = buildCalendarMonthWeeks('2026-10-01', [
+			{ ...shared, id: 'bar', allDay: true },
+			{ ...shared, id: 'morning', endDate: '2026-10-01', allDay: false, startTime: '08:30' },
+			{ ...shared, id: 'afternoon', allDay: false, startTime: '13:00' }
+		]);
+		const segments = weeks[0].segments;
+		assert.equal(segments.find((item) => item.event.id === 'bar').lane, 0);
+		assert.deepEqual(
+			segments.filter((item) => item.event.id === 'afternoon').map((item) => item.lane),
+			[2, 1, 1]
+		);
+	});
+
 	it('counts events hidden when all visible lanes are occupied', () => {
 		const [firstWeek] = buildCalendarMonthWeeks(
 			'2026-07-01',

@@ -64,13 +64,14 @@ for (const width of [1280, 375]) {
 		);
 		await page.goto(calendarPath());
 		const day = page.getByRole('button', { name: '1 ต.ค. 2569, 3 กิจกรรม', exact: true });
-		await day.click();
+		await day.click({ position: { x: 5, y: 5 } });
 		const centered = await day.evaluate((el) => {
 			const cell = el.getBoundingClientRect(),
 				number = el.querySelector('span')!.getBoundingClientRect();
 			return Math.abs((cell.left + cell.right) / 2 - (number.left + number.right) / 2) < 1;
 		});
 		expect(centered).toBe(true);
+		await page.keyboard.press('Escape');
 		const bar = page.locator('[title="ค่ายทั้งวัน"]');
 		const timed = page.locator('[title="08:30 สอบช่วงเช้า"]');
 		await expect(timed).toHaveCount(1);
@@ -100,11 +101,13 @@ for (const width of [1280, 375]) {
 				fullPage: true
 			});
 		}
+		await timed.click();
 		await page.getByRole('button', { name: 'แก้ไข สอบช่วงเช้า', exact: true }).click();
 		await expect(page.getByRole('checkbox', { name: 'ทั้งวัน', exact: true })).not.toBeChecked();
 		await expect(page.getByLabel('เวลาเริ่มต้น *', { exact: true })).toHaveValue('08:30');
 		await expect(page.getByLabel('เวลาสิ้นสุด *', { exact: true })).toHaveValue('09:30');
 		await page.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+		await bar.click();
 		await page.getByRole('button', { name: 'แก้ไข ค่ายทั้งวัน', exact: true }).click();
 		await expect(page.getByRole('checkbox', { name: 'ทั้งวัน', exact: true })).toBeChecked();
 		await expect(page.getByLabel('เวลาเริ่มต้น *', { exact: true })).toHaveCount(0);
