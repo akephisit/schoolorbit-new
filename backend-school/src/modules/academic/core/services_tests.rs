@@ -3464,7 +3464,7 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
     )
     .await
     .unwrap_err();
-    assert!(matches!(immutable, AppError::Conflict(_)));
+    assert!(matches!(immutable, school_errors::AppError::Conflict(_)));
 
     let archived = catalog::update_subject(
         &pool,
@@ -4879,7 +4879,7 @@ async fn curriculum_version_supports_multiple_programs_and_freezes_them_on_publi
     )
     .await
     .unwrap_err();
-    assert!(matches!(immutable, AppError::Conflict(_)));
+    assert!(matches!(immutable, school_errors::AppError::Conflict(_)));
 }
 
 #[tokio::test]
