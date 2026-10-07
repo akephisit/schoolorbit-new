@@ -20,6 +20,8 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import CalendarCreateMenu from '#lib/components/calendar/CalendarCreateMenu.svelte';
 	import CalendarMonthGrid, {
 		type CalendarDisplayEvent
 	} from '#lib/components/calendar/CalendarMonthGrid.svelte';
@@ -76,7 +78,7 @@
 		Code2,
 		Copy,
 		FolderPlus,
-		Plus,
+		Settings,
 		RefreshCw,
 		Search,
 		SlidersHorizontal,
@@ -940,6 +942,13 @@
 		manageOptionsLoaded = true;
 		return true;
 	}
+	function openRequestDialog() {
+		if (!canRequestCalendar) return;
+		detailOpen = false;
+		requestSession++;
+		requestError = '';
+		requestDialogOpen = true;
+	}
 	function openEventDialog(event: { id: string } | null = null) {
 		if (!canManageCalendar || !categoriesLoaded || !tagsLoaded || categoriesError || tagsError)
 			return;
@@ -1037,18 +1046,6 @@
 <PageShell title="ปฏิทินโรงเรียน" description="กิจกรรมและประกาศตามช่วงเดือน">
 	{#snippet actions()}
 		<div class="flex flex-wrap gap-2">
-			{#if canRequestCalendar}
-				<Button
-					variant="outline"
-					onclick={() => {
-						requestSession++;
-						requestError = '';
-						requestDialogOpen = true;
-					}}
-				>
-					<Plus class="size-4" />คำร้องขอเพิ่มวันกิจกรรม
-				</Button>
-			{/if}
 			{#if canRequestCalendar || canManageCalendar}
 				<Button
 					variant="outline"
@@ -1060,36 +1057,41 @@
 				</Button>
 			{/if}
 			{#if canReadCalendar}
-				<Button variant="outline" onclick={copyPublicCalendarLink}>
-					<Copy class="size-4" />
-					คัดลอกลิงก์สาธารณะ
-				</Button>
-				<Button variant="outline" onclick={() => (embedDialogOpen = true)}>
-					<Code2 class="size-4" />
-					ฝังในเว็บไซต์
-				</Button>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button {...props} variant="outline"><Settings class="size-4" />ตั้งค่า</Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-60">
+						<DropdownMenu.Item onSelect={copyPublicCalendarLink}
+							><Copy class="size-4" />คัดลอกลิงก์สาธารณะ</DropdownMenu.Item
+						>
+						<DropdownMenu.Item onSelect={() => (embedDialogOpen = true)}
+							><Code2 class="size-4" />ฝังในเว็บไซต์</DropdownMenu.Item
+						>
+						{#if canManageCalendar}
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item
+								onSelect={openCategoryDialog}
+								disabled={!categoriesLoaded || !tagsLoaded || !!categoriesError || !!tagsError}
+								><FolderPlus class="size-4" />หมวดหมู่และแท็ก</DropdownMenu.Item
+							>
+						{/if}
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 			{/if}
-			{#if canManageCalendar}
-				<Button
-					variant="outline"
-					onclick={openCategoryDialog}
-					disabled={!categoriesLoaded || !tagsLoaded || !!categoriesError || !!tagsError}
-				>
-					<FolderPlus class="h-4 w-4" />
-					หมวดหมู่และแท็ก
-				</Button>
-				<Button
-					onclick={() => openEventDialog()}
-					disabled={manageOptionsLoading ||
-						!categoriesLoaded ||
-						!tagsLoaded ||
-						!!categoriesError ||
-						!!tagsError}
-				>
-					<Plus class="h-4 w-4" />
-					เพิ่มกิจกรรม
-				</Button>
-			{/if}
+			<CalendarCreateMenu
+				canCreate={canManageCalendar}
+				canRequest={canRequestCalendar}
+				createDisabled={manageOptionsLoading ||
+					!categoriesLoaded ||
+					!tagsLoaded ||
+					!!categoriesError ||
+					!!tagsError}
+				oncreate={() => openEventDialog()}
+				onrequest={openRequestDialog}
+			/>
 		</div>
 	{/snippet}
 
@@ -1336,11 +1338,7 @@
 							oneventselect={openEntryDetails}
 						/>
 					</div>
-					{#if eventsLoaded && !loading && events.length === 0}<PageState
-							variant="empty"
-							title="ยังไม่มีกิจกรรม"
-							description="ไม่มีรายการในช่วงวันที่หรือเงื่อนไขที่เลือก"
-						/>{/if}
+
 					{#if activeCategories.length > 0}<CalendarColorKey items={activeCategories} />{/if}
 				</div>
 				<Popover.Root bind:open={detailOpen}>
@@ -1360,12 +1358,29 @@
 							<h2 class="font-semibold">
 								{detailKind === 'day' ? formatCalendarDate(selectedDate) : 'รายละเอียดกิจกรรม'}
 							</h2>
-							<Button
-								variant="ghost"
-								size="icon"
-								aria-label="ปิดรายละเอียดกิจกรรม"
-								onclick={() => (detailOpen = false)}><X class="size-4" /></Button
-							>
+							<div class="flex items-center gap-1">
+								{#if detailKind === 'day'}
+									<CalendarCreateMenu
+										canCreate={canManageCalendar}
+										canRequest={canRequestCalendar}
+										compact
+										label="เพิ่มรายการในวันที่เลือก"
+										createDisabled={manageOptionsLoading ||
+											!categoriesLoaded ||
+											!tagsLoaded ||
+											!!categoriesError ||
+											!!tagsError}
+										oncreate={() => openEventDialog()}
+										onrequest={openRequestDialog}
+									/>
+								{/if}
+								<Button
+									variant="ghost"
+									size="icon"
+									aria-label="ปิดรายละเอียดกิจกรรม"
+									onclick={() => (detailOpen = false)}><X class="size-4" /></Button
+								>
+							</div>
 						</div>
 						{#if detailKind !== 'request' && !eventsLoaded && loading}
 							<p role="status" class="text-sm text-muted-foreground">กำลังโหลดกิจกรรม...</p>

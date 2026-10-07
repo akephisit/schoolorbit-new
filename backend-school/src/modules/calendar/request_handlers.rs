@@ -93,7 +93,13 @@ pub async fn create_request(
     Ok((
         StatusCode::CREATED,
         Json(ApiResponse::ok(
-            requests::create_request(&context.tenant.pool, &context.actor, payload).await?,
+            super::services::CalendarRequestWorkflow::new(
+                &context.tenant.pool,
+                &state.notification_channel,
+                &context.tenant.subdomain,
+            )
+            .create(&context.actor, payload)
+            .await?,
         )),
     ))
 }
@@ -113,8 +119,13 @@ pub async fn approve_request(
     require_staff(&session)?;
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let notify = payload.notify_audience;
-    let outcome =
-        requests::approve_request(&context.tenant.pool, &context.actor, id, payload).await?;
+    let outcome = super::services::CalendarRequestWorkflow::new(
+        &context.tenant.pool,
+        &state.notification_channel,
+        &context.tenant.subdomain,
+    )
+    .approve(&context.actor, id, payload)
+    .await?;
     if notify {
         if let Err(error) = super::services::send_event_notification(
             &context.tenant.pool,
@@ -146,7 +157,13 @@ pub async fn reject_request(
     require_staff(&session)?;
     let context = actor_tenant_context_from_session(&state, &session).await?;
     Ok(Json(ApiResponse::ok(
-        requests::reject_request(&context.tenant.pool, &context.actor, id, &payload.reason).await?,
+        super::services::CalendarRequestWorkflow::new(
+            &context.tenant.pool,
+            &state.notification_channel,
+            &context.tenant.subdomain,
+        )
+        .reject(&context.actor, id, &payload.reason)
+        .await?,
     )))
 }
 

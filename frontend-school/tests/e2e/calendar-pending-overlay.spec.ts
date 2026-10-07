@@ -336,7 +336,8 @@ test('own pending requests and a successful submission patch markers without rer
 		page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 	).toContainText('คำร้องของฉัน');
 	await expect(page.getByText('วันนี้ไม่มีคำร้องรออนุมัติ', { exact: true })).toBeVisible();
-	await page.getByRole('button', { name: 'คำร้องขอเพิ่มวันกิจกรรม', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มรายการปฏิทิน', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'คำร้องขอเพิ่มกิจกรรม', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('คำร้องของฉันใหม่');
 	await dialog.getByLabel('รายละเอียดกิจกรรม *', { exact: true }).fill('รายละเอียดทดสอบ');
@@ -550,7 +551,8 @@ for (const width of [1280, 375]) {
 		await form.getByRole('button', { name: /^กรอง(?: \d+)?$/ }).click();
 		await expect(form).toHaveCount(0);
 		await expect(page).toHaveURL(/q=/);
-		await expect(page.getByTestId('calendar-events')).toContainText('ยังไม่มีกิจกรรม');
+		await expect(page.getByRole('button', { name: /^ดูรายละเอียด / })).toHaveCount(0);
+		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
 		expect(api.count('/api/calendar/categories')).toBe(1);
 		expect(api.count('/api/calendar/tags')).toBe(1);
 		expect(

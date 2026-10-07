@@ -74,7 +74,8 @@ for (const width of [1280, 375])
 		const writes = await requests(page, true);
 		await page.goto(calendarPath(nextYear, '2027-06'));
 		await page.getByRole('button', { name: '12 มิ.ย. 2570, 0 กิจกรรม', exact: true }).click();
-		await page.getByRole('button', { name: 'คำร้องขอเพิ่มวันกิจกรรม', exact: true }).click();
+		await page.getByRole('button', { name: 'เพิ่มรายการในวันที่เลือก', exact: true }).click();
+		await page.getByRole('menuitem', { name: 'คำร้องขอเพิ่มกิจกรรม', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await expect(
 			dialog.getByRole('button', { name: 'วันที่เริ่มกิจกรรม', exact: true })
@@ -134,7 +135,8 @@ test('direct event defaults to selected date despite an unrelated header year', 
 	const api = await mockCalendar(page);
 	await page.goto(calendarPath(nextYear, '2027-06'));
 	await page.getByRole('button', { name: '12 มิ.ย. 2570, 0 กิจกรรม', exact: true }).click();
-	await page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มรายการในวันที่เลือก', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'เพิ่มกิจกรรม', exact: true }).click();
 	await page.getByLabel('ชื่อกิจกรรม', { exact: true }).fill('กิจกรรมในอนาคต');
 	await expect(page.getByRole('checkbox', { name: 'ทั้งวัน', exact: true })).not.toBeChecked();
 	await page.getByLabel('เวลาเริ่มต้น *', { exact: true }).fill('1300');

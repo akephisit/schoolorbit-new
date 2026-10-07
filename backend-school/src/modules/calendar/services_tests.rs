@@ -1263,3 +1263,315 @@ async fn reminder_without_active_recipients_is_marked_complete_without_broadcast
             .expect("sent_at should query");
     assert!(sent_at.is_some());
 }
+
+async fn grant_calendar_role(pool: &PgPool, user: Uuid, permissions: &[&str]) -> Uuid {
+    let role = Uuid::new_v4();
+    sqlx::query("INSERT INTO roles(id,code,name) VALUES($1,$2,'Synthetic calendar role')")
+        .bind(role)
+        .bind(format!("cal-{}", role))
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=ANY($2)")
+        .bind(role).bind(permissions).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
+        .bind(user)
+        .bind(role)
+        .execute(pool)
+        .await
+        .unwrap();
+    role
+}
+
+#[tokio::test]
+async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligible_users() {
+    use school_authorization::{
+        load_actor_context, staff_users_with_all_permissions, PermissionCache,
+    };
+    use school_permissions::registry::codes;
+    let pool = migrated_pool("calendar_request_recipients").await;
+    let required = [codes::CALENDAR_READ_SCHOOL, codes::CALENDAR_MANAGE_SCHOOL];
+    let manager = insert_user(&pool, "staff", "Role manager").await;
+    grant_calendar_role(&pool, manager, &required).await;
+    // Multiple grant sources must still produce a single recipient.
+    grant_calendar_role(&pool, manager, &required).await;
+    let wildcard = insert_user(&pool, "staff", "Wildcard manager").await;
+    grant_calendar_role(&pool, wildcard, &[codes::WILDCARD]).await;
+    let read_only = insert_user(&pool, "staff", "Reader").await;
+    grant_calendar_role(&pool, read_only, &[required[0]]).await;
+    let manage_only = insert_user(&pool, "staff", "No calendar read").await;
+    grant_calendar_role(&pool, manage_only, &[required[1]]).await;
+    let inactive = insert_user(&pool, "staff", "Inactive manager").await;
+    grant_calendar_role(&pool, inactive, &required).await;
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(inactive)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let student = insert_user(&pool, "student", "Ineligible student").await;
+    grant_calendar_role(&pool, student, &required).await;
+    let ended = insert_user(&pool, "staff", "Ended role").await;
+    grant_calendar_role(&pool, ended, &required).await;
+    sqlx::query("UPDATE user_roles SET ended_at=CURRENT_DATE WHERE user_id=$1")
+        .bind(ended)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let disabled = insert_user(&pool, "staff", "Disabled role").await;
+    let role = grant_calendar_role(&pool, disabled, &required).await;
+    sqlx::query("UPDATE roles SET is_active=false WHERE id=$1")
+        .bind(role)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let unit = Uuid::new_v4();
+    sqlx::query("INSERT INTO organization_units(id,code,name) VALUES($1,'calendar-fixture','Synthetic calendar unit')").bind(unit).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO organization_permission_grants(organization_unit_id,permission_id,position_code) SELECT $1,id,'head' FROM permissions WHERE code=ANY($2)").bind(unit).bind(&required).execute(&pool).await.unwrap();
+    let head = insert_user(&pool, "staff", "Unit head").await;
+    let member = insert_user(&pool, "staff", "Unit member").await;
+    for (user, position) in [(head, "head"), (member, "member")] {
+        sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,$3)").bind(user).bind(unit).bind(position).execute(&pool).await.unwrap();
+    }
+    let delegated = insert_user(&pool, "staff", "Delegated manager").await;
+    let expired = insert_user(&pool, "staff", "Expired delegation").await;
+    let revoked = insert_user(&pool, "staff", "Revoked delegation").await;
+    for user in [delegated, expired, revoked] {
+        sqlx::query("INSERT INTO organization_permission_delegations(from_user_id,to_user_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code=ANY($3)").bind(manager).bind(user).bind(&required).execute(&pool).await.unwrap();
+    }
+    sqlx::query("UPDATE organization_permission_delegations SET expires_at=NOW()-INTERVAL '1 hour' WHERE to_user_id=$1").bind(expired).execute(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE organization_permission_delegations SET revoked_at=NOW() WHERE to_user_id=$1",
+    )
+    .bind(revoked)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let recipients = staff_users_with_all_permissions(&pool, &required)
+        .await
+        .unwrap();
+    let cache = PermissionCache::new();
+    for user in [
+        manager,
+        wildcard,
+        read_only,
+        manage_only,
+        inactive,
+        ended,
+        disabled,
+        head,
+        member,
+        delegated,
+        expired,
+        revoked,
+    ] {
+        let actor = load_actor_context(user, "calendar-recipient-test", &pool, &cache)
+            .await
+            .unwrap();
+        assert_eq!(
+            recipients.contains(&user),
+            actor.has_all_permissions(&required),
+            "batch resolution must agree with actor authorization for {user}"
+        );
+    }
+    for allowed in [manager, wildcard, head, delegated] {
+        assert!(recipients.contains(&allowed));
+    }
+    for denied in [
+        read_only,
+        manage_only,
+        inactive,
+        student,
+        ended,
+        disabled,
+        member,
+        expired,
+        revoked,
+    ] {
+        assert!(!recipients.contains(&denied));
+    }
+    assert_eq!(recipients.iter().filter(|id| **id == manager).count(), 1);
+    sqlx::query("UPDATE organization_units SET is_active=false WHERE id=$1")
+        .bind(unit)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(!staff_users_with_all_permissions(&pool, &required)
+        .await
+        .unwrap()
+        .contains(&head));
+}
+
+#[tokio::test]
+async fn request_workflow_notifies_managers_then_only_requester_for_one_successful_decision() {
+    use school_authorization::ActorContext;
+    use school_calendar::requests::{CalendarRequestStatus, CreateCalendarRequest};
+    use school_permissions::registry::codes;
+    let pool = migrated_pool("calendar_request_notification_workflow").await;
+    let fixture = insert_fixture(&pool).await;
+    let manager_id = insert_user(&pool, "staff", "Review manager").await;
+    let required = [codes::CALENDAR_READ_SCHOOL, codes::CALENDAR_MANAGE_SCHOOL];
+    grant_calendar_role(&pool, manager_id, &required).await;
+    grant_calendar_role(&pool, manager_id, &required).await;
+    let actor = ActorContext {
+        user_id: fixture.staff_user_id,
+        permissions: vec![required[0].into(), codes::CALENDAR_REQUEST_OWN.into()],
+    };
+    let manager = ActorContext {
+        user_id: manager_id,
+        permissions: required.iter().map(ToString::to_string).collect(),
+    };
+    let (tx, mut rx) = broadcast::channel::<TenantNotificationEvent>(32);
+    let workflow = services::CalendarRequestWorkflow::new(&pool, &tx, "synthetic-tenant");
+    let payload = CreateCalendarRequest {
+        title: "Synthetic calendar request".into(),
+        description: "Synthetic description".into(),
+        location: None,
+        start_date: calendar_today(),
+        end_date: calendar_today(),
+        all_day: true,
+        start_time: None,
+        end_time: None,
+    };
+    let request = workflow.create(&actor, payload.clone()).await.unwrap();
+    let created = rx.try_recv().unwrap();
+    assert_eq!(created.tenant, "synthetic-tenant");
+    assert_eq!(created.user_id, manager_id);
+    assert_eq!(created.notification.type_, "info");
+    assert!(created.notification.message.contains(&request.title));
+    assert_eq!(
+        created.notification.link.as_deref(),
+        Some("/staff/calendar/requests?review=true&status=pending")
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "duplicate grant must not duplicate notification"
+    );
+    let mut event = payload_event_for_pending_test(calendar_today(), fixture.academic_year_id);
+    event.notify_audience = false;
+    let (one, two) = tokio::join!(
+        workflow.approve(&manager, request.id, event.clone()),
+        workflow.approve(&manager, request.id, event)
+    );
+    assert_eq!(usize::from(one.is_ok()) + usize::from(two.is_ok()), 1);
+    let decision = rx.try_recv().unwrap();
+    assert_eq!(decision.user_id, actor.user_id);
+    assert_eq!(decision.tenant, "synthetic-tenant");
+    assert_eq!(decision.notification.type_, "success");
+    assert_eq!(
+        decision.notification.link.as_deref(),
+        Some("/staff/calendar/requests?status=approved")
+    );
+    assert!(rx.try_recv().is_err());
+    assert!(workflow
+        .reject(&manager, request.id, "already approved")
+        .await
+        .is_err());
+    assert!(rx.try_recv().is_err());
+    let rejected = workflow.create(&actor, payload.clone()).await.unwrap();
+    assert_eq!(rx.try_recv().unwrap().user_id, manager_id);
+    let rejected = workflow
+        .reject(&manager, rejected.id, "Synthetic rejection reason")
+        .await
+        .unwrap();
+    assert_eq!(rejected.status, CalendarRequestStatus::Rejected);
+    assert_eq!(
+        rejected.rejection_reason.as_deref(),
+        Some("Synthetic rejection reason")
+    );
+    let decision = rx.try_recv().unwrap();
+    assert_eq!(decision.user_id, actor.user_id);
+    assert_eq!(decision.notification.type_, "warning");
+    assert_eq!(
+        decision.notification.link.as_deref(),
+        Some("/staff/calendar/requests?status=rejected")
+    );
+    assert!(rx.try_recv().is_err());
+    let invalid = CreateCalendarRequest {
+        title: String::new(),
+        ..payload
+    };
+    assert!(workflow.create(&actor, invalid).await.is_err());
+    assert!(rx.try_recv().is_err());
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM notifications")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, 4);
+    let own_links: Vec<String> =
+        sqlx::query_scalar("SELECT link FROM notifications WHERE user_id=$1 ORDER BY created_at")
+            .bind(actor.user_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        own_links,
+        vec![
+            "/staff/calendar/requests?status=approved",
+            "/staff/calendar/requests?status=rejected"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn request_workflow_keeps_committed_mutations_when_notification_storage_fails() {
+    use school_authorization::ActorContext;
+    use school_calendar::requests::{CalendarRequestStatus, CreateCalendarRequest};
+    use school_permissions::registry::codes;
+    let pool = migrated_pool("calendar_request_notification_failure").await;
+    let fixture = insert_fixture(&pool).await;
+    let manager_id = insert_user(&pool, "staff", "Manager").await;
+    let required = [codes::CALENDAR_READ_SCHOOL, codes::CALENDAR_MANAGE_SCHOOL];
+    grant_calendar_role(&pool, manager_id, &required).await;
+    sqlx::query(
+        "ALTER TABLE notifications ADD CONSTRAINT synthetic_notification_failure CHECK (false)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let actor = ActorContext {
+        user_id: fixture.staff_user_id,
+        permissions: vec![required[0].into(), codes::CALENDAR_REQUEST_OWN.into()],
+    };
+    let manager = ActorContext {
+        user_id: manager_id,
+        permissions: required.iter().map(ToString::to_string).collect(),
+    };
+    let (tx, mut rx) = broadcast::channel::<TenantNotificationEvent>(8);
+    let workflow = services::CalendarRequestWorkflow::new(&pool, &tx, "failure-test");
+    let request = workflow
+        .create(
+            &actor,
+            CreateCalendarRequest {
+                title: "Storage failure fixture".into(),
+                description: "Synthetic".into(),
+                location: None,
+                start_date: calendar_today(),
+                end_date: calendar_today(),
+                all_day: true,
+                start_time: None,
+                end_time: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(request.status, CalendarRequestStatus::Pending);
+    let outcome = workflow
+        .approve(
+            &manager,
+            request.id,
+            payload_event_for_pending_test(calendar_today(), fixture.academic_year_id),
+        )
+        .await
+        .unwrap();
+    assert_eq!(outcome.request.status, CalendarRequestStatus::Approved);
+    assert!(outcome.request.event_id.is_some());
+    assert!(rx.try_recv().is_err());
+    assert!(workflow
+        .approve(
+            &manager,
+            request.id,
+            payload_event_for_pending_test(calendar_today(), fixture.academic_year_id)
+        )
+        .await
+        .is_err());
+}

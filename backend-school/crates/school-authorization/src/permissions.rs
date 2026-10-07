@@ -103,54 +103,73 @@ pub fn module_permission_matches(permissions: &[String], module: &str) -> bool {
     })
 }
 
-async fn fetch_user_permissions(user_id: Uuid, pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar(
-        r#"
-        SELECT DISTINCT code FROM (
-            SELECT p.code
+// One effective-grant owner for both actor loading and permission-based recipients.
+const EFFECTIVE_PERMISSIONS_CTE: &str = r#"
+        WITH effective_permissions AS (
+            SELECT ur.user_id, p.code
             FROM user_roles ur
             JOIN roles r ON ur.role_id = r.id AND r.is_active = true
             JOIN role_permissions rp ON r.id = rp.role_id
             JOIN permissions p ON rp.permission_id = p.id AND p.is_active = true
-            WHERE ur.user_id = $1 AND ur.ended_at IS NULL
+            WHERE ur.ended_at IS NULL
 
             UNION
 
-            SELECT p.code
+            SELECT om.user_id, p.code
             FROM organization_members om
             JOIN organization_units ou
               ON om.organization_unit_id = ou.id AND ou.is_active = true
             JOIN organization_permission_grants opg
               ON ou.id = opg.organization_unit_id
             JOIN permissions p ON opg.permission_id = p.id AND p.is_active = true
-            WHERE om.user_id = $1
-              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
+            WHERE (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
               AND (opg.position_code IS NULL OR opg.position_code = om.position_code)
 
             UNION
 
-            SELECT p.code
+            SELECT opd.to_user_id AS user_id, p.code
             FROM organization_permission_delegations opd
             LEFT JOIN organization_units delegated_ou
               ON delegated_ou.id = opd.organization_unit_id
             JOIN permissions p ON opd.permission_id = p.id AND p.is_active = true
-            WHERE opd.to_user_id = $1
-              AND opd.revoked_at IS NULL
+            WHERE opd.revoked_at IS NULL
               AND (opd.expires_at IS NULL OR opd.expires_at > NOW())
               AND (opd.organization_unit_id IS NULL OR delegated_ou.is_active = true)
-        ) AS perms
-        WHERE EXISTS (
-            SELECT 1
-            FROM users active_user
-            WHERE active_user.id = $1
-              AND active_user.status = 'active'
         )
-        ORDER BY code
-        "#,
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
+"#;
+
+async fn fetch_user_permissions(user_id: Uuid, pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+    let query = format!(
+        "{EFFECTIVE_PERMISSIONS_CTE}
+        SELECT DISTINCT code FROM effective_permissions WHERE user_id=$1
+        AND EXISTS (SELECT 1 FROM users WHERE id=$1 AND status='active') ORDER BY code"
+    );
+    sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+}
+
+/// Resolve active staff recipients using the same role, organization and delegation
+/// grants as actor authorization. Every required code must be granted (or wildcard).
+pub async fn staff_users_with_all_permissions(
+    pool: &PgPool,
+    required: &[&str],
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let query = format!(
+        "{EFFECTIVE_PERMISSIONS_CTE}
+        SELECT users.id FROM users WHERE users.status='active' AND users.user_type='staff'
+        AND NOT EXISTS (
+            SELECT 1 FROM unnest($1::text[]) AS required(code)
+            WHERE NOT EXISTS (SELECT 1 FROM effective_permissions grant_row
+                WHERE grant_row.user_id=users.id AND grant_row.code IN (required.code, $2))
+        ) ORDER BY users.id"
+    );
+    sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+        .bind(required)
+        .bind(codes::WILDCARD)
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn load_actor_context(

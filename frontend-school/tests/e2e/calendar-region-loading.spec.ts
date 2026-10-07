@@ -58,7 +58,8 @@ test('month and committed search preserve URL history while rereading events onl
 	await page.getByPlaceholder('ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก').fill('ไม่มีรายการ');
 	await page.getByRole('button', { name: /^กรอง(?: \d+)?$/ }).click();
 	await expect(page).toHaveURL(/q=/);
-	await expect(page.getByTestId('calendar-events')).toContainText('ยังไม่มีกิจกรรม');
+	await expect(page.getByRole('button', { name: /^ดูรายละเอียด / })).toHaveCount(0);
+	await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
 	await page.goBack();
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมพฤศจิกายน');
 	await page.goBack();
@@ -104,7 +105,7 @@ test('reader does not request unopened target options', async ({ page }) => {
 	const api = await mockCalendar(page, { permissions: ['calendar.read.school'] });
 	await page.goto(calendarPath());
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
-	await expect(page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'เพิ่มรายการปฏิทิน', exact: true })).toHaveCount(0);
 	expect(api.count('/api/academic/homerooms')).toBe(0);
 	expect(api.count('/api/lookup/grade-levels')).toBe(0);
 });
@@ -177,7 +178,8 @@ test('category label mutation patches catalog and event labels locally', async (
 	const api = await mockCalendar(page);
 	await page.goto(calendarPath());
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
-	await page.getByRole('button', { name: 'หมวดหมู่และแท็ก', exact: true }).click();
+	await page.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'หมวดหมู่และแท็ก', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'หมวดแรก', exact: true }).click();
 	await page.getByLabel('ชื่อหมวดหมู่', { exact: true }).fill('หมวดเปลี่ยน');
 	await page
@@ -193,7 +195,8 @@ test('deleting an active category clears only its URL filter and rereads events 
 	const api = await mockCalendar(page);
 	await page.goto(`${calendarPath()}&categoryId=${categoryId}`);
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
-	await page.getByRole('button', { name: 'หมวดหมู่และแท็ก', exact: true }).click();
+	await page.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'หมวดหมู่และแท็ก', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'หมวดแรก', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ลบถาวร', exact: true }).click();
 	await page.getByRole('alertdialog').getByRole('button', { name: /ลบ/ }).click();
@@ -225,7 +228,8 @@ test('renaming a tag removes events that stop matching the committed search with
 	const api = await mockCalendar(page);
 	await page.goto(`${calendarPath()}&q=${encodeURIComponent('แท็กแรก')}`);
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
-	await page.getByRole('button', { name: 'หมวดหมู่และแท็ก', exact: true }).click();
+	await page.getByRole('button', { name: 'ตั้งค่า', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'หมวดหมู่และแท็ก', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('tab', { name: 'แท็ก', exact: true }).click();
 	await dialog.getByRole('button', { name: 'แท็กแรก', exact: true }).click();
