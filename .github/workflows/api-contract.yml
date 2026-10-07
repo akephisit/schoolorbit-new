@@ -247,3 +247,6 @@ jobs:
           ./scripts/test_backend_school.sh delivery_management_options_are_scoped_and_human_readable -- --test-threads=1
           ./scripts/test_backend_school.sh --integration delivery_versions -- --test-threads=4
           ./scripts/test_backend_school.sh --package school-certificates purge_rejects_admission_logo_and_question_bank_file_consumers -- --test-threads=1
+
+      - name: Test canonical sandbox publication and repeat seeding
+        run: BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_seed_is_idempotent_across_student_year_and_placement -- --test-threads=1

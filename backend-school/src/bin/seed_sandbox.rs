@@ -1007,5 +1007,48 @@ mod tests {
 
         assert_eq!(student_year_count, 1);
         assert_eq!(placement_count, 1);
+
+        let edition_id: Uuid =
+            sqlx::query_scalar("SELECT edition_id FROM curriculum_levels WHERE id=$1")
+                .bind(first.curriculum_level_id)
+                .fetch_one(&pool)
+                .await
+                .expect("seed edition");
+        let edition = school_academic_core::services::curriculum::get(&pool, edition_id)
+            .await
+            .expect("published seed");
+        assert_eq!(edition.publication_count, 1);
+        assert!(edition.current_publication_id.is_some());
+        assert!(edition.draft_id.is_none());
+        let published_programs: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM published_study_programs WHERE id=$1")
+                .bind(first.study_program_id)
+                .fetch_one(&pool)
+                .await
+                .expect("visible published seed");
+        assert_eq!(published_programs, 1);
+        let amendment = school_academic_core::services::curriculum_publications::open_draft(
+            &pool,
+            edition_id,
+            school_academic_core::models::OpenCurriculumDraftRequest {
+                row_version: edition.row_version,
+            },
+        )
+        .await
+        .expect("staff amendment");
+        let third = seed_database(&pool, &config)
+            .await
+            .expect("seed with an open staff amendment");
+        assert_eq!(third.study_program_id, first.study_program_id);
+        let retained = school_academic_core::services::curriculum::get(&pool, edition_id)
+            .await
+            .expect("retained amendment");
+        assert_eq!(retained.publication_count, 1);
+        assert_eq!(
+            retained.current_publication_id,
+            edition.current_publication_id
+        );
+        assert_eq!(retained.draft_id, amendment.draft_id);
+        assert_eq!(retained.row_version, amendment.row_version);
     }
 }
