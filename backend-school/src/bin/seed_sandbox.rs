@@ -246,13 +246,9 @@ async fn seed_database(pool: &PgPool, config: &SeedConfig) -> SeedResult<SeedSum
     let active_term_id = upsert_terms(&mut tx, config.academic_year, academic_year_id).await?;
     let grade_level_id = upsert_grade_level(&mut tx).await?;
     ensure_year_grade_level(&mut tx, academic_year_id, grade_level_id).await?;
-    let (curriculum_level_id, study_program_id) = upsert_curriculum_program(
-        &mut tx,
-        academic_year_id,
-        grade_level_id,
-        config.academic_year,
-    )
-    .await?;
+    let (curriculum_level_id, study_program_id) =
+        upsert_curriculum_program(&mut tx, admin_user_id, grade_level_id, config.academic_year)
+            .await?;
     let homeroom_id = upsert_homeroom(
         &mut tx,
         academic_year_id,
@@ -719,7 +715,7 @@ async fn ensure_year_grade_level(
 
 async fn upsert_curriculum_program(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    _academic_year_id: Uuid,
+    actor_id: Uuid,
     grade_level_id: Uuid,
     academic_year: i32,
 ) -> SeedResult<(Uuid, Uuid)> {
@@ -738,12 +734,26 @@ async fn upsert_curriculum_program(
     );
     sqlx::query("INSERT INTO curriculum_editions(id,name,revision_year,description) VALUES($1,$2,$3,'Minimal sandbox fixture for smoke and E2E tests') ON CONFLICT(id) DO NOTHING")
         .bind(edition_id).bind(format!("Sandbox {academic_year}")).bind(academic_year+543).execute(&mut **tx).await?;
+    // Repeated seeds reuse the immutable published graph and leave any staff amendment alone.
+    let has_publication: bool = sqlx::query_scalar(
+        "SELECT current_publication_id IS NOT NULL FROM curriculum_editions WHERE id=$1 FOR UPDATE",
+    )
+    .bind(edition_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if has_publication {
+        return Ok((level_id, program_id));
+    }
     sqlx::query("INSERT INTO curriculum_levels(id,edition_id,code,name_th,grade_level_ids,is_active) SELECT $1,$2,'SBX-GEN','Sandbox General',$3,true WHERE NOT EXISTS(SELECT 1 FROM curriculum_levels WHERE id=$1)")
         .bind(level_id).bind(edition_id).bind(json!([grade_level_id])).execute(&mut **tx).await?;
     sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,is_default,status) SELECT $1,$2,'GENERAL','แผนการเรียนทั่วไป Sandbox',true,'draft' WHERE NOT EXISTS(SELECT 1 FROM study_programs WHERE id=$1)")
         .bind(program_id).bind(level_id).execute(&mut **tx).await?;
     sqlx::query("UPDATE study_programs SET status='published',row_version=row_version+1,updated_at=now() WHERE id=$1 AND status='draft'").bind(program_id).execute(&mut **tx).await?;
-    sqlx::query("UPDATE curriculum_editions SET status='published',published_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1 AND status='draft'").bind(edition_id).execute(&mut **tx).await?;
+    sqlx::query("SELECT capture_curriculum_publication($1,$2,'Initial minimal sandbox fixture')")
+        .bind(edition_id)
+        .bind(actor_id)
+        .execute(&mut **tx)
+        .await?;
     Ok((level_id, program_id))
 }
 

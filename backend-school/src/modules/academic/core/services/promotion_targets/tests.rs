@@ -52,9 +52,9 @@ async fn program(
         .bind(id).bind(version).bind(if published {"published"} else {"draft"}).execute(pool).await.unwrap();
     if published {
         sqlx::query(
-            "UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT edition_id FROM curriculum_levels WHERE id=$1)",
+            "SELECT capture_curriculum_publication($1,NULL,'Synthetic promotion destination')",
         )
-        .bind(version)
+        .bind(edition)
         .execute(pool)
         .await
         .unwrap();
