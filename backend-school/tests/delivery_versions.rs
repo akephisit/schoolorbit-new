@@ -414,7 +414,7 @@ async fn independent_delivery_publication_does_not_publish_or_rewrite_timetables
         timetable_lifecycle, timetable_version_service as tables,
     };
     let pool = predecessor("independent_delivery_publish").await;
-    apply_migrations_through(&pool, 89).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
@@ -941,7 +941,7 @@ async fn zero_course_periods_preserve_delivery_and_require_removing_existing_les
         timetable_lifecycle, timetable_version_service as tables,
     };
     let pool = predecessor("zero_course_periods").await;
-    apply_migrations_through(&pool, 90).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.timetable_version_id=version.id) ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
     let source = tables::get_version(&pool, source_id, chrono::Utc::now().date_naive())
         .await
