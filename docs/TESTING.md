@@ -281,7 +281,7 @@ PUBLIC_BACKEND_URL=http://127.0.0.1:4173 PUBLIC_VAPID_KEY=test npm run preview -
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/route-region-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-catalog-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-foundation-route-loading.spec.ts --project=chromium
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-delivery-alignment.spec.ts --project=chromium
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/curriculum-delivery-alignment.spec.ts tests/e2e/curriculum-publications.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/academic-year-collections-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/delivery-offering-route-loading.spec.ts --project=chromium
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personal-daily-timetable-region-loading.spec.ts tests/e2e/timetable-daily-overview-layout.spec.ts tests/e2e/staff-own-timetable-grid.spec.ts tests/e2e/staff-own-timetable-pdf.spec.ts --project=chromium
@@ -330,6 +330,8 @@ The readonly live spec also accepts `SMOKE_USERNAME/PASSWORD` for its staff logi
 The Delivery spec uses five warm mocked navigations to verify sanitized timing and size summaries. Use the same helper for credentialed, representative environment measurements; keep those results in release evidence rather than committing tenant-specific output.
 The catalog spec checks the three route-owned list regions, focused retry, local group patching, and lazy history after create.
 The foundation spec checks route-first setup/curriculum regions, focused retry, lazy period reads, and edition creation without owner/grade lookups surviving a stale overview response.
+The publication spec covers a published edition opening an amendment, adding term two, publishing the whole edition, reading the baseline unchanged, stale-edition refusal, read-only permissions, independent history retry and superseded selection. History layouts run at desktop/mobile sizes in light/dark themes. Native Academic Core service tests additionally verify baseline preservation, live requirement references, concurrent draft reuse, stale tokens, atomic validation failure, immutable snapshots and deferred completeness. The delivery apply test verifies source metadata in previews, applied runs and snapshots while retained legacy offerings keep unknown provenance.
+
 The curriculum detail spec checks independent edition/level reads, regional retry, invalid or mismatched level refusal, read-only alignment, covered-grade level creation, plan creation and copying a selected published program with conflict handling. Copy and later-year room-selection scenarios cover desktop/mobile in light/dark themes. Database tests additionally verify whole-edition atomic publication, source preservation, semantic term-slot copying, uncovered-grade and stale-revision refusal, migration retry and permission-grant metadata preservation.
 
 For coordinated school release behavior, run:

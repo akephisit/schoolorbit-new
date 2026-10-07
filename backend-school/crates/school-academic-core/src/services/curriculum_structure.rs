@@ -374,7 +374,7 @@ pub async fn replace_term_slots(
     let mut transaction = pool.begin().await?;
     super::curriculum::require_draft_level(&mut transaction, version_id, request.draft_id).await?;
     let (status, current_row_version): (VersionStatus, i64) = sqlx::query_as(
-        "SELECT e.status,l.row_version FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1 FOR UPDATE OF l",
+        "SELECT CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END,l.row_version FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1 FOR UPDATE OF l",
     )
     .bind(version_id)
     .fetch_optional(&mut *transaction)
