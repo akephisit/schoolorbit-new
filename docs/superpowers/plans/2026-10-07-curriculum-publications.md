@@ -1,0 +1,9 @@
+# Implementation plan
+
+1. Add forward migration 095 with publication headers, normalized snapshots, durable requirement identities, one-draft tokens, database immutability, published selectors and preservation audit. Reuse the central migration runner.
+2. Add typed Academic Core draft/publication/history services and DTOs. Require draft tokens and optimistic row versions, publish atomically, provide bounded history/diffs and explicit public/draft reads. Register thin permission-checked handlers and OpenAPI.
+3. Switch every room/admission/lifecycle/delivery curriculum consumer to published selectors. Record curriculum publication provenance in delivery preparation, hash and actual applied source graphs without rewriting legacy history.
+4. Generate tracked API contracts and implement amendment/history controls, draft-aware editors, source import and read-only historical documents using existing UI/request-state patterns.
+5. Add meaningful native database and browser tests for baseline preservation, publication immutability, single-draft races, stale tokens, failed publication, term2 edits, old histories, retained stable room/program IDs and unchanged delivery/timetables. Run cargo fmt, focused crate/integration tests, static_architecture and cargo check --workspace --all-targets; frontend generate/check/test contracts, lint, check, test:static and affected browser tests.
+6. Capture fresh seven-day recovery and encrypted verified archives; rehearse migration and preservation on copies of every active tenant. Record reviewable outcome and validation in a draft PR, remove temporary workflow inputs after its completed outcome is recorded, then run final exact-tree checks.
+7. Fetch/reconcile main, squash-merge, push, follow coordinated full release and verify deployed readiness, schema/publication/audit counts and unchanged actual references. Retain recovery and feature branch through acceptance and remove ephemeral secrets.
