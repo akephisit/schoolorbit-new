@@ -316,9 +316,10 @@ pub(crate) async fn approved_fixture(
         let program: Uuid = sqlx::query_scalar("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) VALUES(uuid_generate_v4(),$1,'E2E-IMPACT','E2E-LIFECYCLE-target','published') RETURNING id")
             .bind(version).fetch_one(&pool).await.unwrap();
         sqlx::query(
-            "UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT edition_id FROM curriculum_levels WHERE id=$1)",
+            "SELECT capture_curriculum_publication($1,$2,'Synthetic placement publication')",
         )
-        .bind(version)
+        .bind(edition)
+        .bind(reviewer.user_id)
         .execute(&pool)
         .await
         .unwrap();
