@@ -733,7 +733,7 @@ async fn upsert_curriculum_program(
         format!("sandbox-study-program:{level_id}:GENERAL").as_bytes(),
     );
     sqlx::query("INSERT INTO curriculum_editions(id,name,revision_year,description) VALUES($1,$2,$3,'Minimal sandbox fixture for smoke and E2E tests') ON CONFLICT(id) DO NOTHING")
-        .bind(edition_id).bind(format!("Sandbox {academic_year}")).bind(academic_year+543).execute(&mut **tx).await?;
+        .bind(edition_id).bind(format!("Sandbox {academic_year}")).bind(academic_year).execute(&mut **tx).await?;
     // Repeated seeds reuse the immutable published graph and leave any staff amendment alone.
     let has_publication: bool = sqlx::query_scalar(
         "SELECT current_publication_id IS NOT NULL FROM curriculum_editions WHERE id=$1 FOR UPDATE",
@@ -1017,6 +1017,7 @@ mod tests {
         let edition = school_academic_core::services::curriculum::get(&pool, edition_id)
             .await
             .expect("published seed");
+        assert_eq!(edition.revision_year, Some(config.academic_year));
         assert_eq!(edition.publication_count, 1);
         assert!(edition.current_publication_id.is_some());
         assert!(edition.draft_id.is_none());
