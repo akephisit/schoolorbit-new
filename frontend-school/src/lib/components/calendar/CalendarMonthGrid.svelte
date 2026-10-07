@@ -7,6 +7,7 @@
 		allDay?: boolean;
 		startTime?: string | null;
 		categoryColor?: string | null;
+		pending?: boolean;
 	}
 </script>
 
@@ -24,12 +25,14 @@
 	let {
 		monthDate,
 		events = [],
+		pendingRequests = [],
 		selectedDate = '',
 		onselect,
 		fillHeight = false
 	}: {
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
+		pendingRequests?: CalendarDisplayEvent[];
 		selectedDate?: string;
 		onselect?: (date: string) => void;
 		fillHeight?: boolean;
@@ -38,18 +41,23 @@
 	const fallbackColor = '#64748b';
 	const todayDate = toIsoDate(new Date());
 
-	let weeks = $derived(buildCalendarMonthWeeks(monthDate, events));
+	let displayEvents = $derived([...events, ...pendingRequests]);
+	let weeks = $derived(buildCalendarMonthWeeks(monthDate, displayEvents));
 
 	function eventsForDate(date: string) {
 		return events.filter((event) => eventOverlapsDate(event, date));
 	}
+	function requestsForDate(date: string) {
+		return pendingRequests.filter((event) => eventOverlapsDate(event, date));
+	}
 
 	function segmentLabel(segment: CalendarWeekEventSegment<CalendarDisplayEvent>) {
+		const title = segment.event.pending ? `รออนุมัติ: ${segment.event.title}` : segment.event.title;
 		const startTime = segment.event.startTime?.slice(0, 5);
 		if (segment.event.allDay || !startTime || segment.continuesFromPreviousWeek) {
-			return segment.event.title;
+			return title;
 		}
-		return `${startTime} ${segment.event.title}`;
+		return `${startTime} ${title}`;
 	}
 </script>
 
@@ -71,6 +79,7 @@
 			<div class={cn('relative grid grid-cols-7', fillHeight && 'min-h-0')}>
 				{#each week.cells as cell, dayIndex (cell.date)}
 					{@const dayEvents = eventsForDate(cell.date)}
+					{@const dayRequests = requestsForDate(cell.date)}
 					<button
 						type="button"
 						class={cn(
@@ -80,7 +89,7 @@
 							selectedDate === cell.date && 'bg-primary/5 ring-2 ring-inset ring-primary'
 						)}
 						aria-pressed={selectedDate === cell.date}
-						aria-label={`${formatCalendarDate(cell.date)}, ${dayEvents.length} กิจกรรม`}
+						aria-label={`${formatCalendarDate(cell.date)}, ${dayEvents.length} กิจกรรม${dayRequests.length ? `, ${dayRequests.length} คำร้องรออนุมัติ` : ''}`}
 						onclick={() => onselect?.(cell.date)}
 					>
 						<span
@@ -114,14 +123,19 @@
 					{#each week.segments as segment (`${segment.event.id}-${weekIndex}`)}
 						<div
 							class={cn(
-								'min-w-0 overflow-hidden text-white shadow-sm',
+								'min-w-0 overflow-hidden shadow-sm',
+								segment.event.pending
+									? 'outline-1 outline-dashed -outline-offset-1 outline-primary bg-background text-primary'
+									: 'text-white',
 								segment.continuesFromPreviousWeek ? 'ml-0 rounded-l-none' : 'ml-0.5 rounded-l-sm',
 								segment.continuesIntoNextWeek ? 'mr-0 rounded-r-none' : 'mr-0.5 rounded-r-sm'
 							)}
 							style:grid-column={`${segment.startColumn + 1} / span ${segment.span}`}
 							style:grid-row={`${segment.lane + 1}`}
-							style:background-color={segment.event.categoryColor ?? fallbackColor}
-							title={segment.event.title}
+							style:background-color={segment.event.pending
+								? undefined
+								: (segment.event.categoryColor ?? fallbackColor)}
+							title={segmentLabel(segment)}
 						>
 							<span
 								class={cn(
@@ -129,7 +143,7 @@
 									fillHeight && 'leading-[10px]'
 								)}
 							>
-								{segment.event.title}
+								{segment.event.pending ? 'รออนุมัติ: ' : ''}{segment.event.title}
 							</span>
 							<span
 								class="hidden truncate px-1.5 text-[10px] font-medium leading-[18px] sm:block xl:text-[11px]"

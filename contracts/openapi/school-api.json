@@ -10757,6 +10757,39 @@
         ],
         "type": "object"
       },
+      "ApiResponse_PendingCalendarPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "records": {
+                "items": {
+                  "$ref": "#/components/schemas/PendingCalendarRequest"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "records",
+              "hasMore"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_PersonnelOverview": {
         "properties": {
           "data": {
@@ -39470,6 +39503,68 @@
           "email",
           "national_id",
           "children"
+        ],
+        "type": "object"
+      },
+      "PendingCalendarPage": {
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/PendingCalendarRequest"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "PendingCalendarRequest": {
+        "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "startDate",
+          "endDate",
+          "allDay",
+          "startTime",
+          "endTime"
         ],
         "type": "object"
       },
@@ -78122,6 +78217,76 @@
               }
             },
             "description": "Request already decided"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/requests/calendar": {
+      "get": {
+        "operationId": "listPendingCalendarRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PendingCalendarPage"
+                }
+              }
+            },
+            "description": "Pending request dates; managers see the school, requesters see their own. Up to 500 records with explicit overflow."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid or excessive date range"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff calendar request access required"
           }
         },
         "tags": [

@@ -464,6 +464,215 @@ async fn date_calendar_accepts_dates_outside_and_closed_academic_years() {
 }
 
 #[tokio::test]
+async fn review_queue_is_fifo_across_pages_while_own_history_is_newest_first() {
+    use school_authorization::ActorContext;
+    use school_calendar::requests::{self, CalendarRequestQuery, CalendarRequestStatus};
+    use school_permissions::registry::codes;
+    let pool = migrated_pool("calendar_request_fifo").await;
+    let fixture = insert_fixture(&pool).await;
+    sqlx::query("INSERT INTO calendar_event_requests(requested_by,title,description,start_date,end_date,all_day,created_at)
+        SELECT $1,'Queue '||lpad(sequence::text,2,'0'),'Synthetic detail',$2,$2,true,
+            '2026-01-01 00:00:00+00'::timestamptz + sequence * interval '1 minute'
+        FROM generate_series(0,28) AS sequence")
+        .bind(fixture.staff_user_id).bind(calendar_today()).execute(&pool).await.unwrap();
+    let manager = ActorContext {
+        user_id: fixture.staff_user_id,
+        permissions: vec![
+            codes::CALENDAR_READ_SCHOOL.into(),
+            codes::CALENDAR_MANAGE_SCHOOL.into(),
+        ],
+    };
+    let query = CalendarRequestQuery {
+        review: true,
+        status: Some(CalendarRequestStatus::Pending),
+        offset: None,
+    };
+    let first = requests::list_requests(&pool, &manager, query.clone())
+        .await
+        .unwrap();
+    assert!(first.has_more);
+    assert_eq!(first.records.len(), 25);
+    assert_eq!(first.records[0].title, "Queue 00");
+    assert_eq!(first.records[24].title, "Queue 24");
+    let second = requests::list_requests(
+        &pool,
+        &manager,
+        CalendarRequestQuery {
+            offset: Some(25),
+            ..query
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!second.has_more);
+    assert_eq!(
+        second
+            .records
+            .iter()
+            .map(|row| row.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Queue 25", "Queue 26", "Queue 27", "Queue 28"]
+    );
+    let own = requests::list_requests(&pool, &manager, CalendarRequestQuery::default())
+        .await
+        .unwrap();
+    assert_eq!(own.records[0].title, "Queue 28");
+
+    sqlx::query("INSERT INTO calendar_event_requests(id,requested_by,title,description,start_date,end_date,all_day,created_at)
+        SELECT ('00000000-0000-0000-0000-'||lpad(sequence::text,12,'0'))::uuid,$1,'Tied '||sequence,'Synthetic detail',$2,$2,true,'2025-01-01 00:00:00+00'
+        FROM generate_series(1,2) AS sequence")
+        .bind(fixture.staff_user_id).bind(calendar_today()).execute(&pool).await.unwrap();
+    let tied = requests::list_requests(
+        &pool,
+        &manager,
+        CalendarRequestQuery {
+            review: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(tied.records[0].title, "Tied 1");
+    assert_eq!(tied.records[1].title, "Tied 2");
+}
+
+#[tokio::test]
+async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_requests() {
+    use school_authorization::ActorContext;
+    use school_calendar::requests::{self, CreateCalendarRequest, PendingCalendarQuery};
+    use school_permissions::registry::codes;
+    let pool = migrated_pool("calendar_pending_overlay").await;
+    let fixture = insert_fixture(&pool).await;
+    let own = ActorContext {
+        user_id: fixture.staff_user_id,
+        permissions: vec![
+            codes::CALENDAR_READ_SCHOOL.into(),
+            codes::CALENDAR_REQUEST_OWN.into(),
+        ],
+    };
+    let manager = ActorContext {
+        user_id: fixture.staff_user_id,
+        permissions: vec![
+            codes::CALENDAR_READ_SCHOOL.into(),
+            codes::CALENDAR_MANAGE_SCHOOL.into(),
+        ],
+    };
+    let other = ActorContext {
+        user_id: insert_user(&pool, "staff", "Other requester").await,
+        permissions: own.permissions.clone(),
+    };
+    let from = NaiveDate::from_ymd_opt(2027, 6, 1).unwrap();
+    let to = from + Duration::days(41);
+    let payload = |title: &str, start_date, end_date| CreateCalendarRequest {
+        title: title.into(),
+        description: "Synthetic request".into(),
+        location: None,
+        start_date,
+        end_date,
+        all_day: true,
+        start_time: None,
+        end_time: None,
+    };
+    let spanning = requests::create_request(
+        &pool,
+        &own,
+        payload("Spanning", from - Duration::days(2), from),
+    )
+    .await
+    .unwrap();
+    let mut timed = payload("Boundary", to, to);
+    timed.all_day = false;
+    timed.start_time = Some(chrono::NaiveTime::from_hms_opt(8, 0, 0).unwrap());
+    timed.end_time = Some(chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+    let boundary = requests::create_request(&pool, &own, timed).await.unwrap();
+    let other_request = requests::create_request(&pool, &other, payload("Other", from, from))
+        .await
+        .unwrap();
+    requests::create_request(
+        &pool,
+        &own,
+        payload("Outside", to + Duration::days(1), to + Duration::days(1)),
+    )
+    .await
+    .unwrap();
+    let rejected = requests::create_request(&pool, &own, payload("Rejected", from, from))
+        .await
+        .unwrap();
+    requests::reject_request(&pool, &manager, rejected.id, "Duplicate date")
+        .await
+        .unwrap();
+    let approved = requests::create_request(&pool, &own, payload("Approved", from, from))
+        .await
+        .unwrap();
+    requests::approve_request(
+        &pool,
+        &manager,
+        approved.id,
+        payload_event_for_pending_test(from, fixture.academic_year_id),
+    )
+    .await
+    .unwrap();
+    let query = PendingCalendarQuery { from, to };
+    let mine = requests::list_pending_calendar(&pool, &own, query.clone())
+        .await
+        .unwrap();
+    assert!(!mine.has_more);
+    assert_eq!(
+        mine.records
+            .iter()
+            .map(|row| row.id)
+            .collect::<std::collections::HashSet<_>>(),
+        std::collections::HashSet::from([spanning.id, boundary.id])
+    );
+    assert_eq!(
+        mine.records
+            .iter()
+            .find(|row| row.id == boundary.id)
+            .unwrap()
+            .start_time,
+        Some(chrono::NaiveTime::from_hms_opt(8, 0, 0).unwrap())
+    );
+    let other_view = requests::list_pending_calendar(&pool, &other, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(other_view.records.len(), 1);
+    assert_eq!(other_view.records[0].id, other_request.id);
+    let all = requests::list_pending_calendar(&pool, &manager, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(all.records.len(), 3);
+    let reader = ActorContext {
+        user_id: fixture.staff_user_id,
+        permissions: vec![codes::CALENDAR_READ_SCHOOL.into()],
+    };
+    assert!(matches!(
+        requests::list_pending_calendar(&pool, &reader, query.clone()).await,
+        Err(AppError::Forbidden(_))
+    ));
+    sqlx::query("INSERT INTO calendar_event_requests(requested_by,title,description,start_date,end_date,all_day)
+        SELECT $1,'Bulk '||sequence,'Synthetic detail',$2,$2,true FROM generate_series(1,501) AS sequence")
+        .bind(fixture.staff_user_id).bind(from).execute(&pool).await.unwrap();
+    let bounded = requests::list_pending_calendar(&pool, &manager, query)
+        .await
+        .unwrap();
+    assert!(bounded.has_more);
+    assert_eq!(bounded.records.len(), 500);
+}
+
+fn payload_event_for_pending_test(date: NaiveDate, year: Uuid) -> UpsertCalendarEventRequest {
+    payload(
+        date,
+        year,
+        "Approved event",
+        vec![CalendarEventTargetInput {
+            audience_type: CalendarAudienceType::All,
+            grade_level_id: None,
+            homeroom_id: None,
+        }],
+    )
+}
+
+#[tokio::test]
 async fn pending_requests_are_private_and_decisions_create_one_event() {
     use school_authorization::ActorContext;
     use school_calendar::requests::{

@@ -3820,6 +3820,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/calendar/requests/calendar': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listPendingCalendarRequests'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/calendar/tags': {
 		parameters: {
 			query?: never;
@@ -9175,6 +9191,14 @@ export interface components {
 				phone: string | null;
 				title: string | null;
 				username: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PendingCalendarPage: {
+			data: {
+				hasMore: boolean;
+				records: components['schemas']['PendingCalendarRequest'][];
 			};
 			message?: string;
 			success: boolean;
@@ -17004,6 +17028,22 @@ export interface components {
 			phone: string | null;
 			title: string | null;
 			username: string;
+		};
+		PendingCalendarPage: {
+			hasMore: boolean;
+			records: components['schemas']['PendingCalendarRequest'][];
+		};
+		PendingCalendarRequest: {
+			allDay: boolean;
+			/** Format: date */
+			endDate: string;
+			endTime: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: date */
+			startDate: string;
+			startTime: string | null;
+			title: string;
 		};
 		Permission: {
 			action: string;
@@ -38999,6 +39039,56 @@ export interface operations {
 			};
 			/** @description Request already decided */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listPendingCalendarRequests: {
+		parameters: {
+			query: {
+				from: string;
+				to: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Pending request dates; managers see the school, requesters see their own. Up to 500 records with explicit overflow. */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PendingCalendarPage'];
+				};
+			};
+			/** @description Invalid or excessive date range */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff calendar request access required */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

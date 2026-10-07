@@ -16,6 +16,10 @@ pub fn calendar_routes() -> Router<AppState> {
             get(request_handlers::list_requests).post(request_handlers::create_request),
         )
         .route(
+            "/requests/calendar",
+            get(request_handlers::list_pending_calendar),
+        )
+        .route(
             "/requests/{id}/approve",
             axum::routing::post(request_handlers::approve_request),
         )

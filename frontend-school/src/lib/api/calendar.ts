@@ -208,6 +208,24 @@ export type CalendarRequestQuery = NonNullable<
 	operations['listCalendarRequests']['parameters']['query']
 >;
 export type CalendarTargetOptions = Schemas['CalendarTargetOptions'];
+export type PendingCalendarRequest = Schemas['PendingCalendarRequest'];
+export type PendingCalendarPage = Schemas['PendingCalendarPage'];
+export type PendingCalendarQuery = NonNullable<
+	operations['listPendingCalendarRequests']['parameters']['query']
+>;
+
+export async function listPendingCalendarRequests(
+	query: PendingCalendarQuery,
+	options: ApiRequestOptions = {}
+): Promise<PendingCalendarPage> {
+	return requireApiData(
+		await apiClient.get<PendingCalendarPage>('/api/calendar/requests/calendar', {
+			...options,
+			query
+		}),
+		'โหลดคำร้องรออนุมัติไม่สำเร็จ'
+	);
+}
 
 export async function createCalendarRequest(
 	payload: CreateCalendarRequest

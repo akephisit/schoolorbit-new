@@ -292,6 +292,9 @@
 		</Select.Root>
 		<Button variant="ghost" onclick={reload} disabled={loading}>รีเฟรช</Button>
 	</div>
+	{#if data.query.review && manager}<p class="text-sm text-muted-foreground">
+			เรียงตามเวลาส่งคำร้อง: ขอก่อนอยู่บน ขอทีหลังอยู่ล่าง
+		</p>{/if}
 	{#if !allowed}<PageState variant="permission" title="ไม่มีสิทธิ์ดูคำร้องนี้" />
 	{:else}
 		<section aria-busy={loading} data-testid="calendar-requests">
@@ -373,7 +376,10 @@
 					><Button
 						variant="outline"
 						disabled={!hasMore}
-						onclick={() => navigate({ offset: String((data.query.offset ?? 0) + 25) })}
+						onclick={() =>
+							records.length === 0
+								? reload()
+								: navigate({ offset: String((data.query.offset ?? 0) + records.length) })}
 						>ถัดไป</Button
 					>
 				</div>

@@ -10,7 +10,8 @@ use school_calendar::{
     models::UpsertCalendarEventRequest,
     requests::{
         self, CalendarEventRequest, CalendarRequestApproval, CalendarRequestPage,
-        CalendarRequestQuery, CreateCalendarRequest, RejectCalendarRequest,
+        CalendarRequestQuery, CreateCalendarRequest, PendingCalendarPage, PendingCalendarQuery,
+        RejectCalendarRequest,
     },
     target_options::{self, CalendarTargetOptions, CalendarTargetOptionsQuery},
 };
@@ -23,6 +24,23 @@ fn require_staff(session: &AuthenticatedSession) -> Result<(), AppError> {
         return Err(AppError::Forbidden("คำร้องปฏิทินสำหรับบุคลากรเท่านั้น".into()));
     }
     Ok(())
+}
+
+#[utoipa::path(get,path="/api/calendar/requests/calendar",operation_id="listPendingCalendarRequests",tag="calendar",params(PendingCalendarQuery),responses(
+    (status=200,description="Pending request dates; managers see the school, requesters see their own. Up to 500 records with explicit overflow.",body=ApiResponse<PendingCalendarPage>),
+    (status=400,description="Invalid or excessive date range",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
+    (status=403,description="Staff calendar request access required",body=ApiErrorResponse)
+))]
+pub async fn list_pending_calendar(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<PendingCalendarQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        requests::list_pending_calendar(&context.tenant.pool, &context.actor, query).await?,
+    )))
 }
 
 #[utoipa::path(get,path="/api/calendar/requests",operation_id="listCalendarRequests",tag="calendar",params(CalendarRequestQuery),responses(

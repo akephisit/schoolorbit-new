@@ -630,6 +630,7 @@ use utoipa::OpenApi;
         crate::modules::question_bank::handlers::delete_question,
         crate::modules::question_bank::handlers::get_question_file,
         crate::modules::calendar::request_handlers::list_requests,
+        crate::modules::calendar::request_handlers::list_pending_calendar,
         crate::modules::calendar::request_handlers::create_request,
         crate::modules::calendar::request_handlers::approve_request,
         crate::modules::calendar::request_handlers::reject_request,
@@ -4322,6 +4323,45 @@ mod tests {
         assert!(schemas["CalendarRequestApproval"]["properties"]
             .get("event")
             .is_some());
+    }
+
+    #[test]
+    fn pending_calendar_documents_required_dates_and_narrow_private_records() {
+        let document = school_api_value().unwrap();
+        let operation = &document["paths"]["/api/calendar/requests/calendar"]["get"];
+        assert_eq!(operation["operationId"], "listPendingCalendarRequests");
+        for name in ["from", "to"] {
+            let parameter = operation["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|value| value["name"] == name)
+                .unwrap();
+            assert_eq!(parameter["required"], true);
+            assert_eq!(parameter["schema"]["format"], "date");
+        }
+        assert!(operation["responses"]["400"].is_object());
+        assert!(operation["responses"]["403"].is_object());
+        let fields = document["components"]["schemas"]["PendingCalendarRequest"]["properties"]
+            .as_object()
+            .unwrap();
+        assert_eq!(
+            fields.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "id",
+                "title",
+                "startDate",
+                "endDate",
+                "allDay",
+                "startTime",
+                "endTime"
+            ])
+        );
+        assert!(
+            document["components"]["schemas"]["PendingCalendarPage"]["properties"]
+                .get("hasMore")
+                .is_some()
+        );
     }
 
     #[test]

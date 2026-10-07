@@ -76,6 +76,35 @@ pub struct CalendarRequestPage {
     pub has_more: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in = Query)]
+pub struct PendingCalendarQuery {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+}
+
+#[derive(Debug, Serialize, FromRow, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingCalendarRequest {
+    pub id: Uuid,
+    pub title: String,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub all_day: bool,
+    #[schema(required = true)]
+    pub start_time: Option<NaiveTime>,
+    #[schema(required = true)]
+    pub end_time: Option<NaiveTime>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingCalendarPage {
+    pub records: Vec<PendingCalendarRequest>,
+    pub has_more: bool,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RejectCalendarRequest {
@@ -136,7 +165,8 @@ pub async fn list_requests(
         CalendarRequestStatus::Approved => "approved",
         CalendarRequestStatus::Rejected => "rejected",
     });
-    let sql=format!("{SELECT_REQUEST} WHERE ($1::boolean OR r.requested_by=$2) AND ($3::text IS NULL OR r.status=$3) ORDER BY r.created_at DESC,r.id DESC LIMIT 26 OFFSET $4");
+    let order = if query.review { "ASC" } else { "DESC" };
+    let sql=format!("{SELECT_REQUEST} WHERE ($1::boolean OR r.requested_by=$2) AND ($3::text IS NULL OR r.status=$3) ORDER BY r.created_at {order},r.id {order} LIMIT 26 OFFSET $4");
     let mut records = sqlx::query_as::<_, CalendarEventRequest>(sqlx::AssertSqlSafe(sql))
         .bind(query.review)
         .bind(actor.user_id)
@@ -147,6 +177,39 @@ pub async fn list_requests(
     let has_more = records.len() > 25;
     records.truncate(25);
     Ok(CalendarRequestPage { records, has_more })
+}
+
+fn validate_pending_range(query: &PendingCalendarQuery) -> Result<(), AppError> {
+    let days = (query.to - query.from).num_days();
+    if !(0..=61).contains(&days) {
+        return Err(AppError::BadRequest("ช่วงวันที่คำร้องต้องไม่เกิน 62 วัน".into()));
+    }
+    Ok(())
+}
+
+pub async fn list_pending_calendar(
+    pool: &PgPool,
+    actor: &ActorContext,
+    query: PendingCalendarQuery,
+) -> Result<PendingCalendarPage, AppError> {
+    require_request_access(actor, false)?;
+    validate_pending_range(&query)?;
+    let mut records = sqlx::query_as::<_, PendingCalendarRequest>(
+        "SELECT id,title,start_date,end_date,all_day,start_time,end_time
+         FROM calendar_event_requests
+         WHERE status='pending' AND start_date<=$1 AND end_date>=$2
+           AND ($3::boolean OR requested_by=$4)
+         ORDER BY created_at ASC,id ASC LIMIT 501",
+    )
+    .bind(query.to)
+    .bind(query.from)
+    .bind(actor.has_permission(codes::CALENDAR_MANAGE_SCHOOL))
+    .bind(actor.user_id)
+    .fetch_all(pool)
+    .await?;
+    let has_more = records.len() > 500;
+    records.truncate(500);
+    Ok(PendingCalendarPage { records, has_more })
 }
 
 async fn get_request(pool: &PgPool, id: Uuid) -> Result<CalendarEventRequest, AppError> {
@@ -238,6 +301,24 @@ mod tests {
         ActorContext {
             user_id: Uuid::new_v4(),
             permissions: permissions.iter().map(|value| value.to_string()).collect(),
+        }
+    }
+    #[test]
+    fn pending_calendar_requires_a_bounded_ordered_date_range() {
+        let from = NaiveDate::from_ymd_opt(2027, 6, 1).unwrap();
+        for days in [0, 41, 61] {
+            assert!(validate_pending_range(&PendingCalendarQuery {
+                from,
+                to: from + chrono::Duration::days(days),
+            })
+            .is_ok());
+        }
+        for days in [-1, 62, 365] {
+            assert!(validate_pending_range(&PendingCalendarQuery {
+                from,
+                to: from + chrono::Duration::days(days),
+            })
+            .is_err());
         }
     }
     #[test]
