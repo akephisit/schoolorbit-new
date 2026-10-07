@@ -8,6 +8,8 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import CalendarTimeInput from './CalendarTimeInput.svelte';
+	import { normalizeCalendarTime } from '#lib/utils/calendar.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import type {
 		CalendarAudienceType,
@@ -76,7 +78,8 @@
 	let selectedTagIds = $state<string[]>([]);
 	let startDate = $state('');
 	let endDate = $state('');
-	let allDay = $state(true);
+	let allDay = $state(false);
+	let validation = $state('');
 	let startTime = $state('');
 	let endTime = $state('');
 	let isPublic = $state(false);
@@ -117,7 +120,7 @@
 		selectedTagIds = source?.tags.map((tag) => tag.id) ?? [];
 		startDate = source?.startDate ?? request?.startDate ?? initialDate;
 		endDate = source?.endDate ?? request?.endDate ?? initialDate;
-		allDay = source?.allDay ?? request?.allDay ?? true;
+		allDay = source?.allDay ?? request?.allDay ?? false;
 		startTime = (source?.startTime ?? request?.startTime)?.slice(0, 5) ?? '';
 		endTime = (source?.endTime ?? request?.endTime)?.slice(0, 5) ?? '';
 		isPublic = source?.isPublic ?? false;
@@ -233,6 +236,7 @@
 	);
 
 	function submitForm() {
+		validation = '';
 		if (
 			saving ||
 			optionsLoading ||
@@ -242,6 +246,17 @@
 			invalidTarget
 		)
 			return;
+		const normalizedStart = normalizeCalendarTime(startTime);
+		const normalizedEnd = normalizeCalendarTime(endTime);
+		if (
+			!allDay &&
+			(!normalizedStart ||
+				!normalizedEnd ||
+				(startDate === endDate && normalizedEnd <= normalizedStart))
+		) {
+			validation = 'กรุณาระบุเวลาเริ่มและสิ้นสุดให้ถูกต้อง';
+			return;
+		}
 
 		const targets: CalendarEventTargetInput[] = selectedAudiences.map((audienceType) => ({
 			audienceType,
@@ -257,8 +272,8 @@
 			startDate,
 			endDate,
 			allDay,
-			startTime: allDay ? null : startTime || null,
-			endTime: allDay ? null : endTime || null,
+			startTime: allDay ? null : normalizedStart,
+			endTime: allDay ? null : normalizedEnd,
 			isPublic,
 			tagIds: selectedTagIds,
 			targets,
@@ -382,12 +397,20 @@
 					</label>
 					{#if !allDay}
 						<div class="grid gap-2">
-							<Label for="calendar-event-start-time">เวลาเริ่มต้น</Label>
-							<Input id="calendar-event-start-time" type="time" bind:value={startTime} />
+							<Label for="calendar-event-start-time">เวลาเริ่มต้น *</Label>
+							<CalendarTimeInput
+								id="calendar-event-start-time"
+								bind:value={startTime}
+								disabled={saving}
+							/>
 						</div>
 						<div class="grid gap-2">
-							<Label for="calendar-event-end-time">เวลาสิ้นสุด</Label>
-							<Input id="calendar-event-end-time" type="time" bind:value={endTime} />
+							<Label for="calendar-event-end-time">เวลาสิ้นสุด *</Label>
+							<CalendarTimeInput
+								id="calendar-event-end-time"
+								bind:value={endTime}
+								disabled={saving}
+							/>
 						</div>
 					{/if}
 				</section>
@@ -490,7 +513,9 @@
 			{#if invalidTarget}<p role="alert" class="text-sm text-destructive">
 					กรุณาเลือกระดับชั้นหรือห้องเรียนให้ตรงกับวันที่กิจกรรม
 				</p>{/if}
-			{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
+			{#if validation || error}<p role="alert" class="text-sm text-destructive">
+					{validation || error}
+				</p>{/if}
 			<Dialog.Footer class="sticky bottom-0 mt-6 border-t bg-background py-4">
 				<Button type="button" variant="outline" onclick={() => (open = false)}>ยกเลิก</Button>
 				<LoadingButton

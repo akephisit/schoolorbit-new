@@ -94,7 +94,7 @@
 					>
 						<span
 							class={cn(
-								'flex size-6 items-center justify-center rounded-full text-xs font-medium transition-colors',
+								'flex size-6 self-center items-center justify-center rounded-full text-xs font-medium transition-colors',
 								cell.date === todayDate && 'bg-primary text-primary-foreground',
 								selectedDate === cell.date && cell.date !== todayDate && 'text-primary'
 							)}
@@ -120,33 +120,47 @@
 					)}
 					aria-hidden="true"
 				>
-					{#each week.segments as segment (`${segment.event.id}-${weekIndex}`)}
+					{#each week.segments as segment (`${segment.event.id}-${weekIndex}-${segment.startColumn}`)}
+						{@const timed = segment.event.allDay === false && !segment.event.pending}
 						<div
 							class={cn(
-								'min-w-0 overflow-hidden shadow-sm',
+								'min-w-0 overflow-hidden',
+								timed ? 'flex items-center gap-1 px-1 text-foreground' : 'shadow-sm',
 								segment.event.pending
 									? 'outline-1 outline-dashed -outline-offset-1 outline-primary bg-background text-primary'
-									: 'text-white',
+									: !timed && 'text-white',
 								segment.continuesFromPreviousWeek ? 'ml-0 rounded-l-none' : 'ml-0.5 rounded-l-sm',
 								segment.continuesIntoNextWeek ? 'mr-0 rounded-r-none' : 'mr-0.5 rounded-r-sm'
 							)}
 							style:grid-column={`${segment.startColumn + 1} / span ${segment.span}`}
 							style:grid-row={`${segment.lane + 1}`}
-							style:background-color={segment.event.pending
+							style:background-color={segment.event.pending || timed
 								? undefined
 								: (segment.event.categoryColor ?? fallbackColor)}
 							title={segmentLabel(segment)}
 						>
+							{#if timed}
+								<span
+									class="size-1.5 shrink-0 rounded-full sm:size-2"
+									style:background-color={segment.event.categoryColor ?? fallbackColor}
+								></span>
+							{/if}
 							<span
 								class={cn(
-									'block truncate px-1 text-[8px] font-medium leading-[13px] sm:hidden',
+									'block truncate text-[8px] leading-[13px] sm:hidden',
+									timed ? 'font-normal' : 'px-1 font-medium',
 									fillHeight && 'leading-[10px]'
 								)}
 							>
-								{segment.event.pending ? 'รออนุมัติ: ' : ''}{segment.event.title}
+								{segment.event.pending ? 'รออนุมัติ: ' : ''}{timed
+									? segmentLabel(segment)
+									: segment.event.title}
 							</span>
 							<span
-								class="hidden truncate px-1.5 text-[10px] font-medium leading-[18px] sm:block xl:text-[11px]"
+								class={cn(
+									'hidden truncate text-[10px] leading-[18px] sm:block xl:text-[11px]',
+									timed ? 'font-normal' : 'px-1.5 font-medium'
+								)}
 							>
 								{segmentLabel(segment)}
 							</span>

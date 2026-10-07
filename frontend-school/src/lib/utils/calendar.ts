@@ -60,6 +60,16 @@ export interface CalendarLayoutEvent {
 	allDay?: boolean;
 	startTime?: string | null;
 	categoryColor?: string | null;
+	pending?: boolean;
+}
+
+export function normalizeCalendarTime(value: string): string | null {
+	const match = /^(\d{1,2}):?(\d{2})$/.exec(value.trim());
+	if (!match) return null;
+	const hours = Number(match[1]);
+	const minutes = Number(match[2]);
+	if (hours > 23 || minutes > 59) return null;
+	return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 export interface CalendarWeekEventSegment<EventType extends CalendarLayoutEvent> {
@@ -185,7 +195,7 @@ export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
 
 		const visibleEvents = events
 			.filter((event) => event.startDate <= weekEnd && event.endDate >= weekStart)
-			.map((event) => {
+			.flatMap((event) => {
 				const startColumn = weekCells.findIndex((cell) => cell.date >= event.startDate);
 				let endColumn = weekCells.length - 1;
 
@@ -197,6 +207,14 @@ export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
 				}
 
 				const normalizedStartColumn = startColumn === -1 ? 0 : startColumn;
+				if (event.allDay === false && !event.pending) {
+					return Array.from({ length: endColumn - normalizedStartColumn + 1 }, (_, index) => ({
+						event,
+						startColumn: normalizedStartColumn + index,
+						endColumn: normalizedStartColumn + index,
+						span: 1
+					}));
+				}
 				return {
 					event,
 					startColumn: normalizedStartColumn,
@@ -205,9 +223,13 @@ export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
 				};
 			})
 			.sort((left, right) => {
+				const timedOrder =
+					Number(left.event.allDay === false && !left.event.pending) -
+					Number(right.event.allDay === false && !right.event.pending);
 				const continuationOrder =
 					Number(left.event.startDate >= weekStart) - Number(right.event.startDate >= weekStart);
 				return (
+					timedOrder ||
 					continuationOrder ||
 					left.startColumn - right.startColumn ||
 					right.span - left.span ||
@@ -255,8 +277,12 @@ export function buildCalendarMonthWeeks<EventType extends CalendarLayoutEvent>(
 				startColumn: visibleEvent.startColumn,
 				span: visibleEvent.span,
 				lane,
-				continuesFromPreviousWeek: visibleEvent.event.startDate < weekStart,
-				continuesIntoNextWeek: visibleEvent.event.endDate > weekEnd
+				continuesFromPreviousWeek:
+					(visibleEvent.event.allDay !== false || !!visibleEvent.event.pending) &&
+					visibleEvent.event.startDate < weekStart,
+				continuesIntoNextWeek:
+					(visibleEvent.event.allDay !== false || !!visibleEvent.event.pending) &&
+					visibleEvent.event.endDate > weekEnd
 			});
 		}
 

@@ -12,10 +12,51 @@ import {
 	eventOverlapsDate,
 	formatCalendarDate,
 	formatCalendarMonth,
-	monthRange
+	monthRange,
+	normalizeCalendarTime
 } from '../../src/lib/utils/calendar.ts';
 
 describe('calendar helpers', () => {
+	it('normalizes 24-hour clock input without guessing invalid times', () => {
+		for (const [input, expected] of [
+			['830', '08:30'],
+			['0830', '08:30'],
+			['8:30', '08:30'],
+			['13:05', '13:05'],
+			['0000', '00:00'],
+			['2359', '23:59'],
+			[' 0900 ', '09:00']
+		]) {
+			assert.equal(normalizeCalendarTime(input), expected);
+		}
+		for (const input of ['', '8', '08', '24:00', '2360', '8:3', '08:30 AM', '-1:00', '12345']) {
+			assert.equal(normalizeCalendarTime(input), null);
+		}
+	});
+	it('keeps timed entries within each day while all-day and pending spans continue across weeks', () => {
+		const shared = { title: 'กิจกรรม', startDate: '2026-07-03', endDate: '2026-07-05' };
+		const weeks = buildCalendarMonthWeeks('2026-07-01', [
+			{ ...shared, id: 'all-day', allDay: true },
+			{ ...shared, id: 'timed', allDay: false, startTime: '08:30' },
+			{ ...shared, id: 'pending', allDay: false, pending: true, startTime: '10:00' }
+		]);
+		const segments = weeks.flatMap((week) => week.segments);
+		const timed = segments.filter((segment) => segment.event.id === 'timed');
+		assert.equal(timed.length, 3);
+		assert.ok(
+			timed.every(
+				(segment) =>
+					segment.span === 1 && !segment.continuesFromPreviousWeek && !segment.continuesIntoNextWeek
+			)
+		);
+		assert.ok(segments.some((segment) => segment.event.id === 'all-day' && segment.span === 2));
+		assert.ok(
+			segments.some(
+				(segment) => segment.event.id === 'pending' && segment.continuesFromPreviousWeek
+			)
+		);
+		assert.ok(weeks.every((week) => week.hiddenEventCounts.every((count) => count === 0)));
+	});
 	it('builds a 42-cell month grid', () => {
 		const cells = buildCalendarMonth('2026-07-01');
 		assert.equal(cells.length, 42);
@@ -131,6 +172,33 @@ describe('calendar helpers', () => {
 		});
 	});
 
+	it('places a new all-day bar above timed entries continued from the previous week', () => {
+		const weeks = buildCalendarMonthWeeks('2026-07-01', [
+			{
+				id: 'timed',
+				title: 'อบรม',
+				startDate: '2026-07-03',
+				endDate: '2026-07-06',
+				allDay: false,
+				startTime: '08:30'
+			},
+			{
+				id: 'all-day',
+				title: 'ทั้งวัน',
+				startDate: '2026-07-05',
+				endDate: '2026-07-06',
+				allDay: true
+			}
+		]);
+		const nextWeek = weeks[1].segments;
+		const bar = nextWeek.find((segment) => segment.event.id === 'all-day');
+		assert.ok(bar);
+		assert.ok(
+			nextWeek
+				.filter((segment) => segment.event.id === 'timed')
+				.every((segment) => segment.lane > bar.lane)
+		);
+	});
 	it('counts events hidden when all visible lanes are occupied', () => {
 		const [firstWeek] = buildCalendarMonthWeeks(
 			'2026-07-01',

@@ -329,6 +329,7 @@ test('own pending requests and a successful submission patch markers without rer
 	const dialog = page.getByRole('dialog');
 	await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('คำร้องของฉันใหม่');
 	await dialog.getByLabel('รายละเอียดกิจกรรม *', { exact: true }).fill('รายละเอียดทดสอบ');
+	await dialog.getByRole('checkbox', { name: 'ทั้งวัน', exact: true }).check();
 	await dialog.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect(

@@ -8,6 +8,8 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import CalendarTimeInput from './CalendarTimeInput.svelte';
+	import { normalizeCalendarTime } from '#lib/utils/calendar.js';
 	import type { CreateCalendarRequest } from '#lib/api/calendar.js';
 	let {
 		open = $bindable(false),
@@ -27,7 +29,7 @@
 		location = $state('');
 	let startDate = $state(untrack(() => initialDate)),
 		endDate = $state(untrack(() => initialDate));
-	let allDay = $state(true),
+	let allDay = $state(false),
 		startTime = $state(''),
 		endTime = $state('');
 	let validation = $state('');
@@ -42,7 +44,14 @@
 			validation = 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
 			return;
 		}
-		if (!allDay && (!startTime || !endTime || (startDate === endDate && endTime <= startTime))) {
+		const normalizedStart = normalizeCalendarTime(startTime);
+		const normalizedEnd = normalizeCalendarTime(endTime);
+		if (
+			!allDay &&
+			(!normalizedStart ||
+				!normalizedEnd ||
+				(startDate === endDate && normalizedEnd <= normalizedStart))
+		) {
 			validation = 'กรุณาระบุเวลาเริ่มและสิ้นสุดให้ถูกต้อง';
 			return;
 		}
@@ -53,8 +62,8 @@
 			startDate,
 			endDate,
 			allDay,
-			startTime: allDay ? null : startTime,
-			endTime: allDay ? null : endTime
+			startTime: allDay ? null : normalizedStart,
+			endTime: allDay ? null : normalizedEnd
 		});
 	}
 </script>
@@ -109,18 +118,16 @@
 			{#if !allDay}
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-2">
-						<Label for="request-start-time">เวลาเริ่ม *</Label><Input
+						<Label for="request-start-time">เวลาเริ่ม *</Label><CalendarTimeInput
 							id="request-start-time"
-							type="time"
 							bind:value={startTime}
 							required
 							disabled={saving}
 						/>
 					</div>
 					<div class="space-y-2">
-						<Label for="request-end-time">เวลาสิ้นสุด *</Label><Input
+						<Label for="request-end-time">เวลาสิ้นสุด *</Label><CalendarTimeInput
 							id="request-end-time"
-							type="time"
 							bind:value={endTime}
 							required
 							disabled={saving}

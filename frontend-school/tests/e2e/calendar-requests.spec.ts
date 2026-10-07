@@ -83,6 +83,20 @@ for (const width of [1280, 375])
 		await expect(dialog).not.toContainText('ปีการศึกษา');
 		await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('วันกิจกรรมเสนอ');
 		await dialog.getByLabel('รายละเอียดกิจกรรม *', { exact: true }).fill('รายละเอียดเพื่อพิจารณา');
+		await expect(dialog.getByRole('checkbox', { name: 'ทั้งวัน', exact: true })).not.toBeChecked();
+		const start = dialog.getByLabel('เวลาเริ่ม *', { exact: true });
+		const end = dialog.getByLabel('เวลาสิ้นสุด *', { exact: true });
+		await expect(start).toHaveAttribute('type', 'text');
+		await start.fill('2460');
+		await end.fill('0930');
+		await dialog.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
+		expect(writes).toHaveLength(0);
+		await start.fill('830');
+		await end.fill('0830');
+		await dialog.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
+		await expect(dialog.getByRole('alert')).toContainText('เวลาเริ่มและสิ้นสุด');
+		expect(writes).toHaveLength(0);
+		await end.fill('930');
 		await dialog.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
 		await expect(dialog.getByRole('alert')).toContainText('ส่งไม่สำเร็จ');
 		await expect(dialog.getByLabel('ชื่อกิจกรรม *', { exact: true })).toHaveValue('วันกิจกรรมเสนอ');
@@ -92,9 +106,9 @@ for (const width of [1280, 375])
 			location: null,
 			startDate: '2027-06-12',
 			endDate: '2027-06-12',
-			allDay: true,
-			startTime: null,
-			endTime: null
+			allDay: false,
+			startTime: '08:30',
+			endTime: '09:30'
 		});
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
@@ -122,6 +136,9 @@ test('direct event defaults to selected date despite an unrelated header year', 
 	await page.getByRole('button', { name: '12 มิ.ย. 2570, 0 กิจกรรม', exact: true }).click();
 	await page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true }).click();
 	await page.getByLabel('ชื่อกิจกรรม', { exact: true }).fill('กิจกรรมในอนาคต');
+	await expect(page.getByRole('checkbox', { name: 'ทั้งวัน', exact: true })).not.toBeChecked();
+	await page.getByLabel('เวลาเริ่มต้น *', { exact: true }).fill('1300');
+	await page.getByLabel('เวลาสิ้นสุด *', { exact: true }).fill('1430');
 	const posted = page.waitForRequest(
 		(req) => new URL(req.url()).pathname === '/api/calendar/events' && req.method() === 'POST'
 	);
@@ -129,6 +146,9 @@ test('direct event defaults to selected date despite an unrelated header year', 
 	const payload = (await posted).postDataJSON();
 	expect(payload.startDate).toBe('2027-06-12');
 	expect(payload.endDate).toBe('2027-06-12');
+	expect(payload.allDay).toBe(false);
+	expect(payload.startTime).toBe('13:00');
+	expect(payload.endTime).toBe('14:30');
 	expect(payload).not.toHaveProperty('academicYearId');
 	await expect.poll(() => api.writes.length).toBe(1);
 	expect(
