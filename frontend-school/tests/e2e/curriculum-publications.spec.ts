@@ -48,7 +48,7 @@ async function mock(
 	function workspace(url: URL) {
 		const editing = url.searchParams.get('draftId') === draftId && token === draftId;
 		const publicationId = url.searchParams.get('publicationId') ?? publicationIds[count - 1];
-		const level = {
+		const level: ReturnType<typeof curriculumVersion> = {
 			...curriculumVersion(ids.curriculumVersion),
 			draftId: editing ? draftId : null,
 			publicationId: editing ? null : publicationId,
