@@ -144,6 +144,11 @@ BEGIN
  RETURN publication;
 END $$;
 SELECT capture_curriculum_publication(id,NULL,'ข้อมูลหลักสูตรที่เผยแพร่ก่อนเริ่มประวัติการแก้ไข',true) FROM curriculum_editions WHERE status='published';
+-- A published flag cannot bypass capture or create an invisible published edition.
+ALTER TABLE curriculum_editions ADD CONSTRAINT curriculum_editions_publication_state
+ CHECK ((current_publication_id IS NULL AND publication_count=0) OR (current_publication_id IS NOT NULL AND publication_count>0)),
+ ADD CONSTRAINT curriculum_editions_published_has_snapshot CHECK(status<>'published' OR current_publication_id IS NOT NULL);
+
 CREATE VIEW published_curriculum_levels AS SELECT r.* FROM curriculum_publication_levels r JOIN curriculum_editions e ON e.current_publication_id=r.publication_id;
 CREATE VIEW published_study_programs AS SELECT r.* FROM curriculum_publication_programs r JOIN curriculum_editions e ON e.current_publication_id=r.publication_id;
 CREATE VIEW published_curriculum_term_slots AS SELECT r.* FROM curriculum_publication_slots r JOIN curriculum_editions e ON e.current_publication_id=r.publication_id;

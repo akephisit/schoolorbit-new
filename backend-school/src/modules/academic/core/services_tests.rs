@@ -5324,6 +5324,22 @@ async fn curriculum_publication_concurrent_open_reuses_one_draft_and_failed_publ
 #[tokio::test]
 async fn curriculum_publication_database_seals_history_and_rejects_partial_capture() {
     let pool = prepare_current_core_fixture("curriculum_publication_immutable").await;
+    let unpublished: Uuid = sqlx::query_scalar("INSERT INTO curriculum_editions(name,revision_year) VALUES('Unpublished fixture',2569) RETURNING id")
+        .fetch_one(&pool).await.unwrap();
+    assert!(
+        sqlx::query("UPDATE curriculum_editions SET status='published' WHERE id=$1")
+            .bind(unpublished)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(sqlx::query("INSERT INTO curriculum_editions(name,revision_year,status) VALUES('Invalid publication',2569,'published')")
+        .execute(&pool).await.is_err());
+    let unchanged = curriculum::get(&pool, unpublished).await.unwrap();
+    assert_eq!(unchanged.status, VersionStatus::Draft);
+    assert_eq!(unchanged.publication_count, 0);
+    assert!(unchanged.current_publication_id.is_none());
+
     let (id, level) = publication_fixture(&pool, "IMMUTABLE").await;
     let edition = curriculum::get(&pool, id).await.unwrap();
     let publication = edition.current_publication_id.unwrap();
