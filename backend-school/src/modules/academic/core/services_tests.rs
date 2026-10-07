@@ -5606,7 +5606,13 @@ async fn curriculum_publication_discard_restores_all_levels_and_used_requirement
     )
     .await
     .unwrap();
-    let added_slot:Uuid=sqlx::query_scalar("SELECT id FROM curriculum_term_slots WHERE curriculum_level_id=$1 AND sequence=2").bind(added.id).fetch_one(&pool).await.unwrap();
+    let added_slot: Uuid = sqlx::query_scalar(
+        "SELECT id FROM curriculum_term_slots WHERE curriculum_level_id=$1 AND sequence=2",
+    )
+    .bind(added.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let added_requirement:Uuid=sqlx::query_scalar("INSERT INTO curriculum_course_requirements(id,curriculum_level_id,grade_level_id,subject_version_id,display_order,metadata,study_program_id,requirement_kind,term_slot_id) SELECT gen_random_uuid(),$1,grade_level_id,subject_version_id,1,metadata,$2,requirement_kind,$3 FROM curriculum_publication_courses WHERE publication_id=$4 AND id=$5 RETURNING id").bind(added.id).bind(added_program.id).bind(added_slot).bind(original.current_publication_id).bind(requirement).fetch_one(&pool).await.unwrap();
     // Preserve IDs of removed released requirements while removing new IDs physically.
     let preview = publications::preview_discard(&pool, id, token)
