@@ -1,10 +1,11 @@
 use crate::models::{
-    CurriculumEdition, CurriculumLevel, CurriculumLevelView, CurriculumPublication,
-    CurriculumPublicationHistory, CurriculumStructureWorkspace, CurriculumViewQuery,
-    OpenCurriculumDraftRequest, StudyProgram, VersionStatus,
+    CurriculumDraftDiscardPreview, CurriculumEdition, CurriculumLevel, CurriculumLevelView,
+    CurriculumPublication, CurriculumPublicationHistory, CurriculumStructureWorkspace,
+    CurriculumViewQuery, DiscardCurriculumDraftRequest, OpenCurriculumDraftRequest, StudyProgram,
+    VersionStatus,
 };
 use school_errors::AppError;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 const PUBLICATION_COLUMNS: &str = "p.id,p.edition_id,p.publication_no,p.previous_publication_id,p.name,p.revision_year,p.description,p.published_by,NULLIF(concat_ws(' ',u.title,u.first_name,u.last_name),'') AS publisher_name,p.published_at,p.captured_at,p.change_note,p.is_baseline,p.level_count,p.program_count,p.slot_count,p.course_count,p.activity_count";
@@ -78,6 +79,172 @@ pub async fn open_draft(
         sqlx::query("UPDATE curriculum_levels SET row_version=row_version+1,updated_at=now() WHERE edition_id=$1").bind(id).execute(&mut *tx).await?;
         sqlx::query("UPDATE study_programs SET row_version=row_version+1,updated_at=now() WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)").bind(id).execute(&mut *tx).await?;
     }
+    tx.commit().await?;
+    super::curriculum::get(pool, id).await
+}
+
+fn validate_discard_context(
+    token: Option<Uuid>,
+    publication: Option<Uuid>,
+    row_version: i64,
+    request: &DiscardCurriculumDraftRequest,
+) -> Result<Uuid, AppError> {
+    super::parse_row_version(request.row_version)?;
+    if request.content_hash.len() != 64
+        || !request
+            .content_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(AppError::ValidationError("โหลดข้อมูลยืนยันการลบร่างใหม่".into()));
+    }
+    validate_draft_token(token, request.draft_id)?;
+    if row_version != request.row_version {
+        return Err(AppError::Conflict(
+            "ร่างหลักสูตรเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนลบ".into(),
+        ));
+    }
+    publication.ok_or_else(|| AppError::Conflict("ยกเลิกร่างแก้ไขได้เฉพาะฉบับที่เคยเผยแพร่แล้ว".into()))
+}
+
+async fn discard_preview_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    token: Uuid,
+    row_version: i64,
+) -> Result<CurriculumDraftDiscardPreview, AppError> {
+    sqlx::query_as(
+        "WITH graph AS (SELECT
+        COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_levels r WHERE edition_id=$1),'[]') AS levels,
+        COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM study_programs r WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)),'[]') AS programs,
+        COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_term_slots r WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)),'[]') AS slots,
+        COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_course_requirements r WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)),'[]') AS courses,
+        COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_activity_requirements r WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)),'[]') AS activities,
+        COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM curriculum_requirement_sources r WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)),'[]') AS sources)
+        SELECT $2::uuid AS draft_id,$3::bigint AS row_version,
+        encode(sha256(convert_to(to_jsonb(graph)::text,'UTF8')),'hex') AS content_hash,
+        jsonb_array_length(levels)::bigint AS level_count,jsonb_array_length(programs)::bigint AS program_count,
+        jsonb_array_length(slots)::bigint AS slot_count,jsonb_array_length(courses)::bigint AS course_count,
+        jsonb_array_length(activities)::bigint AS activity_count FROM graph"
+    ).bind(id).bind(token).bind(row_version).fetch_one(&mut **tx).await.map_err(Into::into)
+}
+
+pub async fn preview_discard(
+    pool: &PgPool,
+    id: Uuid,
+    token: Uuid,
+) -> Result<CurriculumDraftDiscardPreview, AppError> {
+    let mut tx = pool.begin().await?;
+    let sql = format!(
+        "SELECT {} FROM curriculum_editions WHERE id=$1 FOR SHARE",
+        super::curriculum::EDITION_COLUMNS
+    );
+    let edition: CurriculumEdition = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบฉบับหลักสูตร".into()))?;
+    validate_draft_token(edition.draft_id, token)?;
+    if edition.current_publication_id.is_none() {
+        return Err(AppError::Conflict(
+            "ยกเลิกร่างแก้ไขได้เฉพาะฉบับที่เคยเผยแพร่แล้ว".into(),
+        ));
+    }
+    let preview = discard_preview_in_transaction(&mut tx, id, token, edition.row_version).await?;
+    tx.commit().await?;
+    Ok(preview)
+}
+
+fn discard_error(error: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(ref database) = error {
+        if database.code().as_deref() == Some("23503") {
+            return AppError::Conflict("ร่างมีข้อมูลอื่นอ้างอิงอยู่ จึงยังลบไม่ได้".into());
+        }
+    }
+    error.into()
+}
+
+/// Restore the released graph and physically remove all unpublished additions in one
+/// owner-locked transaction. Neither publication history nor actual delivery is written.
+pub async fn discard_draft(
+    pool: &PgPool,
+    id: Uuid,
+    request: DiscardCurriculumDraftRequest,
+) -> Result<CurriculumEdition, AppError> {
+    let mut tx = pool.begin().await?;
+    let sql = format!(
+        "SELECT {} FROM curriculum_editions WHERE id=$1 FOR UPDATE",
+        super::curriculum::EDITION_COLUMNS
+    );
+    let edition: CurriculumEdition = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบฉบับหลักสูตร".into()))?;
+    let publication = validate_discard_context(
+        edition.draft_id,
+        edition.current_publication_id,
+        edition.row_version,
+        &request,
+    )?;
+    let preview =
+        discard_preview_in_transaction(&mut tx, id, request.draft_id, edition.row_version).await?;
+    if preview.content_hash != request.content_hash {
+        return Err(AppError::Conflict(
+            "มีการแก้ไขร่างหลังเปิดหน้าต่างยืนยัน กรุณาตรวจสอบและยืนยันใหม่".into(),
+        ));
+    }
+    for table in [
+        "curriculum_course_requirements",
+        "curriculum_activity_requirements",
+        "curriculum_term_slots",
+    ] {
+        let sql=format!("DELETE FROM {table} WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)");
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(discard_error)?;
+    }
+    sqlx::query("DELETE FROM curriculum_requirement_sources s WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_courses WHERE id=s.id) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_activities WHERE id=s.id) AND NOT EXISTS(SELECT 1 FROM course_offering_details WHERE curriculum_course_requirement_id=s.id) AND NOT EXISTS(SELECT 1 FROM activity_offering_details WHERE curriculum_activity_requirement_id=s.id)")
+        .bind(id).execute(&mut *tx).await.map_err(discard_error)?;
+    sqlx::query("DELETE FROM study_programs w WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1) AND NOT EXISTS(SELECT 1 FROM curriculum_publication_programs p WHERE p.publication_id=$2 AND p.id=w.id)")
+        .bind(id).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
+    sqlx::query("DELETE FROM curriculum_levels w WHERE edition_id=$1 AND NOT EXISTS(SELECT 1 FROM curriculum_publication_levels p WHERE p.publication_id=$2 AND p.id=w.id)")
+        .bind(id).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
+    // Codes and the default flag may have been swapped during editing. Vacate their
+    // unique keys inside this transaction before restoring the published values.
+    sqlx::query(
+        "UPDATE curriculum_levels SET code='discard-'||gen_random_uuid()::text WHERE edition_id=$1",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE study_programs SET code='discard-'||gen_random_uuid()::text,is_default=false WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)")
+        .bind(id).execute(&mut *tx).await?;
+    for (table,snapshot,columns) in [
+        ("curriculum_levels","curriculum_publication_levels","id,description,created_at,updated_at,row_version,migration_provenance,edition_id,code,name_th,name_en,grade_level_ids,is_active"),
+        ("study_programs","curriculum_publication_programs","id,curriculum_level_id,code,name_th,name_en,is_default,status,row_version,created_at,updated_at,migration_provenance"),
+        ("curriculum_term_slots","curriculum_publication_slots","id,curriculum_level_id,sequence,term_type,type_occurrence,name,row_version,created_at,updated_at"),
+        ("curriculum_course_requirements","curriculum_publication_courses","id,curriculum_level_id,grade_level_id,subject_version_id,display_order,metadata,created_at,updated_at,study_program_id,requirement_kind,row_version,term_slot_id"),
+        ("curriculum_activity_requirements","curriculum_publication_activities","id,curriculum_level_id,display_order,created_at,updated_at,activity_version_id,grade_level_id,study_program_id,requirement_kind,row_version,term_slot_id"),
+    ] {
+        let selected=columns.split(',').map(|column| match column {
+            "row_version"=>"p.row_version+1".to_owned(),
+            "updated_at"=>"now()".to_owned(),
+            _=>format!("p.{column}"),
+        }).collect::<Vec<_>>().join(",");
+        let updated=columns.split(',').filter(|column| *column!="id").map(|column| match column {
+            "row_version"=>"row_version=GREATEST(workspace.row_version+1,EXCLUDED.row_version)".to_owned(),
+            _=>format!("{column}=EXCLUDED.{column}"),
+        }).collect::<Vec<_>>().join(",");
+        let sql=format!("INSERT INTO {table} AS workspace({columns}) SELECT {selected} FROM {snapshot} p WHERE publication_id=$1 ON CONFLICT(id) DO UPDATE SET {updated}");
+        sqlx::query(sqlx::AssertSqlSafe(sql)).bind(publication).execute(&mut *tx).await.map_err(discard_error)?;
+    }
+    // The database guard independently requires the entire workspace to match the
+    // publication before permitting this token to close without a new publication.
+    sqlx::query("UPDATE curriculum_editions SET draft_id=NULL,row_version=row_version+1,updated_at=now() WHERE id=$1")
+        .bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
     super::curriculum::get(pool, id).await
 }
@@ -255,6 +422,26 @@ pub async fn history(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn discard_requires_current_amendment_and_exact_revision() {
+        let token = Uuid::new_v4();
+        let publication = Uuid::new_v4();
+        let request = DiscardCurriculumDraftRequest {
+            draft_id: token,
+            row_version: 3,
+            content_hash: "0".repeat(64),
+        };
+        assert_eq!(
+            validate_discard_context(Some(token), Some(publication), 3, &request).unwrap(),
+            publication
+        );
+        assert!(validate_discard_context(Some(token), None, 3, &request).is_err());
+        assert!(validate_discard_context(None, Some(publication), 3, &request).is_err());
+        assert!(
+            validate_discard_context(Some(Uuid::new_v4()), Some(publication), 3, &request).is_err()
+        );
+        assert!(validate_discard_context(Some(token), Some(publication), 4, &request).is_err());
+    }
     #[test]
     fn draft_tokens_and_change_notes_fail_closed() {
         let token = Uuid::new_v4();

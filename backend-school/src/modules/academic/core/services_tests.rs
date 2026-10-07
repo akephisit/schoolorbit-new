@@ -37,11 +37,11 @@ const FUTURE_YEAR_ID: Uuid = Uuid::from_u128(0x1000_0000_0000_0000_0000_0000_000
 const DEFAULT_SUBJECT_GROUP_ID: Uuid = Uuid::from_u128(0x783a_4a9d_9ff1_4eac_b370_06b5_8daa_1eb7);
 
 pub(crate) async fn prepare_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 96).await
+    prepare_core_fixture_through(name, 97).await
 }
 
 pub(crate) async fn prepare_current_core_fixture(name: &str) -> PgPool {
-    prepare_core_fixture_through(name, 96).await
+    prepare_core_fixture_through(name, 97).await
 }
 
 async fn prepare_core_fixture_through(name: &str, version: i64) -> PgPool {
@@ -5254,6 +5254,98 @@ async fn curriculum_publication_amendment_adds_term_two_preserves_history_and_ac
     assert!(publications::read_workspace(&pool, level_id, &view)
         .await
         .is_err());
+    // Discard restores publication two, never the baseline or an empty edition.
+    sqlx::query("UPDATE curriculum_term_slots SET name='ร่างที่จะทิ้ง' WHERE curriculum_level_id=$1")
+        .bind(level_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let preview = publications::preview_discard(&pool, id, next.draft_id.unwrap())
+        .await
+        .unwrap();
+    let restored = publications::discard_draft(
+        &pool,
+        id,
+        school_academic_core::models::DiscardCurriculumDraftRequest {
+            draft_id: preview.draft_id,
+            row_version: preview.row_version,
+            content_hash: preview.content_hash,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(restored.publication_count, 2);
+    assert_eq!(
+        restored.current_publication_id,
+        second.current_publication_id
+    );
+    let restored_workspace =
+        publications::read_workspace(&pool, level_id, &CurriculumViewQuery::default())
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(current).unwrap(),
+        serde_json::to_value(restored_workspace).unwrap()
+    );
+    assert_eq!(actual, publication_actual_evidence(&pool).await);
+}
+
+#[tokio::test]
+async fn curriculum_publication_discard_rolls_back_when_new_plan_has_external_reference() {
+    use school_academic_core::models::{DiscardCurriculumDraftRequest, OpenCurriculumDraftRequest};
+    use school_academic_core::services::curriculum_publications as publications;
+    let pool = prepare_current_core_fixture("curriculum_publication_discard_referenced").await;
+    let (id, level) = publication_fixture(&pool, "DISCARD-REFERENCED").await;
+    let edition = curriculum::get(&pool, id).await.unwrap();
+    let draft = publications::open_draft(
+        &pool,
+        id,
+        OpenCurriculumDraftRequest {
+            row_version: edition.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let token = draft.draft_id.unwrap();
+    let added = curriculum::create_program(
+        &pool,
+        level,
+        CreateStudyProgramRequest {
+            draft_id: token,
+            name_th: "แผนมีห้องอ้างอิง".into(),
+            is_default: false,
+        },
+    )
+    .await
+    .unwrap();
+    let grade = curriculum_structure::get_workspace(&pool, level)
+        .await
+        .unwrap()
+        .grade_levels[0]
+        .id;
+    sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,study_program_id,capacity,is_active) VALUES(gen_random_uuid(),'DISCARD-REF','ห้องอ้างอิง',$1,$2,$3,40,true)").bind(CURRENT_YEAR_ID).bind(grade).bind(added.id).execute(&pool).await.unwrap();
+    let actual = publication_actual_evidence(&pool).await;
+    let preview = publications::preview_discard(&pool, id, token)
+        .await
+        .unwrap();
+    let error = publications::discard_draft(
+        &pool,
+        id,
+        DiscardCurriculumDraftRequest {
+            draft_id: token,
+            row_version: preview.row_version,
+            content_hash: preview.content_hash.clone(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(error.public_message().contains("อ้างอิง"));
+    let after = publications::preview_discard(&pool, id, token)
+        .await
+        .unwrap();
+    assert_eq!(after.content_hash, preview.content_hash);
+    assert_eq!(after.row_version, preview.row_version);
+    assert_eq!(actual, publication_actual_evidence(&pool).await);
 }
 
 #[tokio::test]
@@ -5457,4 +5549,260 @@ async fn curriculum_publication_draft_removal_keeps_actual_offering_requirement_
     .unwrap();
     assert!(released.requirements.iter().any(|r| r.id == requirement_id));
     assert_eq!(actual, publication_actual_evidence(&pool).await);
+}
+
+#[tokio::test]
+async fn curriculum_publication_discard_restores_all_levels_and_used_requirement_without_history() {
+    use school_academic_core::models::{
+        CurriculumViewQuery, DiscardCurriculumDraftRequest, OpenCurriculumDraftRequest,
+    };
+    use school_academic_core::services::curriculum_publications as publications;
+    let pool = prepare_current_core_fixture("curriculum_publication_discard_graph").await;
+    let (requirement, program, level, id):(Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT r.id,r.study_program_id,r.curriculum_level_id,l.edition_id FROM course_offering_details d JOIN curriculum_course_requirements r ON r.id=d.curriculum_course_requirement_id JOIN curriculum_levels l ON l.id=r.curriculum_level_id ORDER BY d.learning_offering_id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let actual = publication_actual_evidence(&pool).await;
+    let original = curriculum::get(&pool, id).await.unwrap();
+    let history =
+        serde_json::to_value(publications::list_publications(&pool, id).await.unwrap()).unwrap();
+    let draft = publications::open_draft(
+        &pool,
+        id,
+        OpenCurriculumDraftRequest {
+            row_version: original.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let token = draft.draft_id.unwrap();
+    // Exercise edits throughout the edition, not only the currently selected level.
+    sqlx::query("UPDATE curriculum_levels SET name_th=name_th||' ร่าง',description='discard me' WHERE edition_id=$1").bind(id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE study_programs SET name_th=name_th||' ร่าง' WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)").bind(id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE curriculum_activity_requirements SET display_order=display_order+100 WHERE curriculum_level_id IN(SELECT id FROM curriculum_levels WHERE edition_id=$1)").bind(id).execute(&pool).await.unwrap();
+    sqlx::query("DELETE FROM curriculum_course_requirements WHERE id=$1")
+        .bind(requirement)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let grade:Uuid=sqlx::query_scalar("SELECT grade_level_id FROM curriculum_publication_courses WHERE publication_id=$1 AND id=$2").bind(original.current_publication_id).bind(requirement).fetch_one(&pool).await.unwrap();
+    let added = curriculum::create_level(
+        &pool,
+        id,
+        CreateCurriculumLevelRequest {
+            draft_id: token,
+            name_th: "ระดับทดลองที่จะลบ".into(),
+            grade_level_ids: vec![grade],
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    let added_program = curriculum::create_program(
+        &pool,
+        added.id,
+        CreateStudyProgramRequest {
+            draft_id: token,
+            name_th: "แผนทดลองที่จะลบ".into(),
+            is_default: true,
+        },
+    )
+    .await
+    .unwrap();
+    let added_slot:Uuid=sqlx::query_scalar("INSERT INTO curriculum_term_slots(id,curriculum_level_id,sequence,term_type,type_occurrence,name) SELECT gen_random_uuid(),$1,1,term_type,1,'ภาคเรียนทดลอง' FROM curriculum_publication_slots WHERE publication_id=$2 LIMIT 1 RETURNING id").bind(added.id).bind(original.current_publication_id).fetch_one(&pool).await.unwrap();
+    let added_requirement:Uuid=sqlx::query_scalar("INSERT INTO curriculum_course_requirements(id,curriculum_level_id,grade_level_id,subject_version_id,display_order,metadata,study_program_id,requirement_kind,term_slot_id) SELECT gen_random_uuid(),$1,grade_level_id,subject_version_id,1,metadata,$2,requirement_kind,$3 FROM curriculum_publication_courses WHERE publication_id=$4 AND id=$5 RETURNING id").bind(added.id).bind(added_program.id).bind(added_slot).bind(original.current_publication_id).bind(requirement).fetch_one(&pool).await.unwrap();
+    // Preserve IDs of removed released requirements while removing new IDs physically.
+    let preview = publications::preview_discard(&pool, id, token)
+        .await
+        .unwrap();
+    let request = DiscardCurriculumDraftRequest {
+        draft_id: token,
+        row_version: preview.row_version,
+        content_hash: preview.content_hash,
+    };
+    let restored = publications::discard_draft(&pool, id, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        restored.current_publication_id,
+        original.current_publication_id
+    );
+    assert_eq!(restored.publication_count, original.publication_count);
+    assert!(restored.draft_id.is_none());
+    assert_eq!(
+        history,
+        serde_json::to_value(publications::list_publications(&pool, id).await.unwrap()).unwrap()
+    );
+    assert!(sqlx::query_scalar::<_,bool>("SELECT curriculum_workspace_matches_publication(id,current_publication_id) FROM curriculum_editions WHERE id=$1").bind(id).fetch_one(&pool).await.unwrap());
+    assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM curriculum_course_requirements WHERE id=$1 AND study_program_id=$2 AND curriculum_level_id=$3)").bind(requirement).bind(program).bind(level).fetch_one(&pool).await.unwrap());
+    assert!(!sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM curriculum_levels WHERE id=$1) OR EXISTS(SELECT 1 FROM study_programs WHERE id=$2)").bind(added.id).bind(added_program.id).fetch_one(&pool).await.unwrap());
+    assert!(!sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM curriculum_requirement_sources WHERE id=$1) OR EXISTS(SELECT 1 FROM curriculum_course_requirements WHERE id=$1) OR EXISTS(SELECT 1 FROM curriculum_term_slots WHERE id=$2)").bind(added_requirement).bind(added_slot).fetch_one(&pool).await.unwrap());
+    assert_eq!(actual, publication_actual_evidence(&pool).await);
+    assert!(matches!(
+        publications::discard_draft(&pool, id, request).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    assert!(publications::read_workspace(
+        &pool,
+        level,
+        &CurriculumViewQuery {
+            draft_id: Some(token),
+            publication_id: None
+        }
+    )
+    .await
+    .is_err());
+    let reopened = publications::open_draft(
+        &pool,
+        id,
+        OpenCurriculumDraftRequest {
+            row_version: restored.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_ne!(reopened.draft_id, Some(token));
+}
+
+#[tokio::test]
+async fn curriculum_publication_discard_refuses_changed_preview_and_unreleased_edition() {
+    use school_academic_core::models::{DiscardCurriculumDraftRequest, OpenCurriculumDraftRequest};
+    use school_academic_core::services::curriculum_publications as publications;
+    let pool = prepare_current_core_fixture("curriculum_publication_discard_stale").await;
+    let (id, level) = publication_fixture(&pool, "DISCARD-STALE").await;
+    let edition = curriculum::get(&pool, id).await.unwrap();
+    let draft = publications::open_draft(
+        &pool,
+        id,
+        OpenCurriculumDraftRequest {
+            row_version: edition.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let token = draft.draft_id.unwrap();
+    let preview = publications::preview_discard(&pool, id, token)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE curriculum_levels SET name_th='แก้หลังเปิดยืนยัน' WHERE id=$1")
+        .bind(level)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let request = DiscardCurriculumDraftRequest {
+        draft_id: token,
+        row_version: preview.row_version,
+        content_hash: preview.content_hash,
+    };
+    assert!(matches!(
+        publications::discard_draft(&pool, id, request).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    assert_eq!(
+        curriculum::get(&pool, id).await.unwrap().draft_id,
+        Some(token)
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT name_th FROM curriculum_levels WHERE id=$1")
+            .bind(level)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "แก้หลังเปิดยืนยัน"
+    );
+    // Direct SQL cannot clear a token while leaving changed workspace rows behind.
+    assert!(
+        sqlx::query("UPDATE curriculum_editions SET draft_id=NULL WHERE id=$1")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    let latest = publications::preview_discard(&pool, id, token)
+        .await
+        .unwrap();
+    publications::discard_draft(
+        &pool,
+        id,
+        DiscardCurriculumDraftRequest {
+            draft_id: token,
+            row_version: latest.row_version,
+            content_hash: latest.content_hash,
+        },
+    )
+    .await
+    .unwrap();
+    let never_published = curriculum::create(
+        &pool,
+        CreateCurriculumRequest {
+            name: "ร่างใหม่ไม่มีข้อมูลคืน".into(),
+            revision_year: 2570,
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        publications::preview_discard(&pool, never_published.id, never_published.draft_id.unwrap())
+            .await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+}
+
+#[tokio::test]
+async fn curriculum_publication_publish_and_discard_serialize_on_the_same_owner() {
+    use school_academic_core::models::{DiscardCurriculumDraftRequest, OpenCurriculumDraftRequest};
+    use school_academic_core::services::curriculum_publications as publications;
+    let pool = prepare_current_core_fixture("curriculum_publication_discard_race").await;
+    let (id, _) = publication_fixture(&pool, "DISCARD-RACE").await;
+    let edition = curriculum::get(&pool, id).await.unwrap();
+    let draft = publications::open_draft(
+        &pool,
+        id,
+        OpenCurriculumDraftRequest {
+            row_version: edition.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let preview = publications::preview_discard(&pool, id, draft.draft_id.unwrap())
+        .await
+        .unwrap();
+    let actor = fixture_actor(&pool).await;
+    let (discard, publish) = tokio::join!(
+        publications::discard_draft(
+            &pool,
+            id,
+            DiscardCurriculumDraftRequest {
+                draft_id: preview.draft_id,
+                row_version: preview.row_version,
+                content_hash: preview.content_hash
+            }
+        ),
+        curriculum::publish(
+            &pool,
+            id,
+            PublishCurriculumRequest {
+                draft_id: preview.draft_id,
+                row_version: preview.row_version,
+                change_note: "เผยแพร่แข่งกับยกเลิก".into()
+            },
+            actor
+        )
+    );
+    assert_ne!(discard.is_ok(), publish.is_ok());
+    let expected_count = if publish.is_ok() { 2 } else { 1 };
+    let failed = if discard.is_err() {
+        discard.unwrap_err()
+    } else {
+        publish.unwrap_err()
+    };
+    assert!(matches!(failed, school_errors::AppError::Conflict(_)));
+    let result = curriculum::get(&pool, id).await.unwrap();
+    assert!(result.draft_id.is_none());
+    assert_eq!(result.publication_count, expected_count);
+    assert_eq!(
+        publications::list_publications(&pool, id)
+            .await
+            .unwrap()
+            .len(),
+        expected_count as usize
+    );
 }
