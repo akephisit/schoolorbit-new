@@ -87,7 +87,7 @@ for (const width of [1280, 375]) {
 		expect(await bar.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(
 			'rgb(37, 99, 235)'
 		);
-		await expect(page.getByTestId('calendar-events')).toContainText('08:30');
+		expect(await timed.innerText()).toBe(width < 640 ? 'สอบช่วงเช้า' : '08:30 สอบช่วงเช้า');
 		await page.addStyleTag({
 			content: '*,*::before,*::after{transition:none!important;animation:none!important}'
 		});
@@ -102,6 +102,9 @@ for (const width of [1280, 375]) {
 			});
 		}
 		await timed.click();
+		await expect(page.getByRole('dialog', { name: 'รายละเอียดปฏิทิน', exact: true })).toContainText(
+			'08:30-09:30'
+		);
 		await page.getByRole('button', { name: 'แก้ไข สอบช่วงเช้า', exact: true }).click();
 		await expect(page.getByRole('checkbox', { name: 'ทั้งวัน', exact: true })).not.toBeChecked();
 		await expect(page.getByLabel('เวลาเริ่มต้น *', { exact: true })).toHaveValue('08:30');

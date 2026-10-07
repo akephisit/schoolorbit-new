@@ -7,7 +7,7 @@ import {
 } from './fixtures/calendar-route-data';
 import { id } from './fixtures/staff-home-route-data';
 
-test.use({ serviceWorkers: 'block' });
+test.use({ serviceWorkers: 'block', hasTouch: true });
 for (const width of [1280, 375]) {
 	for (const manager of [true, false]) {
 		test(`event details use an anchored popup at ${width}px for ${manager ? 'managers' : 'readers'}`, async ({
@@ -104,6 +104,20 @@ for (const width of [1280, 375]) {
 					.click();
 				await entry.click();
 			}
+			const otherDay = page.locator(
+				`[data-calendar-date="${width < 640 ? '2026-09-27' : '2026-10-20'}"]`
+			);
+			const nextDay = page.locator(
+				`[data-calendar-date="${width < 640 ? '2026-09-28' : '2026-10-21'}"]`
+			);
+			await otherDay.click({ position: { x: 5, y: 5 } });
+			await expect(popup).toHaveCount(0);
+			await otherDay.click({ position: { x: 5, y: 5 } });
+			await expect(popup).toContainText(width < 640 ? '27 ก.ย. 2569' : '20 ต.ค. 2569');
+			await nextDay.tap({ position: { x: 5, y: 5 } });
+			await expect(popup).toHaveCount(0);
+			await nextDay.tap({ position: { x: 5, y: 5 } });
+			await expect(popup).toContainText(width < 640 ? '28 ก.ย. 2569' : '21 ต.ค. 2569');
 			await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 			await expect(popup).toHaveCount(0);
 			expect(api.writes).toHaveLength(0);

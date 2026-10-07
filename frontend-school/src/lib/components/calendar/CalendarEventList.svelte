@@ -63,11 +63,11 @@
 {#if events.length === 0}
 	<PageState title="ยังไม่มีกิจกรรม" description="ไม่มีรายการในช่วงวันที่ที่เลือก" />
 {:else}
-	<div class="space-y-3">
+	<div class={cn('space-y-3', variant === 'plain' && 'divide-y divide-border')}>
 		{#each events as event (event.id)}
 			<article
 				class={variant === 'plain'
-					? 'space-y-3'
+					? 'space-y-3 not-first:pt-3'
 					: 'rounded-xl border border-l-4 bg-card p-4 shadow-sm transition-shadow hover:shadow-md'}
 				style:border-left-color={variant === 'plain'
 					? undefined

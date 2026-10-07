@@ -179,6 +179,7 @@
 							{events}
 							{selectedDate}
 							onselect={selectDate}
+							hideMobileTimes
 							fillHeight
 						/>
 					</div>

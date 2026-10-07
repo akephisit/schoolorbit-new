@@ -234,3 +234,44 @@ test('renaming a tag removes events that stop matching the committed search with
 	await expect(page.getByTestId('calendar-events')).not.toContainText('กิจกรรมแรก');
 	for (const path of [eventsPath, categoriesPath, tagsPath]) expect(api.count(path)).toBe(1);
 });
+
+for (const width of [1280, 375]) {
+	test(`month navigation keeps the grid and arrows stable during a delayed read at ${width}px`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		const api = await mockCalendar(page, { hold: 'events', holdAt: 2 });
+		await page.goto(calendarPath());
+		await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+		const previous = page.getByRole('button', { name: 'เดือนก่อนหน้า', exact: true });
+		const next = page.getByRole('button', { name: 'เดือนถัดไป', exact: true });
+		const previousBox = (await previous.boundingBox())!;
+		const nextBox = (await next.boundingBox())!;
+		const headingBox = (await page
+			.getByRole('heading', { name: 'ตุลาคม 2569', exact: true })
+			.boundingBox())!;
+		expect(previousBox.x + previousBox.width).toBeLessThanOrEqual(nextBox.x);
+		expect(nextBox.x + nextBox.width).toBeLessThan(headingBox.x);
+		const gridTop = (await page.locator('[data-calendar-date="2026-10-01"]').boundingBox())!.y;
+		await next.click();
+		await expect(page.getByRole('heading', { name: 'พฤศจิกายน 2569', exact: true })).toBeVisible();
+		await expect(page.getByRole('status', { name: 'กำลังโหลดกิจกรรม', exact: true })).toHaveCount(
+			0
+		);
+		await expect(page.getByRole('status')).toContainText('กำลังโหลดกิจกรรม');
+		await expect(page.getByTestId('calendar-events')).not.toContainText('กิจกรรมแรก');
+		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
+		const november = page.locator('[data-calendar-date="2026-11-01"]');
+		await expect(november).toBeVisible();
+		expect((await november.boundingBox())!.y).toBe(gridTop);
+		expect((await previous.boundingBox())!.x).toBe(previousBox.x);
+		expect((await next.boundingBox())!.x).toBe(nextBox.x);
+		api.release();
+		await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมพฤศจิกายน');
+		expect((await november.boundingBox())!.y).toBe(gridTop);
+		await previous.click();
+		await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+		expect(api.count(categoriesPath)).toBe(1);
+		expect(api.count(tagsPath)).toBe(1);
+	});
+}

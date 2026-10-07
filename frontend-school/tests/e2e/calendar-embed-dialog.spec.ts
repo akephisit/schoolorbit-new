@@ -1,4 +1,5 @@
 import { devices, expect, test } from '@playwright/test';
+import { makeApprovedCalendarEvent } from './fixtures/calendar-route-data';
 import { year } from './fixtures/staff-home-route-data';
 
 test.use({ ...devices['iPhone 13'], defaultBrowserType: 'chromium', serviceWorkers: 'block' });
@@ -49,3 +50,42 @@ test('closes the embedded calendar day dialog when its overlay is tapped', async
 
 	await expect(dialog).toBeHidden();
 });
+
+for (const width of [375, 620]) {
+	test(`public mobile calendar gives timed activities the full label at ${width}px`, async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width, height: 884 });
+		await page.clock.setFixedTime(new Date('2026-10-01T02:00:00Z'));
+		await page.route('https://fonts.**', (route) => route.abort());
+		const event = makeApprovedCalendarEvent({
+			title: 'สอบช่วงเช้า',
+			startDate: '2026-10-01',
+			endDate: '2026-10-01',
+			allDay: false,
+			startTime: '08:30',
+			endTime: '09:30',
+			isPublic: true,
+			notifyAudience: false,
+			reminderOffsetsDays: [],
+			targets: [{ audienceType: 'all' }]
+		});
+		await page.route('**/api/public/calendar/events?*', (route) =>
+			route.fulfill({
+				json: { success: true, data: [event] }
+			})
+		);
+		await page.goto('/calendar');
+		const entry = page.locator('[title="08:30 สอบช่วงเช้า"]');
+		await expect(entry).toBeVisible();
+		expect(await entry.innerText()).toBe('สอบช่วงเช้า');
+		await page.screenshot({ path: testInfo.outputPath(`public-calendar-${width}.png`) });
+		await page.locator('[data-calendar-date="2026-10-01"]').tap();
+		await expect(page.getByRole('dialog')).toContainText('สอบช่วงเช้า');
+		await expect(page.getByRole('dialog')).toContainText('08:30 – 09:30');
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		await page.setViewportSize({ width: 1280, height: 884 });
+		expect(await entry.innerText()).toBe('08:30 สอบช่วงเช้า');
+	});
+}

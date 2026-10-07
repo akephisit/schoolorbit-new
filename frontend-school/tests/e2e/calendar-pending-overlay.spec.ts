@@ -146,6 +146,10 @@ for (const width of [1280, 375]) {
 		await page
 			.getByRole('button', { name: '2 ต.ค. 2569, 0 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
 			.click({ position: { x: 5, y: 5 } });
+		await expect(selected).toHaveCount(0);
+		await page
+			.getByRole('button', { name: '2 ต.ค. 2569, 0 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
+			.click({ position: { x: 5, y: 5 } });
 		await expect(selected).toContainText('คำร้องหลายวัน');
 		await expect(selected).not.toContainText('คำร้องเวลาเช้า');
 		await page.keyboard.press('Escape');

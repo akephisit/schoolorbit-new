@@ -29,7 +29,8 @@
 		selectedDate = '',
 		onselect,
 		oneventselect,
-		fillHeight = false
+		fillHeight = false,
+		hideMobileTimes = false
 	}: {
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
@@ -38,6 +39,7 @@
 		onselect?: (date: string, anchor: HTMLElement) => void;
 		oneventselect?: (event: CalendarDisplayEvent, date: string, anchor: HTMLElement) => void;
 		fillHeight?: boolean;
+		hideMobileTimes?: boolean;
 	} = $props();
 
 	const fallbackColor = '#64748b';
@@ -165,7 +167,7 @@
 									fillHeight && 'leading-[10px]'
 								)}
 							>
-								{segment.event.pending ? 'รออนุมัติ: ' : ''}{timed
+								{segment.event.pending ? 'รออนุมัติ: ' : ''}{timed && !hideMobileTimes
 									? segmentLabel(segment)
 									: segment.event.title}
 							</span>

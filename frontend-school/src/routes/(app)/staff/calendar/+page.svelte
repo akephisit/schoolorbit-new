@@ -144,6 +144,8 @@
 	let deleteDialogOpen = $state(false);
 	let deletingEvent = $state<CalendarEvent | null>(null);
 	let deleting = $state(false);
+	let calendarRendered = $state(false);
+	let dismissDetailClick = false;
 	let eventsLoaded = $state(false),
 		categoriesLoaded = $state(false),
 		categoriesLoading = $state(true),
@@ -244,6 +246,7 @@
 		if (result.ok) {
 			events = result.data;
 			eventsLoaded = true;
+			calendarRendered = true;
 		} else error = result.error;
 	}
 	async function loadCalendar() {
@@ -357,6 +360,7 @@
 			optionsRequest.abort();
 			events = [];
 			eventsLoaded = false;
+			calendarRendered = false;
 			categories = [];
 			categoriesLoaded = false;
 			tags = [];
@@ -520,6 +524,13 @@
 			detailOpen = false;
 	});
 
+	function captureCalendarClick(event: MouseEvent) {
+		if (!detailOpen && !dismissDetailClick) return;
+		dismissDetailClick = false;
+		detailOpen = false;
+		event.preventDefault();
+		event.stopPropagation();
+	}
 	function openDayDetails(date: string, anchor: HTMLElement) {
 		selectedDate = date;
 		detailKind = 'day';
@@ -1094,17 +1105,6 @@
 					>
 						<ChevronLeft class="size-4" />
 					</Button>
-					<div class="min-w-0 flex-1 px-2 sm:flex-none">
-						<div class="flex items-center gap-2">
-							<CalendarDays class="size-4 shrink-0 text-primary" />
-							<h2 class="truncate text-base font-semibold capitalize">{monthLabel}</h2>
-						</div>
-						<p class="mt-0.5 text-xs text-muted-foreground">
-							{eventsLoaded ? selectedMonthEvents.length : '—'} กิจกรรม · {eventsLoaded
-								? publicEventCount
-								: '—'} สาธารณะ
-						</p>
-					</div>
 					<Button
 						variant="outline"
 						size="icon"
@@ -1113,6 +1113,21 @@
 					>
 						<ChevronRight class="size-4" />
 					</Button>
+					<div class="min-w-0 flex-1 px-2 sm:flex-none">
+						<div class="flex items-center gap-2">
+							<CalendarDays class="size-4 shrink-0 text-primary" />
+							<h2 class="truncate text-base font-semibold capitalize">{monthLabel}</h2>
+						</div>
+						<p
+							role={loading && calendarRendered ? 'status' : undefined}
+							class="mt-0.5 text-xs text-muted-foreground"
+						>
+							{#if loading && calendarRendered}กำลังโหลดกิจกรรม...
+							{:else}{eventsLoaded ? selectedMonthEvents.length : '—'} กิจกรรม · {eventsLoaded
+									? publicEventCount
+									: '—'} สาธารณะ{/if}
+						</p>
+					</div>
 				</div>
 
 				<div class="flex flex-wrap items-center gap-2">
@@ -1277,9 +1292,6 @@
 				description="ติดต่อผู้ดูแลระบบหากต้องการเข้าถึงข้อมูลนี้"
 			/>
 		{:else}
-			{#if loading && eventsLoaded}<p role="status" class="text-sm text-muted-foreground">
-					กำลังอัปเดตกิจกรรม...
-				</p>{/if}
 			{#if error}
 				<PageState
 					variant="error"
@@ -1289,9 +1301,9 @@
 					onaction={loadCalendar}
 				/>
 			{/if}
-			{#if loading && !eventsLoaded}<div role="status" aria-label="กำลังโหลดกิจกรรม">
+			{#if loading && !calendarRendered}<div role="status" aria-label="กำลังโหลดกิจกรรม">
 					<PageSkeleton variant="detail" />
-				</div>{:else if eventsLoaded}
+				</div>{:else if eventsLoaded || calendarRendered}
 				<div class="min-w-0 space-y-3">
 					{#if showPendingRequests && canViewPendingRequests && (!detailOpen || detailKind === 'event')}
 						{#if pendingLoading}<p role="status" class="text-sm text-muted-foreground">
@@ -1309,15 +1321,22 @@
 								กรุณาเปิดคิวคำร้องเพื่อดูทั้งหมด
 							</p>{/if}
 					{/if}
-					<CalendarMonthGrid
-						monthDate={selectedMonth}
-						{events}
-						pendingRequests={pendingDisplayEvents}
-						{selectedDate}
-						onselect={openDayDetails}
-						oneventselect={openEntryDetails}
-					/>
-					{#if events.length === 0}<PageState
+					<div
+						role="presentation"
+						onpointerdowncapture={() => (dismissDetailClick = detailOpen)}
+						onclickcapture={captureCalendarClick}
+					>
+						<CalendarMonthGrid
+							monthDate={selectedMonth}
+							{events}
+							pendingRequests={pendingDisplayEvents}
+							{selectedDate}
+							hideMobileTimes
+							onselect={openDayDetails}
+							oneventselect={openEntryDetails}
+						/>
+					</div>
+					{#if eventsLoaded && !loading && events.length === 0}<PageState
 							variant="empty"
 							title="ยังไม่มีกิจกรรม"
 							description="ไม่มีรายการในช่วงวันที่หรือเงื่อนไขที่เลือก"
@@ -1348,7 +1367,9 @@
 								onclick={() => (detailOpen = false)}><X class="size-4" /></Button
 							>
 						</div>
-						{#if detailKind !== 'request'}
+						{#if detailKind !== 'request' && !eventsLoaded && loading}
+							<p role="status" class="text-sm text-muted-foreground">กำลังโหลดกิจกรรม...</p>
+						{:else if detailKind !== 'request' && eventsLoaded}
 							<CalendarEventList
 								events={detailKind === 'event'
 									? detailEvent
