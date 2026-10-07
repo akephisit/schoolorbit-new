@@ -9,6 +9,9 @@
 		listCurriculumLevels,
 		publishCurriculum,
 		openCurriculumDraft,
+		discardCurriculumDraft,
+		previewCurriculumDraftDiscard,
+		type CurriculumDraftDiscardPreview,
 		curriculumViewSearch,
 		type CurriculumEdition,
 		type CurriculumLevelView,
@@ -20,6 +23,7 @@
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -33,12 +37,17 @@
 	let levelsError = $state('');
 	let publishing = $state(false);
 	let openingDraft = $state(false);
+	let discarding = $state(false);
+	let preparingDiscard = $state(false);
+	let discardPreview = $state.raw<CurriculumDraftDiscardPreview | null>(null);
+	let discardOpen = $state(false);
 	let changeNote = $state('');
 	let actionError = $state('');
 	let editionRevision = 0;
 	let levelsRevision = 0;
 	const editionRequest = new LatestRequest();
 	const levelsRequest = new LatestRequest();
+	const discardPreviewRequest = new LatestRequest();
 	let canManage = $derived($can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL));
 	let draftView = $derived(
 		!!edition?.draftId &&
@@ -62,6 +71,10 @@
 			actionError = '';
 			publishing = false;
 			openingDraft = false;
+			discarding = false;
+			preparingDiscard = false;
+			discardPreview = null;
+			discardOpen = false;
 			changeNote = '';
 		});
 		void ep.then((r) => {
@@ -82,6 +95,7 @@
 			current = false;
 			editionRequest.abort();
 			levelsRequest.abort();
+			discardPreviewRequest.abort();
 		};
 	});
 	function saved(result: CurriculumEdition) {
@@ -133,7 +147,15 @@
 		}
 	}
 	async function publish() {
-		if (!edition?.draftId || !draftView || publishing || !changeNote.trim()) return;
+		if (
+			!edition?.draftId ||
+			!draftView ||
+			publishing ||
+			discarding ||
+			preparingDiscard ||
+			!changeNote.trim()
+		)
+			return;
 		const selected = edition;
 		publishing = true;
 		actionError = '';
@@ -179,6 +201,67 @@
 				actionError = e instanceof Error ? e.message : 'เปิดร่างไม่สำเร็จ';
 		} finally {
 			if (data.editionId === selected.id) openingDraft = false;
+		}
+	}
+	async function prepareDiscard() {
+		if (!edition?.draftId || !draftView || !canManage || discarding || publishing) return;
+		const selected = edition;
+		const { revision, signal } = discardPreviewRequest.begin();
+		preparingDiscard = true;
+		actionError = '';
+		discardPreview = null;
+		try {
+			const result = await previewCurriculumDraftDiscard(selected.id, selected.draftId ?? '', {
+				signal
+			});
+			if (
+				!discardPreviewRequest.isCurrent(revision) ||
+				data.editionId !== selected.id ||
+				data.view.draftId !== selected.draftId
+			)
+				return;
+			discardPreview = result;
+			discardOpen = true;
+		} catch (e) {
+			if (discardPreviewRequest.isCurrent(revision) && !isAbortError(e))
+				actionError = e instanceof Error ? e.message : 'โหลดข้อมูลยืนยันการลบร่างไม่สำเร็จ';
+		} finally {
+			if (discardPreviewRequest.isCurrent(revision)) preparingDiscard = false;
+		}
+	}
+	async function discard() {
+		if (
+			!edition?.draftId ||
+			!draftView ||
+			!canManage ||
+			edition.publicationCount === 0 ||
+			discarding ||
+			publishing
+		)
+			return;
+		if (!discardPreview) return;
+		const selected = edition;
+		const preview = discardPreview;
+		discarding = true;
+		actionError = '';
+		try {
+			const result = await discardCurriculumDraft(selected.id, {
+				draftId: selected.draftId ?? '',
+				rowVersion: preview.rowVersion,
+				contentHash: preview.contentHash
+			});
+			if (data.editionId !== selected.id || data.view.draftId !== selected.draftId) return;
+			discardOpen = false;
+			saved(result);
+			await goto(`/staff/academic/curricula/${selected.id}`, { replaceState: true });
+		} catch (e) {
+			if (data.editionId === selected.id && data.view.draftId === selected.draftId) {
+				discardPreview = null;
+				actionError = e instanceof Error ? e.message : 'ยกเลิกและลบร่างไม่สำเร็จ';
+			}
+		} finally {
+			if (data.editionId === selected.id && data.view.draftId === selected.draftId)
+				discarding = false;
 		}
 	}
 </script>
@@ -263,10 +346,18 @@
 							<LoadingButton
 								loading={publishing}
 								loadingLabel="กำลังเผยแพร่"
-								disabled={!changeNote.trim()}
+								disabled={!changeNote.trim() || discarding || preparingDiscard}
 								onclick={publish}
 								>เผยแพร่ทั้งฉบับ · ครั้งที่ {edition.publicationCount + 1}</LoadingButton
-							>{/if}
+							>
+							{#if edition.publicationCount > 0}<LoadingButton
+									variant="destructive"
+									loading={preparingDiscard}
+									loadingLabel="กำลังตรวจร่าง"
+									disabled={publishing || discarding}
+									onclick={prepareDiscard}>ยกเลิกและลบร่าง</LoadingButton
+								>{/if}
+						{/if}
 					</div>
 				{:else if edition.draftId}<p class="text-sm">มีร่างแก้ไขที่ยังไม่ได้เผยแพร่</p>{/if}
 				{#if edition.description}<p class="text-sm">{edition.description}</p>{/if}
@@ -332,3 +423,35 @@
 		</section>
 	</div>
 </PageShell>
+
+<AlertDialog.Root bind:open={discardOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>ยกเลิกและลบร่างแก้ไข?</AlertDialog.Title>
+			<AlertDialog.Description>
+				การแก้ไขที่ยังไม่เผยแพร่ทั้งหมดในทุกระดับและทุกแผนจะถูกลบทิ้ง โดยไม่เก็บเป็นประวัติ
+				ระบบจะกลับไปใช้ข้อมูลจากครั้งที่เผยแพร่ล่าสุด การเปิดสอนและตารางสอนเดิมยังคงเดิม
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		{#if discardPreview}<p class="text-sm">
+				ร่างปัจจุบัน: {discardPreview.levelCount} ระดับ · {discardPreview.programCount} แผน · {discardPreview.courseCount}
+				รายวิชา · {discardPreview.activityCount} กิจกรรม
+			</p>{/if}
+		{#if actionError}<p role="alert" class="text-sm text-destructive">{actionError}</p>{/if}
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={discarding}>เก็บร่างไว้</AlertDialog.Cancel>
+			{#if !discardPreview && actionError}<LoadingButton
+					variant="outline"
+					loading={preparingDiscard}
+					onclick={prepareDiscard}>ตรวจสอบร่างใหม่</LoadingButton
+				>{/if}
+			<LoadingButton
+				variant="destructive"
+				loading={discarding}
+				loadingLabel="กำลังลบร่าง"
+				disabled={!discardPreview || preparingDiscard}
+				onclick={discard}>ยืนยันลบร่าง</LoadingButton
+			>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

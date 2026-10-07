@@ -431,6 +431,22 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['openCurriculumDraft'];
+		delete: operations['discardCurriculumDraft'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curricula/{id}/draft/discard-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['previewCurriculumDraftDiscard'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -7802,6 +7818,27 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_CurriculumDraftDiscardPreview: {
+			data: {
+				/** Format: int64 */
+				activityCount: number;
+				contentHash: string;
+				/** Format: int64 */
+				courseCount: number;
+				/** Format: uuid */
+				draftId: string;
+				/** Format: int64 */
+				levelCount: number;
+				/** Format: int64 */
+				programCount: number;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: int64 */
+				slotCount: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_CurriculumEdition: {
 			data: {
 				/** Format: date-time */
@@ -14351,6 +14388,23 @@ export interface components {
 		};
 		/** @enum {string} */
 		CurriculumDocumentSection: 'basic_course' | 'additional_course' | 'student_development';
+		CurriculumDraftDiscardPreview: {
+			/** Format: int64 */
+			activityCount: number;
+			contentHash: string;
+			/** Format: int64 */
+			courseCount: number;
+			/** Format: uuid */
+			draftId: string;
+			/** Format: int64 */
+			levelCount: number;
+			/** Format: int64 */
+			programCount: number;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: int64 */
+			slotCount: number;
+		};
 		CurriculumEdition: {
 			/** Format: date-time */
 			createdAt: string;
@@ -14953,6 +15007,13 @@ export interface components {
 			role: components['schemas']['LearningTeacherRole'];
 			/** Format: uuid */
 			teacherId: string;
+		};
+		DiscardCurriculumDraftRequest: {
+			contentHash: string;
+			/** Format: uuid */
+			draftId: string;
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		DocumentUploadResponse: {
 			docType: string;
@@ -23490,6 +23551,148 @@ export interface operations {
 				};
 			};
 			/** @description Revision conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	discardCurriculumDraft: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Edition identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DiscardCurriculumDraftRequest'];
+			};
+		};
+		responses: {
+			/** @description Unpublished amendment deleted; current publication restored */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumEdition'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Revision conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewCurriculumDraftDiscard: {
+		parameters: {
+			query: {
+				draftId: string;
+			};
+			header?: never;
+			path: {
+				/** @description Edition identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current amendment content and deletion scope */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumDraftDiscardPreview'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Draft conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;

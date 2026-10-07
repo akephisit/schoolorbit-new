@@ -43,6 +43,57 @@ fn created<T: serde::Serialize>(data: T) -> Response {
     (StatusCode::CREATED, Json(ApiResponse::ok(data))).into_response()
 }
 
+#[utoipa::path(delete,path="/api/academic/curricula/{id}/draft",operation_id="discardCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=DiscardCurriculumDraftRequest,responses((status=200,description="Unpublished amendment deleted; current publication restored",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn discard_curriculum_draft(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<DiscardCurriculumDraftRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum_publications::discard_draft(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}/draft/discard-preview",operation_id="previewCurriculumDraftDiscard",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),CurriculumDraftDiscardPreviewQuery),responses((status=200,description="Current amendment content and deletion scope",body=ApiResponse<CurriculumDraftDiscardPreview>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Draft conflict",body=ApiErrorResponse)))]
+pub async fn preview_curriculum_draft_discard(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumDraftDiscardPreviewQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    Ok(ok(curriculum_publications::preview_discard(
+        &context.tenant.pool,
+        id,
+        query.draft_id,
+    )
+    .await?))
+}
+
 fn signal_core_changed(
     state: &AppState,
     session: &AuthenticatedSession,

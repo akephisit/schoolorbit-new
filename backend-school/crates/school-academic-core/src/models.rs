@@ -652,6 +652,34 @@ pub struct OpenCurriculumDraftRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiscardCurriculumDraftRequest {
+    pub draft_id: Uuid,
+    pub row_version: i64,
+    pub content_hash: String,
+}
+
+#[derive(Debug, Clone, Deserialize, utoipa::IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumDraftDiscardPreviewQuery {
+    pub draft_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumDraftDiscardPreview {
+    pub draft_id: Uuid,
+    pub row_version: i64,
+    pub content_hash: String,
+    pub level_count: i64,
+    pub program_count: i64,
+    pub slot_count: i64,
+    pub course_count: i64,
+    pub activity_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishCurriculumRequest {
     pub draft_id: Uuid,
     pub row_version: i64,

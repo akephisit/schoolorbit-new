@@ -524,6 +524,8 @@ use utoipa::OpenApi;
         crate::modules::academic::core::handlers::update_curriculum_level,
         crate::modules::academic::core::handlers::publish_curriculum,
         crate::modules::academic::core::handlers::open_curriculum_draft,
+        crate::modules::academic::core::handlers::discard_curriculum_draft,
+        crate::modules::academic::core::handlers::preview_curriculum_draft_discard,
         crate::modules::academic::core::handlers::list_curriculum_publications,
         crate::modules::academic::core::handlers::get_curriculum_publication_history,
         crate::modules::academic::core::handlers::get_curriculum_structure_workspace,

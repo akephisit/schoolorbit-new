@@ -189,7 +189,11 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/curricula/{id}/draft",
-            post(handlers::open_curriculum_draft),
+            post(handlers::open_curriculum_draft).delete(handlers::discard_curriculum_draft),
+        )
+        .route(
+            "/curricula/{id}/draft/discard-preview",
+            get(handlers::preview_curriculum_draft_discard),
         )
         .route(
             "/curricula/{id}/publications",

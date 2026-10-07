@@ -34,6 +34,8 @@ export type CurriculumViewQuery = NonNullable<
 >;
 export type PublishCurriculumRequest = Schemas['PublishCurriculumRequest'];
 export type OpenCurriculumDraftRequest = Schemas['OpenCurriculumDraftRequest'];
+export type DiscardCurriculumDraftRequest = Schemas['DiscardCurriculumDraftRequest'];
+export type CurriculumDraftDiscardPreview = Schemas['CurriculumDraftDiscardPreview'];
 export type CurriculumReadOptions = ApiRequestOptions & CurriculumViewQuery;
 
 export function curriculumViewSearch(view: CurriculumViewQuery): string {
@@ -680,6 +682,26 @@ export const openCurriculumDraft = (id: string, body: OpenCurriculumDraftRequest
 			body
 		),
 		'เปิดร่างแก้ไขไม่สำเร็จ'
+	);
+export const previewCurriculumDraftDiscard = (
+	id: string,
+	draftId: string,
+	options: ApiRequestOptions = {}
+) =>
+	academicData(
+		apiClient.get<CurriculumDraftDiscardPreview>(
+			`/api/academic/curricula/${requiredContext(id, 'ฉบับหลักสูตร')}/draft/discard-preview`,
+			{ ...options, query: { draftId } }
+		),
+		'โหลดข้อมูลยืนยันการลบร่างไม่สำเร็จ'
+	);
+export const discardCurriculumDraft = (id: string, body: DiscardCurriculumDraftRequest) =>
+	academicData(
+		apiClient.deleteWithBody<CurriculumEdition>(
+			`/api/academic/curricula/${requiredContext(id, 'ฉบับหลักสูตร')}/draft`,
+			body
+		),
+		'ยกเลิกและลบร่างไม่สำเร็จ'
 	);
 export const listCurriculumPublications = (id: string, options: ApiRequestOptions = {}) =>
 	academicData(

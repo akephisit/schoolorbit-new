@@ -28,6 +28,7 @@ async function mock(
 		conflict?: boolean;
 		delayFirst?: Promise<void>;
 		failDetail?: boolean;
+		discardConflict?: boolean;
 	} = {}
 ) {
 	let count = options.historical ? 2 : 1;
@@ -116,6 +117,33 @@ async function mock(
 			if (path === '/api/notifications') return respond(route, { items: [], unread_count: 0 });
 			if (path.endsWith('/stream'))
 				return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+			if (path === `/api/academic/curricula/${ids.curriculum}/draft/discard-preview`)
+				return respond(route, {
+					draftId,
+					rowVersion: 5,
+					contentHash: 'a'.repeat(64),
+					levelCount: 1,
+					programCount: 1,
+					slotCount: termTwo ? 2 : 1,
+					courseCount: 1,
+					activityCount: 0
+				});
+			if (path === `/api/academic/curricula/${ids.curriculum}/draft` && method === 'DELETE') {
+				expect(route.request().postDataJSON()).toEqual({
+					draftId,
+					rowVersion: 5,
+					contentHash: 'a'.repeat(64)
+				});
+				if (options.discardConflict)
+					return respond(
+						route,
+						'มีการแก้ไขร่างหลังเปิดหน้าต่างยืนยัน กรุณาตรวจสอบและยืนยันใหม่',
+						409
+					);
+				token = null;
+				termTwo = count > 1;
+				return respond(route, header());
+			}
 			if (path === `/api/academic/curricula/${ids.curriculum}/draft`) {
 				if (options.conflict) return respond(route, 'ข้อมูลหลักสูตรเปลี่ยน กรุณาโหลดใหม่', 409);
 				token = draftId;
@@ -246,6 +274,7 @@ test('a reader sees the published edition and history without amendment actions'
 	await page.goto(root);
 	await expect(page.getByText('เผยแพร่ครั้งที่ 2', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'แก้ไขหลักสูตร', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'ยกเลิกและลบร่าง', exact: true })).toHaveCount(0);
 	await page.getByRole('link', { name: 'ประวัติการแก้ไข' }).click();
 	await expect(page.getByTestId('curriculum-publication-history')).toContainText('อ่านอย่างเดียว');
 	expect(state.writes).toEqual([]);
@@ -285,11 +314,93 @@ test('history detail retries independently while its educational levels remain a
 	);
 });
 
+test('discard permanently removes an amendment without adding publication history', async ({
+	page
+}) => {
+	const state = await mock(page);
+	await page.goto(root);
+	await page.getByRole('button', { name: 'แก้ไขหลักสูตร', exact: true }).click();
+	await page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น' }).click();
+	await page.getByRole('button', { name: 'จัดโครงสร้าง', exact: true }).click();
+	const editor = page.getByRole('dialog');
+	await editor
+		.getByRole('button', { name: 'ภาคเรียนปกติ', exact: true })
+		.and(editor.locator('[data-slot=button]'))
+		.click();
+	await editor.getByRole('button', { name: 'บันทึกภาคเรียน', exact: true }).click();
+	await page.goto(`${root}?draftId=${draftId}`);
+	await page.getByRole('button', { name: 'ยกเลิกและลบร่าง', exact: true }).click();
+	const confirmation = page.getByRole('alertdialog');
+	await expect(confirmation).toContainText('ไม่เก็บเป็นประวัติ');
+	await confirmation.getByRole('button', { name: 'เก็บร่างไว้' }).click();
+	expect(state.writes).toHaveLength(2);
+	await expect(page).toHaveURL(new RegExp(`draftId=${draftId}`));
+	await page.getByRole('button', { name: 'ยกเลิกและลบร่าง', exact: true }).click();
+	await confirmation.getByRole('button', { name: 'ยืนยันลบร่าง', exact: true }).click();
+	await expect(page).toHaveURL(root);
+	await expect(page.getByText('เผยแพร่ครั้งที่ 1', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ยกเลิกและลบร่าง', exact: true })).toHaveCount(0);
+	await page.getByRole('link', { name: 'ประวัติการแก้ไข' }).click();
+	await expect(page.getByRole('button', { name: /เผยแพร่ครั้งที่ 2/ })).toHaveCount(0);
+	await page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น' }).click();
+	await expect(page.getByText('ภาคเรียนที่ 2', { exact: true })).toHaveCount(0);
+	expect(state.writes.map((write) => write.path)).toEqual([
+		`/api/academic/curricula/${ids.curriculum}/draft`,
+		`/api/academic/curriculum-levels/${ids.curriculumVersion}/term-slots`,
+		`/api/academic/curricula/${ids.curriculum}/draft`
+	]);
+});
+
+test('discard conflict preserves the draft and requires a fresh confirmation preview', async ({
+	page
+}) => {
+	await mock(page, { discardConflict: true });
+	await page.goto(root);
+	await page.getByRole('button', { name: 'แก้ไขหลักสูตร', exact: true }).click();
+	await page.getByLabel('สรุปการแก้ไข').fill('ยังเก็บร่างไว้');
+	await page.getByRole('button', { name: 'ยกเลิกและลบร่าง', exact: true }).click();
+	const confirmation = page.getByRole('alertdialog');
+	await confirmation.getByRole('button', { name: 'ยืนยันลบร่าง', exact: true }).click();
+	await expect(confirmation.getByRole('alert')).toContainText('มีการแก้ไขร่าง');
+	await expect(
+		confirmation.getByRole('button', { name: 'ยืนยันลบร่าง', exact: true })
+	).toBeDisabled();
+	await confirmation.getByRole('button', { name: 'ตรวจสอบร่างใหม่' }).click();
+	await expect(
+		confirmation.getByRole('button', { name: 'ยืนยันลบร่าง', exact: true })
+	).toBeEnabled();
+	await confirmation.getByRole('button', { name: 'เก็บร่างไว้' }).click();
+	await expect(page.getByLabel('สรุปการแก้ไข')).toHaveValue('ยังเก็บร่างไว้');
+	await expect(page).toHaveURL(new RegExp(`draftId=${draftId}`));
+});
+
 for (const viewport of [
 	{ width: 1440, height: 960 },
 	{ width: 390, height: 844 }
 ]) {
 	for (const theme of ['light', 'dark'] as const) {
+		test(`discard confirmation layout ${viewport.width} ${theme}`, async ({ page }, testInfo) => {
+			await page.setViewportSize(viewport);
+			await mock(page);
+			await page.goto(root);
+			await page.getByRole('button', { name: 'แก้ไขหลักสูตร', exact: true }).click();
+			if (theme === 'dark') {
+				await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+				await expect(page.locator('html')).toHaveClass(/dark/);
+			} else await expect(page.locator('html')).not.toHaveClass(/dark/);
+			await page.getByRole('button', { name: 'ยกเลิกและลบร่าง', exact: true }).click();
+			await expect(
+				page.getByRole('alertdialog').getByRole('button', { name: 'ยืนยันลบร่าง', exact: true })
+			).toBeEnabled();
+			expect(
+				await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+			).toBe(true);
+			await page.screenshot({
+				path: testInfo.outputPath(`discard-${viewport.width}-${theme}.png`),
+				animations: 'disabled',
+				fullPage: true
+			});
+		});
 		test(`publication history layout ${viewport.width} ${theme}`, async ({ page }, testInfo) => {
 			await page.setViewportSize(viewport);
 			await mock(page, { historical: true });
