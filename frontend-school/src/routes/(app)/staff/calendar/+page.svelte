@@ -1045,7 +1045,7 @@
 					>
 						<ChevronLeft class="size-4" />
 					</Button>
-					<div class="min-w-0 flex-1 px-2 sm:min-w-52 sm:flex-none">
+					<div class="min-w-0 flex-1 px-2 sm:flex-none">
 						<div class="flex items-center gap-2">
 							<CalendarDays class="size-4 shrink-0 text-primary" />
 							<h2 class="truncate text-base font-semibold capitalize">{monthLabel}</h2>
