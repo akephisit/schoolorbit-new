@@ -58,7 +58,7 @@ test('editions and level structures have separate route-owned reads and manageme
 	assert.match(level, /getCurriculumManagementOptions/);
 	assert.match(level, /CurriculumProgramCopyDialog/);
 	assert.match(level, /ACADEMIC_CURRICULUM_MANAGE_SCHOOL/);
-	assert.match(level, /level\.status === 'draft'/);
+	assert.match(level, /level\.draftId/);
 	for (const page of [main, edition, level])
 		assert.doesNotMatch(page, /\bonMount\s*\(|\binvalidateAll\s*\(/);
 });

@@ -9,9 +9,14 @@ export const _meta = {
 	access: { user_type: 'staff', permission: PERMISSION_MODULES.ACADEMIC_CURRICULUM }
 };
 export const load: PageLoad = ({ fetch, params, url }) => {
+	const view = {
+		draftId: url.searchParams.get('draftId') ?? undefined,
+		publicationId: url.searchParams.get('publicationId') ?? undefined
+	};
 	const alignmentContext = readCurriculumAlignmentContext(url);
 	return {
 		title: 'แผนการเรียน',
+		view,
 		editionId: params.id,
 		levelId: params.levelId,
 		studyProgramId: url.searchParams.get('studyProgramId') ?? '',
@@ -31,11 +36,13 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 			'โหลดฉบับหลักสูตรไม่สำเร็จ'
 		),
 		structure: captureRouteLoad(
-			getCurriculumStructureWorkspace(params.levelId, { requestFetch: fetch }).then((workspace) => {
-				if (workspace.level.editionId !== params.id)
-					throw new Error('ระดับการศึกษาไม่อยู่ในฉบับที่เลือก');
-				return workspace;
-			}),
+			getCurriculumStructureWorkspace(params.levelId, { requestFetch: fetch, ...view }).then(
+				(workspace) => {
+					if (workspace.level.editionId !== params.id)
+						throw new Error('ระดับการศึกษาไม่อยู่ในฉบับที่เลือก');
+					return workspace;
+				}
+			),
 			'โหลดแผนการเรียนไม่สำเร็จ'
 		)
 	};

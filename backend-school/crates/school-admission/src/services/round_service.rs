@@ -98,7 +98,7 @@ pub async fn get_public_round_info(
                   program.name_th AS study_program_name,
                   0::bigint AS computed_capacity, 0::bigint AS room_count, 0::bigint AS application_count
            FROM admission_tracks at2
-           JOIN study_programs program ON program.id = at2.study_program_id
+           JOIN published_study_programs program ON program.id = at2.study_program_id
            WHERE at2.admission_round_id = $1
            ORDER BY at2.display_order ASC"#
     )
@@ -413,7 +413,7 @@ pub async fn list_tracks(pool: &PgPool, round_id: Uuid) -> Result<Vec<AdmissionT
                (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_track_id = t.id) AS application_count
            FROM admission_tracks t
            JOIN admission_rounds round ON round.id = t.admission_round_id
-           JOIN study_programs program ON program.id = t.study_program_id
+           JOIN published_study_programs program ON program.id = t.study_program_id
            WHERE t.admission_round_id = $1
            ORDER BY t.display_order ASC, t.created_at ASC"#
     )
@@ -443,7 +443,7 @@ pub async fn create_track(
            WHERE round.id = $1
            RETURNING id, admission_round_id, study_program_id, name,
                capacity_override, scoring_subject_ids, tiebreak_method, display_order, created_at,
-               (SELECT name_th FROM study_programs WHERE id = $2) AS study_program_name,
+               (SELECT name_th FROM published_study_programs WHERE id = $2) AS study_program_name,
                0::bigint AS room_count,
                NULL::bigint AS computed_capacity,
                0::bigint AS application_count"#,
@@ -483,7 +483,7 @@ pub async fn update_track(
            WHERE id = $6
            RETURNING id, admission_round_id, study_program_id, name,
                capacity_override, scoring_subject_ids, tiebreak_method, display_order, created_at,
-               (SELECT name_th FROM study_programs WHERE id = study_program_id) AS study_program_name,
+               (SELECT name_th FROM published_study_programs WHERE id = study_program_id) AS study_program_name,
                NULL::bigint AS room_count,
                NULL::bigint AS computed_capacity,
                (SELECT COUNT(*) FROM admission_applications WHERE admission_track_id = $6) AS application_count"#

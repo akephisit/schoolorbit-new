@@ -100,11 +100,12 @@
 	}
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
-		if (!sourceProgram) return;
+		if (!sourceProgram || !level.draftId) return;
 		saving = true;
 		error = '';
 		try {
 			await copyStudyProgram(level.id, {
+				draftId: level.draftId,
 				sourceProgramId: sourceProgram.id,
 				sourceRowVersion: sourceProgram.rowVersion,
 				destinationRowVersion: level.rowVersion,

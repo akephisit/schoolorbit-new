@@ -70,7 +70,7 @@ pub(super) async fn student_identities(
          FROM student_academic_years sy JOIN users student ON student.id=sy.student_id
          LEFT JOIN student_info info ON info.user_id=sy.student_id
          JOIN grade_levels grade ON grade.id=sy.grade_level_id
-         JOIN study_programs program ON program.id=sy.study_program_id
+         JOIN published_study_programs program ON program.id=sy.study_program_id
          WHERE sy.academic_year_id=$1 AND sy.id=ANY($2)
          ORDER BY info.student_id NULLS LAST,student.first_name,student.last_name,sy.id"
     ).bind(year).bind(ids).fetch_all(&mut **tx).await?;

@@ -26,11 +26,15 @@
 					<Table.Cell
 						><Badge variant={item.edition.status === 'published' ? 'default' : 'secondary'}
 							>{item.edition.status === 'published'
-								? 'เผยแพร่แล้ว'
+								? `เผยแพร่ครั้งที่ ${item.edition.publicationCount}`
 								: item.edition.status === 'draft'
 									? 'ฉบับร่าง'
 									: 'เก็บถาวร'}</Badge
-						></Table.Cell
+						>{#if item.edition.draftId && item.edition.publicationCount > 0}<p
+								class="mt-1 text-xs text-muted-foreground"
+							>
+								มีร่างแก้ไข
+							</p>{/if}</Table.Cell
 					>
 					<Table.Cell>{item.levelCount}</Table.Cell><Table.Cell>{item.studyProgramCount}</Table.Cell
 					>

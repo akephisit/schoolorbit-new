@@ -271,13 +271,13 @@ pub async fn homeroom_delivery_workspace_with_timing(
                   version.id AS curriculum_level_id,
                   curriculum.name AS edition_name, curriculum.revision_year,
                   ARRAY(SELECT DISTINCT requirement.grade_level_id FROM (
-                      SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id = program.id
-                      UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id = program.id
+                      SELECT grade_level_id FROM published_curriculum_course_requirements WHERE study_program_id = program.id
+                      UNION SELECT grade_level_id FROM published_curriculum_activity_requirements WHERE study_program_id = program.id
                   ) requirement ORDER BY requirement.grade_level_id) AS grade_level_ids
            FROM homerooms homeroom
            JOIN grade_levels grade ON grade.id = homeroom.grade_level_id
-           JOIN study_programs program ON program.id = homeroom.study_program_id
-           JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+           JOIN published_study_programs program ON program.id = homeroom.study_program_id
+           JOIN published_curriculum_levels version ON version.id = program.curriculum_level_id
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE homeroom.academic_year_id = $1
              AND homeroom.is_active
@@ -348,11 +348,11 @@ pub async fn homeroom_delivery_workspace_with_timing(
                   NULL::text AS scheduling_mode,
                   requirement.display_order
            FROM homerooms homeroom
-           JOIN study_programs program ON program.id = homeroom.study_program_id
-           JOIN curriculum_course_requirements requirement
+           JOIN published_study_programs program ON program.id = homeroom.study_program_id
+           JOIN published_curriculum_course_requirements requirement
              ON requirement.study_program_id = program.id
             AND requirement.grade_level_id = homeroom.grade_level_id
-           JOIN curriculum_term_slots slot
+           JOIN published_curriculum_term_slots slot
              ON slot.id = requirement.term_slot_id
             AND slot.curriculum_level_id = program.curriculum_level_id
             AND slot.term_type = $2
@@ -372,11 +372,11 @@ pub async fn homeroom_delivery_workspace_with_timing(
                   version.scheduling_mode,
                   requirement.display_order
            FROM homerooms homeroom
-           JOIN study_programs program ON program.id = homeroom.study_program_id
-           JOIN curriculum_activity_requirements requirement
+           JOIN published_study_programs program ON program.id = homeroom.study_program_id
+           JOIN published_curriculum_activity_requirements requirement
              ON requirement.study_program_id = program.id
             AND requirement.grade_level_id = homeroom.grade_level_id
-           JOIN curriculum_term_slots slot
+           JOIN published_curriculum_term_slots slot
              ON slot.id = requirement.term_slot_id
             AND slot.curriculum_level_id = program.curriculum_level_id
             AND slot.term_type = $2
@@ -969,11 +969,11 @@ pub async fn delivery_overview(
                curriculum.id AS edition_id, version.name_th AS level_name,
                version.id AS curriculum_level_id, curriculum.name AS edition_name, curriculum.revision_year,
                ARRAY(SELECT DISTINCT requirement.grade_level_id FROM (
-                   SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id = program.id
-                   UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id = program.id
+                   SELECT grade_level_id FROM published_curriculum_course_requirements WHERE study_program_id = program.id
+                   UNION SELECT grade_level_id FROM published_curriculum_activity_requirements WHERE study_program_id = program.id
                ) requirement ORDER BY requirement.grade_level_id) AS grade_level_ids
-        FROM study_programs program
-        JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+        FROM published_study_programs program
+        JOIN published_curriculum_levels version ON version.id = program.curriculum_level_id
         JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
         WHERE program.id = ANY($1)
         ORDER BY version.code, program.code, program.id

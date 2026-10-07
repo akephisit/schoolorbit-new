@@ -421,6 +421,22 @@ export interface paths {
 		patch: operations['updateCurriculum'];
 		trace?: never;
 	};
+	'/api/academic/curricula/{id}/draft': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['openCurriculumDraft'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/curricula/{id}/levels': {
 		parameters: {
 			query?: never;
@@ -431,6 +447,38 @@ export interface paths {
 		get: operations['listCurriculumLevels'];
 		put?: never;
 		post: operations['createCurriculumLevel'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curricula/{id}/publications': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCurriculumPublications'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/curricula/{id}/publications/{publication_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCurriculumPublicationHistory'];
+		put?: never;
+		post?: never;
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -7758,12 +7806,18 @@ export interface components {
 			data: {
 				/** Format: date-time */
 				createdAt: string;
+				/** Format: uuid */
+				currentPublicationId?: string | null;
 				description?: string | null;
+				/** Format: uuid */
+				draftId?: string | null;
 				/** Format: uuid */
 				id: string;
 				isActive: boolean;
 				migrated: boolean;
 				name: string;
+				/** Format: int32 */
+				publicationCount: number;
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: int32 */
@@ -7784,6 +7838,8 @@ export interface components {
 				createdAt: string;
 				description?: string | null;
 				/** Format: uuid */
+				draftId?: string | null;
+				/** Format: uuid */
 				editionId: string;
 				editionName: string;
 				gradeLevelIds: string[];
@@ -7793,6 +7849,8 @@ export interface components {
 				migrated: boolean;
 				nameEn?: string | null;
 				nameTh: string;
+				/** Format: uuid */
+				publicationId?: string | null;
 				/** Format: int32 */
 				revisionYear?: number | null;
 				/** Format: int64 */
@@ -7816,6 +7874,7 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				academicTermId: string;
+				curriculumSources: components['schemas']['CurriculumPublicationSource'][];
 				proposals: components['schemas']['CurriculumPreparationProposal'][];
 				sourceHash: string;
 			};
@@ -7825,6 +7884,14 @@ export interface components {
 		ApiResponse_CurriculumOverview: {
 			data: {
 				items: components['schemas']['CurriculumOverviewItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CurriculumPublicationHistory: {
+			data: {
+				changes: components['schemas']['CurriculumPublicationChange'][];
+				publication: components['schemas']['CurriculumPublication'];
 			};
 			message?: string;
 			success: boolean;
@@ -10992,12 +11059,18 @@ export interface components {
 			data: {
 				/** Format: date-time */
 				createdAt: string;
+				/** Format: uuid */
+				currentPublicationId?: string | null;
 				description?: string | null;
+				/** Format: uuid */
+				draftId?: string | null;
 				/** Format: uuid */
 				id: string;
 				isActive: boolean;
 				migrated: boolean;
 				name: string;
+				/** Format: int32 */
+				publicationCount: number;
 				/** Format: date-time */
 				publishedAt?: string | null;
 				/** Format: int32 */
@@ -11018,6 +11091,8 @@ export interface components {
 				createdAt: string;
 				description?: string | null;
 				/** Format: uuid */
+				draftId?: string | null;
+				/** Format: uuid */
 				editionId: string;
 				editionName: string;
 				gradeLevelIds: string[];
@@ -11027,6 +11102,8 @@ export interface components {
 				migrated: boolean;
 				nameEn?: string | null;
 				nameTh: string;
+				/** Format: uuid */
+				publicationId?: string | null;
 				/** Format: int32 */
 				revisionYear?: number | null;
 				/** Format: int64 */
@@ -11041,6 +11118,43 @@ export interface components {
 		ApiResponse_Vec_CurriculumLevelView: {
 			data: {
 				level: components['schemas']['CurriculumLevel'];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_CurriculumPublication: {
+			data: {
+				/** Format: int64 */
+				activityCount: number;
+				/** Format: date-time */
+				capturedAt: string;
+				changeNote: string;
+				/** Format: int64 */
+				courseCount: number;
+				description?: string | null;
+				/** Format: uuid */
+				editionId: string;
+				/** Format: uuid */
+				id: string;
+				isBaseline: boolean;
+				/** Format: int64 */
+				levelCount: number;
+				name: string;
+				/** Format: uuid */
+				previousPublicationId?: string | null;
+				/** Format: int64 */
+				programCount: number;
+				/** Format: int32 */
+				publicationNo: number;
+				/** Format: date-time */
+				publishedAt?: string | null;
+				/** Format: uuid */
+				publishedBy?: string | null;
+				publisherName?: string | null;
+				/** Format: int32 */
+				revisionYear?: number | null;
+				/** Format: int64 */
+				slotCount: number;
 			}[];
 			message?: string;
 			success: boolean;
@@ -13540,6 +13654,8 @@ export interface components {
 		CopyStudyProgramRequest: {
 			/** Format: int64 */
 			destinationRowVersion: number;
+			/** Format: uuid */
+			draftId: string;
 			nameTh?: string | null;
 			/** Format: uuid */
 			sourceProgramId: string;
@@ -13767,6 +13883,8 @@ export interface components {
 		};
 		CreateCurriculumLevelRequest: {
 			description?: string | null;
+			/** Format: uuid */
+			draftId: string;
 			gradeLevelIds: string[];
 			nameTh: string;
 		};
@@ -14045,6 +14163,8 @@ export interface components {
 			username: string;
 		};
 		CreateStudyProgramRequest: {
+			/** Format: uuid */
+			draftId: string;
 			isDefault: boolean;
 			nameTh: string;
 		};
@@ -14234,12 +14354,18 @@ export interface components {
 		CurriculumEdition: {
 			/** Format: date-time */
 			createdAt: string;
+			/** Format: uuid */
+			currentPublicationId?: string | null;
 			description?: string | null;
+			/** Format: uuid */
+			draftId?: string | null;
 			/** Format: uuid */
 			id: string;
 			isActive: boolean;
 			migrated: boolean;
 			name: string;
+			/** Format: int32 */
+			publicationCount: number;
 			/** Format: date-time */
 			publishedAt?: string | null;
 			/** Format: int32 */
@@ -14261,6 +14387,8 @@ export interface components {
 			createdAt: string;
 			description?: string | null;
 			/** Format: uuid */
+			draftId?: string | null;
+			/** Format: uuid */
 			editionId: string;
 			editionName: string;
 			gradeLevelIds: string[];
@@ -14270,6 +14398,8 @@ export interface components {
 			migrated: boolean;
 			nameEn?: string | null;
 			nameTh: string;
+			/** Format: uuid */
+			publicationId?: string | null;
 			/** Format: int32 */
 			revisionYear?: number | null;
 			/** Format: int64 */
@@ -14288,6 +14418,7 @@ export interface components {
 		CurriculumOfferingPreview: {
 			/** Format: uuid */
 			academicTermId: string;
+			curriculumSources: components['schemas']['CurriculumPublicationSource'][];
 			proposals: components['schemas']['CurriculumPreparationProposal'][];
 			sourceHash: string;
 		};
@@ -14327,6 +14458,60 @@ export interface components {
 		};
 		/** @enum {string} */
 		CurriculumPreviewAction: 'create' | 'retain' | 'conflict';
+		CurriculumPublication: {
+			/** Format: int64 */
+			activityCount: number;
+			/** Format: date-time */
+			capturedAt: string;
+			changeNote: string;
+			/** Format: int64 */
+			courseCount: number;
+			description?: string | null;
+			/** Format: uuid */
+			editionId: string;
+			/** Format: uuid */
+			id: string;
+			isBaseline: boolean;
+			/** Format: int64 */
+			levelCount: number;
+			name: string;
+			/** Format: uuid */
+			previousPublicationId?: string | null;
+			/** Format: int64 */
+			programCount: number;
+			/** Format: int32 */
+			publicationNo: number;
+			/** Format: date-time */
+			publishedAt?: string | null;
+			/** Format: uuid */
+			publishedBy?: string | null;
+			publisherName?: string | null;
+			/** Format: int32 */
+			revisionYear?: number | null;
+			/** Format: int64 */
+			slotCount: number;
+		};
+		CurriculumPublicationChange: {
+			after?: string | null;
+			before?: string | null;
+			name: string;
+			resourceKind: string;
+		};
+		CurriculumPublicationHistory: {
+			changes: components['schemas']['CurriculumPublicationChange'][];
+			publication: components['schemas']['CurriculumPublication'];
+		};
+		CurriculumPublicationSource: {
+			/** Format: uuid */
+			editionId: string;
+			editionName: string;
+			/** Format: uuid */
+			publicationId: string;
+			/** Format: int32 */
+			publicationNo: number;
+			/** Format: int32 */
+			revisionYear?: number | null;
+		};
 		CurriculumStructureRequirement: {
 			/** Format: uuid */
 			catalogVersionId: string;
@@ -14709,6 +14894,8 @@ export interface components {
 		DeliveryVersionOffering: {
 			catalog: components['schemas']['LearningOfferingSnapshot'];
 			code: string;
+			/** @description Empty means the actual source publication was not recorded (legacy/manual). */
+			curriculumSources?: components['schemas']['CurriculumPublicationSource'][];
 			groups: components['schemas']['DeliveryVersionGroup'][];
 			homeroomIds: string[];
 			/** Format: uuid */
@@ -16482,6 +16669,10 @@ export interface components {
 		};
 		/** @enum {string} */
 		OfferingTargetKind: 'homeroom' | 'grade_program';
+		OpenCurriculumDraftRequest: {
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		OpeningPolicy: {
 			requireHomeroomPlacements: boolean;
 			requirePublishedOfferings: boolean;
@@ -17235,6 +17426,13 @@ export interface components {
 			/** Format: int64 */
 			targetDeliveryVersionRowVersion: number;
 		};
+		PublishCurriculumRequest: {
+			changeNote: string;
+			/** Format: uuid */
+			draftId: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		PublishLearningOfferingRequest: {
 			/** Format: uuid */
 			idempotencyKey: string;
@@ -17526,11 +17724,15 @@ export interface components {
 			rowVersion: number;
 		};
 		ReplaceCurriculumStructureRequest: {
+			/** Format: uuid */
+			draftId: string;
 			requirements: components['schemas']['CurriculumStructureRequirementInput'][];
 			/** Format: int64 */
 			rowVersion: number;
 		};
 		ReplaceCurriculumTermSlotsRequest: {
+			/** Format: uuid */
+			draftId: string;
 			/** Format: int64 */
 			rowVersion: number;
 			slots: components['schemas']['CurriculumTermSlotInput'][];
@@ -20038,6 +20240,8 @@ export interface components {
 		};
 		UpdateCurriculumLevelRequest: {
 			description?: string | null;
+			/** Format: uuid */
+			draftId: string;
 			gradeLevelIds: string[];
 			nameTh: string;
 			/** Format: int64 */
@@ -20045,6 +20249,8 @@ export interface components {
 		};
 		UpdateCurriculumRequest: {
 			description?: string | null;
+			/** Format: uuid */
+			draftId: string;
 			name: string;
 			/** Format: int32 */
 			revisionYear: number;
@@ -20255,6 +20461,8 @@ export interface components {
 			student_number?: number | null;
 		};
 		UpdateStudyProgramRequest: {
+			/** Format: uuid */
+			draftId: string;
 			isDefault: boolean;
 			nameTh: string;
 			/** Format: int64 */
@@ -23220,9 +23428,84 @@ export interface operations {
 			};
 		};
 	};
-	listCurriculumLevels: {
+	openCurriculumDraft: {
 		parameters: {
 			query?: never;
+			header?: never;
+			path: {
+				/** @description Edition identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['OpenCurriculumDraftRequest'];
+			};
+		};
+		responses: {
+			/** @description Curriculum publication lifecycle */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumEdition'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Revision conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCurriculumLevels: {
+		parameters: {
+			query?: {
+				draftId?: string;
+				publicationId?: string;
+			};
 			header?: never;
 			path: {
 				/** @description Resource identity */
@@ -23360,6 +23643,144 @@ export interface operations {
 			};
 		};
 	};
+	listCurriculumPublications: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Edition identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curriculum publication lifecycle */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_CurriculumPublication'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Revision conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCurriculumPublicationHistory: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Edition identity */
+				id: string;
+				/** @description Publication identity */
+				publication_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Curriculum publication lifecycle */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CurriculumPublicationHistory'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Revision conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	publishCurriculum: {
 		parameters: {
 			query?: never;
@@ -23372,7 +23793,7 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['PublishVersionRequest'];
+				'application/json': components['schemas']['PublishCurriculumRequest'];
 			};
 		};
 		responses: {
@@ -23528,7 +23949,10 @@ export interface operations {
 	};
 	getCurriculumLevel: {
 		parameters: {
-			query?: never;
+			query?: {
+				draftId?: string;
+				publicationId?: string;
+			};
 			header?: never;
 			path: {
 				/** @description Resource identity */
@@ -23808,7 +24232,10 @@ export interface operations {
 	};
 	listStudyPrograms: {
 		parameters: {
-			query?: never;
+			query?: {
+				draftId?: string;
+				publicationId?: string;
+			};
 			header?: never;
 			path: {
 				/** @description Resource identity */
@@ -23948,7 +24375,10 @@ export interface operations {
 	};
 	getCurriculumStructureWorkspace: {
 		parameters: {
-			query?: never;
+			query?: {
+				draftId?: string;
+				publicationId?: string;
+			};
 			header?: never;
 			path: {
 				/** @description Resource identity */
@@ -32652,7 +33082,10 @@ export interface operations {
 	};
 	getStudyProgram: {
 		parameters: {
-			query?: never;
+			query?: {
+				draftId?: string;
+				publicationId?: string;
+			};
 			header?: never;
 			path: {
 				/** @description Resource identity */

@@ -265,8 +265,9 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
     .fetch_one(&pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT edition_id FROM curriculum_levels WHERE id=$1)")
-        .bind(version)
+    sqlx::query("SELECT capture_curriculum_publication($1,$2,'Synthetic placement publication')")
+        .bind(edition)
+        .bind(actor_id)
         .execute(&pool)
         .await
         .unwrap();

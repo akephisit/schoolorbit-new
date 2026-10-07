@@ -40,7 +40,7 @@ const STUDENT_YEAR_JOINS: &str = r#"
     JOIN users student ON student.id = student_year.student_id
     LEFT JOIN student_info ON student_info.user_id = student_year.student_id
     JOIN grade_levels grade ON grade.id = student_year.grade_level_id
-    JOIN study_programs program ON program.id = student_year.study_program_id
+    JOIN published_study_programs program ON program.id = student_year.study_program_id
 "#;
 const PLACEMENT_COLUMNS: &str = r#"
     id, student_academic_year_id, academic_year_id, homeroom_id, start_date,
@@ -944,13 +944,13 @@ async fn validate_homeroom_context(
             .await?
             .ok_or_else(|| AppError::ValidationError("ระดับชั้นไม่ถูกต้อง".to_string()))?;
     let valid_program: Option<i32> = sqlx::query_scalar(
-        r#"SELECT 1 FROM study_programs program
-           JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+        r#"SELECT 1 FROM published_study_programs program
+           JOIN published_curriculum_levels version ON version.id = program.curriculum_level_id
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            WHERE program.id = $1 AND program.status = 'published'
              AND curriculum.status = 'published' AND (curriculum.is_active IS TRUE AND version.is_active)
-             AND (EXISTS (SELECT 1 FROM curriculum_course_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2)
-                  OR EXISTS (SELECT 1 FROM curriculum_activity_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2))"#,
+             AND (EXISTS (SELECT 1 FROM published_curriculum_course_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2)
+                  OR EXISTS (SELECT 1 FROM published_curriculum_activity_requirements r WHERE r.study_program_id=program.id AND r.grade_level_id=$2))"#,
     ).bind(study_program_id).bind(grade_level_id).fetch_optional(&mut **transaction).await?;
     valid_program.map(|_| grade).ok_or_else(|| {
         AppError::ValidationError("เลือกแผนในฉบับที่เผยแพร่แล้วและมีโครงสร้างสำหรับระดับชั้นนี้".to_string())

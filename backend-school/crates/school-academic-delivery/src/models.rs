@@ -1193,9 +1193,20 @@ pub struct CurriculumPreparationChoice {
     pub groups: Vec<CurriculumGroupProposal>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumPublicationSource {
+    pub edition_id: Uuid,
+    pub publication_id: Uuid,
+    pub publication_no: i32,
+    pub revision_year: Option<i32>,
+    pub edition_name: String,
+}
+
 #[derive(Clone, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumOfferingPreview {
+    pub curriculum_sources: Vec<CurriculumPublicationSource>,
     pub academic_term_id: Uuid,
     pub source_hash: String,
     pub proposals: Vec<CurriculumPreparationProposal>,

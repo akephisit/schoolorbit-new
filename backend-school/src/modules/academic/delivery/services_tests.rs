@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 94).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 94).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     pool
 }
 
@@ -4485,6 +4485,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     )
     .await
     .unwrap();
+    assert_eq!(preview.curriculum_sources.len(), 1);
+    assert_eq!(preview.curriculum_sources[0].publication_no, 1);
+    let publication_id = preview.curriculum_sources[0].publication_id;
     assert!(!preview.source_hash.is_empty());
     assert!(!preview.proposals.is_empty());
     assert!(preview
@@ -4523,6 +4526,37 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     )
     .await
     .unwrap();
+    let recorded: serde_json::Value = sqlx::query_scalar(
+        "SELECT curriculum_sources FROM learning_delivery_apply_runs WHERE idempotency_key=$1",
+    )
+    .bind(idempotency_key)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        recorded,
+        serde_json::to_value(&preview.curriculum_sources).unwrap()
+    );
+    let source_count:i64=sqlx::query_scalar("SELECT count(DISTINCT learning_offering_id) FROM learning_offering_curriculum_sources WHERE learning_offering_id=ANY($1) AND publication_id=$2")
+        .bind(&applied.offering_ids).bind(publication_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        source_count, applied.created_offering_count as i64,
+        "retained legacy offerings must not acquire invented provenance"
+    );
+    let captured:sqlx::types::Json<school_academic_delivery::models::versions::DeliverySnapshot>=sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,(SELECT start_date FROM academic_terms WHERE id=$1),$2)")
+        .bind(context.term_id).bind(sqlx::types::Json(applied.offering_ids.iter().map(|id|serde_json::json!({"id":id,"weekly_period_target":1})).collect::<Vec<_>>())).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        captured
+            .0
+            .offerings
+            .iter()
+            .filter(|o| o
+                .curriculum_sources
+                .iter()
+                .any(|s| s.publication_id == publication_id))
+            .count(),
+        applied.created_offering_count
+    );
     let retried = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,

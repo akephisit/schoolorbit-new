@@ -1,26 +1,13 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import {
+	ids,
+	edition,
+	curriculumVersion,
+	curriculumStructure
+} from './helpers/curriculum-fixtures';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
-
-const ids = {
-	year: '12000000-0000-4000-8000-000000000401',
-	futureYear: '12000000-0000-4000-8000-000000000402',
-	term: '22000000-0000-4000-8000-000000000401',
-	deliveryVersion: '32000000-0000-4000-8000-000000000401',
-	curriculum: '42000000-0000-4000-8000-000000000401',
-	curriculumVersion: '52000000-0000-4000-8000-000000000401',
-	clonedVersion: '52000000-0000-4000-8000-000000000402',
-	program: '62000000-0000-4000-8000-000000000401',
-	grade: '72000000-0000-4000-8000-000000000401',
-	homeroom: '82000000-0000-4000-8000-000000000401',
-	requirement: '92000000-0000-4000-8000-000000000401',
-	catalogVersion: 'a2000000-0000-4000-8000-000000000401',
-	offering: 'b2000000-0000-4000-8000-000000000401',
-	extraOffering: 'b2000000-0000-4000-8000-000000000402',
-	group: 'c2000000-0000-4000-8000-000000000401',
-	user: 'd2000000-0000-4000-8000-000000000401'
-};
 
 function fulfill(route: Route, data: unknown, status = 200) {
 	return route.fulfill({
@@ -117,112 +104,6 @@ function homeroomWorkspace() {
 			}
 		],
 		unlinked: []
-	};
-}
-
-function edition(id = ids.curriculum, status: 'draft' | 'published' = 'published') {
-	return {
-		id,
-		name: `ฉบับปรับปรุง พุทธศักราช ${status === 'draft' ? 2570 : 2569}`,
-		revisionYear: status === 'draft' ? 2570 : 2569,
-		description: null,
-		status,
-		isActive: true,
-		rowVersion: 4,
-		migrated: false,
-		publishedAt: status === 'published' ? '2026-05-01T00:00:00Z' : null,
-		createdAt: '2026-04-01T00:00:00Z',
-		updatedAt: '2026-08-30T00:00:00Z'
-	};
-}
-function curriculumVersion(id: string, status: 'draft' | 'published' = 'published') {
-	return {
-		id,
-		editionId: status === 'draft' ? ids.futureYear : ids.curriculum,
-		editionName: edition(ids.curriculum, status).name,
-		revisionYear: status === 'draft' ? 2570 : 2569,
-		code: 'LEVEL-M1',
-		nameTh: 'ระดับมัธยมศึกษาตอนต้น',
-		nameEn: null,
-		gradeLevelIds: [ids.grade],
-		description: null,
-		status,
-		isActive: true,
-		rowVersion: 4,
-		migrated: false,
-		createdAt: '2026-04-01T00:00:00Z',
-		updatedAt: '2026-08-30T00:00:00Z'
-	};
-}
-
-function curriculumStructure(version = curriculumVersion(ids.curriculumVersion)) {
-	return {
-		level: version,
-		rowVersion: version.rowVersion,
-		gradeLevels: [
-			{
-				id: ids.grade,
-				code: 'M1',
-				name: 'มัธยมศึกษาปีที่ 1',
-				short_name: 'ม.1',
-				level_type: 'secondary',
-				level_order: 301
-			}
-		],
-		termSlots: [
-			{
-				id: 'e2000000-0000-4000-8000-000000000401',
-				curriculumLevelId: version.id,
-				sequence: 1,
-				name: 'ภาคเรียนที่ 1',
-				termType: 'regular',
-				typeOccurrence: 1,
-				rowVersion: 1
-			}
-		],
-		programs: [
-			{
-				id: ids.program,
-				curriculumLevelId: version.id,
-				code: 'DEFAULT',
-				nameTh: 'แผนการเรียนพื้นฐาน',
-				nameEn: null,
-				isDefault: true,
-				status: version.status,
-				rowVersion: 1,
-				createdAt: '2026-04-01T00:00:00Z',
-				updatedAt: '2026-08-30T00:00:00Z'
-			}
-		],
-		requirements: [
-			{
-				id: ids.requirement,
-				studyProgramId: ids.program,
-				gradeLevel: {
-					id: ids.grade,
-					code: 'M1',
-					name: 'มัธยมศึกษาปีที่ 1',
-					short_name: 'ม.1',
-					level_type: 'secondary',
-					level_order: 301
-				},
-				termSlotId: 'e2000000-0000-4000-8000-000000000401',
-				resourceKind: 'course',
-				catalogVersionId: ids.catalogVersion,
-				code: 'ค21101',
-				name: 'คณิตศาสตร์พื้นฐาน',
-				requirementKind: 'required',
-				section: 'basic_course',
-				metrics: {
-					credit: '0.50',
-					totalHours: '20',
-					weeklyUnit: 'periods_per_week',
-					weeklyValue: '1'
-				},
-				displayOrder: 1
-			}
-		],
-		validation: { blockers: [], warnings: [] }
 	};
 }
 
@@ -360,6 +241,9 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				await fulfill(route, {
 					...edition(ids.futureYear, 'draft'),
 					status: 'published',
+					draftId: null,
+					publicationCount: 1,
+					currentPublicationId: 'f2000000-0000-4000-8000-000000000401',
 					publishedAt: '2026-10-06T00:00:00Z',
 					rowVersion: 5
 				});
@@ -671,6 +555,7 @@ for (const mobile of [false, true])
 			await dialog.getByRole('button', { name: 'คัดลอกเป็นแผนร่าง', exact: true }).click();
 			await expect(dialog).toBeHidden();
 			expect(mocked.cloneRequest()).toEqual({
+				draftId: 'f2000000-0000-4000-8000-000000000402',
 				sourceProgramId: ids.program,
 				sourceRowVersion: 1,
 				destinationRowVersion: 4,
@@ -720,6 +605,7 @@ test('create a level with covered grades within an edition, then create its plan
 	await dialog.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true }).click();
 	await expect(dialog).toBeHidden();
 	expect(mocked.levelRequest()).toEqual({
+		draftId: 'f2000000-0000-4000-8000-000000000402',
 		nameTh: 'ระดับมัธยมศึกษาตอนต้น',
 		gradeLevelIds: [ids.grade],
 		description: null
@@ -734,7 +620,11 @@ test('create a level with covered grades within an edition, then create its plan
 	await expect(dialog.getByLabel('หน่วยงานเจ้าของหลักสูตร')).toHaveCount(0);
 	await dialog.getByRole('button', { name: 'สร้างแผนการเรียน', exact: true }).click();
 	await expect(dialog).toBeHidden();
-	expect(mocked.programRequest()).toEqual({ nameTh: 'วิทยาศาสตร์-คณิตศาสตร์', isDefault: false });
+	expect(mocked.programRequest()).toEqual({
+		draftId: 'f2000000-0000-4000-8000-000000000402',
+		nameTh: 'วิทยาศาสตร์-คณิตศาสตร์',
+		isDefault: false
+	});
 	expect(mocked.managementOptionsRequestCount()).toBe(0);
 });
 
@@ -746,11 +636,12 @@ test('publishes the selected edition once and keeps its educational-level link',
 	await expect(
 		page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น', exact: true })
 	).toBeVisible();
-	await page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร', exact: true })).toHaveCount(
-		0
-	);
-	await expect(page.getByText('เผยแพร่แล้ว', { exact: true })).toBeVisible();
+	await page.getByLabel('สรุปการแก้ไข *').fill('เผยแพร่ครั้งแรก');
+	await page.getByRole('button', { name: 'เผยแพร่ทั้งฉบับ · ครั้งที่ 1', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'เผยแพร่ทั้งฉบับ · ครั้งที่ 1', exact: true })
+	).toHaveCount(0);
+	await expect(page.getByText('เผยแพร่ครั้งที่ 1', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true })).toHaveCount(
 		0
 	);
@@ -760,7 +651,11 @@ test('publishes the selected edition once and keeps its educational-level link',
 		'href',
 		`/staff/academic/curricula/${ids.futureYear}/levels/${ids.clonedVersion}`
 	);
-	expect(mocked.publishRequest()).toEqual({ rowVersion: 4 });
+	expect(mocked.publishRequest()).toEqual({
+		rowVersion: 4,
+		draftId: 'f2000000-0000-4000-8000-000000000402',
+		changeNote: 'เผยแพร่ครั้งแรก'
+	});
 	expect(mocked.academicRequests.filter((r) => r.startsWith('POST'))).toEqual([
 		`POST /api/academic/curricula/${ids.futureYear}/publish`
 	]);

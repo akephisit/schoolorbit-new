@@ -287,6 +287,16 @@
 			"notes": "Route starts edition and level listing independently; mutations patch the affected region. Level details own plan structure and optional delivery alignment."
 		},
 		{
+			"route": "staff/academic/curricula/[id]/history",
+			"wave": "academic-foundation",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-academic-core",
+			"notes": "Route starts the bounded publication timeline. Selected-only immutable comparison and educational levels load as independent regions with cancellation and focused retry; historical documents remain read-only."
+		},
+		{
 			"route": "staff/academic/curricula/[id]/levels/[levelId]",
 			"wave": "academic-foundation",
 			"dataOwner": "route",

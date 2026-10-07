@@ -30,6 +30,10 @@
 	}
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
+		if (edition && !edition.draftId) {
+			error = 'เปิดร่างแก้ไขก่อนบันทึก';
+			return;
+		}
 		if (year === undefined || !Number.isInteger(year) || year < 2400 || year > 2999) {
 			error = 'ระบุปีปรับปรุงเป็นพุทธศักราชระหว่าง 2400–2999';
 			return;
@@ -43,7 +47,11 @@
 				description: description.trim() || null
 			};
 			const result = edition
-				? await updateCurriculum(edition.id, { ...body, rowVersion: edition.rowVersion })
+				? await updateCurriculum(edition.id, {
+						...body,
+						rowVersion: edition.rowVersion,
+						draftId: edition.draftId!
+					})
 				: await createCurriculum(body);
 			onSaved(result);
 			open = false;

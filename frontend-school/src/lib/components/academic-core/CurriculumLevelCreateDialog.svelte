@@ -11,8 +11,11 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import GradeLevelMultiSelect from './GradeLevelMultiSelect.svelte';
-	let { editionId, onCreated }: { editionId: string; onCreated: (level: CurriculumLevel) => void } =
-		$props();
+	let {
+		editionId,
+		draftId,
+		onCreated
+	}: { editionId: string; draftId: string; onCreated: (level: CurriculumLevel) => void } = $props();
 	let open = $state(false);
 	let saving = $state(false);
 	let loading = $state(false);
@@ -40,6 +43,7 @@
 		error = '';
 		try {
 			const result = await createCurriculumLevel(editionId, {
+				draftId,
 				nameTh: name.trim(),
 				gradeLevelIds: grades,
 				description: null

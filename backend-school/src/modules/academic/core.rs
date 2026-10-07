@@ -188,6 +188,18 @@ pub fn routes() -> Router<AppState> {
             get(handlers::get_curriculum).patch(handlers::update_curriculum),
         )
         .route(
+            "/curricula/{id}/draft",
+            post(handlers::open_curriculum_draft),
+        )
+        .route(
+            "/curricula/{id}/publications",
+            get(handlers::list_curriculum_publications),
+        )
+        .route(
+            "/curricula/{id}/publications/{publication_id}",
+            get(handlers::get_curriculum_publication_history),
+        )
+        .route(
             "/curricula/{id}/publish",
             post(handlers::publish_curriculum),
         )

@@ -380,6 +380,7 @@ mod tests {
     fn ready_snapshot() -> DeliverySnapshot {
         DeliverySnapshot {
             offerings: vec![DeliveryVersionOffering {
+                curriculum_sources: Vec::new(),
                 id: Uuid::from_u128(1),
                 kind: LearningOfferingKind::Course,
                 code: "ท101".into(),

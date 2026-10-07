@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		getCurriculum,
 		listCurriculumLevels,
 		publishCurriculum,
+		openCurriculumDraft,
+		curriculumViewSearch,
 		type CurriculumEdition,
 		type CurriculumLevelView,
 		type CurriculumLevel
@@ -27,12 +32,20 @@
 	let editionError = $state('');
 	let levelsError = $state('');
 	let publishing = $state(false);
+	let openingDraft = $state(false);
+	let changeNote = $state('');
 	let actionError = $state('');
 	let editionRevision = 0;
 	let levelsRevision = 0;
 	const editionRequest = new LatestRequest();
 	const levelsRequest = new LatestRequest();
 	let canManage = $derived($can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL));
+	let draftView = $derived(
+		!!edition?.draftId &&
+			!data.view.publicationId &&
+			(data.view.draftId === edition.draftId || edition.publicationCount === 0)
+	);
+	let viewSearch = $derived(curriculumViewSearch(data.view));
 	$effect.pre(() => {
 		const ep = data.edition;
 		const lp = data.levels;
@@ -48,6 +61,8 @@
 			levelsError = '';
 			actionError = '';
 			publishing = false;
+			openingDraft = false;
+			changeNote = '';
 		});
 		void ep.then((r) => {
 			if (!current) return;
@@ -107,7 +122,7 @@
 		levelsLoading = true;
 		levelsError = '';
 		try {
-			const result = await listCurriculumLevels(id, { signal });
+			const result = await listCurriculumLevels(id, { signal, ...data.view });
 			if (levelsRequest.isCurrent(revision) && id === data.editionId && mutation === levelsRevision)
 				levels = result;
 		} catch (e) {
@@ -118,21 +133,52 @@
 		}
 	}
 	async function publish() {
-		if (!edition || publishing) return;
+		if (!edition?.draftId || !draftView || publishing || !changeNote.trim()) return;
 		const selected = edition;
 		publishing = true;
 		actionError = '';
 		try {
-			const result = await publishCurriculum(selected.id, { rowVersion: selected.rowVersion });
+			const result = await publishCurriculum(selected.id, {
+				rowVersion: selected.rowVersion,
+				draftId: selected.draftId ?? '',
+				changeNote: changeNote.trim()
+			});
 			if (data.editionId !== selected.id) return;
 			saved(result);
 			levelsRevision++;
-			levels = levels.map(({ level }) => ({ level: { ...level, status: 'published' } }));
+			levels = levels.map(({ level }) => ({
+				level: {
+					...level,
+					status: 'published',
+					draftId: null,
+					publicationId: result.currentPublicationId
+				}
+			}));
+			if (data.view.draftId)
+				await goto(`/staff/academic/curricula/${selected.id}`, { replaceState: true });
 		} catch (e) {
 			if (data.editionId === selected.id)
 				actionError = e instanceof Error ? e.message : 'เผยแพร่ไม่สำเร็จ';
 		} finally {
 			if (data.editionId === selected.id) publishing = false;
+		}
+	}
+	async function editCurriculum() {
+		if (!edition || !canManage || openingDraft) return;
+		const selected = edition;
+		openingDraft = true;
+		actionError = '';
+		try {
+			const result = await openCurriculumDraft(selected.id, { rowVersion: selected.rowVersion });
+			if (data.editionId !== selected.id || !result.draftId) return;
+			await goto(
+				`/staff/academic/curricula/${selected.id}?draftId=${encodeURIComponent(result.draftId)}`
+			);
+		} catch (e) {
+			if (data.editionId === selected.id)
+				actionError = e instanceof Error ? e.message : 'เปิดร่างไม่สำเร็จ';
+		} finally {
+			if (data.editionId === selected.id) openingDraft = false;
 		}
 	}
 </script>
@@ -164,23 +210,65 @@
 						<h2 class="font-semibold">หลักสูตรสถานศึกษา · {edition.name}</h2>
 						<Badge variant={edition.status === 'published' ? 'default' : 'secondary'}
 							>{edition.status === 'published'
-								? 'เผยแพร่แล้ว'
+								? `เผยแพร่ครั้งที่ ${edition.publicationCount}`
 								: edition.status === 'draft'
 									? 'ฉบับร่าง'
 									: 'เก็บถาวร'}</Badge
 						>
 					</div>
-					{#if canManage && edition.status === 'draft'}<div class="flex flex-wrap gap-2">
-							<CurriculumCreateDialog {edition} onSaved={saved} /><LoadingButton
-								loading={publishing}
-								loadingLabel="กำลังเผยแพร่"
-								onclick={publish}>เผยแพร่ฉบับหลักสูตร</LoadingButton
+					<div class="flex flex-wrap gap-2">
+						<Button variant="outline" href={`/staff/academic/curricula/${edition.id}/history`}
+							>ประวัติการแก้ไข</Button
+						>
+						{#if canManage && !draftView && !data.view.publicationId && edition.status !== 'archived'}
+							<LoadingButton
+								loading={openingDraft}
+								loadingLabel="กำลังเปิดร่าง"
+								onclick={editCurriculum}
+								>{edition.draftId ? 'แก้ไขร่างต่อ' : 'แก้ไขหลักสูตร'}</LoadingButton
 							>
-						</div>{/if}
+						{/if}
+						{#if canManage && draftView && edition.publicationCount === 0}<CurriculumCreateDialog
+								{edition}
+								onSaved={saved}
+							/>{/if}
+						{#if draftView && edition.publicationCount > 0}<Button
+								variant="outline"
+								href={`/staff/academic/curricula/${edition.id}`}>ดูฉบับที่เผยแพร่</Button
+							>{/if}
+					</div>
 				</div>
 				<p class="text-sm text-muted-foreground">
 					ปีปรับปรุง {edition.revisionYear ?? 'ยังไม่กำหนด'} · โรงเรียนเลือกใช้ฉบับนี้ให้ห้องได้ในปีการศึกษาที่ต้องการ
 				</p>
+				{#if data.view.publicationId}<p class="text-sm font-medium">
+						ประวัติการเผยแพร่ · อ่านอย่างเดียว
+					</p>
+				{:else if draftView}<div class="space-y-3 rounded-xl border bg-muted p-3">
+						<p class="text-sm font-medium">
+							ร่างสำหรับเผยแพร่ครั้งที่ {edition.publicationCount + 1}
+						</p>
+						<p class="text-sm text-muted-foreground">
+							แก้ไขระดับ แผน และรายวิชาในร่าง แล้วเผยแพร่ทั้งฉบับ
+							การเปิดสอนและตารางเดิมยังใช้ข้อมูลเดิม
+						</p>
+						{#if canManage}<div class="space-y-2">
+								<Label for="curriculum-change-note">สรุปการแก้ไข *</Label><Textarea
+									id="curriculum-change-note"
+									maxlength={2000}
+									bind:value={changeNote}
+									placeholder="เช่น เพิ่มรายวิชาภาคเรียนที่ 2"
+								/>
+							</div>
+							<LoadingButton
+								loading={publishing}
+								loadingLabel="กำลังเผยแพร่"
+								disabled={!changeNote.trim()}
+								onclick={publish}
+								>เผยแพร่ทั้งฉบับ · ครั้งที่ {edition.publicationCount + 1}</LoadingButton
+							>{/if}
+					</div>
+				{:else if edition.draftId}<p class="text-sm">มีร่างแก้ไขที่ยังไม่ได้เผยแพร่</p>{/if}
 				{#if edition.description}<p class="text-sm">{edition.description}</p>{/if}
 				{#if actionError}<p role="alert" class="text-sm text-destructive">{actionError}</p>{/if}
 			</section>{/if}
@@ -200,8 +288,9 @@
 				</div>{/if}
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<h2 class="text-lg font-semibold">ระดับการศึกษาในฉบับนี้</h2>
-				{#if canManage && !levelsLoading && edition?.status === 'draft'}<CurriculumLevelCreateDialog
+				{#if canManage && !levelsLoading && draftView && edition?.draftId}<CurriculumLevelCreateDialog
 						editionId={edition.id}
+						draftId={edition.draftId}
 						onCreated={created}
 					/>{/if}
 			</div>
@@ -227,7 +316,7 @@
 									><Table.Cell
 										><a
 											class="font-medium text-primary hover:underline"
-											href={`/staff/academic/curricula/${data.editionId}/levels/${level.id}`}
+											href={`/staff/academic/curricula/${data.editionId}/levels/${level.id}${viewSearch}`}
 											>{level.nameTh}</a
 										></Table.Cell
 									><Table.Cell>{level.gradeLevelIds.length} ชั้น</Table.Cell></Table.Row

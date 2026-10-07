@@ -304,7 +304,7 @@ pub async fn load_labels<'e, E: Executor<'e, Database = Postgres>>(
     }
     let labels:Vec<(Uuid,String)>=sqlx::query_as("SELECT id,name FROM homerooms WHERE id=ANY($1)
         UNION ALL SELECT id,CASE level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' ELSE 'ม.' END||year::text FROM grade_levels WHERE id=ANY($1)
-        UNION ALL SELECT id,name_th FROM study_programs WHERE id=ANY($1)
+        UNION ALL SELECT id,name_th FROM published_study_programs WHERE id=ANY($1)
         UNION ALL SELECT id,concat_ws(' — ',code,name_th) FROM rooms WHERE id=ANY($1)")
         .bind(ids).fetch_all(executor).await?;
     Ok(labels.into_iter().collect())
@@ -323,6 +323,7 @@ mod tests {
     fn graph() -> DeliverySnapshot {
         DeliverySnapshot {
             offerings: vec![DeliveryVersionOffering {
+                curriculum_sources: Vec::new(),
                 id: Uuid::from_u128(1),
                 kind: LearningOfferingKind::Course,
                 code: "ค11101".into(),

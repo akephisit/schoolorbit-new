@@ -12,7 +12,7 @@ pub(crate) async fn empty_school(name: &str) -> (PgPool, Uuid) {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 94).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     let actor: Uuid = sqlx::query_scalar("INSERT INTO users(username,password_hash,first_name,last_name,user_type) VALUES('E2E-LIFECYCLE-opening','!','ฝ่ายวิชาการ','ทดสอบ','staff') RETURNING id")
         .fetch_one(&pool).await.unwrap();
     (pool, actor)
@@ -269,8 +269,9 @@ async fn activation_context_validates_planned_curriculum_placement_capacity_and_
     let version:Uuid=sqlx::query_scalar("INSERT INTO curriculum_levels(edition_id,code,name_th,grade_level_ids,is_active) VALUES($1,$2,'E2E-LIFECYCLE-target',$3,true) RETURNING id").bind(edition).bind(Uuid::new_v4().to_string()).bind(sqlx::types::Json(vec![grade])).fetch_one(&pool).await.unwrap();
     let program: Uuid = sqlx::query_scalar("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,status) VALUES(uuid_generate_v4(),$1,'E2E-OPEN','E2E-LIFECYCLE-opening','published') RETURNING id")
         .bind(version).fetch_one(&pool).await.unwrap();
-    sqlx::query("UPDATE curriculum_editions SET status='published',published_at=now() WHERE id=(SELECT edition_id FROM curriculum_levels WHERE id=$1)")
-        .bind(version)
+    sqlx::query("SELECT capture_curriculum_publication($1,$2,'Synthetic placement publication')")
+        .bind(edition)
+        .bind(actor)
         .execute(&pool)
         .await
         .unwrap();

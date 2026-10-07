@@ -1,18 +1,18 @@
 use super::super::models::{
     CopyStudyProgramRequest, CreateCurriculumLevelRequest, CreateCurriculumRequest,
-    CreateStudyProgramRequest, CurriculumEdition, CurriculumLevel, PublishVersionRequest,
+    CreateStudyProgramRequest, CurriculumEdition, CurriculumLevel, PublishCurriculumRequest,
     StudyProgram, StudyProgramOption, UpdateCurriculumLevelRequest, UpdateCurriculumRequest,
     UpdateStudyProgramRequest, VersionStatus,
 };
-use super::{ensure_draft_version, parse_row_version};
+use super::parse_row_version;
 use school_authorization::AcademicResourceListFilter;
 use school_errors::AppError;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-const EDITION_COLUMNS: &str = "id,name,revision_year,description,status,is_active,published_at,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at";
-const LEVEL_COLUMNS: &str = "l.id,l.edition_id,l.code,l.name_th,l.name_en,l.description,ARRAY(SELECT jsonb_array_elements_text(l.grade_level_ids)::uuid) AS grade_level_ids,l.is_active,l.row_version,l.migration_provenance <> '{}'::jsonb AS migrated,l.created_at,l.updated_at,e.name AS edition_name,e.revision_year,e.status";
-const PROGRAM_COLUMNS: &str = "id,curriculum_level_id,code,name_th,name_en,is_default,status,row_version,created_at,updated_at";
+pub(super) const EDITION_COLUMNS: &str = "current_publication_id,publication_count,draft_id,id,name,revision_year,description,status,is_active,published_at,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at";
+pub(super) const LEVEL_COLUMNS: &str = "l.id,l.edition_id,l.code,l.name_th,l.name_en,l.description,ARRAY(SELECT jsonb_array_elements_text(l.grade_level_ids)::uuid) AS grade_level_ids,l.is_active,l.row_version,l.migration_provenance <> '{}'::jsonb AS migrated,l.created_at,l.updated_at,e.name AS edition_name,e.revision_year,CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id";
+pub(super) const PROGRAM_COLUMNS: &str = "id,curriculum_level_id,code,name_th,name_en,is_default,status,row_version,created_at,updated_at";
 const MAX_LEVELS: i64 = 500;
 const MAX_PROGRAM_OPTIONS: i64 = 2000;
 const MAX_COPIED_REQUIREMENTS: i64 = 50_000;
@@ -94,8 +94,8 @@ pub async fn update(
     validate_name(&request.name)?;
     validate_revision_year(request.revision_year)?;
     parse_row_version(request.row_version)?;
-    let result=sqlx::query("UPDATE curriculum_editions SET name=$1,revision_year=$2,description=$3,row_version=row_version+1,updated_at=now() WHERE id=$4 AND row_version=$5 AND status='draft'")
-        .bind(request.name.trim()).bind(request.revision_year).bind(request.description).bind(id).bind(request.row_version).execute(pool).await?;
+    let result=sqlx::query("UPDATE curriculum_editions SET name=$1,revision_year=$2,description=$3,row_version=row_version+1,updated_at=now() WHERE id=$4 AND row_version=$5 AND status='draft' AND draft_id=$6")
+        .bind(request.name.trim()).bind(request.revision_year).bind(request.description).bind(id).bind(request.row_version).bind(request.draft_id).execute(pool).await?;
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict("ฉบับหลักสูตรถูกแก้ไขหรือเผยแพร่แล้ว".into()));
     }
@@ -127,21 +127,23 @@ pub async fn list_levels(
     }
     Ok(rows)
 }
-async fn require_draft_edition(
+pub(super) async fn require_draft_edition(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
+    draft_id: Uuid,
 ) -> Result<(), AppError> {
-    let status: VersionStatus =
-        sqlx::query_scalar("SELECT status FROM curriculum_editions WHERE id=$1 FOR SHARE")
+    let actual: Option<Uuid> =
+        sqlx::query_scalar("SELECT draft_id FROM curriculum_editions WHERE id=$1 FOR SHARE")
             .bind(id)
             .fetch_optional(&mut **tx)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบฉบับหลักสูตร".into()))?;
-    ensure_draft_version(status)
+    super::curriculum_publications::validate_draft_token(actual, draft_id)
 }
 pub(super) async fn require_draft_level(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
+    draft_id: Uuid,
 ) -> Result<(), AppError> {
     let edition_id: Uuid =
         sqlx::query_scalar("SELECT edition_id FROM curriculum_levels WHERE id=$1")
@@ -149,7 +151,7 @@ pub(super) async fn require_draft_level(
             .fetch_optional(&mut **tx)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบระดับการศึกษา".into()))?;
-    require_draft_edition(tx, edition_id).await?;
+    require_draft_edition(tx, edition_id, draft_id).await?;
     sqlx::query("SELECT id FROM curriculum_levels WHERE id=$1 FOR UPDATE")
         .bind(id)
         .fetch_one(&mut **tx)
@@ -187,7 +189,7 @@ pub async fn create_level(
     validate_grade_levels(pool, &request.grade_level_ids).await?;
     let id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
-    require_draft_edition(&mut tx, edition_id).await?;
+    require_draft_edition(&mut tx, edition_id, request.draft_id).await?;
     sqlx::query("INSERT INTO curriculum_levels(id,edition_id,code,name_th,description,grade_level_ids,is_active) VALUES($1,$2,$3,$4,$5,$6,true)")
         .bind(id).bind(edition_id).bind(internal_code("LEVEL",id)).bind(request.name_th.trim()).bind(request.description).bind(sqlx::types::Json(request.grade_level_ids)).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO curriculum_term_slots(id,curriculum_level_id,sequence,term_type,type_occurrence,name) SELECT gen_random_uuid(),$1,n,'regular',n,'ภาคเรียนที่ '||n::text FROM generate_series(1,2) n")
@@ -204,7 +206,7 @@ pub async fn update_level(
     validate_grade_levels(pool, &request.grade_level_ids).await?;
     parse_row_version(request.row_version)?;
     let mut tx = pool.begin().await?;
-    require_draft_level(&mut tx, id).await?;
+    require_draft_level(&mut tx, id, request.draft_id).await?;
     let uncovered:i64=sqlx::query_scalar("SELECT count(*) FROM (SELECT grade_level_id FROM curriculum_course_requirements WHERE curriculum_level_id=$1 UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE curriculum_level_id=$1) r WHERE NOT grade_level_id=ANY($2)").bind(id).bind(&request.grade_level_ids).fetch_one(&mut *tx).await?;
     if uncovered > 0 {
         return Err(AppError::ValidationError(
@@ -222,7 +224,8 @@ pub async fn update_level(
 pub async fn publish(
     pool: &PgPool,
     id: Uuid,
-    request: PublishVersionRequest,
+    request: PublishCurriculumRequest,
+    actor_id: Uuid,
 ) -> Result<CurriculumEdition, AppError> {
     parse_row_version(request.row_version)?;
     let mut tx = pool.begin().await?;
@@ -232,7 +235,8 @@ pub async fn publish(
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบฉบับหลักสูตร".into()))?;
-    ensure_draft_version(edition.status)?;
+    super::curriculum_publications::validate_draft_token(edition.draft_id, request.draft_id)?;
+    super::curriculum_publications::validate_change_note(&request.change_note)?;
     if edition.row_version != request.row_version {
         return Err(AppError::Conflict("ฉบับหลักสูตรถูกแก้ไขโดยผู้ใช้อื่น".into()));
     }
@@ -258,7 +262,12 @@ pub async fn publish(
         validate_publishable(&mut tx, level).await?;
     }
     sqlx::query("UPDATE study_programs SET status='published',row_version=row_version+1,updated_at=now() WHERE curriculum_level_id IN (SELECT id FROM curriculum_levels WHERE edition_id=$1) AND status='draft'").bind(id).execute(&mut *tx).await?;
-    sqlx::query("UPDATE curriculum_editions SET status='published',published_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1").bind(id).execute(&mut *tx).await?;
+    sqlx::query("SELECT capture_curriculum_publication($1,$2,$3)")
+        .bind(id)
+        .bind(actor_id)
+        .bind(request.change_note.trim())
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     get(pool, id).await
 }
@@ -300,7 +309,7 @@ pub async fn create_program(
     validate_name(&request.name_th)?;
     let id = Uuid::new_v4();
     let mut tx = pool.begin().await?;
-    require_draft_level(&mut tx, level_id).await?;
+    require_draft_level(&mut tx, level_id, request.draft_id).await?;
     if request.is_default {
         clear_default(&mut tx, level_id, None).await?;
     }
@@ -323,7 +332,7 @@ pub async fn update_program(
             .fetch_optional(&mut *tx)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?;
-    require_draft_level(&mut tx, level_id).await?;
+    require_draft_level(&mut tx, level_id, request.draft_id).await?;
     let program: StudyProgram = {
         let sql = format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE id=$1 FOR UPDATE");
         sqlx::query_as(sqlx::AssertSqlSafe(sql))
@@ -332,7 +341,9 @@ pub async fn update_program(
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?
     };
-    ensure_draft_version(program.status)?;
+    if program.status == VersionStatus::Archived {
+        return Err(AppError::Conflict("แผนที่เก็บถาวรแล้วแก้ไขไม่ได้".into()));
+    }
     if program.row_version != request.row_version {
         return Err(AppError::Conflict("แผนการเรียนถูกแก้ไขโดยผู้ใช้อื่น".into()));
     }
@@ -358,8 +369,8 @@ pub async fn list_study_program_options_for_year(
         return Err(AppError::NotFound("ไม่พบปีการศึกษา".into()));
     }
     let options:Vec<StudyProgramOption>=sqlx::query_as(r#"SELECT p.id,p.code,p.name_th AS name,e.id AS edition_id,e.name AS edition_name,e.revision_year,l.id AS curriculum_level_id,l.name_th AS level_name,
-        ARRAY(SELECT DISTINCT grade_level_id FROM (SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id=p.id UNION SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id=p.id) r ORDER BY grade_level_id) AS grade_level_ids
-        FROM study_programs p JOIN curriculum_levels l ON l.id=p.curriculum_level_id JOIN curriculum_editions e ON e.id=l.edition_id
+        ARRAY(SELECT DISTINCT grade_level_id FROM (SELECT grade_level_id FROM published_curriculum_course_requirements WHERE study_program_id=p.id UNION SELECT grade_level_id FROM published_curriculum_activity_requirements WHERE study_program_id=p.id) r ORDER BY grade_level_id) AS grade_level_ids
+        FROM published_study_programs p JOIN published_curriculum_levels l ON l.id=p.curriculum_level_id JOIN curriculum_editions e ON e.id=l.edition_id
         WHERE p.status='published' AND e.status='published' AND e.is_active AND l.is_active
         ORDER BY e.revision_year DESC NULLS LAST,e.created_at DESC,l.name_th,p.is_default DESC,p.name_th,p.id LIMIT $1"#).bind(MAX_PROGRAM_OPTIONS+1).fetch_all(pool).await?;
     if options.len() as i64 > MAX_PROGRAM_OPTIONS {
@@ -492,7 +503,7 @@ pub async fn copy_program(
     parse_row_version(request.source_row_version)?;
     parse_row_version(request.destination_row_version)?;
     let mut tx = pool.begin().await?;
-    require_draft_level(&mut tx, level_id).await?;
+    require_draft_level(&mut tx, level_id, request.draft_id).await?;
     let (covered, revision): (sqlx::types::Json<Vec<Uuid>>, i64) = sqlx::query_as(
         "SELECT grade_level_ids,row_version FROM curriculum_levels WHERE id=$1 FOR UPDATE",
     )
@@ -504,23 +515,26 @@ pub async fn copy_program(
             "ระดับการศึกษาปลายทางถูกแก้ไขแล้ว กรุณาโหลดใหม่".into(),
         ));
     }
+    let source_status:VersionStatus=sqlx::query_scalar("SELECT e.status FROM study_programs p JOIN curriculum_levels l ON l.id=p.curriculum_level_id JOIN curriculum_editions e ON e.id=l.edition_id WHERE p.id=$1 FOR SHARE OF e")
+        .bind(request.source_program_id).fetch_one(&mut *tx).await?;
+    if source_status != VersionStatus::Published {
+        return Err(AppError::Conflict("คัดลอกได้เฉพาะแผนจากฉบับที่เผยแพร่แล้ว".into()));
+    }
     let source: StudyProgram = {
-        let sql = format!("SELECT {PROGRAM_COLUMNS} FROM study_programs WHERE id=$1 FOR SHARE");
+        let sql = format!("SELECT {PROGRAM_COLUMNS} FROM published_study_programs WHERE id=$1");
         sqlx::query_as(sqlx::AssertSqlSafe(sql))
             .bind(request.source_program_id)
             .fetch_optional(&mut *tx)
             .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบแผนต้นทาง".into()))?
+            .ok_or_else(|| AppError::Conflict("แผนต้นทางยังไม่เคยเผยแพร่".into()))?
     };
-    let source_status:VersionStatus=sqlx::query_scalar("SELECT e.status FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1 FOR SHARE OF e")
-        .bind(source.curriculum_level_id).fetch_one(&mut *tx).await?;
     if source_status != VersionStatus::Published || source.status != VersionStatus::Published {
         return Err(AppError::Conflict("คัดลอกได้เฉพาะแผนจากฉบับที่เผยแพร่แล้ว".into()));
     }
     if source.row_version != request.source_row_version {
         return Err(AppError::Conflict("แผนต้นทางถูกแก้ไขแล้ว กรุณาโหลดใหม่".into()));
     }
-    let (total,uncovered):(i64,i64)=sqlx::query_as("SELECT count(*),count(*) FILTER(WHERE NOT grade_level_id=ANY($2)) FROM (SELECT grade_level_id FROM curriculum_course_requirements WHERE study_program_id=$1 UNION ALL SELECT grade_level_id FROM curriculum_activity_requirements WHERE study_program_id=$1) r")
+    let (total,uncovered):(i64,i64)=sqlx::query_as("SELECT count(*),count(*) FILTER(WHERE NOT grade_level_id=ANY($2)) FROM (SELECT grade_level_id FROM published_curriculum_course_requirements WHERE study_program_id=$1 UNION ALL SELECT grade_level_id FROM published_curriculum_activity_requirements WHERE study_program_id=$1) r")
         .bind(source.id).bind(&covered.0).fetch_one(&mut *tx).await?;
     if total > MAX_COPIED_REQUIREMENTS || uncovered > 0 {
         return Err(AppError::ValidationError(
@@ -531,8 +545,8 @@ pub async fn copy_program(
     validate_name(name)?;
     sqlx::query(r#"INSERT INTO curriculum_term_slots(id,curriculum_level_id,sequence,term_type,type_occurrence,name)
         SELECT gen_random_uuid(),$1,(SELECT COALESCE(max(sequence),0) FROM curriculum_term_slots WHERE curriculum_level_id=$1)+row_number() OVER(ORDER BY s.sequence,s.id)::integer,s.term_type,s.type_occurrence,s.name
-        FROM curriculum_term_slots s WHERE s.curriculum_level_id=$2
-        AND EXISTS(SELECT 1 FROM (SELECT term_slot_id FROM curriculum_course_requirements WHERE study_program_id=$3 UNION SELECT term_slot_id FROM curriculum_activity_requirements WHERE study_program_id=$3) used WHERE used.term_slot_id=s.id)
+        FROM published_curriculum_term_slots s WHERE s.curriculum_level_id=$2
+        AND EXISTS(SELECT 1 FROM (SELECT term_slot_id FROM published_curriculum_course_requirements WHERE study_program_id=$3 UNION SELECT term_slot_id FROM published_curriculum_activity_requirements WHERE study_program_id=$3) used WHERE used.term_slot_id=s.id)
         AND NOT EXISTS(SELECT 1 FROM curriculum_term_slots t WHERE t.curriculum_level_id=$1 AND t.term_type=s.term_type AND t.type_occurrence=s.type_occurrence)"#)
         .bind(level_id).bind(source.curriculum_level_id).bind(source.id).execute(&mut *tx).await?;
     let id = Uuid::new_v4();
@@ -540,12 +554,12 @@ pub async fn copy_program(
         .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(name).bind(&source.name_en).execute(&mut *tx).await?;
     sqlx::query(r#"INSERT INTO curriculum_course_requirements(id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order)
         SELECT gen_random_uuid(),$1,$2,r.subject_version_id,r.grade_level_id,target.id,r.requirement_kind,r.display_order
-        FROM curriculum_course_requirements r JOIN curriculum_term_slots original ON original.id=r.term_slot_id
+        FROM published_curriculum_course_requirements r JOIN published_curriculum_term_slots original ON original.id=r.term_slot_id
         JOIN curriculum_term_slots target ON target.curriculum_level_id=$1 AND target.term_type=original.term_type AND target.type_occurrence=original.type_occurrence
         WHERE r.study_program_id=$3"#).bind(level_id).bind(id).bind(source.id).execute(&mut *tx).await?;
     sqlx::query(r#"INSERT INTO curriculum_activity_requirements(id,curriculum_level_id,study_program_id,activity_version_id,grade_level_id,term_slot_id,requirement_kind,display_order)
         SELECT gen_random_uuid(),$1,$2,r.activity_version_id,r.grade_level_id,target.id,r.requirement_kind,r.display_order
-        FROM curriculum_activity_requirements r JOIN curriculum_term_slots original ON original.id=r.term_slot_id
+        FROM published_curriculum_activity_requirements r JOIN published_curriculum_term_slots original ON original.id=r.term_slot_id
         JOIN curriculum_term_slots target ON target.curriculum_level_id=$1 AND target.term_type=original.term_type AND target.type_occurrence=original.type_occurrence
         WHERE r.study_program_id=$3"#).bind(level_id).bind(id).bind(source.id).execute(&mut *tx).await?;
     let copied:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM curriculum_course_requirements WHERE study_program_id=$1)+(SELECT count(*) FROM curriculum_activity_requirements WHERE study_program_id=$1)").bind(id).fetch_one(&mut *tx).await?;
@@ -575,4 +589,37 @@ mod tests {
         let id = Uuid::from_u128(42);
         assert_eq!(internal_code("LEVEL", id), format!("LEVEL-{}", id.simple()));
     }
+}
+
+pub(super) async fn level_from_publication(
+    pool: &PgPool,
+    id: Uuid,
+    publication: Option<Uuid>,
+) -> Result<CurriculumLevel, AppError> {
+    let source = super::curriculum_publications::source("curriculum_levels", publication)?;
+    let columns = if publication.is_some() {
+        LEVEL_COLUMNS.replace("CASE WHEN e.draft_id IS NOT NULL THEN 'draft' ELSE e.status END AS status,e.draft_id,NULL::uuid AS publication_id", "'published'::text AS status,NULL::uuid AS draft_id,l.publication_id")
+    } else {
+        LEVEL_COLUMNS.to_owned()
+    };
+    let query = format!("SELECT {columns} FROM {source} l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1");
+    sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(id)
+        .bind(publication)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบระดับการศึกษาในชุดหลักสูตรที่เลือก".into()))
+}
+pub(super) async fn programs_from_publication(
+    pool: &PgPool,
+    level_id: Uuid,
+    publication: Option<Uuid>,
+) -> Result<Vec<StudyProgram>, AppError> {
+    let source = super::curriculum_publications::source("study_programs", publication)?;
+    let query = format!("SELECT {PROGRAM_COLUMNS} FROM {source} WHERE curriculum_level_id=$1 ORDER BY is_default DESC,code,id");
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(level_id)
+        .bind(publication)
+        .fetch_all(pool)
+        .await?)
 }
