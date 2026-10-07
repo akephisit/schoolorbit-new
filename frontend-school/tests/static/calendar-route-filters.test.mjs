@@ -60,3 +60,26 @@ test('calendar malformed month and unsupported enums fall back without false con
 	assert.equal(result.filters.audience, undefined);
 	assert.equal(result.filters.visibility, undefined);
 });
+
+const requestSource = await readFile(
+	new URL('../../src/lib/utils/calendar-request-filters.ts', import.meta.url),
+	'utf8'
+);
+const requestCode = ts.transpileModule(requestSource, {
+	compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+}).outputText;
+const requestFilters = {};
+new Function('exports', requestCode)(requestFilters);
+const parseRequests = (query) =>
+	requestFilters.calendarRequestFilters(
+		new URL(`https://tenant.example/staff/calendar/requests?${query}`)
+	);
+test('review defaults to pending and normalizes old approved links while own history keeps every status', () => {
+	assert.equal(parseRequests('review=true').status, 'pending');
+	assert.equal(parseRequests('review=true&status=approved').status, 'pending');
+	assert.equal(parseRequests('review=true&status=rejected').status, 'rejected');
+	assert.equal(parseRequests('review=true&status=all').status, undefined);
+	assert.equal(parseRequests('status=approved').status, 'approved');
+	assert.equal(parseRequests('').status, undefined);
+	assert.equal(parseRequests('offset=-1').offset, 0);
+});

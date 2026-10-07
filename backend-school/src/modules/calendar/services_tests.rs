@@ -518,6 +518,61 @@ async fn review_queue_is_fifo_across_pages_while_own_history_is_newest_first() {
         .unwrap();
     assert_eq!(own.records[0].title, "Queue 28");
 
+    requests::approve_request(
+        &pool,
+        &manager,
+        first.records[0].id,
+        payload_event_for_pending_test(calendar_today(), fixture.academic_year_id),
+    )
+    .await
+    .unwrap();
+    let remaining = requests::list_requests(
+        &pool,
+        &manager,
+        CalendarRequestQuery {
+            review: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(remaining.records.len(), 25);
+    assert!(remaining.has_more);
+    assert_eq!(remaining.records[0].title, "Queue 01");
+    assert_eq!(remaining.records[24].title, "Queue 25");
+    let final_page = requests::list_requests(
+        &pool,
+        &manager,
+        CalendarRequestQuery {
+            review: true,
+            offset: Some(25),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        final_page
+            .records
+            .iter()
+            .map(|row| row.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Queue 26", "Queue 27", "Queue 28"]
+    );
+    assert!(!final_page.has_more);
+    let approved_history = requests::list_requests(
+        &pool,
+        &manager,
+        CalendarRequestQuery {
+            status: Some(CalendarRequestStatus::Approved),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(approved_history.records.len(), 1);
+    assert_eq!(approved_history.records[0].title, "Queue 00");
+
     sqlx::query("INSERT INTO calendar_event_requests(id,requested_by,title,description,start_date,end_date,all_day,created_at)
         SELECT ('00000000-0000-0000-0000-'||lpad(sequence::text,12,'0'))::uuid,$1,'Tied '||sequence,'Synthetic detail',$2,$2,true,'2025-01-01 00:00:00+00'
         FROM generate_series(1,2) AS sequence")
@@ -560,6 +615,10 @@ async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_reques
     let other = ActorContext {
         user_id: insert_user(&pool, "staff", "Other requester").await,
         permissions: own.permissions.clone(),
+    };
+    let reader = ActorContext {
+        user_id: fixture.staff_user_id,
+        permissions: vec![codes::CALENDAR_READ_SCHOOL.into()],
     };
     let from = NaiveDate::from_ymd_opt(2027, 6, 1).unwrap();
     let to = from + Duration::days(41);
@@ -613,6 +672,49 @@ async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_reques
     .await
     .unwrap();
     let query = PendingCalendarQuery { from, to };
+    let detail = requests::get_request_for_review(&pool, &manager, other_request.id)
+        .await
+        .unwrap();
+    assert_eq!(detail.id, other_request.id);
+    assert_eq!(detail.description, other_request.description);
+    for denied in [&own, &other, &reader] {
+        assert!(matches!(
+            requests::get_request_for_review(&pool, denied, other_request.id).await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+    assert!(matches!(
+        requests::get_request_for_review(&pool, &manager, Uuid::new_v4()).await,
+        Err(AppError::NotFound(_))
+    ));
+    let queue = requests::list_requests(
+        &pool,
+        &manager,
+        requests::CalendarRequestQuery {
+            review: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(queue
+        .records
+        .iter()
+        .all(|row| row.status != requests::CalendarRequestStatus::Approved));
+    assert!(queue.records.iter().any(|row| row.id == rejected.id));
+    assert!(!queue.records.iter().any(|row| row.id == approved.id));
+    let invalid_review_filter = requests::list_requests(
+        &pool,
+        &manager,
+        requests::CalendarRequestQuery {
+            review: true,
+            status: Some(requests::CalendarRequestStatus::Approved),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(invalid_review_filter.records.is_empty());
     let mine = requests::list_pending_calendar(&pool, &own, query.clone())
         .await
         .unwrap();
@@ -641,10 +743,6 @@ async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_reques
         .await
         .unwrap();
     assert_eq!(all.records.len(), 3);
-    let reader = ActorContext {
-        user_id: fixture.staff_user_id,
-        permissions: vec![codes::CALENDAR_READ_SCHOOL.into()],
-    };
     assert!(matches!(
         requests::list_pending_calendar(&pool, &reader, query.clone()).await,
         Err(AppError::Forbidden(_))

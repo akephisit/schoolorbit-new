@@ -20,6 +20,7 @@ for (const kind of ['events', 'categories', 'tags']) {
 	test(`${kind} can be slow while independent calendar siblings render`, async ({ page }) => {
 		const api = await mockCalendar(page, { hold: kind });
 		await page.goto(calendarPath());
+		await page.getByRole('button', { name: 'เปิดตัวกรองปฏิทิน', exact: true }).click();
 		await expect(page.getByTestId(region).getByRole('status')).toBeVisible();
 		await expect(
 			page.getByTestId(kind === 'events' ? 'calendar-categories' : 'calendar-events')
@@ -32,6 +33,7 @@ for (const kind of ['events', 'categories', 'tags']) {
 	test(`${kind} has focused failure and retry`, async ({ page }) => {
 		const api = await mockCalendar(page, { fail: kind });
 		await page.goto(calendarPath());
+		await page.getByRole('button', { name: 'เปิดตัวกรองปฏิทิน', exact: true }).click();
 		await expect(page.getByTestId(region)).toContainText(`region ${kind} ไม่พร้อม`);
 		await page.getByTestId(region).getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 		await expect(page.getByTestId(region)).not.toContainText(`region ${kind} ไม่พร้อม`);
@@ -52,6 +54,7 @@ test('month and committed search preserve URL history while rereading events onl
 	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page).toHaveURL(/month=2026-11/);
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมพฤศจิกายน');
+	await page.getByRole('button', { name: 'เปิดตัวกรองปฏิทิน', exact: true }).click();
 	await page.getByPlaceholder('ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก').fill('ไม่มีรายการ');
 	await page.getByRole('button', { name: /^กรอง(?: \d+)?$/ }).click();
 	await expect(page).toHaveURL(/q=/);

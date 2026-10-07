@@ -695,7 +695,7 @@
 			"context": "committed calendar month and filters; independent of academic header",
 			"status": "complete",
 			"backendOwner": "school-calendar",
-			"notes": "Direct loader owns concurrent events/categories/tags; shallow history rereads events only. Opened event targets and the optional pending-request overlay are lazy. Pending dates follow month/principal ownership independently of event filters, with scoped bounded reads and cancellation. Typed mutations patch affected regions with owner/draft/disposal guards. SQL audit: date-scoped event query plus three set-based expansions; pending requests use one date-overlap query, no N+1 or justified index change."
+			"notes": "Direct loader owns concurrent events/categories/tags; shallow history rereads events only. Opened event targets and the optional pending-request overlay are lazy. Pending dates follow month/principal ownership independently of event filters, with scoped bounded reads and cancellation. Typed mutations patch affected regions with owner/draft/disposal guards. SQL audit: date-scoped event query plus three set-based expansions; pending requests use one date-overlap query, no N+1 or justified index change. Request decisions use the shared manager-only review dialog, lazy detail and date options, then patch pending markers and approved events independently. Compact filters open beside the pending toggle."
 		},
 		{
 			"route": "staff/calendar/requests",
@@ -705,7 +705,7 @@
 			"context": "own/review scope, status and bounded page",
 			"status": "complete",
 			"backendOwner": "school-calendar",
-			"notes": "Loader owns authorized bounded request list; manager review is oldest-first with a stable ID tie break, while own history is newest-first. Review catalogs and event-date classroom options load only after manager opens approval. Typed decisions patch request state with owner/draft/disposal guards."
+			"notes": "Loader owns authorized bounded request list; manager review is oldest-first with a stable ID tie break, while own history is newest-first. Review catalogs and event-date classroom options load only after manager opens approval. Typed decisions patch request state with owner/draft/disposal guards. Approval queue excludes approved records before pagination and starts with pending; own history preserves decisions. Shared review dialog reconciles late outcomes without changing a newer draft."
 		},
 		{
 			"route": "staff/certificate-requests",

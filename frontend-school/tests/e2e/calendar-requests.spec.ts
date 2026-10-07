@@ -4,7 +4,7 @@ import {
 	calendarPath,
 	nextYear,
 	categoryId,
-	eventId
+	makeApprovedCalendarEvent
 } from './fixtures/calendar-route-data';
 import type { CalendarEventRequest } from '../../src/lib/api/calendar';
 import { id } from './fixtures/staff-home-route-data';
@@ -55,8 +55,8 @@ async function requests(page: Page, failFirst = false) {
 			return reply(route, record);
 		}
 		if (path.endsWith('/approve')) {
-			record = { ...record, status: 'approved', eventId };
-			return reply(route, { request: record, event: { id: eventId, ...payload } });
+			record = { ...record, status: 'approved', eventId: id(145) };
+			return reply(route, { request: record, event: makeApprovedCalendarEvent(payload) });
 		}
 		record = { ...record, ...payload };
 		return reply(route, record, 201);
@@ -150,7 +150,10 @@ test('manager selects event settings before approval, with date-specific targets
 	await page.getByRole('button', { name: 'ไม่ระบุหมวดหมู่', exact: true }).click();
 	await page.getByRole('option', { name: 'หมวดแรก', exact: true }).click();
 	await page.getByRole('button', { name: 'อนุมัติและเพิ่มลงปฏิทิน', exact: true }).click();
-	await expect(page.getByTestId('calendar-requests')).toContainText('อนุมัติแล้ว');
+	await expect(
+		page.getByTestId('calendar-requests').getByRole('heading', { name: pending.title, exact: true })
+	).toHaveCount(0);
+	await expect(page.getByTestId('calendar-requests')).toContainText('ยังไม่มีคำร้องในรายการนี้');
 	expect(writes[0].path).toBe(`/api/calendar/requests/${pending.id}/approve`);
 	expect(writes[0].payload.startDate).toBe(pending.startDate);
 	expect(writes[0].payload).not.toHaveProperty('academicYearId');
@@ -172,6 +175,11 @@ test('rejection requires and displays a reason without creating an event', async
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('textbox').fill('ขอปรับกำหนดการ');
 	await dialog.getByRole('button', { name: 'บันทึกผลไม่อนุมัติ', exact: true }).click();
+	await expect(
+		page.getByTestId('calendar-requests').getByRole('heading', { name: pending.title, exact: true })
+	).toHaveCount(0);
+	await page.getByRole('button', { name: 'สถานะคำร้อง', exact: true }).click();
+	await page.getByRole('option', { name: 'ไม่อนุมัติ', exact: true }).click();
 	await expect(page.getByTestId('calendar-requests')).toContainText('ขอปรับกำหนดการ');
 	expect(writes[0].payload).toEqual({ reason: 'ขอปรับกำหนดการ' });
 	expect(api.writes).toHaveLength(0);
@@ -187,4 +195,58 @@ test('a requester cannot load the manager review queue', async ({ page }) => {
 	await page.goto('/staff/calendar/requests?review=true');
 	await expect(page.getByText('ไม่มีสิทธิ์ดูคำร้องนี้', { exact: true })).toBeVisible();
 	expect(reads).toHaveLength(0);
+});
+
+test('review starts with pending and excludes approvals even in all results while own history retains them', async ({
+	page
+}) => {
+	await mockCalendar(page);
+	const reads: URL[] = [];
+	await page.route(
+		(url) => url.pathname === '/api/calendar/requests',
+		(route) => {
+			reads.push(new URL(route.request().url()));
+			return route.fulfill({
+				contentType: 'application/json',
+				body: JSON.stringify({
+					success: true,
+					data: {
+						records: [
+							pending,
+							{
+								...pending,
+								id: id(121),
+								title: 'อนุมัติก่อนแล้ว',
+								status: 'approved',
+								eventId: id(145)
+							},
+							{
+								...pending,
+								id: id(122),
+								title: 'ไม่อนุมัติก่อนแล้ว',
+								status: 'rejected',
+								rejectionReason: 'วันซ้ำ'
+							}
+						],
+						hasMore: false
+					}
+				})
+			});
+		}
+	);
+	await page.goto('/staff/calendar/requests?review=true');
+	const list = page.getByTestId('calendar-requests');
+	await expect(list).toContainText(pending.title);
+	expect(reads[0].searchParams.get('status')).toBe('pending');
+	await expect(list.getByRole('heading', { name: 'อนุมัติก่อนแล้ว', exact: true })).toHaveCount(0);
+	await expect(list.getByRole('heading', { name: 'ไม่อนุมัติก่อนแล้ว', exact: true })).toHaveCount(
+		0
+	);
+	await page.getByRole('button', { name: 'สถานะคำร้อง', exact: true }).click();
+	await expect(page.getByRole('option', { name: 'อนุมัติแล้ว', exact: true })).toHaveCount(0);
+	await page.getByRole('option', { name: 'ยังไม่อนุมัติทั้งหมด', exact: true }).click();
+	await expect(list).toContainText('ไม่อนุมัติก่อนแล้ว');
+	await expect(list.getByRole('heading', { name: 'อนุมัติก่อนแล้ว', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'คำร้องของฉัน', exact: true }).click();
+	await expect(list).toContainText('อนุมัติก่อนแล้ว');
 });

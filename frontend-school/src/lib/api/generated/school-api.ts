@@ -3788,6 +3788,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/calendar/requests/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getCalendarRequestForReview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/calendar/requests/{id}/approve': {
 		parameters: {
 			query?: never;
@@ -38815,7 +38831,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Own requests or authorized school review queue */
+			/** @description Own request history or authorized oldest-first school review queue excluding approved requests */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -38895,6 +38911,56 @@ export interface operations {
 			};
 			/** @description Request capability required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getCalendarRequestForReview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Request ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Full request details loaded when a calendar manager opens review */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarEventRequest'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff calendar manager required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request missing */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

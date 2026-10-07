@@ -1,6 +1,11 @@
 import type { Page, Route } from '@playwright/test';
 import { mockStaffHome, id, year, nextYear } from './staff-home-route-data';
-import type { CalendarEvent, CalendarCategory, CalendarTag } from '../../../src/lib/api/calendar';
+import type {
+	CalendarEvent,
+	CalendarCategory,
+	CalendarTag,
+	CreateCalendarEventRequest
+} from '../../../src/lib/api/calendar';
 export { year, nextYear };
 export const categoryId = id(110),
 	tagId = id(111),
@@ -160,4 +165,35 @@ export async function mockCalendar(
 		}
 	);
 	return { ...base, release, reads, writes, count: (path: string) => counts.get(path) ?? 0 };
+}
+
+export function makeApprovedCalendarEvent(payload: CreateCalendarEventRequest): CalendarEvent {
+	const timestamp = '2026-10-01T02:00:00Z';
+	return {
+		id: id(145),
+		categoryId: payload.categoryId ?? null,
+		categoryName: payload.categoryId ? 'หมวดแรก' : null,
+		categoryColor: payload.categoryId ? '#2563eb' : null,
+		title: payload.title,
+		description: payload.description ?? null,
+		location: payload.location ?? null,
+		startDate: payload.startDate,
+		endDate: payload.endDate,
+		startTime: payload.startTime ?? null,
+		endTime: payload.endTime ?? null,
+		allDay: payload.allDay,
+		isPublic: payload.isPublic,
+		targets: payload.targets.map((target, index) => ({
+			id: id(150 + index),
+			audienceType: target.audienceType,
+			gradeLevelId: target.gradeLevelId ?? null,
+			homeroomId: target.homeroomId ?? null
+		})),
+		tags: (payload.tagIds ?? []).map((tagId) => ({ id: tagId, name: 'แท็กแรก' })),
+		reminders: [],
+		createdBy: null,
+		updatedBy: null,
+		createdAt: timestamp,
+		updatedAt: timestamp
+	};
 }

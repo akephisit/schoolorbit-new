@@ -11,29 +11,13 @@
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import CalendarEventDialog from '#lib/components/calendar/CalendarEventDialog.svelte';
-	import {
-		listCalendarRequests,
-		listCalendarCategories,
-		listCalendarTags,
-		listCalendarTargetOptions,
-		approveCalendarRequest,
-		rejectCalendarRequest,
-		type CalendarEventRequest,
-		type CalendarTargetOptions,
-		type CalendarCategory,
-		type CalendarTag,
-		type CreateCalendarEventRequest
-	} from '#lib/api/calendar.js';
+	import CalendarRequestReviewDialog from '#lib/components/calendar/CalendarRequestReviewDialog.svelte';
+	import { listCalendarRequests, type CalendarEventRequest } from '#lib/api/calendar.js';
 	import { formatCalendarDate } from '#lib/utils/calendar.js';
-	import { toast } from 'svelte-sonner';
 	let { data }: PageProps = $props();
 	const identity = $derived.by(() => {
 		void $authStore;
@@ -55,31 +39,25 @@
 	let owner = '',
 		disposed = false,
 		consumed: typeof data.requests | null = null;
-	const listRequest = new LatestRequest(),
-		optionRequest = new LatestRequest();
-	let reviewing = $state<CalendarEventRequest | null>(null),
-		rejecting = $state<CalendarEventRequest | null>(null);
-	let reviewOpen = $state(false),
-		rejectOpen = $state(false),
-		session = $state(0),
-		saving = $state(false),
-		decisionError = $state(''),
-		reason = $state('');
-	let catalogs = $state.raw<{ categories: CalendarCategory[]; tags: CalendarTag[] }>({
-		categories: [],
-		tags: []
-	});
-	let targetOptions = $state.raw<CalendarTargetOptions>({ gradeLevels: [], homerooms: [] });
-	let optionsDate = $state(''),
-		optionsLoading = $state(false),
-		optionsLoaded = $state(false),
-		optionsError = $state('');
-	const statusOptions = [
+	const listRequest = new LatestRequest();
+	let reviewTarget = $state<CalendarEventRequest | null>(null),
+		reviewOpen = $state(false),
+		reviewMode = $state<'approve' | 'reject'>('approve'),
+		session = $state(0);
+	const allStatusOptions = [
 		{ value: 'all', label: 'ทุกสถานะ' },
 		{ value: 'pending', label: 'รออนุมัติ' },
 		{ value: 'approved', label: 'อนุมัติแล้ว' },
 		{ value: 'rejected', label: 'ไม่อนุมัติ' }
 	];
+	const statusOptions = $derived(
+		data.query.review
+			? [
+					{ value: 'all', label: 'ยังไม่อนุมัติทั้งหมด' },
+					...allStatusOptions.filter((item) => item.value !== 'all' && item.value !== 'approved')
+				]
+			: allStatusOptions
+	);
 	const statusLabel = $derived(
 		statusOptions.find((item) => item.value === (data.query.status ?? 'all'))?.label ?? 'ทุกสถานะ'
 	);
@@ -98,7 +76,7 @@
 			error = 'ไม่มีสิทธิ์ดูคำร้อง';
 			return;
 		}
-		records = result.data.page.records;
+		records = result.data.page.records.filter(matchesQueue);
 		hasMore = result.data.page.hasMore;
 		loaded = true;
 		error = '';
@@ -111,16 +89,12 @@
 			if (owner !== key || !canRead) {
 				owner = key;
 				listRequest.abort();
-				optionRequest.abort();
 				records = [];
 				loaded = false;
 				loading = canRead;
 				error = '';
 				reviewOpen = false;
-				rejectOpen = false;
-				reviewing = null;
-				rejecting = null;
-				saving = false;
+				reviewTarget = null;
 				session++;
 			}
 			if (!canRead) return;
@@ -135,7 +109,6 @@
 	onDestroy(() => {
 		disposed = true;
 		listRequest.abort();
-		optionRequest.abort();
 	});
 	async function reload() {
 		if (!allowed) return;
@@ -163,105 +136,24 @@
 		}
 		void goto(resolve('staff/calendar/requests') + url.search, { reset: false });
 	}
-	async function loadOptions() {
-		if (!reviewOpen || !manager || !optionsDate) return;
-		const key = ownerKey,
-			activeSession = session,
-			ticket = optionRequest.begin();
-		optionsLoading = true;
-		optionsError = '';
-		try {
-			const [categories, tags, targets] = await Promise.all([
-				listCalendarCategories({ signal: ticket.signal }),
-				listCalendarTags({ signal: ticket.signal }),
-				listCalendarTargetOptions(optionsDate, { signal: ticket.signal })
-			]);
-			if (
-				!current(key) ||
-				activeSession !== session ||
-				!reviewOpen ||
-				!optionRequest.isCurrent(ticket.revision)
-			)
-				return;
-			catalogs = { categories, tags };
-			targetOptions = targets;
-			optionsLoaded = true;
-		} catch (error: unknown) {
-			if (
-				current(key) &&
-				activeSession === session &&
-				reviewOpen &&
-				optionRequest.isCurrent(ticket.revision)
-			)
-				optionsError = error instanceof Error ? error.message : 'โหลดตัวเลือกไม่สำเร็จ';
-		} finally {
-			if (current(key) && activeSession === session && optionRequest.isCurrent(ticket.revision))
-				optionsLoading = false;
-		}
+	function matchesQueue(request: CalendarEventRequest) {
+		return (
+			(!data.query.review || request.status !== 'approved') &&
+			(!data.query.status || request.status === data.query.status)
+		);
 	}
-	function review(request: CalendarEventRequest) {
-		if (!manager || request.status !== 'pending') return;
-		reviewing = request;
-		optionsDate = request.startDate;
-		optionsLoaded = false;
-		optionsError = '';
-		decisionError = '';
+	function openDecision(request: CalendarEventRequest, mode: 'approve' | 'reject') {
+		if (!allowed || !manager || request.status !== 'pending') return;
+		reviewTarget = request;
+		reviewMode = mode;
 		session++;
 		reviewOpen = true;
-		void loadOptions();
 	}
-	function changeDate(date: string) {
-		if (date === optionsDate) return;
-		optionsDate = date;
-		optionsLoaded = false;
-		void loadOptions();
-	}
-	function patch(request: CalendarEventRequest) {
-		records = records
-			.map((item) => (item.id === request.id ? request : item))
-			.filter((item) => !data.query.status || item.status === data.query.status);
-	}
-	async function decide(payload: CreateCalendarEventRequest | null) {
-		const target = payload ? reviewing : rejecting;
-		if (
-			!target ||
-			!manager ||
-			saving ||
-			(payload && (!optionsLoaded || optionsLoading || optionsError))
-		)
-			return;
-		if (!payload && !reason.trim()) {
-			decisionError = 'กรุณาระบุเหตุผลที่ไม่อนุมัติ';
-			return;
-		}
-		const key = ownerKey,
-			activeSession = session;
-		const owns = () =>
-			current(key) && manager && activeSession === session && (payload ? reviewOpen : rejectOpen);
-		saving = true;
-		decisionError = '';
+	function patch(request: CalendarEventRequest, key: string) {
+		if (!current(key) || !manager) return;
 		listRequest.abort();
 		loading = false;
-		try {
-			const result = payload
-				? (await approveCalendarRequest(target.id, payload)).request
-				: await rejectCalendarRequest(target.id, reason.trim());
-			if (!current(key) || !manager) return;
-			listRequest.abort();
-			loading = false;
-			patch(result);
-			if (!owns()) return;
-			reviewOpen = false;
-			rejectOpen = false;
-			toast.success(payload ? 'อนุมัติแล้ว กิจกรรมขึ้นปฏิทินแล้ว' : 'บันทึกผลไม่อนุมัติแล้ว');
-		} catch (error: unknown) {
-			if (owns()) {
-				decisionError = error instanceof Error ? error.message : 'บันทึกผลไม่สำเร็จ';
-				toast.error(decisionError);
-			}
-		} finally {
-			if (current(key) && activeSession === session) saving = false;
-		}
+		records = records.map((item) => (item.id === request.id ? request : item)).filter(matchesQueue);
 	}
 </script>
 
@@ -272,16 +164,18 @@
 		{#if manager}<div class="flex flex-wrap gap-2">
 				<Button
 					variant={!data.query.review ? 'default' : 'outline'}
-					onclick={() => navigate({ review: '', offset: '' })}>คำร้องของฉัน</Button
+					onclick={() => navigate({ review: '', status: '', offset: '' })}>คำร้องของฉัน</Button
 				><Button
 					variant={data.query.review ? 'default' : 'outline'}
-					onclick={() => navigate({ review: 'true', offset: '' })}>คิวอนุมัติทั้งหมด</Button
+					onclick={() => navigate({ review: 'true', status: 'pending', offset: '' })}
+					>คิวอนุมัติทั้งหมด</Button
 				>
 			</div>{/if}
 		<Select.Root
 			type="single"
 			value={data.query.status ?? 'all'}
-			onValueChange={(value) => navigate({ status: value === 'all' ? '' : value, offset: '' })}
+			onValueChange={(value) =>
+				navigate({ status: value === 'all' && !data.query.review ? '' : value, offset: '' })}
 		>
 			<Select.Trigger class="w-40" aria-label="สถานะคำร้อง">{statusLabel}</Select.Trigger
 			><Select.Content
@@ -329,7 +223,8 @@
 									</p>
 								</div>
 								<Badge variant={request.status === 'pending' ? 'secondary' : 'outline'}
-									>{statusOptions.find((option) => option.value === request.status)?.label}</Badge
+									>{allStatusOptions.find((option) => option.value === request.status)
+										?.label}</Badge
 								>
 							</div>
 							<p class="whitespace-pre-wrap break-words text-sm">{request.description}</p>
@@ -352,16 +247,12 @@
 							{#if data.query.review && manager && request.status === 'pending'}<div
 									class="flex flex-wrap gap-2"
 								>
-									<Button size="sm" onclick={() => review(request)}>ตรวจและอนุมัติ</Button><Button
+									<Button size="sm" onclick={() => openDecision(request, 'approve')}
+										>ตรวจและอนุมัติ</Button
+									><Button
 										variant="outline"
 										size="sm"
-										onclick={() => {
-											session++;
-											reason = '';
-											decisionError = '';
-											rejecting = request;
-											rejectOpen = true;
-										}}>ไม่อนุมัติ</Button
+										onclick={() => openDecision(request, 'reject')}>ไม่อนุมัติ</Button
 									>
 								</div>{/if}
 						</article>
@@ -386,58 +277,16 @@
 			{/if}
 		</section>
 	{/if}
-	{#if reviewOpen && reviewing && manager}{#key session}<CalendarEventDialog
+	{#if reviewTarget && manager && allowed}
+		{#key session}
+			{@const decisionOwner = ownerKey}
+			<CalendarRequestReviewDialog
 				bind:open={reviewOpen}
-				request={reviewing}
-				categories={catalogs.categories}
-				tags={catalogs.tags}
-				gradeLevels={targetOptions.gradeLevels}
-				homerooms={targetOptions.homerooms}
-				{saving}
-				{optionsLoading}
-				{optionsLoaded}
-				{optionsError}
-				error={decisionError}
-				onretryoptions={loadOptions}
-				ondatechange={changeDate}
-				onsave={(payload) => void decide(payload)}
-				submitLabel="อนุมัติและเพิ่มลงปฏิทิน"
-			/>{/key}{/if}
-	<Dialog.Root bind:open={rejectOpen}
-		><Dialog.Content
-			><Dialog.Header
-				><Dialog.Title>ไม่อนุมัติคำร้อง</Dialog.Title><Dialog.Description
-					>{rejecting?.title}</Dialog.Description
-				></Dialog.Header
-			>
-			<form
-				class="space-y-4"
-				onsubmit={(event) => {
-					event.preventDefault();
-					void decide(null);
-				}}
-			>
-				<div class="space-y-2">
-					<Label for="rejection-reason">เหตุผลที่ไม่อนุมัติ *</Label><Textarea
-						id="rejection-reason"
-						bind:value={reason}
-						required
-						maxlength={2000}
-						disabled={saving}
-					/>
-				</div>
-				{#if decisionError}<p role="alert" class="text-sm text-destructive">
-						{decisionError}
-					</p>{/if}<Dialog.Footer
-					><Button
-						variant="outline"
-						type="button"
-						disabled={saving}
-						onclick={() => (rejectOpen = false)}>ยกเลิก</Button
-					><LoadingButton type="submit" loading={saving}>บันทึกผลไม่อนุมัติ</LoadingButton
-					></Dialog.Footer
-				>
-			</form></Dialog.Content
-		></Dialog.Root
-	>
+				target={reviewTarget}
+				mode={reviewMode}
+				initialRequest={reviewTarget}
+				ondecided={(request) => patch(request, decisionOwner)}
+			/>
+		{/key}
+	{/if}
 </PageShell>

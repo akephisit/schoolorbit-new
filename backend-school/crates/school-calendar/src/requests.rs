@@ -166,7 +166,7 @@ pub async fn list_requests(
         CalendarRequestStatus::Rejected => "rejected",
     });
     let order = if query.review { "ASC" } else { "DESC" };
-    let sql=format!("{SELECT_REQUEST} WHERE ($1::boolean OR r.requested_by=$2) AND ($3::text IS NULL OR r.status=$3) ORDER BY r.created_at {order},r.id {order} LIMIT 26 OFFSET $4");
+    let sql=format!("{SELECT_REQUEST} WHERE ($1::boolean OR r.requested_by=$2) AND (NOT $1::boolean OR r.status<>'approved') AND ($3::text IS NULL OR r.status=$3) ORDER BY r.created_at {order},r.id {order} LIMIT 26 OFFSET $4");
     let mut records = sqlx::query_as::<_, CalendarEventRequest>(sqlx::AssertSqlSafe(sql))
         .bind(query.review)
         .bind(actor.user_id)
@@ -219,6 +219,15 @@ async fn get_request(pool: &PgPool, id: Uuid) -> Result<CalendarEventRequest, Ap
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบคำร้อง".into()))
+}
+
+pub async fn get_request_for_review(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+) -> Result<CalendarEventRequest, AppError> {
+    require_request_access(actor, true)?;
+    get_request(pool, id).await
 }
 
 pub async fn create_request(

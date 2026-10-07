@@ -77944,7 +77944,7 @@
                 }
               }
             },
-            "description": "Own requests or authorized school review queue"
+            "description": "Own request history or authorized oldest-first school review queue excluding approved requests"
           },
           "400": {
             "content": {
@@ -78033,6 +78033,68 @@
               }
             },
             "description": "Request capability required"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/requests/{id}": {
+      "get": {
+        "operationId": "getCalendarRequestForReview",
+        "parameters": [
+          {
+            "description": "Request ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarEventRequest"
+                }
+              }
+            },
+            "description": "Full request details loaded when a calendar manager opens review"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff calendar manager required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request missing"
           }
         },
         "tags": [

@@ -19,19 +19,21 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { Separator } from '#lib/components/ui/separator/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
 	import CalendarEventList from '#lib/components/calendar/CalendarEventList.svelte';
 	import CalendarEventDialog from '#lib/components/calendar/CalendarEventDialog.svelte';
 	import CalendarCategoryDialog from '#lib/components/calendar/CalendarCategoryDialog.svelte';
 	import CalendarEmbedDialog from '#lib/components/calendar/CalendarEmbedDialog.svelte';
 	import CalendarRequestDialog from '#lib/components/calendar/CalendarRequestDialog.svelte';
+	import CalendarRequestReviewDialog from '#lib/components/calendar/CalendarRequestReviewDialog.svelte';
 	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
 	import {
 		type CalendarAudienceType,
 		type CalendarTargetOptions,
 		type CreateCalendarRequest,
 		type PendingCalendarRequest,
+		type CalendarEventRequest,
 		listPendingCalendarRequests,
 		createCalendarRequest,
 		listCalendarTargetOptions,
@@ -107,7 +109,13 @@
 	let requesting = $state(false);
 	let requestSession = $state(0);
 	let requestError = $state('');
-	let showPendingRequests = $state(false);
+	let showPendingRequests = $state(false),
+		filterOpen = $state(false);
+	let reviewIdentity = $state('');
+	let reviewTarget = $state<PendingCalendarRequest | null>(null),
+		reviewOpen = $state(false),
+		reviewMode = $state<'approve' | 'reject'>('approve'),
+		reviewSession = $state(0);
 	let pendingRequests = $state.raw<PendingCalendarRequest[]>([]);
 	let pendingLoading = $state(false),
 		pendingLoaded = $state(false),
@@ -344,6 +352,9 @@
 			requestDialogOpen = false;
 			requesting = false;
 			showPendingRequests = false;
+			filterOpen = false;
+			reviewTarget = null;
+			reviewOpen = false;
 			categoryDialogOpen = false;
 			embedDialogOpen = false;
 			deleteDialogOpen = false;
@@ -484,6 +495,31 @@
 		pendingRequest.abort();
 	});
 
+	function reviewPendingRequest(request: PendingCalendarRequest, mode: 'approve' | 'reject') {
+		if (!canReadCalendar || !canManageCalendar) return;
+		reviewIdentity = identityOwner;
+		reviewTarget = request;
+		reviewMode = mode;
+		reviewSession++;
+		reviewOpen = true;
+	}
+	function patchRequestDecision(
+		request: CalendarEventRequest,
+		event: CalendarEvent | undefined,
+		identity: string
+	) {
+		if (disposed || identity !== identityOwner || !canReadCalendar || !canManageCalendar) return;
+		pendingRequest.abort();
+		pendingLoading = false;
+		pendingRequests = pendingRequests.filter((item) => item.id !== request.id);
+		if (event) {
+			eventsRequest.abort();
+			loading = false;
+			patchSavedEvent(event);
+			if (!eventsLoaded) void loadCalendar();
+		}
+		if (showPendingRequests && (!pendingLoaded || pendingHasMore)) void loadPendingRequests();
+	}
 	function sortCalendarEvents(items: CalendarEvent[]) {
 		return [...items].sort(
 			(left, right) =>
@@ -1041,6 +1077,130 @@
 							<ClipboardList class="size-4" />แสดงคำร้องรออนุมัติ
 						</Button>
 					{/if}
+					<Popover.Root bind:open={filterOpen}>
+						<Popover.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant={activeFilterCount > 0 ? 'secondary' : 'outline'}
+									size="sm"
+									aria-label="เปิดตัวกรองปฏิทิน"
+								>
+									<SlidersHorizontal class="size-4" />ตัวกรอง
+									{#if activeFilterCount > 0}<Badge variant="secondary">{activeFilterCount}</Badge
+										>{/if}
+								</Button>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content
+							align="end"
+							collisionPadding={12}
+							class="w-80 max-w-[calc(100vw-2rem)] max-h-96 overflow-y-auto p-4 sm:w-xl"
+						>
+							<form
+								class="grid gap-3 sm:grid-cols-2"
+								aria-label="ตัวกรองปฏิทิน"
+								onsubmit={(submitEvent) => {
+									submitEvent.preventDefault();
+									filterOpen = false;
+									commitFilters();
+								}}
+							>
+								<div class="relative sm:col-span-2">
+									<Search
+										class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+									/>
+									<Input
+										class="pl-9"
+										placeholder="ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก"
+										bind:value={search}
+									/>
+								</div>
+								<div data-testid="calendar-categories" aria-busy={categoriesLoading}>
+									{#if categoriesError}<PageState
+											variant="error"
+											title="โหลดหมวดหมู่ไม่สำเร็จ"
+											description={categoriesError}
+											actionLabel="ลองอีกครั้ง"
+											onaction={loadCategories}
+										/>{/if}
+									{#if categoriesLoading && !categoriesLoaded}<div
+											role="status"
+											aria-label="กำลังโหลดหมวดหมู่"
+										>
+											<Skeleton class="h-9 w-full" />
+										</div>{:else}<Select.Root
+											type="single"
+											disabled={!categoriesLoaded}
+											bind:value={categoryId}
+										>
+											<Select.Trigger class="w-full">{categoryLabel}</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="">ทุกหมวดหมู่</Select.Item>
+												{#each activeCategories as category (category.id)}
+													<Select.Item value={category.id}>{category.name}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>{/if}
+								</div>
+								<div data-testid="calendar-tags" aria-busy={tagsLoading}>
+									{#if tagsError}<PageState
+											variant="error"
+											title="โหลดแท็กไม่สำเร็จ"
+											description={tagsError}
+											actionLabel="ลองอีกครั้ง"
+											onaction={loadTags}
+										/>{/if}
+									{#if tagsLoading && !tagsLoaded}<div role="status" aria-label="กำลังโหลดแท็ก">
+											<Skeleton class="h-9 w-full" />
+										</div>{:else}<Select.Root
+											type="single"
+											disabled={!tagsLoaded}
+											bind:value={tagId}
+										>
+											<Select.Trigger class="w-full">{tagLabel}</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="">ทุกแท็ก</Select.Item>
+												{#each tags as tag (tag.id)}
+													<Select.Item value={tag.id}>{tag.name}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>{/if}
+								</div>
+								<Select.Root type="single" bind:value={audience}>
+									<Select.Trigger class="w-full">{audienceLabel}</Select.Trigger>
+									<Select.Content>
+										{#each audienceOptions as option (option.value)}
+											<Select.Item value={option.value}>{option.label}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+								<Select.Root type="single" bind:value={visibility}>
+									<Select.Trigger class="w-full">{visibilityLabel}</Select.Trigger>
+									<Select.Content>
+										{#each visibilityOptions as option (option.value)}
+											<Select.Item value={option.value}>{option.label}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+								<div class="flex items-center gap-2 sm:col-span-2">
+									<Button type="submit" class="flex-1">
+										<SlidersHorizontal class="size-4" />
+										กรอง
+										{#if activeFilterCount > 0}
+											<Badge variant="secondary" class="ml-1 min-w-5 justify-center px-1">
+												{activeFilterCount}
+											</Badge>
+										{/if}
+									</Button>
+									{#if activeFilterCount > 0}
+										<Button type="button" variant="ghost" onclick={resetFilters}>ล้างตัวกรอง</Button
+										>
+									{/if}
+								</div>
+							</form>
+						</Popover.Content>
+					</Popover.Root>
 					<Button variant="outline" size="sm" onclick={goToToday} disabled={isTodaySelected}>
 						วันนี้
 					</Button>
@@ -1055,129 +1215,7 @@
 					</Button>
 				</div>
 			</div>
-
-			<Separator />
-
-			<form
-				class="grid gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-[minmax(220px,1fr)_160px_160px_160px_160px_auto]"
-				onsubmit={(submitEvent) => {
-					submitEvent.preventDefault();
-					commitFilters();
-				}}
-			>
-				<div class="relative sm:col-span-2 xl:col-span-1">
-					<Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						class="pl-9"
-						placeholder="ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก"
-						bind:value={search}
-					/>
-				</div>
-				<div data-testid="calendar-categories" aria-busy={categoriesLoading}>
-					{#if categoriesError}<PageState
-							variant="error"
-							title="โหลดหมวดหมู่ไม่สำเร็จ"
-							description={categoriesError}
-							actionLabel="ลองอีกครั้ง"
-							onaction={loadCategories}
-						/>{/if}
-					{#if categoriesLoading && !categoriesLoaded}<div
-							role="status"
-							aria-label="กำลังโหลดหมวดหมู่"
-						>
-							<Skeleton class="h-9 w-full" />
-						</div>{:else}<Select.Root
-							type="single"
-							disabled={!categoriesLoaded}
-							bind:value={categoryId}
-						>
-							<Select.Trigger class="w-full">{categoryLabel}</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="">ทุกหมวดหมู่</Select.Item>
-								{#each activeCategories as category (category.id)}
-									<Select.Item value={category.id}>{category.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>{/if}
-				</div>
-				<div data-testid="calendar-tags" aria-busy={tagsLoading}>
-					{#if tagsError}<PageState
-							variant="error"
-							title="โหลดแท็กไม่สำเร็จ"
-							description={tagsError}
-							actionLabel="ลองอีกครั้ง"
-							onaction={loadTags}
-						/>{/if}
-					{#if tagsLoading && !tagsLoaded}<div role="status" aria-label="กำลังโหลดแท็ก">
-							<Skeleton class="h-9 w-full" />
-						</div>{:else}<Select.Root type="single" disabled={!tagsLoaded} bind:value={tagId}>
-							<Select.Trigger class="w-full">{tagLabel}</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="">ทุกแท็ก</Select.Item>
-								{#each tags as tag (tag.id)}
-									<Select.Item value={tag.id}>{tag.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>{/if}
-				</div>
-				<Select.Root type="single" bind:value={audience}>
-					<Select.Trigger class="w-full">{audienceLabel}</Select.Trigger>
-					<Select.Content>
-						{#each audienceOptions as option (option.value)}
-							<Select.Item value={option.value}>{option.label}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Select.Root type="single" bind:value={visibility}>
-					<Select.Trigger class="w-full">{visibilityLabel}</Select.Trigger>
-					<Select.Content>
-						{#each visibilityOptions as option (option.value)}
-							<Select.Item value={option.value}>{option.label}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<div class="flex items-center gap-2 sm:col-span-2 xl:col-span-1">
-					<Button type="submit" class="flex-1 xl:flex-none">
-						<SlidersHorizontal class="size-4" />
-						กรอง
-						{#if activeFilterCount > 0}
-							<Badge variant="secondary" class="ml-1 min-w-5 justify-center px-1">
-								{activeFilterCount}
-							</Badge>
-						{/if}
-					</Button>
-					{#if activeFilterCount > 0}
-						<Button type="button" variant="ghost" onclick={resetFilters}>ล้างตัวกรอง</Button>
-					{/if}
-				</div>
-			</form>
 		</div>
-	{/if}
-	{#if showPendingRequests && canViewPendingRequests}
-		<section aria-label="คำร้องรออนุมัติบนปฏิทิน" aria-busy={pendingLoading} class="space-y-2">
-			<p class="text-sm text-muted-foreground">
-				แถบเส้นประคือคำร้องรออนุมัติ {canManageCalendar ? 'ทั้งหมด' : 'ของฉัน'} ยังไม่ใช่กิจกรรมที่ยืนยันแล้ว
-			</p>
-			{#if pendingLoading}<p role="status" class="text-sm text-muted-foreground">
-					กำลังโหลดคำร้องรออนุมัติ...
-				</p>{/if}
-			{#if pendingError}<PageState
-					variant="error"
-					title="โหลดคำร้องรออนุมัติไม่สำเร็จ"
-					description={pendingError}
-					actionLabel="ลองอีกครั้ง"
-					onaction={loadPendingRequests}
-				/>{/if}
-			{#if pendingLoaded && !pendingLoading && !pendingError && pendingRequests.length === 0}
-				<p class="text-sm text-muted-foreground">ไม่มีคำร้องรออนุมัติในช่วงวันที่นี้</p>
-			{/if}
-			{#if pendingHasMore}
-				<p role="status" class="text-sm text-muted-foreground">
-					มีคำร้องมากกว่า 500 รายการ แสดงบนปฏิทินเพียง 500 รายการแรก
-					กรุณาเปิดคิวคำร้องเพื่อดูทั้งหมด
-				</p>
-			{/if}
-		</section>
 	{/if}
 
 	<section data-testid="calendar-events" aria-busy={loading}>
@@ -1239,6 +1277,7 @@
 						{#if showPendingRequests && canViewPendingRequests}
 							<section
 								aria-label="คำร้องในวันที่เลือก"
+								aria-busy={pendingLoading}
 								class="space-y-3 rounded-xl border border-dashed border-primary/50 bg-card p-4"
 							>
 								<div class="flex flex-wrap items-center justify-between gap-2">
@@ -1252,6 +1291,20 @@
 										{canManageCalendar ? 'เปิดคิวอนุมัติ' : 'คำร้องของฉัน'}
 									</Button>
 								</div>
+								{#if pendingLoading}<p role="status" class="text-sm text-muted-foreground">
+										กำลังโหลดคำร้องรออนุมัติ...
+									</p>{/if}
+								{#if pendingError}<PageState
+										variant="error"
+										title="โหลดคำร้องรออนุมัติไม่สำเร็จ"
+										description={pendingError}
+										actionLabel="ลองอีกครั้ง"
+										onaction={loadPendingRequests}
+									/>{/if}
+								{#if pendingHasMore}<p role="status" class="text-sm text-muted-foreground">
+										มีคำร้องมากกว่า 500 รายการ แสดงบนปฏิทินเพียง 500 รายการแรก
+										กรุณาเปิดคิวคำร้องเพื่อดูทั้งหมด
+									</p>{/if}
 								{#each selectedDateRequests as request (request.id)}
 									<article class="space-y-1 rounded-lg border border-dashed bg-background p-3">
 										<div class="flex items-start justify-between gap-2">
@@ -1270,6 +1323,16 @@
 													request.endDate
 												)}
 											</p>{/if}
+										{#if canManageCalendar}<div class="flex flex-wrap gap-2 pt-2">
+												<Button size="sm" onclick={() => reviewPendingRequest(request, 'approve')}
+													>ตรวจและอนุมัติ</Button
+												>
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => reviewPendingRequest(request, 'reject')}>ไม่อนุมัติ</Button
+												>
+											</div>{/if}
 									</article>
 								{:else}
 									{#if pendingLoaded && !pendingError && !pendingLoading}<p
@@ -1322,6 +1385,20 @@
 				optionsError={manageOptionsError}
 				onretryoptions={ensureManageOptions}
 				onsave={saveEvent}
+			/>
+		{/key}
+	{/if}
+	{#if reviewTarget && canReadCalendar && canManageCalendar}
+		{#key reviewSession}
+			{@const decisionOwner = reviewIdentity}
+			<CalendarRequestReviewDialog
+				bind:open={reviewOpen}
+				target={reviewTarget}
+				mode={reviewMode}
+				initialCatalogs={categoriesLoaded && tagsLoaded && !categoriesError && !tagsError
+					? { categories, tags }
+					: undefined}
+				ondecided={(request, event) => patchRequestDecision(request, event, decisionOwner)}
 			/>
 		{/key}
 	{/if}

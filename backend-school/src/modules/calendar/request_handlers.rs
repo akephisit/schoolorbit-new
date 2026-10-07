@@ -44,7 +44,7 @@ pub async fn list_pending_calendar(
 }
 
 #[utoipa::path(get,path="/api/calendar/requests",operation_id="listCalendarRequests",tag="calendar",params(CalendarRequestQuery),responses(
-    (status=200,description="Own requests or authorized school review queue",body=ApiResponse<CalendarRequestPage>),
+    (status=200,description="Own request history or authorized oldest-first school review queue excluding approved requests",body=ApiResponse<CalendarRequestPage>),
     (status=400,description="Invalid page",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
     (status=403,description="Request or review access denied",body=ApiErrorResponse)
 ))]
@@ -57,6 +57,24 @@ pub async fn list_requests(
     let context = actor_tenant_context_from_session(&state, &session).await?;
     Ok(Json(ApiResponse::ok(
         requests::list_requests(&context.tenant.pool, &context.actor, query).await?,
+    )))
+}
+
+#[utoipa::path(get,path="/api/calendar/requests/{id}",operation_id="getCalendarRequestForReview",tag="calendar",params(("id"=Uuid,Path,description="Request ID")),responses(
+    (status=200,description="Full request details loaded when a calendar manager opens review",body=ApiResponse<CalendarEventRequest>),
+    (status=401,description="Authentication required",body=ApiErrorResponse),
+    (status=403,description="Staff calendar manager required",body=ApiErrorResponse),
+    (status=404,description="Request missing",body=ApiErrorResponse)
+))]
+pub async fn get_request_for_review(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        requests::get_request_for_review(&context.tenant.pool, &context.actor, id).await?,
     )))
 }
 

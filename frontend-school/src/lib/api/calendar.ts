@@ -244,17 +244,30 @@ export async function listCalendarRequests(
 		'โหลดคำร้องไม่สำเร็จ'
 	);
 }
+export async function getCalendarRequestForReview(
+	id: string,
+	options: ApiRequestOptions = {}
+): Promise<CalendarEventRequest> {
+	return requireApiData(
+		await apiClient.get<CalendarEventRequest>(
+			`/api/calendar/requests/${encodeURIComponent(id)}`,
+			options
+		),
+		'โหลดรายละเอียดคำร้องไม่สำเร็จ'
+	);
+}
 export async function approveCalendarRequest(
 	id: string,
 	payload: CreateCalendarEventRequest
-): Promise<Schemas['CalendarRequestApproval']> {
-	return requireApiData(
+): Promise<{ request: CalendarEventRequest; event: CalendarEvent }> {
+	const result = requireApiData(
 		await apiClient.post<Schemas['CalendarRequestApproval']>(
 			`/api/calendar/requests/${encodeURIComponent(id)}/approve`,
 			payload
 		),
 		'อนุมัติคำร้องไม่สำเร็จ'
 	);
+	return { request: result.request, event: calendarEventFromDto(result.event) };
 }
 export async function rejectCalendarRequest(
 	id: string,

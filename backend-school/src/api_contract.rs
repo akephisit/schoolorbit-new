@@ -631,6 +631,7 @@ use utoipa::OpenApi;
         crate::modules::question_bank::handlers::get_question_file,
         crate::modules::calendar::request_handlers::list_requests,
         crate::modules::calendar::request_handlers::list_pending_calendar,
+        crate::modules::calendar::request_handlers::get_request_for_review,
         crate::modules::calendar::request_handlers::create_request,
         crate::modules::calendar::request_handlers::approve_request,
         crate::modules::calendar::request_handlers::reject_request,
@@ -4323,6 +4324,13 @@ mod tests {
         assert!(schemas["CalendarRequestApproval"]["properties"]
             .get("event")
             .is_some());
+        let detail = &document["paths"]["/api/calendar/requests/{id}"]["get"];
+        assert_eq!(detail["operationId"], "getCalendarRequestForReview");
+        for status in ["200", "401", "403", "404"] {
+            assert!(detail["responses"][status].is_object());
+        }
+        assert_eq!(detail["parameters"][0]["name"], "id");
+        assert_eq!(detail["parameters"][0]["required"], true);
     }
 
     #[test]
