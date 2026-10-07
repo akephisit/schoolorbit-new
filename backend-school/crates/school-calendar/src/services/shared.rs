@@ -156,3 +156,22 @@ fn current_month_range(today: NaiveDate) -> (NaiveDate, NaiveDate) {
 
     (first_day, last_day)
 }
+
+/// Validate bounded human-entered event fields for both requests and manager writes.
+pub(crate) fn validate_event_text(
+    title: &str,
+    description: Option<&str>,
+    location: Option<&str>,
+) -> Result<(), AppError> {
+    if title.trim().is_empty() || title.trim().chars().count() > 200 {
+        return Err(AppError::BadRequest(
+            "กรุณาระบุชื่อกิจกรรมไม่เกิน 200 ตัวอักษร".into(),
+        ));
+    }
+    if description.is_some_and(|value| value.chars().count() > 5000)
+        || location.is_some_and(|value| value.chars().count() > 200)
+    {
+        return Err(AppError::BadRequest("รายละเอียดหรือสถานที่ยาวเกินกำหนด".into()));
+    }
+    Ok(())
+}

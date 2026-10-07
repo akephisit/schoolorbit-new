@@ -5,8 +5,9 @@ edition.workspace = true
 
 [dependencies]
 chrono = { workspace = true }
-school-academic-core = { workspace = true }
 school-errors = { workspace = true }
+school-authorization = { workspace = true }
+school-permissions = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 utoipa = { workspace = true }

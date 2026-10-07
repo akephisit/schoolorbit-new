@@ -40,8 +40,6 @@ export async function mockCalendar(
 	];
 	const makeEvent = (selectedYear: string, november = false): CalendarEvent => ({
 		id: eventId,
-		academicYearId: selectedYear,
-		academicTermId: null,
 		categoryId: categories[0]?.id ?? null,
 		categoryName: categories[0]?.name ?? null,
 		categoryColor: categories[0]?.color ?? null,
@@ -123,7 +121,11 @@ export async function mockCalendar(
 				);
 			if (kind === 'categories') return reply(route, categories);
 			if (kind === 'tags') return reply(route, tags);
-			if (kind === 'options') return reply(route, []);
+			if (kind === 'options')
+				return reply(
+					route,
+					path === '/api/calendar/target-options' ? { gradeLevels: [], homerooms: [] } : []
+				);
 			if (path.startsWith(eventsPath)) {
 				if (request.method() === 'DELETE') {
 					deleted = true;

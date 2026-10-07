@@ -76,7 +76,6 @@ export async function listCalendarEvents(
 	filters: CalendarEventFilters,
 	options: ApiRequestOptions = {}
 ): Promise<CalendarEvent[]> {
-	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarEventDto[]>('/api/calendar/events', {
 		...options,
 		query: { ...filters }
@@ -88,7 +87,6 @@ export async function listMyCalendarEvents(
 	filters: MyCalendarQuery,
 	options: ApiRequestOptions = {}
 ): Promise<CalendarViewerEvent[]> {
-	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarViewerEvent[]>('/api/me/calendar/events', {
 		...options,
 		query: { ...filters } satisfies MyCalendarQuery
@@ -101,7 +99,6 @@ export async function listChildCalendarEvents(
 	filters: ChildCalendarQuery,
 	options: ApiRequestOptions = {}
 ): Promise<CalendarViewerEvent[]> {
-	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarViewerEvent[]>(
 		`/api/parent/students/${encodeURIComponent(studentId)}/calendar/events`,
 		{ ...options, query: { ...filters } satisfies ChildCalendarQuery }
@@ -112,7 +109,6 @@ export async function listChildCalendarEvents(
 export async function listPublicCalendarEvents(
 	filters: CalendarPublicEventFilters
 ): Promise<CalendarPublicEvent[]> {
-	if (!filters.academicYearId.trim()) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
 	const response = await apiClient.get<CalendarPublicEvent[]>('/api/public/calendar/events', {
 		query: { ...filters } satisfies GeneratedPublicCalendarQuery
 	});
@@ -202,4 +198,67 @@ export async function deleteCalendarTag(id: string): Promise<Record<string, neve
 		`/api/calendar/tags/${encodeURIComponent(id)}`
 	);
 	return requireApiData(response, 'ไม่สามารถลบแท็กปฏิทินได้');
+}
+
+export type CreateCalendarRequest = Schemas['CreateCalendarRequest'];
+export type CalendarEventRequest = Schemas['CalendarEventRequest'];
+export type CalendarRequestStatus = Schemas['CalendarRequestStatus'];
+export type CalendarRequestPage = Schemas['CalendarRequestPage'];
+export type CalendarRequestQuery = NonNullable<
+	operations['listCalendarRequests']['parameters']['query']
+>;
+export type CalendarTargetOptions = Schemas['CalendarTargetOptions'];
+
+export async function createCalendarRequest(
+	payload: CreateCalendarRequest
+): Promise<CalendarEventRequest> {
+	return requireApiData(
+		await apiClient.post<CalendarEventRequest>('/api/calendar/requests', payload),
+		'ส่งคำร้องไม่สำเร็จ'
+	);
+}
+export async function listCalendarRequests(
+	query: CalendarRequestQuery,
+	options: ApiRequestOptions = {}
+): Promise<CalendarRequestPage> {
+	return requireApiData(
+		await apiClient.get<CalendarRequestPage>('/api/calendar/requests', { ...options, query }),
+		'โหลดคำร้องไม่สำเร็จ'
+	);
+}
+export async function approveCalendarRequest(
+	id: string,
+	payload: CreateCalendarEventRequest
+): Promise<Schemas['CalendarRequestApproval']> {
+	return requireApiData(
+		await apiClient.post<Schemas['CalendarRequestApproval']>(
+			`/api/calendar/requests/${encodeURIComponent(id)}/approve`,
+			payload
+		),
+		'อนุมัติคำร้องไม่สำเร็จ'
+	);
+}
+export async function rejectCalendarRequest(
+	id: string,
+	reason: string
+): Promise<CalendarEventRequest> {
+	return requireApiData(
+		await apiClient.post<CalendarEventRequest>(
+			`/api/calendar/requests/${encodeURIComponent(id)}/reject`,
+			{ reason } satisfies Schemas['RejectCalendarRequest']
+		),
+		'ไม่สามารถบันทึกผลคำร้องได้'
+	);
+}
+export async function listCalendarTargetOptions(
+	date: string,
+	options: ApiRequestOptions = {}
+): Promise<CalendarTargetOptions> {
+	return requireApiData(
+		await apiClient.get<CalendarTargetOptions>('/api/calendar/target-options', {
+			...options,
+			query: { date }
+		}),
+		'โหลดตัวเลือกชั้นเรียนไม่สำเร็จ'
+	);
 }

@@ -851,6 +851,13 @@
     },
     {
       "module": "calendar",
+      "action": "request",
+      "scope": "own",
+      "name": "ส่งคำร้องเพิ่มกิจกรรมของตนเอง",
+      "description": "ส่งและติดตามคำร้องเพิ่มกิจกรรมของตนเอง โดยต้องรอผู้ดูแลอนุมัติก่อนขึ้นปฏิทิน"
+    },
+    {
+      "module": "calendar",
       "action": "manage",
       "scope": "school",
       "name": "จัดการปฏิทินโรงเรียน",

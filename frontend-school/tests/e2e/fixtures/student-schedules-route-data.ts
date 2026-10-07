@@ -150,8 +150,6 @@ export async function mockStudentSchedules(
 				{
 					id: id(415),
 					title: `กิจกรรม ${month}`,
-					academicYearId: year,
-					academicTermId: null,
 					allDay: true,
 					categoryColor: null,
 					categoryId: null,

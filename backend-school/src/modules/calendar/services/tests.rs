@@ -119,8 +119,6 @@ fn calendar_event_for_notification(title: &str) -> CalendarEvent {
 
     CalendarEvent {
         id: Uuid::new_v4(),
-        academic_year_id: Uuid::new_v4(),
-        academic_term_id: None,
         category_id: None,
         category_name: None,
         category_color: None,

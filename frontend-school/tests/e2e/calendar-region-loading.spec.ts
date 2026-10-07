@@ -8,7 +8,6 @@ import {
 	nextYear,
 	categoryId
 } from './fixtures/calendar-route-data';
-import { navigate } from './fixtures/supervision-route-data';
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ page }) => {
 	await page.clock.setFixedTime(new Date('2026-10-01T02:00:00Z'));
@@ -87,14 +86,16 @@ test('late month response cannot restore old month data', async ({ page }) => {
 	expect(api.count(categoriesPath)).toBe(1);
 	expect(api.count(tagsPath)).toBe(1);
 });
-test('late selected-year response is suppressed before the new year paints', async ({ page }) => {
-	const api = await mockCalendar(page, { hold: 'events' });
-	await page.goto(calendarPath());
-	await expect(page.getByTestId('calendar-events').getByRole('status')).toBeVisible();
-	await navigate(page, calendarPath(nextYear));
-	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมปีใหม่');
-	api.release();
-	await expect(page.getByTestId('calendar-events')).not.toContainText('กิจกรรมแรก');
+test('a calendar link with a different academic year reads the same date calendar', async ({
+	page
+}) => {
+	const api = await mockCalendar(page);
+	await page.goto(calendarPath(nextYear));
+	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+	const reads = api.reads.filter((url) => url.pathname === eventsPath);
+	expect(reads).toHaveLength(1);
+	expect(reads[0].searchParams.has('academicYearId')).toBe(false);
+	expect(reads[0].searchParams.has('academicTermId')).toBe(false);
 });
 test('reader does not request unopened target options', async ({ page }) => {
 	const api = await mockCalendar(page, { permissions: ['calendar.read.school'] });
@@ -125,8 +126,7 @@ test('opened event options start together, retry locally, and retain its input d
 	expect(api.count(eventsPath)).toBe(1);
 	expect(api.count(categoriesPath)).toBe(1);
 	expect(api.count(tagsPath)).toBe(1);
-	expect(api.count('/api/lookup/grade-levels')).toBe(2);
-	expect(api.count('/api/academic/homerooms')).toBe(2);
+	expect(api.count('/api/calendar/target-options')).toBe(2);
 });
 test('typed event save patches only events and never rereads catalogs', async ({ page }) => {
 	const api = await mockCalendar(page);
@@ -185,22 +185,13 @@ test('deleting an active category clears only its URL filter and rereads events 
 	expect(api.count(tagsPath)).toBe(1);
 });
 
-test('academic year switch preserves the committed month from shallow history', async ({
-	page
-}) => {
+test('calendar can navigate months without an academic context switcher', async ({ page }) => {
 	const api = await mockCalendar(page);
-	await page.goto(calendarPath());
+	await page.goto('/staff/calendar?month=2026-10');
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+	await expect(page.getByTestId('academic-context-switcher')).toHaveCount(0);
 	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมพฤศจิกายน');
-	await page
-		.getByTestId('academic-context-switcher')
-		.getByRole('button', { name: 'เลือกปีการศึกษา', exact: true })
-		.click();
-	await page.getByRole('option', { name: /2570/ }).click();
-	await expect(page).toHaveURL(new RegExp(`academicYearId=${nextYear}`));
-	await expect(page).toHaveURL(/month=2026-11/);
-	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมปีใหม่');
 	expect(
 		api.reads
 			.filter((url) => url.pathname === eventsPath)

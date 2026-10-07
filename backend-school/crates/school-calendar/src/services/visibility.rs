@@ -16,8 +16,6 @@ use super::shared::{normalized_event_range, tenant_today, EVENT_NOT_FOUND_MESSAG
 const EVENT_SELECT_WITH_CATEGORY: &str = r#"
 SELECT
     e.id,
-    e.academic_year_id,
-    e.academic_term_id,
     e.category_id,
     c.name AS category_name,
     c.color AS category_color,
@@ -182,8 +180,6 @@ async fn hydrate_events(
         .into_iter()
         .map(|row| CalendarEvent {
             id: row.id,
-            academic_year_id: row.academic_year_id,
-            academic_term_id: row.academic_term_id,
             category_id: row.category_id,
             category_name: row.category_name,
             category_color: row.category_color,
@@ -232,10 +228,9 @@ pub async fn list_management_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarEvent>, AppError> {
-    validate_calendar_query_context(pool, &query).await?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, &query, from, to);
+    push_base_event_filters(&mut builder, from, to);
     push_event_query_filters(&mut builder, &query);
 
     if let Some(audience) = &query.audience {
@@ -263,12 +258,11 @@ pub async fn list_my_events(
     user_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
-    validate_calendar_query_context(pool, &query).await?;
     let user_type = active_user_type(pool, user_id).await?;
     self_calendar_user_type_access(&user_type)?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, &query, from, to);
+    push_base_event_filters(&mut builder, from, to);
     push_event_query_filters(&mut builder, &query);
     push_my_event_target_filter(&mut builder, user_id, &user_type, query.audience.as_ref());
     push_search_filter(&mut builder, query.q.as_deref());
@@ -289,10 +283,9 @@ pub async fn list_child_events(
     student_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
-    validate_calendar_query_context(pool, &query).await?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, &query, from, to);
+    push_base_event_filters(&mut builder, from, to);
     push_event_query_filters(&mut builder, &query);
     push_child_event_target_filter(&mut builder, parent_id, student_id, query.audience.as_ref());
     push_search_filter(&mut builder, query.q.as_deref());
@@ -311,10 +304,9 @@ pub async fn list_public_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarPublicEvent>, AppError> {
-    validate_calendar_query_context(pool, &query).await?;
     let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, &query, from, to);
+    push_base_event_filters(&mut builder, from, to);
     builder.push(" AND e.is_public = true");
     push_category_and_tag_query_filters(&mut builder, &query);
 
@@ -330,54 +322,8 @@ pub async fn list_public_events(
     Ok(events.into_iter().map(CalendarPublicEvent::from).collect())
 }
 
-async fn validate_calendar_query_context(
-    pool: &PgPool,
-    query: &CalendarEventQuery,
-) -> Result<(), AppError> {
-    let context_exists: bool = match query.academic_term_id {
-        Some(academic_term_id) => {
-            sqlx::query_scalar(
-                "SELECT EXISTS (
-                    SELECT 1 FROM academic_terms
-                    WHERE id = $1 AND academic_year_id = $2
-                )",
-            )
-            .bind(academic_term_id)
-            .bind(query.academic_year_id)
-            .fetch_one(pool)
-            .await?
-        }
-        None => {
-            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM academic_years WHERE id = $1)")
-                .bind(query.academic_year_id)
-                .fetch_one(pool)
-                .await?
-        }
-    };
-
-    if !context_exists {
-        return Err(AppError::BadRequest(
-            "ปีการศึกษาหรือภาคเรียนของปฏิทินไม่ถูกต้อง".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
-fn push_base_event_filters(
-    builder: &mut QueryBuilder<Postgres>,
-    query: &CalendarEventQuery,
-    from: NaiveDate,
-    to: NaiveDate,
-) {
-    builder.push(" WHERE e.deleted_at IS NULL AND e.academic_year_id = ");
-    builder.push_bind(query.academic_year_id);
-    if let Some(academic_term_id) = query.academic_term_id {
-        builder.push(" AND (e.academic_term_id = ");
-        builder.push_bind(academic_term_id);
-        builder.push(" OR e.academic_term_id IS NULL)");
-    }
-    builder.push(" AND e.start_date <= ");
+fn push_base_event_filters(builder: &mut QueryBuilder<Postgres>, from: NaiveDate, to: NaiveDate) {
+    builder.push(" WHERE e.deleted_at IS NULL AND e.start_date <= ");
     builder.push_bind(to);
     builder.push(" AND e.end_date >= ");
     builder.push_bind(from);
@@ -521,7 +467,7 @@ fn push_my_event_target_filter(
             );
             builder.push_bind(user_id);
             builder.push(
-                "             AND student_year.academic_year_id = e.academic_year_id
+                "             AND (student_year.academic_year_id = target.academic_year_id OR (target.academic_year_id IS NULL AND EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=e.start_date AND target_year.end_date>=e.start_date)))
                               AND (
                                   target.grade_level_id IS NULL
                                   OR student_year.grade_level_id = target.grade_level_id
@@ -595,7 +541,7 @@ fn push_child_event_target_filter(
     );
     builder.push_bind(student_id);
     builder.push(
-        "                 AND student_year.academic_year_id = e.academic_year_id
+        "                 AND (student_year.academic_year_id = target.academic_year_id OR (target.academic_year_id IS NULL AND EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=e.start_date AND target_year.end_date>=e.start_date)))
                               AND (
                                   target.grade_level_id IS NULL
                                   OR student_year.grade_level_id = target.grade_level_id

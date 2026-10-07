@@ -276,8 +276,6 @@ fn normalized_event_range_uses_complete_query_range() {
     let to = NaiveDate::from_ymd_opt(2026, 5, 6).unwrap();
     let today = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap();
     let query = CalendarEventQuery {
-        academic_year_id: Uuid::new_v4(),
-        academic_term_id: None,
         from: Some(from),
         to: Some(to),
         category_id: None,
@@ -296,8 +294,6 @@ fn normalized_event_range_rejects_reversed_complete_query_range() {
     let to = NaiveDate::from_ymd_opt(2026, 5, 2).unwrap();
     let today = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap();
     let query = CalendarEventQuery {
-        academic_year_id: Uuid::new_v4(),
-        academic_term_id: None,
         from: Some(from),
         to: Some(to),
         category_id: None,
@@ -317,8 +313,6 @@ fn normalized_event_range_rejects_reversed_complete_query_range() {
 fn normalized_event_range_defaults_to_current_month_when_bound_is_missing() {
     let today = NaiveDate::from_ymd_opt(2026, 2, 10).unwrap();
     let query = CalendarEventQuery {
-        academic_year_id: Uuid::new_v4(),
-        academic_term_id: None,
         from: Some(NaiveDate::from_ymd_opt(2026, 1, 5).unwrap()),
         to: None,
         category_id: None,
@@ -341,8 +335,6 @@ fn normalized_event_range_defaults_to_current_month_when_bound_is_missing() {
 fn normalized_event_range_handles_december_current_month() {
     let today = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
     let query = CalendarEventQuery {
-        academic_year_id: Uuid::new_v4(),
-        academic_term_id: None,
         from: None,
         to: None,
         category_id: None,

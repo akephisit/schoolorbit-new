@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "d1501c48c5ab35a70dc1d120bb6ab1406286d3925a4d418a02b086a44ce39b94",
+  "contract_sha256": "6bb4571d69259edccef2ff71719295def7489747a5f438e83d05554d120cd526",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -82,6 +82,7 @@
     "admission.verify.all",
     "calendar.manage.school",
     "calendar.read.school",
+    "calendar.request.own",
     "certificate.create.organization_unit",
     "certificate.create.school",
     "certificate.delete.organization_unit",

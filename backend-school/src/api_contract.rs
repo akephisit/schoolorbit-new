@@ -629,6 +629,11 @@ use utoipa::OpenApi;
         crate::modules::question_bank::handlers::update_question,
         crate::modules::question_bank::handlers::delete_question,
         crate::modules::question_bank::handlers::get_question_file,
+        crate::modules::calendar::request_handlers::list_requests,
+        crate::modules::calendar::request_handlers::create_request,
+        crate::modules::calendar::request_handlers::approve_request,
+        crate::modules::calendar::request_handlers::reject_request,
+        crate::modules::calendar::request_handlers::list_target_options,
         crate::modules::calendar::handlers::list_my_calendar_events,
         crate::modules::calendar::handlers::list_public_calendar_events,
         crate::modules::calendar::handlers::list_calendar_events,
@@ -683,7 +688,7 @@ use utoipa::OpenApi;
         (name = "student", description = "Student self-service reads"),
         (name = "parent", description = "Parent self-service reads"),
         (name = "academic", description = "Academic structure administration and self-service reads"),
-        (name = "calendar", description = "Calendar reads"),
+        (name = "calendar", description = "Date-based calendars and activity requests"),
         (name = "supervision", description = "Teaching supervision workflows and reports"),
         (name = "question-bank", description = "Authorized question bank and export operations"),
         (name = "school", description = "School settings and public branding reads"),
@@ -3258,7 +3263,7 @@ mod tests {
     }
 
     #[test]
-    fn documents_academic_year_scoped_profile_and_calendar_queries() {
+    fn documents_academic_profile_and_date_calendar_queries() {
         let document = school_api_value().expect("document should serialize");
         assert_eq!(
             query_contract(&document, "/api/students", "get"),
@@ -3285,8 +3290,6 @@ mod tests {
         }
 
         let calendar_query = BTreeSet::from([
-            ("academicTermId".to_string(), false),
-            ("academicYearId".to_string(), true),
             ("audience".to_string(), false),
             ("categoryId".to_string(), false),
             ("from".to_string(), false),
@@ -3892,8 +3895,6 @@ mod tests {
             .expect("parent calendar parameters must be an array");
         for (name, location) in [
             ("student_id", "path"),
-            ("academicYearId", "query"),
-            ("academicTermId", "query"),
             ("from", "query"),
             ("to", "query"),
             ("categoryId", "query"),
@@ -3905,6 +3906,12 @@ mod tests {
             assert!(parent_calendar_parameters
                 .iter()
                 .any(|parameter| parameter["name"] == name && parameter["in"] == location));
+        }
+
+        for name in ["academicYearId", "academicTermId"] {
+            assert!(!parent_calendar_parameters
+                .iter()
+                .any(|parameter| parameter["name"] == name));
         }
 
         let my_timetable_parameters = document["paths"]["/api/me/timetable"]["get"]["parameters"]
@@ -4261,7 +4268,7 @@ mod tests {
     }
 
     #[test]
-    fn calendar_mutations_document_closed_context_conflicts() {
+    fn calendar_mutations_do_not_require_academic_context() {
         let document = school_api_value().unwrap();
         for (path, method, success) in [
             ("/api/calendar/events", "post", "201"),
@@ -4269,11 +4276,6 @@ mod tests {
             ("/api/calendar/events/{id}", "delete", "200"),
         ] {
             let operation = &document["paths"][path][method];
-            assert_eq!(
-                operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],
-                "#/components/schemas/ApiErrorResponse",
-                "{method} {path}"
-            );
             assert!(operation["responses"][success].is_object());
             if method != "delete" {
                 assert_eq!(
@@ -4282,6 +4284,44 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn calendar_requests_have_minimal_input_and_atomic_decision_contracts() {
+        let document = school_api_value().unwrap();
+        let schemas = &document["components"]["schemas"];
+        let fields = schemas["CreateCalendarRequest"]["properties"]
+            .as_object()
+            .unwrap();
+        let names: BTreeSet<_> = fields.keys().map(String::as_str).collect();
+        assert_eq!(
+            names,
+            BTreeSet::from([
+                "title",
+                "description",
+                "location",
+                "startDate",
+                "endDate",
+                "allDay",
+                "startTime",
+                "endTime"
+            ])
+        );
+        let event_fields = schemas["UpsertCalendarEventRequest"]["properties"]
+            .as_object()
+            .unwrap();
+        assert!(!event_fields.contains_key("academicYearId"));
+        assert!(!event_fields.contains_key("academicTermId"));
+        for path in [
+            "/api/calendar/requests/{id}/approve",
+            "/api/calendar/requests/{id}/reject",
+        ] {
+            assert!(document["paths"][path]["post"]["responses"]["403"].is_object());
+            assert!(document["paths"][path]["post"]["responses"]["409"].is_object());
+        }
+        assert!(schemas["CalendarRequestApproval"]["properties"]
+            .get("event")
+            .is_some());
     }
 
     #[test]
@@ -4354,8 +4394,6 @@ mod tests {
             .as_array()
             .expect("calendar parameters must be an array");
         for name in [
-            "academicYearId",
-            "academicTermId",
             "from",
             "to",
             "categoryId",

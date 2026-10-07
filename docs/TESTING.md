@@ -905,3 +905,9 @@ sudo apt install -y libnspr4 libnss3 libasound2t64 libxss1 fonts-liberation
 ```
 
 The sandbox E2E workflow uses Ubuntu 24.04.
+
+## Date calendar and activity requests
+
+Run `cargo test -p school-calendar` for date/time validation and request authorization policy. Run `./scripts/test_backend_school.sh modules::calendar -- --nocapture` from the repository root for database coverage: own-request isolation, manager decisions, failed approval rollback, concurrent approval deduplication, and migration 098 preservation of existing events, audience scope, reminders and timestamps. Use disposable PostgreSQL and synthetic fixtures; never point this suite at a tenant database.
+
+Against a local frontend preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/calendar-region-loading.spec.ts tests/e2e/calendar-requests.spec.ts tests/e2e/calendar-embed-dialog.spec.ts --project=chromium`. The fixtures use synthetic staff sessions and intercept calendar APIs. They do not exercise a deployed database. The request tests cover selected-day defaults in a future month, minimal payloads, failure draft retention, own status tracking, approval and rejection, including desktop and mobile layouts.

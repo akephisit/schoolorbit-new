@@ -301,17 +301,18 @@ test('staff calendar copies the current school public URL with feedback', async 
 	assert.match(copyBody, /toast\.error\('คัดลอกลิงก์ไม่สำเร็จ'\)/);
 });
 
-test('calendar read-only pages sort selected-day events consistently', async () => {
+test('calendar read-only pages delegate date-based event sorting to their shared view', async () => {
 	for (const route of [
 		'src/routes/(app)/student/calendar/+page.svelte',
 		'src/routes/(app)/parent/student/[id]/calendar/+page.svelte'
 	]) {
 		const page = await readProjectFile(route);
-		assert.match(
-			page,
-			/events\s*\.filter\(\(event\) => eventOverlapsDate\(event, selectedDate\)\)\s*\.sort\(\(left, right\) => left\.startDate\.localeCompare\(right\.startDate\)\)/
-		);
+		assert.match(page, /<CalendarViewer/);
 	}
+	const viewer = await readProjectFile('src/lib/components/calendar/CalendarViewer.svelte');
+	assert.match(viewer, /eventOverlapsDate/);
+	assert.match(viewer, /left.startDate.localeCompare/);
+	assert.doesNotMatch(viewer, /listMyAcademicContextOptions|listChildAcademicContextOptions/);
 
 	const publicView = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	assert.match(publicView, /Number\(right\.allDay\) - Number\(left\.allDay\)/);

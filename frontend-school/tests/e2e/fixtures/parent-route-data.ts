@@ -167,8 +167,6 @@ export async function mockParent(
 				{
 					id: id(516),
 					title: `กิจกรรม${suffix} ${month}`,
-					academicYearId: year,
-					academicTermId: null,
 					allDay: true,
 					categoryColor: null,
 					categoryId: null,

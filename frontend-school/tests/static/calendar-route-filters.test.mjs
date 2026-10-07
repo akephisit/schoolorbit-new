@@ -30,14 +30,12 @@ const parse = (query) =>
 		new URL(`https://tenant.example/staff/calendar?${query}`),
 		'2026-10-01'
 	);
-test('calendar committed filters produce one stable academic/month owner', () => {
+test('calendar committed filters produce one stable date/filter owner', () => {
 	const a = parse(
 		'academicYearId=year&academicTermId=term&month=2026-11&q=%20meeting%20&categoryId=cat&tagId=tag&audience=parent&visibility=private'
 	);
 	assert.equal(a.month, '2026-11-01');
 	assert.deepEqual(a.filters, {
-		academicYearId: 'year',
-		academicTermId: 'term',
 		from: '2026-11-01',
 		to: '2026-12-12',
 		q: 'meeting',
@@ -52,12 +50,13 @@ test('calendar committed filters produce one stable academic/month owner', () =>
 			'visibility=private&audience=parent&tagId=tag&categoryId=cat&q=meeting&month=2026-11&academicTermId=term&academicYearId=year'
 		).key
 	);
-	assert.notEqual(a.key, parse('academicYearId=other&month=2026-11').key);
+	assert.notEqual(a.key, parse('month=2026-11').key);
+	assert.equal(parse('academicYearId=other&month=2026-11').key, parse('month=2026-11').key);
 });
 test('calendar malformed month and unsupported enums fall back without false context', () => {
 	const result = parse('month=2026-13&audience=admin&visibility=hidden');
 	assert.equal(result.month, '2026-10-01');
-	assert.equal(result.academicYearId, '');
+	assert.equal('academicYearId' in result.filters, false);
 	assert.equal(result.filters.audience, undefined);
 	assert.equal(result.filters.visibility, undefined);
 });

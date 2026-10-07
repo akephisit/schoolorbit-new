@@ -3772,6 +3772,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/calendar/requests': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCalendarRequests'];
+		put?: never;
+		post: operations['createCalendarRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/calendar/requests/{id}/approve': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['approveCalendarRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/calendar/requests/{id}/reject': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['rejectCalendarRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/calendar/tags': {
 		parameters: {
 			query?: never;
@@ -3780,6 +3828,22 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['listCalendarTags'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/calendar/target-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listCalendarTargetOptions'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -7366,10 +7430,6 @@ export interface components {
 		};
 		ApiResponse_CalendarEvent: {
 			data: {
-				/** Format: uuid */
-				academicTermId: string | null;
-				/** Format: uuid */
-				academicYearId: string;
 				allDay: boolean;
 				categoryColor: string | null;
 				/** Format: uuid */
@@ -7398,6 +7458,59 @@ export interface components {
 				updatedAt: string;
 				/** Format: uuid */
 				updatedBy: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CalendarEventRequest: {
+			data: {
+				allDay: boolean;
+				/** Format: date-time */
+				createdAt: string;
+				description: string;
+				/** Format: date */
+				endDate: string;
+				endTime: string | null;
+				/** Format: uuid */
+				eventId: string | null;
+				/** Format: uuid */
+				id: string;
+				location: string | null;
+				rejectionReason: string | null;
+				/** Format: uuid */
+				requestedBy: string;
+				requesterName: string;
+				/** Format: date-time */
+				reviewedAt: string | null;
+				/** Format: date */
+				startDate: string;
+				startTime: string | null;
+				status: components['schemas']['CalendarRequestStatus'];
+				title: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CalendarRequestApproval: {
+			data: {
+				event: components['schemas']['CalendarEvent'];
+				request: components['schemas']['CalendarEventRequest'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CalendarRequestPage: {
+			data: {
+				hasMore: boolean;
+				records: components['schemas']['CalendarEventRequest'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_CalendarTargetOptions: {
+			data: {
+				gradeLevels: components['schemas']['CalendarGradeOption'][];
+				homerooms: components['schemas']['CalendarHomeroomOption'][];
 			};
 			message?: string;
 			success: boolean;
@@ -10773,10 +10886,6 @@ export interface components {
 		};
 		ApiResponse_Vec_CalendarEvent: {
 			data: {
-				/** Format: uuid */
-				academicTermId: string | null;
-				/** Format: uuid */
-				academicYearId: string;
 				allDay: boolean;
 				categoryColor: string | null;
 				/** Format: uuid */
@@ -10811,10 +10920,6 @@ export interface components {
 		};
 		ApiResponse_Vec_CalendarPublicEvent: {
 			data: {
-				/** Format: uuid */
-				academicTermId: string | null;
-				/** Format: uuid */
-				academicYearId: string;
 				allDay: boolean;
 				categoryColor: string | null;
 				/** Format: uuid */
@@ -10856,10 +10961,6 @@ export interface components {
 		};
 		ApiResponse_Vec_CalendarViewerEvent: {
 			data: {
-				/** Format: uuid */
-				academicTermId: string | null;
-				/** Format: uuid */
-				academicYearId: string;
 				allDay: boolean;
 				categoryColor: string | null;
 				/** Format: uuid */
@@ -12703,10 +12804,6 @@ export interface components {
 			updatedAt: string;
 		};
 		CalendarEvent: {
-			/** Format: uuid */
-			academicTermId: string | null;
-			/** Format: uuid */
-			academicYearId: string;
 			allDay: boolean;
 			categoryColor: string | null;
 			/** Format: uuid */
@@ -12746,6 +12843,31 @@ export interface components {
 			/** Format: date-time */
 			sentAt: string | null;
 		};
+		CalendarEventRequest: {
+			allDay: boolean;
+			/** Format: date-time */
+			createdAt: string;
+			description: string;
+			/** Format: date */
+			endDate: string;
+			endTime: string | null;
+			/** Format: uuid */
+			eventId: string | null;
+			/** Format: uuid */
+			id: string;
+			location: string | null;
+			rejectionReason: string | null;
+			/** Format: uuid */
+			requestedBy: string;
+			requesterName: string;
+			/** Format: date-time */
+			reviewedAt: string | null;
+			/** Format: date */
+			startDate: string;
+			startTime: string | null;
+			status: components['schemas']['CalendarRequestStatus'];
+			title: string;
+		};
 		CalendarEventTag: {
 			/** Format: uuid */
 			id: string;
@@ -12767,11 +12889,19 @@ export interface components {
 			/** Format: uuid */
 			homeroomId?: string | null;
 		};
+		CalendarGradeOption: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		CalendarHomeroomOption: {
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
 		CalendarPublicEvent: {
-			/** Format: uuid */
-			academicTermId: string | null;
-			/** Format: uuid */
-			academicYearId: string;
 			allDay: boolean;
 			categoryColor: string | null;
 			/** Format: uuid */
@@ -12795,6 +12925,16 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		CalendarRequestApproval: {
+			event: components['schemas']['CalendarEvent'];
+			request: components['schemas']['CalendarEventRequest'];
+		};
+		CalendarRequestPage: {
+			hasMore: boolean;
+			records: components['schemas']['CalendarEventRequest'][];
+		};
+		/** @enum {string} */
+		CalendarRequestStatus: 'pending' | 'approved' | 'rejected';
 		CalendarTag: {
 			/** Format: date-time */
 			createdAt: string;
@@ -12804,11 +12944,11 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		CalendarTargetOptions: {
+			gradeLevels: components['schemas']['CalendarGradeOption'][];
+			homerooms: components['schemas']['CalendarHomeroomOption'][];
+		};
 		CalendarViewerEvent: {
-			/** Format: uuid */
-			academicTermId: string | null;
-			/** Format: uuid */
-			academicYearId: string;
 			allDay: boolean;
 			categoryColor: string | null;
 			/** Format: uuid */
@@ -13885,6 +14025,18 @@ export interface components {
 			description?: string | null;
 			name_en?: string | null;
 			name_th: string;
+		};
+		CreateCalendarRequest: {
+			allDay: boolean;
+			description: string;
+			/** Format: date */
+			endDate: string;
+			endTime?: string | null;
+			location?: string | null;
+			/** Format: date */
+			startDate: string;
+			startTime?: string | null;
+			title: string;
 		};
 		CreateCatalogActivityRequest: {
 			activityType: string;
@@ -17739,6 +17891,9 @@ export interface components {
 			| 'no_next_rank';
 		/** @enum {string} */
 		RecipientType: 'student' | 'staff' | 'external';
+		RejectCalendarRequest: {
+			reason: string;
+		};
 		RemoveDatedRosterMembershipRequest: {
 			/** Format: int64 */
 			groupRowVersion: number;
@@ -20708,10 +20863,6 @@ export interface components {
 					teacherId: string;
 			  };
 		UpsertCalendarEventRequest: {
-			/** Format: uuid */
-			academicTermId?: string | null;
-			/** Format: uuid */
-			academicYearId: string;
 			allDay: boolean;
 			/** Format: uuid */
 			categoryId?: string | null;
@@ -38394,9 +38545,7 @@ export interface operations {
 	};
 	listCalendarEvents: {
 		parameters: {
-			query: {
-				academicTermId?: string;
-				academicYearId: string;
+			query?: {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;
@@ -38498,33 +38647,6 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic year not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year or term is closed */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Term does not belong to the year */
-			422: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
 		};
 	};
 	updateCalendarEvent: {
@@ -38579,26 +38701,8 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Event or academic year not found */
+			/** @description Event not found */
 			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic context is closed or the event moved concurrently */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Term does not belong to the year */
-			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -38656,7 +38760,244 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Academic context is closed or the event moved concurrently */
+		};
+	};
+	listCalendarRequests: {
+		parameters: {
+			query?: {
+				offset?: number;
+				review?: boolean;
+				status?: components['schemas']['CalendarRequestStatus'];
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Own requests or authorized school review queue */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarRequestPage'];
+				};
+			};
+			/** @description Invalid page */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request or review access denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createCalendarRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateCalendarRequest'];
+			};
+		};
+		responses: {
+			/** @description Pending request submitted; no calendar event created */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarEventRequest'];
+				};
+			};
+			/** @description Invalid request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request capability required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	approveCalendarRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Request ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpsertCalendarEventRequest'];
+			};
+		};
+		responses: {
+			/** @description Request approved and one event published atomically */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarRequestApproval'];
+				};
+			};
+			/** @description Invalid event configuration */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar manager required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request already decided */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	rejectCalendarRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Request ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RejectCalendarRequest'];
+			};
+		};
+		responses: {
+			/** @description Request rejected with reason */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarEventRequest'];
+				};
+			};
+			/** @description Reason required */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar manager required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request already decided */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -38695,6 +39036,46 @@ export interface operations {
 				};
 			};
 			/** @description Calendar read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listCalendarTargetOptions: {
+		parameters: {
+			query: {
+				date: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Classroom audience options for the event date */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_CalendarTargetOptions'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Calendar manager required */
 			403: {
 				headers: {
 					[name: string]: unknown;
@@ -42674,9 +43055,7 @@ export interface operations {
 	};
 	listMyCalendarEvents: {
 		parameters: {
-			query: {
-				academicTermId?: string;
-				academicYearId: string;
+			query?: {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;
@@ -43949,9 +44328,7 @@ export interface operations {
 	};
 	getParentChildCalendarEvents: {
 		parameters: {
-			query: {
-				academicTermId?: string;
-				academicYearId: string;
+			query?: {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;
@@ -44201,9 +44578,7 @@ export interface operations {
 	};
 	listPublicCalendarEvents: {
 		parameters: {
-			query: {
-				academicTermId?: string;
-				academicYearId: string;
+			query?: {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;

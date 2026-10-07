@@ -36,9 +36,9 @@ pub async fn resolve_event_recipient_user_ids(
     let ids = sqlx::query_scalar::<_, Uuid>(
         r#"
         WITH targets AS (
-            SELECT audience_type, grade_level_id, homeroom_id, academic_year_id
-            FROM calendar_event_targets
-            WHERE event_id = $1
+            SELECT target.audience_type, target.grade_level_id, target.homeroom_id, target.academic_year_id, event.start_date
+            FROM calendar_event_targets target JOIN calendar_events event ON event.id=target.event_id
+            WHERE target.event_id = $1
         )
         SELECT users.id
         FROM users
@@ -62,6 +62,20 @@ pub async fn resolve_event_recipient_user_ids(
 
         UNION ALL
 
+        SELECT users.id FROM users
+        WHERE users.status='active' AND users.user_type='student'
+          AND EXISTS (SELECT 1 FROM targets WHERE audience_type='student' AND grade_level_id IS NULL AND homeroom_id IS NULL AND academic_year_id IS NULL)
+
+        UNION ALL
+
+        SELECT parent_users.id FROM users parent_users
+        JOIN student_parents links ON links.parent_user_id=parent_users.id
+        JOIN users student_users ON student_users.id=links.student_user_id AND student_users.status='active'
+        WHERE parent_users.status='active' AND parent_users.user_type='parent'
+          AND EXISTS (SELECT 1 FROM targets WHERE audience_type='parent' AND grade_level_id IS NULL AND homeroom_id IS NULL AND academic_year_id IS NULL)
+
+        UNION ALL
+
         SELECT users.id
         FROM users
         JOIN student_academic_years student_year ON student_year.student_id = users.id
@@ -70,7 +84,7 @@ pub async fn resolve_event_recipient_user_ids(
          AND placement.status IN ('planned', 'current')
         JOIN targets
           ON targets.audience_type = 'student'
-         AND targets.academic_year_id = student_year.academic_year_id
+         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND (targets.grade_level_id IS NULL OR EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=targets.start_date AND target_year.end_date>=targets.start_date))))
         WHERE users.status = 'active'
           AND users.user_type = 'student'
           AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)
@@ -93,7 +107,7 @@ pub async fn resolve_event_recipient_user_ids(
          AND placement.status IN ('planned', 'current')
         JOIN targets
           ON targets.audience_type = 'parent'
-         AND targets.academic_year_id = student_year.academic_year_id
+         AND (targets.academic_year_id = student_year.academic_year_id OR (targets.academic_year_id IS NULL AND (targets.grade_level_id IS NULL OR EXISTS (SELECT 1 FROM academic_years target_year WHERE target_year.id=student_year.academic_year_id AND target_year.start_date<=targets.start_date AND target_year.end_date>=targets.start_date))))
         WHERE parent_users.status = 'active'
           AND parent_users.user_type = 'parent'
           AND (targets.grade_level_id IS NULL OR student_year.grade_level_id = targets.grade_level_id)

@@ -1,4 +1,5 @@
 pub mod handlers;
+pub mod request_handlers;
 pub mod services;
 
 #[cfg(test)]
@@ -10,6 +11,22 @@ use axum::Router;
 
 pub fn calendar_routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/requests",
+            get(request_handlers::list_requests).post(request_handlers::create_request),
+        )
+        .route(
+            "/requests/{id}/approve",
+            axum::routing::post(request_handlers::approve_request),
+        )
+        .route(
+            "/requests/{id}/reject",
+            axum::routing::post(request_handlers::reject_request),
+        )
+        .route(
+            "/target-options",
+            get(request_handlers::list_target_options),
+        )
         .route(
             "/events",
             get(handlers::list_calendar_events).post(handlers::create_calendar_event),

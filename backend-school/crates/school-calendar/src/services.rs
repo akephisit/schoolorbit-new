@@ -1,6 +1,6 @@
 mod categories_and_tags;
-mod events;
-mod shared;
+pub(crate) mod events;
+pub(crate) mod shared;
 mod visibility;
 
 #[cfg(test)]

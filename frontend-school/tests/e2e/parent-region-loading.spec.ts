@@ -74,7 +74,7 @@ for (const resource of ['timetable', 'exams', 'calendar'] as const) {
 				: page.getByText(text, { exact: true })
 		).toBeVisible();
 		expect(api.count(resource)).toBe(2);
-		expect(api.count('context')).toBe(1);
+		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
 		expect(api.count('profile')).toBe(resource === 'timetable' ? 1 : 0);
 	});
 	test(`${resource}: changed child ignores a late prior response and Back restores child`, async ({
@@ -121,8 +121,17 @@ for (const resource of ['timetable', 'exams', 'calendar'] as const) {
 	test(`${resource}: denied child context never starts dependent reads`, async ({ page }) => {
 		const api = await mockParent(page);
 		await page.goto(childRoute(resource, deniedChild));
-		await expect(page.getByRole('button', { name: 'ลองบริบทอีกครั้ง', exact: true })).toBeVisible();
-		expect(api.count(resource)).toBe(0);
+		await expect(
+			page.getByRole('button', {
+				name: resource === 'calendar' ? 'ลองอีกครั้ง' : 'ลองบริบทอีกครั้ง',
+				exact: true
+			})
+		).toBeVisible();
+		expect(api.count(resource)).toBe(resource === 'calendar' ? 1 : 0);
+		if (resource === 'calendar')
+			await expect(page.getByTestId('parent-calendar-region')).toContainText(
+				'ไม่มีสิทธิ์เข้าถึงลูกคนนี้'
+			);
 		expect(api.count('profile')).toBe(0);
 		expect(api.writes).toEqual([]);
 	});
@@ -170,7 +179,7 @@ test('calendar month history only refreshes events', async ({ page }) => {
 		page.getByRole('heading', { name: 'กิจกรรมคนแรก 2026-10', exact: true })
 	).toBeVisible();
 	expect(api.count('calendar')).toBe(3);
-	expect(api.count('context')).toBe(1);
+	expect(api.count('context')).toBe(0);
 });
 test('logout during child prerequisite never launches child primary', async ({ page }) => {
 	const api = await mockParent(page, { hold: 'context' });

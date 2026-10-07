@@ -29,12 +29,15 @@
 		tags = [],
 		gradeLevels = [],
 		homerooms = [],
-		academicYearId,
-		academicTermId = null,
+		initialDate = '',
+		request = null,
+		submitLabel = 'บันทึกและเผยแพร่',
+		ondatechange,
 		saving = false,
 		optionsLoading = false,
 		optionsLoaded = true,
 		optionsError = '',
+		error = '',
 		onretryoptions,
 		onsave
 	}: {
@@ -44,12 +47,15 @@
 		tags?: CalendarTag[];
 		gradeLevels?: GradeLevelOption[];
 		homerooms?: HomeroomOption[];
-		academicYearId: string;
-		academicTermId?: string | null;
+		initialDate?: string;
+		request?: import('#lib/api/calendar.js').CalendarEventRequest | null;
+		submitLabel?: string;
+		ondatechange?: (date: string) => void;
 		saving?: boolean;
 		optionsLoading?: boolean;
 		optionsLoaded?: boolean;
 		optionsError?: string;
+		error?: string;
 		onretryoptions?: () => void;
 		onsave?: (payload: CreateCalendarEventRequest) => void;
 	} = $props();
@@ -104,16 +110,16 @@
 	let hasMultipleTargetRows = $derived((event?.targets.length ?? 0) > 1);
 
 	function loadEvent(source: CalendarEvent | null | undefined) {
-		title = source?.title ?? '';
-		description = source?.description ?? '';
-		location = source?.location ?? '';
+		title = source?.title ?? request?.title ?? '';
+		description = source?.description ?? request?.description ?? '';
+		location = source?.location ?? request?.location ?? '';
 		categoryId = source?.categoryId ?? '';
 		selectedTagIds = source?.tags.map((tag) => tag.id) ?? [];
-		startDate = source?.startDate ?? '';
-		endDate = source?.endDate ?? '';
-		allDay = source?.allDay ?? true;
-		startTime = source?.startTime?.slice(0, 5) ?? '';
-		endTime = source?.endTime?.slice(0, 5) ?? '';
+		startDate = source?.startDate ?? request?.startDate ?? initialDate;
+		endDate = source?.endDate ?? request?.endDate ?? initialDate;
+		allDay = source?.allDay ?? request?.allDay ?? true;
+		startTime = (source?.startTime ?? request?.startTime)?.slice(0, 5) ?? '';
+		endTime = (source?.endTime ?? request?.endTime)?.slice(0, 5) ?? '';
 		isPublic = source?.isPublic ?? false;
 		notifyAudience = source ? false : true;
 
@@ -132,6 +138,9 @@
 	}
 
 	loadEvent(untrack(() => event));
+	$effect(() => {
+		if (startDate) ondatechange?.(startDate);
+	});
 
 	function toggleTag(tagId: string) {
 		selectedTagIds = selectedTagIds.includes(tagId)
@@ -214,8 +223,25 @@
 		return selectedHomeroomId || null;
 	}
 
+	const invalidTarget = $derived(
+		targetAudienceSelected &&
+			optionsLoaded &&
+			!optionsLoading &&
+			((!!selectedGradeLevelId &&
+				!gradeLevels.some((grade) => grade.id === selectedGradeLevelId)) ||
+				(!!selectedHomeroomId && !homerooms.some((room) => room.id === selectedHomeroomId)))
+	);
+
 	function submitForm() {
-		if (saving || optionsLoading || !optionsLoaded || optionsError || hasMultipleTargetRows) return;
+		if (
+			saving ||
+			optionsLoading ||
+			!optionsLoaded ||
+			optionsError ||
+			hasMultipleTargetRows ||
+			invalidTarget
+		)
+			return;
 
 		const targets: CalendarEventTargetInput[] = selectedAudiences.map((audienceType) => ({
 			audienceType,
@@ -224,8 +250,6 @@
 		}));
 
 		onsave?.({
-			academicYearId,
-			academicTermId,
 			title: title.trim(),
 			description: description.trim() || null,
 			location: location.trim() || null,
@@ -247,7 +271,13 @@
 <Dialog.Root bind:open>
 	<Dialog.Content class="flex max-h-[92vh] flex-col p-0 sm:max-w-3xl">
 		<Dialog.Header class="border-b px-6 py-5">
-			<Dialog.Title>{event ? 'แก้ไขกิจกรรมปฏิทิน' : 'สร้างกิจกรรมปฏิทิน'}</Dialog.Title>
+			<Dialog.Title
+				>{request
+					? 'ตรวจคำร้องและอนุมัติกิจกรรม'
+					: event
+						? 'แก้ไขกิจกรรมปฏิทิน'
+						: 'สร้างกิจกรรมปฏิทิน'}</Dialog.Title
+			>
 			<Dialog.Description>กำหนดรายละเอียด วันเวลา ผู้ชม และการแจ้งเตือน</Dialog.Description>
 		</Dialog.Header>
 
@@ -284,15 +314,20 @@
 				<section class="grid gap-4">
 					<div class="grid gap-2">
 						<Label for="calendar-event-title">ชื่อกิจกรรม</Label>
-						<Input id="calendar-event-title" bind:value={title} required maxlength={180} />
+						<Input id="calendar-event-title" bind:value={title} required maxlength={200} />
 					</div>
 					<div class="grid gap-2">
 						<Label for="calendar-event-description">รายละเอียด</Label>
-						<Textarea id="calendar-event-description" bind:value={description} class="min-h-24" />
+						<Textarea
+							id="calendar-event-description"
+							bind:value={description}
+							maxlength={5000}
+							class="min-h-24"
+						/>
 					</div>
 					<div class="grid gap-2">
 						<Label for="calendar-event-location">สถานที่</Label>
-						<Input id="calendar-event-location" bind:value={location} maxlength={180} />
+						<Input id="calendar-event-location" bind:value={location} maxlength={200} />
 					</div>
 					<div class="grid gap-2">
 						<Label>หมวดหมู่</Label>
@@ -452,6 +487,10 @@
 				</section>
 			</div>
 
+			{#if invalidTarget}<p role="alert" class="text-sm text-destructive">
+					กรุณาเลือกระดับชั้นหรือห้องเรียนให้ตรงกับวันที่กิจกรรม
+				</p>{/if}
+			{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
 			<Dialog.Footer class="sticky bottom-0 mt-6 border-t bg-background py-4">
 				<Button type="button" variant="outline" onclick={() => (open = false)}>ยกเลิก</Button>
 				<LoadingButton
@@ -460,6 +499,7 @@
 					loadingLabel="กำลังบันทึก..."
 					disabled={optionsLoading ||
 						!optionsLoaded ||
+						invalidTarget ||
 						!!optionsError ||
 						hasMultipleTargetRows ||
 						!title.trim() ||
@@ -467,7 +507,7 @@
 						!endDate}
 					class={cn('min-w-36')}
 				>
-					บันทึกและเผยแพร่
+					{submitLabel}
 				</LoadingButton>
 			</Dialog.Footer>
 		</form>

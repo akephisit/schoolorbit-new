@@ -8,7 +8,7 @@ import { listCalendarEvents, listCalendarCategories, listCalendarTags } from '#l
 import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
-	academicContext: 'term_optional' as const,
+	academicContext: 'none' as const,
 	menu: {
 		title: 'ปฏิทินโรงเรียน',
 		icon: 'CalendarDays',
@@ -26,14 +26,12 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 	const allowed = waitForAuthenticatedUser().then(
 		(user) => user?.user_type === 'staff' && get(can).has(PERMISSIONS.CALENDAR_READ_SCHOOL)
 	);
-	const events = context.academicYearId
-		? captureRouteLoad(
-				allowed.then((read) =>
-					read ? listCalendarEvents(context.filters, { requestFetch: fetch }) : []
-				),
-				'โหลดกิจกรรมไม่สำเร็จ'
-			)
-		: null;
+	const events = captureRouteLoad(
+		allowed.then((read) =>
+			read ? listCalendarEvents(context.filters, { requestFetch: fetch }) : []
+		),
+		'โหลดกิจกรรมไม่สำเร็จ'
+	);
 	const categories = captureRouteLoad(
 		allowed.then((read) => (read ? listCalendarCategories({ requestFetch: fetch }) : [])),
 		'โหลดหมวดหมู่ไม่สำเร็จ'

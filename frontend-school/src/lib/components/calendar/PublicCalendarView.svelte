@@ -1,14 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { addMonths } from 'date-fns';
-	import {
-		listPublicAcademicContextOptions,
-		type AcademicContextOptionsResponse
-	} from '#lib/api/academic-context.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Select from '#lib/components/ui/select/index.js';
 	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
 	import CalendarDayTimelineDialog from '#lib/components/calendar/CalendarDayTimelineDialog.svelte';
 	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
@@ -25,8 +19,6 @@
 	} from '#lib/utils/calendar.js';
 	import { CalendarDays, ChevronLeft, ChevronRight } from '@lucide/svelte';
 
-	const ALL_TERMS_VALUE = '__all_terms__';
-
 	type PublicCalendarMode = 'page' | 'embed';
 
 	let { mode = 'page' }: { mode?: PublicCalendarMode } = $props();
@@ -37,15 +29,9 @@
 	let selectedMonth = $state(toIsoDate(new Date()));
 	let selectedDate = $state(toIsoDate(new Date()));
 	let dayDialogOpen = $state(false);
-	let contextOptions = $state<AcademicContextOptionsResponse | null>(null);
-	let selectedYearId = $state('');
-	let selectedTermId = $state('');
 	let requestToken = 0;
 
 	const embedded = $derived(mode === 'embed');
-	const termOptions = $derived(
-		contextOptions?.terms.filter((term) => term.academicYearId === selectedYearId) ?? []
-	);
 	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
 	const colorKeyItems = $derived(buildCalendarColorKey(selectedMonth, events));
 	const selectedDateEvents = $derived(
@@ -65,13 +51,7 @@
 		loading = true;
 		error = '';
 		try {
-			if (!selectedYearId) {
-				events = [];
-				return;
-			}
 			const nextEvents = await listPublicCalendarEvents({
-				academicYearId: selectedYearId,
-				academicTermId: selectedTermId || undefined,
 				...calendarGridRange(selectedMonth)
 			});
 			if (currentRequest === requestToken) events = nextEvents;
@@ -84,49 +64,6 @@
 		} finally {
 			if (currentRequest === requestToken) loading = false;
 		}
-	}
-
-	async function loadContext() {
-		const currentRequest = ++requestToken;
-		loading = true;
-		error = '';
-		try {
-			const options = await listPublicAcademicContextOptions();
-			if (currentRequest !== requestToken) return;
-			contextOptions = options;
-			selectedYearId =
-				options.years.find((year) => year.id === options.activeAcademicYearId)?.id ??
-				options.years[0]?.id ??
-				'';
-			selectedTermId = '';
-			if (!selectedYearId) {
-				events = [];
-				return;
-			}
-			const nextEvents = await listPublicCalendarEvents({
-				academicYearId: selectedYearId,
-				academicTermId: undefined,
-				...calendarGridRange(selectedMonth)
-			});
-			if (currentRequest === requestToken) events = nextEvents;
-		} catch (loadError: unknown) {
-			if (currentRequest === requestToken) {
-				error = loadError instanceof Error ? loadError.message : 'โหลดปฏิทินไม่สำเร็จ';
-			}
-		} finally {
-			if (currentRequest === requestToken) loading = false;
-		}
-	}
-
-	async function changeYear(yearId: string) {
-		selectedYearId = yearId;
-		selectedTermId = '';
-		await loadCalendar();
-	}
-
-	async function changeTerm(termId: string) {
-		selectedTermId = termId === ALL_TERMS_VALUE ? '' : termId;
-		await loadCalendar();
 	}
 
 	async function changeMonth(offset: number) {
@@ -153,7 +90,10 @@
 		}
 	}
 
-	onMount(loadContext);
+	onMount(loadCalendar);
+	onDestroy(() => {
+		requestToken++;
+	});
 </script>
 
 <main
@@ -191,46 +131,6 @@
 					? 'flex w-full flex-wrap items-center justify-between gap-2'
 					: 'flex flex-wrap items-center justify-between gap-2 sm:justify-end'}
 			>
-				<div class="flex items-end gap-2">
-					<div class="space-y-1">
-						<Label for={`public-calendar-year-${mode}`} class="text-xs">ปีการศึกษา</Label>
-						<Select.Root
-							type="single"
-							value={selectedYearId}
-							disabled={loading}
-							onValueChange={changeYear}
-						>
-							<Select.Trigger id={`public-calendar-year-${mode}`} class="h-8 w-36 text-xs">
-								{contextOptions?.years.find((year) => year.id === selectedYearId)?.name ??
-									'เลือกปี'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each contextOptions?.years ?? [] as year (year.id)}
-									<Select.Item value={year.id}>{year.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="space-y-1">
-						<Label for={`public-calendar-term-${mode}`} class="text-xs">ภาคเรียน</Label>
-						<Select.Root
-							type="single"
-							value={selectedTermId || ALL_TERMS_VALUE}
-							disabled={loading || !selectedYearId}
-							onValueChange={changeTerm}
-						>
-							<Select.Trigger id={`public-calendar-term-${mode}`} class="h-8 w-36 text-xs">
-								{termOptions.find((term) => term.id === selectedTermId)?.name ?? 'ทั้งปี'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value={ALL_TERMS_VALUE}>ทั้งปี</Select.Item>
-								{#each termOptions as term (term.id)}
-									<Select.Item value={term.id}>{term.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-				</div>
 				<Button variant="outline" size="sm" onclick={goToToday}>วันนี้</Button>
 				<div class="flex items-center gap-1 sm:gap-2">
 					<Button
@@ -266,13 +166,6 @@
 					description={error}
 					actionLabel="ลองอีกครั้ง"
 					onaction={loadCalendar}
-				/>
-			</div>
-		{:else if !contextOptions || contextOptions.years.length === 0}
-			<div class="min-h-0 flex-1 overflow-y-auto">
-				<PageState
-					title="ยังไม่มีปีการศึกษาที่เผยแพร่"
-					description="ปฏิทินจะพร้อมใช้งานเมื่อโรงเรียนเปิดปีการศึกษา"
 				/>
 			</div>
 		{:else}

@@ -331,7 +331,11 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ),
         (
             "school-calendar",
-            &["school-academic-core", "school-errors"],
+            &[
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
         ),
         (
             "school-question-bank",

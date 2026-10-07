@@ -794,3 +794,9 @@ separately if its file-ID API contract is not compatible.
 - Upload failure: verify R2 credentials, distinct bucket names, scanner health, purpose limits, and durable reconciliation state.
 
 Use structured logs with correlation context, but redact secrets, cookies, national IDs, request bodies, and raw realtime query strings.
+
+## Date calendar and activity request rollout
+
+Migration [098](../backend-school/migrations/098_calendar_requests_and_date_context.sql) makes events independent of the academic header selection. It preserves existing event facts and timestamps, saves former year/term context in event provenance, and retains audience enrollment scope separately. It also creates private staff activity requests and grants `calendar.request.own` to staff roles and active organization units. Approval requires `calendar.manage.school`; pending and rejected requests never appear in calendar event reads.
+
+Deploy the backend, generated permission/API contracts and frontend together behind the usual maintenance and all-tenant migration gates. Migration 098 removes academic context columns from events, so an older backend cannot be restored against the migrated schema. Recovery requires a compatible forward fix or a reviewed database restore; never alter migration history. Run the calendar database suite before rollout and verify request submission, manager approval and the resulting date-calendar entry on an isolated tenant.

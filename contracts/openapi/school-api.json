@@ -4263,17 +4263,6 @@
         "properties": {
           "data": {
             "properties": {
-              "academicTermId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "academicYearId": {
-                "format": "uuid",
-                "type": "string"
-              },
               "allDay": {
                 "type": "boolean"
               },
@@ -4381,8 +4370,6 @@
             },
             "required": [
               "id",
-              "academicYearId",
-              "academicTermId",
               "categoryId",
               "categoryName",
               "categoryColor",
@@ -4402,6 +4389,216 @@
               "updatedBy",
               "createdAt",
               "updatedAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CalendarEventRequest": {
+        "properties": {
+          "data": {
+            "properties": {
+              "allDay": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "endDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "endTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "eventId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "location": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "rejectionReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requestedBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "requesterName": {
+                "type": "string"
+              },
+              "reviewedAt": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "startDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "startTime": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "$ref": "#/components/schemas/CalendarRequestStatus"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "requestedBy",
+              "requesterName",
+              "title",
+              "description",
+              "location",
+              "startDate",
+              "endDate",
+              "allDay",
+              "startTime",
+              "endTime",
+              "status",
+              "reviewedAt",
+              "rejectionReason",
+              "eventId",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CalendarRequestApproval": {
+        "properties": {
+          "data": {
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/CalendarEvent"
+              },
+              "request": {
+                "$ref": "#/components/schemas/CalendarEventRequest"
+              }
+            },
+            "required": [
+              "request",
+              "event"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CalendarRequestPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "records": {
+                "items": {
+                  "$ref": "#/components/schemas/CalendarEventRequest"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "records",
+              "hasMore"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_CalendarTargetOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "gradeLevels": {
+                "items": {
+                  "$ref": "#/components/schemas/CalendarGradeOption"
+                },
+                "type": "array"
+              },
+              "homerooms": {
+                "items": {
+                  "$ref": "#/components/schemas/CalendarHomeroomOption"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "gradeLevels",
+              "homerooms"
             ],
             "type": "object"
           },
@@ -16924,17 +17121,6 @@
           "data": {
             "items": {
               "properties": {
-                "academicTermId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "academicYearId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
                 "allDay": {
                   "type": "boolean"
                 },
@@ -17042,8 +17228,6 @@
               },
               "required": [
                 "id",
-                "academicYearId",
-                "academicTermId",
                 "categoryId",
                 "categoryName",
                 "categoryColor",
@@ -17086,17 +17270,6 @@
           "data": {
             "items": {
               "properties": {
-                "academicTermId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "academicYearId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
                 "allDay": {
                   "type": "boolean"
                 },
@@ -17178,8 +17351,6 @@
               },
               "required": [
                 "id",
-                "academicYearId",
-                "academicTermId",
                 "categoryId",
                 "categoryName",
                 "categoryColor",
@@ -17262,17 +17433,6 @@
           "data": {
             "items": {
               "properties": {
-                "academicTermId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "academicYearId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
                 "allDay": {
                   "type": "boolean"
                 },
@@ -17354,8 +17514,6 @@
               },
               "required": [
                 "id",
-                "academicYearId",
-                "academicTermId",
                 "categoryId",
                 "categoryName",
                 "categoryColor",
@@ -24053,17 +24211,6 @@
       },
       "CalendarEvent": {
         "properties": {
-          "academicTermId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "academicYearId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "allDay": {
             "type": "boolean"
           },
@@ -24171,8 +24318,6 @@
         },
         "required": [
           "id",
-          "academicYearId",
-          "academicTermId",
           "categoryId",
           "categoryName",
           "categoryColor",
@@ -24222,6 +24367,102 @@
           "daysBefore",
           "remindOn",
           "sentAt"
+        ],
+        "type": "object"
+      },
+      "CalendarEventRequest": {
+        "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "eventId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rejectionReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedBy": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requesterName": {
+            "type": "string"
+          },
+          "reviewedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/CalendarRequestStatus"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "requestedBy",
+          "requesterName",
+          "title",
+          "description",
+          "location",
+          "startDate",
+          "endDate",
+          "allDay",
+          "startTime",
+          "endTime",
+          "status",
+          "reviewedAt",
+          "rejectionReason",
+          "eventId",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -24298,19 +24539,45 @@
         ],
         "type": "object"
       },
-      "CalendarPublicEvent": {
+      "CalendarGradeOption": {
         "properties": {
-          "academicTermId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "academicYearId": {
+          "id": {
             "format": "uuid",
             "type": "string"
           },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CalendarHomeroomOption": {
+        "properties": {
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "gradeLevelId"
+        ],
+        "type": "object"
+      },
+      "CalendarPublicEvent": {
+        "properties": {
           "allDay": {
             "type": "boolean"
           },
@@ -24392,8 +24659,6 @@
         },
         "required": [
           "id",
-          "academicYearId",
-          "academicTermId",
           "categoryId",
           "categoryName",
           "categoryColor",
@@ -24411,6 +24676,47 @@
           "updatedAt"
         ],
         "type": "object"
+      },
+      "CalendarRequestApproval": {
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/CalendarEvent"
+          },
+          "request": {
+            "$ref": "#/components/schemas/CalendarEventRequest"
+          }
+        },
+        "required": [
+          "request",
+          "event"
+        ],
+        "type": "object"
+      },
+      "CalendarRequestPage": {
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarEventRequest"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "records",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "CalendarRequestStatus": {
+        "enum": [
+          "pending",
+          "approved",
+          "rejected"
+        ],
+        "type": "string"
       },
       "CalendarTag": {
         "properties": {
@@ -24438,19 +24744,29 @@
         ],
         "type": "object"
       },
+      "CalendarTargetOptions": {
+        "properties": {
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarGradeOption"
+            },
+            "type": "array"
+          },
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarHomeroomOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "gradeLevels",
+          "homerooms"
+        ],
+        "type": "object"
+      },
       "CalendarViewerEvent": {
         "properties": {
-          "academicTermId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "academicYearId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "allDay": {
             "type": "boolean"
           },
@@ -24532,8 +24848,6 @@
         },
         "required": [
           "id",
-          "academicYearId",
-          "academicTermId",
           "categoryId",
           "categoryName",
           "categoryColor",
@@ -28404,6 +28718,54 @@
         },
         "required": [
           "name_th"
+        ],
+        "type": "object"
+      },
+      "CreateCalendarRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allDay": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "startDate",
+          "endDate",
+          "allDay"
         ],
         "type": "object"
       },
@@ -42246,6 +42608,18 @@
         ],
         "type": "string"
       },
+      "RejectCalendarRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "RemoveDatedRosterMembershipRequest": {
         "additionalProperties": false,
         "properties": {
@@ -53139,17 +53513,6 @@
       "UpsertCalendarEventRequest": {
         "additionalProperties": false,
         "properties": {
-          "academicTermId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "academicYearId": {
-            "format": "uuid",
-            "type": "string"
-          },
           "allDay": {
             "type": "boolean"
           },
@@ -53223,7 +53586,6 @@
           }
         },
         "required": [
-          "academicYearId",
           "title",
           "startDate",
           "endDate",
@@ -77142,24 +77504,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "from",
             "required": false,
             "schema": {
@@ -77317,36 +77661,6 @@
               }
             },
             "description": "Calendar manage permission required"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Academic year not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Academic year or term is closed"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Term does not belong to the year"
           }
         },
         "tags": [
@@ -77409,16 +77723,6 @@
               }
             },
             "description": "Event not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Academic context is closed or the event moved concurrently"
           }
         },
         "tags": [
@@ -77498,7 +77802,224 @@
                 }
               }
             },
-            "description": "Event or academic year not found"
+            "description": "Event not found"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/requests": {
+      "get": {
+        "operationId": "listCalendarRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CalendarRequestStatus"
+            }
+          },
+          {
+            "in": "query",
+            "name": "review",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarRequestPage"
+                }
+              }
+            },
+            "description": "Own requests or authorized school review queue"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid page"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request or review access denied"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      },
+      "post": {
+        "operationId": "createCalendarRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCalendarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarEventRequest"
+                }
+              }
+            },
+            "description": "Pending request submitted; no calendar event created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request capability required"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/requests/{id}/approve": {
+      "post": {
+        "operationId": "approveCalendarRequest",
+        "parameters": [
+          {
+            "description": "Request ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCalendarEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarRequestApproval"
+                }
+              }
+            },
+            "description": "Request approved and one event published atomically"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid event configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar manager required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request missing"
           },
           "409": {
             "content": {
@@ -77508,9 +78029,51 @@
                 }
               }
             },
-            "description": "Academic context is closed or the event moved concurrently"
+            "description": "Request already decided"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/requests/{id}/reject": {
+      "post": {
+        "operationId": "rejectCalendarRequest",
+        "parameters": [
+          {
+            "description": "Request ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectCalendarRequest"
+              }
+            }
           },
-          "422": {
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarEventRequest"
+                }
+              }
+            },
+            "description": "Request rejected with reason"
+          },
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
@@ -77518,7 +78081,47 @@
                 }
               }
             },
-            "description": "Term does not belong to the year"
+            "description": "Reason required"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar manager required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request missing"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request already decided"
           }
         },
         "tags": [
@@ -77559,6 +78162,57 @@
               }
             },
             "description": "Calendar read permission required"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/target-options": {
+      "get": {
+        "operationId": "listCalendarTargetOptions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CalendarTargetOptions"
+                }
+              }
+            },
+            "description": "Classroom audience options for the event date"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Calendar manager required"
           }
         },
         "tags": [
@@ -82842,24 +83496,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "from",
             "required": false,
             "schema": {
@@ -84544,24 +85180,6 @@
           },
           {
             "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "from",
             "required": false,
             "schema": {
@@ -84916,24 +85534,6 @@
       "get": {
         "operationId": "listPublicCalendarEvents",
         "parameters": [
-          {
-            "in": "query",
-            "name": "academicYearId",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "academicTermId",
-            "required": false,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          },
           {
             "in": "query",
             "name": "from",
@@ -90114,7 +90714,7 @@
       "name": "academic"
     },
     {
-      "description": "Calendar reads",
+      "description": "Date-based calendars and activity requests",
       "name": "calendar"
     },
     {

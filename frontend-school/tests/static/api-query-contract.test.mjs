@@ -189,7 +189,11 @@ test('generated API exposes repaired academic query operations', async () => {
 			new RegExp(`\\n\\t${operationId}: \\{[\\s\\S]*?\\n\\t\\};`)
 		)?.[0];
 		assert.ok(operation, `${operationId} operation block must exist`);
-		assert.match(operation, /academicYearId:\s*string/);
+		if (operationId.includes('Calendar')) {
+			assert.doesNotMatch(operation, /academicYearId|academicTermId/);
+			assert.match(operation, /from\?:\s*string/);
+			assert.match(operation, /to\?:\s*string/);
+		} else assert.match(operation, /academicYearId:\s*string/);
 		assert.doesNotMatch(operation, /academic_year_id|category_id|tag_id/);
 	}
 
@@ -280,8 +284,6 @@ test('grade-level wrapper sends a generated camelCase query object', async () =>
 test('calendar wrappers send generated query objects through the central transport', async () => {
 	const calendar = await importApiWrapper('src/lib/api/calendar.ts');
 	const filters = {
-		academicYearId: 'year-1',
-		academicTermId: 'term-1',
 		from: '2026-08-01',
 		to: '2026-08-31',
 		categoryId: 'category-1',
@@ -313,8 +315,6 @@ test('calendar wrappers send generated query objects through the central transpo
 	});
 
 	const publicFilters = {
-		academicYearId: 'year-1',
-		academicTermId: 'term-1',
 		from: '2026-08-01',
 		to: '2026-08-31',
 		categoryId: 'category-1',

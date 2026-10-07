@@ -23,14 +23,10 @@ export function calendarRouteFilters(
 	const rawVisibility = url.searchParams.get('visibility');
 	const visibility: '' | 'public' | 'private' =
 		rawVisibility === 'public' || rawVisibility === 'private' ? rawVisibility : '';
-	const academicYearId = url.searchParams.get('academicYearId') ?? '';
-	const academicTermId = url.searchParams.get('academicTermId') ?? null;
 	const categoryId = url.searchParams.get('categoryId') ?? '',
 		tagId = url.searchParams.get('tagId') ?? '',
 		q = (url.searchParams.get('q') ?? '').trim();
 	const filters: CalendarEventFilters = {
-		academicYearId,
-		academicTermId: academicTermId || undefined,
 		...calendarGridRange(month),
 		categoryId: categoryId || undefined,
 		tagId: tagId || undefined,
@@ -39,8 +35,6 @@ export function calendarRouteFilters(
 		q: q || undefined
 	};
 	return {
-		academicYearId,
-		academicTermId,
 		month,
 		categoryId,
 		tagId,

@@ -12,12 +12,6 @@
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
 
-	import {
-		listGradeLevelOptions,
-		listHomerooms,
-		type GradeLevelOption,
-		type Homeroom
-	} from '#lib/api/academic-core.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
@@ -31,9 +25,14 @@
 	import CalendarEventDialog from '#lib/components/calendar/CalendarEventDialog.svelte';
 	import CalendarCategoryDialog from '#lib/components/calendar/CalendarCategoryDialog.svelte';
 	import CalendarEmbedDialog from '#lib/components/calendar/CalendarEmbedDialog.svelte';
+	import CalendarRequestDialog from '#lib/components/calendar/CalendarRequestDialog.svelte';
 	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
 	import {
 		type CalendarAudienceType,
+		type CalendarTargetOptions,
+		type CreateCalendarRequest,
+		createCalendarRequest,
+		listCalendarTargetOptions,
 		type CalendarCategory,
 		type CalendarEvent,
 		type CalendarTag,
@@ -65,6 +64,7 @@
 	} from '#lib/utils/calendar.js';
 	import {
 		CalendarDays,
+		ClipboardList,
 		ChevronLeft,
 		ChevronRight,
 		Code2,
@@ -84,8 +84,6 @@
 		page.state.calendarUrl ? new URL(page.state.calendarUrl) : new URL(page.url.href)
 	);
 	const committed = $derived(calendarRouteFilters(currentUrl));
-	const academicYearId = $derived(committed.academicYearId);
-	const academicTermId = $derived(committed.academicTermId);
 	let { data }: PageProps = $props();
 	const eventsSource = $derived(data.events),
 		categoriesSource = $derived(data.categories),
@@ -103,14 +101,19 @@
 	let audience = $state<AudienceFilter>('');
 	let visibility = $state<VisibilityFilter>('');
 	let eventDialogOpen = $state(false);
+	let requestDialogOpen = $state(false);
+	let requesting = $state(false);
+	let requestSession = $state(0);
+	let requestError = $state('');
+	let optionsDate = $state('');
 	let eventDialogSession = $state(0);
 	let categoryDialogOpen = $state(false);
 	let embedDialogOpen = $state(false);
 	let editingEvent = $state<CalendarEvent | null>(null);
 	let saving = $state(false);
 	let error = $state('');
-	let gradeLevels = $state.raw<GradeLevelOption[]>([]);
-	let homerooms = $state.raw<Homeroom[]>([]);
+	let gradeLevels = $state.raw<CalendarTargetOptions['gradeLevels']>([]);
+	let homerooms = $state.raw<CalendarTargetOptions['homerooms']>([]);
 	let manageOptionsLoaded = $state(false);
 	let manageOptionsLoading = $state(false);
 	let deleteDialogOpen = $state(false);
@@ -128,7 +131,7 @@
 		categoriesRequest = new LatestRequest(),
 		tagsRequest = new LatestRequest(),
 		optionsRequest = new LatestRequest();
-	let consumedEventsSource: typeof data.events = null;
+	let consumedEventsSource: typeof data.events | null = null;
 	let activeEventOwner = '',
 		identityOwner = '',
 		ownerEpoch = 0,
@@ -151,6 +154,9 @@
 	];
 
 	const canReadCalendar = $derived($can.has(PERMISSIONS.CALENDAR_READ_SCHOOL));
+	const canRequestCalendar = $derived(
+		canReadCalendar && $can.has(PERMISSIONS.CALENDAR_REQUEST_OWN)
+	);
 	const canManageCalendar = $derived($can.has(PERMISSIONS.CALENDAR_MANAGE_SCHOOL));
 	const activeCategories = $derived(categories.filter((category) => category.isActive));
 	const monthLabel = $derived(formatCalendarMonth(selectedMonth));
@@ -193,7 +199,7 @@
 		} else error = result.error;
 	}
 	async function loadCalendar() {
-		if (!canReadCalendar || !academicYearId) return;
+		if (!canReadCalendar) return;
 		const ticket = eventsRequest.begin();
 		loading = true;
 		error = '';
@@ -246,6 +252,8 @@
 	}
 	function commitFilters(month = selectedMonth) {
 		const url = new URL(currentUrl);
+		url.searchParams.delete('academicYearId');
+		url.searchParams.delete('academicTermId');
 		for (const [key, value] of Object.entries({
 			month: month.slice(0, 7),
 			q: search.trim(),
@@ -264,7 +272,7 @@
 		});
 	}
 	$effect.pre(() => {
-		const identity = `${$authStore.user?.id ?? ''}|${canReadCalendar}|${canManageCalendar}`;
+		const identity = `${$authStore.user?.id ?? ''}|${canReadCalendar}|${canManageCalendar}|${canRequestCalendar}`;
 		untrack(() => {
 			if (identityOwner === identity) return;
 			identityOwner = identity;
@@ -280,6 +288,8 @@
 			tags = [];
 			tagsLoaded = false;
 			eventDialogOpen = false;
+			requestDialogOpen = false;
+			requesting = false;
 			categoryDialogOpen = false;
 			embedDialogOpen = false;
 			deleteDialogOpen = false;
@@ -303,7 +313,11 @@
 				tagId = committed.tagId;
 				audience = committed.audience;
 				visibility = committed.visibility;
-				selectedDate = todayDate.startsWith(selectedMonth.slice(0, 7)) ? todayDate : selectedMonth;
+				if (!selectedDate.startsWith(selectedMonth.slice(0, 7))) {
+					selectedDate = todayDate.startsWith(selectedMonth.slice(0, 7))
+						? todayDate
+						: selectedMonth;
+				}
 				optionsRequest.abort();
 				manageOptionsLoaded = false;
 				manageOptionsLoading = false;
@@ -323,12 +337,6 @@
 				loading = false;
 				events = [];
 				eventsLoaded = false;
-				return;
-			}
-			if (!academicYearId) {
-				eventsRequest.abort();
-				loading = true;
-				error = '';
 				return;
 			}
 			if (operation && key === data.eventKey && operation !== consumedEventsSource) {
@@ -380,10 +388,9 @@
 	});
 	$effect.pre(() => {
 		const opened = eventDialogOpen,
-			allowed = canManageCalendar,
-			year = academicYearId;
+			allowed = canManageCalendar;
 		untrack(() => {
-			if (!opened || !allowed || !year) {
+			if (!opened || !allowed) {
 				optionsRequest.abort();
 				manageOptionsLoaded = false;
 				gradeLevels = [];
@@ -583,7 +590,7 @@
 					)
 					.filter(eventMatchesCurrentFilters)
 			);
-			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (!eventsLoaded) await loadCalendar();
 			if (ownsDraft()) toast.success('บันทึกหมวดหมู่แล้ว');
 			return ownsDraft();
 		} catch (saveError: unknown) {
@@ -634,7 +641,7 @@
 					state: { ...page.state, calendarUrl: url.href }
 				});
 			}
-			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (!eventsLoaded) await loadCalendar();
 			if (ownsDraft()) toast.success('ลบหมวดหมู่แล้ว กิจกรรมเดิมยังอยู่ครบ');
 			return ownsDraft();
 		} catch (deleteError: unknown) {
@@ -679,7 +686,7 @@
 					)
 				}))
 				.filter(eventMatchesCurrentFilters);
-			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (!eventsLoaded) await loadCalendar();
 			if (ownsDraft()) toast.success('บันทึกแท็กแล้ว');
 			return ownsDraft();
 		} catch (saveError: unknown) {
@@ -731,7 +738,7 @@
 					state: { ...page.state, calendarUrl: url.href }
 				});
 			}
-			if (!eventsLoaded && academicYearId) await loadCalendar();
+			if (!eventsLoaded) await loadCalendar();
 			if (ownsDraft()) toast.success('ลบแท็กแล้ว กิจกรรมเดิมยังอยู่ครบ');
 			return ownsDraft();
 		} catch (deleteError: unknown) {
@@ -747,16 +754,13 @@
 	}
 
 	async function ensureManageOptions(): Promise<boolean> {
-		if (!eventDialogOpen || !canManageCalendar || !academicYearId) return false;
+		if (!eventDialogOpen || !canManageCalendar || !optionsDate) return false;
 		if (manageOptionsLoaded) return true;
 		const ticket = optionsRequest.begin();
 		manageOptionsLoading = true;
 		manageOptionsError = '';
 		const result = await captureRouteLoad(
-			Promise.all([
-				listGradeLevelOptions(academicYearId, { signal: ticket.signal }),
-				listHomerooms(academicYearId, { signal: ticket.signal })
-			]),
+			listCalendarTargetOptions(optionsDate, { signal: ticket.signal }),
 			'โหลดตัวเลือกชั้นเรียนไม่สำเร็จ'
 		);
 		if (!optionsRequest.isCurrent(ticket.revision)) return false;
@@ -765,7 +769,7 @@
 			manageOptionsError = result.error;
 			return false;
 		}
-		[gradeLevels, homerooms] = result.data;
+		({ gradeLevels, homerooms } = result.data);
 		manageOptionsLoaded = true;
 		return true;
 	}
@@ -775,10 +779,40 @@
 
 		editingEvent = event ? (events.find((item) => item.id === event.id) ?? null) : null;
 
+		optionsDate = editingEvent?.startDate ?? selectedDate;
 		eventDialogSession++;
 		eventDialogOpen = true;
 	}
 
+	function changeOptionsDate(date: string) {
+		if (date === optionsDate) return;
+		optionsDate = date;
+		manageOptionsLoaded = false;
+		void ensureManageOptions();
+	}
+	async function submitRequest(payload: CreateCalendarRequest) {
+		if (!canRequestCalendar || requesting || !requestDialogOpen) return;
+		const identity = identityOwner,
+			session = requestSession;
+		requesting = true;
+		requestError = '';
+		const current = () =>
+			!disposed &&
+			identity === identityOwner &&
+			canRequestCalendar &&
+			session === requestSession &&
+			requestDialogOpen;
+		try {
+			await createCalendarRequest(payload);
+			if (!current()) return;
+			requestDialogOpen = false;
+			toast.success('ส่งคำร้องแล้ว รอผู้ดูแลอนุมัติ');
+		} catch (error: unknown) {
+			if (current()) requestError = error instanceof Error ? error.message : 'ส่งคำร้องไม่สำเร็จ';
+		} finally {
+			if (!disposed && identity === identityOwner && session === requestSession) requesting = false;
+		}
+	}
 	function openCategoryDialog() {
 		if (!canManageCalendar || !categoriesLoaded || !tagsLoaded || categoriesError || tagsError)
 			return;
@@ -819,6 +853,28 @@
 <PageShell title="ปฏิทินโรงเรียน" description="กิจกรรมและประกาศตามช่วงเดือน">
 	{#snippet actions()}
 		<div class="flex flex-wrap gap-2">
+			{#if canRequestCalendar}
+				<Button
+					variant="outline"
+					onclick={() => {
+						requestSession++;
+						requestError = '';
+						requestDialogOpen = true;
+					}}
+				>
+					<Plus class="size-4" />คำร้องขอเพิ่มวันกิจกรรม
+				</Button>
+			{/if}
+			{#if canRequestCalendar || canManageCalendar}
+				<Button
+					variant="outline"
+					href={resolve('staff/calendar/requests') + (canManageCalendar ? '?review=true' : '')}
+				>
+					<ClipboardList class="size-4" />{canManageCalendar
+						? 'ติดตามและอนุมัติคำร้อง'
+						: 'คำร้องของฉัน'}
+				</Button>
+			{/if}
 			{#if canReadCalendar}
 				<Button variant="outline" onclick={copyPublicCalendarLink}>
 					<Copy class="size-4" />
@@ -1088,8 +1144,8 @@
 				{tags}
 				{gradeLevels}
 				{homerooms}
-				academicYearId={academicYearId ?? ''}
-				{academicTermId}
+				initialDate={selectedDate}
+				ondatechange={changeOptionsDate}
 				event={editingEvent}
 				{saving}
 				optionsLoading={manageOptionsLoading}
@@ -1097,6 +1153,17 @@
 				optionsError={manageOptionsError}
 				onretryoptions={ensureManageOptions}
 				onsave={saveEvent}
+			/>
+		{/key}
+	{/if}
+	{#if requestDialogOpen && canRequestCalendar}
+		{#key requestSession}
+			<CalendarRequestDialog
+				bind:open={requestDialogOpen}
+				initialDate={selectedDate}
+				saving={requesting}
+				error={requestError}
+				onsubmit={submitRequest}
 			/>
 		{/key}
 	{/if}

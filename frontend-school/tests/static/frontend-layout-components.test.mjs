@@ -102,6 +102,7 @@ test('every protected app page renders the shared page shell', async () => {
 	const appRoutesDir = path.join(projectRoot, 'src/routes/(app)');
 	const pages = (await listFiles(appRoutesDir)).filter((file) => file.endsWith('+page.svelte'));
 	const pageShellDelegates = new Map([
+		['CalendarViewer', await readProjectFile('src/lib/components/calendar/CalendarViewer.svelte')],
 		[
 			'PromotionRunDetail',
 			await readProjectFile('src/lib/components/academic/lifecycle/PromotionRunDetail.svelte')

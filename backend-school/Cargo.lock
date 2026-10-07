@@ -4236,8 +4236,9 @@ name = "school-calendar"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "school-academic-core",
+ "school-authorization",
  "school-errors",
+ "school-permissions",
  "serde",
  "serde_json",
  "sqlx",

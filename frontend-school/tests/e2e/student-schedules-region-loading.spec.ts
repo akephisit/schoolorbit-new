@@ -34,7 +34,7 @@ for (const resource of Object.keys(resources) as Resource[]) {
 			page.getByRole('status', { name: `กำลังโหลด${titles[resource]}`, exact: true })
 		).toBeVisible();
 		await expect.poll(() => api.count(resource)).toBe(1);
-		expect(api.count('context')).toBe(1);
+		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
 		expect(api.selfProfileCount()).toBe(0);
 		expect(api.writes).toEqual([]);
 		api.release();
@@ -46,7 +46,7 @@ for (const resource of Object.keys(resources) as Resource[]) {
 		await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
 		await expect(readyRegion(page, resource)).toBeVisible();
 		expect(api.count(resource)).toBe(2);
-		expect(api.count('context')).toBe(1);
+		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
 	});
 	test(`${resource}: retained refresh error keeps useful region`, async ({ page }) => {
 		const api = await mockStudentSchedules(page, { fail: resource, failAt: 2 });
@@ -60,7 +60,7 @@ for (const resource of Object.keys(resources) as Resource[]) {
 			.click();
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true })).toBeVisible();
 		await expect(readyRegion(page, resource)).toBeVisible();
-		expect(api.count('context')).toBe(1);
+		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
 	});
 	test(`${resource}: retained refresh exposes local updating status`, async ({ page }) => {
 		const api = await mockStudentSchedules(page, { hold: resource, holdAt: 2 });
@@ -81,7 +81,7 @@ for (const resource of Object.keys(resources) as Resource[]) {
 			'aria-busy',
 			'true'
 		);
-		expect(api.count('context')).toBe(1);
+		expect(api.count('context')).toBe(resource === 'calendar' ? 0 : 1);
 		api.release();
 		await expect(page.getByRole('status', { name: 'กำลังอัปเดตข้อมูล', exact: true })).toHaveCount(
 			0
@@ -91,19 +91,22 @@ for (const resource of Object.keys(resources) as Resource[]) {
 			'false'
 		);
 	});
-	test(`${resource}: failed prerequisite does not issue primary or paint false empty`, async ({
-		page
-	}) => {
-		const api = await mockStudentSchedules(page, { fail: 'context' });
-		await page.goto(scheduleRoute(resource));
-		await expect(page.getByRole('button', { name: 'ลองบริบทอีกครั้ง', exact: true })).toBeVisible();
-		expect(api.count(resource)).toBe(0);
-		await expect(page.getByText('ยังไม่มีประวัติปีการศึกษา', { exact: true })).toHaveCount(0);
-		await expect(page.getByText('ปีการศึกษานี้ยังไม่มีภาคเรียน', { exact: true })).toHaveCount(0);
-		await page.getByRole('button', { name: 'ลองบริบทอีกครั้ง', exact: true }).click();
-		await expect(readyRegion(page, resource)).toBeVisible();
-		expect(api.count(resource)).toBe(1);
-	});
+	if (resource !== 'calendar')
+		test(`${resource}: failed prerequisite does not issue primary or paint false empty`, async ({
+			page
+		}) => {
+			const api = await mockStudentSchedules(page, { fail: 'context' });
+			await page.goto(scheduleRoute(resource));
+			await expect(
+				page.getByRole('button', { name: 'ลองบริบทอีกครั้ง', exact: true })
+			).toBeVisible();
+			expect(api.count(resource)).toBe(0);
+			await expect(page.getByText('ยังไม่มีประวัติปีการศึกษา', { exact: true })).toHaveCount(0);
+			await expect(page.getByText('ปีการศึกษานี้ยังไม่มีภาคเรียน', { exact: true })).toHaveCount(0);
+			await page.getByRole('button', { name: 'ลองบริบทอีกครั้ง', exact: true }).click();
+			await expect(readyRegion(page, resource)).toBeVisible();
+			expect(api.count(resource)).toBe(1);
+		});
 	if (resource !== 'calendar')
 		test(`${resource}: term supersession and Back own primary once`, async ({ page }) => {
 			const api = await mockStudentSchedules(page, { hold: resource });
@@ -142,7 +145,7 @@ test('calendar month shallow history refreshes events only and Back restores mon
 	await page.goBack();
 	await expect(readyRegion(page, 'calendar')).toBeVisible();
 	expect(api.count('calendar')).toBe(3);
-	expect(api.count('context')).toBe(1);
+	expect(api.count('context')).toBe(0);
 });
 test('missing required term repairs URL once; foreign term never reaches primary', async ({
 	page

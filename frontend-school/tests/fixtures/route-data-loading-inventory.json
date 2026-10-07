@@ -56,10 +56,10 @@
 			"wave": "self-service",
 			"dataOwner": "route",
 			"preload": "tap",
-			"context": "child-id + selected academic context",
+			"context": "calendar month; child identity when applicable",
 			"status": "complete",
 			"backendOwner": "school-calendar",
-			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
+			"notes": "Loader owns date-based calendar reads. No academic-context prerequisite. Month navigation reconciles one bounded date range with identity, route and cancellation guards."
 		},
 		{
 			"route": "parent/student/[id]/exams",
@@ -692,10 +692,20 @@
 			"wave": "staff",
 			"dataOwner": "route",
 			"preload": "tap",
-			"context": "academic year + optional term + committed month/filter URL",
+			"context": "committed calendar month and filters; independent of academic header",
 			"status": "complete",
 			"backendOwner": "school-calendar",
 			"notes": "Direct loader owns concurrent events/categories/tags; shallow history rereads events only. Opened event targets are lazy, typed mutations patch affected regions with owner/draft/disposal guards. SQL audit: date-scoped event query plus three set-based expansions, no N+1 or justified index change."
+		},
+		{
+			"route": "staff/calendar/requests",
+			"wave": "staff",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "own/review scope, status and bounded page",
+			"status": "complete",
+			"backendOwner": "school-calendar",
+			"notes": "Loader owns authorized bounded request list. Review catalogs and event-date classroom options load only after manager opens approval. Typed decisions patch request state with owner/draft/disposal guards."
 		},
 		{
 			"route": "staff/certificate-requests",
@@ -1102,10 +1112,10 @@
 			"wave": "self-service",
 			"dataOwner": "route",
 			"preload": "tap",
-			"context": "own academic context",
+			"context": "calendar month; child identity when applicable",
 			"status": "complete",
 			"backendOwner": "school-calendar",
-			"notes": "Direct learner-scoped loader owns one canonical context and month-grid events; optional term keeps whole-year view. Shallow month history refreshes events only and Back restores month. First/retained local retry, identity/context/month/disposal supersession; no eager self profile. Tap preload."
+			"notes": "Loader owns date-based calendar reads. No academic-context prerequisite. Month navigation reconciles one bounded date range with identity, route and cancellation guards."
 		},
 		{
 			"route": "student/certificates",

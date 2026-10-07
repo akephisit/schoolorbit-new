@@ -703,7 +703,7 @@ test('admission round listing is scoped by the selected academic year', async ()
 	assert.match(service, /WHERE ar\.academic_year_id = \$1/);
 });
 
-test('calendar consumers use explicit year and optional term contexts', async () => {
+test('calendar consumers use dates independently of academic header context', async () => {
 	const api = await readProjectFile('src/lib/api/calendar.ts');
 	const academicCoreApi = await readProjectFile('src/lib/api/academic-core.ts');
 	const staffMetadata = await readProjectFile('src/routes/(app)/staff/calendar/+page.ts');
@@ -713,7 +713,7 @@ test('calendar consumers use explicit year and optional term contexts', async ()
 		'src/routes/(app)/parent/student/[id]/calendar/+page.svelte'
 	);
 
-	assert.match(staffMetadata, /academicContext:\s*['"]term_optional['"]/);
+	assert.match(staffMetadata, /academicContext:\s*['"]none['"]/);
 	for (const operationId of [
 		'listCalendarEvents',
 		'listMyCalendarEvents',
@@ -729,10 +729,11 @@ test('calendar consumers use explicit year and optional term contexts', async ()
 	assert.doesNotMatch(api, /classRoomId/);
 	assert.match(staffPage, /calendarRouteFilters\(currentUrl\)/);
 	assert.match(staffMetadata, /calendarRouteFilters\(url\)/);
-	assert.match(studentPage, /listMyAcademicContextOptions/);
-	assert.match(studentPage, /academicYearId:\s*selectedYearId/);
-	assert.match(parentPage, /listChildAcademicContextOptions/);
-	assert.match(parentPage, /academicYearId:\s*selectedYearId/);
+	for (const view of [studentPage, parentPage]) {
+		assert.match(view, /CalendarViewer/);
+		assert.doesNotMatch(view, /selectedYearId|AcademicContextOptions/);
+	}
+	assert.doesNotMatch(api, /academicYearId|academicTermId/);
 });
 
 test('student activity registration uses learner term context and canonical delivery groups', async () => {
@@ -756,7 +757,7 @@ test('student activity registration uses learner term context and canonical deli
 	assert.doesNotMatch(page, /Promise\.all/);
 });
 
-test('public calendar discovers its explicit academic context without authentication', async () => {
+test('public calendar loads date ranges without academic context discovery', async () => {
 	const api = await readProjectFile('src/lib/api/academic-context.ts');
 	const view = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
@@ -767,8 +768,8 @@ test('public calendar discovers its explicit academic context without authentica
 
 	assert.match(api, /listPublicAcademicContextOptions/);
 	assert.match(api, /\/api\/public\/academic-context\/options/);
-	assert.match(view, /listPublicAcademicContextOptions/);
-	assert.match(view, /academicYearId:\s*selectedYearId/);
+	assert.doesNotMatch(view, /listPublicAcademicContextOptions|selectedYearId/);
+	assert.match(view, /listPublicCalendarEvents/);
 	assert.match(app, /"\/api\/public\/academic-context\/options"/);
 	assert.match(handlers, /pub async fn list_public_context_options/);
 });
