@@ -62,21 +62,39 @@ pub async fn get_workspace(
     pool: &PgPool,
     version_id: Uuid,
 ) -> Result<CurriculumStructureWorkspace, AppError> {
-    let level = curriculum::get_level(pool, version_id).await?;
-    let term_slots = sqlx::query_as::<_, CurriculumTermSlot>(
+    get_workspace_from_publication(pool, version_id, None).await
+}
+
+pub(super) async fn get_workspace_from_publication(
+    pool: &PgPool,
+    version_id: Uuid,
+    publication: Option<Uuid>,
+) -> Result<CurriculumStructureWorkspace, AppError> {
+    let level = curriculum::level_from_publication(pool, version_id, publication).await?;
+    let curriculum_term_slots =
+        super::curriculum_publications::source("curriculum_term_slots", publication)?;
+    let curriculum_levels =
+        super::curriculum_publications::source("curriculum_levels", publication)?;
+    let curriculum_course_requirements =
+        super::curriculum_publications::source("curriculum_course_requirements", publication)?;
+    let curriculum_activity_requirements =
+        super::curriculum_publications::source("curriculum_activity_requirements", publication)?;
+    let study_programs = super::curriculum_publications::source("study_programs", publication)?;
+    let term_slots = sqlx::query_as::<_, CurriculumTermSlot>(sqlx::AssertSqlSafe(format!(
         r#"SELECT id, curriculum_level_id, sequence, term_type, type_occurrence,
                   name, row_version
-           FROM curriculum_term_slots
+           FROM {curriculum_term_slots}
            WHERE curriculum_level_id = $1
-           ORDER BY sequence, id"#,
-    )
+           ORDER BY sequence, id"#
+    )))
     .bind(version_id)
+    .bind(publication)
     .fetch_all(pool)
     .await?;
-    let programs = curriculum::list_programs_for_level(pool, version_id).await?;
-    let grade_levels = sqlx::query_as::<_, GradeLevelRow>(
+    let programs = curriculum::programs_from_publication(pool, version_id, publication).await?;
+    let grade_levels = sqlx::query_as::<_, GradeLevelRow>(sqlx::AssertSqlSafe(format!(
         r#"SELECT grade.id, grade.level_type, grade.year
-           FROM curriculum_levels version
+           FROM {curriculum_levels} version
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
            JOIN grade_levels grade ON grade.id IN (
                SELECT jsonb_array_elements_text(
@@ -91,15 +109,16 @@ pub async fn get_workspace(
                         ELSE 4
                     END,
                     grade.year,
-                    grade.id"#,
-    )
+                    grade.id"#
+    )))
     .bind(version_id)
+    .bind(publication)
     .fetch_all(pool)
     .await?
     .into_iter()
     .map(grade_level_item)
     .collect::<Vec<_>>();
-    let rows = sqlx::query_as::<_, RequirementRow>(
+    let rows = sqlx::query_as::<_, RequirementRow>(sqlx::AssertSqlSafe(format!(
         r#"SELECT requirement.id,
                   requirement.study_program_id,
                   requirement.grade_level_id,
@@ -117,8 +136,8 @@ pub async fn get_workspace(
                   version.credit::text AS credit,
                   version.hours_per_semester::text AS total_hours,
                   requirement.display_order
-           FROM curriculum_course_requirements requirement
-           JOIN study_programs program ON program.id = requirement.study_program_id
+           FROM {curriculum_course_requirements} requirement
+           JOIN {study_programs} program ON program.id = requirement.study_program_id
            JOIN grade_levels grade ON grade.id = requirement.grade_level_id
            JOIN subject_versions version ON version.id = requirement.subject_version_id
            JOIN subjects subject ON subject.id = version.subject_id
@@ -141,16 +160,17 @@ pub async fn get_workspace(
                   NULL::text AS credit,
                   version.hours_per_term::text AS total_hours,
                   requirement.display_order
-           FROM curriculum_activity_requirements requirement
-           JOIN study_programs program ON program.id = requirement.study_program_id
+           FROM {curriculum_activity_requirements} requirement
+           JOIN {study_programs} program ON program.id = requirement.study_program_id
            JOIN grade_levels grade ON grade.id = requirement.grade_level_id
            JOIN activity_versions version ON version.id = requirement.activity_version_id
            JOIN activities activity ON activity.id = version.activity_id
            WHERE program.curriculum_level_id = $1
            ORDER BY study_program_id, grade_level_year, term_slot_id,
-                    display_order, resource_kind, catalog_version_id"#,
-    )
+                    display_order, resource_kind, catalog_version_id"#
+    )))
     .bind(version_id)
+    .bind(publication)
     .fetch_all(pool)
     .await?;
 
@@ -214,11 +234,11 @@ pub async fn replace_program_structure(
             .fetch_optional(&mut *transaction)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบแผนการเรียน".into()))?;
-    super::curriculum::require_draft_level(&mut transaction, level_id).await?;
+    super::curriculum::require_draft_level(&mut transaction, level_id, request.draft_id).await?;
     let program = sqlx::query_as::<_, ProgramLockRow>(
         r#"SELECT program.curriculum_level_id,
                   program.row_version,
-                  curriculum.status AS version_status
+                  CASE WHEN curriculum.draft_id IS NOT NULL THEN 'draft' ELSE curriculum.status END AS version_status
            FROM study_programs program
            JOIN curriculum_levels version ON version.id = program.curriculum_level_id
            JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
@@ -352,7 +372,7 @@ pub async fn replace_term_slots(
     }
 
     let mut transaction = pool.begin().await?;
-    super::curriculum::require_draft_level(&mut transaction, version_id).await?;
+    super::curriculum::require_draft_level(&mut transaction, version_id, request.draft_id).await?;
     let (status, current_row_version): (VersionStatus, i64) = sqlx::query_as(
         "SELECT e.status,l.row_version FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE l.id=$1 FOR UPDATE OF l",
     )

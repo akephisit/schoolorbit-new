@@ -238,11 +238,21 @@ async fn migration_093_retains_unknown_year_and_versionless_drafts_without_guess
             .len(),
         3
     );
+    apply_migrations_through(&pool, 96).await.unwrap();
     for row in rows {
         assert!(school_academic_core::services::curriculum::publish(
             &pool,
             row.0,
-            school_academic_core::models::PublishVersionRequest { row_version: 1 }
+            school_academic_core::models::PublishCurriculumRequest {
+                row_version: 1,
+                draft_id: school_academic_core::services::curriculum::get(&pool, row.0)
+                    .await
+                    .unwrap()
+                    .draft_id
+                    .unwrap(),
+                change_note: "ไม่ทราบปีปรับปรุง".into()
+            },
+            Uuid::nil()
         )
         .await
         .is_err());

@@ -9,6 +9,7 @@
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		getCurriculumStructureWorkspace,
+		curriculumViewSearch,
 		getCurriculumManagementOptions,
 		createStudyProgram,
 		replaceCurriculumStructure,
@@ -50,7 +51,7 @@
 	const editorRequest = new LatestRequest();
 	const alignmentRequest = new LatestRequest();
 	let canManage = $derived(
-		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL) && workspace?.level.status === 'draft'
+		$can.has(PERMISSIONS.ACADEMIC_CURRICULUM_MANAGE_SCHOOL) && !!workspace?.level.draftId
 	);
 	function apply(result: CurriculumStructureWorkspace) {
 		workspace = result;
@@ -110,7 +111,7 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await getCurriculumStructureWorkspace(levelId, { signal });
+			const result = await getCurriculumStructureWorkspace(levelId, { signal, ...data.view });
 			if (
 				!workspaceRequest.isCurrent(revision) ||
 				data.levelId !== levelId ||
@@ -151,16 +152,30 @@
 		rowVersion: number,
 		requirements: CurriculumStructureRequirementInput[]
 	) {
-		const result = await replaceCurriculumStructure(programId, { rowVersion, requirements });
+		if (!workspace) return;
+		const draftId = workspace.level.draftId;
+		if (!draftId) return;
+		const selected = workspace.level;
+		const result = await replaceCurriculumStructure(programId, {
+			rowVersion,
+			requirements,
+			draftId
+		});
+		if (data.levelId !== selected.id || workspace?.level.draftId !== selected.draftId) return;
 		mutationRevision++;
 		apply(result);
 	}
 	async function saveSlots(slots: CurriculumTermSlotInput[]) {
 		if (!workspace) return;
+		const draftId = workspace.level.draftId;
+		if (!draftId) return;
+		const selected = workspace.level;
 		const result = await replaceCurriculumTermSlots(workspace.level.id, {
 			rowVersion: workspace.level.rowVersion,
+			draftId,
 			slots
 		});
+		if (data.levelId !== selected.id || workspace?.level.draftId !== selected.draftId) return;
 		mutationRevision++;
 		apply(result);
 	}
@@ -204,7 +219,9 @@
 	title={workspace?.level.nameTh ?? 'แผนการเรียน'}
 	description={`${edition?.name ?? 'ฉบับหลักสูตร'} → ระดับการศึกษา → แผนการเรียน → ชั้น → ภาคเรียน`}
 >
-	{#snippet actions()}<Button variant="outline" href={`/staff/academic/curricula/${data.editionId}`}
+	{#snippet actions()}<Button
+			variant="outline"
+			href={`/staff/academic/curricula/${data.editionId}${curriculumViewSearch(data.view)}`}
 			>กลับฉบับหลักสูตร</Button
 		>{/snippet}
 	<div class="space-y-5">
@@ -225,6 +242,13 @@
 					academicTermId={data.alignmentContext.academicTermId}
 				/>{/if}{/if}
 
+		{#if workspace?.level.draftId}<p class="rounded-xl border bg-muted p-3 text-sm">
+				กำลังแก้ไขร่าง · บันทึกที่นี่แล้วกลับไปเผยแพร่ทั้งฉบับ
+				การเปิดสอนและตารางเดิมยังใช้ข้อมูลเดิม
+			</p>
+		{:else if data.view.publicationId}<p class="rounded-xl border bg-muted p-3 text-sm">
+				ประวัติการเผยแพร่ · อ่านอย่างเดียว
+			</p>{/if}
 		{#if loading && !workspace}<PageSkeleton
 				variant="cards"
 				rows={3}
@@ -250,6 +274,7 @@
 								onCopied={copied}
 							/><CurriculumProgramCreateDialog
 								levelId={workspace.level.id}
+								draftId={workspace.level.draftId ?? ''}
 								isFirst={workspace.programs.length === 0}
 								onCreated={programCreated}
 							/>

@@ -24,8 +24,8 @@ use school_permissions::registry::codes;
 
 use school_academic_core::models::*;
 use school_academic_core::services::{
-    bell_schedules, catalog, context, curriculum, curriculum_structure, progressions,
-    student_years, workspaces, years_terms,
+    bell_schedules, catalog, context, curriculum, curriculum_publications, curriculum_structure,
+    progressions, student_years, workspaces, years_terms,
 };
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -2020,12 +2020,12 @@ pub async fn update_curriculum(
     Ok(ok(value))
 }
 
-#[utoipa::path(post,path="/api/academic/curricula/{id}/publish",operation_id="publishCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=PublishVersionRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[utoipa::path(post,path="/api/academic/curricula/{id}/publish",operation_id="publishCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=PublishCurriculumRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
 pub async fn publish_curriculum(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(request): Json<PublishVersionRequest>,
+    Json(request): Json<PublishCurriculumRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     academic_curriculum_access_policy::require_academic_curriculum_list_access(
@@ -2034,7 +2034,8 @@ pub async fn publish_curriculum(
         CurriculumAction::Manage,
     )
     .await?;
-    let value = curriculum::publish(&context.tenant.pool, id, request).await?;
+    let value =
+        curriculum::publish(&context.tenant.pool, id, request, context.actor.user_id).await?;
     signal_core_changed(
         &state,
         &session,
@@ -2047,11 +2048,12 @@ pub async fn publish_curriculum(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curricula/{id}/levels",operation_id="listCurriculumLevels",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<CurriculumLevelView>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/academic/curricula/{id}/levels",operation_id="listCurriculumLevels",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<CurriculumLevelView>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
 pub async fn list_curriculum_levels(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     academic_curriculum_access_policy::require_academic_curriculum_list_access(
@@ -2060,7 +2062,7 @@ pub async fn list_curriculum_levels(
         CurriculumAction::Read,
     )
     .await?;
-    let value = workspaces::curriculum_level_views(&context.tenant.pool, id).await?;
+    let value = curriculum_publications::read_levels(&context.tenant.pool, id, &query).await?;
     Ok(ok(value))
 }
 
@@ -2091,11 +2093,12 @@ pub async fn create_curriculum_level(
     Ok(created(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}",operation_id="getCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}",operation_id="getCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
 pub async fn get_curriculum_level(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     academic_curriculum_access_policy::require_academic_curriculum_list_access(
@@ -2104,7 +2107,7 @@ pub async fn get_curriculum_level(
         CurriculumAction::Read,
     )
     .await?;
-    let value = curriculum::get_level(&context.tenant.pool, id).await?;
+    let value = curriculum_publications::read_level(&context.tenant.pool, id, &query).await?;
     Ok(ok(value))
 }
 
@@ -2153,11 +2156,12 @@ pub async fn get_curriculum_management_options(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/structure",operation_id="getCurriculumStructureWorkspace",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/structure",operation_id="getCurriculumStructureWorkspace",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
 pub async fn get_curriculum_structure_workspace(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     academic_curriculum_access_policy::require_academic_curriculum_list_access(
@@ -2166,7 +2170,7 @@ pub async fn get_curriculum_structure_workspace(
         CurriculumAction::Read,
     )
     .await?;
-    let value = curriculum_structure::get_workspace(&context.tenant.pool, id).await?;
+    let value = curriculum_publications::read_workspace(&context.tenant.pool, id, &query).await?;
     Ok(ok(value))
 }
 
@@ -2197,11 +2201,12 @@ pub async fn replace_curriculum_term_slots(
     Ok(ok(value))
 }
 
-#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/programs",operation_id="listStudyPrograms",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<StudyProgram>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/programs",operation_id="listStudyPrograms",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<StudyProgram>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
 pub async fn list_study_programs(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     academic_curriculum_access_policy::require_academic_curriculum_list_access(
@@ -2210,7 +2215,7 @@ pub async fn list_study_programs(
         CurriculumAction::Read,
     )
     .await?;
-    let value = curriculum::list_programs(&context.tenant.pool, id).await?;
+    let value = curriculum_publications::read_programs(&context.tenant.pool, id, &query).await?;
     Ok(ok(value))
 }
 
@@ -2268,11 +2273,12 @@ pub async fn copy_study_program(
     Ok(created(value))
 }
 
-#[utoipa::path(get,path="/api/academic/study-programs/{id}",operation_id="getStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/academic/study-programs/{id}",operation_id="getStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
 pub async fn get_study_program(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     academic_curriculum_access_policy::require_academic_curriculum_list_access(
@@ -2281,7 +2287,7 @@ pub async fn get_study_program(
         CurriculumAction::Read,
     )
     .await?;
-    let value = curriculum::get_program(&context.tenant.pool, id).await?;
+    let value = curriculum_publications::read_program(&context.tenant.pool, id, &query).await?;
     Ok(ok(value))
 }
 
@@ -2856,5 +2862,69 @@ pub async fn transfer_placement(
         Some(value.new_placement.academic_year_id),
         None,
     );
+    Ok(ok(value))
+}
+
+#[utoipa::path(post,path="/api/academic/curricula/{id}/draft",operation_id="openCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=OpenCurriculumDraftRequest,responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn open_curriculum_draft(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<OpenCurriculumDraftRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum_publications::open_draft(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}/publications",operation_id="listCurriculumPublications",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<Vec<CurriculumPublication>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn list_curriculum_publications(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::list_publications(&context.tenant.pool, id).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}/publications/{publication_id}",operation_id="getCurriculumPublicationHistory",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),("publication_id"=Uuid,Path,description="Publication identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumPublicationHistory>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn get_curriculum_publication_history(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, publication_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::history(&context.tenant.pool, id, publication_id).await?;
     Ok(ok(value))
 }

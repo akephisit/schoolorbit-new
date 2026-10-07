@@ -138,7 +138,7 @@ async fn validate_scope(
     }
     if let Some(curriculum_level_id) = progression.curriculum_level_id {
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM curriculum_levels WHERE id = $1 AND is_active IS TRUE)",
+            "SELECT EXISTS (SELECT 1 FROM published_curriculum_levels WHERE id = $1 AND is_active IS TRUE)",
         )
         .bind(curriculum_level_id)
         .fetch_one(&mut **transaction)

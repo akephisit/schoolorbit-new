@@ -35,7 +35,7 @@ pub async fn curriculum_overview(
 ) -> Result<CurriculumOverview, AppError> {
     let editions = curriculum::list(pool, filter).await?;
     let ids = editions.iter().map(|e| e.id).collect::<Vec<_>>();
-    let counts:Vec<(Uuid,i64,i64)>=sqlx::query_as("SELECT l.edition_id,count(DISTINCT l.id),count(p.id) FROM curriculum_levels l LEFT JOIN study_programs p ON p.curriculum_level_id=l.id AND p.status<>'archived' WHERE l.edition_id=ANY($1) GROUP BY l.edition_id").bind(&ids).fetch_all(pool).await?;
+    let counts:Vec<(Uuid,i64,i64)>=sqlx::query_as("WITH visible_levels AS (SELECT l.id,l.edition_id FROM published_curriculum_levels l UNION ALL SELECT l.id,l.edition_id FROM curriculum_levels l JOIN curriculum_editions e ON e.id=l.edition_id WHERE e.current_publication_id IS NULL),visible_programs AS(SELECT p.id,p.curriculum_level_id,p.status FROM published_study_programs p UNION ALL SELECT p.id,p.curriculum_level_id,p.status FROM study_programs p JOIN curriculum_levels l ON l.id=p.curriculum_level_id JOIN curriculum_editions e ON e.id=l.edition_id WHERE e.current_publication_id IS NULL) SELECT l.edition_id,count(DISTINCT l.id),count(p.id) FROM visible_levels l LEFT JOIN visible_programs p ON p.curriculum_level_id=l.id AND p.status<>'archived' WHERE l.edition_id=ANY($1) GROUP BY l.edition_id").bind(&ids).fetch_all(pool).await?;
     let counts = counts
         .into_iter()
         .map(|(id, l, p)| (id, (l, p)))

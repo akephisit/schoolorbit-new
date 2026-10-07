@@ -8,6 +8,8 @@ pub mod bell_schedules;
 pub mod catalog;
 pub mod context;
 pub mod curriculum;
+mod curriculum_publication_changes;
+pub mod curriculum_publications;
 pub mod curriculum_structure;
 pub mod lifecycle_context;
 pub mod lifecycle_guard;

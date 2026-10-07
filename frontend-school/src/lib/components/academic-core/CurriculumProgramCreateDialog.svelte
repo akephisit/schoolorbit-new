@@ -8,9 +8,15 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	let {
 		levelId,
+		draftId,
 		isFirst = false,
 		onCreated
-	}: { levelId: string; isFirst?: boolean; onCreated: (program: StudyProgram) => void } = $props();
+	}: {
+		levelId: string;
+		draftId: string;
+		isFirst?: boolean;
+		onCreated: (program: StudyProgram) => void;
+	} = $props();
 	let open = $state(false);
 	let saving = $state(false);
 	let name = $state('');
@@ -28,7 +34,11 @@
 		saving = true;
 		error = '';
 		try {
-			const program = await createStudyProgram(levelId, { nameTh: name.trim(), isDefault });
+			const program = await createStudyProgram(levelId, {
+				draftId,
+				nameTh: name.trim(),
+				isDefault
+			});
 			open = false;
 			onCreated(program);
 		} catch (e) {

@@ -168,6 +168,7 @@ struct PreviewHashInput<'a> {
     term_code: &'a str,
     study_program_ids: &'a [Uuid],
     proposals: &'a [CurriculumPreparationProposal],
+    curriculum_sources: &'a [crate::models::CurriculumPublicationSource],
 }
 
 #[derive(Serialize)]
@@ -677,8 +678,8 @@ pub async fn apply_from_curriculum(
              idempotency_key, academic_term_id, request_hash, source_hash,
              offering_ids, group_ids, created_offering_count,
              retained_offering_count, created_group_count, retained_group_count,
-             skipped_count, actor_user_id
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+             skipped_count, actor_user_id, curriculum_sources
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
     )
     .bind(request.idempotency_key)
     .bind(request.academic_term_id)
@@ -692,6 +693,7 @@ pub async fn apply_from_curriculum(
     .bind(applied.retained_group_count as i32)
     .bind(applied.skipped_count as i32)
     .bind(actor_user_id)
+    .bind(sqlx::types::Json(&preview.curriculum_sources))
     .execute(&mut *transaction)
     .await?;
     transaction.commit().await?;
@@ -755,7 +757,19 @@ async fn apply_preview_in_transaction(
             existing
         } else {
             created_offering_count += 1;
-            insert_generated_offering(transaction, term, proposal).await?
+            let id = insert_generated_offering(transaction, term, proposal).await?;
+            record_curriculum_sources(
+                transaction,
+                id,
+                &proposal.requirement_ids,
+                &preview
+                    .curriculum_sources
+                    .iter()
+                    .map(|source| source.publication_id)
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
+            id
         };
         insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
         offering_ids.push(offering_id);
@@ -1024,8 +1038,8 @@ pub(super) async fn insert_course(
             "SELECT requirement.subject_version_id, requirement.grade_level_id, \
                  requirement.study_program_id, slot.term_type, slot.type_occurrence, \
                  version.credit::text, version.hours_per_semester::text \
-                 FROM curriculum_course_requirements requirement \
-                 JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
+                 FROM published_curriculum_course_requirements requirement \
+                 JOIN published_curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
                  JOIN subject_versions version ON version.id = requirement.subject_version_id \
                  WHERE requirement.id = $1",
         )
@@ -1123,8 +1137,8 @@ pub(super) async fn insert_activity(
             "SELECT requirement.activity_version_id, requirement.grade_level_id, \
              requirement.study_program_id, slot.term_type, slot.type_occurrence, \
              version.hours_per_week::text \
-             FROM curriculum_activity_requirements requirement \
-             JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
+             FROM published_curriculum_activity_requirements requirement \
+             JOIN published_curriculum_term_slots slot ON slot.id = requirement.term_slot_id \
              JOIN activity_versions version ON version.id = requirement.activity_version_id \
              WHERE requirement.id = $1",
         )
@@ -1371,8 +1385,8 @@ pub(super) async fn validate_targets(
                 }
                 let valid: bool = sqlx::query_scalar(
                     "SELECT EXISTS (
-                         SELECT 1 FROM study_programs program
-                         JOIN curriculum_levels version ON version.id = program.curriculum_level_id
+                         SELECT 1 FROM published_study_programs program
+                         JOIN published_curriculum_levels version ON version.id = program.curriculum_level_id
                          JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
                          WHERE program.id = $1 AND $2 = ANY(
                              SELECT jsonb_array_elements_text(version.grade_level_ids)::uuid
@@ -1661,9 +1675,23 @@ async fn build_curriculum_preview_for_term(
     term: TermContext,
     lock_rows: bool,
 ) -> Result<CurriculumOfferingPreview, AppError> {
+    // Lock stable owners before resolving their pointers. Joining publication rows
+    // in the locking statement could otherwise retain an older statement snapshot
+    // while waiting for a concurrent whole-edition publication.
+    sqlx::query("SELECT e.id FROM curriculum_editions e WHERE e.id IN(
+        SELECT l.edition_id FROM study_programs program JOIN curriculum_levels l ON l.id=program.curriculum_level_id
+        WHERE program.id=ANY($1)) ORDER BY e.id FOR SHARE OF e")
+        .bind(program_ids).fetch_all(&mut **transaction).await?;
+    let curriculum_sources: Vec<crate::models::CurriculumPublicationSource> = sqlx::query_as(
+        "SELECT e.id AS edition_id,p.id AS publication_id,p.publication_no,p.revision_year,p.name AS edition_name
+         FROM curriculum_editions e JOIN curriculum_publications p ON p.id=e.current_publication_id
+         WHERE e.id IN(SELECT l.edition_id FROM published_study_programs program
+           JOIN published_curriculum_levels l ON l.id=program.curriculum_level_id WHERE program.id=ANY($1))
+         ORDER BY e.id")
+        .bind(program_ids).fetch_all(&mut **transaction).await?;
     let valid_program_query = format!(
-        "SELECT program.id FROM study_programs program \
-         JOIN curriculum_levels version ON version.id=program.curriculum_level_id \
+        "SELECT program.id FROM published_study_programs program \
+         JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id \
          JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id \
          WHERE program.id=ANY($1) AND program.status='published' \
            AND curriculum.status='published' AND curriculum.is_active AND version.is_active{}",
@@ -1687,9 +1715,9 @@ async fn build_curriculum_preview_for_term(
                   version.credit::text AS credit, version.hours_per_semester::text AS hours,
                   version.status AS version_status, version.effective_from,
                   version.effective_until
-           FROM curriculum_course_requirements requirement
+           FROM published_curriculum_course_requirements requirement
            JOIN subject_versions version ON version.id = requirement.subject_version_id
-           JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id
+           JOIN published_curriculum_term_slots slot ON slot.id = requirement.term_slot_id
            WHERE requirement.study_program_id = ANY($1)
              AND slot.term_type = $2
              AND slot.type_occurrence = $3
@@ -1702,10 +1730,10 @@ async fn build_curriculum_preview_for_term(
                   NULL::text AS credit, version.hours_per_week::text AS hours,
                   version.status AS version_status, version.effective_from,
                   version.effective_until
-           FROM curriculum_activity_requirements requirement
+           FROM published_curriculum_activity_requirements requirement
            JOIN activity_versions version ON version.id = requirement.activity_version_id
            JOIN activities stable ON stable.id = version.activity_id
-           JOIN curriculum_term_slots slot ON slot.id = requirement.term_slot_id
+           JOIN published_curriculum_term_slots slot ON slot.id = requirement.term_slot_id
            WHERE requirement.study_program_id = ANY($1)
              AND slot.term_type = $2
              AND slot.type_occurrence = $3
@@ -1907,8 +1935,10 @@ async fn build_curriculum_preview_for_term(
         term_code: &term.code,
         study_program_ids: program_ids,
         proposals: &proposals,
+        curriculum_sources: &curriculum_sources,
     })?;
     Ok(CurriculumOfferingPreview {
+        curriculum_sources,
         academic_term_id,
         source_hash,
         proposals,
@@ -2198,4 +2228,25 @@ mod preparation_choice_tests {
             Err(AppError::ValidationError(_))
         ));
     }
+}
+
+async fn record_curriculum_sources(
+    tx: &mut Transaction<'_, Postgres>,
+    offering_id: Uuid,
+    requirement_ids: &[Uuid],
+    publication_ids: &[Uuid],
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO learning_offering_curriculum_sources(learning_offering_id,publication_id)
+        SELECT DISTINCT $1,publication_id FROM (
+          SELECT id,publication_id FROM curriculum_publication_courses UNION ALL
+          SELECT id,publication_id FROM curriculum_publication_activities
+        ) source WHERE id=ANY($2) AND publication_id=ANY($3) ON CONFLICT DO NOTHING",
+    )
+    .bind(offering_id)
+    .bind(requirement_ids)
+    .bind(publication_ids)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }

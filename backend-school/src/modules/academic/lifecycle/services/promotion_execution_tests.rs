@@ -20,7 +20,7 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
             "promotion_execution_partial",
         )
         .await;
-    apply_migrations_through(&pool, 94).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     assert_eq!(calc.items.len(), 2);
     let mut reviewed = Vec::new();
     let mut run = calc.run.clone();
@@ -301,7 +301,7 @@ pub(crate) async fn approved_fixture(
     PromotionRun,
 ) {
     let (pool, reviewer, results_actor, context, calc) = ready_run(name).await;
-    apply_migrations_through(&pool, 94).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     let mut decision = hold(1);
     decision.decision.outcome = outcome;
     if outcome == PromotionDecisionOutcome::Promote {
@@ -561,7 +561,7 @@ async fn promotion_execution_can_finish_after_reload_when_all_item_receipts_alre
 #[tokio::test]
 async fn promotion_execution_requires_approval_and_exact_permission_then_replays_hold_receipt() {
     let (pool, reviewer, _, _, calc) = ready_run("promotion_execution_hold").await;
-    apply_migrations_through(&pool, 94).await.unwrap();
+    apply_migrations_through(&pool, 96).await.unwrap();
     let executor = ActorContext {
         user_id: reviewer.user_id,
         permissions: vec![

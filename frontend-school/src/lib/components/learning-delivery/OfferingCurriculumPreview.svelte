@@ -368,6 +368,15 @@
 	</div>
 
 	{#if preview}
+		<div class="rounded-xl border bg-muted p-3 text-sm">
+			<p class="font-medium">หลักสูตรที่ใช้เตรียมรายการ</p>
+			{#each preview.curriculumSources as source (source.publicationId)}<p>
+					{source.editionName} · เผยแพร่ครั้งที่ {source.publicationNo}
+				</p>{/each}
+			<p class="mt-1 text-muted-foreground">
+				เลือกนำรายการไปใช้ในร่างเปิดสอน แล้วเผยแพร่ที่หน้าจัดการการเปิดสอนก่อนนำไปจัดตาราง
+			</p>
+		</div>
 		<div class="overflow-hidden rounded-xl border">
 			<div class="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-3">
 				<div>

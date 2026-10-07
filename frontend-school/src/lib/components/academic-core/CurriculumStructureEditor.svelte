@@ -286,7 +286,9 @@
 		saving = true;
 		errorMessage = '';
 		try {
+			if (!workspace.level.draftId) throw new Error('เปิดร่างแก้ไขก่อนเพิ่มแผน');
 			await onCreateProgram({
+				draftId: workspace.level.draftId,
 				nameTh: programDraft.nameTh.trim(),
 				isDefault: programDraft.isDefault
 			});

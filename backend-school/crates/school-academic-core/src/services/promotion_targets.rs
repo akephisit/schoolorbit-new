@@ -109,9 +109,9 @@ async fn validate_destinations_with_owned_target(
         "SELECT program.id,version.id AS curriculum_level_id,COALESCE(version.grade_level_ids,'[]'::jsonb) AS grade_level_ids,
          (program.status='published' AND curriculum.status='published' AND (curriculum.is_active IS TRUE AND version.is_active)
 ) AS is_applicable
-         FROM study_programs program JOIN curriculum_levels version ON version.id=program.curriculum_level_id
+         FROM published_study_programs program JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id
          JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
-         WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF program,version,curriculum"
+         WHERE program.id=ANY($1) ORDER BY program.id FOR SHARE OF curriculum"
     ).bind(program_ids).fetch_all(&mut **tx).await?;
     let programs: BTreeMap<_, _> = programs.into_iter().map(|row| (row.id, row)).collect();
     let grades: Vec<Uuid> = sqlx::query_scalar(

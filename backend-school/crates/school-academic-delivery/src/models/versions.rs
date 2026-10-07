@@ -17,6 +17,9 @@ pub struct DeliverySnapshot {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeliveryVersionOffering {
+    /// Empty means the actual source publication was not recorded (legacy/manual).
+    #[serde(default)]
+    pub curriculum_sources: Vec<super::CurriculumPublicationSource>,
     pub id: Uuid,
     pub kind: LearningOfferingKind,
     pub code: String,

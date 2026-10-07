@@ -123,6 +123,9 @@ function homeroomWorkspace() {
 function edition(id = ids.curriculum, status: 'draft' | 'published' = 'published') {
 	return {
 		id,
+		publicationCount: status === 'draft' ? 0 : 1,
+		currentPublicationId: status === 'draft' ? null : 'f2000000-0000-4000-8000-000000000401',
+		draftId: status === 'draft' ? 'f2000000-0000-4000-8000-000000000402' : null,
 		name: `ฉบับปรับปรุง พุทธศักราช ${status === 'draft' ? 2570 : 2569}`,
 		revisionYear: status === 'draft' ? 2570 : 2569,
 		description: null,
@@ -140,6 +143,8 @@ function curriculumVersion(id: string, status: 'draft' | 'published' = 'publishe
 		id,
 		editionId: status === 'draft' ? ids.futureYear : ids.curriculum,
 		editionName: edition(ids.curriculum, status).name,
+		draftId: status === 'draft' ? 'f2000000-0000-4000-8000-000000000402' : null,
+		publicationId: status === 'draft' ? null : 'f2000000-0000-4000-8000-000000000401',
 		revisionYear: status === 'draft' ? 2570 : 2569,
 		code: 'LEVEL-M1',
 		nameTh: 'ระดับมัธยมศึกษาตอนต้น',
@@ -360,6 +365,9 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				await fulfill(route, {
 					...edition(ids.futureYear, 'draft'),
 					status: 'published',
+					draftId: null,
+					publicationCount: 1,
+					currentPublicationId: 'f2000000-0000-4000-8000-000000000401',
 					publishedAt: '2026-10-06T00:00:00Z',
 					rowVersion: 5
 				});
@@ -671,6 +679,7 @@ for (const mobile of [false, true])
 			await dialog.getByRole('button', { name: 'คัดลอกเป็นแผนร่าง', exact: true }).click();
 			await expect(dialog).toBeHidden();
 			expect(mocked.cloneRequest()).toEqual({
+				draftId: 'f2000000-0000-4000-8000-000000000402',
 				sourceProgramId: ids.program,
 				sourceRowVersion: 1,
 				destinationRowVersion: 4,
@@ -720,6 +729,7 @@ test('create a level with covered grades within an edition, then create its plan
 	await dialog.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true }).click();
 	await expect(dialog).toBeHidden();
 	expect(mocked.levelRequest()).toEqual({
+		draftId: 'f2000000-0000-4000-8000-000000000402',
 		nameTh: 'ระดับมัธยมศึกษาตอนต้น',
 		gradeLevelIds: [ids.grade],
 		description: null
@@ -734,7 +744,11 @@ test('create a level with covered grades within an edition, then create its plan
 	await expect(dialog.getByLabel('หน่วยงานเจ้าของหลักสูตร')).toHaveCount(0);
 	await dialog.getByRole('button', { name: 'สร้างแผนการเรียน', exact: true }).click();
 	await expect(dialog).toBeHidden();
-	expect(mocked.programRequest()).toEqual({ nameTh: 'วิทยาศาสตร์-คณิตศาสตร์', isDefault: false });
+	expect(mocked.programRequest()).toEqual({
+		draftId: 'f2000000-0000-4000-8000-000000000402',
+		nameTh: 'วิทยาศาสตร์-คณิตศาสตร์',
+		isDefault: false
+	});
 	expect(mocked.managementOptionsRequestCount()).toBe(0);
 });
 
@@ -746,11 +760,12 @@ test('publishes the selected edition once and keeps its educational-level link',
 	await expect(
 		page.getByRole('link', { name: 'ระดับมัธยมศึกษาตอนต้น', exact: true })
 	).toBeVisible();
-	await page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'เผยแพร่ฉบับหลักสูตร', exact: true })).toHaveCount(
-		0
-	);
-	await expect(page.getByText('เผยแพร่แล้ว', { exact: true })).toBeVisible();
+	await page.getByLabel('สรุปการแก้ไข *').fill('เผยแพร่ครั้งแรก');
+	await page.getByRole('button', { name: 'เผยแพร่ทั้งฉบับ · ครั้งที่ 1', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'เผยแพร่ทั้งฉบับ · ครั้งที่ 1', exact: true })
+	).toHaveCount(0);
+	await expect(page.getByText('เผยแพร่ครั้งที่ 1', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'เพิ่มระดับการศึกษา', exact: true })).toHaveCount(
 		0
 	);
@@ -760,7 +775,11 @@ test('publishes the selected edition once and keeps its educational-level link',
 		'href',
 		`/staff/academic/curricula/${ids.futureYear}/levels/${ids.clonedVersion}`
 	);
-	expect(mocked.publishRequest()).toEqual({ rowVersion: 4 });
+	expect(mocked.publishRequest()).toEqual({
+		rowVersion: 4,
+		draftId: 'f2000000-0000-4000-8000-000000000402',
+		changeNote: 'เผยแพร่ครั้งแรก'
+	});
 	expect(mocked.academicRequests.filter((r) => r.startsWith('POST'))).toEqual([
 		`POST /api/academic/curricula/${ids.futureYear}/publish`
 	]);

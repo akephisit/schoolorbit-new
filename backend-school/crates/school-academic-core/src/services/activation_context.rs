@@ -301,8 +301,8 @@ async fn read_enrollment(
 ,false) AS reference_valid
          FROM student_academic_years student JOIN academic_years target ON target.id=student.academic_year_id
          JOIN users person ON person.id=student.student_id LEFT JOIN grade_levels grade ON grade.id=student.grade_level_id
-         LEFT JOIN study_programs program ON program.id=student.study_program_id
-         LEFT JOIN curriculum_levels version ON version.id=program.curriculum_level_id
+         LEFT JOIN published_study_programs program ON program.id=student.study_program_id
+         LEFT JOIN published_curriculum_levels version ON version.id=program.curriculum_level_id
          LEFT JOIN curriculum_editions curriculum ON curriculum.id=version.edition_id
          WHERE student.academic_year_id=$1 ORDER BY student.id LIMIT 10001"
     ).bind(context.academic_year_id).fetch_all(&mut **tx).await?;

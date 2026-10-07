@@ -620,6 +620,9 @@ pub struct UpdateSubjectGroupRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumEdition {
+    pub current_publication_id: Option<Uuid>,
+    pub publication_count: i32,
+    pub draft_id: Option<Uuid>,
     pub id: Uuid,
     pub name: String,
     pub revision_year: Option<i32>,
@@ -633,6 +636,67 @@ pub struct CurriculumEdition {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, utoipa::IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CurriculumViewQuery {
+    pub draft_id: Option<Uuid>,
+    pub publication_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenCurriculumDraftRequest {
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublishCurriculumRequest {
+    pub draft_id: Uuid,
+    pub row_version: i64,
+    pub change_note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumPublication {
+    pub id: Uuid,
+    pub edition_id: Uuid,
+    pub publication_no: i32,
+    pub previous_publication_id: Option<Uuid>,
+    pub name: String,
+    pub revision_year: Option<i32>,
+    pub description: Option<String>,
+    pub published_by: Option<Uuid>,
+    pub publisher_name: Option<String>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub captured_at: DateTime<Utc>,
+    pub change_note: String,
+    pub is_baseline: bool,
+    pub level_count: i64,
+    pub program_count: i64,
+    pub slot_count: i64,
+    pub course_count: i64,
+    pub activity_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumPublicationChange {
+    pub resource_kind: String,
+    pub name: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurriculumPublicationHistory {
+    pub publication: CurriculumPublication,
+    pub changes: Vec<CurriculumPublicationChange>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCurriculumRequest {
@@ -644,6 +708,7 @@ pub struct CreateCurriculumRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCurriculumRequest {
+    pub draft_id: Uuid,
     pub name: String,
     pub revision_year: i32,
     pub description: Option<String>,
@@ -653,6 +718,8 @@ pub struct UpdateCurriculumRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct CurriculumLevel {
+    pub draft_id: Option<Uuid>,
+    pub publication_id: Option<Uuid>,
     pub id: Uuid,
     pub edition_id: Uuid,
     pub code: String,
@@ -693,6 +760,7 @@ pub struct CurriculumLevelView {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCurriculumLevelRequest {
+    pub draft_id: Uuid,
     pub name_th: String,
     pub grade_level_ids: Vec<Uuid>,
     pub description: Option<String>,
@@ -701,6 +769,7 @@ pub struct CreateCurriculumLevelRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCurriculumLevelRequest {
+    pub draft_id: Uuid,
     pub name_th: String,
     pub grade_level_ids: Vec<Uuid>,
     pub description: Option<String>,
@@ -710,6 +779,7 @@ pub struct UpdateCurriculumLevelRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CopyStudyProgramRequest {
+    pub draft_id: Uuid,
     pub source_program_id: Uuid,
     pub source_row_version: i64,
     pub destination_row_version: i64,
@@ -748,6 +818,7 @@ pub struct StudyProgramOption {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStudyProgramRequest {
+    pub draft_id: Uuid,
     pub name_th: String,
     pub is_default: bool,
 }
@@ -755,6 +826,7 @@ pub struct CreateStudyProgramRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateStudyProgramRequest {
+    pub draft_id: Uuid,
     pub name_th: String,
     pub is_default: bool,
     pub row_version: i64,
@@ -895,6 +967,7 @@ pub struct CurriculumTermSlotInput {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceCurriculumTermSlotsRequest {
+    pub draft_id: Uuid,
     pub slots: Vec<CurriculumTermSlotInput>,
     pub row_version: i64,
 }
@@ -913,6 +986,7 @@ pub struct CurriculumStructureRequirementInput {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplaceCurriculumStructureRequest {
+    pub draft_id: Uuid,
     pub requirements: Vec<CurriculumStructureRequirementInput>,
     pub row_version: i64,
 }

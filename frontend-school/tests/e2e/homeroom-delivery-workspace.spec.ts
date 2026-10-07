@@ -1020,6 +1020,7 @@ async function mockActivityActivation(
 	});
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
+			curriculumSources: [],
 			sourceHash: 'a'.repeat(64),
 			proposals: [
 				{
