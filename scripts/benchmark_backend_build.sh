@@ -10,7 +10,7 @@ unset RUSTC_WRAPPER
 export CARGO_INCREMENTAL=0
 
 case "$backend" in backend-school | backend-admin) ;; *) exit 64 ;; esac
-case "$variant" in gnu | lld | opt2 | cgu64 | cpu1) ;; *) exit 64 ;; esac
+case "$variant" in default | gnu | lld | opt2 | cgu64 | cpu1 | cpu4) ;; *) exit 64 ;; esac
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends lld python3 >/dev/null
 if [[ "$backend" == backend-school ]]; then
@@ -21,8 +21,23 @@ cat >/tmp/schoolorbit-benchmark-linker <<'LINKER'
 #!/usr/bin/env bash
 set -euo pipefail
 start=$(date +%s%N)
-if [[ "$BENCH_LINKER" == lld ]]; then
-    cc -fuse-ld=lld "$@"
+if [[ "$BENCH_LINKER" == compare ]]; then
+    for selection in default bfd lld; do
+        link_start=$(date +%s%N)
+        if [[ "$selection" == default ]]; then
+            cc "$@"
+        else
+            # Override rustc's own -fuse-ld argument after, not before, its flags.
+            cc "$@" "-fuse-ld=$selection"
+        fi
+        link_end=$(date +%s%N)
+        printf '%s %s\n' "$selection" "$((link_end - link_start))" >>"${BENCH_LINK_LOG}.compare"
+    done
+    printf '%s\n' "$@" | sed -n '/^-fuse-ld=/p' >>"${BENCH_LINK_LOG}.driver"
+elif [[ "$BENCH_LINKER" == lld ]]; then
+    cc "$@" -fuse-ld=lld
+elif [[ "$BENCH_LINKER" == gnu ]]; then
+    cc "$@" -fuse-ld=bfd
 else
     cc "$@"
 fi
@@ -30,23 +45,25 @@ end=$(date +%s%N)
 printf '%s\n' "$((end - start))" >>"$BENCH_LINK_LOG"
 LINKER
 chmod +x /tmp/schoolorbit-benchmark-linker
-export BENCH_LINKER=lld
-if [[ "$variant" == gnu || "$variant" == cpu1 ]]; then export BENCH_LINKER=gnu; fi
+export BENCH_LINKER=${BENCH_COMPARE_LINKERS:-default}
+if [[ "$variant" == gnu ]]; then export BENCH_LINKER=gnu; fi
+if [[ "$variant" == lld ]]; then export BENCH_LINKER=lld; fi
+configuration=()
 flags=(-C linker=/tmp/schoolorbit-benchmark-linker)
 if [[ "$backend" == backend-school ]]; then flags+=(-C lto=off); fi
-if [[ "$variant" == opt2 ]]; then flags+=(-C opt-level=2); fi
-if [[ "$variant" == cgu64 ]]; then flags+=(-C codegen-units=64); fi
+if [[ "$variant" == opt2 ]]; then configuration+=(--config "profile.release.package.$backend.opt-level=2"); fi
+if [[ "$variant" == cgu64 ]]; then configuration+=(--config "profile.release.package.$backend.codegen-units=64"); fi
 export BENCH_LINK_LOG="$output/link-nanoseconds.txt"
 printf 'backend=%s variant=%s cpu_available=%s rust=%s\n' "$backend" "$variant" "$(nproc)" "$(rustc --version)"
 
-for sample in 1 2; do
+for ((sample = 1; sample <= ${BENCH_SAMPLES:-2}; sample++)); do
     # Change application source, not a dependency manifest or toolchain.
     source_file=src/main.rs
     if [[ "$backend" == backend-admin ]]; then source_file=src/handlers/school.rs; fi
     printf '\n// Docker build benchmark: %s sample %s\n' "$variant" "$sample" >>"$source_file"
     : >"$BENCH_LINK_LOG"
     start=$(date +%s%N)
-    cargo rustc --release --locked --bin "$backend" --timings -- "${flags[@]}" 2>&1 | tee "$output/compile-$sample.log"
+    cargo "${configuration[@]}" rustc --release --locked --bin "$backend" --timings -- "${flags[@]}" 2>&1 | tee "$output/compile-$sample.log"
     end=$(date +%s%N)
     cp target/cargo-timings/cargo-timing.html "$output/cargo-timing-$sample.html"
     stat -c '%s' "target/release/$backend" >"$output/binary-bytes-$sample.txt"
@@ -59,14 +76,14 @@ done
 
 # This measures persistent target reuse separately from a source-changing build.
 start=$(date +%s%N)
-cargo rustc --release --locked --bin "$backend" -- "${flags[@]}"
+cargo "${configuration[@]}" rustc --release --locked --bin "$backend" -- "${flags[@]}"
 end=$(date +%s%N)
 printf '%s\n' "$((end - start))" >"$output/unchanged-nanoseconds.txt"
 python3 - "$output" <<'PY'
 import json, pathlib, sys
 p = pathlib.Path(sys.argv[1])
 result = {"samples": [], "unchanged_seconds": int((p / "unchanged-nanoseconds.txt").read_text()) / 1e9}
-for sample in (1, 2):
+for sample in range(1, len(list(p.glob("cargo-nanoseconds-*.txt"))) + 1):
     result["samples"].append({
         "cargo_seconds": int((p / f"cargo-nanoseconds-{sample}.txt").read_text()) / 1e9,
         "link_seconds": sum(int(n) for n in (p / f"link-nanoseconds-{sample}.txt").read_text().splitlines()) / 1e9,
