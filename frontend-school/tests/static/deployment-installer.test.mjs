@@ -927,6 +927,7 @@ test('backend workflows export Cargo timings and pass compiler cache credentials
 		if (backend === 'backend-school') {
 			assert.match(workflow, /cache-from: type=gha,scope=backend-school/);
 			assert.match(workflow, /sccache-stats\.json/);
+			assert.equal((workflow.match(/build-args: SCHOOL_COMPILER_CACHE=gha/g) ?? []).length, 2);
 		}
 		assert.match(workflow, /target: build-timings/);
 		assert.match(workflow, /push: false/);

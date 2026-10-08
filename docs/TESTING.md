@@ -428,8 +428,8 @@ without runtime configuration while preserving the compiler environment used to 
 
 The `setup-chromium` action caches the exact installed Playwright version's Chromium headless shell.
 It always verifies browser files and launches the browser, including on a cache hit, installing
-host dependencies when the runner cannot launch it. School
-promotion and E2E Sandbox retain their browser checks. Verify a change to the browser setup with
+host dependencies when the runner cannot launch it. School promotion and E2E Sandbox retain their
+browser checks. Verify a change to the browser setup with
 the deployment static guards and the release-scope tests above, then confirm a real headless
 Chromium launch; a reported browser cache hit alone is insufficient.
 

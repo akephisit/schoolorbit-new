@@ -359,7 +359,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=backend-school
           cache-to: type=gha,scope=backend-school,mode=max
-          build-args: SCHOOL_COMPILER_CACHE=${{ vars.SCHOOL_COMPILER_CACHE || 'off' }}
+          build-args: SCHOOL_COMPILER_CACHE=gha
           secret-envs: |
             sccache_gha_url=ACTIONS_RESULTS_URL
             sccache_gha_token=ACTIONS_RUNTIME_TOKEN
@@ -373,7 +373,7 @@ jobs:
           push: false
           outputs: type=local,dest=${{ runner.temp }}/cargo-timings-backend-school
           cache-from: type=gha,scope=backend-school
-          build-args: SCHOOL_COMPILER_CACHE=${{ vars.SCHOOL_COMPILER_CACHE || 'off' }}
+          build-args: SCHOOL_COMPILER_CACHE=gha
           secret-envs: |
             sccache_gha_url=ACTIONS_RESULTS_URL
             sccache_gha_token=ACTIONS_RUNTIME_TOKEN
@@ -442,7 +442,7 @@ jobs:
           printf '%s\n' \
             '### Docker build cache' \
             '- Scope: backend-school' \
-            '- Compiler cache mode: ${{ vars.SCHOOL_COMPILER_CACHE || 'off' }}' \
+            '- Compiler cache mode: gha' \
             '- Layer hits: inspect the Docker build record attached to this job.' \
             >> "$GITHUB_STEP_SUMMARY"
 

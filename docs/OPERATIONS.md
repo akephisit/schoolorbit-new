@@ -140,6 +140,9 @@ The public organization response uses `members` for every current staff member, 
 Backend image builds keep separate BuildKit cache scopes for admin and school. Rust, cargo-chef, and
 sccache are pinned in their Dockerfiles. GitHub's cache runtime reaches the final Cargo build as
 BuildKit secrets; a missing or unavailable compiler cache falls back to an ordinary Cargo build.
+Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use
+`SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
+does not select v2; a build that reports write errors has not populated a usable cache.
 Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. School additionally
 exports compiler-cache statistics and summarizes the slowest Cargo units in the job summary. Compare the
 Cargo report, sccache statistics, and GitHub step duration rather than treating one cache marker as
@@ -152,20 +155,21 @@ but it cannot avoid every changed-crate compile or the final link. If two ordina
 no useful hits or increase total duration, remove the sccache integration while retaining the pinned
 toolchain, Cargo timing artifact, and BuildKit cache.
 
-School defaults to plain Cargo for the final binary build. Its `SCHOOL_COMPILER_CACHE` repository
-variable selects `off` or `gha`; both the image and timing export must use the same mode so exporting
+School release builds use GitHub compiler caching. The release workflow passes
+`SCHOOL_COMPILER_CACHE=gha` to both the image and timing export so exporting
 metrics reuses the completed build. Credentials enter only through BuildKit secrets and never the
-runtime image. A missing credential or cache I/O failure falls back to compilation. Local Docker
+runtime image. A missing credential or cache I/O failure falls back to compilation. Standalone builds
+default to `off` without runner credentials. To disable production compiler caching, change both
+workflow build arguments to `SCHOOL_COMPILER_CACHE=off`; update the cache summary alongside them. Local Docker
 experiments may explicitly select `local`, which is not the cross-runner GitHub cache.
 
-Two source-changing CI runs before the internal
-workspace split reported zero compiler-cache hits and non-cacheable `crate-type` calls, so that
-evidence does not establish whether the new library crates are worth caching. Dependency layers
-and timing artifacts remain enabled. Do not enable school sccache from local benchmarks alone:
-first observe two ordinary, source-changing, warm CI builds after the workspace graph is stable,
-then enable it only when useful hits also reduce end-to-end duration. Plain Cargo remains canonical
-until that evidence exists; this does not eliminate application compilation or promise a faster
-final link.
+After the workspace split, a source-changing GitHub comparison measured 24 eligible library hits
+with zero write errors in each of two warm builds. Cargo duration fell from 6m25s without compiler
+caching to 4m39s and 4m35s; the complete measured build, including BuildKit cache export, also fell.
+These are build measurements, not production request latency or an entire deployment duration.
+The application binary still compiles and links. Observe two ordinary warm releases after changes
+to the workspace graph, toolchain, or cache integration; disable this cache if useful hits stop
+reducing total duration. A new branch or cache namespace must first populate its own entries.
 
 The school Dockerfile uses `cargo rustc` with `-C lto=off` only for the final application
 crate to reduce source-changing release build work. Dependencies retain their existing
