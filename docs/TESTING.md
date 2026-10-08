@@ -36,6 +36,10 @@ fixtures, and runs the internal `prime` command to compile the same backend targ
 the shared snapshot. A compiler-snapshot receipt names the original verification run and cannot
 authorize another test reuse. Missing, changed or expired proof runs the complete selected suite.
 
+Rust snapshots include the tracked cross-component permission lock and fonts consumed by School's
+compiler. Migration directory timestamps are restored only when their complete tracked contents
+match the saved snapshot; changed, removed, untracked or ignored inputs keep Cargo dirty.
+
 Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, provenance, merge and
 maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and

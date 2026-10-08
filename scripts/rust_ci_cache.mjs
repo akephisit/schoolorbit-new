@@ -1,13 +1,18 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync, writeFileSync, statSync, utimesSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync, statSync, utimesSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 const component = process.env.RUST_COMPONENT;
 if (!['backend-admin', 'backend-school'].includes(component)) throw new Error('Invalid Rust cache owner');
 const mode = process.argv[2];
 const manifestPath = path.join(component, 'target', '.pipeline-sources.json');
-const files = execFileSync('git', ['ls-files', '-z', '--', component], { encoding: 'utf8' }).split('\0').filter(Boolean);
+// include_str!/include_bytes! are compiler inputs too, even when another
+// component owns their source. Keep this list aligned with School consumers.
+const inputPaths = component === 'backend-school'
+ ? [component, 'contracts/permissions.lock.json', 'frontend-school/static/fonts']
+ : [component];
+const files = execFileSync('git', ['ls-files', '-z', '--', ...inputPaths], { encoding: 'utf8' }).split('\0').filter(Boolean);
 const sources = Object.fromEntries(files.map(file => [file, createHash('sha256').update(readFileSync(file)).digest('hex')]));
 const toolchain = execFileSync('rustc', ['-vV'], { encoding: 'utf8' });
 const profile = ['CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG', 'CARGO_INCREMENTAL', 'RUSTFLAGS'].map(key => [key, process.env[key] || '']);
@@ -35,6 +40,28 @@ if (mode === 'key') {
     utimesSync(file, dirty, dirty);
    }
   }
+  const dirty = Math.max(Date.now()/1000, saved.savedAt+2);
+  const signature = (entries, directory) => JSON.stringify(Object.entries(entries)
+   .filter(([file]) => file.startsWith(directory + '/')).sort(([a],[b]) => a.localeCompare(b)));
+  const restoreDirectory = directory => {
+   let managed = true;
+   for (const entry of readdirSync(directory, {withFileTypes:true})) {
+    const child = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+     const hasTrackedInput = files.some(file => file.startsWith(child + '/'));
+     managed = restoreDirectory(child) && hasTrackedInput && managed;
+    }
+    else if (!entry.isFile() || !Object.hasOwn(sources, child)) managed = false;
+   }
+   // Cargo observes directory mtimes for rerun-if-changed=migrations. Compare
+   // membership and content so edits/deletions/backdated files still invalidate;
+   // never normalize a tree containing untracked or ignored compiler inputs.
+   const unchanged = managed && signature(saved.sources, directory) === signature(sources, directory);
+   utimesSync(directory, unchanged ? 1 : dirty, unchanged ? 1 : dirty);
+   return managed;
+  };
+  const migrations = path.join(component, 'migrations');
+  if (existsSync(migrations)) restoreDirectory(migrations);
   console.log(`Rust unchanged source timestamps restored=${reused}; changed=${files.length-reused}. Cargo freshness still validates compiler/dependencies.`);
  }
 } else if (mode === 'save') {
