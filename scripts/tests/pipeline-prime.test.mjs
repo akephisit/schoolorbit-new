@@ -12,6 +12,7 @@ function fixture(t) {
  writeFileSync(path.join(root,'scripts/generate-api-contracts.mjs'),'// fixture exporter check\n');
  writeFileSync(path.join(root,'scripts/tests/neon-compatibility.test.mjs'),"import test from 'node:test';test('fixture',()=>{});\n");
  writeFileSync(path.join(root,'scripts/test_school_database_suite.sh'),'#!/bin/sh\ntouch fixture-executed\n');
+ writeFileSync(path.join(root,'scripts/test_backend_admin.sh'),'#!/bin/sh\nprintf "%s" "$SCHOOLORBIT_COMPILE_ONLY" > "$MODE_LOG"\n');
  writeFileSync(path.join(root,'backend-school/target/debug/backend-school'),'#!/bin/sh\nprintf "{}"\n',{mode:0o755});
  writeFileSync(path.join(root,'bin/cargo'),`#!/usr/bin/env node
 const fs=require('node:fs');const args=process.argv.slice(2);
@@ -21,7 +22,7 @@ if(args[0]==='metadata')process.stdout.write(JSON.stringify({target_directory:${
  execFileSync('git',['init','-q',root]);execFileSync('git',['-C',root,'config','user.email','fixture@example.invalid']);execFileSync('git',['-C',root,'config','user.name','Fixture']);
  execFileSync('git',['-C',root,'add','.']);execFileSync('git',['-C',root,'commit','-qm','fixture']);
  const tree=execFileSync('git',['-C',root,'rev-parse','HEAD^{tree}'],{encoding:'utf8'}).trim();
- const env={...process.env,PATH:path.join(root,'bin')+':'+process.env.PATH,GITHUB_REF:'refs/heads/main',GITHUB_EVENT_NAME:'push',COMMAND_LOG:path.join(root,'commands'),PR_VERIFICATION_PROOF:JSON.stringify({runId:'21',attempt:1,tree,suites:['backend-school']})};
+ const env={...process.env,PATH:path.join(root,'bin')+':'+process.env.PATH,GITHUB_REF:'refs/heads/main',GITHUB_EVENT_NAME:'push',COMMAND_LOG:path.join(root,'commands'),MODE_LOG:path.join(root,'mode'),PR_VERIFICATION_PROOF:JSON.stringify({runId:'21',attempt:1,tree,suites:['backend-school']})};
  return {root,env,run:(extra={})=>spawnSync(process.execPath,[path.join(root,'scripts/pipeline.mjs'),'prime','--scope','backend-school'],{cwd:root,env:{...env,...extra},encoding:'utf8'})};
 }
 test('proven main priming compiles every selected test target without executing database fixtures',t=>{
@@ -36,6 +37,11 @@ test('proven main priming compiles every selected test target without executing 
  for(const [,target]of suite.matchAll(/--integration ([a-z0-9_]+)/g))assert.ok(tests.some(args=>args.includes(target)),target);
  for(const [,target]of suite.matchAll(/BACKEND_SCHOOL_TEST_BIN=([a-z0-9_]+)/g))assert.ok(tests.some(args=>args.includes(target)),target);
  assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,1);
+});
+test('ordinary verification explicitly refuses an ambient compile-only flag for Admin fixtures',t=>{
+ const f=fixture(t);
+ const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope','backend-admin'],{cwd:f.root,env:{...f.env,SCHOOLORBIT_COMPILE_ONLY:'true'},encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);assert.equal(readFileSync(f.env.MODE_LOG,'utf8'),'false');
 });
 for(const extra of [{PR_VERIFICATION_PROOF:'null'},{GITHUB_REF:'refs/pull/7/merge'},{GITHUB_EVENT_NAME:'pull_request_target'},{PR_VERIFICATION_PROOF:JSON.stringify({runId:'21',attempt:1,tree:'a'.repeat(40),suites:['backend-school']})}])test(`invalid priming context ${JSON.stringify(extra)} fails before any Cargo work`,t=>{
  const f=fixture(t);const result=f.run(extra);assert.notEqual(result.status,0);

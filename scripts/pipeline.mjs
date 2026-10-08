@@ -90,7 +90,7 @@ try {
       }
       if (suite === 'backend-admin') {
         run('cargo', ['fmt', '--all', '--', '--check'], path.join(root, suite));
-        run('bash', ['scripts/test_backend_admin.sh'], root, prime ? {SCHOOLORBIT_COMPILE_ONLY:'true'} : {});
+        run('bash', ['scripts/test_backend_admin.sh'], root, {SCHOOLORBIT_COMPILE_ONLY:prime ? 'true' : 'false'});
       }
       if (suite.startsWith('frontend-')) {
         run('npm', ['run', 'lint'], path.join(root, suite));
