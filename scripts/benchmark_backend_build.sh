@@ -17,7 +17,7 @@ if [[ "$backend" == backend-school ]]; then
     env -i PATH="$PATH" HOME=/tmp "target/release/$backend" export-openapi >"$output/openapi-baseline.json"
 fi
 
-cat > /tmp/schoolorbit-benchmark-linker <<'LINKER'
+cat >/tmp/schoolorbit-benchmark-linker <<'LINKER'
 #!/usr/bin/env bash
 set -euo pipefail
 start=$(date +%s%N)
