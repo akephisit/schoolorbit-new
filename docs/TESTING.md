@@ -142,6 +142,19 @@ Lifecycle respectively. Lifecycle and Supervision expose dev-only integration-su
 only for root tests that intentionally span domain owners; the normal release graph must keep
 those features disabled. The application supplies external readiness, timetable consequence,
 result-lock, notification, cache, and realtime adapters without duplicating crate-owned SQL.
+Assessment also owns exam scheduling models and services, including published views and
+transaction-scoped lifecycle operations. Its pure tests run with
+`cargo test -p school-academic-assessment --lib`; the existing application exam-schedule
+database fixtures continue to exercise the HTTP/lifecycle adapters and shared transactions.
+
+The manual [Backend Build Benchmark](../.github/workflows/backend-build-benchmark.yml) uses
+the pinned Docker builder for both backends. It records repeated source-changing Cargo/link
+times, binary size, unchanged persistent-target reuse, and exact School OpenAPI equality.
+Compiler options apply only to the application package; dependency optimization stays unchanged.
+CPU quota experiments do not provision hosted/self-hosted runners. Compare compiler variants
+sequentially on one runner before attributing a change to a flag: different hosted machines
+can produce substantially different timings. A runtime performance claim requires a separate
+representative load test; exporter equality establishes the API contract only.
 
 `school-workflow`, `school-question-bank`, `school-admission`, `school-supervision`,
 `school-students`, `school-staff`, and `school-calendar` own their domain models, policies where

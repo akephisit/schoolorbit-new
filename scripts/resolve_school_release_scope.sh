@@ -36,6 +36,9 @@ if [[ $scope == auto ]]; then
         frontend_changed_files=$(git diff --name-only "$frontend_accepted_sha" "$release_sha")
         while IFS= read -r changed; do
             case "$changed" in
+                frontend-school/tests/* | frontend-school/README.md)
+                    continue
+                    ;;
                 frontend-school/* | .github/actions/setup-chromium/* | scripts/discover_school_tenants.sh | \
                     scripts/find_worker_release_candidates.mjs | \
                     scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh)
@@ -53,6 +56,9 @@ if [[ $scope == auto ]]; then
         backend_changed_files=$(git diff --name-only "$backend_accepted_sha" "$release_sha")
         while IFS= read -r changed; do
             case "$changed" in
+                backend-school/tests/* | backend-school/README.md)
+                    continue
+                    ;;
                 backend-school/* | podman-compose.yml | nginx-configs/school-api.* | \
                     scripts/render_nginx_config.sh | scripts/smoke_test.sh | \
                     scripts/prune_runtime_images.sh | scripts/clamd_runtime_matches.sh | \

@@ -6,6 +6,8 @@ on:
     branches: ["main"]
     paths:
       - "backend-admin/**"
+      - "!backend-admin/tests/**"
+      - "!backend-admin/README.md"
       - "podman-compose.yml"
       - "nginx-configs/admin-api.conf.template"
       - "scripts/render_nginx_config.sh"

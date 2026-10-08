@@ -143,6 +143,12 @@ BuildKit secrets; a missing or unavailable compiler cache falls back to an ordin
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use
 `SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
 does not select v2; a build that reports write errors has not populated a usable cache.
+Automatic backend releases ignore application READMEs and root integration-test directories
+already excluded from Docker contexts. School scope resolution also ignores frontend tests and
+its README, so changing a cross-stack test with backend code does not promote unchanged
+frontends. Scope still includes all queued runtime changes since each trusted accepted baseline;
+dirty attempts and release-control changes retain full reconciliation. Explicit manual scopes
+retain their existing behavior.
 Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. School additionally
 exports compiler-cache statistics and summarizes the slowest Cargo units in the job summary. Compare the
 Cargo report, sccache statistics, and GitHub step duration rather than treating one cache marker as
