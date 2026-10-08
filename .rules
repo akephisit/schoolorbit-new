@@ -284,6 +284,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 
 These rules own the shared UI standard. Theme values and component defaults remain executable sources of truth; link to their owners instead of maintaining a second value inventory or a separate design guide. Apply this standard when creating or changing UI, and migrate existing pages by coherent workflow rather than combining unrelated visual rewrites.
 
+Choose controls and detail surfaces according to the task on each page. These principles apply across workflows; domain-specific presentation belongs with the feature's components and tests.
+
 #### Design tokens and component ownership
 
 - Use the theme tokens in [frontend-school/src/routes/layout.css](frontend-school/src/routes/layout.css) for school-app colors, typography, and radii, including light and dark modes. Use semantic utilities such as `bg-card`, `text-muted-foreground`, and `border-border`; do not hardcode brand or status colors independently in each route.
@@ -303,12 +305,19 @@ Pages serving the same kind of task use the same visual order and action placeme
 | Dashboard | Page header → summary regions → detailed regions; each independent region follows the route-loading policy. |
 | Board/timetable | Page header → context selectors and tools → the scrollable workspace, following the full-height layout rules below. |
 
+#### Workflow controls and detail
+
+- Keep the primary task easy to find and group related secondary tools in a clearly named menu when separate buttons crowd the header. Keep frequent actions readily accessible. A `+` menu is appropriate when there are multiple ways to create an item; choose a labeled create button when it makes the task clearer. Menu entries retain their own permission and disabled-state checks.
+- When creating from a selected date, resource, or scope, use that context for valid form defaults where the workflow supports it. Keep defaults visible and editable where permitted; preserve the user's edits while the form is open or retrying. Shared create entry points must apply the same context and authorization rules.
+- Use popovers for brief contextual details and dialogs for focused forms or decisions. Use dedicated routes when workflows need deep links, history, or independent navigation. Show enough separation between multiple items in a detail surface to make their boundaries clear.
+- Keep repeated navigation controls in stable positions within each responsive layout. Variable-length titles, counts, and labels must not move the controls between successive uses; follow the route-loading policy to preserve the usable workspace during background reads.
+
 #### Interaction, states, and responsive behavior
 
 - Use a consistent primary-action variant and action placement within each page pattern. Use destructive variants for destructive actions and consistent confirmation for irreversible actions. Permission-controlled actions continue to follow the exact capability checks above.
 - Forms use visible associated labels, consistent required-field indicators, and field-local validation messages. Preserve entered values after a failed save; make success and failure feedback actionable and consistent with the shared app-state components.
-- Use [frontend-school/src/lib/components/app-state/](frontend-school/src/lib/components/app-state/) for loading, empty, error, and mutation states. Match skeleton structure to the pending region to reduce layout shifts, and follow the existing first-paint and background-refresh rules; distinguish an empty dataset from no matching filter results and from a failed read.
-- Use mobile-first responsive layouts with the project's Tailwind breakpoints. Keep control order and labels consistent as actions wrap or stack; dense tables and fixed-format workspaces scroll horizontally instead of shrinking below readable widths.
+- Use [frontend-school/src/lib/components/app-state/](frontend-school/src/lib/components/app-state/) for loading, empty, error, and mutation states. Match skeleton structure to the pending region to reduce layout shifts, and follow the existing first-paint and background-refresh rules; distinguish an empty dataset from no matching filter results and from a failed read. A calendar or board that already communicates an empty range may keep its workspace visible without a redundant empty-state box. Add empty-state guidance when it explains the result or provides a useful next action.
+- Use mobile-first responsive layouts with the project's Tailwind breakpoints. Keep control order and labels consistent as actions wrap or stack; dense tables and fixed-format workspaces scroll horizontally instead of shrinking below readable widths. In compact item presentations, prioritize the item name and move secondary metadata to accessible details when needed. Keep information required to distinguish items or make the current decision visible.
 - Preserve keyboard access, visible focus, accessible names for icon-only actions, and readable contrast in both themes. Communicate status and errors with text or icons as well as color.
 
 #### UI review and verification
