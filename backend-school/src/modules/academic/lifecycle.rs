@@ -3,6 +3,7 @@ pub mod handlers;
 pub mod models {
     pub use school_academic_lifecycle::models::*;
 }
+#[cfg(test)]
 pub mod services;
 
 pub fn routes() -> axum::Router<crate::AppState> {

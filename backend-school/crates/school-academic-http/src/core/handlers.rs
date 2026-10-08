@@ -1,0 +1,2981 @@
+use axum::{
+    extract::{Extension, Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
+};
+use chrono::Utc;
+use serde::Deserialize;
+use uuid::Uuid;
+
+use crate::policies::{
+    academic_catalog_access_policy::{self, CatalogAction, CatalogResourceRef},
+    academic_curriculum_access_policy::{self, CurriculumAction},
+};
+const SCHOOL_TIMEZONE: chrono_tz::Tz = chrono_tz::Asia::Bangkok;
+use crate::state::AcademicHttpState;
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_http::tenant::tenant_context;
+use school_authorization::ActorContext;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse, EmptyData};
+use school_permissions::registry::codes;
+
+use school_academic_core::models::*;
+use school_academic_core::services::{
+    bell_schedules, catalog, context, curriculum, curriculum_publications, curriculum_structure,
+    progressions, student_years, workspaces, years_terms,
+};
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcademicYearQuery {
+    pub academic_year_id: Uuid,
+}
+
+fn ok<T: serde::Serialize>(data: T) -> Response {
+    Json(ApiResponse::ok(data)).into_response()
+}
+
+fn created<T: serde::Serialize>(data: T) -> Response {
+    (StatusCode::CREATED, Json(ApiResponse::ok(data))).into_response()
+}
+
+#[utoipa::path(delete,path="/api/academic/curricula/{id}/draft",operation_id="discardCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=DiscardCurriculumDraftRequest,responses((status=200,description="Unpublished amendment deleted; current publication restored",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn discard_curriculum_draft(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<DiscardCurriculumDraftRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum_publications::discard_draft(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}/draft/discard-preview",operation_id="previewCurriculumDraftDiscard",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),CurriculumDraftDiscardPreviewQuery),responses((status=200,description="Current amendment content and deletion scope",body=ApiResponse<CurriculumDraftDiscardPreview>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Draft conflict",body=ApiErrorResponse)))]
+pub async fn preview_curriculum_draft_discard(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumDraftDiscardPreviewQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    Ok(ok(curriculum_publications::preview_discard(
+        &context.tenant.pool,
+        id,
+        query.draft_id,
+    )
+    .await?))
+}
+
+fn signal_core_changed(
+    state: &AcademicHttpState,
+    session: &AuthenticatedSession,
+    actor: &ActorContext,
+    entity_type: &str,
+    entity_id: Option<Uuid>,
+    academic_year_id: Option<Uuid>,
+    academic_term_id: Option<Uuid>,
+) {
+    state.websocket_manager.broadcast_academic_core_changed(
+        session.tenant.subdomain.clone(),
+        actor.user_id,
+        entity_type,
+        entity_id,
+        academic_year_id,
+        academic_term_id,
+    );
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/context/options",
+    operation_id = "listAcademicContextOptions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Academic context options", body = ApiResponse<AcademicContextOptions>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic context read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_context_options(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_CONTEXT_READ_SCHOOL)?;
+    Ok(ok(context::list_options(&pool).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/setup/workspace",
+    operation_id = "getAcademicSetupWorkspace",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Academic years, terms, and bell schedules for setup", body = ApiResponse<AcademicSetupWorkspace>),
+        (status = 400, description = "Academic setup workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic setup read permissions denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_academic_setup_workspace(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    Ok(ok(workspaces::setup_workspace(
+        &context.tenant.pool,
+        &context.actor,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/public/academic-context/options",
+    operation_id = "listPublicAcademicContextOptions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Published academic years and terms available to the public calendar", body = ApiResponse<AcademicContextOptions>),
+        (status = 404, description = "School tenant not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_public_context_options(
+    State(state): State<AcademicHttpState>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let tenant = tenant_context(&state.auth_runtime, &headers).await?;
+    Ok(ok(context::list_public_options(&tenant.pool).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/me/academic-context/options",
+    operation_id = "listMyAcademicContextOptions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Academic years and terms available to the current student", body = ApiResponse<AcademicContextOptions>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student context access denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_my_context_options(
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    if session.user_type != "student" {
+        return Err(AppError::Forbidden(
+            "เฉพาะนักเรียนเท่านั้นที่ดูประวัติบริบทของตนเองได้".to_string(),
+        ));
+    }
+    Ok(ok(context::list_options_for_student(
+        &session.tenant.pool,
+        session.user_id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/years",
+    operation_id = "listAcademicYears",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Academic years", body = ApiResponse<Vec<AcademicYear>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic year read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_years(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_YEAR_READ_SCHOOL,
+        codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(years_terms::list_years(&pool).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/years",
+    operation_id = "createAcademicYear",
+    tag = "academic",
+    request_body = CreateAcademicYearRequest,
+    responses(
+        (status = 201, description = "Academic year created", body = ApiResponse<AcademicYear>),
+        (status = 400, description = "Invalid academic year", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic year management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Academic year conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateAcademicYearRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    let year = years_terms::create_year(&pool, actor.user_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "academic_year",
+        Some(year.id),
+        Some(year.id),
+        None,
+    );
+    Ok(created(year))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/years/{id}",
+    operation_id = "getAcademicYear",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Academic year ID")),
+    responses(
+        (status = 200, description = "Academic year", body = ApiResponse<AcademicYear>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic year read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_YEAR_READ_SCHOOL,
+        codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(years_terms::get_year(&pool, id).await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/years/{id}",
+    operation_id = "updateAcademicYear",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Academic year ID")),
+    request_body = UpdateAcademicYearRequest,
+    responses(
+        (status = 200, description = "Academic year updated", body = ApiResponse<AcademicYear>),
+        (status = 400, description = "Invalid academic year", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic year management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic year row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateAcademicYearRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    let year = years_terms::update_year(&pool, actor.user_id, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "academic_year",
+        Some(id),
+        Some(id),
+        None,
+    );
+    Ok(ok(year))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/terms",
+    operation_id = "listAcademicTerms",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Academic terms in the selected year", body = ApiResponse<Vec<AcademicTerm>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_terms(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_TERM_READ_SCHOOL,
+        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(
+        years_terms::list_terms(&pool, query.academic_year_id).await?
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/terms",
+    operation_id = "createAcademicTerm",
+    tag = "academic",
+    request_body = CreateAcademicTermRequest,
+    responses(
+        (status = 201, description = "Academic term created", body = ApiResponse<AcademicTerm>),
+        (status = 400, description = "Invalid academic term", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Academic term conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_term(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateAcademicTermRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let term = years_terms::create_term(&pool, actor.user_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "academic_term",
+        Some(term.id),
+        Some(term.academic_year_id),
+        Some(term.id),
+    );
+    Ok(created(term))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/terms/{id}",
+    operation_id = "getAcademicTerm",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Academic term ID")),
+    responses(
+        (status = 200, description = "Academic term", body = ApiResponse<AcademicTerm>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic term not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_term(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_TERM_READ_SCHOOL,
+        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(years_terms::get_term(&pool, id).await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/terms/{id}",
+    operation_id = "updateAcademicTerm",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Academic term ID")),
+    request_body = UpdateAcademicTermRequest,
+    responses(
+        (status = 200, description = "Academic term updated", body = ApiResponse<AcademicTerm>),
+        (status = 400, description = "Invalid academic term", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic term not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic term row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_term(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateAcademicTermRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let term = years_terms::update_term(&pool, actor.user_id, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "academic_term",
+        Some(id),
+        Some(term.academic_year_id),
+        Some(id),
+    );
+    Ok(ok(term))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/academic/terms/{id}",
+    operation_id = "deleteAcademicTerm",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Academic term ID")),
+    responses(
+        (status = 200, description = "Academic term deleted", body = ApiResponse<EmptyData>),
+        (status = 400, description = "Academic term cannot be deleted", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic term not found", body = ApiErrorResponse),
+        (status = 409, description = "Academic term has dependent records", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_term(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let term = years_terms::get_term(&pool, id).await?;
+    years_terms::delete_term(&pool, actor.user_id, id).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "academic_term",
+        Some(id),
+        Some(term.academic_year_id),
+        None,
+    );
+    Ok(ok(EmptyData {}))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/bell-schedules",
+    operation_id = "listBellSchedules",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Bell schedules in the selected year", body = ApiResponse<Vec<BellSchedule>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_bell_schedules(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_TERM_READ_SCHOOL,
+        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(
+        bell_schedules::list(&pool, query.academic_year_id).await?
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/bell-schedules",
+    operation_id = "createBellSchedule",
+    tag = "academic",
+    request_body = CreateBellScheduleRequest,
+    responses(
+        (status = 201, description = "Bell schedule created", body = ApiResponse<BellSchedule>),
+        (status = 400, description = "Invalid bell schedule", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Bell schedule conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_bell_schedule(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateBellScheduleRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let schedule = bell_schedules::create(&pool, actor.user_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "bell_schedule",
+        Some(schedule.id),
+        Some(schedule.academic_year_id),
+        None,
+    );
+    Ok(created(schedule))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/bell-schedules/{id}",
+    operation_id = "getBellSchedule",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Bell schedule ID")),
+    responses(
+        (status = 200, description = "Bell schedule", body = ApiResponse<BellSchedule>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Bell schedule not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_bell_schedule(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_TERM_READ_SCHOOL,
+        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(bell_schedules::get(&pool, id).await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/bell-schedules/{id}",
+    operation_id = "updateBellSchedule",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Bell schedule ID")),
+    request_body = UpdateBellScheduleRequest,
+    responses(
+        (status = 200, description = "Bell schedule updated", body = ApiResponse<BellSchedule>),
+        (status = 400, description = "Invalid bell schedule", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Bell schedule not found", body = ApiErrorResponse),
+        (status = 409, description = "Bell schedule row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_bell_schedule(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateBellScheduleRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let schedule = bell_schedules::update(&pool, actor.user_id, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "bell_schedule",
+        Some(id),
+        Some(schedule.academic_year_id),
+        None,
+    );
+    Ok(ok(schedule))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/bell-schedules/{id}/periods",
+    operation_id = "listBellSchedulePeriods",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Bell schedule ID")),
+    responses(
+        (status = 200, description = "Bell schedule periods", body = ApiResponse<Vec<BellSchedulePeriod>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Bell schedule not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_bell_schedule_periods(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_TERM_READ_SCHOOL,
+        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(bell_schedules::list_periods(&pool, id).await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/bell-schedules/{id}/periods",
+    operation_id = "replaceBellSchedulePeriods",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Bell schedule ID")),
+    request_body = ReplaceBellSchedulePeriodsRequest,
+    responses(
+        (status = 200, description = "Bell schedule periods replaced", body = ApiResponse<Vec<BellSchedulePeriod>>),
+        (status = 400, description = "Invalid bell schedule periods", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Bell schedule not found", body = ApiErrorResponse),
+        (status = 409, description = "Bell schedule row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn replace_bell_schedule_periods(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ReplaceBellSchedulePeriodsRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
+    let periods = bell_schedules::replace_periods(&pool, actor.user_id, id, request).await?;
+    let schedule = bell_schedules::get(&pool, id).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "bell_schedule_periods",
+        Some(id),
+        Some(schedule.academic_year_id),
+        None,
+    );
+    Ok(ok(periods))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/grade-progressions",
+    operation_id = "listGradeProgressions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Grade progression rules", body = ApiResponse<GradeProgressionSet>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic year read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_grade_progressions(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_YEAR_READ_SCHOOL,
+        codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(progressions::list(&pool).await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/grade-progressions",
+    operation_id = "replaceGradeProgressions",
+    tag = "academic",
+    request_body = ReplaceGradeProgressionsRequest,
+    responses(
+        (status = 200, description = "Grade progression rules replaced", body = ApiResponse<GradeProgressionSet>),
+        (status = 400, description = "Invalid grade progression rules", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic year management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Grade progression row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn replace_grade_progressions(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<ReplaceGradeProgressionsRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    let values = progressions::replace(&pool, actor.user_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "grade_progressions",
+        None,
+        None,
+        None,
+    );
+    Ok(ok(values))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subjects",
+    operation_id = "listCatalogSubjects",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Catalog subjects", body = ApiResponse<Vec<CatalogSubject>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_catalog_subjects(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(catalog::list_subjects(&pool, &filter).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subjects/overview",
+    operation_id = "getCatalogSubjectOverview",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Catalog subject overview", body = ApiResponse<CatalogSubjectOverview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_catalog_subject_overview(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let read_filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Read,
+    )
+    .await?;
+    let manage_filter = academic_catalog_access_policy::academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Manage,
+    )
+    .await?;
+    let today = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
+    Ok(ok(catalog::list_subject_overview(
+        &pool,
+        &read_filter,
+        &manage_filter,
+        today,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/catalog/subjects",
+    operation_id = "createCatalogSubject",
+    tag = "academic",
+    request_body = CreateCatalogSubjectRequest,
+    responses(
+        (status = 201, description = "Catalog subject created", body = ApiResponse<CatalogSubject>),
+        (status = 400, description = "Invalid catalog subject", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Catalog subject conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_catalog_subject(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateCatalogSubjectRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Manage,
+    )
+    .await?;
+    let owner_id = catalog::resolve_subject_group_owner(&pool, request.subject_group_id).await?;
+    if !catalog::owner_allowed(&filter, Some(owner_id)) {
+        return Err(AppError::Forbidden(
+            "ไม่มีสิทธิ์สร้างรายวิชาในกลุ่มสาระนี้".to_string(),
+        ));
+    }
+    let subject = catalog::create_subject(&pool, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "catalog_subject",
+        Some(subject.id),
+        None,
+        None,
+    );
+    Ok(created(subject))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subjects/{id}",
+    operation_id = "getCatalogSubject",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog subject ID")),
+    responses(
+        (status = 200, description = "Catalog subject", body = ApiResponse<CatalogSubject>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog subject not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_catalog_subject(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(catalog::get_subject(&pool, id).await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/catalog/subjects/{id}",
+    operation_id = "updateCatalogSubject",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog subject ID")),
+    request_body = UpdateCatalogSubjectRequest,
+    responses(
+        (status = 200, description = "Catalog subject updated", body = ApiResponse<CatalogSubject>),
+        (status = 400, description = "Invalid catalog subject", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog subject not found", body = ApiErrorResponse),
+        (status = 409, description = "Catalog subject row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_catalog_subject(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateCatalogSubjectRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Manage,
+    )
+    .await?;
+    let owner_id = catalog::resolve_subject_group_owner(&pool, request.subject_group_id).await?;
+    if !catalog::owner_allowed(&filter, Some(owner_id)) {
+        return Err(AppError::Forbidden("ไม่มีสิทธิ์ย้ายรายวิชาไปกลุ่มสาระนี้".to_string()));
+    }
+    let subject = catalog::update_subject(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "catalog_subject",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(subject))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subjects/{id}/versions",
+    operation_id = "listSubjectVersions",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog subject ID")),
+    responses(
+        (status = 200, description = "Subject versions", body = ApiResponse<Vec<SubjectVersion>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog subject not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_subject_versions(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(subject_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(subject_id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(catalog::list_subject_versions(&pool, subject_id).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/catalog/subjects/{id}/versions",
+    operation_id = "createSubjectVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog subject ID")),
+    request_body = CreateSubjectVersionRequest,
+    responses(
+        (status = 201, description = "Subject version created", body = ApiResponse<SubjectVersion>),
+        (status = 400, description = "Invalid subject version", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog subject not found", body = ApiErrorResponse),
+        (status = 409, description = "Subject version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_subject_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(subject_id): Path<Uuid>,
+    Json(request): Json<CreateSubjectVersionRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(subject_id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let version = catalog::create_subject_version(&pool, subject_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "subject_version",
+        Some(version.id),
+        None,
+        None,
+    );
+    Ok(created(version))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subject-versions/{id}",
+    operation_id = "getSubjectVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject version ID")),
+    responses(
+        (status = 200, description = "Subject version", body = ApiResponse<SubjectVersion>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject version not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_subject_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let version = catalog::get_subject_version(&pool, id).await?;
+    let subject_id = version.subject_id;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(subject_id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(version))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/catalog/subject-versions/{id}",
+    operation_id = "updateSubjectVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject version ID")),
+    request_body = UpdateSubjectVersionRequest,
+    responses(
+        (status = 200, description = "Subject version updated", body = ApiResponse<SubjectVersion>),
+        (status = 400, description = "Invalid or immutable subject version", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject version not found", body = ApiErrorResponse),
+        (status = 409, description = "Subject version row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_subject_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateSubjectVersionRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let subject_id = catalog::get_subject_version(&pool, id).await?.subject_id;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(subject_id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let version = catalog::update_subject_version(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "subject_version",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(version))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/catalog/subject-versions/{id}/publish",
+    operation_id = "publishSubjectVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject version ID")),
+    request_body = PublishVersionRequest,
+    responses(
+        (status = 200, description = "Subject version published", body = ApiResponse<SubjectVersion>),
+        (status = 400, description = "Subject version cannot be published", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject version not found", body = ApiErrorResponse),
+        (status = 409, description = "Subject version row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn publish_subject_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<PublishVersionRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let subject_id = catalog::get_subject_version(&pool, id).await?.subject_id;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(subject_id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let version = catalog::publish_subject_version(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "subject_version",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(version))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subjects/{id}/default-teachers",
+    operation_id = "listSubjectDefaultTeachers",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog subject ID")),
+    responses(
+        (status = 200, description = "Subject default teachers", body = ApiResponse<Vec<DefaultTeacher>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog subject not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_subject_default_teachers(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(catalog::list_subject_default_teachers(&pool, id).await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/catalog/subjects/{id}/default-teachers",
+    operation_id = "replaceSubjectDefaultTeachers",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog subject ID")),
+    request_body = ReplaceDefaultTeachersRequest,
+    responses(
+        (status = 200, description = "Subject default teachers replaced", body = ApiResponse<Vec<DefaultTeacher>>),
+        (status = 400, description = "Invalid default teachers", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog subject not found", body = ApiErrorResponse),
+        (status = 409, description = "Catalog subject row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn replace_subject_default_teachers(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ReplaceDefaultTeachersRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Subject(id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let teachers = catalog::replace_subject_default_teachers(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "subject_default_teachers",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(teachers))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subject-groups",
+    operation_id = "listSubjectGroups",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Subject groups", body = ApiResponse<Vec<SubjectGroup>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_subject_groups(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Read,
+    )
+    .await?;
+    if !filter.includes_school_owned {
+        return Err(AppError::Forbidden("กลุ่มสาระเป็นข้อมูลระดับโรงเรียน".to_string()));
+    }
+    Ok(ok(catalog::list_subject_groups(&pool).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/catalog/subject-groups",
+    operation_id = "createSubjectGroup",
+    tag = "academic",
+    request_body = CreateSubjectGroupRequest,
+    responses(
+        (status = 201, description = "Subject group created", body = ApiResponse<SubjectGroup>),
+        (status = 400, description = "Invalid subject group", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Subject group conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_subject_group(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateSubjectGroupRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_CATALOG_MANAGE_SCHOOL)?;
+    let group = catalog::create_subject_group(&pool, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "subject_group",
+        Some(group.id),
+        None,
+        None,
+    );
+    Ok(created(group))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/subject-groups/{id}",
+    operation_id = "getSubjectGroup",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject group ID")),
+    responses(
+        (status = 200, description = "Subject group", body = ApiResponse<SubjectGroup>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject group not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_subject_group(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::ACADEMIC_CATALOG_READ_SCHOOL,
+        codes::ACADEMIC_CATALOG_MANAGE_SCHOOL,
+    ])?;
+    let group = catalog::list_subject_groups(&pool)
+        .await?
+        .into_iter()
+        .find(|group| group.id == id)
+        .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มสาระ".to_string()))?;
+    Ok(ok(group))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/catalog/subject-groups/{id}",
+    operation_id = "updateSubjectGroup",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject group ID")),
+    request_body = UpdateSubjectGroupRequest,
+    responses(
+        (status = 200, description = "Subject group updated", body = ApiResponse<SubjectGroup>),
+        (status = 400, description = "Invalid subject group", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject group not found", body = ApiErrorResponse),
+        (status = 409, description = "Subject group row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_subject_group(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateSubjectGroupRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_CATALOG_MANAGE_SCHOOL)?;
+    let group = catalog::update_subject_group(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "subject_group",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(group))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/academic/catalog/subject-groups/{id}",
+    operation_id = "deleteSubjectGroup",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Subject group ID")),
+    responses(
+        (status = 200, description = "Subject group deleted", body = ApiResponse<EmptyData>),
+        (status = 400, description = "Subject group cannot be deleted", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Subject group not found", body = ApiErrorResponse),
+        (status = 409, description = "Subject group has dependent records", body = ApiErrorResponse)
+    )
+)]
+pub async fn delete_subject_group(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::ACADEMIC_CATALOG_MANAGE_SCHOOL)?;
+    catalog::delete_subject_group(&pool, id).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "subject_group",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(EmptyData {}))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/activities",
+    operation_id = "listCatalogActivities",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Catalog activities", body = ApiResponse<Vec<CatalogActivity>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_catalog_activities(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(catalog::list_activities(&pool, &filter).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/activities/overview",
+    operation_id = "getCatalogActivityOverview",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Catalog activity overview", body = ApiResponse<CatalogActivityOverview>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_catalog_activity_overview(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let read_filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Read,
+    )
+    .await?;
+    let manage_filter = academic_catalog_access_policy::academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Manage,
+    )
+    .await?;
+    let today = Utc::now().with_timezone(&SCHOOL_TIMEZONE).date_naive();
+    Ok(ok(catalog::list_activity_overview(
+        &pool,
+        &read_filter,
+        &manage_filter,
+        today,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/catalog/activities",
+    operation_id = "createCatalogActivity",
+    tag = "academic",
+    request_body = CreateCatalogActivityRequest,
+    responses(
+        (status = 201, description = "Catalog activity created", body = ApiResponse<CatalogActivity>),
+        (status = 400, description = "Invalid catalog activity", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Catalog activity conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_catalog_activity(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateCatalogActivityRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_catalog_access_policy::require_academic_catalog_list_access(
+        &pool,
+        &actor,
+        CatalogAction::Manage,
+    )
+    .await?;
+    let owner_id = catalog::resolve_activity_owner(&pool).await?;
+    if !catalog::owner_allowed(&filter, Some(owner_id)) {
+        return Err(AppError::Forbidden("ไม่มีสิทธิ์สร้างกิจกรรมพัฒนาผู้เรียน".to_string()));
+    }
+    let activity = catalog::create_activity(&pool, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "catalog_activity",
+        Some(activity.id),
+        None,
+        None,
+    );
+    Ok(created(activity))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/activities/{id}",
+    operation_id = "getCatalogActivity",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog activity ID")),
+    responses(
+        (status = 200, description = "Catalog activity", body = ApiResponse<CatalogActivity>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog activity not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_catalog_activity(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(catalog::get_activity(&pool, id).await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/catalog/activities/{id}",
+    operation_id = "updateCatalogActivity",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog activity ID")),
+    request_body = UpdateCatalogActivityRequest,
+    responses(
+        (status = 200, description = "Catalog activity updated", body = ApiResponse<CatalogActivity>),
+        (status = 400, description = "Invalid catalog activity", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog activity not found", body = ApiErrorResponse),
+        (status = 409, description = "Catalog activity row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_catalog_activity(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateCatalogActivityRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let activity = catalog::update_activity(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "catalog_activity",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(activity))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/activities/{id}/versions",
+    operation_id = "listActivityVersions",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog activity ID")),
+    responses(
+        (status = 200, description = "Activity versions", body = ApiResponse<Vec<ActivityVersion>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog activity not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_activity_versions(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(activity_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(activity_id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(
+        catalog::list_activity_versions(&pool, activity_id).await?
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/catalog/activities/{id}/versions",
+    operation_id = "createActivityVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog activity ID")),
+    request_body = CreateActivityVersionRequest,
+    responses(
+        (status = 201, description = "Activity version created", body = ApiResponse<ActivityVersion>),
+        (status = 400, description = "Invalid activity version", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog activity not found", body = ApiErrorResponse),
+        (status = 409, description = "Activity version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_activity_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(activity_id): Path<Uuid>,
+    Json(request): Json<CreateActivityVersionRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(activity_id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let version = catalog::create_activity_version(&pool, activity_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "activity_version",
+        Some(version.id),
+        None,
+        None,
+    );
+    Ok(created(version))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/activity-versions/{id}",
+    operation_id = "getActivityVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Activity version ID")),
+    responses(
+        (status = 200, description = "Activity version", body = ApiResponse<ActivityVersion>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Activity version not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_activity_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let version = catalog::get_activity_version(&pool, id).await?;
+    let activity_id = version.activity_id;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(activity_id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(version))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/catalog/activity-versions/{id}",
+    operation_id = "updateActivityVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Activity version ID")),
+    request_body = UpdateActivityVersionRequest,
+    responses(
+        (status = 200, description = "Activity version updated", body = ApiResponse<ActivityVersion>),
+        (status = 400, description = "Invalid or immutable activity version", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Activity version not found", body = ApiErrorResponse),
+        (status = 409, description = "Activity version row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_activity_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateActivityVersionRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let activity_id = catalog::get_activity_version(&pool, id).await?.activity_id;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(activity_id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let version = catalog::update_activity_version(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "activity_version",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(version))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/catalog/activity-versions/{id}/publish",
+    operation_id = "publishActivityVersion",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Activity version ID")),
+    request_body = PublishVersionRequest,
+    responses(
+        (status = 200, description = "Activity version published", body = ApiResponse<ActivityVersion>),
+        (status = 400, description = "Activity version cannot be published", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Activity version not found", body = ApiErrorResponse),
+        (status = 409, description = "Activity version row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn publish_activity_version(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<PublishVersionRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let activity_id = catalog::get_activity_version(&pool, id).await?.activity_id;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(activity_id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let version = catalog::publish_activity_version(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "activity_version",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(version))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/catalog/activities/{id}/default-teachers",
+    operation_id = "listActivityDefaultTeachers",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog activity ID")),
+    responses(
+        (status = 200, description = "Activity default teachers", body = ApiResponse<Vec<DefaultTeacher>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog activity not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_activity_default_teachers(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(id),
+        CatalogAction::Read,
+    )
+    .await?;
+    Ok(ok(catalog::list_activity_default_teachers(&pool, id).await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/catalog/activities/{id}/default-teachers",
+    operation_id = "replaceActivityDefaultTeachers",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Catalog activity ID")),
+    request_body = ReplaceDefaultTeachersRequest,
+    responses(
+        (status = 200, description = "Activity default teachers replaced", body = ApiResponse<Vec<DefaultTeacher>>),
+        (status = 400, description = "Invalid default teachers", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic catalog management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Catalog activity not found", body = ApiErrorResponse),
+        (status = 409, description = "Catalog activity row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn replace_activity_default_teachers(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ReplaceDefaultTeachersRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    academic_catalog_access_policy::require_academic_catalog_access(
+        &pool,
+        &actor,
+        CatalogResourceRef::Activity(id),
+        CatalogAction::Manage,
+    )
+    .await?;
+    let teachers = catalog::replace_activity_default_teachers(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "activity_default_teachers",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(teachers))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/curricula",
+    operation_id = "listCurricula",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Curricula", body = ApiResponse<Vec<CurriculumEdition>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_curricula(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    Ok(ok(curriculum::list(&pool, &filter).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/curricula/overview",
+    operation_id = "getCurriculumOverview",
+    tag = "academic",
+    responses(
+        (status = 200, description = "CurriculumEdition overview with the most relevant version for each curriculum", body = ApiResponse<CurriculumOverview>),
+        (status = 400, description = "CurriculumEdition overview exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_curriculum_overview(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    Ok(ok(workspaces::curriculum_overview(&pool, &filter).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/curricula/management-options",
+    operation_id = "getCurriculumCreateOptions",
+    tag = "academic",
+    responses(
+        (status = 200, description = "Options for creating a curriculum", body = ApiResponse<CurriculumCreateOptions>),
+        (status = 400, description = "CurriculumEdition options exceed the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum management permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_curriculum_create_options(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    Ok(ok(
+        workspaces::curriculum_create_options(&pool, &filter).await?
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/study-program-options",
+    operation_id = "listStudyProgramOptionsForAcademicYear",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Published curriculum editions available for explicit selection in the academic year", body = ApiResponse<Vec<StudyProgramOption>>),
+        (status = 400, description = "Invalid academic year query or workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Academic curriculum read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_study_program_options_for_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &pool,
+        &actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    Ok(ok(curriculum::list_study_program_options_for_year(
+        &pool,
+        query.academic_year_id,
+        &filter,
+    )
+    .await?))
+}
+
+#[utoipa::path(post,path="/api/academic/curricula",operation_id="createCurriculum",tag="academic",request_body=CreateCurriculumRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn create_curriculum(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateCurriculumRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::create(&context.tenant.pool, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(value.id),
+        None,
+        None,
+    );
+    Ok(created(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}",operation_id="getCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn get_curriculum(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum::get(&context.tenant.pool, id).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(patch,path="/api/academic/curricula/{id}",operation_id="updateCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateCurriculumRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn update_curriculum(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateCurriculumRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::update(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(post,path="/api/academic/curricula/{id}/publish",operation_id="publishCurriculum",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=PublishCurriculumRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn publish_curriculum(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<PublishCurriculumRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value =
+        curriculum::publish(&context.tenant.pool, id, request, context.actor.user_id).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}/levels",operation_id="listCurriculumLevels",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<CurriculumLevelView>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn list_curriculum_levels(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::read_levels(&context.tenant.pool, id, &query).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(post,path="/api/academic/curricula/{id}/levels",operation_id="createCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CreateCurriculumLevelRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn create_curriculum_level(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CreateCurriculumLevelRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::create_level(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(created(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}",operation_id="getCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn get_curriculum_level(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::read_level(&context.tenant.pool, id, &query).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(patch,path="/api/academic/curriculum-levels/{id}",operation_id="updateCurriculumLevel",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateCurriculumLevelRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumLevel>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn update_curriculum_level(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateCurriculumLevelRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::update_level(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/management-options",operation_id="getCurriculumManagementOptions",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumManagementOptions>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn get_curriculum_management_options(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value =
+        workspaces::curriculum_management_options(&context.tenant.pool, id, &filter).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/structure",operation_id="getCurriculumStructureWorkspace",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn get_curriculum_structure_workspace(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::read_workspace(&context.tenant.pool, id, &query).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(put,path="/api/academic/curriculum-levels/{id}/term-slots",operation_id="replaceCurriculumTermSlots",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=ReplaceCurriculumTermSlotsRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn replace_curriculum_term_slots(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ReplaceCurriculumTermSlotsRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum_structure::replace_term_slots(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curriculum-levels/{id}/programs",operation_id="listStudyPrograms",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<Vec<StudyProgram>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn list_study_programs(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::read_programs(&context.tenant.pool, id, &query).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(post,path="/api/academic/curriculum-levels/{id}/programs",operation_id="createStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CreateStudyProgramRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn create_study_program(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CreateStudyProgramRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::create_program(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(created(value))
+}
+
+#[utoipa::path(post,path="/api/academic/curriculum-levels/{id}/copy-program",operation_id="copyStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=CopyStudyProgramRequest,responses((status=201,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn copy_study_program(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CopyStudyProgramRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::copy_program(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(created(value))
+}
+
+#[utoipa::path(get,path="/api/academic/study-programs/{id}",operation_id="getStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity"),CurriculumViewQuery),responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn get_study_program(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<CurriculumViewQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::read_program(&context.tenant.pool, id, &query).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(patch,path="/api/academic/study-programs/{id}",operation_id="updateStudyProgram",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=UpdateStudyProgramRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<StudyProgram>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn update_study_program(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateStudyProgramRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum::update_program(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(put,path="/api/academic/study-programs/{id}/structure",operation_id="replaceCurriculumStructure",tag="academic",params(("id"=Uuid,Path,description="Resource identity")),request_body=ReplaceCurriculumStructureRequest,responses((status=200,description="Curriculum resource",body=ApiResponse<CurriculumStructureWorkspace>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision or publication conflict",body=ApiErrorResponse)))]
+pub async fn replace_curriculum_structure(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ReplaceCurriculumStructureRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value =
+        curriculum_structure::replace_program_structure(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/homerooms",
+    operation_id = "listHomerooms",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Homerooms in the selected year", body = ApiResponse<Vec<Homeroom>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_homerooms(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
+    Ok(ok(student_years::list_homerooms(
+        &pool,
+        query.academic_year_id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/homerooms",
+    operation_id = "createHomeroom",
+    tag = "academic",
+    request_body = CreateHomeroomRequest,
+    responses(
+        (status = 201, description = "Homeroom created", body = ApiResponse<Homeroom>),
+        (status = 400, description = "Invalid homeroom", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Homeroom conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_homeroom(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateHomeroomRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::HOMEROOM_MANAGE_SCHOOL)?;
+    let homeroom = student_years::create_homeroom(&pool, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "homeroom",
+        Some(homeroom.id),
+        Some(homeroom.academic_year_id),
+        None,
+    );
+    Ok(created(homeroom))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/homerooms/{id}",
+    operation_id = "getHomeroom",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Homeroom ID")),
+    responses(
+        (status = 200, description = "Homeroom", body = ApiResponse<Homeroom>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Homeroom not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_homeroom(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
+    Ok(ok(student_years::get_homeroom(&pool, id).await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/homerooms/{id}",
+    operation_id = "updateHomeroom",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Homeroom ID")),
+    request_body = UpdateHomeroomRequest,
+    responses(
+        (status = 200, description = "Homeroom updated", body = ApiResponse<Homeroom>),
+        (status = 400, description = "Invalid homeroom", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Homeroom not found", body = ApiErrorResponse),
+        (status = 409, description = "Homeroom row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_homeroom(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateHomeroomRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::HOMEROOM_MANAGE_SCHOOL)?;
+    let homeroom = student_years::update_homeroom(&pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "homeroom",
+        Some(id),
+        Some(homeroom.academic_year_id),
+        None,
+    );
+    Ok(ok(homeroom))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/homerooms/{id}/advisors",
+    operation_id = "listHomeroomAdvisors",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Homeroom ID")),
+    responses(
+        (status = 200, description = "Homeroom advisors", body = ApiResponse<Vec<HomeroomAdvisor>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Homeroom not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_homeroom_advisors(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
+    Ok(ok(student_years::list_advisors(&pool, id).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/homeroom-advisors",
+    operation_id = "listHomeroomAdvisorsForAcademicYear",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Homeroom advisor assignments in the selected year", body = ApiResponse<Vec<HomeroomAdvisorAssignment>>),
+        (status = 400, description = "Invalid academic year query or workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_homeroom_advisors_for_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
+    Ok(ok(student_years::list_advisors_for_year(
+        &pool,
+        query.academic_year_id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/homerooms/{id}/advisors",
+    operation_id = "replaceHomeroomAdvisors",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Homeroom ID")),
+    request_body = ReplaceHomeroomAdvisorsRequest,
+    responses(
+        (status = 200, description = "Homeroom advisors replaced", body = ApiResponse<Vec<HomeroomAdvisor>>),
+        (status = 400, description = "Invalid homeroom advisors", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Homeroom management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Homeroom not found", body = ApiErrorResponse),
+        (status = 409, description = "Homeroom row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn replace_homeroom_advisors(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<ReplaceHomeroomAdvisorsRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::HOMEROOM_MANAGE_SCHOOL)?;
+    let advisors = student_years::replace_advisors(&pool, id, request).await?;
+    let homeroom = student_years::get_homeroom(&pool, id).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "homeroom_advisors",
+        Some(id),
+        Some(homeroom.academic_year_id),
+        None,
+    );
+    Ok(ok(advisors))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/student-years",
+    operation_id = "listStudentAcademicYears",
+    tag = "academic",
+    params(StudentAcademicYearFilter),
+    responses(
+        (status = 200, description = "Student academic years", body = ApiResponse<Vec<StudentAcademicYear>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_student_years(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(filter): Query<StudentAcademicYearFilter>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL,
+        codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(student_years::list_student_years(&pool, filter).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/student-years/candidates",
+    operation_id = "listStudentYearCandidates",
+    tag = "academic",
+    params(StudentYearCandidateQuery),
+    responses(
+        (status = 200, description = "Students available to add to the selected academic year", body = ApiResponse<Vec<StudentYearCandidate>>),
+        (status = 400, description = "Invalid candidate search", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_student_year_candidates(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<StudentYearCandidateQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    context
+        .actor
+        .require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    Ok(ok(student_years::list_student_year_candidates(
+        &pool, query,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/student-years",
+    operation_id = "createStudentAcademicYear",
+    tag = "academic",
+    request_body = CreateStudentAcademicYearRequest,
+    responses(
+        (status = 201, description = "Student academic year created", body = ApiResponse<StudentAcademicYear>),
+        (status = 400, description = "Invalid student academic year", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Student academic year conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_student_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(request): Json<CreateStudentAcademicYearRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    let value = student_years::create_student_year(&pool, actor.user_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "student_academic_year",
+        Some(value.id),
+        Some(value.academic_year_id),
+        None,
+    );
+    Ok(created(value))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/student-years/{id}",
+    operation_id = "getStudentAcademicYear",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Student academic year ID")),
+    responses(
+        (status = 200, description = "Student academic year", body = ApiResponse<StudentAcademicYear>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_student_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_any_permission(&[
+        codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL,
+        codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(student_years::get_student_year(&pool, id).await?))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/academic/student-years/{id}",
+    operation_id = "updateStudentAcademicYear",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Student academic year ID")),
+    request_body = UpdateStudentAcademicYearRequest,
+    responses(
+        (status = 200, description = "Student academic year updated", body = ApiResponse<StudentAcademicYear>),
+        (status = 400, description = "Invalid student academic year", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student academic year not found", body = ApiErrorResponse),
+        (status = 409, description = "Student academic year row version conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_student_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateStudentAcademicYearRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    let value = student_years::update_student_year(&pool, actor.user_id, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "student_academic_year",
+        Some(id),
+        Some(value.academic_year_id),
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/student-years/{id}/placements",
+    operation_id = "listHomeroomPlacements",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Student academic year ID")),
+    responses(
+        (status = 200, description = "Homeroom placement history", body = ApiResponse<Vec<HomeroomPlacement>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_placements(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL)?;
+    Ok(ok(
+        student_years::list_placements(&pool, student_year_id).await?
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/placements",
+    operation_id = "listPlacementsForAcademicYear",
+    tag = "academic",
+    params(AcademicYearQuery),
+    responses(
+        (status = 200, description = "Homeroom placements in the selected year", body = ApiResponse<Vec<HomeroomPlacement>>),
+        (status = 400, description = "Invalid academic year query or workspace exceeds the supported size", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic year not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_placements_for_year(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL)?;
+    Ok(ok(student_years::list_placements_for_year(
+        &pool,
+        query.academic_year_id,
+    )
+    .await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/student-years/{id}/placements",
+    operation_id = "createHomeroomPlacement",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Student academic year ID")),
+    request_body = CreateHomeroomPlacementRequest,
+    responses(
+        (status = 201, description = "Homeroom placement created", body = ApiResponse<HomeroomPlacement>),
+        (status = 400, description = "Invalid homeroom placement", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Student academic year or homeroom not found", body = ApiErrorResponse),
+        (status = 409, description = "Homeroom placement conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn create_placement(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(student_year_id): Path<Uuid>,
+    Json(request): Json<CreateHomeroomPlacementRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    let value =
+        student_years::create_placement(&pool, actor.user_id, student_year_id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "homeroom_placement",
+        Some(value.id),
+        Some(value.academic_year_id),
+        None,
+    );
+    Ok(created(value))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/academic/placements/{id}/transfer",
+    operation_id = "transferHomeroomPlacement",
+    tag = "academic",
+    params(("id" = Uuid, Path, description = "Current homeroom placement ID")),
+    request_body = TransferHomeroomPlacementRequest,
+    responses(
+        (status = 200, description = "Homeroom placement transferred", body = ApiResponse<HomeroomPlacementTransfer>),
+        (status = 400, description = "Invalid homeroom placement transfer", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Student academic year management permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Homeroom placement or target homeroom not found", body = ApiErrorResponse),
+        (status = 409, description = "Homeroom placement transfer conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn transfer_placement(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<TransferHomeroomPlacementRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
+    let value = student_years::transfer_placement(&pool, actor.user_id, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "homeroom_placement",
+        Some(value.new_placement.id),
+        Some(value.new_placement.academic_year_id),
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(post,path="/api/academic/curricula/{id}/draft",operation_id="openCurriculumDraft",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),request_body=OpenCurriculumDraftRequest,responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumEdition>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn open_curriculum_draft(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<OpenCurriculumDraftRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Manage,
+    )
+    .await?;
+    let value = curriculum_publications::open_draft(&context.tenant.pool, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &context.actor,
+        "curriculum",
+        Some(id),
+        None,
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}/publications",operation_id="listCurriculumPublications",tag="academic",params(("id"=Uuid,Path,description="Edition identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<Vec<CurriculumPublication>>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn list_curriculum_publications(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::list_publications(&context.tenant.pool, id).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/curricula/{id}/publications/{publication_id}",operation_id="getCurriculumPublicationHistory",tag="academic",params(("id"=Uuid,Path,description="Edition identity"),("publication_id"=Uuid,Path,description="Publication identity")),responses((status=200,description="Curriculum publication lifecycle",body=ApiResponse<CurriculumPublicationHistory>),(status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Revision conflict",body=ApiErrorResponse)))]
+pub async fn get_curriculum_publication_history(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, publication_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    academic_curriculum_access_policy::require_academic_curriculum_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        CurriculumAction::Read,
+    )
+    .await?;
+    let value = curriculum_publications::history(&context.tenant.pool, id, publication_id).await?;
+    Ok(ok(value))
+}

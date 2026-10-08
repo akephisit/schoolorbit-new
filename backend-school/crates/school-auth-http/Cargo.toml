@@ -1,0 +1,25 @@
+[package]
+name = "school-auth-http"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+ipnet = { workspace = true }
+school-auth = { workspace = true }
+school-authorization = { workspace = true }
+school-errors = { workspace = true }
+school-http = { workspace = true }
+school-tenancy = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-auth = { workspace = true, features = ["test-support"] }
+school-tenancy = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

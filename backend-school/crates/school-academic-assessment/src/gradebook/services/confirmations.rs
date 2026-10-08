@@ -1,7 +1,7 @@
 use super::*;
 
 pub async fn confirm_phase(
-    result_locks: &impl ResultLockPort,
+    result_locks: &dyn ResultLockPort,
     pool: &PgPool,
     actor: &ActorContext,
     group: Uuid,

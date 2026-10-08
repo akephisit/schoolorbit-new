@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 pub async fn save_scores_batch(
-    result_locks: &impl ResultLockPort,
+    result_locks: &dyn ResultLockPort,
     pool: &PgPool,
     actor: &ActorContext,
     group: Uuid,

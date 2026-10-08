@@ -1777,7 +1777,7 @@ test('frontend permission contracts use organization units instead of department
 
 test('tenant routing uses Origin by default with explicit X-School-Subdomain override', async () => {
 	const subdomainResolver = await readFile(
-		path.join(repoRoot, 'backend-school/src/utils/subdomain.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-auth-http/src/origin.rs'),
 		'utf8'
 	);
 	const apiClient = await readFile(
@@ -1844,7 +1844,7 @@ test('web push notifications favor fresh visible Android notifications', async (
 		'utf8'
 	);
 	const backendNotificationService = await readFile(
-		path.join(repoRoot, 'backend-school/src/services/notification.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-notifications/src/publisher.rs'),
 		'utf8'
 	);
 	const notificationBadge = await readFile(

@@ -36,33 +36,7 @@ pub struct RoleLookupItem {
     pub user_type: String,
 }
 
-/// Organization unit lookup item
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct OrganizationUnitLookupItem {
-    pub id: Uuid,
-    pub code: String,
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
-    pub name_en: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
-    pub category: Option<String>,
-    pub display_order: i32,
-    pub is_active: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Uuid)]
-    pub parent_unit_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = String)]
-    pub unit_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Uuid)]
-    pub subject_group_id: Option<Uuid>,
-}
+pub use school_staff::models::OrganizationUnitLookupItem;
 
 /// Student lookup item with the placement in the caller-selected academic year.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

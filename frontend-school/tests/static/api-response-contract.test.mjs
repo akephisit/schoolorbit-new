@@ -637,7 +637,7 @@ test('daily teaching overview API uses typed response contracts', async () => {
 		'backend-school/crates/school-academic-timetable/src/services/daily_teaching.rs'
 	);
 	const backendHandler = await readRepoFile(
-		'backend-school/src/modules/academic/handlers/timetable_blocks.rs'
+		'backend-school/crates/school-academic-http/src/handlers/timetable_blocks.rs'
 	);
 
 	const dailyTeachingPath = '/api/academic/timetable/daily-teaching';

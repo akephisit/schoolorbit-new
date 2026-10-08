@@ -1,0 +1,19 @@
+[package]
+name = "school-notifications"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+chrono = { workspace = true }
+school-errors = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+web-push = { workspace = true }
+
+[lints]
+workspace = true

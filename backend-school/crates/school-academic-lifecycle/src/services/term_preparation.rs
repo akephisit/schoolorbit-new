@@ -1197,7 +1197,7 @@ async fn date_requirements(
 }
 
 pub async fn apply(
-    external: &impl crate::ports::ExternalLifecyclePort,
+    external: &dyn crate::ports::ExternalLifecyclePort,
     pool: &PgPool,
     actor: &ActorContext,
     input: ApplyTermPreparationInput,
@@ -1435,7 +1435,7 @@ async fn apply_timetable(
 }
 
 async fn apply_exams(
-    external: &impl crate::ports::ExternalLifecyclePort,
+    external: &dyn crate::ports::ExternalLifecyclePort,
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
     context: &TermPreparationContext,
@@ -1447,7 +1447,7 @@ async fn apply_exams(
 }
 
 async fn apply_supervision(
-    external: &impl crate::ports::ExternalLifecyclePort,
+    external: &dyn crate::ports::ExternalLifecyclePort,
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
     context: &TermPreparationContext,

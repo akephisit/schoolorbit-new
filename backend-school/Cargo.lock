@@ -821,20 +821,25 @@ dependencies = [
  "school-academic-assessment",
  "school-academic-core",
  "school-academic-delivery",
+ "school-academic-http",
  "school-academic-lifecycle",
  "school-academic-results",
  "school-academic-timetable",
  "school-admission",
  "school-auth",
+ "school-auth-http",
  "school-authorization",
  "school-calendar",
  "school-certificates",
+ "school-certificates-http",
  "school-crypto",
  "school-errors",
  "school-file-platform",
  "school-fonts",
  "school-http",
  "school-migrations",
+ "school-navigation",
+ "school-notifications",
  "school-permissions",
  "school-question-bank",
  "school-staff",
@@ -4101,6 +4106,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-academic-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "chrono-tz",
+ "school-academic-assessment",
+ "school-academic-core",
+ "school-academic-delivery",
+ "school-academic-lifecycle",
+ "school-academic-results",
+ "school-academic-timetable",
+ "school-auth",
+ "school-auth-http",
+ "school-authorization",
+ "school-errors",
+ "school-http",
+ "school-permissions",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "school-academic-lifecycle"
 version = "0.1.0"
 dependencies = [
@@ -4221,6 +4254,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-auth-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "ipnet",
+ "school-auth",
+ "school-authorization",
+ "school-errors",
+ "school-http",
+ "school-tenancy",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "school-authorization"
 version = "0.1.0"
 dependencies = [
@@ -4280,6 +4331,29 @@ dependencies = [
  "utoipa",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "school-certificates-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "school-auth",
+ "school-auth-http",
+ "school-certificates",
+ "school-errors",
+ "school-file-platform",
+ "school-fonts",
+ "school-http",
+ "school-permissions",
+ "school-staff",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -4373,6 +4447,42 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "school-navigation"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "school-authorization",
+ "school-errors",
+ "school-permissions",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-notifications"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "school-errors",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+ "web-push",
 ]
 
 [[package]]

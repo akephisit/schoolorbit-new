@@ -159,6 +159,10 @@ jobs:
         working-directory: backend-school
         run: cargo test -p school-academic-assessment --lib
 
+      - name: HTTP and extracted service owner tests
+        working-directory: backend-school
+        run: cargo test -p school-auth-http -p school-academic-http -p school-certificates-http -p school-notifications --lib
+
       - name: Test exporter logging boundary
         working-directory: backend-school
         run: cargo test structured_logging --test static_architecture
@@ -231,6 +235,9 @@ jobs:
 
       - name: Test curriculum migration preservation and refusal
         run: ./scripts/test_backend_school.sh curriculum_revision_schema_tests -- --test-threads=1
+
+      - name: Test navigation persistence and policy
+        run: ./scripts/test_backend_school.sh --package school-navigation -- --test-threads=4
 
       - name: Test Academic Core consumers
         run: ./scripts/test_backend_school.sh modules::academic::core::services_tests -- --test-threads=4

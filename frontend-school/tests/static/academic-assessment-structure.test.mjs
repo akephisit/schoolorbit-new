@@ -109,7 +109,7 @@ test('backend assessment model is term and offering scoped with optimistic locki
 });
 
 test('backend routes assessment plans through offering IDs and registers OpenAPI paths', async () => {
-	const handler = await readRepoFile('backend-school/src/modules/academic/handlers/assessment.rs');
+	const handler = await readRepoFile('backend-school/crates/school-academic-http/src/handlers/assessment.rs');
 	const router = await readRepoFile('backend-school/src/modules/academic.rs');
 	const contract = await readRepoFile('backend-school/src/api_contract.rs');
 

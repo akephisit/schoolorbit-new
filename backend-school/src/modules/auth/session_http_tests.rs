@@ -235,7 +235,7 @@ fn logout_expires_new_and_legacy_cookies() {
 
 #[test]
 fn unsafe_origin_must_equal_the_resolved_tenant_origin() {
-    let policy = TenantOriginPolicy::for_tests("schoolorbit.app", []);
+    let policy = TenantOriginPolicy::new("schoolorbit.app", []);
     let resolve = |origin: &'static str, tenant: &'static str| {
         let mut headers = HeaderMap::new();
         headers.insert(header::ORIGIN, HeaderValue::from_static(origin));
@@ -357,7 +357,7 @@ fn session_cookie_parser_rejects_duplicate_identity_and_ignores_legacy_identity(
 
 #[test]
 fn authoritative_headers_and_realtime_hint_reject_ambiguity() {
-    let policy = TenantOriginPolicy::for_tests("schoolorbit.app", ["http://localhost:5173"]);
+    let policy = TenantOriginPolicy::new("schoolorbit.app", ["http://localhost:5173"]);
 
     for name in ["origin", "referer", "x-school-subdomain"] {
         let mut headers = HeaderMap::new();

@@ -42,6 +42,15 @@ for changed application modules. For API-contract work:
 cargo test api_contract::tests -- --nocapture
 ```
 
+HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
+`cargo test -p school-academic-http`, `cargo test -p school-certificates-http`,
+`cargo test -p school-navigation`, and `cargo test -p school-notifications`.
+The application owns `FromRef` state selection and injected realtime, result-lock,
+lifecycle and file-deletion adapters. Architecture guards inspect the actual crate
+implementation paths; root cross-domain/database fixtures retain their original
+application-level ownership. Keep the full OpenAPI artifact byte-identical when
+moving handlers without changing their contract.
+
 Foundation ownership can be checked independently:
 
 ```bash
@@ -82,8 +91,9 @@ normal release dependency trees must expose neither `test-support` nor `school-t
 
 `school-auth` owns session credentials, policy, persistence, throttling, audit events, the identity
 cache, user-profile domain operations, and the root-independent auth runtime. Its package tests use
-dev-only database and test-support edges. The application package retains Axum handlers,
-cookie/CSRF and origin adapters, File Platform profile-image orchestration, and deliberate
+dev-only database and test-support edges. `school-auth-http` owns cookie/CSRF, origin, trusted-client-address and tenant/session
+request-context adapters. The application package retains login/profile Axum handlers,
+File Platform profile-image orchestration, and deliberate
 cross-domain tests such as staff soft-delete followed by session invalidation.
 
 Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh modules::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.

@@ -430,7 +430,7 @@ pub async fn get_plan_detail(
 }
 
 pub async fn save_plan(
-    result_locks: &impl crate::ports::ResultLockPort,
+    result_locks: &dyn crate::ports::ResultLockPort,
     pool: &PgPool,
     offering_id: Uuid,
     actor_user_id: Uuid,

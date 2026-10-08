@@ -26,7 +26,7 @@ pub(crate) async fn read_context(
 }
 
 pub async fn transition_term(
-    external: &impl crate::ports::ExternalLifecyclePort,
+    external: &dyn crate::ports::ExternalLifecyclePort,
     pool: &sqlx::PgPool,
     actor: &ActorContext,
     term: Uuid,

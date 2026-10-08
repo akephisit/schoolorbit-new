@@ -1,0 +1,187 @@
+use axum::{
+    extract::{Extension, Path, Query, State},
+    response::IntoResponse,
+    Json,
+};
+use uuid::Uuid;
+
+use crate::state::AcademicHttpState;
+use school_academic_assessment::assessment::models::{
+    AssessmentPhaseControlListQuery, AssessmentPlanListQuery, SaveAssessmentPlanRequest,
+    UpdateAssessmentPhaseControlRequest,
+};
+use school_academic_assessment::assessment::services as assessment_adapter;
+use school_academic_assessment::assessment::services as assessment_service;
+use school_academic_assessment::policy::assessment::{
+    require_assessment_plan_access, require_assessment_plan_list_access, AssessmentAction,
+};
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+use school_http::HttpError as AppError;
+use school_http::{ApiErrorResponse, ApiResponse};
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/assessments/plans",
+    operation_id = "listAssessmentPlans",
+    tag = "academic",
+    params(AssessmentPlanListQuery),
+    responses(
+        (status = 200, description = "Assessment plans for the selected term", body = ApiResponse<Vec<school_academic_assessment::assessment::models::AssessmentPlanSummary>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_assessment_plans(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AssessmentPlanListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let access = require_assessment_plan_list_access(
+        &context.tenant.pool,
+        &context.actor,
+        AssessmentAction::Read,
+    )
+    .await?;
+    let plans = assessment_service::list_assessment_plans(
+        &context.tenant.pool,
+        &query,
+        &access,
+        context.actor.user_id,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(plans)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/assessments/phase-controls",
+    operation_id = "listAssessmentPhaseControls",
+    tag = "academic",
+    params(AssessmentPhaseControlListQuery),
+    responses(
+        (status = 200, description = "Assessment phase controls", body = ApiResponse<Vec<school_academic_assessment::assessment::models::AssessmentPhaseControl>>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment phase control read permission denied", body = ApiErrorResponse)
+    )
+)]
+pub async fn list_assessment_phase_controls(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AssessmentPhaseControlListQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    assessment_service::require_phase_controls_read_access(&context.actor)?;
+    let controls =
+        assessment_service::list_phase_controls(&context.tenant.pool, query.academic_term_id)
+            .await?;
+    Ok(Json(ApiResponse::ok(controls)).into_response())
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/assessments/phase-controls/{control_id}",
+    operation_id = "updateAssessmentPhaseControl",
+    tag = "academic",
+    params(("control_id" = Uuid, Path, description = "Assessment phase control ID")),
+    request_body = UpdateAssessmentPhaseControlRequest,
+    responses(
+        (status = 200, description = "Updated assessment phase control", body = ApiResponse<school_academic_assessment::assessment::models::AssessmentPhaseControl>),
+        (status = 400, description = "Invalid assessment phase control", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment phase control manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Assessment phase control not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale control version or closed academic context", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_assessment_phase_control(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(control_id): Path<Uuid>,
+    Json(payload): Json<UpdateAssessmentPhaseControlRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    assessment_service::require_phase_controls_manage_access(&context.actor)?;
+    let control = assessment_service::update_phase_control(
+        &context.tenant.pool,
+        control_id,
+        context.actor.user_id,
+        payload,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(control)).into_response())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/academic/assessments/offerings/{offering_id}",
+    operation_id = "getAssessmentPlan",
+    tag = "academic",
+    params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
+    responses(
+        (status = 200, description = "Assessment plan for an offering", body = ApiResponse<school_academic_assessment::assessment::models::AssessmentPlanDetail>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment plan read permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Offering not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_assessment_plan(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(offering_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    require_assessment_plan_access(
+        &context.tenant.pool,
+        &context.actor,
+        offering_id,
+        AssessmentAction::Read,
+    )
+    .await?;
+    let plan = assessment_service::get_plan_detail(&context.tenant.pool, offering_id).await?;
+    Ok(Json(ApiResponse::ok(plan)).into_response())
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/academic/assessments/offerings/{offering_id}",
+    operation_id = "saveAssessmentPlan",
+    tag = "academic",
+    params(("offering_id" = Uuid, Path, description = "Learning offering ID")),
+    request_body = SaveAssessmentPlanRequest,
+    responses(
+        (status = 200, description = "Saved assessment plan", body = ApiResponse<school_academic_assessment::assessment::models::AssessmentPlanDetail>),
+        (status = 400, description = "Invalid assessment plan", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Assessment plan manage permission denied", body = ApiErrorResponse),
+        (status = 404, description = "Offering not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale assessment plan version", body = ApiErrorResponse)
+    )
+)]
+pub async fn save_assessment_plan(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(offering_id): Path<Uuid>,
+    Json(payload): Json<SaveAssessmentPlanRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    require_assessment_plan_access(
+        &context.tenant.pool,
+        &context.actor,
+        offering_id,
+        AssessmentAction::Manage,
+    )
+    .await?;
+    let can_manage_school = assessment_service::actor_can_manage_all_plans(&context.actor);
+    let plan = assessment_adapter::save_plan(
+        state.result_locks,
+        &context.tenant.pool,
+        offering_id,
+        context.actor.user_id,
+        can_manage_school,
+        payload,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(plan)).into_response())
+}

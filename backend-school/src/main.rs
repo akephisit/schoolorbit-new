@@ -3,6 +3,7 @@
 pub mod api_contract;
 mod app;
 mod db;
+mod http_state;
 mod middleware;
 mod modules;
 mod policies;
