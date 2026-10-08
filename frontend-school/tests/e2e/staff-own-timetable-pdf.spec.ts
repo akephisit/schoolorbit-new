@@ -1,6 +1,7 @@
 import { expect, test, type Route } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { expectRoundedTimetablePdf } from './timetable-pdf-assertions';
 
 import { makeTimetableBlock, timetableIds } from './timetable-test-harness';
 
@@ -168,6 +169,8 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	const downloadPromise = page.waitForEvent('download');
 	await downloadButton.click();
 	const download = await downloadPromise;
+	await download.saveAs('/tmp/staff-own-round.pdf');
+	await expectRoundedTimetablePdf(download, [1]);
 
 	expect(download.suggestedFilename()).toBe(
 		'ตารางสอน ครูสายใจ วิทยา ภาคเรียนที่ 1 ปีการศึกษา 2569.pdf'

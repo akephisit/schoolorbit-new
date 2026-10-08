@@ -1,5 +1,6 @@
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
+import { expectRoundedTimetablePdf } from './timetable-pdf-assertions';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import {
@@ -133,6 +134,7 @@ for (const width of [1543, 390]) {
 				await openDownload(page);
 				await confirmDownload(page);
 				const download = await pending;
+				await expectRoundedTimetablePdf(download, [1]);
 				expect(download.suggestedFilename()).toMatch(/แบบร่าง\.pdf$/);
 				await download.saveAs(`/tmp/academic-timetable-${width}-${theme}-${view}.pdf`);
 				const text = await pdfText(download);
@@ -163,6 +165,7 @@ for (const width of [1543, 390]) {
 					const compactPending = page.waitForEvent('download');
 					await confirmDownload(page);
 					const compactDownload = await compactPending;
+					await expectRoundedTimetablePdf(compactDownload, [1]);
 					expect(compactDownload.suggestedFilename()).not.toBe(download.suggestedFilename());
 					expect(compactDownload.suggestedFilename()).toContain('6ต่อหน้า');
 					await compactDownload.saveAs(`/tmp/pdf-options-${width}-${theme}-${view}.pdf`);
@@ -348,6 +351,7 @@ for (const width of [1543, 390]) {
 			let download = await pending;
 			let pdf = await PDFDocument.load(readFileSync((await download.path())!));
 			expect(pdf.getPageCount()).toBe(2);
+			await expectRoundedTimetablePdf(download, [1, 1]);
 			const rooms = await pdfText(download);
 			expect(rooms).toContain('ม.1/1');
 			expect(rooms).toContain('ม.1/2');
@@ -379,6 +383,7 @@ for (const width of [1543, 390]) {
 			await download.saveAs(`/tmp/pdf-options-${width}-${theme}-6.pdf`);
 			pdf = await PDFDocument.load(readFileSync((await download.path())!));
 			expect(pdf.getPageCount()).toBe(1);
+			await expectRoundedTimetablePdf(download, [6]);
 			let text = await pdfText(download);
 			expect(text).toContain('ครูพิสิษฐ');
 			expect(text).toContain('สกุลทดสอบ');
@@ -392,6 +397,7 @@ for (const width of [1543, 390]) {
 			download = await pending;
 			pdf = await PDFDocument.load(readFileSync((await download.path())!));
 			expect(pdf.getPageCount()).toBe(2);
+			await expectRoundedTimetablePdf(download, [6, 1]);
 			text = await pdfText(download);
 			expect(text).toContain('ครูผู้สอน6');
 			await openDownload(page);

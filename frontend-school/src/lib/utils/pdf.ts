@@ -1,3 +1,4 @@
+import { createTimetablePdfCorners } from './timetable-pdf-corners.ts';
 import { timetablePdfClassLabel } from './timetable-pdf-class-label.ts';
 import { timetableTeacherFullLabel } from '../academic/timetable/teacher-label.ts';
 import type {
@@ -316,7 +317,8 @@ export interface TimetablePage {
 function buildPageContent(
 	page: TimetablePage,
 	isFirst: boolean,
-	logoDataUrl: string | null
+	logoDataUrl: string | null,
+	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content[] {
 	const {
 		title,
@@ -629,12 +631,14 @@ function buildPageContent(
 			body: tableBody,
 			dontBreakRows: true
 		},
-		layout: tableLayout,
-		...(isFirst ? {} : { pageBreak: 'before' })
+		layout: tableLayout
 	} as Content;
 
 	return [
-		tableContent,
+		{
+			...corners.wrap(tableContent, maxSumWidths + offsetsTotal, 6, 1),
+			...(isFirst ? {} : { pageBreak: 'before' as const })
+		},
 		...(signatureBlock ? [signatureBlock] : []),
 		{
 			columns: [
@@ -652,8 +656,9 @@ function buildPageContent(
  *                 282 สำหรับ portrait 2-col) */
 function buildMiniTable(
 	page: TimetablePage,
-	miniAreaWidth: number = 400,
-	logoDataUrl: string | null = null
+	miniAreaWidth: number,
+	logoDataUrl: string | null,
+	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content {
 	const {
 		dayValues,
@@ -891,7 +896,7 @@ function buildMiniTable(
 
 	// row height ลดลงเหลือ 24pt — content น้อยลง (ตัดชื่อวิชาออก เหลือ code + ครูชื่อแรก + ห้อง)
 	// title อยู่ใน row 0 ของตารางแล้ว → ไม่ต้องมีข้อความข้างนอก
-	return {
+	const table: Content = {
 		table: {
 			headerRows: 3,
 			widths,
@@ -907,6 +912,7 @@ function buildMiniTable(
 		layout: miniTableLayout,
 		width: '*'
 	} as unknown as Content;
+	return corners.wrap(table, maxSumWidths + offsetsTotal, 3, 0.5);
 }
 
 /** Portrait 2-column page — รวม mini-tables ใน 2 คอลัมเรียงลงมา (newspaper order)
@@ -919,7 +925,8 @@ function buildPortraitPageContent(
 	isFirst: boolean,
 	logoDataUrl: string | null,
 	pageHeaderTitle: string,
-	pageHeaderSubTitle: string
+	pageHeaderSubTitle: string,
+	corners: ReturnType<typeof createTimetablePdfCorners>
 ): Content[] {
 	// QR code — แสดงเฉพาะ INSTRUCTOR view (เหมือนกับ full mode)
 	const isInstructor = chunk[0]?.viewMode === 'INSTRUCTOR';
@@ -976,7 +983,7 @@ function buildPortraitPageContent(
 
 	// แต่ละ mini เพิ่ม bottom margin 8pt เพื่อ separation ใน stack
 	const minis: Content[] = chunk.map((p) => {
-		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl);
+		const mini = buildMiniTable(p, PORTRAIT_MINI_AREA_WIDTH, logoDataUrl, corners);
 		return { ...(mini as object), margin: [0, 0, 0, 8] } as Content;
 	});
 
@@ -1041,6 +1048,7 @@ export const generateTimetablePDF = async (
 		readLogo: blobToDataUrl
 	});
 
+	const corners = createTimetablePdfCorners();
 	let content: Content[];
 	if (layout === 'portrait-2col') {
 		// chunk pages ละ MINIS_PER_PORTRAIT_PAGE → 1 PDF page = หลาย mini-tables
@@ -1053,10 +1061,17 @@ export const generateTimetablePDF = async (
 		const pageHeaderTitle = isClassroom ? 'ตารางเรียน' : 'ตารางสอน';
 		const pageHeaderSubTitle = pages[0].subTitle;
 		content = chunks.flatMap((chunk, i) =>
-			buildPortraitPageContent(chunk, i === 0, logoDataUrl, pageHeaderTitle, pageHeaderSubTitle)
+			buildPortraitPageContent(
+				chunk,
+				i === 0,
+				logoDataUrl,
+				pageHeaderTitle,
+				pageHeaderSubTitle,
+				corners
+			)
 		);
 	} else {
-		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl));
+		content = pages.flatMap((page, i) => buildPageContent(page, i === 0, logoDataUrl, corners));
 	}
 
 	const docDefinition: TDocumentDefinitions = {
@@ -1066,6 +1081,7 @@ export const generateTimetablePDF = async (
 		// ลด margin ซ้าย-ขวาเหลือน้อยสุด → table มีที่ให้กว้างที่สุด
 		pageMargins: [10, 30, 10, 20],
 		content,
+		pageBreakBefore: corners.capture,
 		styles: {
 			header: { fontSize: 18, bold: true, color: '#1e3a8a' },
 			subheader: { fontSize: 14, color: '#4b5563' },
@@ -1074,5 +1090,7 @@ export const generateTimetablePDF = async (
 		defaultStyle: { font: 'Sarabun' }
 	};
 
-	await pdfMake.createPdf(docDefinition).download(`${fileName ?? pages[0].title}.pdf`);
+	const pdf = pdfMake.createPdf(docDefinition, { bufferPages: true });
+	corners.draw(await pdf.getStream());
+	await pdf.download(`${fileName ?? pages[0].title}.pdf`);
 };
