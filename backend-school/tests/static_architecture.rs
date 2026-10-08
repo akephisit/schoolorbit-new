@@ -1616,9 +1616,10 @@ fn notification_sse_binds_stream_lifetime_to_authoritative_session() {
 
 #[test]
 fn exam_schedule_shared_module_is_private() {
-    let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
-    let shared_path =
-        manifest_dir().join("src/modules/academic/services/exam_schedule_service/shared.rs");
+    let facade_path =
+        manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/services.rs");
+    let shared_path = manifest_dir()
+        .join("crates/school-academic-assessment/src/exam_schedule/services/shared.rs");
     let source = read_source(facade_path);
 
     assert!(source.contains("mod shared;"));
@@ -1929,8 +1930,10 @@ fn calendar_service_uses_private_child_modules() {
 
 #[test]
 fn exam_schedule_service_uses_a_thin_private_module_facade() {
-    let service_dir = manifest_dir().join("src/modules/academic/services/exam_schedule_service");
-    let facade_path = manifest_dir().join("src/modules/academic/services/exam_schedule_service.rs");
+    let service_dir =
+        manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/services");
+    let facade_path =
+        manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/services.rs");
     let source = read_source(facade_path);
 
     for module in [
@@ -3033,18 +3036,13 @@ fn exam_round_kind_migration_adds_midterm_final_contract() {
 #[test]
 fn academic_exam_days_use_date_ordering_without_sort_order_contract() {
     let model = read_source(
-        manifest_dir()
-            .join("src")
-            .join("modules")
-            .join("academic")
-            .join("models")
-            .join("exam_schedule.rs"),
+        workspace_crate_dir("school-academic-assessment").join("src/exam_schedule/models.rs"),
     );
-    let service_dir = manifest_dir().join("src/modules/academic/services");
+    let service_dir = workspace_crate_dir("school-academic-assessment").join("src/exam_schedule");
     let service = [
-        service_dir.join("exam_schedule_service.rs"),
-        service_dir.join("exam_schedule_service/rounds_and_days.rs"),
-        service_dir.join("exam_schedule_service/workspace.rs"),
+        service_dir.join("services.rs"),
+        service_dir.join("services/rounds_and_days.rs"),
+        service_dir.join("services/workspace.rs"),
     ]
     .into_iter()
     .map(read_source)
@@ -3735,10 +3733,10 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     let parent_services = strip_comments(&read_source(
         manifest_dir().join("src/modules/parents/services.rs"),
     ));
-    let exam_service = strip_comments(&read_source(
-        manifest_dir()
-            .join("src/modules/academic/services/exam_schedule_service/published_views.rs"),
-    ));
+    let exam_service =
+        strip_comments(&read_source(manifest_dir().join(
+            "crates/school-academic-assessment/src/exam_schedule/services/published_views.rs",
+        )));
     let exam_handler_path = manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs");
 
     assert!(
@@ -7828,7 +7826,7 @@ fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
         manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
         manifest_dir().join("src/modules/academic/handlers/timetable_templates.rs"),
         manifest_dir().join("crates/school-academic-assessment/src/assessment/models.rs"),
-        manifest_dir().join("src/modules/academic/models/exam_schedule.rs"),
+        manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/models.rs"),
         manifest_dir().join("crates/school-academic-timetable/src/models/timetable.rs"),
         manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
         manifest_dir().join("crates/school-academic-timetable/src/services/daily_teaching.rs"),
@@ -7845,7 +7843,7 @@ fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
         manifest_dir().join("src/modules/academic/websockets.rs"),
     ];
     runtime_files.extend(list_files(
-        manifest_dir().join("src/modules/academic/services/exam_schedule_service"),
+        manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/services"),
         |path| {
             path.extension().and_then(|extension| extension.to_str()) == Some("rs")
                 && path.file_name().and_then(|name| name.to_str()) != Some("tests.rs")
@@ -8328,4 +8326,26 @@ fn completed_personnel_migration_has_no_runtime_owner() {
     ] {
         assert!(manifest_dir().join("migrations").join(migration).is_file());
     }
+}
+
+#[test]
+fn academic_routes_expose_staff_level_invigilator_actions() {
+    let source = include_str!("../src/modules/academic.rs");
+
+    assert!(
+        source.contains("/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}")
+    );
+    assert!(source.contains("assign_assignment_invigilator"));
+    assert!(source.contains("remove_assignment_invigilator"));
+}
+
+#[test]
+fn exam_schedule_handler_uses_staff_level_invigilator_services() {
+    let source = include_str!("../src/modules/academic/handlers/exam_schedule.rs");
+
+    assert!(source.contains("pub async fn assign_assignment_invigilator"));
+    assert!(source.contains("pub async fn remove_assignment_invigilator"));
+    assert!(source.contains("exam_schedule_service::assign_invigilator_to_assignment"));
+    assert!(source.contains("exam_schedule_service::remove_invigilator_from_assignment"));
+    assert!(source.contains("Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>"));
 }

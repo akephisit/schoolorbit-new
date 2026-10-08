@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod assessment_service_tests;
-pub mod exam_schedule_service;
+pub use school_academic_assessment::exam_schedule::services as exam_schedule_service;
 
 #[cfg(test)]
 pub use school_academic_timetable::services::{

@@ -1,4 +1,4 @@
-pub(crate) async fn pending_term_work(
+pub async fn pending_term_work(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     year: uuid::Uuid,
     term: uuid::Uuid,
@@ -24,7 +24,7 @@ use chrono::NaiveTime;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::{
+use crate::exam_schedule::models::{
     BlockedWindow, BlockedWindowInput, CreateExamRoundRequest, ExamDay, ExamDayDetail,
     ExamDayRoomAssignmentView, ExamInvigilatorView, ExamRound, UpdateExamRoundRequest,
     UpsertExamDayRequest,

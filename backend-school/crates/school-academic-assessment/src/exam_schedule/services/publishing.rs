@@ -2,7 +2,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::shared::{require_exam_write, ExamWriteTarget};
-use crate::modules::academic::models::exam_schedule::ExamRound;
+use crate::exam_schedule::models::ExamRound;
 use school_errors::AppError;
 
 use super::workspace::{

@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::{
+use crate::exam_schedule::models::{
     PersonalExamScheduleRound, PersonalExamSessionView, StaffPublishedExamDay,
     StaffPublishedExamInvigilator, StaffPublishedExamRoomAssignment,
     StaffPublishedExamScheduleRound, StaffPublishedExamSession,

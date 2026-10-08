@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::{
+use crate::exam_schedule::models::{
     ExamPaperReceiptItem, ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleReadinessCode,
     ExamScheduleReadinessFinding, ExamScheduleWorkspace, ExamSessionView, ExamSourceChange,
     ExamSourceChangeKind, ExamSourcePreview, ExamSourceSyncItemResult, ExamSourceSyncItemStatus,
