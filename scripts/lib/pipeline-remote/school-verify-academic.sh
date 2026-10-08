@@ -18,8 +18,9 @@ if [ -z "${SMOKE_USERNAME:-}" ] || [ -z "${SMOKE_PASSWORD:-}" ]; then
 fi
 
 base_domain="${BASE_DOMAIN}"
-smoke_script=/opt/stack/deployment/scripts/smoke_test.sh
-timing_helper_source=/opt/stack/deployment/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
+deployment_root=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}/deployment
+smoke_script=$deployment_root/scripts/smoke_test.sh
+timing_helper_source=$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
 test -f "$smoke_script" || {
     echo "Academic Core maintenance smoke script is unavailable"
     exit 1
@@ -34,7 +35,7 @@ test -f "$timing_helper_source" || {
 authenticated_smoke_started="$(schoolorbit_timer_now)"
 SMOKE_SUBDOMAIN="$smoke_subdomain" \
     SMOKE_API_URL=http://localhost:8081 \
-    SMOKE_ADMIN_API_URL="https://admin-api.${base_domain}" \
+    SMOKE_ADMIN_API_URL=http://localhost:8080 \
     SMOKE_TENANT_URL="https://${smoke_subdomain}.${base_domain}" \
     SMOKE_ORIGIN="https://${smoke_subdomain}.${base_domain}" \
     SMOKE_REQUIRE_AUTH=true \

@@ -31,6 +31,11 @@ outcomes and verification environment receipts separately. Auth/session Playwrig
 synthetic values with `--list` and loopback URLs only; it performs no browser or network execution.
 Live session acceptance still requires a dedicated disposable account and the explicit E2E owner.
 
+After an equivalent trusted PR passes, main reuses its test receipts, including fresh database
+fixtures, and runs the internal `prime` command to compile the same backend targets and refresh
+the shared snapshot. A compiler-snapshot receipt names the original verification run and cannot
+authorize another test reuse. Missing, changed or expired proof runs the complete selected suite.
+
 Rust snapshots include the tracked cross-component permission lock and fonts consumed by School's
 compiler. Migration directory timestamps are restored only when their complete tracked contents
 match the saved snapshot; changed, removed, untracked or ignored inputs keep Cargo dirty.

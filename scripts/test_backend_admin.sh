@@ -22,4 +22,8 @@ binding=$(docker port "$container" 5432/tcp)
 export DATABASE_URL="postgresql://schoolorbit_test:schoolorbit_test@${binding}/schoolorbit_test?sslmode=disable"
 cd backend-admin
 cargo check --all-targets --locked
-cargo test --locked
+if [[ ${SCHOOLORBIT_COMPILE_ONLY:-false} == true ]]; then
+    cargo test --locked --no-run
+else
+    cargo test --locked
+fi
