@@ -528,7 +528,7 @@ impl SchoolService {
             .deploy_worker(&data.subdomain, &school_id.to_string(), &api_url)
             .await
         {
-            Ok((url, trigger_time)) => {
+            Ok((url, request_id)) => {
                 options
                     .success(&format!("✅ Worker deployment initiated: {}", url))
                     .await;
@@ -540,7 +540,7 @@ impl SchoolService {
                         .await;
 
                     match cloudflare_client
-                        .wait_for_workflow_completion(&data.subdomain, trigger_time, 10)
+                        .wait_for_workflow_completion(&data.subdomain, &request_id, 30)
                         .await
                     {
                         Ok(_) => {
@@ -818,7 +818,7 @@ impl SchoolService {
             .deploy_worker(&school.subdomain, &school_id.to_string(), &api_url)
             .await
         {
-            Ok((deployment_url, _trigger_time)) => {
+            Ok((deployment_url, _request_id)) => {
                 let github_actions_url = format!("https://github.com/{}/actions", github_repo);
 
                 sqlx::query(

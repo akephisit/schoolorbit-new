@@ -509,13 +509,13 @@ test('project rules document generated API contract ownership', async () => {
 });
 
 test('API contract CI protects the offline exporter boundary', async () => {
-	const workflow = await readRepoFile('.github/workflows/api-contract.yml');
-
-	assert.match(workflow, /backend-school\/src\/main\.rs/);
-	assert.match(workflow, /backend-school\/tests\/static_architecture\.rs/);
-	assert.match(workflow, /cargo test structured_logging --test static_architecture/);
-	assert.match(workflow, /env -i PATH="\$PATH" HOME="\$HOME"[\s\S]*export-openapi/);
-	assert.match(workflow, /JSON\.parse/);
+	const workflow = await readRepoFile('.github/workflows/verify.yml');
+	const runner = await readRepoFile('scripts/pipeline.mjs');
+	assert.match(workflow, /scripts\/pipeline verify/);
+	assert.match(runner, /'test', '--test', 'static_architecture'/);
+	assert.match(runner, /generate-api-contracts\.mjs', '--check'/);
+	assert.match(runner, /env', \['-i',[\s\S]*export-openapi/);
+	assert.match(runner, /JSON\.parse/);
 });
 
 test('user role assignment API contract stays aligned across backend and frontend', async () => {

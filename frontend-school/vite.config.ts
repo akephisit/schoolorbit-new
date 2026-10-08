@@ -85,7 +85,7 @@ export default defineConfig({
 
 			// adapter-cloudflare for Cloudflare Workers deployment
 			adapter: adapter(),
-			version: { pollInterval: 0 },
+			version: { name: process.env.SCHOOLORBIT_BUILD_ID, pollInterval: 0 },
 			serviceWorker: { register: false }
 		})
 	],

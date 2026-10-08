@@ -3,14 +3,14 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 
-const workflow = readFileSync('.github/workflows/deploy-school-release.yml', 'utf8');
+const workflow = readFileSync('scripts/lib/pipeline-remote/school-deploy-backend.sh', 'utf8');
 const body = workflow.match(/migration_completion_filter="([\s\S]*?)"\n\s*if ! podman/)?.[1];
 assert.ok(body, 'exercise the migration filter actually used by the release');
 const filter = body.replaceAll('\\"', '"').replaceAll('\\$', '$');
 
 async function accepts(report) {
     return new Promise((resolve, reject) => {
-        const child = spawn('podman', ['run', '--rm', '-i', 'ghcr.io/jqlang/jq:1.7.1', '-e', filter], {
+        const child = spawn('docker', ['run', '--rm', '-i', 'ghcr.io/jqlang/jq:1.7.1', '-e', filter], {
             stdio: ['pipe', 'ignore', 'pipe']
         });
         let error = '';

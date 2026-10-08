@@ -6,11 +6,11 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '../..');
-const workflow = await readFile(join(root, '.github/workflows/deploy-school-release.yml'), 'utf8');
-const start = workflow.indexOf('            private_cors_origin=');
-const end = workflow.indexOf('            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY', start);
+const workflow = await readFile(join(root, 'scripts/lib/pipeline-remote/school-deploy-backend.sh'), 'utf8');
+const start = workflow.indexOf('private_cors_origin=');
+const end = workflow.indexOf('unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY', start);
 assert.ok(start >= 0 && end > start);
-const script = workflow.slice(start, end).replace(/^ {12}/gm, '');
+const script = workflow.slice(start, end);
 const desired = { CORSRules: [{
     AllowedOrigins: ['https://*.example.test'], AllowedMethods: ['GET', 'HEAD'],
     AllowedHeaders: ['Range'],

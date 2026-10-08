@@ -1,22 +1,17 @@
 name: Backend Build Benchmark
-
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       backend:
         description: Backend to measure
-        type: choice
+        type: string
         default: both
-        options: [both, backend-school, backend-admin]
       samples:
         description: Source-changing samples per compiler profile
-        type: choice
+        type: string
         default: "2"
-        options: ["2", "1"]
-
 permissions:
   contents: read
-
 jobs:
   benchmark:
     runs-on: ubuntu-latest

@@ -1,45 +1,47 @@
 name: Smoke Test Sandbox
-
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       subdomain:
         description: Tenant subdomain to test
-        required: true
+        required: false
         default: sandbox
+        type: string
       api_url:
         description: Backend school API URL
-        required: true
+        required: false
         default: https://school-api.schoolorbit.app
+        type: string
       admin_api_url:
         description: Backend admin API URL
-        required: true
+        required: false
         default: https://admin-api.schoolorbit.app
+        type: string
       tenant_url:
         description: Optional full tenant URL override
         required: false
-        default: ''
+        default: ""
+        type: string
       origin:
         description: Optional CORS Origin override
         required: false
-        default: ''
+        default: ""
+        type: string
       timeout_seconds:
         description: Curl timeout per request
-        required: true
-        default: '20'
+        required: false
+        default: "20"
+        type: string
       run_authenticated:
         description: Run login and authenticated /me checks
-        required: true
+        required: false
         type: boolean
         default: true
-
 permissions:
   contents: read
-
 concurrency:
   group: smoke-test-${{ inputs.subdomain }}
   cancel-in-progress: false
-
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
@@ -53,11 +55,9 @@ jobs:
       SMOKE_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
       SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
       - name: Require sandbox credentials
         if: ${{ inputs.run_authenticated == true }}
         shell: bash
@@ -66,7 +66,6 @@ jobs:
             echo "::error::Set SMOKE_USERNAME and SMOKE_PASSWORD repository secrets, or run with run_authenticated=false."
             exit 1
           fi
-
       - name: Run smoke test
         shell: bash
         run: |

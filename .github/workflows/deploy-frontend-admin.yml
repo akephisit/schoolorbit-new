@@ -1,50 +1,38 @@
-name: Deploy Frontend Admin
-run-name: Deploy Frontend Admin (${{ inputs.deployment_id || github.sha }})
-
+name: Admin frontend release implementation
 on:
-  push:
-    branches: [main]
-    paths:
-      - "frontend-admin/**"
-      - ".github/workflows/deploy-frontend-admin.yml"
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      deployment_id:
-        description: "Installer run identifier"
-        required: false
+      input_hash:
         type: string
-
+        required: true
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || vars.FRONTEND_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend-admin/package-lock.json
-
       - name: Install dependencies
         working-directory: frontend-admin
         run: npm ci
-
-      - name: Validate and build frontend
-        working-directory: frontend-admin
+      - name: Download prepared Admin frontend
+        uses: actions/download-artifact@v7
+        with:
+          name: prepared-frontend-admin
+          path: ${{ runner.temp }}/prepared
+      - name: Validate and unpack prepared frontend
         env:
-          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
-          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
-        run: |
-          npm run lint
-          npm run check
-          npm run build
-
+          COMPONENT: frontend-admin
+          INPUT_HASH: ${{ inputs.input_hash }}
+          ARTIFACT_DIR: ${{ runner.temp }}/prepared
+        run: node scripts/frontend_artifact.mjs unpack
       - name: Create environment-specific deployment configuration
         working-directory: frontend-admin
         env:
@@ -61,9 +49,8 @@ jobs:
             --arg zone "$BASE_DOMAIN" \
             --arg admin_api "$PUBLIC_API_URL" \
             --arg school_api "$BACKEND_SCHOOL_URL" \
-            '. + {routes:[{pattern:$route,zone_name:$zone}],vars:{PUBLIC_API_URL:$admin_api,BACKEND_SCHOOL_URL:$school_api}}' \
+            'del(.build) + {routes:[{pattern:$route,zone_name:$zone}],vars:{PUBLIC_API_URL:$admin_api,BACKEND_SCHOOL_URL:$school_api}}' \
             wrangler.json >wrangler.deploy.json
-
       - name: Read locked Wrangler version
         id: wrangler-version
         working-directory: frontend-admin
@@ -75,7 +62,6 @@ jobs:
           if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid locked Wrangler version');
           appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
           NODE
-
       - name: Prepare versioned Worker secrets
         working-directory: frontend-admin
         env:
@@ -91,7 +77,6 @@ jobs:
             INTERNAL_API_SECRET: process.env.INTERNAL_API_SECRET
           }), { mode: 0o600, flag: 'wx' });
           NODE
-
       - name: Upload frontend-admin Worker with its secrets
         uses: cloudflare/wrangler-action@v4.1.3
         with:
@@ -104,7 +89,6 @@ jobs:
           WRANGLER_OUTPUT_FILE_PATH: ${{ github.workspace }}/frontend-admin/.wrangler/admin-release-upload.ndjson
           PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
           BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
-
       - name: Read uploaded Worker version
         id: uploaded-version
         working-directory: frontend-admin
@@ -122,7 +106,6 @@ jobs:
             throw new Error('Invalid uploaded Worker version ID');
           appendFileSync(process.env.GITHUB_OUTPUT, `id=${id}\n`);
           NODE
-
       - name: Promote uploaded frontend-admin Worker and apply routes
         uses: cloudflare/wrangler-action@v4.1.3
         with:
@@ -133,7 +116,32 @@ jobs:
           command: |
             versions deploy --config wrangler.deploy.json --version-id ${{ steps.uploaded-version.outputs.id }} --percentage 100 --yes
             triggers deploy --config wrangler.deploy.json
-
+      - name: Verify the exact Admin Worker deployment and retain its receipt
+        working-directory: frontend-admin
+        env:
+          EXPECTED_VERSION: ${{ steps.uploaded-version.outputs.id }}
+        run: |-
+          set -euo pipefail
+          npx wrangler deployments list --config wrangler.deploy.json --json > "$RUNNER_TEMP/admin-active.json"
+          jq -e --arg id "$EXPECTED_VERSION" 'sort_by(.created_on // .created_at // "") | last | .versions | length == 1 and ((.[0].version_id // .[0].id) == $id) and .[0].percentage == 100' "$RUNNER_TEMP/admin-active.json" >/dev/null
+          jq -n --arg sha "$GITHUB_SHA" --arg versionId "$EXPECTED_VERSION" '{sha:$sha,versionId:$versionId}' > "$RUNNER_TEMP/admin-worker.json"
+      - name: Install browser acceptance dependencies
+        working-directory: frontend-school
+        run: npm ci
+      - name: Set up cached Chromium for Admin maintenance acceptance
+        uses: ./.github/actions/setup-chromium
+      - name: Verify Admin maintenance page and exact prepared assets
+        working-directory: frontend-school
+        env:
+          ADMIN_ORIGIN: https://admin.${{ vars.BASE_DOMAIN }}
+        run: node scripts/verify-admin-worker-readiness.mjs
+      - uses: actions/upload-artifact@v6
+        with:
+          overwrite: true
+          name: admin-worker-${{ github.sha }}
+          path: ${{ runner.temp }}/admin-worker.json
+          retention-days: 90
+          if-no-files-found: error
       - name: Remove temporary Worker secrets
         if: always()
         working-directory: frontend-admin

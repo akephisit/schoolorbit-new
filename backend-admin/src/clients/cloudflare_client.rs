@@ -123,18 +123,18 @@ impl CloudflareClient {
     }
 
     /// Deploy a Cloudflare Worker via GitHub Actions
-    /// Triggers the deploy-school-tenant workflow
-    /// Returns (deployment_url, trigger_timestamp)
+    /// Triggers the operations provisioning owner
+    /// Returns (deployment_url, request_id)
     pub async fn deploy_worker(
         &self,
         subdomain: &str,
         school_id: &str,
         api_url: &str,
-    ) -> Result<(String, chrono::DateTime<chrono::Utc>), String> {
+    ) -> Result<(String, String), String> {
         info!(subdomain, "triggering GitHub Actions deployment");
 
-        // Record the time before triggering (to account for any delays)
-        let trigger_time = chrono::Utc::now();
+        // Correlate completion by the exact dispatch request, including concurrent requests.
+        let request_id = uuid::Uuid::new_v4().to_string();
 
         // Get GitHub configuration
         let github_token =
@@ -144,7 +144,7 @@ impl CloudflareClient {
 
         // Trigger workflow via GitHub API
         let url = format!(
-            "https://api.github.com/repos/{}/actions/workflows/deploy-school-tenant.yml/dispatches",
+            "https://api.github.com/repos/{}/actions/workflows/operations.yml/dispatches",
             github_repo
         );
 
@@ -157,6 +157,8 @@ impl CloudflareClient {
 
         #[derive(Debug, Serialize)]
         struct WorkflowInputs {
+            operation: String,
+            request_id: String,
             subdomain: String,
             school_id: String,
             api_url: String,
@@ -165,6 +167,8 @@ impl CloudflareClient {
         let dispatch = WorkflowDispatch {
             git_ref: "main".to_string(),
             inputs: WorkflowInputs {
+                operation: "provision".to_string(),
+                request_id: request_id.clone(),
                 subdomain: subdomain.to_string(),
                 school_id: school_id.to_string(),
                 api_url: api_url.to_string(),
@@ -197,15 +201,15 @@ impl CloudflareClient {
 
         info!(
             subdomain,
-            %trigger_time,
+            %request_id,
             github_repo,
             "GitHub Actions workflow triggered successfully"
         );
 
-        // Return the expected URL and trigger time
+        // Return the expected URL and exact request correlation identifier
         // Note: Actual deployment happens asynchronously in GitHub Actions
         let deployment_url = format!("https://{}.{}", subdomain, self.base_domain);
-        Ok((deployment_url, trigger_time))
+        Ok((deployment_url, request_id))
     }
 
     /// Wait for GitHub Actions workflow to complete
@@ -213,15 +217,18 @@ impl CloudflareClient {
     pub async fn wait_for_workflow_completion(
         &self,
         subdomain: &str,
-        trigger_time: chrono::DateTime<chrono::Utc>,
+        request_id: &str,
         timeout_minutes: u64,
     ) -> Result<(), String> {
         let github_token =
             std::env::var("GITHUB_TOKEN").map_err(|_| "GITHUB_TOKEN not set".to_string())?;
-        let github_repo = std::env::var("GITHUB_REPOSITORY")
+        let github_repo = std::env::var("GITHUB_REPO")
             .unwrap_or_else(|_| "akephisit/schoolorbit-new".to_string());
 
-        let url = format!("https://api.github.com/repos/{}/actions/runs", github_repo);
+        let url = format!(
+            "https://api.github.com/repos/{}/actions/workflows/operations.yml/runs",
+            github_repo
+        );
 
         let start_time = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs(timeout_minutes * 60);
@@ -229,7 +236,7 @@ impl CloudflareClient {
 
         info!(
             subdomain,
-            %trigger_time,
+            %request_id,
             timeout_minutes,
             "waiting for GitHub Actions workflow to complete"
         );
@@ -277,37 +284,9 @@ impl CloudflareClient {
                 let mut found_matching_run = false;
                 for run in workflow_runs {
                     let name = run["name"].as_str().unwrap_or("");
-                    let created_at_str = run["created_at"].as_str().unwrap_or("");
-
-                    // Parse created_at timestamp
-                    let created_at = match chrono::DateTime::parse_from_rfc3339(created_at_str) {
-                        Ok(dt) => dt.with_timezone(&chrono::Utc),
-                        Err(_) => {
-                            warn!(
-                                created_at = created_at_str,
-                                "could not parse workflow created_at"
-                            );
-                            continue;
-                        }
-                    };
-
-                    // Check if this workflow was created after we triggered
-                    // Allow 5 seconds buffer for clock differences
-                    let trigger_with_buffer = trigger_time - chrono::Duration::seconds(5);
-                    if created_at < trigger_with_buffer {
-                        debug!(
-                            workflow = name,
-                            "skipping old workflow created before trigger"
-                        );
+                    if !matches_provision_run(run, &github_repo, request_id) {
                         continue;
                     }
-
-                    // Check if this is deployment workflow
-                    if !name.contains("Deploy") || !name.contains("School") {
-                        debug!(workflow = name, "skipping non-deployment workflow");
-                        continue;
-                    }
-
                     // Found a matching workflow!
                     found_matching_run = true;
                     let status = run["status"].as_str().unwrap_or("");
@@ -317,8 +296,7 @@ impl CloudflareClient {
                     info!(
                         workflow = name,
                         status,
-                        %created_at,
-                        %trigger_time,
+                        %request_id,
                         "found matching workflow"
                     );
 
@@ -406,5 +384,27 @@ impl CloudflareClient {
 
         info!(worker_name, "Worker deleted successfully");
         Ok(())
+    }
+}
+
+fn matches_provision_run(run: &serde_json::Value, repository: &str, request_id: &str) -> bool {
+    run["display_title"].as_str() == Some(format!("Operations provision ({request_id})").as_str())
+        && run["path"].as_str() == Some(".github/workflows/operations.yml")
+        && run["event"].as_str() == Some("workflow_dispatch")
+        && run["head_branch"].as_str() == Some("main")
+        && run["head_repository"]["full_name"].as_str() == Some(repository)
+}
+
+#[cfg(test)]
+mod provisioning_correlation_tests {
+    use super::matches_provision_run;
+    #[test]
+    fn completion_matches_exact_request_and_trusted_workflow() {
+        let mut run = serde_json::json!({"display_title":"Operations provision (request-a)", "path":".github/workflows/operations.yml", "event":"workflow_dispatch", "head_branch":"main", "head_repository":{"full_name":"team/school"}});
+        assert!(matches_provision_run(&run, "team/school", "request-a"));
+        assert!(!matches_provision_run(&run, "team/school", "request-b"));
+        assert!(!matches_provision_run(&run, "other/school", "request-a"));
+        run["path"] = serde_json::json!(".github/workflows/pipeline.yml");
+        assert!(!matches_provision_run(&run, "team/school", "request-a"));
     }
 }

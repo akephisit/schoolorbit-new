@@ -1,0 +1,77 @@
+# Only the private per-release probe token bypasses public maintenance. Resource
+# authentication still belongs to the backend; this is not a user auth bypass.
+map $http_x_schoolorbit_release_probe $admin_release_probe {
+    default 0;
+    "~^${MAINTENANCE_PROBE_TOKEN}$" 1;
+}
+
+map $http_origin $admin_maintenance_allow_origin {
+    default "";
+    "~^https://([\w-]+\.)?${BASE_DOMAIN_REGEX}(:[0-9]+)?$" $http_origin;
+    "http://localhost:3000" $http_origin;
+    "http://127.0.0.1:3000" $http_origin;
+}
+
+server {
+    listen 80;
+    server_name admin-api.${BASE_DOMAIN};
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name admin-api.${BASE_DOMAIN};
+
+    ssl_certificate /etc/nginx/ssl/schoolorbit-origin.pem;
+    ssl_certificate_key /etc/nginx/ssl/schoolorbit-origin.key;
+
+    add_header Access-Control-Allow-Origin $admin_maintenance_allow_origin always;
+    add_header Access-Control-Allow-Credentials "true" always;
+    add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
+    add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,X-School-Subdomain,X-CSRF-Token" always;
+    add_header Access-Control-Expose-Headers "X-CSRF-Token" always;
+    add_header Retry-After "10" always;
+    add_header Cache-Control "no-store" always;
+
+    location = /deployment-status {
+        if ($request_method = OPTIONS) {
+            return 204;
+        }
+
+        default_type application/json;
+        return 200 '{"status":"${DEPLOYMENT_STATUS}","releaseId":"${RELEASE_ID}","retryAfterSeconds":10}';
+    }
+
+    # Control-plane calls remain backend-authenticated while browser APIs are blocked.
+    location ^~ /internal/ {
+        access_log off;
+        proxy_pass http://schoolorbit-backend-admin:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Internal-Secret $http_x_internal_secret;
+        proxy_set_header X-Internal-Caller $http_x_internal_caller;
+    }
+
+    error_page 418 = @release_probe;
+    location @release_probe {
+        proxy_pass http://schoolorbit-backend-admin:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        if ($admin_release_probe = 1) { return 418; }
+        if ($request_method = OPTIONS) {
+            return 204;
+        }
+
+        default_type application/json;
+        return 503 '{"success":false,"error":"maintenance","message":"ระบบกำลังปรับปรุง กรุณาลองใหม่อีกครั้ง"}';
+    }
+}

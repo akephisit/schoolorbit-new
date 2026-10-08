@@ -6472,9 +6472,13 @@ fn school_session_runtime_is_deployment_owned() {
 fn recurring_healthchecks_use_liveness_while_deployment_and_smoke_use_readiness() {
     let local_compose = read_source(repo_root().join("compose.local.yml"));
     let podman_compose = read_source(repo_root().join("podman-compose.yml"));
-    let school_deploy =
-        read_source(repo_root().join(".github/workflows/deploy-school-release.yml"));
-    let admin_deploy = read_source(repo_root().join(".github/workflows/deploy-backend-admin.yml"));
+    let school_deploy = [
+        read_source(repo_root().join(".github/workflows/deploy-school-release.yml")),
+        read_source(repo_root().join("scripts/lib/pipeline-remote/school-deploy-backend.sh")),
+        read_source(repo_root().join("scripts/lib/pipeline-remote/school-verify-release.sh")),
+    ]
+    .join("\n");
+    let admin_deploy = read_source(repo_root().join("scripts/lib/pipeline-remote/admin-deploy.sh"));
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
 
     for compose in [&local_compose, &podman_compose] {
@@ -6551,15 +6555,17 @@ fn scheduled_jobs_never_trigger_lazy_tenant_migrations() {
 
 #[test]
 fn coordinated_school_release_keeps_maintenance_until_acceptance() {
-    let deploy = read_source(repo_root().join(".github/workflows/deploy-school-release.yml"))
-        .replace(r#"\""#, "\"");
-
-    assert!(deploy
-        .contains("School API remains in maintenance until the authenticated smoke completes"));
-    assert!(deploy.contains("needs.promote-frontends.result == 'success'"));
-    assert!(deploy.contains("Open accepted School API release"));
-    assert!(deploy.contains("Public release smoke failed; maintenance restored"));
-    assert!(!deploy.contains("SCHOOL_API_KEEP_MAINTENANCE"));
+    let child = read_source(repo_root().join(".github/workflows/deploy-school-release.yml"));
+    let parent = read_source(repo_root().join(".github/workflows/release.yml"));
+    let maintenance = read_source(repo_root().join("scripts/lib/pipeline-remote/maintenance.sh"));
+    let deploy =
+        read_source(repo_root().join("scripts/lib/pipeline-remote/school-deploy-backend.sh"))
+            .replace(r#"\""#, "\"");
+    assert!(child.contains("needs.promote-frontends.result == 'success'"));
+    assert!(parent.contains("needs.school.result == 'success'"));
+    assert!(parent.contains("Verify proxy smoke then leave maintenance"));
+    assert!(maintenance.contains("Public release readiness failed; maintenance restored"));
+    assert!(maintenance.contains("SMOKE_RELEASE_PROBE_TOKEN"));
     assert!(deploy.contains(".academicCoreCutover.migrationVersion == 45"));
     assert!(deploy.contains(".academicCoreCutover.status == \"cleanupCompleted\""));
     assert!(deploy.contains(".academicCoreCutover.passed == true"));
@@ -6571,23 +6577,29 @@ fn coordinated_school_release_keeps_maintenance_until_acceptance() {
 
 #[test]
 fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live() {
-    let deploy = read_source(repo_root().join(".github/workflows/deploy-school-release.yml"));
+    let deploy = [
+        read_source(repo_root().join(".github/workflows/deploy-school-release.yml")),
+        read_source(repo_root().join("scripts/lib/pipeline-remote/school-verify-academic.sh")),
+    ]
+    .join("\n");
+    let release = read_source(repo_root().join(".github/workflows/release.yml"));
+    let maintenance = read_source(repo_root().join("scripts/lib/pipeline-remote/maintenance.sh"));
     let smoke = read_source(repo_root().join("scripts/smoke_test.sh"));
-
     assert!(deploy.contains("academic_core_smoke_subdomain:"));
     assert!(deploy.contains("Validate Academic Core authenticated smoke inputs"));
     assert!(deploy.contains("Run Academic Core authenticated smoke"));
-    assert!(deploy.contains("Open accepted School API release"));
     assert!(deploy.contains("SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}"));
     assert!(deploy.contains("SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}"));
     assert!(deploy.contains("SMOKE_API_URL=http://localhost:8081"));
     assert!(deploy.contains("SMOKE_ACADEMIC_CONTEXT=true"));
     assert!(deploy.contains("SMOKE_DIRECT_BACKEND=true"));
-    assert!(deploy.contains("restore_maintenance"));
+    assert!(maintenance.contains("restore_maintenance"));
     assert!(
-        deploy.find("Run Academic Core authenticated smoke")
-            < deploy.find("Open accepted School API release"),
-        "the normal proxy may open only after authenticated smoke"
+        release.find("needs.school.result == 'success'").unwrap()
+            < release
+                .find("Verify proxy smoke then leave maintenance")
+                .unwrap(),
+        "all School checks must gate opening the public proxy"
     );
     assert!(smoke.contains("SMOKE_DIRECT_BACKEND"));
     assert!(smoke.contains("expect_cors_header"));

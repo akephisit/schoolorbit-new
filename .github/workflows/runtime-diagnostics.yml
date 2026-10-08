@@ -1,11 +1,9 @@
 name: Runtime Diagnostics
-
 on:
-  workflow_dispatch:
-
+  workflow_call:
+    inputs: {}
 permissions:
   contents: read
-
 jobs:
   inspect:
     runs-on: ubuntu-latest

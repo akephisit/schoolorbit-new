@@ -1,0 +1,212 @@
+name: Serialized production release
+on:
+  workflow_call:
+    inputs:
+      plan:
+        type: string
+        required: true
+      automatic:
+        type: boolean
+        default: false
+      target_origin_ip:
+        type: string
+        default: ""
+permissions:
+  contents: read
+  actions: read
+  packages: write
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    outputs:
+      admin_digest: ${{ steps.manifest.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Recheck trusted gate, current main and accepted state under the production lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN: ${{ inputs.plan }}
+          AUTOMATIC_DISPATCH: ${{ inputs.automatic }}
+          RUNTIME_DEPLOY_ENABLED: ${{ vars.RUNTIME_DEPLOY_ENABLED }}
+          FRONTEND_DEPLOY_ENABLED: ${{ vars.FRONTEND_DEPLOY_ENABLED }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+        run: node scripts/release_preflight.mjs
+      - name: Download prepared Admin backend manifest
+        if: contains(fromJson(inputs.plan).deploy, 'backend-admin')
+        uses: actions/download-artifact@v7
+        with:
+          name: prepared-backend-admin
+          path: ${{ runner.temp }}/prepared
+      - name: Validate Admin backend digest
+        if: contains(fromJson(inputs.plan).deploy, 'backend-admin')
+        id: manifest
+        env:
+          INPUT_HASH: ${{ fromJson(inputs.plan).hashes['backend-admin'] }}
+        run: |
+          set -euo pipefail
+          digest=$(jq -er --arg sha "$GITHUB_SHA" --arg hash "$INPUT_HASH" '
+            if .schemaVersion == 1 and .component == "backend-admin" and .sha == $sha and .inputHash == $hash and (.digest | test("^sha256:[0-9a-f]{64}$")) then .digest else error("Prepared image identity mismatch") end
+          ' "$RUNNER_TEMP/prepared/backend-admin.json")
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+  maintenance:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Upload release control and proxy implementations
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: podman-compose.yml,scripts/prune_runtime_images.sh,scripts/lib/pipeline-remote,scripts/render_nginx_config.sh,scripts/smoke_test.sh,nginx-configs
+          target: /opt/stack/deployment
+      - name: Enter universal maintenance
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          RELEASE_SHA: ${{ github.sha }}
+        with:
+          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: BASE_DOMAIN,RELEASE_SHA
+          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/maintenance.sh enter
+  admin-backend:
+    needs:
+      - preflight
+      - maintenance
+    if: contains(fromJson(inputs.plan).deploy, 'backend-admin')
+    uses: ./.github/workflows/deploy-backend-admin.yml
+    with:
+      image_digest: ${{ needs.preflight.outputs.admin_digest }}
+      target_origin_ip: ${{ inputs.target_origin_ip }}
+    secrets: inherit
+  admin-frontend:
+    needs:
+      - maintenance
+      - admin-backend
+    if: always() && needs.maintenance.result == 'success' && (needs.admin-backend.result == 'success' || needs.admin-backend.result == 'skipped') && contains(fromJson(inputs.plan).deploy, 'frontend-admin')
+    uses: ./.github/workflows/deploy-frontend-admin.yml
+    with:
+      input_hash: ${{ fromJson(inputs.plan).hashes['frontend-admin'] }}
+    secrets: inherit
+  school:
+    needs:
+      - maintenance
+      - admin-backend
+      - admin-frontend
+    if: always() && needs.maintenance.result == 'success' && (needs.admin-backend.result == 'success' || needs.admin-backend.result == 'skipped') && (needs.admin-frontend.result == 'success' || needs.admin-frontend.result == 'skipped') && (contains(fromJson(inputs.plan).deploy, 'backend-school') || contains(fromJson(inputs.plan).deploy, 'frontend-school'))
+    uses: ./.github/workflows/deploy-school-release.yml
+    with:
+      plan: ${{ inputs.plan }}
+      target_origin_ip: ${{ inputs.target_origin_ip }}
+    secrets: inherit
+  accept:
+    needs:
+      - preflight
+      - maintenance
+      - admin-backend
+      - admin-frontend
+      - school
+    if: always() && needs.preflight.result == 'success' && needs.maintenance.result == 'success' && (needs.admin-backend.result == 'success' || needs.admin-backend.result == 'skipped') && (needs.admin-frontend.result == 'success' || needs.admin-frontend.result == 'skipped') && (needs.school.result == 'success' || needs.school.result == 'skipped')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Download prepared component manifests
+        uses: actions/download-artifact@v7
+        with:
+          pattern: prepared-*
+          path: ${{ runner.temp }}/accepted-inputs
+          merge-multiple: true
+      - name: Download immutable Worker receipts
+        if: contains(fromJson(inputs.plan).deploy, 'frontend-admin') || contains(fromJson(inputs.plan).deploy, 'frontend-school')
+        uses: actions/download-artifact@v7
+        with:
+          pattern: "*worker*"
+          path: ${{ runner.temp }}/accepted-workers
+          merge-multiple: true
+      - name: Assemble accepted manifest without opening maintenance
+        env:
+          PLAN: ${{ inputs.plan }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/accept_pipeline_state.mjs
+      - name: Select verified runtime image aliases
+        id: images
+        env:
+          PLAN: ${{ inputs.plan }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const plan=JSON.parse(process.env.PLAN);
+          const images=Object.fromEntries(plan.deploy.filter(x=>x.startsWith('backend-')).map(x=>[x,JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/accepted-inputs/'+x+'.json','utf8')).digest]));
+          appendFileSync(process.env.GITHUB_OUTPUT,'images='+JSON.stringify(images)+'\n');
+          NODE
+      - name: Verify all proxy smoke while maintenance remains enabled
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          PREPARED_IMAGES: ${{ steps.images.outputs.images }}
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          RELEASE_SHA: ${{ github.sha }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        with:
+          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 15m
+          envs: PREPARED_IMAGES,BASE_DOMAIN,RELEASE_SHA,SMOKE_USERNAME,SMOKE_PASSWORD
+          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/maintenance.sh verify
+      - name: Advance accepted registry tags
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Publish selected accepted image aliases
+        env:
+          PLAN: ${{ inputs.plan }}
+        run: |-
+          set -euo pipefail
+          while IFS= read -r component; do
+            digest=$(jq -er '.digest' "$RUNNER_TEMP/accepted-inputs/$component.json")
+            docker buildx imagetools create --prefer-index=false --tag "ghcr.io/$GITHUB_REPOSITORY_OWNER/schoolorbit-$component:latest" "ghcr.io/$GITHUB_REPOSITORY_OWNER/schoolorbit-$component@$digest"
+          done < <(printf '%s' "$PLAN" | jq -r '.deploy[] | select(startswith("backend-"))')
+      - name: Persist accepted release baselines
+        uses: actions/upload-artifact@v6
+        with:
+          overwrite: true
+          name: pipeline-state
+          path: ${{ runner.temp }}/pipeline-state.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Verify proxy smoke then leave maintenance
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          RELEASE_SHA: ${{ github.sha }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        with:
+          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 15m
+          envs: BASE_DOMAIN,RELEASE_SHA,SMOKE_USERNAME,SMOKE_PASSWORD
+          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/maintenance.sh accept

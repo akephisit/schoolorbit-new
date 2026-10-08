@@ -113,9 +113,7 @@ _phase_tls_apply() {
 _phase_deploy_apply() {
     local workflow
     local -a workflows=(
-        deploy-backend-admin.yml
-        deploy-frontend-admin.yml
-        deploy-school-release.yml
+        pipeline.yml
     )
     SO_WORKFLOW_RUNS='[]'
     vps_create_deployment_key || return

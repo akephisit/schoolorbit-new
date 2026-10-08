@@ -1,3 +1,4 @@
+import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -12,9 +13,9 @@ const repoRoot = path.resolve(testDirectory, '../../..');
 const discoveryScript = path.join(repoRoot, 'scripts/discover_school_tenants.sh');
 
 test('pre-cutover frontend deployment pins API traffic to the selected origin', async () => {
-	const workflow = await readFile(
-		path.join(repoRoot, '.github/workflows/deploy-school-release.yml'),
-		'utf8'
+	const workflow = await readWorkflowSource(
+		repoRoot,
+		'.github/workflows/deploy-school-release.yml'
 	);
 	const originRouting = await readFile(
 		path.join(repoRoot, 'scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh'),

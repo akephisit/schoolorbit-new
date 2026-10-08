@@ -7,9 +7,9 @@ This guide describes production-facing procedures and invariants. Development co
 - `backend-admin` listens on container port `8080`, owns the admin database, school records, tenant database provisioning metadata, and deployment coordination.
 - `backend-school` listens on container port `8081`, calls backend-admin over the internal network, resolves the tenant from the request, and connects to that tenant's PostgreSQL database.
 - `frontend-admin` is the administrative web application.
-- `frontend-school` is built and deployed per tenant/subdomain and calls the school API.
+- `frontend-school` is built once per input/configuration and deployed per tenant/subdomain and calls the school API.
 
-Local source-build topology is defined in [`compose.local.yml`](../compose.local.yml), and the production topology is defined in [`podman-compose.yml`](../podman-compose.yml). Run both with rootless Podman and invoke `podman-compose` explicitly. The production file is the sole Compose owner for both backends, Nginx, clamd, their explicitly named networks, and the scanner volume. The production host publishes backend ports only on `127.0.0.1`; containers use service DNS names internally and must not use `localhost` to reach another container.
+Local source-build topology is defined in [`compose.local.yml`](../compose.local.yml), and the production topology is defined in [`podman-compose.yml`](../podman-compose.yml). Use Docker Compose locally and rootless `podman-compose` in production. The production file is the sole Compose owner for both backends, Nginx, clamd, their explicitly named networks, and the scanner volume. The production host publishes backend ports only on `127.0.0.1`; containers use service DNS names internally and must not use `localhost` to reach another container.
 
 For first-time production server bootstrap, follow [Podman server setup](./PODMAN_SETUP.md).
 
@@ -56,90 +56,78 @@ Recurring Compose healthchecks use `/health` so process monitoring does not wake
 
 ## Deployment Workflows
 
-Current workflows:
+There are four public workflow entry points:
 
-- [deploy-backend-admin.yml](../.github/workflows/deploy-backend-admin.yml)
-- [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml)
-- [deploy-school-tenant.yml](../.github/workflows/deploy-school-tenant.yml)
-- [runtime-diagnostics.yml](../.github/workflows/runtime-diagnostics.yml)
-- [ghcr-retention.yml](../.github/workflows/ghcr-retention.yml)
-- [permission-contract.yml](../.github/workflows/permission-contract.yml)
-- [api-contract.yml](../.github/workflows/api-contract.yml)
-- [smoke-test.yml](../.github/workflows/smoke-test.yml)
-- [e2e-sandbox.yml](../.github/workflows/e2e-sandbox.yml)
-- [installer.yml](../.github/workflows/installer.yml)
+| Owner | Trigger and responsibility |
+| --- | --- |
+| [pipeline.yml](../.github/workflows/pipeline.yml) | PR checks; main or manual preparation and production release |
+| [merge.yml](../.github/workflows/merge.yml) | Serialize trusted team PR integration after `Pipeline gate` |
+| [operations.yml](../.github/workflows/operations.yml) | Explicit smoke, browser E2E, diagnostics, benchmarks, Neon compatibility and tenant provisioning |
+| [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention; dry-run unless explicitly enabled |
 
-`Deploy School Release` is the only push-triggered production workflow for `frontend-school` and
-`backend-school`. Every run uses the checked-out 40-character Git SHA as one release ID and the
-`school-production-release` concurrency group serializes school releases. Because GitHub may replace
-a pending run with a newer one, every acceptance persists separate frontend and backend component
-SHAs in a trusted workflow artifact. Automatic scope detection compares each component with its
-accepted SHA instead of only the immediately preceding push. A missing or divergent baseline, or
-any later failed, cancelled, or incomplete release attempt, forces a full release. Scope detection
-then selects one of these paths:
+The callable [verify.yml](../.github/workflows/verify.yml), [prepare.yml](../.github/workflows/prepare.yml)
+and [release.yml](../.github/workflows/release.yml) implement the pipeline. The [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml) and other `deploy-*` files
+are callable component implementations, with no separate push or manual writers.
 
-| Changed area                          | Scope         | Release behavior                                                                                                                                                                                                     |
-| ------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `frontend-school` only                | frontend-only | Build and stage every tenant Worker, synchronize menus through the VPS loopback, then promote every staged version. The school API stays available.                                                                  |
-| `backend-school` only                 | backend-only  | Build the immutable backend image first, enable maintenance, replace the backend, migrate and audit every tenant, pass readiness and authenticated smoke, then reopen the API. The existing frontend remains active. |
-| Both, or a shared school runtime file | full release  | Build the backend and stage every tenant Worker before maintenance, deploy and verify the backend, synchronize menus, promote every tenant, then reopen the API only after all tenant promotions pass.               |
+The flow is `plan → selected verification + artifact preparation → Pipeline gate → production lock
+→ recheck main/baselines → universal maintenance → selected deployment → readiness/acceptance
+→ publish accepted baselines → open maintenance`. PRs verify without production credentials or
+release builds. Main builds selected immutable images and frontend bundles in parallel with checks.
+All production mutations, including Admin and tenant provisioning, share `schoolorbit-production`
+with cancellation disabled. An obsolete candidate is rejected before maintenance. GitHub can
+replace a queued run; component baselines therefore include every outstanding runtime change,
+not only the immediately preceding commit. A newer push during an active release waits for that
+release to finish.
 
-A manual dispatch may choose `frontend`, `backend`, or `full`; `auto` applies the same path-based
-classification as a push. `deploy-school-tenant.yml` remains a provisioning-only manual workflow
-for one new tenant and is not a production release path, but it shares the release concurrency group
-so provisioning cannot change a Worker while a coordinated release records or promotes versions.
+The planner distinguishes verification, build and deployment paths. Frontend-only changes do not
+compile a backend; body-only backend edits do not rebuild a frontend. Generated contract changes
+include their School backend/frontend consumers. Test-only and documentation changes do not
+normally deploy. Manual `scope` can add one component or `full`, and cannot omit queued changes.
+The accepted schema-2 `pipeline-state` artifact records each component SHA and input hash, immutable
+OCI digest or frontend bundle digest/run, and exact Worker versions. The reader checks repository,
+main ref, workflow, accepted attempt and successful acceptance job. A cache hit alone never proves
+verification or acceptance. Missing/expired/divergent state requires reconciliation; the first
+transition from the previous workflows deliberately reconciles all four components.
 
-Before any production change, `verify-release-ci` requires successful API and Permission workflows on the exact release SHA and latest attempt, and Installer when deployment inputs match its tracked push filters. Builds and inactive Worker uploads run in parallel with this verification. A failed, cancelled, missing, skipped, or timed-out required check blocks backend replacement, menu synchronization, Worker promotion and release acceptance; the active release remains available. Manual dispatch calls the same CI workflows directly on its checked-out SHA. An already-accepted replay remains a no-op and restores only its trusted accepted-state evidence. Release summaries distinguish CI rejection before production changes from a deployment failure after maintenance starts.
+`RUNTIME_DEPLOY_ENABLED` and `FRONTEND_DEPLOY_ENABLED` control automatic releases. Manual installer
+releases remain possible while these are disabled. The installer dispatches one full Pipeline with
+an exact deployment ID and selected target origin, and enables automatic releases only after its
+public handoff verification. Direct-origin checks use the intended API hostname, loopback resolution
+and the pinned Cloudflare Origin CA; the still-public DNS name is not evidence of a replacement VPS.
 
-Wrangler actions use Node 24 and read the CLI version from each application's tracked `package-lock.json`; action upgrades do not select a floating CLI version.
+Every production deployment enters maintenance for both School and Admin, including frontend-only
+updates and provisioning. `/deployment-status` remains available with no-store typed status;
+public API requests return CORS-safe `503`, with `204` preflights. Frontends show maintenance and
+poll every 10 seconds while visible, then reload when ready. Per-release mode-0600 probe tokens permit readiness and authenticated smoke
+through the proxy while users remain blocked; tokens bypass only maintenance, not authorization.
+Backend-authenticated Admin `/internal/` remains available for control-plane calls. A fresh origin
+starts the maintenance proxy before its first backend exists, without unresolved upstream names.
 
-Frontend Admin uploads code and `INTERNAL_API_SECRET` together with `wrangler versions upload --secrets-file`, then promotes the exact version ID from Wrangler's structured upload output and applies the configured routes. Its temporary secret file is mode `0600` and removed even on failure. Do not use legacy `secret bulk` before deployment: Cloudflare rejects it when an inactive Worker version exists, including versions created by Cloudflare Builds.
+Selected backend services use immutable digests, canonical rootless Podman topology, readiness,
+migration completion and cutover audits. Admin starts before School on a full release. School
+frontends consume one prepared bundle, synchronize menus through authenticated VPS loopback,
+promote exactly their staged Worker version and apply routes. Asset propagation and real browser
+mount checks precede acceptance. Admin uploads code and secrets together in one inactive version,
+promotes the exact ID from structured Wrangler output and verifies it. Node 24 and the application
+lockfile own Wrangler versions. Temporary secrets are mode `0600` and always removed.
 
-The school release stages the tracked canonical Compose file, validates it, atomically replaces
-`/opt/stack/podman-compose.yml`, and recreates backend-school without restarting backend-admin.
-It starts and verifies clamd when required. Production backend-school deliberately has no Compose
-`depends_on`: this prevents older supported `podman-compose` releases from expanding a
-selected-service update into backend-admin or clamd. Backend releases verify the selected target
-origin with the intended hostname and pinned Cloudflare Origin CA root; they do not use the
-still-public hostname as proof of the new origin.
+The final acceptance owner verifies both proxy readiness paths and authenticated School academic
+smoke, advances only selected image aliases, persists component baselines, and opens maintenance
+last. Any earlier failure leaves maintenance active. A normal-proxy readiness failure restores
+maintenance. Retry the same reviewed run or dispatch the current main; retained Worker recovery
+manifests bind candidates to the exact trusted pipeline SHA and preserve the rollback boundary.
+Successful replay uses accepted component baselines rather than a parallel legacy replay owner.
+Provisioning reuses the trusted accepted School artifact and its public configuration, with an
+exact request UUID; it has the same maintenance and acceptance discipline.
 
-`RUNTIME_DEPLOY_ENABLED` gates push-triggered backend deployments and
-`FRONTEND_DEPLOY_ENABLED` gates push-triggered frontend deployments. Manual workflow dispatch
-remains available while either gate is `false`. The replacement-VPS installer keeps both gates
-disabled during migration and enables them only in the final handoff after public verification.
-
-During a backend or full release, Nginx keeps `GET /deployment-status` available with a no-store
-JSON document containing `status`, `releaseId`, and `retryAfterSeconds`. All other school API
-requests receive a CORS-safe `503` maintenance envelope, except preflight requests, which receive
-`204`. The frontend enters its maintenance page after that typed `503`, after a failed API request
-whose status probe confirms maintenance, or when the initial status probe reports maintenance. It
-polls `/deployment-status` every 10 seconds while visible and reloads the page when the accepted release
-becomes ready. This intentionally discards an unsaved form because the newly accepted frontend and
-backend must start from a clean document.
-
-Backend releases wait for `/ready`, migration/status audits, and authenticated smoke before they can
-be accepted. Frontend promotion runs `npm run sync:menu-routes` through the VPS loopback with the
-server-only `DEPLOY_KEY` and `SUBDOMAIN`, promotes the exact Worker version ID recorded in the
-recovery manifest, and applies its routes. Acceptance verifies that exact active version, then uses
-bounded condition-based retries for its complete immutable JavaScript/CSS assets and a real browser
-mount so Cloudflare propagation delay does not fail an otherwise healthy release. Re-running a workflow
-run that already reached release acceptance is an idempotent no-op: build and deployment jobs are skipped,
-and the run finishes successfully. If it is still the newest workflow run, its accepted component baselines
-are restored as a fresh state artifact. Replaying an older accepted run never overwrites state from a newer
-successful or failed run; use a reviewed manual dispatch when an intentional rollback or recovery is required.
-A same-SHA retry of an unaccepted attempt reuses the original Worker recovery manifest and backend image
-digest; it refuses to replace an orphaned candidate when the original rollback boundary cannot be proven.
-When a manifest is absent, the workflow scans the
-complete paginated Worker version inventory before deciding whether a new upload is safe. Reusable
-manifests are accepted only from the same
-coordinated workflow, trusted repository, main ref, and exact release SHA. Missing configuration, an
-incomplete scan, or a rejected request fails the release. A full release keeps maintenance active
-when any tenant promotion fails; the operator fixes forward and reruns the reviewed commit. The
-mutable registry `latest` tag and bounded local image cleanup move only after release acceptance.
-
-After deployment, verify readiness first, then run the smoke test and the relevant browser workflow with runtime credentials.
-
-The public organization response uses `members` for every current staff member, including coordinators and ordinary members, rather than the former leadership-only `leaders` field. Deploy this contract and its frontend consumer as a coordinated full school release; retain maintenance until both components are accepted. There is no database migration. A rollback must restore matching backend and frontend contracts together.
+Team development uses one branch/worktree per independent developer and a PR for every main
+change. Write collaborators automatically squash merge when the latest-main candidate passes;
+no human approval is mandatory. Fork/external PRs cannot auto-merge. The trusted controller
+updates and explicitly rechecks a stale candidate, merges one at a time, then dispatches the main
+pipeline because `GITHUB_TOKEN` merges do not emit push workflows. Branch protection should
+require the GitHub Actions `Pipeline gate` and up-to-date branches without requiring reviews.
+Equivalent PR verification may be reused only with exact tree/base, latest successful attempt,
+suite receipts and matching runner/toolchain/profile evidence; otherwise main executes its checks. Backend owners always execute fresh database verification on main and refresh the compiled snapshot for subsequent PRs.
 
 ### Build, deployment timing, and image retention
 
@@ -149,16 +137,13 @@ BuildKit secrets; a missing or unavailable compiler cache falls back to an ordin
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use
 `SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
 does not select v2; a build that reports write errors has not populated a usable cache.
-Automatic backend releases ignore application READMEs and root integration-test directories
-already excluded from Docker contexts. School scope resolution also ignores frontend tests and
-its README, so changing a cross-stack test with backend code does not promote unchanged
-frontends. Scope still includes all queued runtime changes since each trusted accepted baseline;
-dirty attempts and release-control changes retain full reconciliation. Explicit manual scopes
-retain their existing behavior.
-Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. School additionally
-exports compiler-cache statistics and summarizes the slowest Cargo units in the job summary. Compare the
-Cargo report, sccache statistics, and GitHub step duration rather than treating one cache marker as
-proof of a faster build.
+Component hashes exclude application READMEs and top-level integration tests already excluded
+from image contexts. Public frontend configuration and the preparation recipe participate in keys.
+Prepared OCI images are tagged by input hash and release SHA; runtime replacement uses their exact
+digest. Prepared frontend bundles are checked by content digest and consumed without rebuilding.
+Compiler evidence artifacts include Cargo HTML timings and sccache statistics when a build actually
+runs. Compare compilation, restore, push and deployment durations separately; an exact cache marker
+alone is not evidence of a faster release. A failed release does not advance accepted baselines.
 
 A source-only edit invalidates the final source/build layer, so the changed application crate and
 final executable must be compiled and linked again. It does not discard the cargo-chef dependency

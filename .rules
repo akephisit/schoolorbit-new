@@ -58,9 +58,11 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Verification evidence belongs to the exact tested Git tree and relevant test environment, not to a branch name or commit hash. After a conflict-free squash merge from an unchanged base, confirm that the feature and integrated root tree object IDs are identical. If they match and no hook, generator, dependency install, manual step, or external test dependency changed the tracked tree or relevant test environment, reuse the completed focused and matrix results; do not rerun them only because the branch or commit hash changed.
 - Rerun affected checks when the base advanced, conflicts were resolved, the integrated tree differs, required coverage was incomplete or failed, or the relevant toolchain, dependencies, or external test environment changed. GitHub Actions triggered by a push remain separate CI and deployment verification; they do not require duplicating an already-valid local suite immediately before the push.
 - Feature branches may contain multiple focused or checkpoint commits. Integrate an approved feature into `main` with a squash merge so `main` receives one coherent commit for that feature.
-- Update local `main` to the fetched `origin/main` before the squash merge. Push normally; never force-push `main`.
-- For user-requested code or documentation changes, after the required focused and matrix checks pass, commit the completed branch, squash-merge it into `main`, and push `origin/main` without waiting for another instruction. Stop and report instead of pushing if verification fails, the remote advanced with unresolved conflicts, or the push would require a force push.
-- Keep the feature branch and any worktree until the required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
+- Every change enters `main` through a pull request. Do not push directly to `main` or force-push shared branches. After required local checks pass, commit and push the feature branch, open a PR and attach it to the task.
+- Trusted team collaborators with write access use automatic squash merge after the stable `Pipeline gate` succeeds; human approval is not mandatory. External/fork PRs are never auto-merged.
+- The merge controller serializes integration, validates the merged candidate against the latest `main`, and updates/rechecks a stale candidate. A cached compiler output or a local report cannot authorize merge or deployment.
+- Independent developers own distinct branches/worktrees. Cancel superseded PR checks when appropriate, but never cancel an active production deployment or migration. Preparation may run concurrently; all School/Admin production changes and provisioning share `schoolorbit-production`.
+- Keep the feature branch and any worktree until required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
 
 ## 2. Adding or Changing a Feature
 
@@ -381,24 +383,25 @@ Pages serving the same kind of task use the same visual order and action placeme
 ## 10. Deployment Constraints
 
 - Runtime configuration is environment-driven; do not bake environment URLs, credentials, keys, or tenant identifiers into images.
-- `compose.local.yml` is the sole local Compose owner. Run it with rootless `podman-compose`; local runtime and database tests must use the native Podman CLI without a Docker socket, Docker compatibility alias, remote Podman connection, or engine fallback.
-- `podman-compose.yml` is the sole production Compose owner for backend-admin, backend-school, Nginx, clamd, their networks, and their volumes. Deployment workflows may recreate only the selected service and its declared dependencies; do not add a second production Compose definition.
-- Docker Buildx is allowed only in GitHub Actions backend-image build jobs. Those jobs publish OCI-compatible images that production and local verification run with Podman; do not require a Docker daemon for repository-local runtime or tests.
-- Backend image workflows use distinct GHA BuildKit cache scopes. API and permission contract workflows share only the dependency-oriented backend-school Rust cache; pull requests are restore-only. Only trusted `main` runs may save the shared Rust dependency cache. A cache miss must run every existing build, contract, test, migration, readiness, and deployment gate.
-- Automatic school release scope compares runtime inputs against each accepted component baseline.
-  Root `tests/` directories and application READMEs do not request a component deployment;
-  queued runtime changes, release-control files, missing/untrusted baselines, and dirty attempts
-  retain the existing full reconciliation rules. Manual component/full scopes remain explicit.
-- Every School production mutation requires successful CI for the exact release SHA and latest run attempt. Push releases verify trusted main push API/Permission runs, plus Installer when its tracked path filters match. API/Permission push filters cover every School release input. Manual releases reuse the same CI workflows through `workflow_call`; a proven accepted replay remains a no-op. Build images and inactive Worker staging may run alongside CI, but backend replacement, menu synchronization, Worker promotion, API cutover and accepted-state/image-tag advancement must wait for the release CI gate. Missing, failed, cancelled, skipped or timed-out required checks block before production changes.
+- `compose.local.yml` is the sole local Compose owner. Local runtime and disposable database tests use Docker. `podman-compose.yml` is the sole production Compose owner for rootless Podman; production service/network ownership is unchanged.
+- `pipeline.yml` alone owns automatic PR/main verification, artifact preparation and production release. `merge.yml` owns team integration, `operations.yml` explicit operational tasks, and `maintenance.yml` retention. Reusable implementations have no independent push/PR/dispatch writers.
+- Executable policy separates verification, build and deployment scopes. Unknown paths expand verification rather than silently skipping it. Automatic deployment compares each component against its trusted accepted input baseline and includes queued changes; manual scope can add work but cannot omit required reconciliation.
+- Local and CI checks use `scripts/pipeline`. Run selected checks before opening a PR; critical API, permission, auth, tenant, migration and recovery checks remain required for their affected scope.
+- Dependencies, compiled test targets and release artifacts have separate keys including toolchain, platform/profile, source and compiled public configuration. Main alone saves shared caches; PRs restore. Debug/test output cannot replace a release binary, and cache hits never count as verification success.
+- The main backend verification owner refreshes source-keyed compiled snapshots and reruns owned database fixtures. Only content-verified unchanged inputs may have checkout timestamps normalized; edited sources must invalidate the cached outputs. Equivalent PR evidence may skip static/frontend checks only when tree, tools, runner image and latest attempt match.
+- Before production changes, the exact SHA and latest attempt must pass every selected Pipeline check/build. Validate immutable image digests and frontend bundle manifests, reread accepted state under the shared production lock, and reject a stale candidate before maintenance.
+- Every production deployment enters Maintenance Mode, including frontend-only, backend-only, full, School, Admin and provisioning. Finish checks/build first; keep public maintenance active until all selected components pass readiness, tenant asset/browser acceptance and authenticated proxy smoke. Failure keeps maintenance active; use the retained immutable artifacts/recovery manifests to retry or roll forward.
+- Private per-release smoke probe tokens are mode-0600 operational secrets, never logged or cached. They bypass only the maintenance response; backend authentication remains enforced. Backend-authenticated Admin `/internal/` calls remain available for control-plane readiness.
+- Provisioning consumes the trusted accepted frontend artifact, validates its public configuration and correlates completion by exact request UUID, repository, main ref and workflow identity.
 - Cloudflare Wrangler actions use a Node 24 runtime and the exact Wrangler CLI version from the owning application lockfile.
 - Frontend Admin stages code and secrets in the same inactive Worker version, promotes only the version ID from that upload's structured output, and applies its configured routes. Temporary secret files are mode `0600`, never logged, and always removed; legacy pre-deploy `secret bulk` is prohibited because inactive versions can block it.
-- API Contract runs artifact, backend, and frontend validation in independent jobs without `needs`. Keep every contract gate in its owned job; only the artifact job may save the API workflow's shared Rust cache, while the backend job is restore-only.
-- Contract CI normalizes the pinned toolchain inventory before restoring the shared Rust cache; this runner-only setup must not remove developer toolchains. Offline exporter verification reuses the contract generator's compiled binary under a clean runtime environment rather than recompiling under different Cargo settings.
+- School Rust formatting, workspace/architecture, API export and selected database consumers have one verification owner and reuse compiled targets. A database suite uses one disposable Docker server with a fresh owned database per invocation; never point fixtures at a shared tenant or production database.
+- Contract CI normalizes the pinned toolchain inventory on disposable runners only; never remove developer toolchains. Offline exporter verification reuses the compiled contract binary under a clean runtime environment.
 - Cached Playwright browser files must match the installed Playwright version, runner OS, and architecture. Always verify a real browser launch and install missing host dependencies before running the existing frontend acceptance or E2E gates, including on cache hits.
 - Before DNS cutover, deployment workflows must verify the selected target origin with the intended hostname and pinned Origin CA trust. Do not verify a still-public hostname that may reach the old origin.
 - Containers bind application ports to `0.0.0.0`.
 - `/health` is dependency-free process liveness and owns recurring container and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes do not keep Neon active.
-- Keep local and production Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
+- Keep local Docker and production Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
 - Required backend-school runtime values include `SESSION_HMAC_KEY`, `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`, `BASE_DOMAIN`, and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` is an explicit local-development allowlist.
 - `SCHOOL_ROLLBACK_JWT_SECRET` exists only for a time-bounded backend-school rollback. The normal school runtime must not use it; `JWT_SECRET` is owned by backend-admin.
 - Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
@@ -436,50 +439,19 @@ npm run check:api-contracts
 npm run test:api-contracts
 ```
 
-For frontend changes:
+For frontend, backend, installer, proxy or workflow changes, run the applicable owned suites from the repository root:
 
 ```bash
-npm run lint
-PUBLIC_BACKEND_URL=http://localhost:3000 PUBLIC_VAPID_KEY=test npm run check
-npm run test:static
+./scripts/pipeline verify --scope auto
 ```
+
+Use `--scope full` for a full local rehearsal or a comma-separated list of owners for focused work. The runner owns frontend lint/type/static or unit checks, backend formatting/workspace/architecture/API and disposable database checks, and deployment ShellCheck/shfmt/Bats/Node guards/Compose/actionlint. Do not rerun their individual commands as a second mandatory flow; use those commands only to diagnose a failure or run additional affected tests. Backend Admin SQLx checks must use the owned disposable Docker fixture, not a shared database.
 
 When creating, editing, or analyzing `.svelte`, `.svelte.ts`, or `.svelte.js`, use the project Svelte tooling and resolve all reported issues before completion.
 
-For backend-school changes:
+For school authentication, session, or realtime identity changes, also run the affected focused Rust and frontend auth/session tests, session Playwright discovery or execution with a dedicated disposable account, and deployed proxy smoke as described in `docs/TESTING.md`. The central owners already cover their baseline fixtures and contract checks; add only coverage required by the changed behavior.
 
-```bash
-cargo fmt --all -- --check
-cargo test --test static_architecture
-cargo check --workspace --all-targets
-```
-
-For school authentication, session, or realtime identity changes, also run the focused Rust auth/realtime tests, `frontend-school` auth/session static tests, session Playwright discovery or execution with a dedicated disposable account, and `scripts/smoke_test.sh` through the deployed proxy path as described in `docs/TESTING.md`.
-
-For backend-admin changes:
-
-```bash
-cargo fmt --all -- --check
-cargo check
-```
-
-For installer, production topology, proxy template, or deployment-workflow changes, from the repository root:
-
-```bash
-shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
-  scripts/lib/schoolorbit-installer/*.sh \
-  scripts/lib/schoolorbit-installer/remote/*.sh
-shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
-  scripts/lib/schoolorbit-installer/*.sh \
-  scripts/lib/schoolorbit-installer/remote/*.sh
-bats scripts/tests/installer
-node --test frontend-school/tests/static/deployment-installer.test.mjs
-env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
-  podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
-podman run --rm -v "$PWD:/repo" -w /repo docker.io/rhysd/actionlint:1.7.7
-```
-
-The deployment static guard renders the proxy template and checks direct-origin deployment behavior. All commands above are required; do not replace unavailable checks with weaker substitutes.
+The deployment owner renders proxy templates and checks direct-origin deployment behavior. Every owned check is required; do not replace unavailable checks with weaker substitutes.
 
 Run `scripts/smoke_test.sh` when authentication, CORS, readiness, proxying, deployment, or cross-service behavior changes. Run Playwright from `frontend-school` when browser auth or user workflows change. Credentials must come from `SMOKE_*` or `E2E_*` environment variables and must never be committed.
 

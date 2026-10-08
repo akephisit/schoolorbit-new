@@ -1,3 +1,10 @@
+# Only the private per-release probe token bypasses public maintenance. Resource
+# authentication still belongs to the backend; this is not a user auth bypass.
+map $http_x_schoolorbit_release_probe $school_release_probe {
+    default 0;
+    "~^${MAINTENANCE_PROBE_TOKEN}$" 1;
+}
+
 map $http_origin $maintenance_allow_origin {
     default "";
     "~^https://([\w-]+\.)?${BASE_DOMAIN_REGEX}(:[0-9]+)?$" $http_origin;
@@ -38,7 +45,18 @@ server {
         return 200 '{"status":"${DEPLOYMENT_STATUS}","releaseId":"${RELEASE_ID}","retryAfterSeconds":10}';
     }
 
+    error_page 418 = @release_probe;
+    location @release_probe {
+        proxy_pass http://schoolorbit-backend-school:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
+        if ($school_release_probe = 1) { return 418; }
         if ($request_method = OPTIONS) {
             return 204;
         }

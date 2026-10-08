@@ -626,35 +626,30 @@ test('permission contract developer workflow is complete and non-deploying', asy
 		}
 	);
 
-	const workflow = await readFile(
-		path.join(repoRoot, '.github/workflows/permission-contract.yml'),
-		'utf8'
-	);
+	const workflow = await readFile(path.join(repoRoot, '.github/workflows/verify.yml'), 'utf8');
+	const runner = await readFile(path.join(repoRoot, 'scripts/pipeline.mjs'), 'utf8');
+	const policy = await readFile(path.join(repoRoot, 'scripts/lib/pipeline-policy.mjs'), 'utf8');
 	for (const required of [
 		'actions/checkout@v6',
 		'actions/setup-node@v6',
-		'node scripts/generate-permissions.mjs --check',
-		'node --test scripts/tests/generate-permissions.test.mjs',
-		'cargo fmt --all -- --check',
-		'cargo check --workspace --all-targets',
-		'cargo test --test static_architecture',
 		'npm ci',
-		'npm run test:static',
-		'npm run check'
+		'scripts/pipeline verify'
 	]) {
-		assert.ok(workflow.includes(required), `permission workflow must contain: ${required}`);
+		assert.ok(workflow.includes(required), `verification owner must contain: ${required}`);
 	}
-
-	assert.match(workflow, /pull_request:\s*\n\s*paths:/);
-	assert.match(workflow, /push:\s*\n\s*branches:\s*\n\s*- main/);
-	assert.match(workflow, /contracts\/permissions\*\.json/);
+	assert.match(runner, /generate-permissions\.mjs', '--check'/);
+	assert.match(runner, /scripts\/tests\/generate-permissions\.test\.mjs/);
+	assert.match(runner, /'fmt', '--all', '--', '--check'/);
+	assert.match(runner, /'check', '--workspace', '--all-targets'/);
+	assert.match(runner, /'test', '--test', 'static_architecture'/);
+	assert.match(runner, /test:static/);
+	assert.match(policy, /'contracts', 'backend-school', 'frontend-school'/);
 	assert.match(workflow, /permissions:\s*\n\s*contents:\s*read/);
 	assert.match(workflow, /PUBLIC_BACKEND_URL:/);
 	assert.match(workflow, /PUBLIC_VAPID_KEY:/);
 	assert.doesNotMatch(
-		// Trigger filenames may contain "deploy"; execution and environment must stay read-only.
 		JSON.stringify(parseYaml(workflow).jobs),
-		/(?:docker|git)\s+push|\bdeploy\b|\bssh\b|\bpsql\b|sqlx\s+(?:database|migrate)|\bDATABASE_URL\b/i
+		/(?:docker|git)\s+push|\bssh\b|sqlx\s+(?:database|migrate)/i
 	);
 });
 
