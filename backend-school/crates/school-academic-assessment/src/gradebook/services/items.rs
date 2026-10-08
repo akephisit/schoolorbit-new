@@ -8,7 +8,7 @@ fn validate_item(input: &ItemInput) -> Result<BigDecimal, AppError> {
     decimal(&input.max_score)
 }
 pub async fn create_item(
-    result_locks: &impl ResultLockPort,
+    result_locks: &dyn ResultLockPort,
     pool: &PgPool,
     actor: &ActorContext,
     group: Uuid,
@@ -44,7 +44,7 @@ pub async fn create_item(
     Ok(item)
 }
 pub async fn update_item(
-    result_locks: &impl ResultLockPort,
+    result_locks: &dyn ResultLockPort,
     pool: &PgPool,
     actor: &ActorContext,
     group: Uuid,
@@ -84,7 +84,7 @@ pub async fn update_item(
     Ok(item)
 }
 pub async fn remove_item(
-    result_locks: &impl ResultLockPort,
+    result_locks: &dyn ResultLockPort,
     pool: &PgPool,
     actor: &ActorContext,
     group: Uuid,

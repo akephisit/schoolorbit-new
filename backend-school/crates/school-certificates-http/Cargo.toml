@@ -1,0 +1,28 @@
+[package]
+name = "school-certificates-http"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-certificates = { workspace = true }
+school-errors = { workspace = true }
+school-file-platform = { workspace = true }
+school-fonts = { workspace = true }
+school-http = { workspace = true }
+school-permissions = { workspace = true }
+school-staff = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

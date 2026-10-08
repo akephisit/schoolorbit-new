@@ -1,3 +1,4 @@
+#[cfg(test)]
 pub(crate) mod assessment_adapter;
 pub mod core;
 #[cfg(test)]

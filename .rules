@@ -95,7 +95,10 @@ Feature toggles are optional. Add one only for staged rollout or operational con
 - `backend-school/Cargo.toml` is both the application package and the non-virtual workspace root.
   The application package owns startup, the router, full `AppState`, OpenAPI composition,
   schedulers, and cross-domain adapters; an internal crate must not depend on the root package or
-  accept the full `AppState`.
+  accept the full `AppState`. Domain HTTP crates own concrete handlers and their path declarations,
+  receive narrow state through application-owned `FromRef` implementations, and use provider-owned
+  ports for cross-domain operations. `school-auth-http` is the single session/tenant request-context
+  and cookie/origin adapter owner; root facades delegate to it without duplicating identity logic.
 - Evaluate crate placement whenever a capability is added or an existing capability materially
   expands. Create a crate only for a cohesive owner with a public interface materially narrower
   than its implementation, acyclic and intentionally directed dependencies, meaningful focused
@@ -122,7 +125,9 @@ Feature toggles are optional. Add one only for staged rollout or operational con
 
 ### Request context and architecture
 
-- Share pools and configuration through `Arc<AppState>`.
+- Share pools and configuration through the application state and cloneable narrow HTTP state.
+  Domain HTTP handlers use concrete state rather than generic handler bodies, so their code compiles
+  in the owning crate instead of being monomorphized back into the application.
 - Authenticated browser handlers receive `AuthenticatedSession` from the single router-level session middleware. Feature handlers pass it to `actor_tenant_context_from_session` or `current_user_tenant_context_from_session`; they never parse `Cookie`, `Authorization`, session tokens, or CSRF headers.
 - Public tenant handlers use `tenant_context`, `tenant_pool`, or `tenant_context_by_subdomain` as appropriate.
 - Do not add handler-local pool, JWT, actor, or tenant-resolution helpers. Do not call `get_school_database_url`, `pool_manager.get_pool`, `PgPool::connect`, lower-level tenant resolvers, or `load_actor_context` directly from feature handlers. The explicit manual migration operation is the exception.
@@ -200,7 +205,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 
 ## 5. API Contracts
 
-- Rust DTOs plus `utoipa` registration in `backend-school/src/api_contract.rs` own the HTTP wire contract.
+- Rust DTOs plus domain-owned `utoipa::path` declarations own the HTTP wire contract.
+  `backend-school/src/api_contract.rs` owns composition and registration of the complete document.
 - Tracked OpenAPI output lives at `contracts/openapi/school-api.json`; generated frontend DTOs live under `frontend-school/src/lib/api/generated/`.
 - When adding or changing an endpoint:
   1. Add typed request/response DTOs and `ToSchema` as needed.

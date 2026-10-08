@@ -14,6 +14,7 @@ on:
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
       - "backend-school/src/main.rs"
+      - "backend-school/src/http_state.rs"
       - "backend-school/src/modules/**"
       - "backend-school/tests/static_architecture.rs"
       - "frontend-school/src/lib/api/**"
@@ -39,6 +40,7 @@ on:
       - "backend-school/src/api_contract.rs"
       - "backend-school/src/api_response.rs"
       - "backend-school/src/main.rs"
+      - "backend-school/src/http_state.rs"
       - "backend-school/src/modules/**"
       - "backend-school/tests/static_architecture.rs"
       - "frontend-school/src/lib/api/**"
@@ -159,6 +161,10 @@ jobs:
         working-directory: backend-school
         run: cargo test -p school-academic-assessment --lib
 
+      - name: HTTP and extracted service owner tests
+        working-directory: backend-school
+        run: cargo test -p school-auth-http -p school-academic-http -p school-certificates-http -p school-notifications --lib
+
       - name: Test exporter logging boundary
         working-directory: backend-school
         run: cargo test structured_logging --test static_architecture
@@ -231,6 +237,12 @@ jobs:
 
       - name: Test curriculum migration preservation and refusal
         run: ./scripts/test_backend_school.sh curriculum_revision_schema_tests -- --test-threads=1
+
+      - name: Test navigation persistence and policy
+        run: ./scripts/test_backend_school.sh --package school-navigation -- --test-threads=4
+
+      - name: Test narrow HTTP state and tenant isolation
+        run: ./scripts/test_backend_school.sh modules::school::public_tests -- --test-threads=4
 
       - name: Test Academic Core consumers
         run: ./scripts/test_backend_school.sh modules::academic::core::services_tests -- --test-threads=4

@@ -643,7 +643,7 @@ test('student and parent history selectors use learner-scoped academic context e
 	const parentsApi = await readProjectFile('src/lib/api/parents.ts');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
 	const coreHandlers = await readFile(
-		path.join(repoRoot, 'backend-school/src/modules/academic/core/handlers.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/core/handlers.rs'),
 		'utf8'
 	);
 	const coreService = await readFile(
@@ -762,7 +762,7 @@ test('public calendar loads date ranges without academic context discovery', asy
 	const view = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
 	const handlers = await readFile(
-		path.join(repoRoot, 'backend-school/src/modules/academic/core/handlers.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/core/handlers.rs'),
 		'utf8'
 	);
 

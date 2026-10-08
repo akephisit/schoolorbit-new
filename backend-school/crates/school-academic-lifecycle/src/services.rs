@@ -66,7 +66,7 @@ pub use promotion_impacts::get_promotion_impacts;
 pub use term_preparation::{apply as apply_term_preparation, preview as preview_term_preparation};
 
 pub async fn get_workspace(
-    external: &impl crate::ports::ExternalLifecyclePort,
+    external: &dyn crate::ports::ExternalLifecyclePort,
     pool: &sqlx::PgPool,
     actor: &school_authorization::ActorContext,
     year: uuid::Uuid,

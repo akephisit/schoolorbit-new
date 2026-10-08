@@ -186,6 +186,37 @@ it does not eliminate the final application build. OpenAPI documents were identi
 warm Cargo measurements, not complete build/push/deployment timings. The first changed workspace
 graph may require dependency-cache priming before those savings apply.
 
+Academic and certificate handlers now compile in `school-academic-http` and
+`school-certificates-http`. Menu models, templates, route synchronization and feature
+toggles compile in `school-navigation`; notification persistence, tenant/user events,
+publishing and Web Push compile in `school-notifications`. `school-auth-http` provides
+their shared HTTP authentication context. The application owns routing, middleware,
+startup and OpenAPI composition, and supplies narrow realtime, result-lock, lifecycle
+and file-deletion adapters through `FromRef`. All contexts retain the same process-owned
+identity and permission caches. New crates must never depend on the application or
+accept its whole `AppState`.
+
+Use the manual [HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml)
+to compare the pre-extraction commit and a candidate on one Docker runner. Its two samples
+per source owner separate first-graph priming from warm compilation and record rebuilt
+packages, binary size, persistent-target reuse and exact OpenAPI equality. This comparison
+disables sccache to isolate Cargo invalidation; use production build statistics to assess
+cross-runner compiler-cache hits. A changed workspace graph may make its first image build
+slower while dependency caches are populated. Do not equate a warm Cargo result with
+the entire build, push, deployment, or request latency.
+
+The [paired extraction experiment](https://github.com/akephisit/schoolorbit-new/actions/runs/37749256658)
+used baseline `75b46a68`, candidate `27c5aba8`, the same Docker container and two
+source-changing samples per case. Mean warm Cargo time changed from 265.4 to 236.5
+seconds for application edits, 282.1 to 264.8 for Academic HTTP, 268.8 to 246.6 for
+Certificates HTTP, 269.5 to 232.9 for Navigation, and 258.5 to 235.6 for Notifications.
+Application edits rebuilt only the application; each extracted-owner edit rebuilt
+that owner and the application, with no other domain rebuild. All twenty OpenAPI
+exports were byte-identical to baseline. Unchanged target reuse took 0.40 seconds.
+The candidate's first graph prime took 7m30s and is excluded from these means;
+the binary grew from 109.2 to 111.2 MiB (about 1.8%). These two-sample compile savings
+do not establish a percentage reduction in complete deployment time.
+
 The pinned Rust toolchain already passes `-fuse-ld=lld` on this Linux target. Selecting lld again
 does not remove compiler work. The manual build benchmark records the actual driver flag and
 compares default/GNU BFD/lld using the same object files. Keep production optimization unchanged

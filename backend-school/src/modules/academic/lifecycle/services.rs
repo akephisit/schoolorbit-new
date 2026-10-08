@@ -2,9 +2,8 @@ pub use school_academic_lifecycle::services::{
     approve_run, calculate_run, create_promotion_policy, create_run, execute_run,
     get_activation_workspace, get_opening_policy, get_promotion_impacts,
     get_promotion_policy_options, get_run_workspace, get_year_reopening_workspace,
-    get_year_workspace, list_promotion_policies, list_runs, preview_term_preparation,
-    resolve_promotion_impact, review_item, update_opening_policy, year_reopening_command,
-    year_transitions,
+    get_year_workspace, list_promotion_policies, list_runs, resolve_promotion_impact, review_item,
+    update_opening_policy, year_reopening_command, year_transitions,
 };
 
 #[cfg(test)]
@@ -38,20 +37,6 @@ pub async fn get_workspace(
         actor,
         year,
         term,
-    )
-    .await
-}
-
-pub async fn apply_term_preparation(
-    pool: &PgPool,
-    actor: &ActorContext,
-    input: ApplyTermPreparationInput,
-) -> Result<TermPreparationOutcome, AppError> {
-    school_academic_lifecycle::services::apply_term_preparation(
-        &LIFECYCLE_PROVIDERS,
-        pool,
-        actor,
-        input,
     )
     .await
 }

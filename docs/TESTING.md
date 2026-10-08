@@ -42,6 +42,15 @@ for changed application modules. For API-contract work:
 cargo test api_contract::tests -- --nocapture
 ```
 
+HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
+`cargo test -p school-academic-http`, `cargo test -p school-certificates-http`,
+`cargo test -p school-navigation`, and `cargo test -p school-notifications`.
+The application owns `FromRef` state selection and injected realtime, result-lock,
+lifecycle and file-deletion adapters. Architecture guards inspect the actual crate
+implementation paths; root cross-domain/database fixtures retain their original
+application-level ownership. Keep the full OpenAPI artifact byte-identical when
+moving handlers without changing their contract.
+
 Foundation ownership can be checked independently:
 
 ```bash
@@ -82,8 +91,9 @@ normal release dependency trees must expose neither `test-support` nor `school-t
 
 `school-auth` owns session credentials, policy, persistence, throttling, audit events, the identity
 cache, user-profile domain operations, and the root-independent auth runtime. Its package tests use
-dev-only database and test-support edges. The application package retains Axum handlers,
-cookie/CSRF and origin adapters, File Platform profile-image orchestration, and deliberate
+dev-only database and test-support edges. `school-auth-http` owns cookie/CSRF, origin, trusted-client-address and tenant/session
+request-context adapters. The application package retains login/profile Axum handlers,
+File Platform profile-image orchestration, and deliberate
 cross-domain tests such as staff soft-delete followed by session invalidation.
 
 Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh modules::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
@@ -156,6 +166,16 @@ sequentially on one runner before attributing a change to a flag: different host
 can produce substantially different timings. A runtime performance claim requires a separate
 representative load test; exporter equality establishes the API contract only.
 
+The manual [Backend HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml)
+compares a selected pre-extraction commit with the workflow's candidate commit. Both use
+the production Docker builder, two CPU quota, the same release profile, and one persistent
+Cargo target. It makes two source changes in each of the application, Academic HTTP,
+Certificates HTTP, Navigation, and Notifications owners. Initial dependency/graph priming,
+unchanged target reuse, compiled package names, binary sizes, Cargo timing reports, and
+exact OpenAPI equality are recorded separately. The source-changing comparison disables
+the compiler wrapper to measure Cargo invalidation; production sccache hits/misses must be
+assessed in the actual image-build artifacts.
+
 `school-workflow`, `school-question-bank`, `school-admission`, `school-supervision`,
 `school-students`, `school-staff`, and `school-calendar` own their domain models, policies where
 applicable, persistence, business rules, and focused tests. Root keeps HTTP/OpenAPI composition,
@@ -172,8 +192,17 @@ relationships, and cross-domain file authorization remain in the application pac
 `school-crypto` is the only application-field encryption and blind-index implementation.
 `school-fonts` owns the school font library and its typed staging relationships.
 `school-certificates` owns certificate policy, layout, issuance, rendering, verification, rate
-limiting, and purge behavior. Their Axum handlers, request context, OpenAPI composition, and
-cross-domain deletion orchestration remain in the application package. Use at most eight test
+limiting, and purge behavior. `school-certificates-http` owns its handlers and API declarations;
+the application composes OpenAPI and supplies the cross-domain file-deletion adapter.
+`school-academic-http` owns academic handlers and their request policies, while the six
+academic domain crates retain business logic and transactions. Both HTTP owners receive
+concrete narrow state through application-owned `FromRef` implementations.
+`school-auth-http` owns the shared session-derived request context, tenant-origin resolution,
+client-address checks, and cookie/CSRF helpers. It uses the existing `AuthRuntime` and shared
+permission/identity caches, with no application dependency. Navigation owns menu persistence,
+templates, route synchronization and feature toggles; Notifications owns persistence,
+tenant/user events, the publisher and Web Push. Startup, routing, middleware and realtime
+connection management remain in the application. Use at most eight test
 threads for the database-heavy font and certificate package suites so concurrent migration
 fixtures do not exhaust the disposable PostgreSQL instance.
 

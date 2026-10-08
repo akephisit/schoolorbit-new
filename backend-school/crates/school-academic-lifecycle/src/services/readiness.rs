@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 #[doc(hidden)]
 pub async fn workspace_in_transaction(
-    external: &impl ExternalLifecyclePort,
+    external: &dyn ExternalLifecyclePort,
     tx: &mut Transaction<'_, Postgres>,
     actor: &ActorContext,
     year: Uuid,

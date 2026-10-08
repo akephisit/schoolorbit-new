@@ -39,7 +39,7 @@ fn school_dependencies_in_section(manifest: &str, section: &str) -> BTreeSet<Str
 #[test]
 fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
+        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
     ));
     let service = strip_comments(&read_source(
         workspace_crate_dir("school-academic-timetable")
@@ -206,7 +206,53 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
-    let approved_graph: [(&str, &[&str]); 25] = [
+    let approved_graph: [(&str, &[&str]); 30] = [
+        (
+            "school-auth-http",
+            &[
+                "school-auth",
+                "school-authorization",
+                "school-errors",
+                "school-http",
+                "school-tenancy",
+            ],
+        ),
+        (
+            "school-academic-http",
+            &[
+                "school-academic-assessment",
+                "school-academic-core",
+                "school-academic-delivery",
+                "school-academic-lifecycle",
+                "school-academic-results",
+                "school-academic-timetable",
+                "school-auth",
+                "school-auth-http",
+                "school-authorization",
+                "school-errors",
+                "school-http",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-certificates-http",
+            &[
+                "school-auth",
+                "school-auth-http",
+                "school-certificates",
+                "school-errors",
+                "school-file-platform",
+                "school-fonts",
+                "school-http",
+                "school-permissions",
+                "school-staff",
+            ],
+        ),
+        (
+            "school-navigation",
+            &["school-authorization", "school-errors"],
+        ),
+        ("school-notifications", &["school-errors"]),
         ("school-permissions", &[]),
         ("school-migrations", &["school-permissions"]),
         ("school-errors", &[]),
@@ -1152,7 +1198,7 @@ fn school_tenancy_is_the_single_tenant_runtime_owner() {
     assert!(!manifest_dir().join("src/db/pool_manager.rs").exists());
     assert!(!manifest_dir().join("src/db/school_mapping.rs").exists());
 
-    let request_adapter = read_source(manifest_dir().join("src/utils/tenant.rs"));
+    let request_adapter = read_source(manifest_dir().join("crates/school-auth-http/src/tenant.rs"));
     let pool_manager =
         read_source(workspace_crate_dir("school-tenancy").join("src/pool_manager.rs"));
     assert!(request_adapter.contains("HeaderMap"));
@@ -1249,7 +1295,7 @@ fn crypto_fonts_and_certificates_have_singular_workspace_owners() {
             .exists());
     }
     assert!(manifest_dir()
-        .join("src/modules/certificates/handlers.rs")
+        .join("crates/school-certificates-http/src/handlers.rs")
         .exists());
     assert!(manifest_dir()
         .join("src/modules/certificates/schema_tests.rs")
@@ -1300,7 +1346,7 @@ fn school_auth_is_the_single_session_runtime_owner() {
             .exists());
     }
     assert!(
-        !read_source(manifest_dir().join("src/modules/notification/events.rs"))
+        !read_source(manifest_dir().join("crates/school-notifications/src/events.rs"))
             .contains("pub struct PermissionChangeEvent")
     );
 
@@ -1420,7 +1466,7 @@ fn assert_typed_session_handlers(paths: &[&str]) {
             source.contains("Extension(session): Extension<AuthenticatedSession>"),
             "{path} must extract the central authenticated session"
         );
-        assert!(!source.contains("actor_tenant_context(&state, &headers)"));
+        assert!(!source.contains("actor_tenant_context(&state.auth_runtime, &headers)"));
         assert!(!source.contains("current_user_tenant_context_from_headers"));
     }
 }
@@ -1451,16 +1497,17 @@ fn people_and_platform_handlers_use_typed_session_identity() {
 #[test]
 fn academic_group_a_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
-        "src/modules/academic/gradebook/handlers.rs",
-        "src/modules/academic/results/handlers.rs",
-        "src/modules/academic/core/handlers.rs",
-        "src/modules/academic/handlers/assessment.rs",
+        "crates/school-academic-http/src/gradebook/handlers.rs",
+        "crates/school-academic-http/src/results/handlers.rs",
+        "crates/school-academic-http/src/core/handlers.rs",
+        "crates/school-academic-http/src/handlers/assessment.rs",
     ]);
 }
 
 #[test]
 fn gradebook_handlers_keep_database_and_authorization_in_services() {
-    let handlers = read_source(manifest_dir().join("src/modules/academic/gradebook/handlers.rs"));
+    let handlers =
+        read_source(manifest_dir().join("crates/school-academic-http/src/gradebook/handlers.rs"));
     for forbidden in ["sqlx::query", ".fetch_", ".execute(", ".begin(", "PgPool"] {
         assert!(
             !handlers.contains(forbidden),
@@ -1490,7 +1537,8 @@ fn gradebook_handlers_keep_database_and_authorization_in_services() {
 
 #[test]
 fn academic_result_handlers_keep_database_and_authorization_in_services() {
-    let handlers = read_source(manifest_dir().join("src/modules/academic/results/handlers.rs"));
+    let handlers =
+        read_source(manifest_dir().join("crates/school-academic-http/src/results/handlers.rs"));
     for forbidden in ["sqlx::query", ".fetch_", ".execute(", ".begin(", "PgPool"] {
         assert!(
             !handlers.contains(forbidden),
@@ -1519,9 +1567,9 @@ fn academic_result_handlers_keep_database_and_authorization_in_services() {
 #[test]
 fn academic_group_b_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
-        "src/modules/academic/handlers/exam_schedule.rs",
-        "src/modules/academic/handlers/timetable_blocks.rs",
-        "src/modules/academic/handlers/timetable_templates.rs",
+        "crates/school-academic-http/src/handlers/exam_schedule.rs",
+        "crates/school-academic-http/src/handlers/timetable_blocks.rs",
+        "crates/school-academic-http/src/handlers/timetable_templates.rs",
     ]);
 }
 
@@ -1547,14 +1595,14 @@ fn remaining_vertical_handlers_use_typed_session_identity() {
 fn only_auth_boundary_parses_browser_session_credentials() {
     let credential_boundaries = [
         "src/middleware/session.rs",
-        "src/modules/auth/http.rs",
+        "crates/school-auth-http/src/cookies.rs",
         "src/modules/auth/session_handlers.rs",
         "src/modules/academic/websockets.rs",
     ];
     let cookie_name_owners = [
         "src/middleware/session.rs",
         "crates/school-auth/src/config.rs",
-        "src/modules/auth/http.rs",
+        "crates/school-auth-http/src/cookies.rs",
         "src/modules/auth/session_handlers.rs",
         "src/modules/academic/websockets.rs",
     ];
@@ -1576,7 +1624,7 @@ fn only_auth_boundary_parses_browser_session_credentials() {
         }
     }
 
-    let context = read_source(manifest_dir().join("src/utils/request_context.rs"));
+    let context = read_source(manifest_dir().join("crates/school-auth-http/src/context.rs"));
     assert!(!context.contains("_from_headers"));
     assert!(!context.contains("HeaderMap"));
 }
@@ -1811,7 +1859,7 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
 #[test]
 fn personal_staff_timetable_stays_exact_own_scope_without_academic_list_permission() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
+        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
     ));
     let handler = extract_braced_block(&handlers, "pub async fn get_my_timetable", false);
 
@@ -2467,9 +2515,20 @@ fn backend_rs_files() -> Vec<PathBuf> {
 }
 
 fn module_rs_files() -> Vec<PathBuf> {
-    list_files(manifest_dir().join("src/modules"), |path| {
-        path.extension().is_some_and(|ext| ext == "rs") && !is_rust_test_module(path)
+    [
+        manifest_dir().join("src/modules"),
+        workspace_crate_dir("school-academic-http").join("src"),
+        workspace_crate_dir("school-certificates-http").join("src"),
+        workspace_crate_dir("school-navigation").join("src"),
+        workspace_crate_dir("school-notifications").join("src"),
+    ]
+    .into_iter()
+    .flat_map(|root| {
+        list_files(root, |path| {
+            path.extension().is_some_and(|ext| ext == "rs") && !is_rust_test_module(path)
+        })
     })
+    .collect()
 }
 
 fn is_rust_test_module(path: &Path) -> bool {
@@ -2512,41 +2571,27 @@ fn strip_cfg_test_modules(source: &str) -> String {
 }
 
 fn module_handler_files() -> Vec<PathBuf> {
-    let modules_dir = manifest_dir().join("src/modules");
-    list_files(&modules_dir, |path| {
-        if path.extension().is_none_or(|ext| ext != "rs") {
-            return false;
-        }
-        if is_rust_test_module(path) {
-            return false;
-        }
-
-        let Ok(relative_path) = path.strip_prefix(&modules_dir) else {
-            return false;
-        };
-        let path_text = relative_path.to_string_lossy().replace('\\', "/");
-
-        path_text.ends_with("/handlers.rs") || path_text.contains("/handlers/")
-    })
+    module_rs_files()
+        .into_iter()
+        .filter(|path| {
+            let text = path.to_string_lossy().replace('\\', "/");
+            text.ends_with("/handlers.rs")
+                || text.ends_with("/version_handlers.rs")
+                || text.contains("/handlers/")
+        })
+        .collect()
 }
 
 fn module_service_files() -> Vec<PathBuf> {
-    let modules_dir = manifest_dir().join("src/modules");
-    list_files(&modules_dir, |path| {
-        if path.extension().is_none_or(|ext| ext != "rs") {
-            return false;
-        }
-        if is_rust_test_module(path) {
-            return false;
-        }
-
-        let Ok(relative_path) = path.strip_prefix(&modules_dir) else {
-            return false;
-        };
-        let path_text = relative_path.to_string_lossy().replace('\\', "/");
-
-        path_text.ends_with("/services.rs") || path_text.contains("/services/")
-    })
+    module_rs_files()
+        .into_iter()
+        .filter(|path| {
+            let text = path.to_string_lossy().replace('\\', "/");
+            text.ends_with("/services.rs")
+                || text.contains("/services/")
+                || text.ends_with("school-notifications/src/publisher.rs")
+        })
+        .collect()
 }
 
 fn is_reexport_only_service_file(source: &str) -> bool {
@@ -2769,7 +2814,7 @@ fn certificate_campaign_hard_delete_exists_only_in_the_guarded_forward_migration
 
 #[test]
 fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral() {
-    let handlers_path = manifest_dir().join("src/modules/certificates/handlers.rs");
+    let handlers_path = manifest_dir().join("crates/school-certificates-http/src/handlers.rs");
     let handlers = strip_comments(&read_source(&handlers_path));
     let certificate_services = list_files(
         workspace_crate_dir("school-certificates").join("src/services"),
@@ -2814,7 +2859,7 @@ fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral(
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
         assert!(
-            handler.contains("tenant_context(&state, &headers).await?"),
+            handler.contains("tenant_context(&state.auth_runtime, &headers).await?"),
             "public handler `{handler_name}` must resolve only public tenant context"
         );
         assert!(
@@ -3444,7 +3489,7 @@ fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
 fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     let routes = strip_comments(&read_source(manifest_dir().join("src/modules/academic.rs")));
     let handler = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
+        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
     ));
     let service = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-timetable/src/services/daily_teaching.rs"),
@@ -3457,7 +3502,8 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     assert!(routes.contains("\"/timetable/daily-teaching\""));
     assert!(routes.contains("get(handlers::timetable_blocks::daily_teaching_overview)"));
 
-    assert!(daily_handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
+    assert!(daily_handler
+        .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
     assert!(daily_handler.contains("TimetableAction::Read"));
     assert!(daily_handler.contains("requires_school_scope: true"));
     assert!(daily_handler.contains("daily_teaching_service::get_daily_teaching_overview"));
@@ -3500,13 +3546,14 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 #[test]
 fn academic_core_handlers_are_thin_authorized_and_signal_only_after_mutation() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
     ));
     let context_service = strip_comments(&read_source(
         workspace_crate_dir("school-academic-core").join("src/services/context.rs"),
     ));
 
-    assert!(handlers.contains("actor_tenant_context_from_session(&state, &session).await?"));
+    assert!(handlers
+        .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
     assert!(!handlers.contains("sqlx::query"));
     assert!(!handlers.contains(".fetch_"));
     assert!(!handlers.contains(".execute("));
@@ -3547,7 +3594,8 @@ fn academic_core_handlers_are_thin_authorized_and_signal_only_after_mutation() {
     ] {
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
-        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
+        assert!(handler
+            .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
         assert!(
             handler.contains(&format!("actor.require_permission(codes::{permission})?")),
             "{handler_name} must require {permission}"
@@ -3562,7 +3610,7 @@ fn academic_core_handlers_are_thin_authorized_and_signal_only_after_mutation() {
 #[test]
 fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
     ));
     let cases = [
         ("get_curriculum", "CurriculumAction::Read"),
@@ -3588,7 +3636,8 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
     for (handler_name, action) in cases {
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}("), false);
-        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
+        assert!(handler
+            .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
         assert!(
             (handler.contains("require_academic_curriculum_access")
                 || handler.contains("require_academic_curriculum_list_access"))
@@ -3615,7 +3664,8 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
     ] {
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}("), false);
-        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
+        assert!(handler
+            .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
         assert!(handler.contains("require_academic_curriculum_list_access"));
         assert!(
             handler.contains(action),
@@ -3633,7 +3683,7 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
 #[test]
 fn academic_core_catalog_handlers_enforce_resource_policy_contract() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
     ));
     let cases = [
         ("get_catalog_subject", "CatalogAction::Read"),
@@ -3655,7 +3705,8 @@ fn academic_core_catalog_handlers_enforce_resource_policy_contract() {
     for (handler_name, action) in cases {
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}("), false);
-        assert!(handler.contains("actor_tenant_context_from_session(&state, &session).await?"));
+        assert!(handler
+            .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
         assert!(
             handler.contains("require_academic_catalog_access") && handler.contains(action),
             "{handler_name} must use the catalog resource policy with {action}"
@@ -3737,7 +3788,8 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         strip_comments(&read_source(manifest_dir().join(
             "crates/school-academic-assessment/src/exam_schedule/services/published_views.rs",
         )));
-    let exam_handler_path = manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs");
+    let exam_handler_path =
+        manifest_dir().join("crates/school-academic-http/src/handlers/exam_schedule.rs");
 
     assert!(
         academic_handler_root.contains("pub mod exam_schedule;"),
@@ -3745,7 +3797,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     );
     assert!(
         exam_handler_path.exists(),
-        "academic exam schedule handlers must live in src/modules/academic/handlers/exam_schedule.rs"
+        "academic exam schedule handlers must live in crates/school-academic-http/src/handlers/exam_schedule.rs"
     );
 
     let exam_handler = strip_comments(&read_source(exam_handler_path));
@@ -3892,7 +3944,8 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
 #[test]
 fn academic_curriculum_access_uses_school_permission_policy() {
     let curriculum_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/academic_curriculum_access_policy.rs"),
+        manifest_dir()
+            .join("crates/school-academic-http/src/policies/academic_curriculum_access_policy.rs"),
     ));
 
     assert!(curriculum_policy.contains("ACADEMIC_CURRICULUM_READ_SCHOOL"));
@@ -3906,15 +3959,18 @@ fn academic_curriculum_access_uses_school_permission_policy() {
 
 #[test]
 fn academic_curriculum_permission_decisions_live_in_policy_layer() {
-    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let policies_root =
+        read_source(workspace_crate_dir("school-academic-http").join("src/policies.rs"));
     let catalog_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/academic_catalog_access_policy.rs"),
+        manifest_dir()
+            .join("crates/school-academic-http/src/policies/academic_catalog_access_policy.rs"),
     ));
     let curriculum_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/academic_curriculum_access_policy.rs"),
+        manifest_dir()
+            .join("crates/school-academic-http/src/policies/academic_curriculum_access_policy.rs"),
     ));
     let core_handler = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
     ));
     let catalog_service = strip_comments(&read_source(
         workspace_crate_dir("school-academic-core").join("src/services/catalog.rs"),
@@ -3937,7 +3993,8 @@ fn academic_curriculum_permission_decisions_live_in_policy_layer() {
 
 #[test]
 fn academic_core_resource_policies_preserve_independent_scopes() {
-    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let policies_root =
+        read_source(workspace_crate_dir("school-academic-http").join("src/policies.rs"));
     let shared_policy = strip_comments(&read_source(
         workspace_crate_dir("school-authorization").join("src/academic_resource.rs"),
     ));
@@ -3945,13 +4002,16 @@ fn academic_core_resource_policies_preserve_independent_scopes() {
         workspace_crate_dir("school-authorization").join("src/organization_scope.rs"),
     ));
     let catalog_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/academic_catalog_access_policy.rs"),
+        manifest_dir()
+            .join("crates/school-academic-http/src/policies/academic_catalog_access_policy.rs"),
     ));
     let curriculum_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/academic_curriculum_access_policy.rs"),
+        manifest_dir()
+            .join("crates/school-academic-http/src/policies/academic_curriculum_access_policy.rs"),
     ));
     let offering_policy = strip_comments(&read_source(
-        manifest_dir().join("src/policies/learning_offering_access_policy.rs"),
+        manifest_dir()
+            .join("crates/school-academic-http/src/policies/learning_offering_access_policy.rs"),
     ));
 
     for module in [
@@ -4096,7 +4156,7 @@ fn achievement_access_uses_resource_policy_and_no_plain_stderr_logging() {
 fn activity_offerings_use_the_shared_delivery_resource_policy() {
     let policies_root = read_source(manifest_dir().join("src/policies.rs"));
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
     ));
     let offerings = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
@@ -5222,7 +5282,7 @@ fn auth_responses_use_shared_effective_permission_resolver() {
 fn menu_and_feature_handlers_do_not_parse_auth_or_query_permissions_directly() {
     let checked_files = [
         "src/modules/menu/handlers/admin.rs",
-        "src/modules/menu/services/menu_service.rs",
+        "crates/school-navigation/src/services/menu_service.rs",
         "src/modules/system/handlers/feature_toggles.rs",
     ];
     let forbidden_patterns = Regex::new(
@@ -5243,14 +5303,15 @@ fn menu_and_feature_handlers_do_not_parse_auth_or_query_permissions_directly() {
 
 #[test]
 fn menu_workspace_contract_is_explicit_and_permission_based() {
-    let menu_models = read_source(manifest_dir().join("src/modules/menu/models.rs"));
+    let menu_models = read_source(manifest_dir().join("crates/school-navigation/src/models.rs"));
     let admin_menu_handler = read_source(manifest_dir().join("src/modules/menu/handlers/admin.rs"));
-    let public_menu_service =
-        read_source(manifest_dir().join("src/modules/menu/services/public_menu_service.rs"));
+    let public_menu_service = read_source(
+        manifest_dir().join("crates/school-navigation/src/services/public_menu_service.rs"),
+    );
     let public_menu_handler =
         read_source(manifest_dir().join("src/modules/menu/handlers/public.rs"));
     let route_registration_service = read_source(
-        manifest_dir().join("src/modules/system/services/route_registration_service.rs"),
+        manifest_dir().join("crates/school-navigation/src/services/route_registration_service.rs"),
     );
     let route_migration =
         read_source(manifest_dir().join("migrations/029_configurable_menu_workspaces.sql"));
@@ -5916,7 +5977,8 @@ fn permission_change_sse_supports_user_targeted_and_broadcast_invalidation() {
 
 #[test]
 fn work_change_sse_supports_work_item_and_window_refresh_signals() {
-    let event_source = read_source(manifest_dir().join("src/modules/notification/events.rs"));
+    let event_source =
+        read_source(manifest_dir().join("crates/school-notifications/src/events.rs"));
     let notification_handler =
         read_source(manifest_dir().join("src/modules/notification/handlers.rs"));
     let app_state = read_source(manifest_dir().join("src/main.rs"));
@@ -6200,7 +6262,7 @@ fn mutation_performance_foundation_services_use_bulk_helpers() {
             ["for student in &students"].as_slice(),
         ),
         (
-            "src/modules/menu/services/menu_service.rs",
+            "crates/school-navigation/src/services/menu_service.rs",
             ["reorder_menu_groups"].as_slice(),
             ["for (id, display_order) in &groups"].as_slice(),
         ),
@@ -6573,7 +6635,8 @@ fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live()
 #[test]
 fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
     let routes = read_source(manifest_dir().join("src/modules/academic/delivery.rs"));
-    let handlers = read_source(manifest_dir().join("src/modules/academic/delivery/handlers.rs"));
+    let handlers =
+        read_source(manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"));
     let models = read_source(manifest_dir().join("crates/school-academic-delivery/src/models.rs"));
 
     assert!(routes.contains("\"/learning-groups/{id}/teachers\""));
@@ -6586,7 +6649,7 @@ fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
 #[test]
 fn learning_delivery_handlers_enforce_policy_and_service_boundaries() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
     ));
 
     for handler_name in [
@@ -6602,7 +6665,9 @@ fn learning_delivery_handlers_enforce_policy_and_service_boundaries() {
     ] {
         let body = extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
         assert!(
-            body.contains("actor_tenant_context_from_session(&state, &session).await?"),
+            body.contains(
+                "actor_tenant_context_from_session(&state.auth_runtime, &session).await?"
+            ),
             "{handler_name} must load actor and tenant through the shared request context"
         );
         assert!(
@@ -7548,10 +7613,11 @@ fn academic_core_registers_only_clean_replacement_routes() {
 #[test]
 fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
     ));
 
-    assert!(handlers.contains("actor_tenant_context_from_session(&state, &session).await?"));
+    assert!(handlers
+        .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
     assert!(!handlers.contains("sqlx::query"));
     assert!(!handlers.contains(".fetch_"));
     assert!(!handlers.contains(".execute("));
@@ -7683,7 +7749,7 @@ fn operational_academic_changes_register_authorized_contract_routes() {
         manifest_dir().join("src/modules/academic/delivery.rs"),
     ));
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
     ));
 
     for required in [
@@ -7705,7 +7771,7 @@ fn operational_academic_changes_register_authorized_contract_routes() {
 
     assert!(!routes.contains("/term-change-sets/{id}/cancel"));
     let version_handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/version_handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/delivery/version_handlers.rs"),
     ));
     let delete = extract_braced_block(&version_handlers, "pub async fn delete_version", false);
     assert!(delete.contains("OfferingAction::Manage"));
@@ -7759,7 +7825,7 @@ fn learning_delivery_contract_is_strictly_tagged_idempotent_and_pii_safe() {
         manifest_dir().join("crates/school-academic-delivery/src/models.rs"),
     ));
     let websockets = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/websockets.rs"),
+        manifest_dir().join("crates/school-academic-http/src/realtime.rs"),
     ));
     let signal = extract_braced_block(&websockets, "LearningDeliveryChanged", false);
 
@@ -7821,10 +7887,10 @@ fn academic_runtime_contract_supports_delivery_idempotency_without_plaintext_pii
 fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
     let mut runtime_files = vec![
         manifest_dir().join("src/modules/academic.rs"),
-        manifest_dir().join("src/modules/academic/handlers/assessment.rs"),
-        manifest_dir().join("src/modules/academic/handlers/exam_schedule.rs"),
-        manifest_dir().join("src/modules/academic/handlers/timetable_blocks.rs"),
-        manifest_dir().join("src/modules/academic/handlers/timetable_templates.rs"),
+        manifest_dir().join("crates/school-academic-http/src/handlers/assessment.rs"),
+        manifest_dir().join("crates/school-academic-http/src/handlers/exam_schedule.rs"),
+        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
+        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_templates.rs"),
         manifest_dir().join("crates/school-academic-assessment/src/assessment/models.rs"),
         manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/models.rs"),
         manifest_dir().join("crates/school-academic-timetable/src/models/timetable.rs"),
@@ -8066,7 +8132,7 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
         manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
     ));
     let delivery_handlers = strip_comments(&read_source(
-        manifest_dir().join("src/modules/academic/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
     ));
     let timetable = strip_comments(&read_source(
         manifest_dir()
@@ -8341,7 +8407,7 @@ fn academic_routes_expose_staff_level_invigilator_actions() {
 
 #[test]
 fn exam_schedule_handler_uses_staff_level_invigilator_services() {
-    let source = include_str!("../src/modules/academic/handlers/exam_schedule.rs");
+    let source = include_str!("../crates/school-academic-http/src/handlers/exam_schedule.rs");
 
     assert!(source.contains("pub async fn assign_assignment_invigilator"));
     assert!(source.contains("pub async fn remove_assignment_invigilator"));

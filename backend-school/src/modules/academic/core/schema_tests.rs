@@ -1132,6 +1132,17 @@ async fn migration_043_maps_all_consumers() {
         })
         .map(str::to_string)
         .collect();
+    // This fixture stops at migration 043. Migration 094 later retires the four
+    // scoped curriculum capabilities, so the current lock omits them.
+    contract_academic_codes.extend(
+        [
+            "academic_curriculum.read.organization_unit",
+            "academic_curriculum.read.organization_tree",
+            "academic_curriculum.manage.organization_unit",
+            "academic_curriculum.manage.organization_tree",
+        ]
+        .map(str::to_string),
+    );
     contract_academic_codes.sort();
 
     let active_database_academic_codes: Vec<String> = sqlx::query_scalar(
@@ -1572,7 +1583,21 @@ async fn migration_runner_applies_authorized_cleanup_and_preserves_active_permis
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(active_target_permissions, 27);
+    // The full runner includes migration 094's school-only curriculum policy.
+    assert_eq!(active_target_permissions, 23);
+    let retired_curriculum_permissions: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*) FROM permissions
+           WHERE is_active AND code IN (
+               'academic_curriculum.read.organization_unit',
+               'academic_curriculum.read.organization_tree',
+               'academic_curriculum.manage.organization_unit',
+               'academic_curriculum.manage.organization_tree'
+           )"#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(retired_curriculum_permissions, 0);
 
     let legacy_definition_and_grant_count: i64 = sqlx::query_scalar(
         r#"SELECT COUNT(*)

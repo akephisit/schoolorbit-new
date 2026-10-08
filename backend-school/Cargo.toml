@@ -1,5 +1,10 @@
 [workspace]
 members = [
+    "crates/school-academic-http",
+    "crates/school-certificates-http",
+    "crates/school-auth-http",
+    "crates/school-notifications",
+    "crates/school-navigation",
     "crates/school-errors",
     "crates/school-http",
     "crates/school-authorization",
@@ -109,6 +114,16 @@ school-file-platform = { path = "crates/school-file-platform" }
 school-fonts = { path = "crates/school-fonts" }
 school-certificates = { path = "crates/school-certificates" }
 
+school-navigation = { path = "crates/school-navigation" }
+
+school-notifications = { path = "crates/school-notifications" }
+
+school-auth-http = { path = "crates/school-auth-http" }
+
+school-certificates-http = { path = "crates/school-certificates-http" }
+
+school-academic-http = { path = "crates/school-academic-http" }
+
 [package]
 name = "backend-school"
 version.workspace = true
@@ -173,6 +188,16 @@ school-tenancy = { workspace = true }
 school-file-platform = { workspace = true }
 school-fonts = { workspace = true }
 school-certificates = { workspace = true }
+
+school-navigation = { workspace = true }
+
+school-notifications = { workspace = true }
+
+school-auth-http = { workspace = true }
+
+school-certificates-http = { workspace = true }
+
+school-academic-http = { workspace = true }
 
 [dev-dependencies]
 school-supervision = { workspace = true, features = ["integration-test-support"] }

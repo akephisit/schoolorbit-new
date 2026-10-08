@@ -1,0 +1,25 @@
+[package]
+name = "school-navigation"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hex = { workspace = true }
+school-authorization = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+school-errors = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-permissions = { workspace = true }
+school-test-db = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
