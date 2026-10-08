@@ -189,7 +189,7 @@ transaction-scoped lifecycle operations. Its pure tests run with
 `cargo test -p school-academic-assessment --lib`; the existing application exam-schedule
 database fixtures continue to exercise the HTTP/lifecycle adapters and shared transactions.
 
-The manual [Backend Build Benchmark](../.github/workflows/backend-build-benchmark.yml) uses
+The Operations `benchmark` task calls [Backend Build Benchmark](../.github/workflows/backend-build-benchmark.yml) and uses
 the pinned Docker builder for both backends. It records repeated source-changing Cargo/link
 times, binary size, unchanged persistent-target reuse, and exact School OpenAPI equality.
 Compiler options apply only to the application package; dependency optimization stays unchanged.
@@ -198,7 +198,7 @@ sequentially on one runner before attributing a change to a flag: different host
 can produce substantially different timings. A runtime performance claim requires a separate
 representative load test; exporter equality establishes the API contract only.
 
-The manual [Backend HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml)
+The Operations `http-benchmark` task calls [Backend HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml) and
 compares a selected pre-extraction commit with the workflow's candidate commit. Both use
 the production Docker builder, two CPU quota, the same release profile, and one persistent
 Cargo target. It makes two source changes in each of the application, Academic HTTP,
@@ -484,8 +484,9 @@ again before unpacking. Test targets and release binaries never share interchang
 
 Backend verification uses `setup-contract-rust` before restoring a source-keyed target cache.
 Only unchanged, content-verified source files have their checkout timestamps normalized; edited
-files are forced newer than the saved compile outputs. Main runs the database owners and saves
-the new compiled snapshot even when other equivalent PR checks are reused. The setup removes
+files are forced newer than the saved compile outputs. Main primes the selected compiler targets
+after exact-tree PR fixture verification is proven; otherwise it runs the complete database owners.
+Compiler snapshots remain separate from verification receipts. The setup removes
 unused preinstalled toolchains only on the disposable GitHub runner. Do not run this runner setup on a developer machine. The offline OpenAPI gate
 executes the binary already compiled by `check:api-contracts` under `env -i`; it still verifies export
 without runtime configuration while preserving the compiler environment used to build the binary.
@@ -524,7 +525,7 @@ Commit the contract, `contracts/permissions.lock.json`, backend registry, fronte
 
 ## API Contract
 
-The API Contract workflow also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the Docker database runner. Frontend validation includes full lint; all jobs remain independent and pull requests do not save the shared Rust cache.
+The Pipeline Backend School verification owner also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the Docker database runner. Frontend validation includes full lint. Pull requests restore the shared Rust cache; main owns compiler snapshot writes and reuses fixture results only under the exact-tree evidence rules above.
 
 Rust DTOs and OpenAPI annotations own the wire contract. The tracked output is `contracts/openapi/school-api.json`; generated TypeScript lives under `frontend-school/src/lib/api/generated/`. These are generated files; do not edit generated files directly.
 
@@ -725,7 +726,7 @@ Response bodies remain in the smoke script's private temporary directory and are
 
 ### Manual Neon migration compatibility
 
-[Backend School Neon Compatibility](../.github/workflows/backend-school-neon-compatibility.yml) is an explicit `workflow_dispatch` gate. Configure names only in repository settings; never put their values in source:
+The Operations `neon` task calls [Backend School Neon Compatibility](../.github/workflows/backend-school-neon-compatibility.yml) with `options={"confirm_disposable_branch":true}`. Configure names only in repository settings; never put their values in source:
 
 ```text
 Secret:    NEON_TEST_API_KEY
@@ -737,7 +738,7 @@ Variables: NEON_TEST_PROJECT_ID
 
 The project and parent branch must be dedicated to testing and contain no production data. Each confirmed run creates a unique ordinary copy-on-write child branch from that parent, retrieves a direct non-pooled connection URI, and provisions `uuid-ossp` plus `pg_trgm` explicitly in the child's `public` schema before migration/schema tests. The tests then create isolated schemas and run the active migrations themselves, so the parent needs only the configured empty database and an owner role allowed to create those Neon-supported extensions. The create request deliberately omits `suspend_timeout_seconds` because the test account owns that setting and rejects attempts to modify it. Branch ownership outputs are published before connection retrieval so later failures still clean up; the two-hour expiration is a fallback if finalization cannot run. API failures expose only bounded, sanitized code/message fields. The gate never requests a pooled URI because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
 
-The manual workflow defaults to `test_scope=full`, which retains all staff, auth, file, and academic compatibility selections. Select `test_scope=course-zero-periods` for migration 090 and the zero-course opening/publication lifecycle, including rejection of negative targets, preserved curriculum/teachers/history, zero waiting demand, refused new placement and explicit removal of existing lessons. Select `test_scope=timetable-subject-groups` for the focused timetable report metadata regression; it exercises the real course and current staff affiliation queries after migration 060 and retains nonempty-test enforcement, disposable branch creation, expiry, and cleanup.
+The Operations task defaults to `test_scope=full`, which retains all staff, auth, file, and academic compatibility selections. Add `"test_scope":"course-zero-periods"` to `options` for migration 090 and the zero-course opening/publication lifecycle, including rejection of negative targets, preserved curriculum/teachers/history, zero waiting demand, refused new placement and explicit removal of existing lessons. Add `"test_scope":"timetable-subject-groups"` for the focused timetable report metadata regression; it exercises the real course and current staff affiliation queries after migration 060 and retains nonempty-test enforcement, disposable branch creation, expiry, and cleanup.
 
 The backend static architecture suite validates that active migrations remain a contiguous timeline beginning at `001_baseline.sql`. Runtime rollout and all-tenant migration verification are documented in [Operations](./OPERATIONS.md).
 

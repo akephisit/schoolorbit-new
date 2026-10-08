@@ -54,8 +54,8 @@ API and permission types are generated contracts. Follow the workflows in [`.rul
 - `PUBLIC_BACKEND_URL` selects backend-school.
 - `PUBLIC_SCHOOL_SUBDOMAIN` is an optional explicit tenant override.
 - `PUBLIC_VAPID_KEY` configures Web Push.
-- `npm run sync:menu-routes` requires server-only `DEPLOY_KEY` and `SUBDOMAIN`; deployment
-  workflows run it after the Worker deploys and fail if synchronization is incomplete.
+- `npm run sync:menu-routes` requires server-only `DEPLOY_KEY` and `SUBDOMAIN`; Pipeline
+  synchronizes routes through VPS loopback before acceptance and fails if synchronization is incomplete.
 
 Do not expose backend secrets through `PUBLIC_*` or Vite variables.
 
