@@ -435,7 +435,10 @@ async fn cloned_timetable_version_preserves_exact_instructor_sets() {
 #[test]
 fn academic_routes_expose_timetable_version_workflow() {
     let routes = include_str!("../../academic.rs");
-    let handlers = include_str!("../handlers/timetable_versions.rs");
+    let handlers = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/school-academic-http/src/handlers/timetable_versions.rs"
+    ));
 
     assert!(routes.contains("/timetable-versions"));
     assert!(routes.contains("/timetable-versions/resolve"));
