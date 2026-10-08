@@ -1,0 +1,25 @@
+name: Setup Chromium
+description: Cache the exact Playwright headless shell and install its host dependencies.
+runs:
+  using: composite
+  steps:
+    - name: Resolve installed Playwright version
+      id: version
+      shell: bash
+      working-directory: frontend-school
+      run: |
+        version="$(node -p 'require("playwright-core/package.json").version')"
+        printf 'version=%s\n' "$version" >>"$GITHUB_OUTPUT"
+
+    - name: Restore Chromium headless shell
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ms-playwright
+        key: chromium-headless-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+
+    - name: Install Chromium for application mount check
+      shell: bash
+      working-directory: frontend-school
+      # Host dependencies are not files in the browser cache. Always verify/install them.
+      # Playwright validates the browser revision even when the cache reported a hit.
+      run: npx playwright install --with-deps --only-shell chromium

@@ -40,8 +40,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browser
-        working-directory: frontend-school
-        run: npx playwright install --with-deps chromium
+        uses: ./.github/actions/setup-chromium
 
       - name: Require sandbox credentials
         shell: bash

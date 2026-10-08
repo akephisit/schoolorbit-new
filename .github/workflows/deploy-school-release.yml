@@ -21,6 +21,7 @@ on:
       - "scripts/clamd_runtime_matches.sh"
       - "scripts/reconcile_r2_cors.sh"
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+      - ".github/actions/setup-chromium/**"
       - ".github/workflows/deploy-school-release.yml"
   workflow_dispatch:
     inputs:
@@ -339,6 +340,14 @@ jobs:
             exit 1
           fi
 
+      - name: Configure sccache cache runtime
+        if: steps.existing-backend-image.outputs.exists != 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
+
       - name: Build and push Docker image
         if: steps.existing-backend-image.outputs.exists != 'true'
         uses: docker/build-push-action@v7
@@ -350,6 +359,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=backend-school
           cache-to: type=gha,scope=backend-school,mode=max
+          build-args: SCHOOL_COMPILER_CACHE=${{ vars.SCHOOL_COMPILER_CACHE || 'off' }}
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
 
       - name: Export Cargo timing report
         if: steps.existing-backend-image.outputs.exists != 'true'
@@ -360,13 +373,19 @@ jobs:
           push: false
           outputs: type=local,dest=${{ runner.temp }}/cargo-timings-backend-school
           cache-from: type=gha,scope=backend-school
+          build-args: SCHOOL_COMPILER_CACHE=${{ vars.SCHOOL_COMPILER_CACHE || 'off' }}
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
 
       - name: Upload Cargo timing report
         if: steps.existing-backend-image.outputs.exists != 'true'
         uses: actions/upload-artifact@v6
         with:
           name: cargo-timings-backend-school
-          path: ${{ runner.temp }}/cargo-timings-backend-school/cargo-timing.html
+          path: |
+            ${{ runner.temp }}/cargo-timings-backend-school/cargo-timing.html
+            ${{ runner.temp }}/cargo-timings-backend-school/sccache-stats.json
           retention-days: 7
           if-no-files-found: error
 
@@ -389,6 +408,7 @@ jobs:
           printf '%s\n' \
             '### Docker build cache' \
             '- Scope: backend-school' \
+            '- Compiler cache mode: ${{ vars.SCHOOL_COMPILER_CACHE || 'off' }}' \
             '- Layer hits: inspect the Docker build record attached to this job.' \
             >> "$GITHUB_STEP_SUMMARY"
 
@@ -1521,9 +1541,8 @@ jobs:
             sleep 5
           done
 
-      - name: Install Chromium for application mount check
-        working-directory: frontend-school
-        run: npx playwright install --with-deps chromium
+      - name: Setup cached Chromium for application mount check
+        uses: ./.github/actions/setup-chromium
 
       - name: Verify promoted frontend readiness
         working-directory: frontend-school
@@ -1532,7 +1551,14 @@ jobs:
         run: node scripts/verify-tenant-worker-readiness.mjs
 
   accept-release:
-    needs: [resolve-scope, build-backend, stage-frontends, deploy-backend, promote-frontends]
+    needs:
+      [
+        resolve-scope,
+        build-backend,
+        stage-frontends,
+        deploy-backend,
+        promote-frontends,
+      ]
     if: >-
       ${{ always() && needs.resolve-scope.result == 'success' &&
           (needs.resolve-scope.outputs.needs_frontend != 'true' ||
@@ -1754,7 +1780,14 @@ jobs:
           fi
 
   release-summary:
-    needs: [resolve-scope, stage-frontends, deploy-backend, promote-frontends, accept-release]
+    needs:
+      [
+        resolve-scope,
+        stage-frontends,
+        deploy-backend,
+        promote-frontends,
+        accept-release,
+      ]
     if: always()
     runs-on: ubuntu-latest
     steps:

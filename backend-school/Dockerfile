@@ -16,16 +16,26 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM base AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
+ADD --checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006 \
+    https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-x86_64-unknown-linux-musl.tar.gz \
+    /tmp/sccache.tar.gz
+RUN tar -xzf /tmp/sccache.tar.gz -C /tmp \
+    && install -m 0755 \
+        /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl/sccache \
+        /usr/local/bin/sccache \
+    && rm -rf /tmp/sccache.tar.gz /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl
 COPY . .
-# Workspace libraries are potentially compiler-cacheable, but school sccache remains disabled
-# until two ordinary post-split warm CI builds prove useful hits and lower total build time.
-# Dependency reuse remains owned by the cargo-chef layer above.
 # Disable local ThinLTO only for the final application crate. Dependencies keep
 # their existing release settings and cargo-chef cache; opt-level is unchanged.
-RUN cargo rustc --release --locked --bin backend-school --timings -- -C lto=off
+ARG SCHOOL_COMPILER_CACHE=off
+RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
+    --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
+    --mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache \
+    bash scripts/build_release.sh
 
 FROM scratch AS build-timings
 COPY --from=builder /app/target/cargo-timings/cargo-timing.html /cargo-timing.html
+COPY --from=builder /app/target/cargo-timings/sccache-stats.json /sccache-stats.json
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app

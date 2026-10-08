@@ -1,0 +1,54 @@
+name: School compiler cache benchmark
+on:
+  push:
+    branches: [perf/school-ci-cache-reuse]
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Configure compiler cache credentials
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
+      - name: Measure source-changing builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          results="$RUNNER_TEMP/school-cache-benchmark"
+          mkdir -p "$results"
+          printf '| Build | Compiler cache | Wall seconds |\n|---|---|---:|\n' >>"$GITHUB_STEP_SUMMARY"
+          for variant in plain-prime cache-prime plain-warm cache-warm-1 cache-warm-2; do
+            context="$RUNNER_TEMP/context-$variant"
+            mkdir -p "$context"
+            git archive HEAD backend-school | tar -x -C "$context" --strip-components=1
+            # A different application source forces Cargo to run while library sources stay stable.
+            printf '\n// CI cache measurement: %s\n' "$variant" >>"$context/src/main.rs"
+            mode=off
+            if [[ "$variant" == cache-* ]]; then mode=gha; fi
+            started=$SECONDS
+            docker buildx build --progress=plain \
+              --build-arg "SCHOOL_COMPILER_CACHE=$mode" \
+              --secret id=sccache_gha_url,env=ACTIONS_RESULTS_URL \
+              --secret id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN \
+              --cache-from type=gha,scope=backend-school-cache-benchmark \
+              --cache-from type=gha,scope=backend-school \
+              --cache-to type=gha,scope=backend-school-cache-benchmark,mode=max \
+              --target build-timings --output "type=local,dest=$results/$variant" \
+              "$context" 2>&1 | tee "$results/$variant.log"
+            printf '| %s | %s | %s |\n' "$variant" "$mode" "$((SECONDS - started))" >>"$GITHUB_STEP_SUMMARY"
+          done
+      - name: Upload measurements
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: school-cache-benchmark
+          path: ${{ runner.temp }}/school-cache-benchmark
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,23 @@
+name: Setup contract Rust toolchain
+description: Install the pinned toolchain and normalize the toolchain inventory used by rust-cache.
+runs:
+  using: composite
+  steps:
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.98.1
+      with:
+        components: rustfmt
+
+    - name: Normalize Rust cache toolchains
+      shell: bash
+      run: |
+        set -euo pipefail
+        # rust-cache hashes all installed toolchains. Hosted runner images can
+        # otherwise give identical jobs different keys due to preinstalled Rust.
+        active="$(rustup show active-toolchain | cut -d ' ' -f 1)"
+        while read -r toolchain _; do
+          if [[ "$toolchain" != "$active" ]]; then
+            rustup toolchain uninstall "$toolchain"
+          fi
+        done < <(rustup toolchain list)
+        rustc --version

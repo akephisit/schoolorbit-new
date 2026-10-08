@@ -52,6 +52,11 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 			const rustSetupIndexes = [];
 
 			for (const [stepIndex, step] of steps.entries()) {
+				if (step.uses === './.github/actions/setup-contract-rust') {
+					rustSetupIndexes.push(stepIndex);
+					const setup = parseYaml(await readRepo('.github/actions/setup-contract-rust/action.yml'));
+					assert.equal(setup.runs.steps[0].uses, 'dtolnay/rust-toolchain@1.98.1');
+				}
 				if (typeof step.uses === 'string' && step.uses.startsWith('actions/setup-node@')) {
 					nodeSetupIndexes.push(stepIndex);
 					assert.equal(step.uses, 'actions/setup-node@v6', `${file}:${jobName} setup-node action`);
@@ -863,12 +868,18 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
 			assert.match(dockerfile, new RegExp(`cargo build --release --bin ${binary} --timings`));
 		} else {
-			assert.doesNotMatch(dockerfile, /RUSTC_WRAPPER|SCCACHE_GHA|type=secret/);
+			const release = await readRepo('backend-school/scripts/build_release.sh');
 			assert.match(dockerfile, /RUN cargo chef cook --release --recipe-path recipe.json/);
-			assert.match(
-				dockerfile,
-				/^RUN cargo rustc --release --locked --bin backend-school --timings -- -C lto=off$/m
-			);
+			assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
+			assert.match(dockerfile, /--checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006/);
+			assert.match(dockerfile, /ARG SCHOOL_COMPILER_CACHE=off/);
+			assert.match(dockerfile, /bash scripts\/build_release\.sh/);
+			assert.match(release, /^cargo rustc --release --locked --bin backend-school --timings -- -C lto=off$/m);
+			assert.match(release, /SCCACHE_GHA_CACHE_TO=schoolorbit-backend-school/);
+			assert.match(release, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
+			assert.match(release, /--show-stats --stats-format=json/);
+			assert.doesNotMatch(release, /set -[a-z]*x/);
+			assert.match(dockerfile, /COPY --from=builder .*sccache-stats\.json/);
 		}
 		assert.match(dockerfile, /FROM scratch AS build-timings/);
 		assert.match(
@@ -883,7 +894,7 @@ test('backend runtime images use deterministic builders without ownership copy-u
 	}
 });
 
-test('backend workflows export Cargo timings and only admin uses compiler cache credentials', async () => {
+test('backend workflows export Cargo timings and pass compiler cache credentials as secrets', async () => {
 	const workflows = new Map([
 		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
 		['.github/workflows/deploy-school-release.yml', 'backend-school']
@@ -892,7 +903,7 @@ test('backend workflows export Cargo timings and only admin uses compiler cache 
 	for (const [file, backend] of workflows) {
 		const workflow = await readRepo(file);
 
-		if (backend === 'backend-admin') {
+		{
 			assert.match(workflow, /uses: actions\/github-script@v8/);
 			assert.match(
 				workflow,
@@ -904,9 +915,10 @@ test('backend workflows export Cargo timings and only admin uses compiler cache 
 			);
 			assert.match(workflow, /secret-envs:\s*\|\s*\n\s*sccache_gha_url=ACTIONS_RESULTS_URL/);
 			assert.match(workflow, /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
-		} else {
-			assert.doesNotMatch(workflow, /sccache_|ACTIONS_RUNTIME_TOKEN/);
+		}
+		if (backend === 'backend-school') {
 			assert.match(workflow, /cache-from: type=gha,scope=backend-school/);
+			assert.match(workflow, /sccache-stats\.json/);
 		}
 		assert.match(workflow, /target: build-timings/);
 		assert.match(workflow, /push: false/);
@@ -919,7 +931,7 @@ test('backend workflows export Cargo timings and only admin uses compiler cache 
 		assert.match(
 			workflow,
 			new RegExp(
-				`path: \\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`
+				`\\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`
 			)
 		);
 		assert.match(workflow, /retention-days: 7/);
@@ -1031,7 +1043,7 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 	for (const command of [
 		'npm run test:api-contracts',
 		'npm run check:api-contracts',
-		'env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi'
+		'env -i PATH="$PATH" HOME="$HOME" "$executable" export-openapi'
 	]) {
 		assert.ok(artifacts.includes(command), `artifacts must retain ${command}`);
 	}
@@ -1059,9 +1071,12 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 		assert.match(nodeJob, /working-directory: frontend-school\n\s+run: npm ci/);
 	}
 	assert.doesNotMatch(backend, /uses: actions\/setup-node@v6/);
+	assert.doesNotMatch(artifacts, /env -i[^\n]*cargo run/);
+	assert.match(artifacts, /cargo metadata --locked --format-version 1 --no-deps/);
+	assert.match(database, /uses: \.\/\.github\/actions\/setup-contract-rust/);
 
 	for (const rustJob of [artifacts, backend]) {
-		assert.match(rustJob, /uses: dtolnay\/rust-toolchain@1\.98\.1/);
+		assert.match(rustJob, /uses: \.\/\.github\/actions\/setup-contract-rust/);
 		assert.match(rustJob, /uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/);
 		assert.match(rustJob, /id: rust_cache/);
 		assert.match(rustJob, /shared-key: backend-school-contracts/);
@@ -1088,6 +1103,7 @@ test('API contract runs artifact backend and frontend gates in independent jobs'
 
 test('Permission Contract keeps its cached validation gates unchanged', async () => {
 	const workflow = await readRepo('.github/workflows/permission-contract.yml');
+	assert.match(workflow, /uses: \.\/\.github\/actions\/setup-contract-rust/);
 	assert.match(workflow, /^ {2}verify:\s*$/m);
 	assert.match(workflow, /uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/);
 	assert.match(workflow, /shared-key: backend-school-contracts/);
