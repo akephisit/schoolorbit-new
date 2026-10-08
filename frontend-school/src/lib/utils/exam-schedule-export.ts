@@ -1224,7 +1224,7 @@ function roomRows(
 					ความจุห้อง: roomAssignment.roomCapacity ?? '',
 					ความจุที่ใช้: effectiveCapacity,
 					จำนวนนักเรียน: '',
-					สร้างเลขที่นั่งแล้ว: '',
+					เลขที่นั่งสอบ: 'ใช้เลขที่นักเรียน',
 					จำนวนกรรมการ: assignment?.invigilators.length ?? roomAssignment.invigilators.length
 				};
 			})

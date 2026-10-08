@@ -514,3 +514,78 @@ test('read-only export loads homeroom labels only after the export action', asyn
 	await page.getByRole('button', { name: 'ส่งออก' }).click();
 	await expect.poll(() => homeroomReads).toBe(1);
 });
+
+for (const viewport of [
+	{ name: 'mobile', width: 390, height: 844 },
+	{ name: 'desktop', width: 1280, height: 900 }
+]) {
+	for (const colorScheme of ['light', 'dark'] as const) {
+		test(`room seats use student numbers without generation controls: ${viewport.name} ${colorScheme}`, async ({
+			page
+		}) => {
+			await page.setViewportSize(viewport);
+			await page.emulateMedia({ colorScheme });
+			await installShell(page);
+			const assignment = {
+				id: '50000000-0000-4000-8000-000000000011',
+				examDayId: '40000000-0000-4000-8000-000000000011',
+				homeroomId: '60000000-0000-4000-8000-000000000011',
+				homeroomName: 'ม.1/1',
+				roomId: '70000000-0000-4000-8000-000000000011',
+				roomName: '316',
+				buildingName: 'อาคารเรียน',
+				roomCapacity: 40,
+				capacityOverride: null,
+				invigilators: [],
+				seatsGenerated: false
+			};
+			const data = workspaceWithDay();
+			await page.route(`**/api/academic/exam-schedules/${firstRoundId}`, (route) =>
+				fulfill(route, {
+					...data,
+					days: data.days.map((day) => ({ ...day, roomAssignments: [assignment] }))
+				})
+			);
+			await page.route('**/api/lookup/homerooms?**', (route) =>
+				fulfill(route, [{ id: assignment.homeroomId, name: 'ม.1/1' }])
+			);
+			await page.route('**/api/lookup/rooms?**', (route) =>
+				fulfill(route, [
+					{ id: assignment.roomId, name_th: '316', building_name: 'อาคารเรียน', capacity: 40 }
+				])
+			);
+			const writes: string[] = [];
+			const pendingSaves: Route[] = [];
+			await page.route('**/api/academic/exam-schedules/days/*/room-assignments', (route) => {
+				writes.push(new URL(route.request().url()).pathname);
+				pendingSaves.push(route);
+			});
+			await page.route('**/api/academic/exam-schedules/room-assignments/*/seats', async (route) => {
+				writes.push('manual-seats');
+				await fulfill(route, []);
+			});
+			await page.goto(detailUrl());
+			await expect(page.getByTestId('exam-detail-ready')).toBeVisible();
+			await page.getByRole('tab', { name: 'ห้องสอบ', exact: true }).click();
+			await expect(
+				page.getByText('เลขที่นั่งสอบใช้เลขที่นักเรียนในห้องเรียนโดยอัตโนมัติ')
+			).toBeVisible();
+			await expect(page.getByRole('button', { name: 'สร้างเลขที่นั่ง' })).toHaveCount(0);
+			const row = page.getByRole('row').filter({ hasText: 'ม.1/1' });
+			await expect(row).toBeVisible();
+			await page.screenshot({
+				path: `test-results/exam-auto-seats-${viewport.name}-${colorScheme}.png`,
+				fullPage: true
+			});
+			await row.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+			await page.getByRole('button', { name: 'บันทึกห้องสอบ', exact: true }).click();
+			await expect.poll(() => pendingSaves.length).toBe(1);
+			await expect(page.getByRole('button', { name: 'กำลังบันทึก...' })).toBeDisabled();
+			await fulfill(pendingSaves[0], { ...assignment, seatsGenerated: true });
+			await expect(page.getByRole('dialog')).toHaveCount(0);
+			expect(writes).toHaveLength(1);
+			expect(writes).not.toContain('manual-seats');
+			await expect(row).toBeVisible();
+		});
+	}
+}

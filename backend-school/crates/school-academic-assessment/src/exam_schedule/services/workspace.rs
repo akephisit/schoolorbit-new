@@ -624,6 +624,7 @@ pub(super) async fn fetch_workspace_counts_in_tx(
 ) -> Result<WorkspaceCounts, AppError> {
     let row: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
         .bind(round_id)
+        .bind(true) // Publication also verifies the automatically synchronized seat snapshot.
         .fetch_one(&mut **tx)
         .await?;
 
@@ -653,6 +654,25 @@ pub(super) fn workspace_counts_from_row(
 }
 
 pub(super) const WORKSPACE_COUNTS_SQL: &str = r#"
+        WITH seat_roster AS (
+            SELECT assignment.id AS assignment_id, student_year.student_id,
+                   placement.class_number, seat.seat_number,
+                   COUNT(*) OVER (PARTITION BY assignment.id, placement.class_number) AS number_count
+            FROM academic_exam_day_room_assignments assignment
+            JOIN academic_exam_days day ON day.id = assignment.exam_day_id
+            JOIN homeroom_placements placement
+              ON placement.homeroom_id = assignment.homeroom_id AND placement.status = 'current'
+            JOIN student_academic_years student_year
+              ON student_year.id = placement.student_academic_year_id
+             AND student_year.academic_year_id = assignment.academic_year_id
+             AND student_year.status = 'active'
+            JOIN users student ON student.id = student_year.student_id
+             AND student.user_type = 'student' AND student.status = 'active'
+            LEFT JOIN academic_exam_seat_assignments seat
+              ON $2 AND seat.day_room_assignment_id = assignment.id
+             AND seat.student_id = student_year.student_id
+            WHERE day.exam_round_id = $1
+        )
         SELECT (
                    SELECT COUNT(*)::BIGINT
                    FROM academic_exam_days day
@@ -748,11 +768,17 @@ pub(super) const WORKSPACE_COUNTS_SQL: &str = r#"
                          ON user_account.id = enrollment.student_id
                         AND user_account.user_type = 'student'
                         AND user_account.status = 'active'
-                       LEFT JOIN academic_exam_seat_assignments seat
-                         ON seat.day_room_assignment_id = assignment.id
-                        AND seat.student_id = enrollment.student_id
+                       LEFT JOIN seat_roster roster
+                         ON roster.assignment_id = assignment.id
+                        AND roster.student_id = enrollment.student_id
                        WHERE session.exam_round_id = $1
-                         AND seat.student_id IS NULL
+                         AND roster.student_id IS NULL
+                       UNION
+                       SELECT roster.assignment_id, roster.student_id
+                       FROM seat_roster roster
+                       WHERE roster.class_number IS NULL OR roster.class_number <= 0
+                          OR roster.number_count > 1
+                          OR ($2 AND roster.seat_number IS DISTINCT FROM roster.class_number::text)
                    ) missing_seat_students
                ) AS missing_seat_student_count,
                (
@@ -999,6 +1025,7 @@ pub(super) async fn fetch_workspace_counts(
 ) -> Result<WorkspaceCounts, AppError> {
     let row: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(WORKSPACE_COUNTS_SQL)
         .bind(round_id)
+        .bind(false) // Draft readiness requires valid class numbers, without a manual generation step.
         .fetch_one(pool)
         .await?;
 

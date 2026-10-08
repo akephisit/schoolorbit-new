@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -43,7 +45,6 @@ struct RoomAssignmentContext {
 pub(super) struct SeatAssignmentContext {
     assignment_id: Uuid,
     pub(super) exam_round_id: Uuid,
-    homeroom_id: Uuid,
     capacity_override: Option<i32>,
     room_capacity: i32,
 }
@@ -67,19 +68,37 @@ impl DayRoomAssignmentViewRow {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub(super) struct SeatStudent {
     pub student_id: Uuid,
+    pub class_number: Option<i32>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SeatAssignmentDraft {
     pub student_id: Uuid,
     pub seat_number: String,
 }
-pub(super) fn build_default_seat_assignments(students: &[SeatStudent]) -> Vec<SeatAssignmentDraft> {
+pub(super) fn build_default_seat_assignments(
+    students: &[SeatStudent],
+) -> Result<Vec<SeatAssignmentDraft>, AppError> {
+    let mut numbers = HashSet::new();
     students
         .iter()
-        .enumerate()
-        .map(|(index, student)| SeatAssignmentDraft {
-            student_id: student.student_id,
-            seat_number: format!("{:02}", index + 1),
+        .map(|student| {
+            let number = student
+                .class_number
+                .filter(|number| *number > 0)
+                .ok_or_else(|| {
+                    AppError::BadRequest(
+                        "กรุณากำหนดเลขที่นักเรียนในห้องเรียนให้ครบก่อนกำหนดที่นั่งสอบ".to_string(),
+                    )
+                })?;
+            if !numbers.insert(number) {
+                return Err(AppError::BadRequest(
+                    "เลขที่นักเรียนในห้องเรียนซ้ำกัน กรุณาแก้ไขก่อนกำหนดที่นั่งสอบ".to_string(),
+                ));
+            }
+            Ok(SeatAssignmentDraft {
+                student_id: student.student_id,
+                seat_number: number.to_string(),
+            })
         })
         .collect()
 }
@@ -215,6 +234,7 @@ pub async fn upsert_day_room_assignment(
         .await?;
     }
 
+    synchronize_assignment_seats_in_tx(&mut tx, &[assignment_id]).await?;
     mark_round_draft_after_mutation(&mut tx, day_context.exam_round_id, Some(actor_user_id))
         .await?;
     tx.commit().await?;
@@ -237,65 +257,13 @@ pub async fn generate_seats_for_assignment(
         return Ok(existing_seats);
     }
 
-    let students = fetch_ordered_seat_students(&mut tx, assignment_context.homeroom_id).await?;
-    let effective_capacity = assignment_context
-        .capacity_override
-        .unwrap_or(assignment_context.room_capacity);
-    validate_seat_generation_capacity(students.len(), effective_capacity)?;
-
-    let mut wrote_seats = false;
-    if request.regenerate {
-        sqlx::query(
-            r#"
-            DELETE FROM academic_exam_seat_assignments
-            WHERE day_room_assignment_id = $1
-            "#,
-        )
-        .bind(assignment_id)
-        .execute(&mut *tx)
-        .await?;
-        wrote_seats = true;
-    }
-
-    let seat_drafts = build_default_seat_assignments(&students);
-
-    if !seat_drafts.is_empty() {
-        let student_ids: Vec<Uuid> = seat_drafts
-            .iter()
-            .map(|assignment| assignment.student_id)
-            .collect();
-        let seat_numbers: Vec<String> = seat_drafts
-            .iter()
-            .map(|assignment| assignment.seat_number.clone())
-            .collect();
-
-        sqlx::query(
-            r#"
-            INSERT INTO academic_exam_seat_assignments (
-                day_room_assignment_id,
-                student_id,
-                seat_number
-            )
-            SELECT $1, student_id, seat_number
-            FROM unnest($2::uuid[], $3::text[]) AS seat(student_id, seat_number)
-            "#,
-        )
-        .bind(assignment_context.assignment_id)
-        .bind(&student_ids)
-        .bind(&seat_numbers)
-        .execute(&mut *tx)
-        .await?;
-        wrote_seats = true;
-    }
-
-    if wrote_seats {
-        mark_round_draft_after_mutation(
-            &mut tx,
-            assignment_context.exam_round_id,
-            Some(actor_user_id),
-        )
-        .await?;
-    }
+    synchronize_assignment_seats_in_tx(&mut tx, &[assignment_id]).await?;
+    mark_round_draft_after_mutation(
+        &mut tx,
+        assignment_context.exam_round_id,
+        Some(actor_user_id),
+    )
+    .await?;
 
     let seats = fetch_seat_assignments_for_assignment(&mut tx, assignment_id).await?;
     tx.commit().await?;
@@ -509,33 +477,119 @@ async fn fetch_seat_assignments_for_assignment(
     .await
     .map_err(AppError::from)
 }
-async fn fetch_ordered_seat_students(
+#[derive(sqlx::FromRow)]
+struct AssignmentSeatStudent {
+    assignment_id: Uuid,
+    student_id: Uuid,
+    class_number: Option<i32>,
+}
+
+pub(super) async fn synchronize_assignment_seats_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    homeroom_id: Uuid,
-) -> Result<Vec<SeatStudent>, AppError> {
-    sqlx::query_as::<_, SeatStudent>(
+    assignment_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if assignment_ids.is_empty() {
+        return Ok(());
+    }
+    let contexts = sqlx::query_as::<_, SeatAssignmentContext>(
         r#"
-        SELECT user_account.id AS student_id
-        FROM homeroom_placements placement
-        JOIN student_academic_years student_year
-          ON student_year.id = placement.student_academic_year_id
-        JOIN users user_account
-          ON user_account.id = student_year.student_id
-         AND user_account.user_type = 'student'
-         AND user_account.status = 'active'
-        LEFT JOIN student_info ON student_info.user_id = user_account.id
-        WHERE placement.homeroom_id = $1
-          AND placement.status = 'current'
-          AND student_year.status = 'active'
-        ORDER BY placement.class_number ASC NULLS LAST,
-                 student_info.student_id ASC NULLS LAST,
-                 user_account.id ASC
+        SELECT assignment.id AS assignment_id, day.exam_round_id,
+               assignment.homeroom_id, assignment.capacity_override,
+               room.capacity AS room_capacity
+        FROM academic_exam_day_room_assignments assignment
+        JOIN academic_exam_days day ON day.id = assignment.exam_day_id
+        JOIN rooms room ON room.id = assignment.room_id
+        WHERE assignment.id = ANY($1)
+        ORDER BY assignment.id
+        FOR UPDATE OF assignment
         "#,
     )
-    .bind(homeroom_id)
+    .bind(assignment_ids)
     .fetch_all(&mut **tx)
-    .await
-    .map_err(AppError::from)
+    .await?;
+    let rows = sqlx::query_as::<_, AssignmentSeatStudent>(
+        r#"
+        SELECT assignment.id AS assignment_id, student_year.student_id,
+               placement.class_number
+        FROM academic_exam_day_room_assignments assignment
+        JOIN homeroom_placements placement
+          ON placement.homeroom_id = assignment.homeroom_id
+         AND placement.status = 'current'
+        JOIN student_academic_years student_year
+          ON student_year.id = placement.student_academic_year_id
+         AND student_year.academic_year_id = assignment.academic_year_id
+         AND student_year.status = 'active'
+        JOIN users student ON student.id = student_year.student_id
+         AND student.user_type = 'student' AND student.status = 'active'
+        WHERE assignment.id = ANY($1)
+        ORDER BY assignment.id, placement.class_number, student_year.student_id
+        FOR SHARE OF placement, student_year, student
+        "#,
+    )
+    .bind(assignment_ids)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut students_by_assignment: HashMap<Uuid, Vec<SeatStudent>> = HashMap::new();
+    for row in rows {
+        students_by_assignment
+            .entry(row.assignment_id)
+            .or_default()
+            .push(SeatStudent {
+                student_id: row.student_id,
+                class_number: row.class_number,
+            });
+    }
+    let mut draft_assignment_ids = Vec::new();
+    let mut student_ids = Vec::new();
+    let mut seat_numbers = Vec::new();
+    for context in contexts {
+        let students = students_by_assignment
+            .remove(&context.assignment_id)
+            .unwrap_or_default();
+        validate_seat_generation_capacity(
+            students.len(),
+            context.capacity_override.unwrap_or(context.room_capacity),
+        )?;
+        for draft in build_default_seat_assignments(&students)? {
+            draft_assignment_ids.push(context.assignment_id);
+            student_ids.push(draft.student_id);
+            seat_numbers.push(draft.seat_number);
+        }
+    }
+    // Remove changed or departed seats first so number swaps cannot hit the unique constraint.
+    // Unchanged seats retain their identities and timestamps.
+    sqlx::query(
+        r#"
+        DELETE FROM academic_exam_seat_assignments seat
+        WHERE seat.day_room_assignment_id = ANY($1)
+          AND NOT EXISTS (
+              SELECT 1 FROM unnest($2::uuid[], $3::uuid[], $4::text[])
+                  AS desired(assignment_id, student_id, seat_number)
+              WHERE desired.assignment_id = seat.day_room_assignment_id
+                AND desired.student_id = seat.student_id
+                AND desired.seat_number = seat.seat_number
+          )
+        "#,
+    )
+    .bind(assignment_ids)
+    .bind(&draft_assignment_ids)
+    .bind(&student_ids)
+    .bind(&seat_numbers)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO academic_exam_seat_assignments (day_room_assignment_id, student_id, seat_number)
+        SELECT * FROM unnest($1::uuid[], $2::uuid[], $3::text[])
+        ON CONFLICT (day_room_assignment_id, student_id) DO NOTHING
+        "#,
+    )
+    .bind(&draft_assignment_ids)
+    .bind(&student_ids)
+    .bind(&seat_numbers)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 pub(super) fn map_day_room_assignment_write_error(error: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db_error) = &error {

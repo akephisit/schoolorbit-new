@@ -633,10 +633,14 @@ fn readiness_sql_rechecks_sessions_after_grade_scope_changes() {
 }
 
 #[test]
-fn readiness_sql_requires_seats_for_every_active_student() {
+fn readiness_sql_requires_valid_class_numbers_for_every_active_student() {
     assert!(WORKSPACE_COUNTS_SQL.contains("missing_seat_student_count"));
     assert!(WORKSPACE_COUNTS_SQL.contains("learning_group_students enrollment"));
-    assert!(WORKSPACE_COUNTS_SQL.contains("seat.student_id IS NULL"));
+    assert!(WORKSPACE_COUNTS_SQL.contains("roster.student_id IS NULL"));
+    assert!(
+        WORKSPACE_COUNTS_SQL.contains("roster.class_number IS NULL OR roster.class_number <= 0")
+    );
+    assert!(WORKSPACE_COUNTS_SQL.contains("roster.number_count > 1"));
 }
 
 #[test]
@@ -856,18 +860,48 @@ fn shared_assignment_invigilators_are_reused_for_each_session() {
 }
 
 #[test]
-fn generates_padded_seat_numbers_in_input_order() {
+fn uses_class_numbers_without_renumbering_gaps_or_padding() {
     let students = vec![
         SeatStudent {
             student_id: Uuid::nil(),
+            class_number: Some(12),
         },
         SeatStudent {
             student_id: Uuid::max(),
+            class_number: Some(3),
         },
     ];
-    let seats = build_default_seat_assignments(&students);
-    assert_eq!(seats[0].seat_number, "01");
-    assert_eq!(seats[1].seat_number, "02");
+    let seats = build_default_seat_assignments(&students).unwrap();
+    assert_eq!(seats[0].student_id, Uuid::nil());
+    assert_eq!(seats[0].seat_number, "12");
+    assert_eq!(seats[1].seat_number, "3");
+    assert!(build_default_seat_assignments(&[]).unwrap().is_empty());
+}
+
+#[test]
+fn rejects_missing_nonpositive_or_duplicate_class_numbers() {
+    for number in [None, Some(0), Some(-1)] {
+        assert!(matches!(
+            build_default_seat_assignments(&[SeatStudent {
+                student_id: Uuid::nil(),
+                class_number: number
+            }]),
+            Err(AppError::BadRequest(_))
+        ));
+    }
+    assert!(matches!(
+        build_default_seat_assignments(&[
+            SeatStudent {
+                student_id: Uuid::nil(),
+                class_number: Some(3)
+            },
+            SeatStudent {
+                student_id: Uuid::max(),
+                class_number: Some(3)
+            },
+        ]),
+        Err(AppError::BadRequest(_))
+    ));
 }
 
 #[test]

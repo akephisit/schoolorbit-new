@@ -13,7 +13,7 @@ export function examScheduleReadinessLabel(finding: ExamScheduleReadinessFinding
 		case 'invalid_exam_sessions':
 			return `เวลาสอบไม่ตรงกับเงื่อนไขวันสอบ ${finding.count} รายการ`;
 		case 'missing_seat_assignments':
-			return `ยังไม่ได้สร้างเลขที่นั่งให้นักเรียน ${finding.count} คน`;
+			return `กรุณาตรวจห้องเรียนและเลขที่นักเรียน ${finding.count} รายการ: เลขที่ต้องครบและไม่ซ้ำ`;
 		case 'invigilator_conflicts':
 			return `กรรมการคุมสอบมีเวลาชนกัน ${finding.count} จุด`;
 		case 'pending_source_changes':

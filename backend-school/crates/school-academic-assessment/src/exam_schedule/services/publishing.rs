@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::room_assignments::synchronize_assignment_seats_in_tx;
 use super::shared::{require_exam_write, ExamWriteTarget};
 use crate::exam_schedule::models::ExamRound;
 use school_errors::AppError;
@@ -29,6 +30,16 @@ pub async fn publish_round(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+
+    let assignment_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT assignment.id FROM academic_exam_day_room_assignments assignment \
+         JOIN academic_exam_days day ON day.id = assignment.exam_day_id \
+         WHERE day.exam_round_id = $1 ORDER BY assignment.id",
+    )
+    .bind(round_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    synchronize_assignment_seats_in_tx(&mut tx, &assignment_ids).await?;
 
     let counts = fetch_workspace_counts_in_tx(&mut tx, round_id).await?;
     let source_change_count = count_source_changes_in_tx(&mut tx, round_id).await?;

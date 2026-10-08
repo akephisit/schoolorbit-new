@@ -1008,3 +1008,220 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
         .iter()
         .all(|item| item.assessment_phase_id != phase_id));
 }
+
+async fn exam_seat_publication_pool(test_name: &str) -> sqlx::PgPool {
+    let pool = migrated_pool(test_name).await;
+    // The cutover fixture has two groups with different teachers, so it intentionally
+    // leaves the shared assessment coordinator unset. Prepare one eligible exam group.
+    sqlx::query(
+        "UPDATE course_assessment_plans plan SET assessment_coordinator_id='50000000-0000-0000-0000-000000000002' \
+         WHERE EXISTS (SELECT 1 FROM course_assessment_phases phase JOIN academic_exam_schedule_items item ON item.assessment_phase_id=phase.id WHERE phase.plan_id=plan.id)",
+    ).execute(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE learning_groups SET status='closed' \
+         WHERE academic_term_id=(SELECT academic_term_id FROM academic_exam_rounds WHERE id='84000000-0000-0000-0000-000000000001') \
+         AND id NOT IN (SELECT learning_group_id FROM academic_exam_schedule_items)",
+    ).execute(&pool).await.unwrap();
+    pool
+}
+
+#[tokio::test]
+async fn exam_seats_follow_class_numbers_automatically_across_days_and_publication() {
+    let pool = exam_seat_publication_pool("exam_seat_automatic_numbers").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let day = Uuid::parse_str("85000000-0000-0000-0000-000000000001").unwrap();
+    let homeroom = Uuid::parse_str("40000000-0000-0000-0000-000000000025").unwrap();
+    let room = Uuid::parse_str("92000000-0000-0000-0000-000000000001").unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let student = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
+    sqlx::query(
+        "UPDATE homeroom_placements SET class_number=12 WHERE homeroom_id=$1 AND status='current'",
+    )
+    .bind(homeroom)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let request = || UpsertDayRoomAssignmentRequest {
+        homeroom_id: homeroom,
+        room_id: room,
+        capacity_override: None,
+        invigilator_staff_ids: None,
+    };
+    let assignment =
+        exam_schedule_service::upsert_day_room_assignment(&pool, day, request(), actor)
+            .await
+            .unwrap();
+    assert!(assignment.seats_generated);
+    let seat: (Uuid, String) = sqlx::query_as("SELECT id,seat_number FROM academic_exam_seat_assignments WHERE day_room_assignment_id=$1 AND student_id=$2")
+        .bind(assignment.id).bind(student).fetch_one(&pool).await.unwrap();
+    assert_eq!(seat.1, "12");
+    exam_schedule_service::upsert_day_room_assignment(&pool, day, request(), actor)
+        .await
+        .unwrap();
+    let repeated: (Uuid, String) = sqlx::query_as("SELECT id,seat_number FROM academic_exam_seat_assignments WHERE day_room_assignment_id=$1 AND student_id=$2")
+        .bind(assignment.id).bind(student).fetch_one(&pool).await.unwrap();
+    assert_eq!(seat, repeated);
+
+    let second_day = exam_schedule_service::upsert_exam_day(
+        &pool,
+        round,
+        UpsertExamDayRequest {
+            exam_date: NaiveDate::from_ymd_opt(2025, 9, 16).unwrap(),
+            label: None,
+            start_time: NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
+            end_time: NaiveTime::from_hms_opt(16, 0, 0).unwrap(),
+            grade_level_ids: vec![],
+            blocked_windows: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    exam_schedule_service::upsert_day_room_assignment(&pool, second_day.id, request(), actor)
+        .await
+        .unwrap();
+    // Existing assignments with no generated seats can publish without per-room actions.
+    sqlx::query("DELETE FROM academic_exam_seat_assignments WHERE student_id=$1")
+        .bind(student)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let workspace = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    assert!(workspace.readiness.can_publish, "{:?}", workspace.readiness);
+    let published = exam_schedule_service::publish_round(&pool, round, actor)
+        .await
+        .unwrap();
+    assert_eq!(published.status, "published");
+    let seats: Vec<String> = sqlx::query_scalar("SELECT seat.seat_number FROM academic_exam_seat_assignments seat JOIN academic_exam_day_room_assignments assignment ON assignment.id=seat.day_room_assignment_id JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=$1 AND seat.student_id=$2")
+        .bind(round).bind(student).fetch_all(&pool).await.unwrap();
+    assert_eq!(seats, vec!["12", "12"]);
+    let personal = exam_schedule_service::list_my_published_exam_schedule(
+        &pool,
+        student,
+        published.academic_term_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(personal[0].sessions[0].seat_number.as_deref(), Some("12"));
+
+    sqlx::query(
+        "UPDATE homeroom_placements SET class_number=27 WHERE homeroom_id=$1 AND status='current'",
+    )
+    .bind(homeroom)
+    .execute(&pool)
+    .await
+    .unwrap();
+    exam_schedule_service::publish_round(&pool, round, actor)
+        .await
+        .unwrap();
+    let seats: Vec<String> = sqlx::query_scalar("SELECT seat.seat_number FROM academic_exam_seat_assignments seat JOIN academic_exam_day_room_assignments assignment ON assignment.id=seat.day_room_assignment_id JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=$1 AND seat.student_id=$2")
+        .bind(round).bind(student).fetch_all(&pool).await.unwrap();
+    assert_eq!(seats, vec!["27", "27"]);
+}
+
+async fn add_exam_seat_classmate(pool: &sqlx::PgPool, homeroom: Uuid, number: i32) -> Uuid {
+    let student = Uuid::new_v4();
+    sqlx::query("INSERT INTO users(id,password_hash,first_name,last_name,user_type,status) VALUES($1,'synthetic','Test','Classmate','student','active')")
+        .bind(student).execute(pool).await.unwrap();
+    let year: Uuid = sqlx::query_scalar("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT $1,$2,academic_year_id,grade_level_id,study_program_id,'active' FROM homerooms WHERE id=$3 RETURNING id")
+        .bind(Uuid::new_v4()).bind(student).bind(homeroom).fetch_one(pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number) SELECT $1,$2,academic_year_id,id,'2025-05-01','current','regular',$4 FROM homerooms WHERE id=$3")
+        .bind(Uuid::new_v4()).bind(year).bind(homeroom).bind(number).execute(pool).await.unwrap();
+    student
+}
+
+#[tokio::test]
+async fn exam_seats_reject_invalid_numbers_atomically_and_handle_number_swaps() {
+    use crate::modules::academic::models::exam_schedule::ExamScheduleReadinessCode;
+    use school_errors::AppError;
+    let pool = exam_seat_publication_pool("exam_seat_invalid_numbers").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let day = Uuid::parse_str("85000000-0000-0000-0000-000000000001").unwrap();
+    let homeroom = Uuid::parse_str("40000000-0000-0000-0000-000000000025").unwrap();
+    let room = Uuid::parse_str("92000000-0000-0000-0000-000000000001").unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let first_student = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
+    let second_student = add_exam_seat_classmate(&pool, homeroom, 3).await;
+    let request = || UpsertDayRoomAssignmentRequest {
+        homeroom_id: homeroom,
+        room_id: room,
+        capacity_override: None,
+        invigilator_staff_ids: None,
+    };
+    let assignment =
+        exam_schedule_service::upsert_day_room_assignment(&pool, day, request(), actor)
+            .await
+            .unwrap();
+    let before: Vec<(Uuid, Uuid, String)> = sqlx::query_as("SELECT id,student_id,seat_number FROM academic_exam_seat_assignments WHERE day_room_assignment_id=$1 ORDER BY student_id")
+        .bind(assignment.id).fetch_all(&pool).await.unwrap();
+    for invalid in [None, Some(0), Some(-1), Some(1)] {
+        sqlx::query("UPDATE homeroom_placements SET class_number=$2 WHERE homeroom_id=$1 AND student_academic_year_id IN (SELECT id FROM student_academic_years WHERE student_id=$3)")
+            .bind(homeroom).bind(invalid).bind(second_student).execute(&pool).await.unwrap();
+        let workspace = exam_schedule_service::get_workspace(&pool, round)
+            .await
+            .unwrap();
+        assert!(!workspace.readiness.can_publish);
+        assert!(workspace
+            .readiness
+            .findings
+            .iter()
+            .any(|finding| finding.code == ExamScheduleReadinessCode::MissingSeatAssignments));
+        let version = workspace.round.row_version;
+        assert!(matches!(
+            exam_schedule_service::publish_round(&pool, round, actor).await,
+            Err(AppError::BadRequest(_))
+        ));
+        let mut changed = request();
+        changed.capacity_override = Some(50);
+        assert!(matches!(
+            exam_schedule_service::upsert_day_room_assignment(&pool, day, changed, actor).await,
+            Err(AppError::BadRequest(_))
+        ));
+        let after: Vec<(Uuid, Uuid, String)> = sqlx::query_as("SELECT id,student_id,seat_number FROM academic_exam_seat_assignments WHERE day_room_assignment_id=$1 ORDER BY student_id")
+            .bind(assignment.id).fetch_all(&pool).await.unwrap();
+        assert_eq!(before, after);
+        let workspace = exam_schedule_service::get_workspace(&pool, round)
+            .await
+            .unwrap();
+        assert_eq!(workspace.round.row_version, version);
+        assert_eq!(
+            workspace
+                .days
+                .iter()
+                .flat_map(|day| &day.room_assignments)
+                .find(|room| room.id == assignment.id)
+                .unwrap()
+                .capacity_override,
+            None
+        );
+    }
+    // Swapping two numbers does not collide with the unique seat-number constraint.
+    sqlx::query("UPDATE homeroom_placements placement SET class_number=CASE student_year.student_id WHEN $2 THEN 3 ELSE 1 END FROM student_academic_years student_year WHERE student_year.id=placement.student_academic_year_id AND placement.homeroom_id=$1")
+        .bind(homeroom).bind(first_student).execute(&pool).await.unwrap();
+    exam_schedule_service::upsert_day_room_assignment(&pool, day, request(), actor)
+        .await
+        .unwrap();
+    let seats: Vec<(Uuid, String)> = sqlx::query_as("SELECT student_id,seat_number FROM academic_exam_seat_assignments WHERE day_room_assignment_id=$1 ORDER BY seat_number")
+        .bind(assignment.id).fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        seats,
+        vec![(second_student, "1".into()), (first_student, "3".into())]
+    );
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(second_student)
+        .execute(&pool)
+        .await
+        .unwrap();
+    exam_schedule_service::publish_round(&pool, round, actor)
+        .await
+        .unwrap();
+    let remaining: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT student_id FROM academic_exam_seat_assignments WHERE day_room_assignment_id=$1",
+    )
+    .bind(assignment.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining, vec![first_student]);
+}

@@ -890,7 +890,6 @@ test('staff workspace wires setup, source sync, room assignment, and publish act
 		'upsertExamDay',
 		'deleteExamDay',
 		'upsertDayRoomAssignment',
-		'generateSeatsForAssignment',
 		'syncExamSources',
 		'publishExamRound',
 		'ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL',

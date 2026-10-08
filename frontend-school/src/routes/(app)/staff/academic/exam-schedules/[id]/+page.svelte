@@ -9,7 +9,6 @@
 		assignExamAssignmentInvigilator,
 		deleteExamDay,
 		deleteExamSession,
-		generateSeatsForAssignment,
 		getExamInvigilatorWorkspace,
 		getExamScheduleWorkspace,
 		listExamInvigilatorStaffOptions,
@@ -106,7 +105,6 @@
 	let savingDay = $state(false);
 	let deletingDayId = $state<string | null>(null);
 	let savingAssignment = $state(false);
-	let generatingAssignmentId = $state<string | null>(null);
 	let placingItemIds = $state<string[]>([]);
 	let unschedulingSessionIds = $state<string[]>([]);
 	let activeRouteRoundId = '';
@@ -201,7 +199,6 @@
 		savingDay = false;
 		deletingDayId = null;
 		savingAssignment = false;
-		generatingAssignmentId = null;
 		placingItemIds = [];
 		unschedulingSessionIds = [];
 		savingRoundKind = false;
@@ -1135,22 +1132,6 @@
 		}
 	}
 
-	async function handleGenerateSeats(assignmentId: string) {
-		const roundId = workspace?.round.id;
-		if (!roundId) return;
-		generatingAssignmentId = assignmentId;
-		try {
-			const seats = await generateSeatsForAssignment(assignmentId, { regenerate: true });
-			if (!isCurrentRound(roundId)) return;
-			toast.success(`สร้างเลขที่นั่ง ${seats.length} รายการ`);
-			await refreshWorkspace(true);
-		} catch (seatError) {
-			toast.error(seatError instanceof Error ? seatError.message : 'สร้างเลขที่นั่งไม่สำเร็จ');
-		} finally {
-			generatingAssignmentId = null;
-		}
-	}
-
 	async function handlePlaceExamSession(input: PlaceExamSessionInput): Promise<boolean> {
 		const roundId = workspace?.round.id;
 		if (!roundId) return false;
@@ -1525,9 +1506,7 @@
 							{rooms}
 							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
 							saving={savingAssignment}
-							{generatingAssignmentId}
 							onSaveAssignment={handleSaveAssignment}
-							onGenerateSeats={handleGenerateSeats}
 						/>
 					{/if}
 				</Tabs.Content>

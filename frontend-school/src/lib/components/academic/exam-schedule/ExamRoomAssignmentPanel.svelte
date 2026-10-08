@@ -21,7 +21,7 @@
 		TableRow
 	} from '#lib/components/ui/table/index.js';
 	import { compareExamDaysByDate } from '#lib/utils/examScheduleDayOrder.js';
-	import { Armchair, Plus } from '@lucide/svelte';
+	import { Plus } from '@lucide/svelte';
 
 	let {
 		days = [],
@@ -29,21 +29,17 @@
 		rooms = [],
 		readonly = false,
 		saving = false,
-		generatingAssignmentId = null,
-		onSaveAssignment,
-		onGenerateSeats
+		onSaveAssignment
 	}: {
 		days: ExamDayDetail[];
 		homerooms: HomeroomLookupItem[];
 		rooms: RoomLookupItem[];
 		readonly?: boolean;
 		saving?: boolean;
-		generatingAssignmentId?: string | null;
 		onSaveAssignment?: (
 			examDayId: string,
 			input: UpsertDayRoomAssignmentInput
 		) => Promise<boolean> | boolean;
-		onGenerateSeats?: (assignmentId: string) => Promise<void> | void;
 	} = $props();
 
 	let selectedDayId = $state('');
@@ -181,6 +177,9 @@
 		<div>
 			<h2 class="font-semibold">ห้องสอบและที่นั่ง</h2>
 			<p class="text-sm text-muted-foreground">{assignments.length} ห้องในวันที่เลือก</p>
+			<p class="mt-1 text-xs text-muted-foreground">
+				เลขที่นั่งสอบใช้เลขที่นักเรียนในห้องเรียนโดยอัตโนมัติ
+			</p>
 		</div>
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
 			<Select.Root type="single" bind:value={selectedDayId}>
@@ -224,7 +223,7 @@
 							<TableHead>ห้องเรียน</TableHead>
 							<TableHead>ห้องสอบ</TableHead>
 							<TableHead class="w-24 text-center">ความจุ</TableHead>
-							<TableHead class="w-36 text-right">ที่นั่ง</TableHead>
+							<TableHead class="w-36 text-right">จัดการ</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -248,16 +247,6 @@
 											>
 												แก้ไข
 											</Button>
-											<LoadingButton
-												variant="outline"
-												size="icon-sm"
-												loading={generatingAssignmentId === assignment.id}
-												loadingLabel=""
-												onclick={() => onGenerateSeats?.(assignment.id)}
-												aria-label="สร้างเลขที่นั่ง"
-											>
-												<Armchair class="h-4 w-4" />
-											</LoadingButton>
 										{:else}
 											<Badge variant="outline">อ่านอย่างเดียว</Badge>
 										{/if}
