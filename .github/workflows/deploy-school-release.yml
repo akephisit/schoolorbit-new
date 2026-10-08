@@ -389,6 +389,40 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      - name: Summarize compiler cache and Cargo timings
+        if: steps.existing-backend-image.outputs.exists != 'true'
+        env:
+          TIMING_DIR: ${{ runner.temp }}/cargo-timings-backend-school
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          directory = pathlib.Path(os.environ['TIMING_DIR'])
+          html = (directory / 'cargo-timing.html').read_text()
+          data = re.search(r'const UNIT_DATA = (\[.*?\]);', html, re.S)
+          if not data:
+              print('::warning::Cargo timing format changed; inspect the HTML artifact.')
+              raise SystemExit(0)
+          units = json.loads(data.group(1))
+          stats = json.loads((directory / 'sccache-stats.json').read_text()).get('stats', {})
+          hits = sum(stats.get('cache_hits', {}).get('counts', {}).values())
+          misses = sum(stats.get('cache_misses', {}).get('counts', {}).values())
+          rows = sorted((unit for unit in units if unit['duration'] > 0),
+                        key=lambda unit: unit['duration'], reverse=True)[:5]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('\n### Compiler cache and slowest Cargo units\n')
+              if stats:
+                  summary.write(f'- Hits: {hits}; misses: {misses}; '
+                                f'non-cacheable: {stats.get("requests_not_cacheable", 0)}; '
+                                f'write errors: {stats.get("cache_write_errors", 0)}\n')
+              else:
+                  summary.write('- Compiler cache disabled or unavailable; ordinary Cargo build.\n')
+              summary.write('\n| Cargo unit | Seconds |\n|---|---:|\n')
+              for unit in rows:
+                  summary.write(f'| {unit["name"]}{unit["target"]} | {unit["duration"]:.2f} |\n')
+              summary.write('\nUnits overlap; these durations are not additive. '
+                            'The application binary duration includes its final link.\n')
+          PY
+
       - name: Resolve immutable backend image digest
         id: backend-image
         run: |

@@ -6,6 +6,7 @@ permissions:
   contents: read
 jobs:
   benchmark:
+    if: github.event.head_commit.message == 'benchmark: full school build comparison'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

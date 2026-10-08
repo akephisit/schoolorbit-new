@@ -138,9 +138,10 @@ The public organization response uses `members` for every current staff member, 
 ### Build, deployment timing, and image retention
 
 Backend image builds keep separate BuildKit cache scopes for admin and school. Rust, cargo-chef, and
-sccache (admin only) are pinned in their Dockerfiles. GitHub's cache runtime reaches only the admin final Cargo build as
+sccache are pinned in their Dockerfiles. GitHub's cache runtime reaches the final Cargo build as
 BuildKit secrets; a missing or unavailable compiler cache falls back to an ordinary Cargo build.
-Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. Compare the
+Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. School additionally
+exports compiler-cache statistics and summarizes the slowest Cargo units in the job summary. Compare the
 Cargo report, sccache statistics, and GitHub step duration rather than treating one cache marker as
 proof of a faster build.
 
@@ -151,7 +152,13 @@ but it cannot avoid every changed-crate compile or the final link. If two ordina
 no useful hits or increase total duration, remove the sccache integration while retaining the pinned
 toolchain, Cargo timing artifact, and BuildKit cache.
 
-School uses plain Cargo for the final binary build. Two source-changing CI runs before the internal
+School defaults to plain Cargo for the final binary build. Its `SCHOOL_COMPILER_CACHE` repository
+variable selects `off` or `gha`; both the image and timing export must use the same mode so exporting
+metrics reuses the completed build. Credentials enter only through BuildKit secrets and never the
+runtime image. A missing credential or cache I/O failure falls back to compilation. Local Docker
+experiments may explicitly select `local`, which is not the cross-runner GitHub cache.
+
+Two source-changing CI runs before the internal
 workspace split reported zero compiler-cache hits and non-cacheable `crate-type` calls, so that
 evidence does not establish whether the new library crates are worth caching. Dependency layers
 and timing artifacts remain enabled. Do not enable school sccache from local benchmarks alone:

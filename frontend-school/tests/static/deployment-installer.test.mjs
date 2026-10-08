@@ -42,7 +42,7 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 	const workflowDirectory = path.join(repoRoot, '.github/workflows');
 	const workflowFiles = (await readdir(workflowDirectory)).filter((file) => /\.ya?ml$/.test(file));
 	const nodeCommand = /\b(?:node|npm|npx)\b/;
-	const rustCommand = /\b(?:cargo|rustc|rustup)\b/;
+	const rustCommand = /^\s*(?:cargo|rustc|rustup)\s/m;
 
 	for (const file of workflowFiles) {
 		const workflow = parseYaml(await readFile(path.join(workflowDirectory, file), 'utf8'));
@@ -871,11 +871,17 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			const release = await readRepo('backend-school/scripts/build_release.sh');
 			assert.match(dockerfile, /RUN cargo chef cook --release --recipe-path recipe.json/);
 			assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
-			assert.match(dockerfile, /--checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006/);
+			assert.match(
+				dockerfile,
+				/--checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006/
+			);
 			assert.match(dockerfile, /ARG SCHOOL_COMPILER_CACHE=off/);
 			assert.match(dockerfile, /bash scripts\/build_release\.sh/);
-			assert.match(release, /^cargo rustc --release --locked --bin backend-school --timings -- -C lto=off$/m);
-			assert.match(release, /SCCACHE_GHA_CACHE_TO=schoolorbit-backend-school/);
+			assert.match(
+				release,
+				/^cargo rustc --release --locked --bin backend-school --timings -- -C lto=off$/m
+			);
+			assert.match(release, /SCCACHE_GHA_VERSION=schoolorbit-backend-school/);
 			assert.match(release, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
 			assert.match(release, /--show-stats --stats-format=json/);
 			assert.doesNotMatch(release, /set -[a-z]*x/);
@@ -930,9 +936,7 @@ test('backend workflows export Cargo timings and pass compiler cache credentials
 		assert.match(workflow, new RegExp(`name: cargo-timings-${backend}`));
 		assert.match(
 			workflow,
-			new RegExp(
-				`\\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`
-			)
+			new RegExp(`\\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`)
 		);
 		assert.match(workflow, /retention-days: 7/);
 		assert.doesNotMatch(workflow, /build-args:[^\n]*(?:ACTIONS_RESULTS_URL|ACTIONS_RUNTIME_TOKEN)/);

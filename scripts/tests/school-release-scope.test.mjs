@@ -110,6 +110,21 @@ test("Worker inventory helper changes use the frontend release path", async () =
   assert.match(result.stdout, /^needs_backend=false$/m);
 });
 
+test("browser setup action changes use the frontend release path", async () => {
+  const root = await fixture();
+  const accepted = run("git", ["rev-parse", "HEAD"], root);
+  const release = await commitFile(
+    root,
+    ".github/actions/setup-chromium/action.yml",
+    "name: Setup Chromium\n",
+  );
+
+  const result = resolve(root, "auto", release, accepted, accepted);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^scope=frontend$/m);
+  assert.match(result.stdout, /^needs_backend=false$/m);
+});
+
 test("release replay selector changes use the full release path", async () => {
   const root = await fixture();
   const accepted = run("git", ["rev-parse", "HEAD"], root);

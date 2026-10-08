@@ -1,5 +1,5 @@
 name: Setup Chromium
-description: Cache the exact Playwright headless shell and install its host dependencies.
+description: Cache the exact Playwright headless shell and verify its host dependencies.
 runs:
   using: composite
   steps:
@@ -17,9 +17,15 @@ runs:
         path: ~/.cache/ms-playwright
         key: chromium-headless-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
 
-    - name: Install Chromium for application mount check
+    - name: Verify Chromium and install missing host dependencies
       shell: bash
       working-directory: frontend-school
-      # Host dependencies are not files in the browser cache. Always verify/install them.
-      # Playwright validates the browser revision even when the cache reported a hit.
-      run: npx playwright install --with-deps --only-shell chromium
+      # Validate the browser revision on hits too. A real launch verifies host libraries;
+      # installing apt dependencies is necessary only if the runner cannot launch it.
+      run: |
+        npx playwright install --only-shell chromium
+        probe='import { chromium } from "playwright"; const browser = await chromium.launch({ headless: true }); await browser.close();'
+        if ! node --input-type=module -e "$probe"; then
+          npx playwright install-deps chromium
+          node --input-type=module -e "$probe"
+        fi

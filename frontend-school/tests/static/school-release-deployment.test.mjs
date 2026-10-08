@@ -174,15 +174,25 @@ test('frontend promotion is gated by backend acceptance and ready waits for ever
 test('frontend promotion waits for complete tenant assets and application mount readiness', async () => {
 	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));
 	const steps = workflow.jobs['promote-frontends'].steps;
-	const chromiumIndex = steps.findIndex(
-		(step) => step.name === 'Install Chromium for application mount check'
-	);
+	const chromiumIndex = steps.findIndex((step) => step.uses === './.github/actions/setup-chromium');
 	const readinessIndex = steps.findIndex(
 		(step) => step.name === 'Verify promoted frontend readiness'
 	);
 
 	assert.ok(chromiumIndex >= 0);
 	assert.ok(readinessIndex > chromiumIndex);
+	const setupSource = await readFile(
+		path.join(repoRoot, '.github/actions/setup-chromium/action.yml'),
+		'utf8'
+	);
+	const setup = parseYaml(setupSource);
+	const browserCache = setup.runs.steps.find((step) => step.uses === 'actions/cache@v5');
+	assert.match(browserCache.with.key, /runner\.os.*runner\.arch.*steps\.version\.outputs\.version/);
+	const verify = setup.runs.steps.find((step) => step.run?.includes('chromium.launch'));
+	assert.ok(verify, 'a restored browser must still launch before promotion readiness');
+	assert.equal(verify.if, undefined, 'cache hits must not skip host dependency verification');
+	assert.match(verify.run, /playwright install --only-shell chromium/);
+	assert.match(verify.run, /playwright install-deps chromium/);
 	assert.equal(
 		steps[readinessIndex].env.TENANT_ORIGIN,
 		'https://${{ matrix.school.subdomain }}.${{ vars.BASE_DOMAIN }}'

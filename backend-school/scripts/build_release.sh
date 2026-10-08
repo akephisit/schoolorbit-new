@@ -11,8 +11,7 @@ case "$cache_mode" in
             ACTIONS_RUNTIME_TOKEN=$(cat /run/secrets/sccache_gha_token)
             export ACTIONS_RESULTS_URL ACTIONS_RUNTIME_TOKEN
             export SCCACHE_GHA_ENABLED=on
-            export SCCACHE_GHA_CACHE_TO=schoolorbit-backend-school
-            export SCCACHE_GHA_CACHE_FROM=schoolorbit-backend-school
+            export SCCACHE_GHA_VERSION=schoolorbit-backend-school
             export SCCACHE_IGNORE_SERVER_IO_ERROR=1
             export RUSTC_WRAPPER=/usr/local/bin/sccache
             cache_enabled=true

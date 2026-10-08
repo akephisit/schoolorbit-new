@@ -1,0 +1,50 @@
+name: School cache transport probe
+on:
+  push:
+    branches: [perf/school-ci-cache-reuse]
+    paths: [.github/workflows/school-cache-transport-probe.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
+      - name: Verify remote compiler cache with a small Rust library
+        run: |
+          set -euo pipefail
+          context="$RUNNER_TEMP/probe"
+          mkdir -p "$context/src" "$context/library/src"
+          cp backend-school/scripts/build_release.sh "$context/build_release.sh"
+          sed -i 's/schoolorbit-backend-school/schoolorbit-school-transport-probe/' "$context/build_release.sh"
+          printf '[package]\nname="backend-school"\nversion="0.1.0"\nedition="2024"\n[dependencies]\nschool-probe={path="library"}\n' >"$context/Cargo.toml"
+          printf '[package]\nname="school-probe"\nversion="0.1.0"\nedition="2024"\n' >"$context/library/Cargo.toml"
+          printf 'pub fn value() -> u32 { 42 }\n' >"$context/library/src/lib.rs"
+          cat >"$context/Dockerfile" <<'DOCKER'
+          # syntax=docker/dockerfile:1.10
+          FROM rust:1.98.1-slim-bookworm AS builder
+          ADD --checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006 https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-x86_64-unknown-linux-musl.tar.gz /tmp/sccache.tar.gz
+          RUN tar -xzf /tmp/sccache.tar.gz -C /tmp && cp /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl/sccache /usr/local/bin/sccache
+          WORKDIR /app
+          COPY . .
+          ARG SCHOOL_COMPILER_CACHE=gha
+          RUN cargo generate-lockfile
+          RUN --mount=type=secret,id=sccache_gha_url --mount=type=secret,id=sccache_gha_token bash build_release.sh
+          FROM scratch AS stats
+          COPY --from=builder /app/target/cargo-timings/sccache-stats.json /sccache-stats.json
+          DOCKER
+          for variant in prime warm-1 warm-2; do
+            printf 'fn main() { println!("{}", school_probe::value()); }\n// %s\n' "$variant" >"$context/src/main.rs"
+            docker buildx build --progress=plain --target stats \
+              --secret id=sccache_gha_url,env=ACTIONS_RESULTS_URL \
+              --secret id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN \
+              --output "type=local,dest=$RUNNER_TEMP/stats-$variant" "$context"
+            cat "$RUNNER_TEMP/stats-$variant/sccache-stats.json"
+          done
