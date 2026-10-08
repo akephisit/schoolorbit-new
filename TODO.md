@@ -143,12 +143,9 @@ This file is the single active backlog for verified, unfinished technical work t
   - Define the supported school-device browser matrix before choosing a JavaScript target.
   - Add CSP, HSTS, frame restrictions, referrer policy, permissions policy, and production guards for debug routes.
 
-- [ ] **CI-001: Deploy only verified immutable artifacts.**
-  - Gate deployment on required backend, frontend, contract, static, migration, and smoke checks.
-  - Build once, deploy an immutable commit SHA or digest, wait for readiness, and retain an automatic rollback path.
-  - Make deploy-all fail when tenant discovery or any required deployment fails.
-  - Move menu/permission synchronization and migrations into explicit observable deployment phases.
-  - Add staging or canary coverage before all-tenant rollout.
+- [ ] **CI-001: Add staging or canary release coverage.**
+  - Exercise representative API, permission, migration and browser contracts against an isolated staging target before all-tenant rollout.
+  - Define schema-compatible recovery and roll-forward acceptance without restoring an incompatible old binary.
 
 - [ ] **CI-002: Add supply-chain and dependency controls.**
   - Pin third-party actions and mutable package sources to immutable versions.

@@ -54,6 +54,30 @@ test('accepted per-component baselines retain queued changes across merges and r
   assert.deepEqual(makePlan({ ...f, head: second, scope: 'frontend-admin' }).deploy, ['backend-admin', 'frontend-admin']);
 });
 
+test("Worker bundling recipe changes rebuild both frontend artifacts without invalidating backend images", (t) => {
+  const f = fixture(t);
+  mkdirSync(path.join(f.root, "scripts"));
+  writeFileSync(
+    path.join(f.root, "scripts/prepare_frontend_worker.mjs"),
+    "// changed bundling recipe",
+  );
+  const head = f.commit();
+  for (const component of components) {
+    const changed =
+      inputHash(f.root, head, component) !==
+      inputHash(f.root, f.base, component);
+    assert.equal(changed, component.startsWith("frontend-"), component);
+  }
+  const plan = makePlan({ ...f, head });
+  assert.deepEqual(plan.deploy, ["frontend-admin", "frontend-school"]);
+  assert.deepEqual(plan.verify, [
+    "documentation",
+    "deployment",
+    "frontend-admin",
+    "frontend-school",
+  ]);
+});
+
 test('an older unrelated component baseline cannot recompile an already accepted backend for a frontend edit', t => {
   const f = fixture(t);
   writeFileSync(path.join(f.root, 'backend-school/input.txt'), 'accepted backend change');
