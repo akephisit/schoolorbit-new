@@ -54,6 +54,9 @@ jobs:
         if: startsWith(matrix.component, 'frontend-') && steps.bundle-cache.outputs.cache-hit != 'true'
         working-directory: ${{ matrix.component }}
         run: npm run build
+      - name: Bundle the complete Worker before crossing the artifact boundary
+        if: startsWith(matrix.component, 'frontend-') && steps.bundle-cache.outputs.cache-hit != 'true'
+        run: node scripts/prepare_frontend_worker.mjs
       - name: Bind frontend cache and artifact to verified inputs
         if: startsWith(matrix.component, 'frontend-')
         run: node scripts/frontend_artifact.mjs pack

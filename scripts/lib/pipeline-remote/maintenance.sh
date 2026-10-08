@@ -10,23 +10,32 @@ renderer="$root/scripts/render_nginx_config.sh"
 mkdir -p "$root/releases/$RELEASE_SHA"
 journal="$root/releases/$RELEASE_SHA"
 public_status() {
-    local part host status body
+    local part host status body attempt expected filter
     for part in school admin; do
         host="${part}-api.${BASE_DOMAIN}"
         body=$(mktemp)
-        status=$(curl --silent --show-error --max-time 30 --cacert "$stack/nginx/ssl/cloudflare-origin-rsa-root.pem" \
-            --resolve "${host}:443:127.0.0.1" -o "$body" -w '%{http_code}' "https://${host}/ready")
         if [[ $1 == maintenance ]]; then
-            if [[ $status != 503 ]] || ! jq -e '.error == "maintenance"' "$body" >/dev/null; then
-                rm -f "$body"
-                return 1
-            fi
+            expected=503
+            filter='.error == "maintenance"'
         else
-            if [[ $status != 200 ]] || ! jq -e '.status == "ready"' "$body" >/dev/null; then
+            expected=200
+            filter='.status == "ready"'
+        fi
+        for attempt in {1..10}; do
+            # Reload returns before new workers accept requests. Check the actual
+            # proxy mode with bounded retries rather than interpreting that race
+            # as a deployment failure or reopening unverified traffic.
+            status=000
+            if status=$(curl --silent --show-error --max-time 10 --cacert "$stack/nginx/ssl/cloudflare-origin-rsa-root.pem" \
+                --resolve "${host}:443:127.0.0.1" -o "$body" -w '%{http_code}' "https://${host}/ready") &&
+                [[ $status == "$expected" ]] && jq -e "$filter" "$body" >/dev/null; then break; fi
+            if ((attempt == 10)); then
+                printf 'Proxy mode failed part=%s mode=%s http=%s\n' "$part" "$1" "$status" >&2
                 rm -f "$body"
                 return 1
             fi
-        fi
+            sleep 1
+        done
         rm -f "$body"
     done
 }

@@ -14,6 +14,11 @@ export function classify(files) {
   for (const file of files) {
     if (!file || file.startsWith('/') || file.split('/').includes('..')) throw new Error('Invalid change path');
     if (file.endsWith('.md')) continue;
+    if (file === 'scripts/prepare_frontend_worker.mjs') {
+      ['deployment', 'frontend-admin', 'frontend-school'].forEach(suite => verify.add(suite));
+      ['frontend-admin', 'frontend-school'].forEach(part => deploy.add(part));
+      continue;
+    }
     if (file === '.rules' || control.test(file)) {
       suites.forEach((suite) => verify.add(suite));
       if (!testOnly(file) && /^(?:podman-compose\.yml$|nginx-configs\/|scripts\/(?:render_nginx|smoke_test|lib\/pipeline-remote)|\.github\/workflows\/(?:release|deploy-))/.test(file)) components.forEach((part) => deploy.add(part));
@@ -64,7 +69,7 @@ export function changes(root, base, head) {
 
 export function inputHash(root, head, component, publicConfig = {}) {
   if (!components.includes(component)) throw new Error('Unknown component');
-  const entries = git(root, 'ls-tree', '-r', head, '--', component, '.github/workflows/prepare.yml')
+  const entries = git(root, 'ls-tree', '-r', head, '--', component, '.github/workflows/prepare.yml', ...(component.startsWith('frontend-') ? ['scripts/prepare_frontend_worker.mjs'] : []))
     .split('\n').filter(Boolean).filter((entry) => !testOnly(entry.split('\t')[1] || ''));
   return createHash('sha256').update(JSON.stringify({ version: 1, entries, publicConfig, platform: 'linux/amd64', node: component.startsWith('frontend-') ? process.versions.node : null, rust: '1.98.1', profile: 'release' })).digest('hex');
 }

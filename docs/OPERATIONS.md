@@ -74,7 +74,10 @@ The flow is `plan → selected verification + artifact preparation → Pipeline 
 → publish accepted baselines → open maintenance`. PRs verify without production credentials or
 release builds. Main builds selected immutable images and frontend bundles in parallel with checks.
 All production mutations, including Admin and tenant provisioning, share `schoolorbit-production`
-with cancellation disabled. An obsolete candidate is rejected before maintenance. GitHub can
+with cancellation disabled. Cloudflare Workers Builds must remain disconnected from the managed
+Admin/School Workers: repository-linked automatic deployment is a competing writer and bypasses
+the production lock and maintenance. Pipeline stages and promotes Worker versions; do not enable
+an independent Git-triggered deployment in the Cloudflare dashboard. An obsolete candidate is rejected before maintenance. GitHub can
 replace a queued run; component baselines therefore include every outstanding runtime change,
 not only the immediately preceding commit. A newer push during an active release waits for that
 release to finish.
@@ -124,8 +127,9 @@ Team development uses one branch/worktree per independent developer and a PR for
 change. Write collaborators automatically squash merge when the latest-main candidate passes;
 no human approval is mandatory. Fork/external PRs cannot auto-merge. The trusted controller
 updates and explicitly rechecks a stale candidate, merges one at a time, then dispatches the main
-pipeline because `GITHUB_TOKEN` merges do not emit push workflows. Branch protection should
-require the GitHub Actions `Pipeline gate` and up-to-date branches without requiring reviews.
+pipeline because `GITHUB_TOKEN` merges do not emit push workflows. Native protection for `main`
+requires a PR, the GitHub Actions `Pipeline gate`, and an up-to-date branch, including for admins.
+It requires zero human approvals, linear history, and forbids force pushes and branch deletion.
 Equivalent PR verification may be reused only with exact tree/base, latest successful attempt,
 suite receipts and matching runner/toolchain/profile evidence; otherwise main executes its checks. Backend owners always execute fresh database verification on main and refresh the compiled snapshot for subsequent PRs.
 

@@ -5,7 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import test from 'node:test';
 const repo=path.resolve(import.meta.dirname,'../..');
-function fixture(t,{fresh=false,publicFailure=false,smokeFailure=false,reloadFailure=false}={}) {
+function fixture(t,{fresh=false,publicFailure=false,smokeFailure=false,reloadFailure=false,reloadDelay=false}={}) {
  const stack=mkdtempSync(path.join(os.tmpdir(),'pipeline-maintenance-'));
  t.after(()=>rmSync(stack,{recursive:true,force:true}));
  const root=path.join(stack,'deployment');
@@ -29,6 +29,15 @@ while (($#)); do
 done
 if [[ $probe == true ]]; then printf '{"status":"ready"}'; exit 0; fi
 if [[ -n $file ]]; then
+ if [[ -f $SCHOOLORBIT_STACK_ROOT/delayed-reload ]]; then
+  rm "$SCHOOLORBIT_STACK_ROOT/delayed-reload"
+  if grep -q '"maintenance"' "$SCHOOLORBIT_STACK_ROOT/nginx/conf.d/school-api.conf"; then
+   printf '{"status":"ready"}' > "$file"; printf 200
+  else
+   printf '{"error":"maintenance"}' > "$file"; printf 503
+  fi
+  exit 0
+ fi
  if grep -q '"maintenance"' "$SCHOOLORBIT_STACK_ROOT/nginx/conf.d/school-api.conf"; then
   printf '{"error":"maintenance"}' > "$file"; printf 503
  else
@@ -37,7 +46,10 @@ if [[ -n $file ]]; then
 fi
 `,{mode:0o755});
  const env={...process.env,PATH:path.join(stack,'bin')+':'+process.env.PATH,SCHOOLORBIT_STACK_ROOT:stack,BASE_DOMAIN:'example.test',RELEASE_SHA:'a'.repeat(40)};
- const run=mode=>spawnSync('bash',[path.join(repo,'scripts/lib/pipeline-remote/maintenance.sh'),mode],{env,encoding:'utf8'});
+ const run=mode=>{
+  if(reloadDelay && ['enter','accept'].includes(mode))writeFileSync(path.join(stack,'delayed-reload'),'');
+  return spawnSync('bash',[path.join(repo,'scripts/lib/pipeline-remote/maintenance.sh'),mode],{env,encoding:'utf8'});
+ };
  return {stack,root,run,reloadFailure};
 }
 test('fresh origin starts only a maintenance proxy without unresolved backend upstreams',t=>{
@@ -63,4 +75,13 @@ for(const failure of ['smokeFailure','publicFailure','reloadFailure','renderFail
  assert.notEqual(f.run('accept').status,0);
  assert.ok(existsSync(path.join(f.root,'pending-release')));assert.ok(!existsSync(path.join(f.root,'accepted-release')));
  for(const part of ['school','admin']) assert.match(readFileSync(path.join(f.stack,'nginx/conf.d',part+'-api.conf'),'utf8'),/return 503/);
+});
+
+test('entering and opening maintenance wait for the asynchronous Nginx reload to take effect',t=>{
+ const f=fixture(t,{reloadDelay:true});
+ for(const mode of ['enter','verify','accept']) {
+  const result=f.run(mode);assert.equal(result.status,0,result.stderr);
+ }
+ assert.ok(existsSync(path.join(f.root,'accepted-release')));
+ assert.ok(!existsSync(path.join(f.root,'pending-release')));
 });
