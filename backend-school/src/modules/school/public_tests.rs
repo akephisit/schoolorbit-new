@@ -292,7 +292,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
     let b = create_named_test_pool("public_http_school_b").await;
     run_test_migrations(&a).await;
     run_test_migrations(&b).await;
-    user(&a, "public-http-teacher", "staff", None, "active").await;
+    let actor_id = user(&a, "public-http-teacher", "staff", None, "active").await;
     let pool_manager = Arc::new(PoolManager::new());
     pool_manager
         .insert_test_pool("test-pool://public-a", a.clone())
@@ -356,11 +356,69 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
         ),
     };
+    use axum::extract::FromRef;
+    let academic = school_academic_http::state::AcademicHttpState::from_ref(&state);
+    let certificates = school_certificates_http::state::CertificateHttpState::from_ref(&state);
+    assert!(Arc::ptr_eq(
+        &academic.auth_runtime.identity_cache,
+        &state.auth_runtime.identity_cache
+    ));
+    assert!(Arc::ptr_eq(
+        &academic.auth_runtime.permission_cache,
+        &state.permission_cache
+    ));
+    assert!(Arc::ptr_eq(
+        &certificates.auth_runtime.pool_manager,
+        &state.pool_manager
+    ));
+    assert!(Arc::ptr_eq(
+        &certificates.file_platform,
+        &state.file_platform
+    ));
+    assert!(Arc::ptr_eq(
+        &certificates.certificate_verification_limiter,
+        &state.certificate_verification_limiter
+    ));
+    let session = school_auth::session_service::AuthenticatedSession::for_tests(
+        state.auth_runtime.identity_cache.clone(),
+        school_tenancy::TenantContext {
+            tenant_id: Uuid::new_v4(),
+            subdomain: "school-a".into(),
+            pool: a.clone(),
+        },
+        Uuid::new_v4(),
+        actor_id,
+        "staff",
+    );
+    let narrow_routes = Router::new()
+        .route(
+            "/academic",
+            get(school_academic_http::core::handlers::list_years),
+        )
+        .route(
+            "/certificates",
+            get(school_certificates_http::handlers::list_certificate_campaigns),
+        )
+        .layer(axum::Extension(session))
+        .with_state(state.clone());
+    for path in ["/academic", "/certificates"] {
+        let response = narrow_routes
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "narrow handler must enforce permission: {path}"
+        );
+    }
     let app = build_app(state);
     for (tenant, count) in [("school-a", 1), ("school-b", 0)] {
         for path in [
             "/api/school/public/statistics",
             "/api/school/public/organization",
+            "/api/public/academic-context/options",
         ] {
             let response = app
                 .clone()
@@ -402,6 +460,18 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             Some("https://missing.schoolorbit.app"),
             None,
             StatusCode::NOT_FOUND,
+        ),
+        (
+            "/api/academic/years",
+            Some("https://school-a.schoolorbit.app"),
+            None,
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "/api/certificates/campaigns",
+            Some("https://school-a.schoolorbit.app"),
+            None,
+            StatusCode::UNAUTHORIZED,
         ),
         (
             "/api/school/settings",

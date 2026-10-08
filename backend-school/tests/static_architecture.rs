@@ -3959,7 +3959,8 @@ fn academic_curriculum_access_uses_school_permission_policy() {
 
 #[test]
 fn academic_curriculum_permission_decisions_live_in_policy_layer() {
-    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let policies_root =
+        read_source(workspace_crate_dir("school-academic-http").join("src/policies.rs"));
     let catalog_policy = strip_comments(&read_source(
         manifest_dir()
             .join("crates/school-academic-http/src/policies/academic_catalog_access_policy.rs"),
@@ -3992,7 +3993,8 @@ fn academic_curriculum_permission_decisions_live_in_policy_layer() {
 
 #[test]
 fn academic_core_resource_policies_preserve_independent_scopes() {
-    let policies_root = read_source(manifest_dir().join("src/policies.rs"));
+    let policies_root =
+        read_source(workspace_crate_dir("school-academic-http").join("src/policies.rs"));
     let shared_policy = strip_comments(&read_source(
         workspace_crate_dir("school-authorization").join("src/academic_resource.rs"),
     ));

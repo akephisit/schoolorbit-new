@@ -239,6 +239,9 @@ jobs:
       - name: Test navigation persistence and policy
         run: ./scripts/test_backend_school.sh --package school-navigation -- --test-threads=4
 
+      - name: Test narrow HTTP state and tenant isolation
+        run: ./scripts/test_backend_school.sh modules::school::public_tests -- --test-threads=4
+
       - name: Test Academic Core consumers
         run: ./scripts/test_backend_school.sh modules::academic::core::services_tests -- --test-threads=4
 
