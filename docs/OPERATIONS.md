@@ -89,6 +89,10 @@ classification as a push. `deploy-school-tenant.yml` remains a provisioning-only
 for one new tenant and is not a production release path, but it shares the release concurrency group
 so provisioning cannot change a Worker while a coordinated release records or promotes versions.
 
+Before any production change, `verify-release-ci` requires successful API and Permission workflows on the exact release SHA and latest attempt, and Installer when deployment inputs match its tracked push filters. Builds and inactive Worker uploads run in parallel with this verification. A failed, cancelled, missing, skipped, or timed-out required check blocks backend replacement, menu synchronization, Worker promotion and release acceptance; the active release remains available. Manual dispatch calls the same CI workflows directly on its checked-out SHA. An already-accepted replay remains a no-op and restores only its trusted accepted-state evidence. Release summaries distinguish CI rejection before production changes from a deployment failure after maintenance starts.
+
+Wrangler actions use Node 24 and read the CLI version from each application's tracked `package-lock.json`; action upgrades do not select a floating CLI version.
+
 The school release stages the tracked canonical Compose file, validates it, atomically replaces
 `/opt/stack/podman-compose.yml`, and recreates backend-school without restarting backend-admin.
 It starts and verifies clamd when required. Production backend-school deliberately has no Compose

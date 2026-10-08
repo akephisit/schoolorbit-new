@@ -14,6 +14,7 @@ on:
       - "scripts/find_worker_release_candidates.mjs"
       - "scripts/resolve_school_release_scope.sh"
       - "scripts/resolve_school_release_replay.mjs"
+      - "scripts/verify_school_release_ci.mjs"
       - "scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh"
       - "scripts/render_nginx_config.sh"
       - "scripts/smoke_test.sh"
@@ -286,6 +287,72 @@ jobs:
 
           printf 'scope=%s\nneeds_frontend=%s\nneeds_backend=%s\nrelease_id=%s\n' \
             "$scope" "$needs_frontend" "$needs_backend" "$release_id" >>"$GITHUB_OUTPUT"
+
+  manual-api-ci:
+    needs: resolve-scope
+    if: github.event_name == 'workflow_dispatch' && needs.resolve-scope.outputs.already_deployed != 'true'
+    uses: ./.github/workflows/api-contract.yml
+
+  manual-permission-ci:
+    needs: resolve-scope
+    if: github.event_name == 'workflow_dispatch' && needs.resolve-scope.outputs.already_deployed != 'true'
+    uses: ./.github/workflows/permission-contract.yml
+
+  manual-installer-ci:
+    needs: resolve-scope
+    if: github.event_name == 'workflow_dispatch' && needs.resolve-scope.outputs.already_deployed != 'true'
+    uses: ./.github/workflows/installer.yml
+
+  verify-release-ci:
+    needs:
+      [resolve-scope, manual-api-ci, manual-permission-ci, manual-installer-ci]
+    if: >-
+      ${{ always() && needs.resolve-scope.result == 'success' &&
+          needs.resolve-scope.outputs.already_deployed != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        if: github.event_name == 'push'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend-school/package-lock.json
+
+      - name: Install gate dependencies
+        if: github.event_name == 'push'
+        working-directory: frontend-school
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify trusted push CI on this release SHA
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+        run: node scripts/verify_school_release_ci.mjs
+
+      - name: Verify manual release CI results
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          API_RESULT: ${{ needs.manual-api-ci.result }}
+          PERMISSION_RESULT: ${{ needs.manual-permission-ci.result }}
+          INSTALLER_RESULT: ${{ needs.manual-installer-ci.result }}
+        run: |
+          set -euo pipefail
+          if [ "$API_RESULT" != success ] || [ "$PERMISSION_RESULT" != success ] || [ "$INSTALLER_RESULT" != success ]; then
+            echo "Manual release blocked before production changes: required CI did not succeed" >>"$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Reusable release CI passed for $GITHUB_SHA" >>"$GITHUB_STEP_SUMMARY"
 
   build-backend:
     needs: resolve-scope
@@ -745,12 +812,25 @@ jobs:
               end
           ' "$RUNNER_TEMP/current-deployments.json" >"$RUNNER_TEMP/previous-versions.json"
 
+      - name: Read locked Wrangler version
+        id: wrangler-version
+        working-directory: frontend-school
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const version = lock.packages['node_modules/wrangler'].version;
+          if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid locked Wrangler version');
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          NODE
+
       - name: Upload inactive Worker version
         if: >-
           ${{ steps.validate-reusable-worker.outputs.reused != 'true' &&
               steps.recover-inactive-worker.outputs.reused != 'true' }}
-        uses: cloudflare/wrangler-action@v3.14.1
+        uses: cloudflare/wrangler-action@v4.1.3
         with:
+          wranglerVersion: ${{ steps.wrangler-version.outputs.version }}
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend-school
@@ -789,9 +869,10 @@ jobs:
           if-no-files-found: error
 
   deploy-backend:
-    needs: [resolve-scope, build-backend, stage-frontends]
+    needs: [resolve-scope, verify-release-ci, build-backend, stage-frontends]
     if: >-
-      ${{ always() && needs.resolve-scope.outputs.needs_backend == 'true' &&
+      ${{ always() && needs.verify-release-ci.result == 'success' &&
+          needs.resolve-scope.outputs.needs_backend == 'true' &&
           needs.build-backend.result == 'success' &&
           (needs.resolve-scope.outputs.needs_frontend != 'true' ||
            needs.stage-frontends.result == 'success') }}
@@ -1411,9 +1492,17 @@ jobs:
             unset SMOKE_USERNAME SMOKE_PASSWORD
 
   promote-frontends:
-    needs: [resolve-scope, discover-schools, stage-frontends, deploy-backend]
+    needs:
+      [
+        resolve-scope,
+        verify-release-ci,
+        discover-schools,
+        stage-frontends,
+        deploy-backend,
+      ]
     if: >-
-      ${{ always() && needs.resolve-scope.outputs.needs_frontend == 'true' &&
+      ${{ always() && needs.verify-release-ci.result == 'success' &&
+          needs.resolve-scope.outputs.needs_frontend == 'true' &&
           needs.discover-schools.result == 'success' &&
           needs.stage-frontends.result == 'success' &&
           (needs.resolve-scope.outputs.needs_backend != 'true' ||
@@ -1543,9 +1632,22 @@ jobs:
           done
           PUBLIC_BACKEND_URL=http://127.0.0.1:18081 npm run sync:menu-routes
 
+      - name: Read locked Wrangler version
+        id: wrangler-version
+        working-directory: frontend-school
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const version = lock.packages['node_modules/wrangler'].version;
+          if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid locked Wrangler version');
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          NODE
+
       - name: Promote staged Worker version
-        uses: cloudflare/wrangler-action@v3.14.1
+        uses: cloudflare/wrangler-action@v4.1.3
         with:
+          wranglerVersion: ${{ steps.wrangler-version.outputs.version }}
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend-school
@@ -1592,6 +1694,7 @@ jobs:
     needs:
       [
         resolve-scope,
+        verify-release-ci,
         build-backend,
         stage-frontends,
         deploy-backend,
@@ -1599,6 +1702,8 @@ jobs:
       ]
     if: >-
       ${{ always() && needs.resolve-scope.result == 'success' &&
+          (needs.verify-release-ci.result == 'success' ||
+           needs.resolve-scope.outputs.already_deployed == 'true') &&
           (needs.resolve-scope.outputs.needs_frontend != 'true' ||
            needs.promote-frontends.result == 'success') &&
           (needs.resolve-scope.outputs.needs_backend != 'true' ||
@@ -1821,6 +1926,7 @@ jobs:
     needs:
       [
         resolve-scope,
+        verify-release-ci,
         stage-frontends,
         deploy-backend,
         promote-frontends,
@@ -1833,6 +1939,7 @@ jobs:
         env:
           RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
           RELEASE_SCOPE: ${{ needs.resolve-scope.outputs.scope }}
+          CI_RESULT: ${{ needs.verify-release-ci.result }}
           BACKEND_RESULT: ${{ needs.deploy-backend.result }}
           FRONTEND_RESULT: ${{ needs.promote-frontends.result }}
           ACCEPT_RESULT: ${{ needs.accept-release.result }}
@@ -1852,6 +1959,8 @@ jobs:
             else
               echo '; newer workflow history was not changed.' >>"$GITHUB_STEP_SUMMARY"
             fi
+          elif [ "$CI_RESULT" != success ]; then
+            echo "Release blocked by CI before production changes; the active release was preserved." >>"$GITHUB_STEP_SUMMARY"
           elif [ "$ACCEPT_RESULT" != success ] && [ "$BACKEND_RESULT" != skipped ]; then
             echo "School API remains in maintenance for the failed release" >>"$GITHUB_STEP_SUMMARY"
           fi

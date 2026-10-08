@@ -1,6 +1,7 @@
 name: API Contract
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - "contracts/openapi/**"
@@ -25,6 +26,26 @@ on:
       - "docs/TESTING.md"
       - ".github/actions/setup-contract-rust/**"
       - ".github/workflows/api-contract.yml"
+      - "backend-school/**"
+      - "frontend-school/**"
+      - "podman-compose.yml"
+      - "nginx-configs/school-api.conf.template"
+      - "nginx-configs/school-api.maintenance.conf.template"
+      - "scripts/discover_school_tenants.sh"
+      - "scripts/find_worker_release_candidates.mjs"
+      - "scripts/resolve_school_release_scope.sh"
+      - "scripts/resolve_school_release_replay.mjs"
+      - "scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh"
+      - "scripts/render_nginx_config.sh"
+      - "scripts/smoke_test.sh"
+      - "scripts/prune_runtime_images.sh"
+      - "scripts/clamd_runtime_matches.sh"
+      - "scripts/reconcile_r2_cors.sh"
+      - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+      - ".github/actions/setup-chromium/**"
+      - ".github/workflows/deploy-school-release.yml"
+      - "scripts/verify_school_release_ci.mjs"
+      - "scripts/tests/school-release-ci.test.mjs"
   push:
     branches:
       - main
@@ -51,6 +72,26 @@ on:
       - "docs/TESTING.md"
       - ".github/actions/setup-contract-rust/**"
       - ".github/workflows/api-contract.yml"
+      - "backend-school/**"
+      - "frontend-school/**"
+      - "podman-compose.yml"
+      - "nginx-configs/school-api.conf.template"
+      - "nginx-configs/school-api.maintenance.conf.template"
+      - "scripts/discover_school_tenants.sh"
+      - "scripts/find_worker_release_candidates.mjs"
+      - "scripts/resolve_school_release_scope.sh"
+      - "scripts/resolve_school_release_replay.mjs"
+      - "scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh"
+      - "scripts/render_nginx_config.sh"
+      - "scripts/smoke_test.sh"
+      - "scripts/prune_runtime_images.sh"
+      - "scripts/clamd_runtime_matches.sh"
+      - "scripts/reconcile_r2_cors.sh"
+      - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+      - ".github/actions/setup-chromium/**"
+      - ".github/workflows/deploy-school-release.yml"
+      - "scripts/verify_school_release_ci.mjs"
+      - "scripts/tests/school-release-ci.test.mjs"
 
 permissions:
   contents: read
@@ -59,6 +100,7 @@ jobs:
   artifacts:
     name: Contract artifacts and offline export
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PUBLIC_BACKEND_URL: http://localhost:3000
@@ -120,6 +162,7 @@ jobs:
   backend:
     name: Backend contract verification
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -176,6 +219,7 @@ jobs:
   frontend:
     name: Frontend contract verification
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PUBLIC_BACKEND_URL: http://localhost:3000
