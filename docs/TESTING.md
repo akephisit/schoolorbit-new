@@ -420,6 +420,19 @@ podman image inspect schoolorbit/backend-school:verification \
 
 Docker Buildx remains limited to the GitHub Actions backend-image build jobs; repository-local runtime, database tests, image inspection, and workflow linting use Podman without a Docker socket or compatibility alias. The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate. API Contract keeps artifact generation/offline export, backend validation, and frontend validation in independent jobs without `needs`; the static guard owns this division and its single-writer Rust cache policy.
 
+Contract jobs use the shared `setup-contract-rust` action before restoring the Rust cache. It removes
+unused preinstalled toolchains from the disposable GitHub runner because rust-cache includes that
+inventory in its key. Do not run this runner setup on a developer machine. The offline OpenAPI gate
+executes the binary already compiled by `check:api-contracts` under `env -i`; it still verifies export
+without runtime configuration while preserving the compiler environment used to build the binary.
+
+The `setup-chromium` action caches the exact installed Playwright version's Chromium headless shell.
+It always verifies browser files and launches the browser, including on a cache hit, installing
+host dependencies when the runner cannot launch it. School promotion and E2E Sandbox retain their
+browser checks. Verify a change to the browser setup with
+the deployment static guards and the release-scope tests above, then confirm a real headless
+Chromium launch; a reported browser cache hit alone is insufficient.
+
 The installer Bats directory includes focused Cockpit coverage:
 
 - `cockpit_provider.bats` exercises Tunnel creation/adoption, ingress, connector IP, CNAME drift, memory-only token handling, and management rollback without deleting Tunnels;

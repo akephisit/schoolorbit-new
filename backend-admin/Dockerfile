@@ -31,8 +31,8 @@ RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
         ACTIONS_RESULTS_URL="$(cat /run/secrets/sccache_gha_url)" \
         ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/sccache_gha_token)" \
         SCCACHE_GHA_ENABLED=on \
-        SCCACHE_GHA_CACHE_TO=schoolorbit-backend-admin \
-        SCCACHE_GHA_CACHE_FROM=schoolorbit-backend-admin \
+        ACTIONS_CACHE_SERVICE_V2=true \
+        SCCACHE_GHA_VERSION=schoolorbit-backend-admin \
         SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
         RUSTC_WRAPPER=/usr/local/bin/sccache \
         cargo build --release --bin backend-admin --timings; \

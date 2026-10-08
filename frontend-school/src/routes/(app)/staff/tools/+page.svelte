@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { QrCode, ArrowRight, Wrench } from '@lucide/svelte';
 	import PageShell from '#lib/components/app-layout/PageShell.svelte';
 </script>
@@ -10,7 +11,7 @@
 >
 	<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 		<a
-			href="/staff/tools/qr-code"
+			href={resolve('staff/tools/qr-code')}
 			class="group rounded-xl border border-border bg-card p-6 text-card-foreground transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 		>
 			<QrCode class="mb-4 size-8 text-primary" />

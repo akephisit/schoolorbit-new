@@ -22,6 +22,7 @@ on:
       - "frontend-school/package-lock.json"
       - ".rules"
       - "docs/TESTING.md"
+      - ".github/actions/setup-contract-rust/**"
       - ".github/workflows/api-contract.yml"
   push:
     branches:
@@ -46,6 +47,7 @@ on:
       - "frontend-school/package-lock.json"
       - ".rules"
       - "docs/TESTING.md"
+      - ".github/actions/setup-contract-rust/**"
       - ".github/workflows/api-contract.yml"
 
 permissions:
@@ -72,9 +74,7 @@ jobs:
           cache-dependency-path: frontend-school/package-lock.json
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.98.1
-        with:
-          components: rustfmt
+        uses: ./.github/actions/setup-contract-rust
 
       - name: Restore Rust dependency cache
         id: rust_cache
@@ -110,7 +110,9 @@ jobs:
       - name: Test offline OpenAPI export
         working-directory: backend-school
         run: |
-          env -i PATH="$PATH" HOME="$HOME" cargo run --quiet --bin backend-school -- export-openapi > /tmp/school-api.json
+          # Reuse the binary built by check:api-contracts; isolate the runtime, not Cargo.
+          executable="$(cargo metadata --locked --format-version 1 --no-deps | jq -r '.target_directory')/debug/backend-school"
+          env -i PATH="$PATH" HOME="$HOME" "$executable" export-openapi > /tmp/school-api.json
           node -e "JSON.parse(require('node:fs').readFileSync('/tmp/school-api.json', 'utf8'))"
 
   backend:
@@ -124,9 +126,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.98.1
-        with:
-          components: rustfmt
+        uses: ./.github/actions/setup-contract-rust
 
       - name: Restore Rust dependency cache
         id: rust_cache
@@ -210,7 +210,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.98.1
+        uses: ./.github/actions/setup-contract-rust
 
       - name: Restore Rust dependency cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32

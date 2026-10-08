@@ -36,7 +36,7 @@ if [[ $scope == auto ]]; then
         frontend_changed_files=$(git diff --name-only "$frontend_accepted_sha" "$release_sha")
         while IFS= read -r changed; do
             case "$changed" in
-                frontend-school/* | scripts/discover_school_tenants.sh | \
+                frontend-school/* | .github/actions/setup-chromium/* | scripts/discover_school_tenants.sh | \
                     scripts/find_worker_release_candidates.mjs | \
                     scripts/lib/schoolorbit-installer/configure_pre_cutover_origin.sh)
                     needs_frontend=true

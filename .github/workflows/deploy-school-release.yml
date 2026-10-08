@@ -21,6 +21,7 @@ on:
       - "scripts/clamd_runtime_matches.sh"
       - "scripts/reconcile_r2_cors.sh"
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
+      - ".github/actions/setup-chromium/**"
       - ".github/workflows/deploy-school-release.yml"
   workflow_dispatch:
     inputs:
@@ -339,6 +340,14 @@ jobs:
             exit 1
           fi
 
+      - name: Configure sccache cache runtime
+        if: steps.existing-backend-image.outputs.exists != 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
+
       - name: Build and push Docker image
         if: steps.existing-backend-image.outputs.exists != 'true'
         uses: docker/build-push-action@v7
@@ -350,6 +359,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=backend-school
           cache-to: type=gha,scope=backend-school,mode=max
+          build-args: SCHOOL_COMPILER_CACHE=gha
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
 
       - name: Export Cargo timing report
         if: steps.existing-backend-image.outputs.exists != 'true'
@@ -360,15 +373,55 @@ jobs:
           push: false
           outputs: type=local,dest=${{ runner.temp }}/cargo-timings-backend-school
           cache-from: type=gha,scope=backend-school
+          build-args: SCHOOL_COMPILER_CACHE=gha
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
 
       - name: Upload Cargo timing report
         if: steps.existing-backend-image.outputs.exists != 'true'
         uses: actions/upload-artifact@v6
         with:
           name: cargo-timings-backend-school
-          path: ${{ runner.temp }}/cargo-timings-backend-school/cargo-timing.html
+          path: |
+            ${{ runner.temp }}/cargo-timings-backend-school/cargo-timing.html
+            ${{ runner.temp }}/cargo-timings-backend-school/sccache-stats.json
           retention-days: 7
           if-no-files-found: error
+
+      - name: Summarize compiler cache and Cargo timings
+        if: steps.existing-backend-image.outputs.exists != 'true'
+        env:
+          TIMING_DIR: ${{ runner.temp }}/cargo-timings-backend-school
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          directory = pathlib.Path(os.environ['TIMING_DIR'])
+          html = (directory / 'cargo-timing.html').read_text()
+          data = re.search(r'const UNIT_DATA = (\[.*?\]);', html, re.S)
+          if not data:
+              print('::warning::Cargo timing format changed; inspect the HTML artifact.')
+              raise SystemExit(0)
+          units = json.loads(data.group(1))
+          stats = json.loads((directory / 'sccache-stats.json').read_text()).get('stats', {})
+          hits = sum(stats.get('cache_hits', {}).get('counts', {}).values())
+          misses = sum(stats.get('cache_misses', {}).get('counts', {}).values())
+          rows = sorted((unit for unit in units if unit['duration'] > 0),
+                        key=lambda unit: unit['duration'], reverse=True)[:5]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('\n### Compiler cache and slowest Cargo units\n')
+              if stats:
+                  summary.write(f'- Hits: {hits}; misses: {misses}; '
+                                f'non-cacheable: {stats.get("requests_not_cacheable", 0)}; '
+                                f'write errors: {stats.get("cache_write_errors", 0)}\n')
+              else:
+                  summary.write('- Compiler cache disabled or unavailable; ordinary Cargo build.\n')
+              summary.write('\n| Cargo unit | Seconds |\n|---|---:|\n')
+              for unit in rows:
+                  summary.write(f'| {unit["name"]}{unit["target"]} | {unit["duration"]:.2f} |\n')
+              summary.write('\nUnits overlap; these durations are not additive. '
+                            'The application binary duration includes its final link.\n')
+          PY
 
       - name: Resolve immutable backend image digest
         id: backend-image
@@ -389,6 +442,7 @@ jobs:
           printf '%s\n' \
             '### Docker build cache' \
             '- Scope: backend-school' \
+            '- Compiler cache mode: gha' \
             '- Layer hits: inspect the Docker build record attached to this job.' \
             >> "$GITHUB_STEP_SUMMARY"
 
@@ -1521,9 +1575,8 @@ jobs:
             sleep 5
           done
 
-      - name: Install Chromium for application mount check
-        working-directory: frontend-school
-        run: npx playwright install --with-deps chromium
+      - name: Setup cached Chromium for application mount check
+        uses: ./.github/actions/setup-chromium
 
       - name: Verify promoted frontend readiness
         working-directory: frontend-school
@@ -1532,7 +1585,14 @@ jobs:
         run: node scripts/verify-tenant-worker-readiness.mjs
 
   accept-release:
-    needs: [resolve-scope, build-backend, stage-frontends, deploy-backend, promote-frontends]
+    needs:
+      [
+        resolve-scope,
+        build-backend,
+        stage-frontends,
+        deploy-backend,
+        promote-frontends,
+      ]
     if: >-
       ${{ always() && needs.resolve-scope.result == 'success' &&
           (needs.resolve-scope.outputs.needs_frontend != 'true' ||
@@ -1754,7 +1814,14 @@ jobs:
           fi
 
   release-summary:
-    needs: [resolve-scope, stage-frontends, deploy-backend, promote-frontends, accept-release]
+    needs:
+      [
+        resolve-scope,
+        stage-frontends,
+        deploy-backend,
+        promote-frontends,
+        accept-release,
+      ]
     if: always()
     runs-on: ubuntu-latest
     steps:

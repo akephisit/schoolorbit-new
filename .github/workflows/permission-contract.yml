@@ -15,6 +15,7 @@ on:
       - "frontend-school/tests/static/**"
       - "frontend-school/package.json"
       - "frontend-school/package-lock.json"
+      - ".github/actions/setup-contract-rust/**"
       - ".github/workflows/permission-contract.yml"
   push:
     branches:
@@ -32,6 +33,7 @@ on:
       - "frontend-school/tests/static/**"
       - "frontend-school/package.json"
       - "frontend-school/package-lock.json"
+      - ".github/actions/setup-contract-rust/**"
       - ".github/workflows/permission-contract.yml"
 
 permissions:
@@ -57,9 +59,7 @@ jobs:
           cache-dependency-path: frontend-school/package-lock.json
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.98.1
-        with:
-          components: rustfmt
+        uses: ./.github/actions/setup-contract-rust
 
       - name: Restore Rust dependency cache
         id: rust_cache
