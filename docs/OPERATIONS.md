@@ -93,6 +93,8 @@ Before any production change, `verify-release-ci` requires successful API and Pe
 
 Wrangler actions use Node 24 and read the CLI version from each application's tracked `package-lock.json`; action upgrades do not select a floating CLI version.
 
+Frontend Admin uploads code and `INTERNAL_API_SECRET` together with `wrangler versions upload --secrets-file`, then promotes the exact version ID from Wrangler's structured upload output and applies the configured routes. Its temporary secret file is mode `0600` and removed even on failure. Do not use legacy `secret bulk` before deployment: Cloudflare rejects it when an inactive Worker version exists, including versions created by Cloudflare Builds.
+
 The school release stages the tracked canonical Compose file, validates it, atomically replaces
 `/opt/stack/podman-compose.yml`, and recreates backend-school without restarting backend-admin.
 It starts and verifies clamd when required. Production backend-school deliberately has no Compose

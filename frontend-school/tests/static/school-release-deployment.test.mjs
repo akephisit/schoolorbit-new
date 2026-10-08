@@ -1,12 +1,113 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { access, readFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { parse as parseYaml } from 'yaml';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const workflowPath = path.join(repoRoot, '.github/workflows/deploy-school-release.yml');
+
+test('Admin uploads code with secrets and promotes only its recorded Worker version', async () => {
+	const workflow = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-frontend-admin.yml'), 'utf8')
+	);
+	const steps = workflow.jobs.deploy.steps;
+	const prepare = steps.find((step) => step.name === 'Prepare versioned Worker secrets');
+	const upload = steps.find(
+		(step) => step.name === 'Upload frontend-admin Worker with its secrets'
+	);
+	const record = steps.find((step) => step.id === 'uploaded-version');
+	const promote = steps.find(
+		(step) => step.name === 'Promote uploaded frontend-admin Worker and apply routes'
+	);
+	const cleanup = steps.find((step) => step.name === 'Remove temporary Worker secrets');
+	assert.match(
+		upload.with.command,
+		/^versions upload .*--secrets-file \.wrangler\/admin-release-secrets\.json/
+	);
+	assert.equal(
+		upload.env.WRANGLER_OUTPUT_FILE_PATH,
+		'${{ github.workspace }}/frontend-admin/.wrangler/admin-release-upload.ndjson'
+	);
+	assert.equal(upload.env.PUBLIC_API_URL, '${{ vars.BACKEND_ADMIN_URL }}');
+	assert.equal(upload.env.BACKEND_SCHOOL_URL, '${{ vars.BACKEND_SCHOOL_URL }}');
+	assert.match(
+		promote.with.command,
+		/--version-id \$\{\{ steps\.uploaded-version\.outputs\.id \}\} --percentage 100 --yes/
+	);
+	assert.match(promote.with.command, /\ntriggers deploy --config wrangler\.deploy\.json/);
+	assert.equal(cleanup.if, 'always()');
+	assert.ok(steps.indexOf(prepare) < steps.indexOf(upload));
+	assert.ok(steps.indexOf(upload) < steps.indexOf(record));
+	assert.ok(steps.indexOf(record) < steps.indexOf(promote));
+	for (const step of steps) {
+		assert.ok(!step.with?.secrets, 'legacy secret bulk must not run');
+		assert.doesNotMatch(step.with?.command || '', /secret bulk/);
+	}
+	const temp = await mkdtemp(path.join(os.tmpdir(), 'admin-version-'));
+	const output = path.join(temp, 'output');
+	const run = (step, extra = {}) =>
+		spawnSync('bash', ['-eu', '-c', step.run], {
+			cwd: temp,
+			env: { ...process.env, GITHUB_OUTPUT: output, ...extra },
+			encoding: 'utf8'
+		});
+	try {
+		assert.notEqual(run(prepare, { INTERNAL_API_SECRET: '' }).status, 0);
+		await mkdir(path.join(temp, '.wrangler'), { recursive: true });
+		const fakeSecret = 'disposable-test-binding';
+		const prepared = run(prepare, { INTERNAL_API_SECRET: fakeSecret });
+		assert.equal(prepared.status, 0, prepared.stderr);
+		assert.doesNotMatch(prepared.stdout + prepared.stderr, /disposable-test-binding/);
+		assert.equal(
+			(await stat(path.join(temp, '.wrangler/admin-release-secrets.json'))).mode & 0o777,
+			0o600
+		);
+		assert.equal(
+			JSON.parse(await readFile(path.join(temp, '.wrangler/admin-release-secrets.json'), 'utf8'))
+				.INTERNAL_API_SECRET,
+			fakeSecret
+		);
+		await writeFile(
+			path.join(temp, 'wrangler.deploy.json'),
+			JSON.stringify({ name: 'schoolorbit-frontend-admin' })
+		);
+		const valid = {
+			type: 'version-upload',
+			version: 1,
+			worker_name: 'schoolorbit-frontend-admin',
+			version_id: '12345678-abcd-1234-abcd-123456789abc'
+		};
+		for (const entries of [
+			[],
+			[valid, valid],
+			[{ ...valid, worker_name: 'other-worker' }],
+			[{ ...valid, version: 2 }],
+			[{ ...valid, version_id: 'latest' }],
+			[{ ...valid, version_id: 'id\ninjected=value' }]
+		]) {
+			await writeFile(
+				path.join(temp, '.wrangler/admin-release-upload.ndjson'),
+				entries.map((entry) => JSON.stringify(entry)).join('\n')
+			);
+			assert.notEqual(run(record).status, 0, JSON.stringify(entries));
+		}
+		await writeFile(
+			path.join(temp, '.wrangler/admin-release-upload.ndjson'),
+			JSON.stringify(valid)
+		);
+		const recorded = run(record);
+		assert.equal(recorded.status, 0, recorded.stderr);
+		assert.equal(await readFile(output, 'utf8'), `id=${valid.version_id}\n`);
+		assert.equal(run(cleanup).status, 0);
+		await assert.rejects(access(path.join(temp, '.wrangler/admin-release-secrets.json')));
+		await assert.rejects(access(path.join(temp, '.wrangler/admin-release-upload.ndjson')));
+	} finally {
+		await rm(temp, { recursive: true, force: true });
+	}
+});
 
 test('every production mutation requires release CI while builds stay parallel', async () => {
 	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));

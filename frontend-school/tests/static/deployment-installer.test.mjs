@@ -1137,16 +1137,24 @@ test('frontend deployments keep environment values out of committed Worker confi
 	assert.equal(wrangler.vars, undefined);
 
 	const admin = await readRepo('.github/workflows/deploy-frontend-admin.yml');
-	assert.match(admin, /secrets:\s*\|\s*\n\s*INTERNAL_API_SECRET/);
+	assert.match(admin, /INTERNAL_API_SECRET: \$\{\{ secrets\.INTERNAL_API_SECRET \}\}/);
+	assert.match(admin, /versions upload .*--secrets-file \.wrangler\/admin-release-secrets\.json/);
 	assert.match(admin, /vars\.BACKEND_ADMIN_URL/);
 	assert.match(admin, /vars\.BACKEND_SCHOOL_URL/);
 	assert.match(admin, /vars\.BASE_DOMAIN/);
 	assert.match(admin, /vars\.CLOUDFLARE_ACCOUNT_ID/);
 	assert.match(admin, /wrangler\.deploy\.json/);
 	assert.match(admin, /FRONTEND_DEPLOY_ENABLED/);
-	const adminWorkerDeploy = admin.slice(admin.indexOf('- name: Deploy frontend-admin Worker'));
-	assert.match(adminWorkerDeploy, /PUBLIC_API_URL: \$\{\{ vars\.BACKEND_ADMIN_URL \}\}/);
-	assert.match(adminWorkerDeploy, /BACKEND_SCHOOL_URL: \$\{\{ vars\.BACKEND_SCHOOL_URL \}\}/);
+	const adminWorkerConfig = admin.slice(
+		admin.indexOf('- name: Create environment-specific deployment configuration'),
+		admin.indexOf('- name: Read locked Wrangler version')
+	);
+	assert.match(adminWorkerConfig, /PUBLIC_API_URL: \$\{\{ vars\.BACKEND_ADMIN_URL \}\}/);
+	assert.match(adminWorkerConfig, /BACKEND_SCHOOL_URL: \$\{\{ vars\.BACKEND_SCHOOL_URL \}\}/);
+	assert.match(
+		adminWorkerConfig,
+		/vars:\{PUBLIC_API_URL:\$admin_api,BACKEND_SCHOOL_URL:\$school_api\}/
+	);
 
 	for (const file of [
 		'.github/workflows/deploy-school-release.yml',
