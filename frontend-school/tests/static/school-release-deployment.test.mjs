@@ -9,6 +9,38 @@ import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 
+test('direct noninteractive Wrangler API commands receive credentials independently of action inputs', async () => {
+	let directCommands = 0;
+	for (const file of [
+		'deploy-frontend-admin.yml',
+		'deploy-school-release.yml',
+		'deploy-school-tenant.yml'
+	]) {
+		const workflow = parseYaml(
+			await readFile(path.join(repoRoot, '.github/workflows', file), 'utf8')
+		);
+		for (const [jobName, job] of Object.entries(workflow.jobs)) {
+			for (const step of job.steps || []) {
+				if (!/\bnpx\s+wrangler\s+(?:versions|deployments|triggers|deploy)\b/.test(step.run || ''))
+					continue;
+				directCommands++;
+				const env = { ...workflow.env, ...job.env, ...step.env };
+				assert.equal(
+					env.CLOUDFLARE_API_TOKEN,
+					'${{ secrets.CLOUDFLARE_API_TOKEN }}',
+					`${file} ${jobName} ${step.name}`
+				);
+				assert.equal(
+					env.CLOUDFLARE_ACCOUNT_ID,
+					'${{ vars.CLOUDFLARE_ACCOUNT_ID }}',
+					`${file} ${jobName} ${step.name}`
+				);
+			}
+		}
+	}
+	assert.ok(directCommands > 5, 'the guard must cover actual deployment commands');
+});
+
 test('Admin uploads code with secrets and promotes only its recorded Worker version', async () => {
 	const workflow = parseYaml(
 		await readFile(path.join(repoRoot, '.github/workflows/deploy-frontend-admin.yml'), 'utf8')
