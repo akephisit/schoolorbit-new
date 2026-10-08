@@ -31,6 +31,11 @@ outcomes and verification environment receipts separately. Auth/session Playwrig
 synthetic values with `--list` and loopback URLs only; it performs no browser or network execution.
 Live session acceptance still requires a dedicated disposable account and the explicit E2E owner.
 
+After an equivalent trusted PR passes, main reuses its test receipts, including fresh database
+fixtures, and runs the internal `prime` command to compile the same backend targets and refresh
+the shared snapshot. A compiler-snapshot receipt names the original verification run and cannot
+authorize another test reuse. Missing, changed or expired proof runs the complete selected suite.
+
 Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, provenance, merge and
 maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and

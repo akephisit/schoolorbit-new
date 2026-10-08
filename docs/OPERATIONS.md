@@ -131,7 +131,10 @@ pipeline because `GITHUB_TOKEN` merges do not emit push workflows. Native protec
 requires a PR, the GitHub Actions `Pipeline gate`, and an up-to-date branch, including for admins.
 It requires zero human approvals, linear history, and forbids force pushes and branch deletion.
 Equivalent PR verification may be reused only with exact tree/base, latest successful attempt,
-suite receipts and matching runner/toolchain/profile evidence; otherwise main executes its checks. Backend owners always execute fresh database verification on main and refresh the compiled snapshot for subsequent PRs.
+suite receipts and matching runner/toolchain/profile evidence; otherwise main executes its checks.
+Backend owners prime the main-owned compiled snapshot after proven PR verification; the PR's
+fresh fixtures are reused once rather than repeated. Compiler-snapshot receipts are distinct from
+test verification, and deployed readiness, migrations and authenticated smoke always execute.
 
 ### Build, deployment timing, and image retention
 

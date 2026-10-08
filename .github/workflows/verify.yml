@@ -20,6 +20,8 @@ jobs:
     outputs:
       remaining: ${{ steps.proof.outputs.remaining }}
       reused: ${{ steps.proof.outputs.reused }}
+      prime: ${{ steps.proof.outputs.prime }}
+      proof: ${{ steps.proof.outputs.proof }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -96,7 +98,15 @@ jobs:
         if: matrix.suite == 'deployment' || matrix.suite == 'frontend-school'
         run: sudo apt-get update && sudo apt-get install -y bats shellcheck shfmt gettext-base jq
       - name: Run owned local and CI verification
-        run: ./scripts/pipeline verify --scope "${{ matrix.suite }}"
+        env:
+          PRIME: ${{ contains(fromJson(needs.reuse.outputs.prime), matrix.suite) }}
+          PR_VERIFICATION_PROOF: ${{ needs.reuse.outputs.proof }}
+        run: |
+          if [[ "$PRIME" == true ]]; then
+            ./scripts/pipeline prime --scope "${{ matrix.suite }}"
+          else
+            ./scripts/pipeline verify --scope "${{ matrix.suite }}"
+          fi
       - name: Record tested Rust sources
         if: startsWith(matrix.suite, 'backend-') && github.ref == 'refs/heads/main' && !inputs.candidate
         env:
@@ -119,6 +129,8 @@ jobs:
       - name: Record actual verification environment
         env:
           VERIFICATION_SUITE: ${{ matrix.suite }}
+          PRIME: ${{ contains(fromJson(needs.reuse.outputs.prime), matrix.suite) }}
+          PR_VERIFICATION_PROOF: ${{ needs.reuse.outputs.proof }}
         run: node scripts/verification_evidence.mjs
       - uses: actions/upload-artifact@v6
         with:

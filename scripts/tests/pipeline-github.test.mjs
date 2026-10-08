@@ -53,9 +53,26 @@ test('main reuses equivalent verified PR suites, independently of SHA after squa
  const f=fixture(t);proof(f);const result=f.run('reuse_pipeline_verification.mjs');assert.equal(result.status,0,result.stderr);
  assert.match(readFileSync(f.env.GITHUB_OUTPUT,'utf8'),/remaining=\[\]/);
 });
-test('main always runs backend fixture owners so source caches advance',t=>{
+test('missing backend proof keeps full verification instead of compiler-only priming',t=>{
  const f=fixture(t);proof(f);const result=f.run('reuse_pipeline_verification.mjs',{REQUESTED_SUITES:'["frontend-school","backend-school","backend-admin"]'});assert.equal(result.status,0,result.stderr);
  assert.match(readFileSync(f.env.GITHUB_OUTPUT,'utf8'),/remaining=\["backend-school","backend-admin"\]/);
+ assert.match(readFileSync(f.env.GITHUB_OUTPUT,'utf8'),/prime=\[\]/);
+});
+function backendProof(f,extra={}) {
+ const p=proof(f);p.plan.verify.push('backend-school');f.zip(10,'plan.json',p.plan);
+ f.routes[`/repos/${repo}/actions/runs/21/artifacts?per_page=100`].artifacts.push({id:13,name:'verification-backend-school'});
+ f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`][0].jobs.push({name:'verify / Verify backend-school',conclusion:'success',run_attempt:1});
+ f.zip(13,'verification-backend-school.json',{kind:'verification',schemaVersion:1,runId:'21',attempt:1,suite:'backend-school',tree,node:process.versions.node,runnerImage:f.env.ImageVersion,runnerOS:'Linux',docker:'28.5.0',rust:'rustc 1.98.1 (fixture)',profile:{incremental:'0',devDebug:'0',testDebug:'0',rustflags:''},...extra});
+ return p;
+}
+test('equivalent backend fixture proof is reused while main still primes its compiled snapshot',t=>{
+ const f=fixture(t);backendProof(f);const result=f.run('reuse_pipeline_verification.mjs',{REQUESTED_SUITES:'["backend-school"]'});assert.equal(result.status,0,result.stderr);
+ const out=readFileSync(f.env.GITHUB_OUTPUT,'utf8');assert.match(out,/reused=\["backend-school"\]/);assert.match(out,/remaining=\["backend-school"\]/);assert.match(out,/prime=\["backend-school"\]/);
+ assert.match(out,/proof=\{"runId":"21","attempt":1,"tree"/);
+});
+for(const mismatch of [{kind:'compiler-snapshot'},{rust:'rustc 1.99.0 (fixture)'},{profile:{incremental:'0',devDebug:'0',testDebug:'0',rustflags:'-C target-cpu=native'}},{attempt:2}])test(`backend ${JSON.stringify(mismatch)} cannot replace actual fixture verification`,t=>{
+ const f=fixture(t);backendProof(f,mismatch);const result=f.run('reuse_pipeline_verification.mjs',{REQUESTED_SUITES:'["backend-school"]'});assert.equal(result.status,0,result.stderr);
+ const out=readFileSync(f.env.GITHUB_OUTPUT,'utf8');assert.match(out,/reused=\[\]/);assert.match(out,/prime=\[\]/);assert.match(out,/remaining=\["backend-school"\]/);
 });
 for(const changed of ['tree','failed-check','missing-receipt','different-runner','rerun-race'])test(`${changed} cannot reuse PR verification`,t=>{
  const f=fixture(t);const p=proof(f);

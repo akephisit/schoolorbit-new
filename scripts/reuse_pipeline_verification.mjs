@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const requested = JSON.parse(process.env.REQUESTED_SUITES);
 let reused = [];
+let proof = null;
 const repo = process.env.GITHUB_REPOSITORY;
 const api = (route) => JSON.parse(execFileSync('gh', ['api', route], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
 if (process.env.GITHUB_REF === 'refs/heads/main' && process.env.CANDIDATE !== 'true') {
@@ -36,21 +37,18 @@ if (process.env.GITHUB_REF === 'refs/heads/main' && process.env.CANDIDATE !== 't
                 reused = [];
                 const docker = execFileSync('docker', ['version', '--format', '{{.Server.Version}}'], { encoding: 'utf8' }).trim();
                 for (const suite of requested) {
-                  // Main owns fresh DB acceptance and the mutable compiled-cache snapshot.
-                  // Keep that one backend owner running; equivalent static/frontend receipts
-                  // can skip duplicate checks without starving the shared compiler cache.
-                  if (suite.startsWith('backend-')) continue;
                   if (!plan.verify.includes(suite) || jobs.filter((job) => job.name.endsWith(`/ Verify ${suite}`) && job.conclusion === 'success' && job.run_attempt === run.run_attempt).length !== 1) continue;
                   const receipt = artifacts.find((item) => item.name === `verification-${suite}` && !item.expired);
                   if (!receipt) continue;
                   writeFileSync(path.join(temp, 'receipt.zip'), execFileSync('gh', ['api', `/repos/${repo}/actions/artifacts/${receipt.id}/zip`], { maxBuffer: 1024 * 1024 }));
                   execFileSync('python3', ['-c', 'import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); assert z.namelist()==[sys.argv[3]]; assert z.getinfo(sys.argv[3]).file_size<65536; open(sys.argv[2],"wb").write(z.read(sys.argv[3]))', path.join(temp, 'receipt.zip'), path.join(temp, 'receipt.json'), `verification-${suite}.json`]);
                   const evidence = JSON.parse(readFileSync(path.join(temp, 'receipt.json'), 'utf8'));
-                  if (evidence.schemaVersion !== 1 || evidence.runId !== String(run.id) || evidence.attempt !== run.run_attempt || evidence.suite !== suite || evidence.tree !== commit.tree.sha || evidence.node !== process.versions.node || !process.env.ImageVersion || evidence.runnerImage !== process.env.ImageVersion || evidence.runnerOS !== process.env.RUNNER_OS || evidence.docker !== docker || evidence.profile?.incremental !== '0' || evidence.profile?.devDebug !== '0' || evidence.profile?.testDebug !== '0' || (suite.startsWith('backend-') && !evidence.rust?.startsWith('rustc 1.98.1 '))) continue;
+                  if ((evidence.kind && evidence.kind !== 'verification') || evidence.schemaVersion !== 1 || evidence.runId !== String(run.id) || evidence.attempt !== run.run_attempt || evidence.suite !== suite || evidence.tree !== commit.tree.sha || evidence.node !== process.versions.node || !process.env.ImageVersion || evidence.runnerImage !== process.env.ImageVersion || evidence.runnerOS !== process.env.RUNNER_OS || evidence.docker !== docker || evidence.profile?.incremental !== '0' || evidence.profile?.devDebug !== '0' || evidence.profile?.testDebug !== '0' || (evidence.profile?.rustflags || '') !== '' || (suite.startsWith('backend-') && !evidence.rust?.startsWith('rustc 1.98.1 '))) continue;
                   reused.push(suite);
                 }
                 const latest = api(`/repos/${repo}/actions/runs/${id}`);
                 if (latest.run_attempt !== run.run_attempt || latest.conclusion !== 'success') reused = [];
+                if (reused.length) proof = {runId:String(run.id),attempt:run.run_attempt,tree:commit.tree.sha,suites:reused};
               }
             } finally { rmSync(temp, { recursive: true, force: true }); }
           }
@@ -59,6 +57,9 @@ if (process.env.GITHUB_REF === 'refs/heads/main' && process.env.CANDIDATE !== 't
     }
   }
 }
-const remaining = requested.filter((suite) => !reused.includes(suite));
-appendFileSync(process.env.GITHUB_OUTPUT, `remaining=${JSON.stringify(remaining)}\nreused=${JSON.stringify(reused)}\n`);
-appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Verified PR checks reused: ${reused.join(', ') || 'none'}. Checks to execute: ${remaining.join(', ') || 'none'}. Runtime readiness/smoke always execute.\n`);
+// Main still owns compiler snapshots. These jobs compile the selected test
+// targets without executing already-proven fixtures; cache misses compile too.
+const prime = reused.filter(suite => suite.startsWith('backend-'));
+const remaining = requested.filter((suite) => !reused.includes(suite) || prime.includes(suite));
+appendFileSync(process.env.GITHUB_OUTPUT, `remaining=${JSON.stringify(remaining)}\nreused=${JSON.stringify(reused)}\nprime=${JSON.stringify(prime)}\nproof=${JSON.stringify(proof)}\n`);
+appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Verified PR checks reused: ${reused.join(', ') || 'none'}. Backend compiler snapshots to refresh: ${prime.join(', ') || 'none'}. Full checks to execute: ${remaining.filter(suite=>!prime.includes(suite)).join(', ') || 'none'}. Runtime readiness/smoke always execute.\n`);
