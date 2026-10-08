@@ -864,7 +864,8 @@ test('backend runtime images use deterministic builders without ownership copy-u
 				/ACTIONS_RUNTIME_TOKEN="\$\(cat \/run\/secrets\/sccache_gha_token\)"/
 			);
 			assert.match(dockerfile, /SCCACHE_GHA_ENABLED=on/);
-			assert.match(dockerfile, new RegExp(`SCCACHE_GHA_CACHE_TO=schoolorbit-${binary}`));
+			assert.match(dockerfile, /ACTIONS_CACHE_SERVICE_V2=true/);
+			assert.match(dockerfile, new RegExp(`SCCACHE_GHA_VERSION=schoolorbit-${binary}`));
 			assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
 			assert.match(dockerfile, new RegExp(`cargo build --release --bin ${binary} --timings`));
 		} else {
@@ -882,6 +883,7 @@ test('backend runtime images use deterministic builders without ownership copy-u
 				/^cargo rustc --release --locked --bin backend-school --timings -- -C lto=off$/m
 			);
 			assert.match(release, /SCCACHE_GHA_VERSION=schoolorbit-backend-school/);
+			assert.match(release, /ACTIONS_CACHE_SERVICE_V2=true/);
 			assert.match(release, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
 			assert.match(release, /--show-stats --stats-format=json/);
 			assert.doesNotMatch(release, /set -[a-z]*x/);

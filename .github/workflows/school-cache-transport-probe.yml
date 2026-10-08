@@ -20,6 +20,7 @@ jobs:
       - name: Verify remote compiler cache with a small Rust library
         run: |
           set -euo pipefail
+          # Exercise the v2 selector inside Docker, where runner variables are absent.
           context="$RUNNER_TEMP/probe"
           mkdir -p "$context/src" "$context/library/src"
           cp backend-school/scripts/build_release.sh "$context/build_release.sh"

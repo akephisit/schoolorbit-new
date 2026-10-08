@@ -10,6 +10,9 @@ case "$cache_mode" in
             ACTIONS_RESULTS_URL=$(cat /run/secrets/sccache_gha_url)
             ACTIONS_RUNTIME_TOKEN=$(cat /run/secrets/sccache_gha_token)
             export ACTIONS_RESULTS_URL ACTIONS_RUNTIME_TOKEN
+            # BuildKit does not forward the runner's cache protocol selector.
+            # Without it sccache selects the retired v1 API even with a v2 URL.
+            export ACTIONS_CACHE_SERVICE_V2=true
             export SCCACHE_GHA_ENABLED=on
             export SCCACHE_GHA_VERSION=schoolorbit-backend-school
             export SCCACHE_IGNORE_SERVER_IO_ERROR=1

@@ -12,6 +12,10 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        if [[ "${RUNNER_ENVIRONMENT:-}" != github-hosted ]]; then
+          echo 'Toolchain cache normalization requires a disposable GitHub-hosted runner' >&2
+          exit 1
+        fi
         # rust-cache hashes all installed toolchains. Hosted runner images can
         # otherwise give identical jobs different keys due to preinstalled Rust.
         active="$(rustup show active-toolchain | cut -d ' ' -f 1)"

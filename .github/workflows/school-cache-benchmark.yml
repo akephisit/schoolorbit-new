@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   benchmark:
-    if: github.event.head_commit.message == 'benchmark: full school build comparison'
+    if: github.event.head_commit.message == 'benchmark-full-school-build'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -25,7 +25,7 @@ jobs:
           results="$RUNNER_TEMP/school-cache-benchmark"
           mkdir -p "$results"
           printf '| Build | Compiler cache | Wall seconds |\n|---|---|---:|\n' >>"$GITHUB_STEP_SUMMARY"
-          for variant in plain-prime cache-prime plain-warm cache-warm-1 cache-warm-2; do
+          for variant in cache-prime plain-warm cache-warm-1 cache-warm-2; do
             context="$RUNNER_TEMP/context-$variant"
             mkdir -p "$context"
             git archive HEAD backend-school | tar -x -C "$context" --strip-components=1
