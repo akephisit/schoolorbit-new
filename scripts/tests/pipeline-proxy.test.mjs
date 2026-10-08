@@ -20,7 +20,7 @@ test('real Nginx serves public maintenance, CORS preflight and token probes with
  docker('network','create',network);
  docker('create','--name',backend,'--network',network,'--network-alias','schoolorbit-backend-school','--network-alias','schoolorbit-backend-admin',image);
  const upstream=path.join(temp,'upstream.conf');
- writeFileSync(upstream,'server { listen 8080; listen 8081; location = /ready { default_type application/json; return 200 \'{"status":"ready"}\'; } location / { default_type application/json; return 401 \'{"error":"unauthorized"}\'; } }');
+ writeFileSync(upstream,'server { listen 8080; listen 8081; location = /ready { default_type application/json; return 200 \'{"status":"ready"}\'; } location / { if ($request_method = OPTIONS) { return 405; } default_type application/json; return 401 \'{"error":"unauthorized"}\'; } }');
  docker('cp',upstream,`${backend}:/etc/nginx/conf.d/default.conf`);docker('start',backend);
  const conf=path.join(temp,'conf'),ssl=path.join(temp,'ssl');mkdirSync(conf);mkdirSync(ssl);
  execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',path.join(ssl,'schoolorbit-origin.key'),'-out',path.join(ssl,'schoolorbit-origin.pem'),'-days','1','-subj','/CN=example.test','-addext','subjectAltName=DNS:school-api.example.test,DNS:admin-api.example.test'],{stdio:'ignore'});
@@ -37,7 +37,11 @@ test('real Nginx serves public maintenance, CORS preflight and token probes with
   assert.match(request(part,'/ready',['-H','X-Schoolorbit-Release-Probe: wrong']),/\n503$/);
   assert.match(request(part,'/ready',['-H',`X-Schoolorbit-Release-Probe: ${probe}`]),/"status":"ready"[\s\S]*\n200$/);
   assert.match(request(part,'/api/private',['-H',`X-Schoolorbit-Release-Probe: ${probe}`]),/"error":"unauthorized"[\s\S]*\n401$/);
-  assert.match(request(part,'/api/private',['-X','OPTIONS','-H','Origin: https://sandbox.example.test','-i']),/Access-Control-Allow-Origin: https:\/\/sandbox.example.test[\s\S]*\n204$/i);
+  for (const headers of [[], ['-H','X-Schoolorbit-Release-Probe: wrong'], ['-H',`X-Schoolorbit-Release-Probe: ${probe}`]]) {
+   const response=request(part,'/api/private',['-X','OPTIONS','-H','Origin: https://sandbox.example.test','-H','Access-Control-Request-Method: POST','-H','Access-Control-Request-Headers: content-type,x-school-subdomain,x-csrf-token','-i',...headers]);
+   assert.match(response,/Access-Control-Allow-Origin: https:\/\/sandbox.example.test[\s\S]*\n204$/i);
+   assert.match(response,/Access-Control-Allow-Headers: [^\r\n]*X-School-Subdomain[^\r\n]*X-CSRF-Token/i);
+  }
  }
  assert.match(request('admin','/internal/schools'),/"error":"unauthorized"[\s\S]*\n401$/);
 });

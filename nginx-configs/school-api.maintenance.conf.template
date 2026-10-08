@@ -56,10 +56,10 @@ server {
     }
 
     location / {
-        if ($school_release_probe = 1) { return 418; }
         if ($request_method = OPTIONS) {
             return 204;
         }
+        if ($school_release_probe = 1) { return 418; }
 
         default_type application/json;
         return 503 '{"success":false,"error":"maintenance","message":"ระบบกำลังปรับปรุง กรุณาลองใหม่อีกครั้ง"}';
