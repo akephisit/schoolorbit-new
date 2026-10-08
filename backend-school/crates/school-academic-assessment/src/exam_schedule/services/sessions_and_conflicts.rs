@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::{
+use crate::exam_schedule::models::{
     BlockedWindow, ExamInvigilatorView, ExamSessionView, PlaceExamSessionRequest,
 };
 use school_errors::AppError;

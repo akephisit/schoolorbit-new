@@ -143,6 +143,12 @@ BuildKit secrets; a missing or unavailable compiler cache falls back to an ordin
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use
 `SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
 does not select v2; a build that reports write errors has not populated a usable cache.
+Automatic backend releases ignore application READMEs and root integration-test directories
+already excluded from Docker contexts. School scope resolution also ignores frontend tests and
+its README, so changing a cross-stack test with backend code does not promote unchanged
+frontends. Scope still includes all queued runtime changes since each trusted accepted baseline;
+dirty attempts and release-control changes retain full reconciliation. Explicit manual scopes
+retain their existing behavior.
 Every build also publishes a `cargo-timings-backend-*` HTML artifact for seven days. School additionally
 exports compiler-cache statistics and summarizes the slowest Cargo units in the job summary. Compare the
 Cargo report, sccache statistics, and GitHub step duration rather than treating one cache marker as
@@ -170,6 +176,21 @@ These are build measurements, not production request latency or an entire deploy
 The application binary still compiles and links. Observe two ordinary warm releases after changes
 to the workspace graph, toolchain, or cache integration; disable this cache if useful hits stop
 reducing total duration. A new branch or cache namespace must first populate its own entries.
+
+Exam scheduling models and persistence now compile in the existing assessment crate, while
+the application retains HTTP/router/OpenAPI and lifecycle adapters. A same-runner Docker
+comparison with a two-CPU quota and unchanged release optimization measured two application-source
+rebuilds at 308 seconds before the move and 261/260 seconds afterward. Changing an exam service
+after the move rebuilt assessment, its dependent academic crates, and the application in 297 seconds;
+it does not eliminate the final application build. OpenAPI documents were identical. These are
+warm Cargo measurements, not complete build/push/deployment timings. The first changed workspace
+graph may require dependency-cache priming before those savings apply.
+
+The pinned Rust toolchain already passes `-fuse-ld=lld` on this Linux target. Selecting lld again
+does not remove compiler work. The manual build benchmark records the actual driver flag and
+compares default/GNU BFD/lld using the same object files. Keep production optimization unchanged
+unless both repeatable compile improvements and representative runtime performance support a
+new profile; profile/exporter experiments alone do not establish production request latency.
 
 The school Dockerfile uses `cargo rustc` with `-C lto=off` only for the final application
 crate to reduce source-changing release build work. Dependencies retain their existing

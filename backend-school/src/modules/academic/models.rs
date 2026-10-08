@@ -1,4 +1,4 @@
-pub mod exam_schedule;
+pub use school_academic_assessment::exam_schedule::models as exam_schedule;
 
 #[cfg(test)]
 pub mod timetable_block {

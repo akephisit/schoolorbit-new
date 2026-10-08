@@ -155,6 +155,10 @@ jobs:
         working-directory: backend-school
         run: cargo test api_contract::tests --bin backend-school
 
+      - name: Test assessment and exam scheduling services
+        working-directory: backend-school
+        run: cargo test -p school-academic-assessment --lib
+
       - name: Test exporter logging boundary
         working-directory: backend-school
         run: cargo test structured_logging --test static_architecture

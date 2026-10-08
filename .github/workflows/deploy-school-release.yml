@@ -23,6 +23,10 @@ on:
       - "scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
       - ".github/actions/setup-chromium/**"
       - ".github/workflows/deploy-school-release.yml"
+      - "!frontend-school/tests/**"
+      - "!frontend-school/README.md"
+      - "!backend-school/tests/**"
+      - "!backend-school/README.md"
   workflow_dispatch:
     inputs:
       release_scope:

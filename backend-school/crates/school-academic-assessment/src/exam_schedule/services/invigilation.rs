@@ -4,7 +4,7 @@ use chrono::NaiveTime;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::{
+use crate::exam_schedule::models::{
     DayRoomAssignmentView, ExamInvigilatorAssignmentSummary, ExamInvigilatorDayWorkload,
     ExamInvigilatorStaffOption, ExamInvigilatorStaffWorkload, ExamInvigilatorView,
     ExamInvigilatorWorkspace, InvigilatorView, UpdateExamInvigilatorsRequest,

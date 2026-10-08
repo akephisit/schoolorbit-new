@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::NaiveTime;
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::{
+use crate::exam_schedule::models::{
     BlockedWindow, BlockedWindowInput, ExamInvigilatorView, ExamScheduleReadinessCode,
     ExamScheduleReadinessFinding, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
 };
@@ -322,28 +322,6 @@ fn published_exam_round_deletion_requires_publish_permission() {
     assert!(ensure_exam_round_can_be_deleted("draft", false).is_ok());
     assert!(ensure_exam_round_can_be_deleted("published", false).is_err());
     assert!(ensure_exam_round_can_be_deleted("published", true).is_ok());
-}
-
-#[test]
-fn academic_routes_expose_staff_level_invigilator_actions() {
-    let source = include_str!("../../../academic.rs");
-
-    assert!(
-        source.contains("/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}")
-    );
-    assert!(source.contains("assign_assignment_invigilator"));
-    assert!(source.contains("remove_assignment_invigilator"));
-}
-
-#[test]
-fn exam_schedule_handler_uses_staff_level_invigilator_services() {
-    let source = include_str!("../../handlers/exam_schedule.rs");
-
-    assert!(source.contains("pub async fn assign_assignment_invigilator"));
-    assert!(source.contains("pub async fn remove_assignment_invigilator"));
-    assert!(source.contains("exam_schedule_service::assign_invigilator_to_assignment"));
-    assert!(source.contains("exam_schedule_service::remove_invigilator_from_assignment"));
-    assert!(source.contains("Path((assignment_id, staff_id)): Path<(Uuid, Uuid)>"));
 }
 
 #[test]

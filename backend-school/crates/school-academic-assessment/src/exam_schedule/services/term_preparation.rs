@@ -67,7 +67,7 @@ fn mapped(
         .ok_or_else(|| AppError::Conflict(format!("ข้อมูลจับคู่ {} สำหรับตารางสอบไม่ครบ", kind.as_str())))
 }
 
-pub(crate) async fn apply(
+pub async fn apply(
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
     context: &TermPreparationContext,

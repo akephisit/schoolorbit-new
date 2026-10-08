@@ -1,0 +1,89 @@
+name: Backend Build Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: Backend to measure
+        type: choice
+        default: both
+        options: [both, backend-school, backend-admin]
+      samples:
+        description: Source-changing samples per compiler profile
+        type: choice
+        default: "2"
+        options: ["2", "1"]
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: ${{ fromJSON(inputs.backend == 'both' && '["backend-school","backend-admin"]' || format('["{0}"]', inputs.backend)) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Configure compiler cache transport
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
+      - name: Restore exact production builder
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ matrix.backend }}
+          target: builder
+          load: true
+          tags: schoolorbit-benchmark:builder
+          cache-from: type=gha,scope=${{ matrix.backend }}
+          build-args: SCHOOL_COMPILER_CACHE=gha
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
+      - name: Compare on the same runner and persistent Cargo state
+        env:
+          BENCH_BACKEND: ${{ matrix.backend }}
+          BENCH_SAMPLES: ${{ inputs.samples }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/build-benchmark"
+          docker create --name schoolorbit-benchmark --cpus=2 \
+            -e BENCH_COMPARE_LINKERS=compare -e BENCH_SAMPLES \
+            -v "$PWD/scripts/benchmark_backend_build.sh:/benchmark.sh:ro" \
+            -v "$RUNNER_TEMP/build-benchmark:/benchmark-results" \
+            --entrypoint sleep schoolorbit-benchmark:builder infinity
+          trap 'docker rm --force schoolorbit-benchmark >/dev/null' EXIT
+          docker start schoolorbit-benchmark
+          for variant in default opt2 cgu64; do
+            docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant"
+          done
+          for cpus in 1 4; do
+            docker update --cpus="$cpus" schoolorbit-benchmark
+            docker exec -e BENCH_SAMPLES=1 schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "cpu$cpus" "/benchmark-results/cpu$cpus"
+          done
+          {
+            echo "### $BENCH_BACKEND / $GITHUB_SHA"
+            echo 'Source-changing Cargo/link timings on one runner; dependencies already built.'
+            echo 'Cargo includes three linker comparisons using the same object files; see their individual timings.'
+            echo 'CPU quotas do not create extra host CPUs. Results are not deployment or API latency.'
+            for variant in default opt2 cgu64 cpu1 cpu4; do
+              echo "#### $variant"
+              echo '```json'
+              cat "$RUNNER_TEMP/build-benchmark/$variant/result.json"
+              echo '```'
+              cat "$RUNNER_TEMP/build-benchmark/$variant/link-nanoseconds.txt.compare"
+              cat "$RUNNER_TEMP/build-benchmark/$variant/link-nanoseconds.txt.driver"
+            done
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: backend-build-${{ matrix.backend }}
+          path: ${{ runner.temp }}/build-benchmark
+          retention-days: 7

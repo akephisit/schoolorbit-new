@@ -599,7 +599,7 @@ test('exam invigilator staff loading is split from room option loading', () => {
 		'utf8'
 	);
 	const backendModels = readFileSync(
-		projectPath('../backend-school/src/modules/academic/models/exam_schedule.rs'),
+		projectPath('../backend-school/crates/school-academic-assessment/src/exam_schedule/models.rs'),
 		'utf8'
 	);
 	const loadManagementOptions = localFunctionSource(page, 'loadManagementOptions');
@@ -814,7 +814,7 @@ test('exam schedule detail exports one editable report workbook', () => {
 test('exam invigilator staff names join title and first name without a middle space', () => {
 	const service = readFileSync(
 		projectPath(
-			'../backend-school/src/modules/academic/services/exam_schedule_service/invigilation.rs'
+			'../backend-school/crates/school-academic-assessment/src/exam_schedule/services/invigilation.rs'
 		),
 		'utf8'
 	);
@@ -1667,7 +1667,10 @@ test('personal exam schedule view groups published sessions and hides staff supe
 test('exam scheduling uses generated term and homeroom contracts end to end', () => {
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const models = readFileSync(
-		path.resolve(projectRoot, '../backend-school/src/modules/academic/models/exam_schedule.rs'),
+		path.resolve(
+			projectRoot,
+			'../backend-school/crates/school-academic-assessment/src/exam_schedule/models.rs'
+		),
 		'utf8'
 	);
 	const handlers = readFileSync(

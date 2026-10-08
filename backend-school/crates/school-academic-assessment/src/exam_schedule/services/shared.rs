@@ -4,7 +4,7 @@ use chrono::{Duration, NaiveTime, Timelike};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::BlockedWindow;
+use crate::exam_schedule::models::BlockedWindow;
 use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
 

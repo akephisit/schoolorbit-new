@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::modules::academic::models::exam_schedule::{
+use crate::exam_schedule::models::{
     DayRoomAssignmentView, GenerateSeatsRequest, InvigilatorView, SeatAssignmentView,
     UpsertDayRoomAssignmentRequest,
 };
