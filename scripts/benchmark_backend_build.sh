@@ -41,7 +41,9 @@ printf 'backend=%s variant=%s cpu_available=%s rust=%s\n' "$backend" "$variant" 
 
 for sample in 1 2; do
     # Change application source, not a dependency manifest or toolchain.
-    printf '\n// Docker build benchmark: %s sample %s\n' "$variant" "$sample" >>src/main.rs
+    source_file=src/main.rs
+    if [[ "$backend" == backend-admin ]]; then source_file=src/handlers/school.rs; fi
+    printf '\n// Docker build benchmark: %s sample %s\n' "$variant" "$sample" >>"$source_file"
     : >"$BENCH_LINK_LOG"
     start=$(date +%s%N)
     cargo rustc --release --locked --bin "$backend" --timings -- "${flags[@]}" 2>&1 | tee "$output/compile-$sample.log"
