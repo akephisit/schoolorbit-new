@@ -166,6 +166,16 @@ sequentially on one runner before attributing a change to a flag: different host
 can produce substantially different timings. A runtime performance claim requires a separate
 representative load test; exporter equality establishes the API contract only.
 
+The manual [Backend HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml)
+compares a selected pre-extraction commit with the workflow's candidate commit. Both use
+the production Docker builder, two CPU quota, the same release profile, and one persistent
+Cargo target. It makes two source changes in each of the application, Academic HTTP,
+Certificates HTTP, Navigation, and Notifications owners. Initial dependency/graph priming,
+unchanged target reuse, compiled package names, binary sizes, Cargo timing reports, and
+exact OpenAPI equality are recorded separately. The source-changing comparison disables
+the compiler wrapper to measure Cargo invalidation; production sccache hits/misses must be
+assessed in the actual image-build artifacts.
+
 `school-workflow`, `school-question-bank`, `school-admission`, `school-supervision`,
 `school-students`, `school-staff`, and `school-calendar` own their domain models, policies where
 applicable, persistence, business rules, and focused tests. Root keeps HTTP/OpenAPI composition,
@@ -182,8 +192,17 @@ relationships, and cross-domain file authorization remain in the application pac
 `school-crypto` is the only application-field encryption and blind-index implementation.
 `school-fonts` owns the school font library and its typed staging relationships.
 `school-certificates` owns certificate policy, layout, issuance, rendering, verification, rate
-limiting, and purge behavior. Their Axum handlers, request context, OpenAPI composition, and
-cross-domain deletion orchestration remain in the application package. Use at most eight test
+limiting, and purge behavior. `school-certificates-http` owns its handlers and API declarations;
+the application composes OpenAPI and supplies the cross-domain file-deletion adapter.
+`school-academic-http` owns academic handlers and their request policies, while the six
+academic domain crates retain business logic and transactions. Both HTTP owners receive
+concrete narrow state through application-owned `FromRef` implementations.
+`school-auth-http` owns the shared session-derived request context, tenant-origin resolution,
+client-address checks, and cookie/CSRF helpers. It uses the existing `AuthRuntime` and shared
+permission/identity caches, with no application dependency. Navigation owns menu persistence,
+templates, route synchronization and feature toggles; Notifications owns persistence,
+tenant/user events, the publisher and Web Push. Startup, routing, middleware and realtime
+connection management remain in the application. Use at most eight test
 threads for the database-heavy font and certificate package suites so concurrent migration
 fixtures do not exhaust the disposable PostgreSQL instance.
 

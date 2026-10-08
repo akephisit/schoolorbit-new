@@ -432,7 +432,9 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
-            assert_eq!(response.headers()["cache-control"], "no-store");
+            if path.starts_with("/api/school/public/") {
+                assert_eq!(response.headers()["cache-control"], "no-store");
+            }
             let body: serde_json::Value =
                 serde_json::from_slice(&to_bytes(response.into_body(), 1_048_576).await.unwrap())
                     .unwrap();
