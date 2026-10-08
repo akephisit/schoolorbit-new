@@ -1674,7 +1674,10 @@ test('exam scheduling uses generated term and homeroom contracts end to end', ()
 		'utf8'
 	);
 	const handlers = readFileSync(
-		path.resolve(projectRoot, '../backend-school/crates/school-academic-http/src/handlers/exam_schedule.rs'),
+		path.resolve(
+			projectRoot,
+			'../backend-school/crates/school-academic-http/src/handlers/exam_schedule.rs'
+		),
 		'utf8'
 	);
 

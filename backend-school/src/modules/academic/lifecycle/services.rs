@@ -41,20 +41,6 @@ pub async fn get_workspace(
     .await
 }
 
-pub async fn apply_term_preparation(
-    pool: &PgPool,
-    actor: &ActorContext,
-    input: ApplyTermPreparationInput,
-) -> Result<TermPreparationOutcome, AppError> {
-    school_academic_lifecycle::services::apply_term_preparation(
-        &LIFECYCLE_PROVIDERS,
-        pool,
-        actor,
-        input,
-    )
-    .await
-}
-
 pub mod term_transitions {
     use super::*;
 
