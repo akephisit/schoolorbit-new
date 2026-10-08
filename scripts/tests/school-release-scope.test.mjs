@@ -141,6 +141,21 @@ test("release replay selector changes use the full release path", async () => {
   assert.match(result.stdout, /^needs_backend=true$/m);
 });
 
+test("release CI gate changes use the full release path", async () => {
+  const root = await fixture();
+  const accepted = run("git", ["rev-parse", "HEAD"], root);
+  const release = await commitFile(
+    root,
+    "scripts/verify_school_release_ci.mjs",
+    "export const gate = true;\n",
+  );
+  const result = resolve(root, "auto", release, accepted, accepted);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^scope=full$/m);
+  assert.match(result.stdout, /^needs_frontend=true$/m);
+  assert.match(result.stdout, /^needs_backend=true$/m);
+});
+
 test("missing or divergent accepted baselines force a full release", async () => {
   const root = await fixture();
   const release = await commitFile(
@@ -205,9 +220,17 @@ test("component baselines retain an older backend after a manual frontend releas
 test("frontend test changes do not promote frontends with a backend release", async () => {
   const root = await fixture();
   const accepted = await commitFile(root, "README.md", "accepted\n");
-  await commitFile(root, "frontend-school/tests/static/example.test.mjs", "test\n");
+  await commitFile(
+    root,
+    "frontend-school/tests/static/example.test.mjs",
+    "test\n",
+  );
   await commitFile(root, "frontend-school/README.md", "documentation\n");
-  const release = await commitFile(root, "backend-school/src/main.rs", "backend\n");
+  const release = await commitFile(
+    root,
+    "backend-school/src/main.rs",
+    "backend\n",
+  );
   const result = resolve(root, "auto", release, accepted, accepted, "false");
   assert.equal(result.status, 0);
   assert.match(result.stdout, /^scope=backend$/m);
@@ -217,9 +240,17 @@ test("frontend test changes do not promote frontends with a backend release", as
 test("backend integration tests do not rebuild the image with a frontend release", async () => {
   const root = await fixture();
   const accepted = await commitFile(root, "README.md", "accepted\n");
-  await commitFile(root, "backend-school/tests/static_architecture.rs", "test\n");
+  await commitFile(
+    root,
+    "backend-school/tests/static_architecture.rs",
+    "test\n",
+  );
   await commitFile(root, "backend-school/README.md", "documentation\n");
-  const release = await commitFile(root, "frontend-school/src/app.ts", "frontend\n");
+  const release = await commitFile(
+    root,
+    "frontend-school/src/app.ts",
+    "frontend\n",
+  );
   const result = resolve(root, "auto", release, accepted, accepted, "false");
   assert.equal(result.status, 0);
   assert.match(result.stdout, /^scope=frontend$/m);

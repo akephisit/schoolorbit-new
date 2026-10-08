@@ -8,6 +8,144 @@ import { parse as parseYaml } from 'yaml';
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const workflowPath = path.join(repoRoot, '.github/workflows/deploy-school-release.yml');
 
+test('every production mutation requires release CI while builds stay parallel', async () => {
+	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));
+	for (const name of ['deploy-backend', 'promote-frontends', 'accept-release']) {
+		assert.ok(workflow.jobs[name].needs.includes('verify-release-ci'), name);
+		assert.match(workflow.jobs[name].if, /needs\.verify-release-ci\.result == 'success'/);
+	}
+	for (const name of ['build-backend', 'stage-frontends']) {
+		assert.ok(!JSON.stringify(workflow.jobs[name].needs).includes('verify-release-ci'));
+		assert.doesNotMatch(workflow.jobs[name].if, /verify-release-ci/);
+	}
+	const gate = workflow.jobs['verify-release-ci'];
+	assert.equal(gate.permissions.actions, 'read');
+	assert.equal(gate.permissions.contents, 'read');
+	assert.match(gate.if, /already_deployed != 'true'/);
+	assert.match(workflow.jobs['accept-release'].if, /already_deployed == 'true'/);
+	assert.ok(gate['timeout-minutes'] > 30);
+	const push = gate.steps.find(
+		(step) => step.name === 'Verify trusted push CI on this release SHA'
+	);
+	assert.equal(push.env.GH_TOKEN, '${{ github.token }}');
+	assert.equal(push.env.PUSH_BASE_SHA, '${{ github.event.before }}');
+	for (const [job, file] of [
+		['manual-api-ci', 'api-contract.yml'],
+		['manual-permission-ci', 'permission-contract.yml'],
+		['manual-installer-ci', 'installer.yml']
+	]) {
+		assert.equal(workflow.jobs[job].uses, `./.github/workflows/${file}`);
+		assert.match(workflow.jobs[job].if, /workflow_dispatch/);
+		const definition = parseYaml(
+			await readFile(path.join(repoRoot, '.github/workflows', file), 'utf8')
+		);
+		assert.ok(Object.hasOwn(definition.on, 'workflow_call'));
+	}
+	const summary = workflow.jobs['release-summary'].steps[0];
+	assert.equal(summary.env.CI_RESULT, '${{ needs.verify-release-ci.result }}');
+	assert.match(summary.run, /active release was preserved/);
+});
+
+test('CI refusal blocks backend-only, frontend-only and full production paths', async () => {
+	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));
+	for (const [backend, frontend] of [
+		['true', 'false'],
+		['false', 'true'],
+		['true', 'true']
+	]) {
+		for (const ci of ['success', 'failure', 'cancelled', 'skipped']) {
+			const needs = Object.fromEntries(
+				Object.keys(workflow.jobs).map((id) => [
+					id,
+					{
+						result: 'success',
+						outputs: { needs_backend: backend, needs_frontend: frontend, already_deployed: 'false' }
+					}
+				])
+			);
+			needs['verify-release-ci'].result = ci;
+			if (backend === 'false') needs['deploy-backend'].result = 'skipped';
+			if (frontend === 'false') needs['stage-frontends'].result = 'skipped';
+			for (const job of ['deploy-backend', 'promote-frontends', 'accept-release']) {
+				const expression = workflow.jobs[job].if
+					.replace(/^\s*\$\{\{|\}\}\s*$/g, '')
+					.replace(/needs\.([a-z-]+)/g, 'needs["$1"]');
+				const enabled = Function('needs', 'always', `return (${expression})`)(needs, () => true);
+				const selected =
+					job === 'deploy-backend'
+						? backend === 'true'
+						: job === 'promote-frontends'
+							? frontend === 'true'
+							: true;
+				assert.equal(
+					enabled,
+					ci === 'success' && selected,
+					`${job}: backend=${backend}, frontend=${frontend}, ci=${ci}`
+				);
+			}
+		}
+	}
+});
+
+test('manual CI failure blocks release for every required reusable workflow', async () => {
+	const workflow = parseYaml(await readFile(workflowPath, 'utf8'));
+	const step = workflow.jobs['verify-release-ci'].steps.find(
+		(step) => step.name === 'Verify manual release CI results'
+	);
+	for (const key of ['API_RESULT', 'PERMISSION_RESULT', 'INSTALLER_RESULT']) {
+		for (const status of ['failure', 'cancelled', 'skipped']) {
+			const result = spawnSync('bash', ['-c', step.run], {
+				env: {
+					...process.env,
+					API_RESULT: 'success',
+					PERMISSION_RESULT: 'success',
+					INSTALLER_RESULT: 'success',
+					[key]: status,
+					GITHUB_STEP_SUMMARY: '/dev/null',
+					GITHUB_SHA: 'a'.repeat(40)
+				},
+				encoding: 'utf8'
+			});
+			assert.notEqual(result.status, 0, `${key}: ${status}`);
+		}
+	}
+	assert.equal(
+		spawnSync('bash', ['-c', step.run], {
+			env: {
+				...process.env,
+				API_RESULT: 'success',
+				PERMISSION_RESULT: 'success',
+				INSTALLER_RESULT: 'success',
+				GITHUB_STEP_SUMMARY: '/dev/null',
+				GITHUB_SHA: 'a'.repeat(40)
+			}
+		}).status,
+		0
+	);
+});
+
+test('all Wrangler actions use Node 24 runtime release and the tracked CLI lock', async () => {
+	for (const file of [
+		'deploy-school-release.yml',
+		'deploy-school-tenant.yml',
+		'deploy-frontend-admin.yml'
+	]) {
+		const workflow = parseYaml(
+			await readFile(path.join(repoRoot, '.github/workflows', file), 'utf8')
+		);
+		for (const job of Object.values(workflow.jobs)) {
+			for (const step of job.steps ?? []) {
+				if (!step.uses?.startsWith('cloudflare/wrangler-action@')) continue;
+				assert.equal(step.uses, 'cloudflare/wrangler-action@v4.1.3');
+				assert.equal(step.with.wranglerVersion, '${{ steps.wrangler-version.outputs.version }}');
+				const version = job.steps.find((item) => item.id === 'wrangler-version');
+				assert.match(version.run, /package-lock\.json/);
+				assert.match(version.run, /node_modules\/wrangler/);
+			}
+		}
+	}
+});
+
 test('one serialized workflow owns every school production release scope', async () => {
 	const source = await readFile(workflowPath, 'utf8');
 	const resolver = await readFile(

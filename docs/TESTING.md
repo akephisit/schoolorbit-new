@@ -13,6 +13,10 @@ Record:
 
 Do not replace a failed check by disabling it or by running a narrower command that misses the failure.
 
+## Release CI gate
+
+From the repository root, run `node --test scripts/tests/school-release-ci.test.mjs` and `node --test frontend-school/tests/static/school-release-deployment.test.mjs`. Fixtures cover trusted main push identity, exact SHA/attempt, mandatory job success, failed/cancelled/missing/timed-out runs, rerun races, trigger coverage and optional Installer selection. The workflow guard also executes manual-result rejection cases and verifies backend-only/frontend-only acceptance paths retain the CI dependency while build/staging remain parallel. Run the deployment-workflow verification matrix below and verify the main release gate plus deployed-proxy smoke after integration.
+
 ## Every Change
 
 From the repository root:

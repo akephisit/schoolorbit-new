@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { parse as parseYaml } from 'yaml';
 import { renderProxy } from './helpers/render-proxy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -651,7 +652,8 @@ test('permission contract developer workflow is complete and non-deploying', asy
 	assert.match(workflow, /PUBLIC_BACKEND_URL:/);
 	assert.match(workflow, /PUBLIC_VAPID_KEY:/);
 	assert.doesNotMatch(
-		workflow,
+		// Trigger filenames may contain "deploy"; execution and environment must stay read-only.
+		JSON.stringify(parseYaml(workflow).jobs),
 		/(?:docker|git)\s+push|\bdeploy\b|\bssh\b|\bpsql\b|sqlx\s+(?:database|migrate)|\bDATABASE_URL\b/i
 	);
 });
