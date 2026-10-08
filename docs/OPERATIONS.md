@@ -177,6 +177,21 @@ The application binary still compiles and links. Observe two ordinary warm relea
 to the workspace graph, toolchain, or cache integration; disable this cache if useful hits stop
 reducing total duration. A new branch or cache namespace must first populate its own entries.
 
+Exam scheduling models and persistence now compile in the existing assessment crate, while
+the application retains HTTP/router/OpenAPI and lifecycle adapters. A same-runner Docker
+comparison with a two-CPU quota and unchanged release optimization measured two application-source
+rebuilds at 308 seconds before the move and 261/260 seconds afterward. Changing an exam service
+after the move rebuilt assessment, its dependent academic crates, and the application in 297 seconds;
+it does not eliminate the final application build. OpenAPI documents were identical. These are
+warm Cargo measurements, not complete build/push/deployment timings. The first changed workspace
+graph may require dependency-cache priming before those savings apply.
+
+The pinned Rust toolchain already passes `-fuse-ld=lld` on this Linux target. Selecting lld again
+does not remove compiler work. The manual build benchmark records the actual driver flag and
+compares default/GNU BFD/lld using the same object files. Keep production optimization unchanged
+unless both repeatable compile improvements and representative runtime performance support a
+new profile; profile/exporter experiments alone do not establish production request latency.
+
 The school Dockerfile uses `cargo rustc` with `-C lto=off` only for the final application
 crate to reduce source-changing release build work. Dependencies retain their existing
 release settings and cargo-chef cache; release optimization level is unchanged. This is
