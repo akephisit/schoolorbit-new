@@ -12,7 +12,10 @@ export CARGO_INCREMENTAL=0
 case "$backend" in backend-school | backend-admin) ;; *) exit 64 ;; esac
 case "$variant" in gnu | lld | opt2 | cgu64 | cpu1) ;; *) exit 64 ;; esac
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends lld >/dev/null
+apt-get install -y -qq --no-install-recommends lld python3 >/dev/null
+if [[ "$backend" == backend-school ]]; then
+    env -i PATH="$PATH" HOME=/tmp "target/release/$backend" export-openapi >"$output/openapi-baseline.json"
+fi
 
 cat > /tmp/schoolorbit-benchmark-linker <<'LINKER'
 #!/usr/bin/env bash
@@ -37,7 +40,7 @@ export BENCH_LINK_LOG="$output/link-nanoseconds.txt"
 printf 'backend=%s variant=%s cpu_available=%s rust=%s\n' "$backend" "$variant" "$(nproc)" "$(rustc --version)"
 
 for sample in 1 2; do
-    # Change an application handler, not a dependency manifest or toolchain.
+    # Change application source, not a dependency manifest or toolchain.
     printf '\n// Docker build benchmark: %s sample %s\n' "$variant" "$sample" >>src/main.rs
     : >"$BENCH_LINK_LOG"
     start=$(date +%s%N)
@@ -70,6 +73,7 @@ for sample in (1, 2):
     if (p / f"openapi-{sample}.json").exists():
         document = json.loads((p / f"openapi-{sample}.json").read_text())
         assert document["openapi"] == "3.1.0" and document["paths"]
+        assert document == json.loads((p / "openapi-baseline.json").read_text()), "API contract changed"
 (p / "result.json").write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result, indent=2))
 PY

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [perf/backend-build-next]
-    paths: [.github/workflows/backend-build-benchmark.yml]
+    paths: [.github/workflows/backend-build-benchmark.yml, scripts/benchmark_backend_build.sh]
 
 permissions:
   contents: read
