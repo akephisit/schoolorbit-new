@@ -6,15 +6,16 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { parse as parseYaml } from 'yaml';
+import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
-const readRepo = (file) => readFile(path.join(repoRoot, file), 'utf8');
+const readRepo = (file) => readWorkflowSource(repoRoot, file);
 const releaseId = '0123456789abcdef0123456789abcdef01234567';
 const loadComposeConfig = async (file, extraArguments = []) => {
 	const { stdout } = await execFileAsync(
-		'podman-compose',
-		[...extraArguments, '-f', file, 'config'],
+		'docker',
+		['compose', ...extraArguments, '-f', file, 'config'],
 		{ cwd: repoRoot }
 	);
 	return parseYaml(stdout);
@@ -236,7 +237,14 @@ test('the resolved production topology has one owner and private backend ports',
 		['backend-admin', 8080],
 		['backend-school', 8081]
 	]) {
-		assert.deepEqual(topology.services[service].ports, [`127.0.0.1:${target}:${target}`]);
+		assert.deepEqual(
+			topology.services[service].ports.map((port) => ({
+				host: port.host_ip,
+				target: port.target,
+				published: String(port.published)
+			})),
+			[{ host: '127.0.0.1', target, published: String(target) }]
+		);
 	}
 });
 
@@ -249,7 +257,7 @@ test('local and production clamd allow 3 GiB for concurrent signature reloads', 
 
 		assert.equal(
 			topology.services.clamd.mem_limit,
-			'3g',
+			String(3 * 1024 ** 3),
 			`${file} must preserve enough memory for concurrent ClamAV database reloads`
 		);
 	}
@@ -405,7 +413,7 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 	assert.match(diagnostic, /entry_ids=/);
 	assert.match(diagnostic, /group_codes=/);
 	assert.match(diagnostic, /tojson/);
-	assert.match(diagnostic, /print_migration_verification_failure < "\$migration_response"/);
+	assert.match(diagnostic, /print_migration_verification_failure\s*<\s*"\$migration_response"/);
 	assert.doesNotMatch(diagnostic, /error=\\\(\.error/);
 	assert.doesNotMatch(diagnostic, /join\(","\)/);
 	assert.doesNotMatch(diagnostic, /displayName|firstName|lastName/);
@@ -664,7 +672,8 @@ test('school proxy status stays reachable and identifies the coordinated release
 			output,
 			'example.test',
 			releaseId,
-			status
+			status,
+			'0'.repeat(64)
 		]);
 		const rendered = await readFile(output, 'utf8');
 		assert.match(rendered, /location = \/deployment-status/);
@@ -760,8 +769,8 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /scripts\/render_nginx_config\.sh/);
 		assert.match(workflow, /scripts\/lib\/schoolorbit-installer\/remote\/install_origin_root\.sh/);
 		assert.match(workflow, /"\$origin_root_installer" "\$origin_root"/);
-		assert.match(workflow, /deployment_id/);
-		assert.match(workflow, /RUNTIME_DEPLOY_ENABLED/);
+		assert.match(await readRepo('.github/workflows/pipeline.yml'), /deployment_id/);
+		assert.match(await readRepo('scripts/release_preflight.mjs'), /RUNTIME_DEPLOY_ENABLED/);
 		assert.match(workflow, /--resolve/);
 		assert.match(workflow, /cloudflare-origin-rsa-root\.pem/);
 		assert.match(workflow, /\/opt\/stack\/deployment/);
@@ -787,7 +796,8 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /timeout 180 bash/);
 		assert.match(workflow, /grep -lF "server_name/);
-		assert.match(workflow, /group: deploy-schoolorbit-runtime/);
+		const parent = await readRepo('.github/workflows/pipeline.yml');
+		assert.match(parent, /group: schoolorbit-production/);
 		assert.equal(
 			(workflow.match(/port: \$\{\{ secrets\.SERVER_PORT \}\}/g) ?? []).length,
 			expectedPortCount
@@ -800,29 +810,16 @@ test('backend workflows deploy the canonical target and verify the selected orig
 });
 
 test('backend image workflows use distinct BuildKit cache scopes', async () => {
-	const workflowScopes = new Map([
-		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
-		['.github/workflows/deploy-school-release.yml', 'backend-school']
-	]);
-
-	assert.equal(new Set(workflowScopes.values()).size, workflowScopes.size);
-	for (const [file, scope] of workflowScopes) {
-		const workflow = await readRepo(file);
-		for (const action of [
-			'docker/login-action@v4',
-			'docker/metadata-action@v6',
-			'docker/setup-buildx-action@v4',
-			'docker/build-push-action@v7'
-		]) {
-			assert.ok(workflow.includes(action), `${file} must retain the CI image builder ${action}`);
-		}
-		assert.ok(workflow.includes(`cache-from: type=gha,scope=${scope}`));
-		assert.ok(workflow.includes(`cache-to: type=gha,scope=${scope},mode=max`));
-		assert.ok(workflow.includes('- name: Summarize Docker cache scope'));
-		assert.ok(workflow.includes(`'- Scope: ${scope}'`));
-		assert.ok(workflow.includes('Docker build record'));
-		assert.ok(workflow.includes('>> "$GITHUB_STEP_SUMMARY"'));
-	}
+	const d = parseYaml(await readRepo('.github/workflows/prepare.yml'));
+	const steps = d.jobs.prepare.steps;
+	const build = steps.find((x) => x.name === 'Build selected OCI image');
+	assert.equal(build.with['cache-from'], 'type=gha,scope=${{ matrix.component }}');
+	assert.equal(build.with['cache-to'], 'type=gha,scope=${{ matrix.component }},mode=max');
+	assert.match(build.if, /startsWith\(matrix.component, 'backend-'\)/);
+	assert.ok(steps.some((x) => x.uses === 'docker/setup-buildx-action@v4'));
+	const policy = await readRepo('scripts/lib/pipeline-policy.mjs');
+	assert.match(policy, /'backend-admin'/);
+	assert.match(policy, /'backend-school'/);
 });
 
 test('backend runtime images use deterministic builders without ownership copy-up', async () => {
@@ -903,77 +900,33 @@ test('backend runtime images use deterministic builders without ownership copy-u
 });
 
 test('backend workflows export Cargo timings and pass compiler cache credentials as secrets', async () => {
-	const workflows = new Map([
-		['.github/workflows/deploy-backend-admin.yml', 'backend-admin'],
-		['.github/workflows/deploy-school-release.yml', 'backend-school']
-	]);
-
-	for (const [file, backend] of workflows) {
-		const workflow = await readRepo(file);
-
-		{
-			assert.match(workflow, /uses: actions\/github-script@v8/);
-			assert.match(
-				workflow,
-				/core\.exportVariable\('ACTIONS_RESULTS_URL', process\.env\.ACTIONS_RESULTS_URL \|\| ''\)/
-			);
-			assert.match(
-				workflow,
-				/core\.exportVariable\('ACTIONS_RUNTIME_TOKEN', process\.env\.ACTIONS_RUNTIME_TOKEN \|\| ''\)/
-			);
-			assert.match(workflow, /secret-envs:\s*\|\s*\n\s*sccache_gha_url=ACTIONS_RESULTS_URL/);
-			assert.match(workflow, /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
-		}
-		if (backend === 'backend-school') {
-			assert.match(workflow, /cache-from: type=gha,scope=backend-school/);
-			assert.match(workflow, /sccache-stats\.json/);
-			assert.equal((workflow.match(/build-args: SCHOOL_COMPILER_CACHE=gha/g) ?? []).length, 2);
-		}
-		assert.match(workflow, /target: build-timings/);
-		assert.match(workflow, /push: false/);
-		assert.match(
-			workflow,
-			new RegExp(`outputs: type=local,dest=\\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}`)
-		);
-		assert.match(workflow, /uses: actions\/upload-artifact@v6/);
-		assert.match(workflow, new RegExp(`name: cargo-timings-${backend}`));
-		assert.match(
-			workflow,
-			new RegExp(`\\$\\{\\{ runner\\.temp \\}\\}/cargo-timings-${backend}/cargo-timing\\.html`)
-		);
-		assert.match(workflow, /retention-days: 7/);
-		assert.doesNotMatch(workflow, /build-args:[^\n]*(?:ACTIONS_RESULTS_URL|ACTIONS_RUNTIME_TOKEN)/);
-		assert.doesNotMatch(workflow, /^\s+secrets:\s*\|[\s\S]*ACTIONS_RUNTIME_TOKEN/m);
+	const d = parseYaml(await readRepo('.github/workflows/prepare.yml'));
+	const steps = d.jobs.prepare.steps;
+	for (const name of ['Build selected OCI image', 'Export compiler evidence']) {
+		const step = steps.find((x) => x.name === name);
+		assert.match(step.with['secret-envs'], /sccache_gha_url=ACTIONS_RESULTS_URL/);
+		assert.match(step.with['secret-envs'], /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
+		assert.doesNotMatch(step.with['build-args'], /TOKEN|URL/);
 	}
+	assert.equal(
+		steps.find((x) => x.name === 'Export compiler evidence').with.target,
+		'build-timings'
+	);
+	assert.match(steps.find((x) => x.name === 'Publish compiler evidence').with.path, /timings-/);
+	assert.ok(
+		steps.find((x) => x.name === 'Publish compiler evidence').with['if-no-files-found'] === 'error'
+	);
 });
 
 test('backend workflows clean only bounded SchoolOrbit image history after acceptance', async () => {
-	const workflowBoundaries = new Map([
-		[
-			'.github/workflows/deploy-backend-admin.yml',
-			'            [ -z "$proxy_backup" ] || rm -f "$proxy_backup"'
-		],
-		[
-			'.github/workflows/deploy-school-release.yml',
-			'            podman tag "${backend_image}:${{ needs.resolve-scope.outputs.release_id }}" "${backend_image}:latest"'
-		]
-	]);
-
-	for (const [file, acceptanceMarker] of workflowBoundaries) {
-		const workflow = await readRepo(file);
-		const acceptance = workflow.indexOf(acceptanceMarker);
-		const cleanup = workflow.indexOf('"$image_cleanup"', acceptance + acceptanceMarker.length);
-
-		assert.match(workflow, /source: [^\n]*scripts\/prune_runtime_images\.sh/);
-		assert.match(workflow, /image_cleanup="\$deployment_root\/scripts\/prune_runtime_images\.sh"/);
-		assert.ok(acceptance >= 0, `${file} must retain its acceptance boundary`);
-		assert.ok(cleanup > acceptance, `${file} must clean images only after acceptance`);
-		assert.match(
-			workflow.slice(cleanup),
-			/"\$image_cleanup" (?:ghcr\.io\/akephisit\/schoolorbit-backend-(?:admin|school)|"\$backend_image") 3/
-		);
-		assert.doesNotMatch(workflow, /podman (?:system|volume|container|image) prune/);
-	}
+	const source = await readRepo('scripts/lib/pipeline-remote/maintenance.sh');
+	const pipeline = await readRepo('.github/workflows/release.yml');
+	assert.match(pipeline, /Verify all proxy smoke while maintenance remains enabled/);
+	assert.match(pipeline, /Publish selected accepted image aliases/);
+	assert.doesNotMatch(source, /podman (?:system|volume|container|image) prune/);
+	const cleanup = await readRepo('scripts/prune_runtime_images.sh');
+	assert.match(cleanup, /podman ps -a --no-trunc/);
+	assert.match(cleanup, /latest/);
 });
 
 test('backend workflows emit bounded deployment phase timings', async () => {
@@ -992,7 +945,7 @@ test('backend workflows emit bounded deployment phase timings', async () => {
 });
 
 test('GHCR retention is bounded, dry-run by default, and isolated from deployment secrets', async () => {
-	const workflow = await readRepo('.github/workflows/ghcr-retention.yml');
+	const workflow = await readRepo('.github/workflows/maintenance.yml');
 	const retention = await readRepo('scripts/prune_ghcr_versions.mjs');
 
 	assert.match(workflow, /schedule:\s*\n\s*- cron:/);
@@ -1021,114 +974,50 @@ test('GHCR retention is bounded, dry-run by default, and isolated from deploymen
 	assert.match(retention, /method = 'GET'/);
 });
 
-test('API contract runs artifact backend and frontend gates in independent jobs', async () => {
-	const workflow = await readRepo('.github/workflows/api-contract.yml');
-	const jobsStart = workflow.indexOf('\njobs:\n');
-	assert.ok(jobsStart >= 0);
-	const jobs = workflow.slice(jobsStart + '\njobs:\n'.length);
-	const jobNames = [...jobs.matchAll(/^ {2}([a-z][a-z0-9_-]*):\s*$/gm)].map((match) => match[1]);
-	assert.deepEqual(jobNames, ['artifacts', 'backend', 'frontend', 'academic-database']);
-	assert.doesNotMatch(jobs, /^ {4}needs:/gm);
-
-	const jobBlock = (name, nextName) => {
-		const start = jobs.indexOf(`  ${name}:\n`);
-		assert.ok(start >= 0, `missing ${name} job`);
-		const end = nextName ? jobs.indexOf(`\n  ${nextName}:\n`, start) : jobs.length;
-		assert.ok(end > start, `invalid ${name} job boundary`);
-		return jobs.slice(start, end);
-	};
-	const artifacts = jobBlock('artifacts', 'backend');
-	const backend = jobBlock('backend', 'frontend');
-	const frontend = jobBlock('frontend', 'academic-database');
-	const database = jobBlock('academic-database');
-	assert.match(database, /sudo apt-get install -y podman/);
-	assert.match(database, /podman info --format '\{\{\.Host\.Security\.Rootless\}\}'/);
-	assert.match(database, /test_backend_school\.sh curriculum_revision_schema_tests/);
-	assert.match(database, /test_backend_school\.sh modules::academic::core::services_tests/);
-	assert.match(database, /test_backend_school\.sh --integration delivery_versions/);
-
-	for (const command of [
-		'npm run test:api-contracts',
-		'npm run check:api-contracts',
-		'env -i PATH="$PATH" HOME="$HOME" "$executable" export-openapi'
-	]) {
-		assert.ok(artifacts.includes(command), `artifacts must retain ${command}`);
-	}
-	for (const command of [
-		'cargo fmt --all -- --check',
-		'cargo test api_contract::tests --bin backend-school',
-		'cargo test structured_logging --test static_architecture',
-		'cargo check --workspace --all-targets'
-	]) {
-		assert.ok(backend.includes(command), `backend must retain ${command}`);
-	}
-	for (const command of [
-		'node --test tests/static/api-response-contract.test.mjs',
-		'npm run check',
-		'npm run lint'
-	]) {
-		assert.ok(frontend.includes(command), `frontend must retain ${command}`);
-	}
-
-	for (const nodeJob of [artifacts, frontend]) {
-		assert.match(nodeJob, /uses: actions\/setup-node@v6/);
-		assert.match(nodeJob, /node-version: "24"/);
-		assert.match(nodeJob, /cache: npm/);
-		assert.match(nodeJob, /cache-dependency-path: frontend-school\/package-lock\.json/);
-		assert.match(nodeJob, /working-directory: frontend-school\n\s+run: npm ci/);
-	}
-	assert.doesNotMatch(backend, /uses: actions\/setup-node@v6/);
-	assert.doesNotMatch(artifacts, /env -i[^\n]*cargo run/);
-	assert.match(artifacts, /cargo metadata --locked --format-version 1 --no-deps/);
-	assert.match(database, /uses: \.\/\.github\/actions\/setup-contract-rust/);
-
-	for (const rustJob of [artifacts, backend]) {
-		assert.match(rustJob, /uses: \.\/\.github\/actions\/setup-contract-rust/);
-		assert.match(rustJob, /uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/);
-		assert.match(rustJob, /id: rust_cache/);
-		assert.match(rustJob, /shared-key: backend-school-contracts/);
-		assert.match(rustJob, /workspaces: backend-school -> target/);
-		assert.match(rustJob, /steps\.rust_cache\.outputs\.cache-hit/);
-		assert.match(rustJob, />> "\$GITHUB_STEP_SUMMARY"/);
-	}
-	assert.match(artifacts, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
-	assert.match(backend, /save-if: "false"/);
-	assert.match(database, /save-if: "false"/);
-	assert.doesNotMatch(frontend, /Swatinem\/rust-cache/);
+test('central verification retains every API, architecture and database consumer gate', async () => {
+	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
+	const runner = await readRepo('scripts/pipeline.mjs');
+	const database = await readRepo('scripts/test_school_database_suite.sh');
+	assert.deepEqual(
+		d.jobs.verify.strategy.matrix.suite,
+		'${{ fromJson(needs.reuse.outputs.remaining) }}'
+	);
+	assert.match(runner, /cargo.*'fmt'.*'--all'/);
+	assert.match(runner, /'check', '--workspace', '--all-targets'/);
+	assert.match(runner, /'test', '--test', 'static_architecture'/);
+	assert.match(runner, /'api_contract::tests'/);
+	assert.match(runner, /generate-api-contracts.mjs.*--check/);
+	assert.match(runner, /export-openapi/);
+	assert.match(runner, /'-i', `PATH=/);
+	assert.match(database, /curriculum_revision_schema_tests/);
+	assert.match(database, /--package school-navigation/);
+	assert.match(database, /purge_rejects_admission_logo_and_question_bank_file_consumers/);
 	assert.equal(
-		(jobs.match(/save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/g) ?? []).length,
+		d.jobs.verify.steps.filter((x) => x.uses?.startsWith('actions/cache/restore')).length,
 		1
 	);
-	assert.equal((jobs.match(/save-if: "false"/g) ?? []).length, 2);
-
-	const rules = await readRepo('.rules');
+	assert.match(await readRepo('scripts/rust_ci_cache.mjs'), /saved.sources\[file\] === hash/);
 	assert.match(
-		rules,
-		/API Contract runs artifact, backend, and frontend validation in independent jobs without `needs`/
+		d.jobs.verify.steps.find((x) => x.uses?.startsWith('actions/cache/save')).if,
+		/github.ref == 'refs\/heads\/main'/
 	);
 });
 
-test('Permission Contract keeps its cached validation gates unchanged', async () => {
-	const workflow = await readRepo('.github/workflows/permission-contract.yml');
-	assert.match(workflow, /uses: \.\/\.github\/actions\/setup-contract-rust/);
-	assert.match(workflow, /^ {2}verify:\s*$/m);
-	assert.match(workflow, /uses: Swatinem\/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32/);
-	assert.match(workflow, /shared-key: backend-school-contracts/);
-	assert.match(workflow, /workspaces: backend-school -> target/);
-	assert.match(workflow, /save-if: \$\{\{ github\.ref == 'refs\/heads\/main' \}\}/);
-	assert.match(workflow, /steps\.rust_cache\.outputs\.cache-hit/);
-	assert.match(workflow, /cache: npm/);
-	for (const command of [
-		'node scripts/generate-permissions.mjs --check',
-		'node --test scripts/tests/generate-permissions.test.mjs',
-		'cargo fmt --all -- --check',
-		'cargo check --workspace --all-targets',
-		'cargo test --test static_architecture',
-		'npm run test:static',
-		'npm run check'
-	]) {
-		assert.ok(workflow.includes(command), `Permission Contract must retain ${command}`);
-	}
+test('permission verification shares its required checks without duplicate Rust owners', async () => {
+	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
+	const runner = await readRepo('scripts/pipeline.mjs');
+	assert.match(runner, /generate-permissions.mjs.*--check/);
+	assert.match(runner, /generate-permissions.test.mjs/);
+	assert.match(runner, /test:static/);
+	assert.match(runner, /'npm', \['run', 'check'/);
+	assert.match(
+		d.jobs.verify.steps.find((x) => x.uses?.startsWith('actions/cache/save')).if,
+		/!inputs.candidate/
+	);
+	assert.match(
+		d.jobs.verify.steps.find((x) => x.id === 'rust-cache').with['restore-keys'],
+		/steps.rust-key.outputs.prefix/
+	);
 });
 
 test('frontend deployments keep environment values out of committed Worker configuration', async () => {
@@ -1144,7 +1033,7 @@ test('frontend deployments keep environment values out of committed Worker confi
 	assert.match(admin, /vars\.BASE_DOMAIN/);
 	assert.match(admin, /vars\.CLOUDFLARE_ACCOUNT_ID/);
 	assert.match(admin, /wrangler\.deploy\.json/);
-	assert.match(admin, /FRONTEND_DEPLOY_ENABLED/);
+	assert.match(await readRepo('scripts/release_preflight.mjs'), /FRONTEND_DEPLOY_ENABLED/);
 	const adminWorkerConfig = admin.slice(
 		admin.indexOf('- name: Create environment-specific deployment configuration'),
 		admin.indexOf('- name: Read locked Wrangler version')
@@ -1176,7 +1065,7 @@ test('frontend deployments keep environment values out of committed Worker confi
 test('runtime diagnostics expose container state without environment or application logs', async () => {
 	const workflow = await readRepo('.github/workflows/runtime-diagnostics.yml');
 
-	assert.match(workflow, /workflow_dispatch/);
+	assert.match(workflow, /workflow_call/);
 	assert.match(workflow, /State\.ExitCode/);
 	assert.match(workflow, /State\.OOMKilled/);
 	assert.match(workflow, /NetworkSettings\.Networks/);
@@ -1203,65 +1092,42 @@ test('runtime diagnostics expose container state without environment or applicat
 });
 
 test('installer CI enforces shell provider topology and workflow guards', async () => {
-	const [workflow, rules] = await Promise.all([
-		readRepo('.github/workflows/installer.yml'),
-		readRepo('.rules')
-	]);
-
-	assert.match(workflow, /runs-on: ubuntu-24\.04/);
-	assert.match(workflow, /uses: actions\/setup-node@v6/);
-	assert.match(workflow, /node-version: "24"/);
-	for (const path of [
-		'scripts/schoolorbit-installer',
-		'scripts/lib/schoolorbit-installer/**',
-		'scripts/tests/installer/**',
-		'compose.local.yml',
-		'podman-compose.yml',
-		'nginx-configs/**',
-		'.github/workflows/**',
-		'.rules',
-		'docs/OPERATIONS.md',
-		'docs/PODMAN_SETUP.md',
-		'docs/TESTING.md'
-	]) {
-		assert.ok(workflow.includes(path), `installer workflow must watch ${path}`);
-	}
-	for (const check of [
-		'shellcheck scripts/schoolorbit-installer',
-		'shfmt -d -i 4 -ci scripts/schoolorbit-installer',
+	const runner = await readRepo('scripts/verify_deployment.sh');
+	for (const command of [
+		'shellcheck',
+		'shfmt -d -i 4 -ci',
 		'bats scripts/tests/installer',
-		'npm ci --ignore-scripts --no-audit --no-fund',
-		'node --test frontend-school/tests/static/deployment-installer.test.mjs',
-		'podman-compose -f podman-compose.yml --dry-run up -d',
-		'podman run --rm -v "$PWD:/repo" -w /repo docker.io/rhysd/actionlint:1.7.7',
+		'deployment-installer.test.mjs',
+		'migration-completion-gate.test.mjs',
+		'r2-cors.test.mjs',
+		'docker compose -f podman-compose.yml config --quiet',
 		'rhysd/actionlint:1.7.7'
-	]) {
-		assert.ok(workflow.includes(check), `installer workflow must run ${check}`);
-	}
-	assert.ok(
-		workflow.indexOf('npm ci --ignore-scripts --no-audit --no-fund') <
-			workflow.indexOf('node --test frontend-school/tests/static/deployment-installer.test.mjs'),
-		'locked Node dependencies must be installed before the deployment guard runs'
+	])
+		assert.ok(runner.includes(command), command);
+	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
+	assert.match(
+		d.jobs.verify.steps.find((x) => x.name === 'Install deployment checker tools').if,
+		/deployment/
 	);
-	assert.doesNotMatch(workflow, /\bdocker run\b/);
-	assert.match(rules, /^podman run --rm .*rhysd\/actionlint:1\.7\.7$/m);
-	assert.doesNotMatch(rules, /^docker run --rm .*rhysd\/actionlint:1\.7\.7$/m);
+	assert.match(
+		d.jobs.verify.steps.find((x) => x.name === 'Install deployment checker tools').run,
+		/bats shellcheck shfmt gettext-base jq/
+	);
 });
 
-test('permission contract provisions Podman Compose before deployment static contracts', async () => {
-	const workflow = parseYaml(await readRepo('.github/workflows/permission-contract.yml'));
-	const steps = workflow.jobs.verify.steps;
-	const installIndex = steps.findIndex(
-		(step) => typeof step.run === 'string' && step.run.includes('podman-compose')
-	);
-	const staticContractsIndex = steps.findIndex((step) => step.run === 'npm run test:static');
-
-	assert.ok(staticContractsIndex >= 0, 'permission contract must run frontend static contracts');
-	assert.ok(installIndex >= 0, 'permission contract must provision Podman Compose');
+test('deployment tools are available before cross-stack static contracts', async () => {
+	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
+	const steps = d.jobs.verify.steps;
 	assert.ok(
-		installIndex < staticContractsIndex,
-		'Podman Compose must be available before frontend static contracts run'
+		steps.findIndex((x) => x.name === 'Install deployment checker tools') <
+			steps.findIndex((x) => x.name === 'Run owned local and CI verification')
 	);
+	assert.match(
+		steps.find((x) => x.name === 'Install deployment checker tools').if,
+		/frontend-school/
+	);
+	const runner = await readRepo('scripts/verify_deployment.sh');
+	assert.match(runner, /docker compose/);
 });
 
 test('Cockpit management stays loopback-only, secret-safe, and documented', async () => {

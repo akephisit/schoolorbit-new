@@ -1,0 +1,96 @@
+name: Operations
+run-name: Operations ${{ inputs.operation }} (${{ inputs.request_id || github.run_id }})
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Explicit operational task; production provisioning uses the shared lock
+        type: choice
+        default: smoke
+        options:
+          - provision
+          - smoke
+          - e2e
+          - diagnostics
+          - benchmark
+          - http-benchmark
+          - neon
+      request_id:
+        description: Exact provisioning request identifier
+        type: string
+        default: ""
+      subdomain:
+        description: Tenant subdomain
+        type: string
+        default: sandbox
+      school_id:
+        description: School UUID for provisioning
+        type: string
+        default: ""
+      api_url:
+        description: School API URL; provisioning must match accepted configuration
+        type: string
+        default: https://school-api.schoolorbit.app
+      options:
+        description: Optional JSON operation settings, e.g. {"backend":"both","samples":"2"}
+        type: string
+        default: "{}"
+permissions:
+  contents: read
+  actions: read
+  packages: write
+jobs:
+  smoke:
+    if: inputs.operation == 'smoke'
+    uses: ./.github/workflows/smoke-test.yml
+    secrets: inherit
+    with:
+      subdomain: ${{ fromJson(inputs.options).subdomain || inputs.subdomain }}
+      api_url: ${{ fromJson(inputs.options).api_url || inputs.api_url }}
+      admin_api_url: ${{ fromJson(inputs.options).admin_api_url || 'https://admin-api.schoolorbit.app' }}
+      tenant_url: ${{ fromJson(inputs.options).tenant_url || '' }}
+      origin: ${{ fromJson(inputs.options).origin || '' }}
+      timeout_seconds: ${{ fromJson(inputs.options).timeout_seconds || '20' }}
+      run_authenticated: ${{ fromJson(inputs.options).run_authenticated != false }}
+  e2e:
+    if: inputs.operation == 'e2e'
+    uses: ./.github/workflows/e2e-sandbox.yml
+    secrets: inherit
+    with:
+      base_url: ${{ fromJson(inputs.options).base_url || 'https://sandbox.schoolorbit.app' }}
+  diagnostics:
+    if: inputs.operation == 'diagnostics'
+    uses: ./.github/workflows/runtime-diagnostics.yml
+    secrets: inherit
+  benchmark:
+    if: inputs.operation == 'benchmark'
+    uses: ./.github/workflows/backend-build-benchmark.yml
+    secrets: inherit
+    with:
+      backend: ${{ fromJson(inputs.options).backend || 'both' }}
+      samples: ${{ fromJson(inputs.options).samples || '2' }}
+  http-benchmark:
+    if: inputs.operation == 'http-benchmark'
+    uses: ./.github/workflows/backend-http-boundary-experiment.yml
+    secrets: inherit
+    with:
+      baseline: ${{ fromJson(inputs.options).baseline || '75b46a688de810cd23c058da26daf4cc93496a35' }}
+  neon:
+    if: inputs.operation == 'neon'
+    uses: ./.github/workflows/backend-school-neon-compatibility.yml
+    secrets: inherit
+    with:
+      confirm_disposable_branch: ${{ fromJson(inputs.options).confirm_disposable_branch == true }}
+      test_scope: ${{ fromJson(inputs.options).test_scope || 'full' }}
+  provision:
+    if: inputs.operation == 'provision' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: schoolorbit-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/deploy-school-tenant.yml
+    with:
+      subdomain: ${{ inputs.subdomain }}
+      school_id: ${{ inputs.school_id }}
+      api_url: ${{ inputs.api_url }}
+      request_id: ${{ inputs.request_id }}
+    secrets: inherit

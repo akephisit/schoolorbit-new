@@ -1,17 +1,14 @@
 name: Backend HTTP Boundary Benchmark
-
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       baseline:
         description: Commit before the HTTP crate extraction
         type: string
-        required: true
-        default: "75b46a688de810cd23c058da26daf4cc93496a35"
-
+        required: false
+        default: 75b46a688de810cd23c058da26daf4cc93496a35
 permissions:
   contents: read
-
 jobs:
   compare-boundaries:
     runs-on: ubuntu-latest

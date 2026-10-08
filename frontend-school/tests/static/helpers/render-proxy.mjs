@@ -18,7 +18,8 @@ export async function renderProxy(template, baseDomain = 'example.test') {
 			output,
 			baseDomain,
 			releaseId,
-			template.includes('maintenance') ? 'maintenance' : 'ready'
+			template.includes('maintenance') ? 'maintenance' : 'ready',
+			'a'.repeat(64)
 		]);
 		return await readFile(output, 'utf8');
 	} finally {

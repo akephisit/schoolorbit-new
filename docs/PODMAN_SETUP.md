@@ -312,7 +312,7 @@ curl -fsS http://127.0.0.1:8081/ready
 Backend และ school release workflows ปัจจุบัน:
 
 - [deploy-backend-admin.yml](../.github/workflows/deploy-backend-admin.yml);
-- [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml).
+- [pipeline.yml](../.github/workflows/pipeline.yml).
 
 Repository/organization secrets ต้องมีอย่างน้อย `SERVER_IP`, `SERVER_PORT`, `SERVER_USER` และ `SSH_PRIVATE_KEY`; package login ใช้ GitHub token ภายใน workflow. Service user บน server ต้อง:
 
@@ -323,7 +323,7 @@ Repository/organization secrets ต้องมีอย่างน้อย `S
 - จัดการ containers ทั้งสามตามชื่อที่กำหนด;
 - เรียก readiness ที่ `127.0.0.1:8080/ready` และ `127.0.0.1:8081/ready` ได้.
 
-`Deploy School Release` รวมการ deploy `backend-school` และ frontend ทุกโรงเรียนไว้ใน release เดียว.
+`Pipeline` รวมการ deploy `backend-school` และ frontend ทุกโรงเรียนไว้ใน release เดียว.
 ถ้าแก้เฉพาะ frontend จะ stage แล้ว promote ทุก Worker โดยไม่เปิด maintenance; ถ้าแก้เฉพาะ
 backend จะเปิด maintenance ระหว่าง replace, migrate และ smoke; ถ้าแก้ทั้งคู่ workflow จะ build
 และ stage ให้เสร็จก่อนเปิด maintenance แล้วจึง promote frontend และเปิด API หลังทุกโรงเรียนผ่าน.

@@ -15,12 +15,15 @@ readonly BACKEND_DIR="$REPOSITORY_ROOT/backend-school"
 readonly POSTGRES_IMAGE='docker.io/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
 readonly POSTGRES_USER='schoolorbit_test'
 readonly POSTGRES_PASSWORD='schoolorbit_test'
-readonly POSTGRES_DATABASE='schoolorbit_test'
+POSTGRES_DATABASE="schoolorbit_test_$$_${RANDOM}"
+readonly POSTGRES_DATABASE
 readonly POSTGRES_SHM_SIZE='1g'
 readonly TEST_EXTENSION_SQL='CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;'
-readonly CONTAINER_NAME="schoolorbit-backend-school-test-$$-${RANDOM}"
+CONTAINER_NAME=${SCHOOLORBIT_TEST_CONTAINER:-"schoolorbit-backend-school-test-$$-${RANDOM}"}
+readonly CONTAINER_NAME
 readonly TEST_BINARY="${BACKEND_SCHOOL_TEST_BIN:-backend-school}"
 cleanup_armed=false
+shared_database=false
 cargo_output=''
 
 cleanup() {
@@ -34,9 +37,14 @@ cleanup() {
         rm -f -- "$cargo_output"
     fi
 
+    if [[ $shared_database == true ]]; then
+        if ! docker exec "$CONTAINER_NAME" dropdb --host 127.0.0.1 --if-exists --force --username "$POSTGRES_USER" "$POSTGRES_DATABASE" >/dev/null; then
+            cleanup_status=1
+        fi
+    fi
     if [[ $cleanup_armed == true ]]; then
-        if podman container exists "$CONTAINER_NAME"; then
-            if ! podman rm --force --volumes "$CONTAINER_NAME" >/dev/null; then
+        if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            if ! docker rm --force --volumes "$CONTAINER_NAME" >/dev/null; then
                 printf 'ERROR: failed to remove disposable PostgreSQL container %s\n' \
                     "$CONTAINER_NAME" >&2
                 cleanup_status=1
@@ -112,49 +120,58 @@ for argument in "$@"; do
     esac
 done
 
-if ! command -v podman >/dev/null 2>&1; then
-    printf '%s\n' 'ERROR: Podman is required for backend-school database tests' >&2
+if ! command -v docker >/dev/null 2>&1; then
+    printf '%s\n' 'ERROR: Docker is required for backend-school database tests' >&2
     exit 127
 fi
 
-if [[ -n ${CONTAINER_HOST-} || -n ${CONTAINER_CONNECTION-} ]]; then
-    printf '%s\n' 'ERROR: backend-school tests require a local Podman engine' >&2
-    exit 64
-fi
+case ${DOCKER_HOST-} in
+    "" | unix://* | tcp://127.0.0.1:* | tcp://localhost:*) ;;
+    *)
+        printf '%s\n' 'ERROR: database fixtures require a local Docker engine' >&2
+        exit 64
+        ;;
+esac
 
-if ! podman_rootless="$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)"; then
-    printf '%s\n' 'ERROR: the local Podman engine is not reachable' >&2
+if ! docker info >/dev/null 2>&1; then
+    printf '%s\n' 'ERROR: Docker is not reachable' >&2
     exit 69
 fi
 
-if [[ $podman_rootless != true ]]; then
-    printf '%s\n' 'ERROR: backend-school tests require rootless Podman' >&2
-    exit 64
-fi
+if [[ -n ${SCHOOLORBIT_TEST_CONTAINER-} ]]; then
+    owner="$(docker inspect --format '{{index .Config.Labels "schoolorbit.test-owner"}}' "$CONTAINER_NAME")" || exit 69
+    if [[ -z ${SCHOOLORBIT_TEST_OWNER-} || $owner != "$SCHOOLORBIT_TEST_OWNER" ]]; then
+        printf '%s\n' 'ERROR: shared test container ownership is invalid' >&2
+        exit 64
+    fi
+    shared_database=true
+    docker exec "$CONTAINER_NAME" createdb --host 127.0.0.1 --username "$POSTGRES_USER" "$POSTGRES_DATABASE" || exit 70
+else
+    cleanup_armed=true
+    if ! docker run --detach \
+        --name "$CONTAINER_NAME" \
+        --publish '127.0.0.1::5432' \
+        --mount type=volume,destination=/var/lib/postgresql \
+        --shm-size "$POSTGRES_SHM_SIZE" \
+        --env "POSTGRES_USER=$POSTGRES_USER" \
+        --env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
+        --env "POSTGRES_DB=$POSTGRES_DATABASE" \
+        "$POSTGRES_IMAGE" \
+        postgres \
+        -c fsync=off \
+        -c synchronous_commit=off \
+        -c full_page_writes=off \
+        -c max_connections=200 \
+        >/dev/null; then
+        printf '%s\n' 'ERROR: failed to start disposable PostgreSQL' >&2
+        exit 70
+    fi
 
-cleanup_armed=true
-if ! podman run --detach \
-    --name "$CONTAINER_NAME" \
-    --publish '127.0.0.1::5432' \
-    --mount type=volume,destination=/var/lib/postgresql \
-    --shm-size "$POSTGRES_SHM_SIZE" \
-    --env "POSTGRES_USER=$POSTGRES_USER" \
-    --env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
-    --env "POSTGRES_DB=$POSTGRES_DATABASE" \
-    "$POSTGRES_IMAGE" \
-    postgres \
-    -c fsync=off \
-    -c synchronous_commit=off \
-    -c full_page_writes=off \
-    -c max_connections=200 \
-    >/dev/null; then
-    printf '%s\n' 'ERROR: failed to start disposable PostgreSQL' >&2
-    exit 70
 fi
 
 postgres_ready=false
 for _attempt in {1..120}; do
-    if podman exec "$CONTAINER_NAME" \
+    if docker exec "$CONTAINER_NAME" \
         pg_isready --quiet --host 127.0.0.1 \
         --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE" \
         >/dev/null 2>&1; then
@@ -163,9 +180,9 @@ for _attempt in {1..120}; do
     fi
 
     if ! container_running="$(
-        podman container inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null
+        docker container inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null
     )" || [[ $container_running != true ]]; then
-        podman logs --tail 50 "$CONTAINER_NAME" >&2 || true
+        docker logs --tail 50 "$CONTAINER_NAME" >&2 || true
         printf '%s\n' 'ERROR: disposable PostgreSQL exited before becoming ready' >&2
         exit 70
     fi
@@ -173,12 +190,12 @@ for _attempt in {1..120}; do
 done
 
 if [[ $postgres_ready != true ]]; then
-    podman logs --tail 50 "$CONTAINER_NAME" >&2 || true
+    docker logs --tail 50 "$CONTAINER_NAME" >&2 || true
     printf '%s\n' 'ERROR: disposable PostgreSQL did not become ready within 30 seconds' >&2
     exit 70
 fi
 
-if ! podman exec "$CONTAINER_NAME" \
+if ! docker exec "$CONTAINER_NAME" \
     psql --no-psqlrc --username "$POSTGRES_USER" --dbname "$POSTGRES_DATABASE" \
     --set ON_ERROR_STOP=1 --command "$TEST_EXTENSION_SQL" \
     >/dev/null; then
@@ -186,7 +203,7 @@ if ! podman exec "$CONTAINER_NAME" \
     exit 70
 fi
 
-if ! port_binding="$(podman port "$CONTAINER_NAME" 5432/tcp)"; then
+if ! port_binding="$(docker port "$CONTAINER_NAME" 5432/tcp)"; then
     printf '%s\n' 'ERROR: unable to resolve the disposable PostgreSQL port' >&2
     exit 70
 fi

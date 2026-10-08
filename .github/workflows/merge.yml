@@ -1,0 +1,31 @@
+name: Team auto-merge
+on:
+  pull_request_target:
+    types: [opened, synchronize, ready_for_review, reopened]
+  workflow_run:
+    workflows: [Pipeline]
+    types: [completed]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  checks: read
+concurrency:
+  group: schoolorbit-team-merge
+  cancel-in-progress: false
+jobs:
+  merge:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout only trusted main controller
+        uses: actions/checkout@v6
+        with:
+          ref: main
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Integrate eligible collaborator PRs without required approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/team_merge.mjs

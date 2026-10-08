@@ -5,7 +5,7 @@
 
 services:
   backend-admin:
-    image: ghcr.io/akephisit/schoolorbit-backend-admin:latest
+    image: ${BACKEND_ADMIN_IMAGE:-ghcr.io/akephisit/schoolorbit-backend-admin:latest}
     container_name: schoolorbit-backend-admin
     restart: unless-stopped
     ports:

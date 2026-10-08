@@ -1,7 +1,7 @@
 [
   {
     "databaseId": 731,
-    "displayTitle": "Deploy Backend Admin (deploy-123)",
+    "displayTitle": "Pipeline (deploy-123)",
     "status": "in_progress",
     "conclusion": null,
     "url": "https://github.invalid/owner/repo/actions/runs/731"

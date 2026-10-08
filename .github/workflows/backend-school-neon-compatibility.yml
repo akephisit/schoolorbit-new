@@ -1,26 +1,19 @@
 name: Backend School Neon Compatibility
-
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       confirm_disposable_branch:
         description: Create and delete a disposable Neon test branch
-        required: true
+        required: false
         default: false
         type: boolean
       test_scope:
         description: Database compatibility selection
-        required: true
+        required: false
         default: full
-        type: choice
-        options:
-          - full
-          - timetable-subject-groups
-          - course-zero-periods
-
+        type: string
 permissions:
   contents: read
-
 jobs:
   compatibility:
     if: ${{ inputs.confirm_disposable_branch }}
@@ -28,29 +21,23 @@ jobs:
     timeout-minutes: 60
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.98.1
-
       - name: Restore Rust dependency cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           shared-key: backend-school-contracts
           workspaces: backend-school -> target
           save-if: "false"
-
       - name: Verify compatibility test selections
         run: node --test scripts/tests/neon-compatibility.test.mjs
-
       - name: Validate test-only Neon configuration
         env:
           NEON_TEST_API_KEY: ${{ secrets.NEON_TEST_API_KEY }}
@@ -70,11 +57,9 @@ jobs:
           done
           [[ $NEON_TEST_PROJECT_ID =~ ^[a-z0-9-]{1,60}$ ]]
           [[ $NEON_TEST_PARENT_BRANCH_ID =~ ^br-[a-z0-9-]+$ ]]
-
       - name: Calculate branch expiration
         id: expiration
         run: echo "expires_at=$(date -u --date '+2 hours' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-
       - name: Create disposable Neon branch
         id: create_branch
         env:
@@ -86,7 +71,6 @@ jobs:
           NEON_BRANCH_NAME: schoolorbit-test-${{ github.run_id }}-${{ github.run_attempt }}
           NEON_BRANCH_EXPIRES_AT: ${{ steps.expiration.outputs.expires_at }}
         run: node scripts/neon-create-test-branch.mjs
-
       - name: Verify this run created a fresh branch
         env:
           BRANCH_CREATED: ${{ steps.create_branch.outputs.created }}
@@ -95,7 +79,6 @@ jobs:
           set -euo pipefail
           [[ $BRANCH_CREATED == true ]]
           [[ $BRANCH_ID =~ ^br-[a-z0-9-]+$ ]]
-
       - name: Provision migration prerequisite extensions
         env:
           TEST_DATABASE_URL: ${{ steps.create_branch.outputs.db_url }}
@@ -110,7 +93,6 @@ jobs:
           CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
           CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
           SQL
-
       - name: Run direct-endpoint compatibility tests
         working-directory: backend-school
         env:
@@ -147,7 +129,6 @@ jobs:
               exit 64
               ;;
           esac
-
       - name: Delete disposable Neon branch
         if: ${{ always() && steps.create_branch.outputs.created == 'true' && steps.create_branch.outputs.branch_id != '' }}
         env:

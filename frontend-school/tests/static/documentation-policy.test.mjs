@@ -161,20 +161,28 @@ test('project rules own durable development and verification workflows', async (
 		'npm run generate:api-contracts',
 		'npm run check:api-contracts',
 		'npm run test:api-contracts',
-		'cargo test --test static_architecture',
 		'podman-compose.yml` is the sole production Compose owner',
-		'bats scripts/tests/installer',
-		'shellcheck scripts/schoolorbit-installer',
-		'shfmt -d -i 4 -ci scripts/schoolorbit-installer',
-		'node --test frontend-school/tests/static/deployment-installer.test.mjs',
 		'Persisted legacy data is migration input, not a runtime compatibility requirement.',
 		'expand → migrate/backfill → reconcile → switch consumers → contract/cleanup',
 		'Legacy runtime compatibility is not a default requirement.',
+		'./scripts/pipeline verify --scope auto',
 		'git diff --check'
 	];
 
 	for (const value of required) {
 		assert.ok(rules.includes(value), `.rules must contain: ${value}`);
+	}
+
+	const pipeline = await readFile(path.join(repoRoot, 'scripts/pipeline.mjs'), 'utf8');
+	const deployment = await readFile(path.join(repoRoot, 'scripts/verify_deployment.sh'), 'utf8');
+	assert.match(pipeline, /'test', '--test', 'static_architecture'/);
+	for (const command of [
+		'bats scripts/tests/installer',
+		'shellcheck -x',
+		'shfmt -d -i 4 -ci',
+		'node --test frontend-school/tests/static/deployment-installer.test.mjs'
+	]) {
+		assert.ok(deployment.includes(command), `Owned deployment runner must retain: ${command}`);
 	}
 
 	const canonicalPolicy = requiredSection(
@@ -296,7 +304,7 @@ test('operations document owns the coordinated school release contract', async (
 	assert.doesNotMatch(operations, /deploy-backend-school\.yml/);
 	assert.doesNotMatch(operations, /deploy-all-schools\.yml/);
 	assert.doesNotMatch(operations, /SCHOOL_API_KEEP_MAINTENANCE/);
-	assert.match(podmanSetup, /deploy-school-release\.yml/);
+	assert.match(podmanSetup, /pipeline\.yml/);
 });
 
 test('canonical docs own the school-font rollout and lifecycle contract', async () => {

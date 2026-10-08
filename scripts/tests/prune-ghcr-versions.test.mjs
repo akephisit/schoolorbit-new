@@ -296,3 +296,13 @@ test('unsupported packages fail before making a request', async () => {
 		/Unsupported GHCR package/
 	);
 });
+
+// Prepared input tags are release inventory; protect the accepted component.
+test('retention covers prepared input tags and preserves the accepted older component', () => {
+    const inventory = releaseInventory(35);
+    const accepted = inventory[34].metadata.container.tags[0];
+    inventory[33].metadata.container.tags = ['input-' + 'b'.repeat(64)];
+    const candidates = selectDeletionCandidates(inventory, 30, [accepted]);
+    assert.ok(candidates.some(x => x.id === inventory[33].id));
+    assert.ok(!candidates.some(x => x.id === inventory[34].id));
+});

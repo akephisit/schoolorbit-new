@@ -1,3 +1,4 @@
+import { readWorkflowSource } from '../helpers/workflow-source.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -9,7 +10,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
 function readRepoFile(relativePath) {
-	return readFile(path.join(repoRoot, relativePath), 'utf8');
+	return relativePath.startsWith('.github/workflows/')
+		? readWorkflowSource(repoRoot, relativePath)
+		: readFile(path.join(repoRoot, relativePath), 'utf8');
 }
 
 test('generated contract publishes the provider-neutral file platform routes', async () => {

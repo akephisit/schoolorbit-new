@@ -13,9 +13,28 @@ Record:
 
 Do not replace a failed check by disabling it or by running a narrower command that misses the failure.
 
-## Release CI gate
+## Local and CI pipeline
 
-From the repository root, run `node --test scripts/tests/school-release-ci.test.mjs` and `node --test frontend-school/tests/static/school-release-deployment.test.mjs`. Fixtures cover trusted main push identity, exact SHA/attempt, mandatory job success, failed/cancelled/missing/timed-out runs, rerun races, trigger coverage and optional Installer selection. The workflow guard also executes manual-result rejection cases and verifies backend-only/frontend-only acceptance paths retain the CI dependency while build/staging remain parallel. Run the deployment-workflow verification matrix below and verify the main release gate plus deployed-proxy smoke after integration.
+From the repository root, run `./scripts/pipeline verify --scope auto` before opening a PR.
+The command includes uncommitted/untracked paths. `--scope full` runs every suite; a comma-separated
+list such as `backend-school,contracts` selects explicit suites. Install Node 24, pinned Rust,
+Docker, and the owning application's locked npm dependencies. Deployment checks also need
+ShellCheck, shfmt, Bats, envsubst and jq. Local test profiles use no debug information or Cargo
+incremental data; production release optimization is unchanged.
+
+The same command owns CI verification. School performs workspace checking, architecture/unit
+checks, generated OpenAPI and clean-environment export once, then database consumers with one
+Docker PostgreSQL server and a fresh owned database per invocation. Admin applies migrations only
+to its disposable Docker fixture before SQLx all-target compilation and tests. Frontend suites run
+lint, type checks and their actual contract/unit tests. CI records command timings, compiler cache
+outcomes and verification environment receipts separately. Auth/session Playwright discovery uses
+synthetic values with `--list` and loopback URLs only; it performs no browser or network execution.
+Live session acceptance still requires a dedicated disposable account and the explicit E2E owner.
+
+Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, provenance, merge and
+maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
+for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and
+browser verification after integration. Caches never replace a required test result.
 
 ## Every Change
 
@@ -387,8 +406,7 @@ For coordinated school release behavior, run:
 ```bash
 node --test tests/runtime/maintenance-controller.test.mjs \
   tests/static/school-release-deployment.test.mjs
-node --test ../scripts/tests/school-release-scope.test.mjs \
-  ../scripts/tests/school-release-replay.test.mjs
+node --test ../scripts/tests/pipeline*.test.mjs
 node --test ../scripts/tests/worker-release-candidates.test.mjs
 ```
 
@@ -416,29 +434,14 @@ npm run build
 When the VPS installer, canonical Compose runtime, Nginx templates, deployment workflows, or their durable documentation changes, run from the repository root:
 
 ```bash
-node --test scripts/tests/backend-school-test-database.test.mjs
-node --test scripts/tests/school-release-scope.test.mjs \
-  scripts/tests/school-release-replay.test.mjs \
-  scripts/tests/worker-release-candidates.test.mjs
-shellcheck scripts/schoolorbit-installer scripts/render_nginx_config.sh \
-  scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
-  scripts/test_backend_school.sh scripts/resolve_school_release_scope.sh \
-  scripts/lib/schoolorbit-installer/*.sh \
-  scripts/lib/schoolorbit-installer/remote/*.sh
-shfmt -d -i 4 -ci scripts/schoolorbit-installer scripts/render_nginx_config.sh \
-  scripts/prune_runtime_images.sh scripts/clamd_runtime_matches.sh \
-  scripts/test_backend_school.sh scripts/resolve_school_release_scope.sh \
-  scripts/lib/schoolorbit-installer/*.sh \
-  scripts/lib/schoolorbit-installer/remote/*.sh
-bats scripts/tests/installer
-node --test scripts/tests/prune-ghcr-versions.test.mjs
-node --test frontend-school/tests/static/deployment-installer.test.mjs
-env $(grep -v '^#' scripts/tests/installer/fixtures/runtime.env | xargs) \
-  podman-compose -f podman-compose.yml --dry-run up -d >/dev/null
-podman run --rm -v "$PWD:/repo" -w /repo docker.io/rhysd/actionlint:1.7.7
+./scripts/pipeline verify --scope deployment
 ```
 
-The deployment static guard renders a proxy template into a temporary target, rejects invalid domains without replacing existing output, enforces the single production Compose owner, and confirms backend workflows verify the selected origin rather than the public hostname. Report an unavailable Bats, Podman, or Podman Compose dependency as unrun; do not replace its check with a narrower command.
+This runs ShellCheck/shfmt against the real scripts, installer Bats, pipeline/database-runner and
+migration-completion fixtures, deployment source guards, R2 CORS checks, Docker Compose config
+resolution and actionlint in Docker. Tests inspect moved implementations rather than workflow
+wrappers. Production itself retains rootless Podman; local fixtures and verification use Docker.
+Report unavailable dependencies explicitly instead of narrowing the checks.
 
 For focused deployment-runtime work, run:
 
@@ -453,22 +456,28 @@ node --test frontend-school/tests/static/documentation-policy.test.mjs
 
 The retention tests use only fake Podman and a loopback HTTP server. They must not contact the
 production VPS, delete a live package version, or replace the manual GHCR dry-run review. Dockerfile
-changes also require Podman runtime-target builds and config inspection:
+changes also require Docker runtime-target builds and config inspection:
 
 ```bash
-podman build --target runtime -t schoolorbit/backend-admin:verification backend-admin
-podman build --target runtime -t schoolorbit/backend-school:verification backend-school
-podman image inspect schoolorbit/backend-admin:verification \
+docker build --target runtime -t schoolorbit/backend-admin:verification backend-admin
+docker build --target runtime -t schoolorbit/backend-school:verification backend-school
+docker image inspect schoolorbit/backend-admin:verification \
   --format '{{.Config.User}} {{json .Config.Cmd}}'
-podman image inspect schoolorbit/backend-school:verification \
+docker image inspect schoolorbit/backend-school:verification \
   --format '{{.Config.User}} {{json .Config.Cmd}}'
 ```
 
-Docker Buildx remains limited to the GitHub Actions backend-image build jobs; repository-local runtime, database tests, image inspection, and workflow linting use Podman without a Docker socket or compatibility alias. The guard also owns CI cache policy: backend-admin and backend-school use distinct BuildKit scopes, while API and permission contract jobs share a dependency-oriented backend-school Rust cache. Pull requests are restore-only, and only trusted `main` runs may save it. A cache miss must execute the complete workflow rather than bypassing a gate. API Contract keeps artifact generation/offline export, backend validation, and frontend validation in independent jobs without `needs`; the static guard owns this division and its single-writer Rust cache policy.
+Backend release builds use separate BuildKit/sccache namespaces for Admin and School. Backend
+verification caches include source hashes, the pinned compiler and debug/test profile and have one writer per
+component. PRs restore shared caches; trusted main runs save. Frontend bundle keys include source,
+actual Node version, build recipe and compiled public configuration. Bundles are hashed and checked
+again before unpacking. Test targets and release binaries never share interchangeable cache keys.
 
-Contract jobs use the shared `setup-contract-rust` action before restoring the Rust cache. It removes
-unused preinstalled toolchains from the disposable GitHub runner because rust-cache includes that
-inventory in its key. Do not run this runner setup on a developer machine. The offline OpenAPI gate
+Backend verification uses `setup-contract-rust` before restoring a source-keyed target cache.
+Only unchanged, content-verified source files have their checkout timestamps normalized; edited
+files are forced newer than the saved compile outputs. Main runs the database owners and saves
+the new compiled snapshot even when other equivalent PR checks are reused. The setup removes
+unused preinstalled toolchains only on the disposable GitHub runner. Do not run this runner setup on a developer machine. The offline OpenAPI gate
 executes the binary already compiled by `check:api-contracts` under `env -i`; it still verifies export
 without runtime configuration while preserving the compiler environment used to build the binary.
 
@@ -506,7 +515,7 @@ Commit the contract, `contracts/permissions.lock.json`, backend registry, fronte
 
 ## API Contract
 
-The API Contract workflow also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the native rootless Podman database runner. Frontend validation includes full lint; all jobs remain independent and pull requests do not save the shared Rust cache.
+The API Contract workflow also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the Docker database runner. Frontend validation includes full lint; all jobs remain independent and pull requests do not save the shared Rust cache.
 
 Rust DTOs and OpenAPI annotations own the wire contract. The tracked output is `contracts/openapi/school-api.json`; generated TypeScript lives under `frontend-school/src/lib/api/generated/`. These are generated files; do not edit generated files directly.
 
@@ -542,7 +551,7 @@ BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh \
   -- --exact --nocapture --test-threads=1
 ```
 
-The runner requires the local rootless Podman engine and rejects `CONTAINER_HOST` or `CONTAINER_CONNECTION`, so it cannot accidentally select a remote runtime. Cargo and its compilation cache stay on the computer, while PostgreSQL uses a fresh anonymous disk-backed volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Podman storage has sufficient free disk space. The runner removes its uniquely named PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
+The runner uses the local Docker engine and rejects remote `DOCKER_HOST`, `CONTAINER_HOST` or `CONTAINER_CONNECTION`, so it cannot accidentally select a remote runtime. Cargo and its compilation cache stay on the computer, while PostgreSQL uses a fresh anonymous disk-backed volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Docker storage has sufficient free disk space. The runner removes its uniquely named PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
 
 Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container and its anonymous data volume after the command, including on test failure.
 
@@ -579,7 +588,7 @@ The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-s
 
 For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual SQLx version and bounded preservation/current-pointer integrity checks afterward; for migration 085 require imported dates/orders/actors to remain unknown and unchanged existing staff fields. Retain the historical `staff_personnel_simplification_audit` checks where relevant. Do not emit credentials, names, source values or national IDs.
 
-The 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The manual `backend-school-neon-compatibility.yml` workflow discovers every declared test selection before creating a branch, runs auth/file schema checks in their current crate owners, and rejects successful Cargo commands with zero passing tests. Run `node --test scripts/tests/neon-compatibility.test.mjs` to verify discovery and failure propagation. The workflow runs the staff migration fixtures and the remaining schema/status selections against a fresh disposable direct-endpoint child; cleanup and expiry stay with that workflow. Run `node --test scripts/tests/migration-completion-gate.test.mjs` to exercise the actual all-tenant release filter through its native Podman jq image, including healthy reports without retired personnel fields, all-tenant coverage, future migration versions, other domain audit failures, and the complete thirty-check delivery/timetable reconciliation. Missing, partial, failed or stale delivery cutover evidence must refuse promotion.
+The 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The explicit Operations `neon` task calls `backend-school-neon-compatibility.yml`, which discovers every declared test selection before creating a branch, runs auth/file schema checks in their current crate owners, and rejects successful Cargo commands with zero passing tests. Run `node --test scripts/tests/neon-compatibility.test.mjs` to verify discovery and failure propagation. The workflow runs the staff migration fixtures and the remaining schema/status selections against a fresh disposable direct-endpoint child; cleanup and expiry stay with that workflow. Run `node --test scripts/tests/migration-completion-gate.test.mjs` to exercise the actual all-tenant release filter through its Docker jq image, including healthy reports without retired personnel fields, all-tenant coverage, future migration versions, other domain audit failures, and the complete thirty-check delivery/timetable reconciliation. Missing, partial, failed or stale delivery cutover evidence must refuse promotion.
 
 Against a production build running in local preview:
 
@@ -661,7 +670,7 @@ tenant connection inventory, keep output outside the repository, apply 041-044, 
 multi-year/multi-term reads, and record only duration, aggregate counts/checksums, finding codes, and
 pass/fail. When a separately reviewed Phase B branch contains migration 045, rehearse that review
 copy on the same disposable clone after a current success marker and verify its cleanup manifest.
-Never commit clone data or its output. The manual Neon migration compatibility workflow remains a
+Never commit clone data or its output. The Operations `neon` compatibility task remains a
 separate credentialed external gate and is unrun when its repository secret/variables are unavailable.
 
 For browser coverage, discovery does not equal execution. Discovery must work without tenant
@@ -696,7 +705,7 @@ bounded check codes, counts, versions, and pass/fail state; it must never contai
 scores, outcomes, credentials, or source rows. A legitimate school edit to grading or evaluation
 configuration is not a deployment invariant and must not keep the tenant in maintenance.
 
-The manual Neon migration compatibility workflow runs the same focused checks on a fresh disposable
+The Operations `neon` compatibility task runs the same focused checks on a fresh disposable
 child branch through its direct non-pooled endpoint. Schema-isolated migration cases use four test
 threads so network round trips do not serialize the entire gate, while each individual test pool
 still has one connection. The workflow then deletes the branch. Repository secrets and variables

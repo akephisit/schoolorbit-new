@@ -1,0 +1,197 @@
+name: Pipeline
+run-name: Pipeline (${{ inputs.deployment_id || github.sha }})
+on:
+  pull_request: null
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Add a component or reconcile all; queued changes are always included
+        type: choice
+        default: auto
+        options:
+          - auto
+          - full
+          - backend-admin
+          - frontend-admin
+          - backend-school
+          - frontend-school
+      automatic:
+        description: Internal automatic integration dispatch; respects rollout gates
+        type: boolean
+        default: false
+      deployment_id:
+        description: Installer or operations request identifier
+        type: string
+      target_origin_ip:
+        description: Temporary IPv4 before DNS cutover
+        type: string
+      pr_number:
+        description: Internal team candidate verification; does not deploy
+        type: string
+        default: ""
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: pipeline-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      verify: ${{ steps.plan.outputs.verify }}
+      build: ${{ steps.plan.outputs.build }}
+      deploy: ${{ steps.plan.outputs.deploy }}
+      candidate: ${{ steps.plan.outputs.candidate }}
+      pr_number: ${{ steps.plan.outputs.pr_number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Select a trusted team PR candidate on explicit dispatch
+        if: github.event_name == 'workflow_dispatch' && inputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |-
+          set -euo pipefail
+          [[ $PR_NUMBER =~ ^[1-9][0-9]*$ ]] || exit 64
+          pr=$(gh api "/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+          printf '%s' "$pr" | jq -e --arg repo "$GITHUB_REPOSITORY" '.head.repo.full_name == $repo and .base.ref == "main" and .state == "open"' >/dev/null
+          author=$(printf '%s' "$pr" | jq -r '.user.login')
+          permission=$(gh api "/repos/$GITHUB_REPOSITORY/collaborators/$author/permission" --jq '.permission')
+          [[ $permission =~ ^(admin|maintain|write)$ ]] || exit 64
+          git fetch origin "refs/pull/$PR_NUMBER/merge"
+          git checkout --detach FETCH_HEAD
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Read trusted accepted baseline
+        if: github.event_name != 'pull_request' && inputs.pr_number == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/lib/pipeline-state.mjs > "$RUNNER_TEMP/state.json"
+      - name: Plan scoped checks and artifacts
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSH_BASE: ${{ github.event.before }}
+          REQUESTED_SCOPE: ${{ inputs.scope || 'auto' }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+          BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ] || [ -n "$PR_NUMBER" ]; then
+            base=$(git rev-parse HEAD^1)
+            ./scripts/pipeline plan --base "$base" --output "$RUNNER_TEMP/plan.json"
+          else
+            base=${PUSH_BASE:-$(git rev-parse HEAD)}
+            if ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=$(git rev-parse HEAD^); fi
+            ./scripts/pipeline plan --release true --base "$base" --state "$RUNNER_TEMP/state.json" --scope "$REQUESTED_SCOPE" --output "$RUNNER_TEMP/plan.json"
+          fi
+          cat "$RUNNER_TEMP/plan.json" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$PR_NUMBER" ]; then
+            node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const file=process.env.RUNNER_TEMP+'/plan.json';
+          const plan=JSON.parse(readFileSync(file,'utf8'));
+          plan.prHead=execFileSync('git',['rev-parse','HEAD^2'],{encoding:'utf8'}).trim();
+          writeFileSync(file,JSON.stringify(plan));
+          appendFileSync(process.env.GITHUB_OUTPUT,'plan='+JSON.stringify(plan)+'\ncandidate=true\npr_number='+process.env.PR_NUMBER+'\n');
+          NODE
+          else
+            printf 'candidate=false\npr_number=\n' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v6
+        with:
+          overwrite: true
+          name: pipeline-plan
+          path: ${{ runner.temp }}/plan.json
+          retention-days: 30
+  verify:
+    needs: plan
+    uses: ./.github/workflows/verify.yml
+    with:
+      suites: ${{ needs.plan.outputs.verify }}
+      sha: ${{ fromJson(needs.plan.outputs.plan).sha }}
+      candidate: ${{ needs.plan.outputs.candidate == 'true' }}
+  prepare:
+    needs: plan
+    if: github.event_name != 'pull_request' && inputs.pr_number == '' && needs.plan.outputs.build != '[]'
+    uses: ./.github/workflows/prepare.yml
+    with:
+      plan: ${{ needs.plan.outputs.plan }}
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+  gate:
+    name: Pipeline gate
+    needs:
+      - plan
+      - verify
+      - prepare
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every selected check and build
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          EVENT: ${{ github.event_name }}
+          BUILDS: ${{ needs.plan.outputs.build }}
+          CANDIDATE: ${{ needs.plan.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          test "$PLAN_RESULT" = success
+          test "$VERIFY_RESULT" = success
+          if [ "$CANDIDATE" != true ] && [ "$BUILDS" != '[]' ]; then test "$PREPARE_RESULT" = success; fi
+  release:
+    needs:
+      - plan
+      - gate
+    if: github.event_name != 'pull_request' && inputs.pr_number == '' && github.ref == 'refs/heads/main' && needs.plan.outputs.deploy != '[]'
+    concurrency:
+      group: schoolorbit-production
+      cancel-in-progress: false
+    uses: ./.github/workflows/release.yml
+    with:
+      plan: ${{ needs.plan.outputs.plan }}
+      target_origin_ip: ${{ inputs.target_origin_ip || '' }}
+      automatic: ${{ github.event_name == 'push' || inputs.automatic == true }}
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+  candidate-gate:
+    needs:
+      - plan
+      - gate
+    if: always() && github.event_name == 'workflow_dispatch' && needs.plan.outputs.candidate == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Publish required check on the exact PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.plan.outputs.plan }}
+          PR_NUMBER: ${{ needs.plan.outputs.pr_number }}
+          GATE_RESULT: ${{ needs.gate.result }}
+        run: node scripts/publish_candidate_gate.mjs

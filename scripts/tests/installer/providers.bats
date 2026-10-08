@@ -9,7 +9,7 @@ setup() {
     export GITHUB_DISPATCH_MARKER="$TEST_ROOT/github-dispatched"
     export GITHUB_RUN_BEFORE_DISPATCH_FIXTURE="$TEST_ROOT/github-runs-before-dispatch.json"
     export GITHUB_RUN_AFTER_DISPATCH_FIXTURE="$GITHUB_RUN_FIXTURE"
-    jq '[.[] | select(.displayTitle != "Deploy Backend Admin (deploy-123)")]' \
+    jq '[.[] | select(.displayTitle != "Pipeline (deploy-123)")]' \
         "$GITHUB_RUN_FIXTURE" >"$GITHUB_RUN_BEFORE_DISPATCH_FIXTURE"
     export CF_DNS_FIXTURE="$FIXTURE_DIR/cloudflare-dns.json"
 
@@ -121,19 +121,17 @@ teardown() {
 }
 
 @test "workflow dispatch waits for exactly correlated display title" {
-    github_dispatch_and_wait deploy-backend-admin.yml deploy-123
+    github_dispatch_and_wait pipeline.yml deploy-123
 
     [ "$SO_GITHUB_RUN_ID" = 731 ]
     [ "$SO_GITHUB_RUN_URL" = 'https://github.invalid/owner/repo/actions/runs/731' ]
-    grep -F 'workflow run deploy-backend-admin.yml --repo owner/repo --ref main -f deployment_id=deploy-123' "$FAKE_COMMAND_LOG"
+    grep -F 'workflow run pipeline.yml --repo owner/repo --ref main -f deployment_id=deploy-123' "$FAKE_COMMAND_LOG"
     grep -F 'run watch 731 --repo owner/repo --exit-status' "$FAKE_COMMAND_LOG"
 }
 
 @test "resume accepts successful admin backend, admin frontend and coordinated school release runs" {
     local runs='[
-        {"workflow":"deploy-backend-admin.yml","id":731,"url":"https://github.invalid/owner/repo/actions/runs/731"},
-        {"workflow":"deploy-frontend-admin.yml","id":732,"url":"https://github.invalid/owner/repo/actions/runs/732"},
-        {"workflow":"deploy-school-release.yml","id":733,"url":"https://github.invalid/owner/repo/actions/runs/733"}
+        {"workflow":"pipeline.yml","id":731,"url":"https://github.invalid/owner/repo/actions/runs/731"}
     ]'
 
     run github_runs_succeeded "$runs"
@@ -143,9 +141,7 @@ teardown() {
 
 @test "resume rejects a failed checkpointed deployment run" {
     local runs='[
-        {"workflow":"deploy-backend-admin.yml","id":731,"url":"https://github.invalid/owner/repo/actions/runs/731"},
-        {"workflow":"deploy-frontend-admin.yml","id":732,"url":"https://github.invalid/owner/repo/actions/runs/732"},
-        {"workflow":"deploy-school-release.yml","id":733,"url":"https://github.invalid/owner/repo/actions/runs/733"}
+        {"workflow":"pipeline.yml","id":731,"url":"https://github.invalid/owner/repo/actions/runs/731"}
     ]'
     export FAKE_RUN_CONCLUSION=failure
 
@@ -158,14 +154,14 @@ teardown() {
     local before="$TEST_ROOT/school-release-runs-before.json"
     local after="$TEST_ROOT/school-release-runs-after.json"
     printf '%s\n' '[]' >"$before"
-    jq '[.[0] | .displayTitle = "Deploy School Release (deploy-123)"]' \
+    jq '[.[0] | .displayTitle = "Pipeline (deploy-123)"]' \
         "$FIXTURE_DIR/github-runs.json" >"$after"
     export GITHUB_RUN_BEFORE_DISPATCH_FIXTURE=$before
     export GITHUB_RUN_AFTER_DISPATCH_FIXTURE=$after
 
-    github_dispatch_and_wait deploy-school-release.yml deploy-123
+    github_dispatch_and_wait pipeline.yml deploy-123
 
-    grep -F 'workflow run deploy-school-release.yml --repo owner/repo --ref main -f deployment_id=deploy-123 -f release_scope=full -f target_origin_ip=192.0.2.20' "$FAKE_COMMAND_LOG"
+    grep -F 'workflow run pipeline.yml --repo owner/repo --ref main -f deployment_id=deploy-123 -f scope=full -f target_origin_ip=192.0.2.20' "$FAKE_COMMAND_LOG"
 }
 
 @test "workflow dispatch rejects ambiguous correlated runs" {
@@ -173,7 +169,7 @@ teardown() {
     jq '. + [.[0]]' "$FIXTURE_DIR/github-runs.json" >"$duplicate"
     export GITHUB_RUN_AFTER_DISPATCH_FIXTURE=$duplicate
 
-    run github_dispatch_and_wait deploy-backend-admin.yml deploy-123
+    run github_dispatch_and_wait pipeline.yml deploy-123
     [ "$status" -eq 78 ]
 }
 
@@ -186,7 +182,7 @@ teardown() {
     export GITHUB_RUN_BEFORE_DISPATCH_FIXTURE=$before
     export GITHUB_RUN_AFTER_DISPATCH_FIXTURE=$after
 
-    github_dispatch_and_wait deploy-backend-admin.yml deploy-123
+    github_dispatch_and_wait pipeline.yml deploy-123
 
     [ "$SO_GITHUB_RUN_ID" = 731 ]
     grep -F 'run watch 731 --repo owner/repo --exit-status' "$FAKE_COMMAND_LOG"

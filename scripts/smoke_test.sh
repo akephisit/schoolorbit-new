@@ -101,6 +101,15 @@ if [[ -n $SMOKE_CA_CERT ]]; then
     school_api_curl_options+=(--cacert "$SMOKE_CA_CERT")
 fi
 
+if [[ -n ${SMOKE_RELEASE_PROBE_TOKEN-} ]]; then
+    if [[ ! $SMOKE_RELEASE_PROBE_TOKEN =~ ^[0-9a-f]{64}$ || $SMOKE_RESOLVE_IP != 127.0.0.1 ]]; then
+        printf 'Release probes require a private token and loopback origin.\n' >&2
+        exit 64
+    fi
+    admin_api_curl_options+=(-H "X-Schoolorbit-Release-Probe: $SMOKE_RELEASE_PROBE_TOKEN")
+    school_api_curl_options+=(-H "X-Schoolorbit-Release-Probe: $SMOKE_RELEASE_PROBE_TOKEN")
+fi
+
 failures=0
 cookie_jar="$(mktemp)"
 tmp_dir="$(mktemp -d)"

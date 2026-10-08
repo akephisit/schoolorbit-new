@@ -7,6 +7,7 @@ const ALLOWED_PACKAGES = new Set([
 	'schoolorbit-backend-school'
 ]);
 const SHA_TAG = /^[0-9a-f]{40}$/;
+const RELEASE_TAG = /^(?:[0-9a-f]{40}|input-[0-9a-f]{64})$/;
 const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const MAX_DELETIONS = 100;
 const API_VERSION = '2026-03-10';
@@ -60,12 +61,13 @@ function compareOldestFirst(left, right) {
 	return left.createdAtEpoch - right.createdAtEpoch || left.id - right.id;
 }
 
-export function selectDeletionCandidates(versions, keep) {
+export function selectDeletionCandidates(versions, keep, protectedTags = []) {
 	if (!Array.isArray(versions)) throw new Error('GHCR inventory must be an array');
 	if (!Number.isSafeInteger(keep) || keep < 1 || keep > 100) {
 		throw new Error('GHCR retention count must be from 1 through 100');
 	}
 
+	if (!Array.isArray(protectedTags) || protectedTags.some((tag) => !SHA_TAG.test(tag))) throw new Error('Invalid protected release tag');
 	const normalized = versions.map(normalizeVersion);
 	const ids = new Set();
 	for (const version of normalized) {
@@ -74,7 +76,7 @@ export function selectDeletionCandidates(versions, keep) {
 	}
 
 	const releases = normalized
-		.filter((version) => version.tags.some((tag) => SHA_TAG.test(tag)))
+		.filter((version) => version.tags.some((tag) => RELEASE_TAG.test(tag)))
 		.sort(compareNewestFirst);
 	const retainedIds = new Set(releases.slice(0, keep).map(({ id }) => id));
 
@@ -83,8 +85,9 @@ export function selectDeletionCandidates(versions, keep) {
 			(version) =>
 				!retainedIds.has(version.id) &&
 				!version.tags.includes('latest') &&
+				!version.tags.some((tag) => protectedTags.includes(tag)) &&
 				version.tags.length > 0 &&
-				version.tags.every((tag) => SHA_TAG.test(tag))
+				version.tags.every((tag) => RELEASE_TAG.test(tag))
 		)
 		.sort(compareOldestFirst)
 		.map((version) => ({
@@ -151,14 +154,14 @@ function validateLinkHeader(link, { page }) {
 }
 
 function parseCliArguments(arguments_) {
-	const result = { execute: false };
+	const result = { execute: false, protectedTags: [] };
 	for (let index = 0; index < arguments_.length; index += 1) {
 		const argument = arguments_[index];
 		if (argument === '--execute') {
 			result.execute = true;
 			continue;
 		}
-		if (!['--owner', '--package', '--keep'].includes(argument)) {
+		if (!['--owner', '--package', '--keep', '--protect'].includes(argument)) {
 			throw new Error('Unsupported GHCR retention argument');
 		}
 		const value = arguments_[index + 1];
@@ -167,6 +170,7 @@ function parseCliArguments(arguments_) {
 		if (argument === '--owner') result.owner = value;
 		if (argument === '--package') result.packageName = value;
 		if (argument === '--keep') result.keep = Number(value);
+		if (argument === '--protect') result.protectedTags.push(value);
 	}
 	return result;
 }
@@ -176,6 +180,7 @@ export async function pruneGhcrVersions({
 	packageName,
 	keep,
 	execute = false,
+	protectedTags = [],
 	token,
 	apiBase = 'https://api.github.com',
 	logger = console.log,
@@ -228,9 +233,9 @@ export async function pruneGhcrVersions({
 
 	const normalizedInventory = inventory.map(normalizeVersion);
 	const releaseCount = normalizedInventory.filter((version) =>
-		version.tags.some((tag) => SHA_TAG.test(tag))
+		version.tags.some((tag) => RELEASE_TAG.test(tag))
 	).length;
-	const allCandidates = selectDeletionCandidates(inventory, keep);
+	const allCandidates = selectDeletionCandidates(inventory, keep, protectedTags);
 	const candidates = allCandidates.slice(0, MAX_DELETIONS);
 
 	for (const candidate of candidates) {
@@ -251,8 +256,9 @@ export async function pruneGhcrVersions({
 		const current = normalizeVersion(data);
 		if (
 			current.tags.includes('latest') ||
+			current.tags.some((tag) => protectedTags.includes(tag)) ||
 			current.tags.length === 0 ||
-			!current.tags.every((tag) => SHA_TAG.test(tag)) ||
+			!current.tags.every((tag) => RELEASE_TAG.test(tag)) ||
 			versionSignature(current) !== candidate.signature
 		) {
 			throw new Error(`GHCR version ${candidate.id} changed during revalidation`);

@@ -1,46 +1,75 @@
-name: Deploy School Tenant
-
+name: Tenant provisioning implementation
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       subdomain:
-        description: "School subdomain (e.g., test-school)"
-        required: true
         type: string
+        required: true
       school_id:
-        description: "School UUID from database"
-        required: true
         type: string
+        required: true
       api_url:
-        description: "Backend API URL for this tenant"
-        required: true
         type: string
-
-concurrency:
-  group: school-production-release
-  cancel-in-progress: false
-
+        required: true
+      request_id:
+        type: string
+        required: true
+permissions:
+  contents: read
+  actions: read
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: frontend-school/package-lock.json
-
-      - name: Install dependencies
+      - name: Read the trusted accepted frontend artifact
+        id: accepted
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_API: ${{ inputs.api_url }}
+          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |-
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          import {readAcceptedState,trustedRun} from './scripts/lib/pipeline-state.mjs';
+          import {inputHash} from './scripts/lib/pipeline-policy.mjs';
+          if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(process.env.REQUEST_ID)) throw new Error('Provisioning request_id must be a UUID');
+          if (process.env.REQUESTED_API !== process.env.PUBLIC_BACKEND_URL) throw new Error('Provisioning API must match the accepted environment');
+          const state=readAcceptedState();
+          const entry=state?.components['frontend-school'];
+          if (!entry) throw new Error('A School release must be accepted before provisioning');
+          const config={backend:process.env.PUBLIC_BACKEND_URL,vapid:process.env.PUBLIC_VAPID_KEY || ''};
+          if (inputHash('.',entry.sha,'frontend-school',config) !== entry.inputHash) throw new Error('Accepted frontend configuration differs; release it before provisioning');
+          const source=JSON.parse(execFileSync('gh',['api','/repos/' + process.env.GITHUB_REPOSITORY + '/actions/runs/' + entry.artifactRunId],{encoding:'utf8'}));
+          if (!trustedRun(source,process.env.GITHUB_REPOSITORY,'pipeline.yml',entry.sha)) throw new Error('Untrusted frontend artifact provenance');
+          appendFileSync(process.env.GITHUB_OUTPUT,'run_id='+entry.artifactRunId+'\nsha='+entry.sha+'\nhash='+entry.inputHash+'\n');
+          NODE
+      - uses: actions/download-artifact@v7
+        with:
+          name: prepared-frontend-school
+          path: ${{ runner.temp }}/prepared
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.accepted.outputs.run_id }}
+      - name: Validate and unpack accepted School bundle
+        env:
+          COMPONENT: frontend-school
+          INPUT_HASH: ${{ steps.accepted.outputs.hash }}
+          ARTIFACT_DIR: ${{ runner.temp }}/prepared
+          ARTIFACT_SHA: ${{ steps.accepted.outputs.sha }}
+        run: node scripts/frontend_artifact.mjs unpack
+      - name: Install menu and Wrangler dependencies
         working-directory: frontend-school
         run: npm ci
-
       - name: Create Wrangler configuration
         working-directory: frontend-school
         env:
@@ -50,7 +79,9 @@ jobs:
           BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
           VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
         run: |
-          set -eu
+          set -euo pipefail
+          [[ $SUBDOMAIN =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || exit 64
+          [[ $SCHOOL_ID =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]] || exit 64
           : "${BASE_DOMAIN:?BASE_DOMAIN repository variable is required}"
           : "${BACKEND_SCHOOL_URL:?BACKEND_SCHOOL_URL repository variable is required}"
           jq -n \
@@ -63,15 +94,6 @@ jobs:
             --arg subdomain "$SUBDOMAIN" \
             '{name:$name,main:"build/index.js",compatibility_date:"2025-09-15",compatibility_flags:["nodejs_compat"],assets:{directory:"build/client",binding:"ASSETS"},routes:[{pattern:$route,zone_name:$zone}],vars:{PUBLIC_BACKEND_URL:$backend,PUBLIC_VAPID_KEY:$vapid,SCHOOL_ID:$school_id,SUBDOMAIN:$subdomain}}' \
             >wrangler.json
-
-      - name: Build frontend
-        working-directory: frontend-school
-        env:
-          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
-          PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
-          SUBDOMAIN: ${{ inputs.subdomain }}
-        run: npm run build
-
       - name: Read locked Wrangler version
         id: wrangler-version
         working-directory: frontend-school
@@ -83,31 +105,119 @@ jobs:
           if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid locked Wrangler version');
           appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
           NODE
-
-      - name: Deploy to Cloudflare Workers
+      - name: Clear upload output
+        working-directory: frontend-school
+        run: |-
+          mkdir -p .wrangler
+          rm -f .wrangler/provision-upload.ndjson
+      - name: Upload inactive accepted frontend
         uses: cloudflare/wrangler-action@v4.1.3
         with:
           wranglerVersion: ${{ steps.wrangler-version.outputs.version }}
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend-school
-          command: deploy
-
-      - name: Synchronize menu routes
+          command: versions upload --tag ${{ inputs.request_id }}
+        env:
+          WRANGLER_OUTPUT_FILE_PATH: ${{ github.workspace }}/frontend-school/.wrangler/provision-upload.ndjson
+      - name: Record the exact uploaded version
+        id: candidate
+        working-directory: frontend-school
+        run: |-
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          const uploads=readFileSync('.wrangler/provision-upload.ndjson','utf8').trim().split('\n').map(line=>JSON.parse(line)).filter(x=>x.type==='version-upload');
+          const config=JSON.parse(readFileSync('wrangler.json','utf8'));
+          if(uploads.length!==1 || uploads[0].version!==1 || uploads[0].worker_name!==config.name || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(uploads[0].version_id)) throw new Error('Invalid provisioned Worker version');
+          appendFileSync(process.env.GITHUB_OUTPUT,'id='+uploads[0].version_id+'\n');
+          NODE
+      - name: Upload release control and proxy implementations
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: scripts/lib/pipeline-remote,scripts/render_nginx_config.sh,scripts/smoke_test.sh,nginx-configs
+          target: /opt/stack/deployment
+      - name: Enter universal maintenance
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          RELEASE_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: BASE_DOMAIN,RELEASE_SHA
+          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/maintenance.sh enter
+      - name: Synchronize menu routes through VPS loopback
         working-directory: frontend-school
         env:
-          PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
           SUBDOMAIN: ${{ inputs.subdomain }}
-        run: npm run sync:menu-routes
-
-      - name: Report deployment status
-        if: always()
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
-          if [ ${{ job.status }} == 'success' ]; then
-            echo "✅ Successfully deployed ${{ inputs.subdomain }}"
-            echo "URL: https://${{ inputs.subdomain }}.${{ vars.BASE_DOMAIN }}"
-          else
-            echo "❌ Deployment failed for ${{ inputs.subdomain }}"
-            exit 1
-          fi
+          set -euo pipefail
+          ssh_directory="$RUNNER_TEMP/school-release-ssh"
+          key_file="$ssh_directory/key"
+          known_hosts="$ssh_directory/known_hosts"
+          install -d -m 0700 "$ssh_directory"
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" >"$key_file"
+          ssh-keyscan -p "$SERVER_PORT" -H "$SERVER_IP" >"$known_hosts" 2>/dev/null
+          ssh -i "$key_file" -p "$SERVER_PORT" \
+            -o BatchMode=yes -o ExitOnForwardFailure=yes \
+            -o UserKnownHostsFile="$known_hosts" \
+            -N -L 127.0.0.1:18081:127.0.0.1:8081 \
+            "${SERVER_USER}@${SERVER_IP}" &
+          tunnel_pid=$!
+          trap 'kill "$tunnel_pid" 2>/dev/null || true; rm -f "$key_file"' EXIT
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent --show-error --max-time 2 \
+              http://127.0.0.1:18081/health >/dev/null 2>&1
+            then
+              break
+            fi
+            if [ "$attempt" -eq 20 ]; then
+              echo "Backend loopback tunnel did not become ready"
+              exit 1
+            fi
+            sleep 1
+          done
+          PUBLIC_BACKEND_URL=http://127.0.0.1:18081 npm run sync:menu-routes
+      - name: Promote the exact provisioned version
+        uses: cloudflare/wrangler-action@v4.1.3
+        with:
+          wranglerVersion: ${{ steps.wrangler-version.outputs.version }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend-school
+          command: |-
+            versions deploy --version-id ${{ steps.candidate.outputs.id }} --percentage 100 --yes
+            triggers deploy
+      - uses: ./.github/actions/setup-chromium
+      - name: Verify provisioned assets and application mount
+        working-directory: frontend-school
+        env:
+          TENANT_ORIGIN: https://${{ inputs.subdomain }}.${{ vars.BASE_DOMAIN }}
+        run: node scripts/verify-tenant-worker-readiness.mjs
+      - name: Verify proxy smoke then leave maintenance
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
+          RELEASE_SHA: ${{ github.sha }}
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 15m
+          envs: BASE_DOMAIN,RELEASE_SHA,SMOKE_USERNAME,SMOKE_PASSWORD
+          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/maintenance.sh accept

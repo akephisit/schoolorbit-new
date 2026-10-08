@@ -1,24 +1,21 @@
-name: GHCR Retention
-
+name: Maintenance
 on:
   schedule:
-    - cron: "23 19 * * 6"
+    - cron: 23 19 * * 6
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "List old backend releases without deleting them"
+        description: List old backend releases without deleting them
         required: true
         default: true
         type: boolean
-
 permissions:
   contents: read
   packages: write
-
+  actions: read
 concurrency:
-  group: schoolorbit-ghcr-retention
+  group: schoolorbit-production
   cancel-in-progress: false
-
 jobs:
   retain:
     runs-on: ubuntu-latest
@@ -31,12 +28,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
-
+      - name: Protect accepted component baselines under the production lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/lib/pipeline-state.mjs > "$RUNNER_TEMP/accepted-state.json"
       - name: Retain bounded backend releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,6 +47,9 @@ jobs:
             --package "$PACKAGE_NAME"
             --keep 30
           )
+          component="${PACKAGE_NAME#schoolorbit-}"
+          protected_sha=$(jq -r --arg part "$component" '.components[$part].sha // empty' "$RUNNER_TEMP/accepted-state.json")
+          if [ -n "$protected_sha" ]; then arguments+=(--protect "$protected_sha"); fi
           if [ "$EXECUTE" = "true" ]; then
             arguments+=(--execute)
           fi

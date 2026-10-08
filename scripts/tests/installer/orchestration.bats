@@ -81,7 +81,7 @@ printf "verified %s\n" "$SMOKE_SUBDOMAIN"
 
 teardown() {
     if [[ -n ${HEALTH_TEST_CONTAINER-} ]]; then
-        podman rm -f "$HEALTH_TEST_CONTAINER" >/dev/null
+        docker rm -f "$HEALTH_TEST_CONTAINER" >/dev/null
     fi
     vps_cleanup_transients
     teardown_installer_test
@@ -246,12 +246,11 @@ install_orchestration_fakes() {
     local health_format
     health_format=$(awk -F "'" '/status=.*podman inspect --format/ { print $2 }' "$FAKE_COMMAND_LOG")
     [[ -n $health_format ]]
-    mkdir "$TEST_ROOT/rootfs"
     HEALTH_TEST_CONTAINER="schoolorbit-installer-health-${BATS_TEST_NUMBER}-$$"
-    podman create --name "$HEALTH_TEST_CONTAINER" --network none \
-        --rootfs "$TEST_ROOT/rootfs" /bin/true >/dev/null
+    docker create --name "$HEALTH_TEST_CONTAINER" --network none \
+        docker.io/library/nginx:stable-alpine /bin/true >/dev/null
 
-    run --separate-stderr podman inspect --format "$health_format" "$HEALTH_TEST_CONTAINER"
+    run --separate-stderr docker inspect --format "$health_format" "$HEALTH_TEST_CONTAINER"
 
     [ "$status" -eq 0 ]
     [ "$output" = created ]
@@ -531,7 +530,7 @@ printf "%s" "$status"
     schoolorbit_main migrate-vps --repository owner/repo --target 192.0.2.20 --base-domain example.test
 
     actual=$(awk '/^workflow run/ { print $3 }' "$FAKE_COMMAND_LOG" | tr '\n' ' ' | sed 's/ $//')
-    expected='deploy-backend-admin.yml deploy-frontend-admin.yml deploy-school-release.yml'
+    expected='pipeline.yml'
     [ "$actual" = "$expected" ]
 }
 

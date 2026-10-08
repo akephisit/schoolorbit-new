@@ -1,0 +1,170 @@
+name: Prepare immutable release artifacts
+on:
+  workflow_call:
+    inputs:
+      plan:
+        type: string
+        required: true
+permissions:
+  contents: read
+  packages: write
+jobs:
+  prepare:
+    name: Prepare ${{ matrix.component }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(inputs.plan).build }}
+    env:
+      SCHOOLORBIT_BUILD_ID: ${{ fromJson(inputs.plan).hashes[matrix.component] }}
+      COMPONENT: ${{ matrix.component }}
+      INPUT_HASH: ${{ fromJson(inputs.plan).hashes[matrix.component] }}
+      PUBLIC_BACKEND_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+      PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+      PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
+      BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        if: startsWith(matrix.component, 'frontend-')
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+      - name: Restore frontend artifact cache
+        if: startsWith(matrix.component, 'frontend-')
+        id: bundle-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ matrix.component }}/build
+            ${{ matrix.component }}/.pipeline-build.json
+          key: bundle-linux-amd64-node24-${{ matrix.component }}-${{ env.INPUT_HASH }}
+      - name: Install locked frontend dependencies
+        if: startsWith(matrix.component, 'frontend-') && steps.bundle-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ matrix.component }}
+        run: npm ci
+      - name: Select the generic School Worker build configuration
+        if: matrix.component == 'frontend-school' && steps.bundle-cache.outputs.cache-hit != 'true'
+        working-directory: frontend-school
+        run: node scripts/create-build-config.mjs
+      - name: Build frontend once for equivalent public configuration
+        if: startsWith(matrix.component, 'frontend-') && steps.bundle-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ matrix.component }}
+        run: npm run build
+      - name: Bind frontend cache and artifact to verified inputs
+        if: startsWith(matrix.component, 'frontend-')
+        run: node scripts/frontend_artifact.mjs pack
+      - name: Save main-owned frontend artifact cache
+        if: startsWith(matrix.component, 'frontend-') && github.ref == 'refs/heads/main' && steps.bundle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ matrix.component }}/build
+            ${{ matrix.component }}/.pipeline-build.json
+          key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
+      - name: Publish prepared frontend artifact
+        if: startsWith(matrix.component, 'frontend-')
+        uses: actions/upload-artifact@v6
+        with:
+          overwrite: true
+          name: prepared-${{ matrix.component }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.component }}.tar
+            ${{ runner.temp }}/${{ matrix.component }}.json
+          retention-days: 90
+          if-no-files-found: error
+      - uses: docker/login-action@v4
+        if: startsWith(matrix.component, 'backend-')
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v4
+        if: startsWith(matrix.component, 'backend-')
+      - name: Find exact reusable OCI inputs
+        if: startsWith(matrix.component, 'backend-')
+        id: image
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/schoolorbit-${COMPONENT}"
+          reference="${image}:input-${INPUT_HASH}"
+          if docker buildx imagetools inspect "$reference" >/dev/null 2>"$RUNNER_TEMP/inspect.err"; then
+            echo 'reused=true' >> "$GITHUB_OUTPUT"
+          elif grep -Eiq 'manifest unknown|not found|404 Not Found' "$RUNNER_TEMP/inspect.err"; then
+            echo 'reused=false' >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/inspect.err" >&2
+            exit 1
+          fi
+          printf 'repository=%s\nreference=%s\n' "$image" "$reference" >> "$GITHUB_OUTPUT"
+      - name: Expose compiler cache runtime through BuildKit secrets
+        if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
+      - name: Build selected OCI image
+        if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ matrix.component }}
+          target: runtime
+          push: true
+          tags: ${{ steps.image.outputs.reference }}
+          labels: org.schoolorbit.input-hash=${{ env.INPUT_HASH }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+          build-args: SCHOOL_COMPILER_CACHE=gha
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
+      - name: Export compiler evidence
+        if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./${{ matrix.component }}
+          target: build-timings
+          outputs: type=local,dest=${{ runner.temp }}/timings-${{ matrix.component }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          build-args: SCHOOL_COMPILER_CACHE=gha
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
+      - name: Publish compiler evidence
+        if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          overwrite: true
+          name: cargo-timings-${{ matrix.component }}
+          path: ${{ runner.temp }}/timings-${{ matrix.component }}
+          retention-days: 14
+          if-no-files-found: error
+      - name: Bind selected image digest to this release
+        if: startsWith(matrix.component, 'backend-')
+        env:
+          REFERENCE: ${{ steps.image.outputs.reference }}
+          IMAGE: ${{ steps.image.outputs.repository }}
+          REUSED: ${{ steps.image.outputs.reused }}
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect "$REFERENCE" | sed -n 's/^Digest:[[:space:]]*//p' | head -n 1)
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          docker buildx imagetools create --prefer-index=false --tag "${IMAGE}:${GITHUB_SHA}" "${IMAGE}@${digest}"
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${GITHUB_SHA}" | sed -n 's/^Digest:[[:space:]]*//p' | head -n 1)
+          printf '%s' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          jq -n --arg component "$COMPONENT" --arg sha "$GITHUB_SHA" --arg inputHash "$INPUT_HASH" --arg digest "$digest" \
+            '{schemaVersion:1,component:$component,sha:$sha,inputHash:$inputHash,digest:$digest}' > "$RUNNER_TEMP/${COMPONENT}.json"
+          printf 'OCI exact-input reuse=%s; digest=%s\n' "$REUSED" "$digest" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish immutable OCI manifest
+        if: startsWith(matrix.component, 'backend-')
+        uses: actions/upload-artifact@v6
+        with:
+          overwrite: true
+          name: prepared-${{ matrix.component }}
+          path: ${{ runner.temp }}/${{ matrix.component }}.json
+          retention-days: 90
+          if-no-files-found: error
