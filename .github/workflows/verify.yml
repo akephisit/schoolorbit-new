@@ -35,7 +35,7 @@ jobs:
           CANDIDATE: ${{ inputs.candidate }}
         run: node scripts/reuse_pipeline_verification.mjs
   verify:
-    name: Verify ${{ matrix.suite }}
+    name: ${{ contains(fromJson(needs.reuse.outputs.prime), matrix.suite) && 'Prime' || 'Verify' }} ${{ matrix.suite }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:

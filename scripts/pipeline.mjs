@@ -48,7 +48,7 @@ try {
       const proof = JSON.parse(process.env.PR_VERIFICATION_PROOF || 'null');
       if (process.env.GITHUB_REF !== 'refs/heads/main' || !['push','workflow_dispatch'].includes(process.env.GITHUB_EVENT_NAME) ||
           !['backend-school','backend-admin'].includes(selected) || !proof || !/^\d+$/.test(proof.runId) || !Number.isInteger(proof.attempt) || proof.attempt < 1 ||
-          proof.tree !== git(root, 'rev-parse', 'HEAD^{tree}') || !proof.suites?.includes(selected)) throw new Error('Compiler priming requires exact-tree verified PR evidence on main');
+          proof.tree !== git(root, 'rev-parse', 'HEAD^{tree}') || !Array.isArray(proof.suites) || !proof.suites.includes(selected)) throw new Error('Compiler priming requires exact-tree verified PR evidence on main');
       console.log(`Reuse successful PR run ${proof.runId} attempt ${proof.attempt}; compile snapshot only, no duplicate database fixture execution.`);
     }
     const testFlags = prime ? ['--no-run'] : [];
