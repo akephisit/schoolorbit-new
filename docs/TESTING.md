@@ -31,6 +31,10 @@ outcomes and verification environment receipts separately. Auth/session Playwrig
 synthetic values with `--list` and loopback URLs only; it performs no browser or network execution.
 Live session acceptance still requires a dedicated disposable account and the explicit E2E owner.
 
+Rust snapshots include the tracked cross-component permission lock and fonts consumed by School's
+compiler. Migration directory timestamps are restored only when their complete tracked contents
+match the saved snapshot; changed, removed, untracked or ignored inputs keep Cargo dirty.
+
 Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, provenance, merge and
 maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and
