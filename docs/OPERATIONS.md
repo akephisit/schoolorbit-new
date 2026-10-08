@@ -205,6 +205,18 @@ cross-runner compiler-cache hits. A changed workspace graph may make its first i
 slower while dependency caches are populated. Do not equate a warm Cargo result with
 the entire build, push, deployment, or request latency.
 
+The [paired extraction experiment](https://github.com/akephisit/schoolorbit-new/actions/runs/37749256658)
+used baseline `75b46a68`, candidate `27c5aba8`, the same Docker container and two
+source-changing samples per case. Mean warm Cargo time changed from 265.4 to 236.5
+seconds for application edits, 282.1 to 264.8 for Academic HTTP, 268.8 to 246.6 for
+Certificates HTTP, 269.5 to 232.9 for Navigation, and 258.5 to 235.6 for Notifications.
+Application edits rebuilt only the application; each extracted-owner edit rebuilt
+that owner and the application, with no other domain rebuild. All twenty OpenAPI
+exports were byte-identical to baseline. Unchanged target reuse took 0.40 seconds.
+The candidate's first graph prime took 7m30s and is excluded from these means;
+the binary grew from 109.2 to 111.2 MiB (about 1.8%). These two-sample compile savings
+do not establish a percentage reduction in complete deployment time.
+
 The pinned Rust toolchain already passes `-fuse-ld=lld` on this Linux target. Selecting lld again
 does not remove compiler work. The manual build benchmark records the actual driver flag and
 compares default/GNU BFD/lld using the same object files. Keep production optimization unchanged
