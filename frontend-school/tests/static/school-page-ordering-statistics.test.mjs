@@ -30,6 +30,31 @@ test('Thai slash room codes group grades before numeric rooms', () => {
 		['ป.6/1', 'ม.1/1', 'ม.1/2', 'ม.1/10', 'ม.2/1', 'ม.2/2']
 	);
 });
+test('year-prefixed room codes sort every room in a grade before the next grade', () => {
+	const rooms = Array.from({ length: 3 }, (_, index) =>
+		Array.from({ length: 6 }, (_, grade) => room(`69-M${grade + 1}-${index + 1}`, `${index + 1}`))
+	).flat();
+	assert.deepEqual(
+		[...rooms].sort(compareHomerooms).map((r) => r.code),
+		Array.from({ length: 6 }, (_, grade) =>
+			Array.from({ length: 3 }, (_, index) => `69-M${grade + 1}-${index + 1}`)
+		).flat()
+	);
+});
+test('prefixed and current room codes share grade ordering regardless of display names', () => {
+	const rooms = [
+		room('69-M2-1', '1'),
+		room('69-M1-10', '10'),
+		room('69-P6-1', '1'),
+		room('M1-2', '2', 'ห้องพิเศษ'),
+		room('69-K3-1', '1'),
+		room('69-M1-1', '1', 'ห้องเรียนวิทยาศาสตร์')
+	];
+	assert.deepEqual(
+		rooms.sort(compareHomerooms).map((r) => r.code),
+		['69-K3-1', '69-P6-1', '69-M1-1', 'M1-2', '69-M1-10', '69-M2-1']
+	);
+});
 test('annual students sort by grade, room and class number, with unassigned entries last', () => {
 	const rooms = [room('M1-10', '10'), room('M1-2', '2')];
 	const student = (id, grade = 'มัธยมศึกษาปีที่ 1') => ({

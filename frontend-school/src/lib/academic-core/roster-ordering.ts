@@ -8,11 +8,18 @@ function levelRank(value: string): number {
 	return 3;
 }
 
+function homeroomGrade(code: string): string {
+	// Migrated codes can include the academic year, e.g. 69-M1-2 instead of M1-2.
+	return code.match(/(?:^|-)((?:[KPM]|[อปม]\.)\d+)(?=[-/]|$)/u)?.[1] ?? code.split(/[-/]/u)[0];
+}
+
 /** Canonical room codes retain the grade even when a room has a custom display name. */
 export function compareHomerooms(left: Homeroom, right: Homeroom): number {
+	const leftGrade = homeroomGrade(left.code);
+	const rightGrade = homeroomGrade(right.code);
 	return (
-		levelRank(left.code) - levelRank(right.code) ||
-		natural.compare(left.code.split(/[-/]/u)[0], right.code.split(/[-/]/u)[0]) ||
+		levelRank(leftGrade) - levelRank(rightGrade) ||
+		natural.compare(leftGrade, rightGrade) ||
 		Number(!left.roomNumber) - Number(!right.roomNumber) ||
 		natural.compare(left.roomNumber ?? '', right.roomNumber ?? '') ||
 		natural.compare(left.code, right.code) ||
