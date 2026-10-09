@@ -5,6 +5,7 @@ export interface PublicLevelSummary {
 	id: string;
 	label: string;
 	students: Counts;
+	grades: PublicSchoolStatistics['grades'];
 }
 
 export function summarizeEducationLevels(statistics: PublicSchoolStatistics): PublicLevelSummary[] {
@@ -25,11 +26,19 @@ export function summarizeEducationLevels(statistics: PublicSchoolStatistics): Pu
 								];
 		let group = groups.get(id);
 		if (!group) {
-			group = { id, label, students: { male: 0, female: 0, otherOrUnspecified: 0, total: 0 } };
+			group = {
+				id,
+				label,
+				students: { male: 0, female: 0, otherOrUnspecified: 0, total: 0 },
+				grades: []
+			};
 			groups.set(id, group);
 		}
+		group.grades.push(grade);
 		for (const key of ['male', 'female', 'otherOrUnspecified', 'total'] as const)
 			group.students[key] += grade.students[key];
 	}
-	return [...groups.values()].sort((a, b) => a.id.localeCompare(b.id));
+	return [...groups.values()]
+		.sort((a, b) => a.id.localeCompare(b.id))
+		.map((group) => ({ ...group, grades: group.grades.sort((a, b) => a.year - b.year) }));
 }

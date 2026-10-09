@@ -382,12 +382,37 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	).toEqual(['/api/school/public']);
 });
 
-test('class details include unassigned students and an empty room', async ({ page }) => {
+test('one statistics table includes all rooms, grade and stage subtotals without disclosure', async ({
+	page
+}) => {
 	await page.goto(baseUrl);
-	await page.getByRole('button', { name: 'มัธยมศึกษาปีที่ 1', exact: true }).click();
-	await expect(page.getByRole('rowheader', { name: 'ยังไม่ได้จัดห้อง' })).toBeVisible();
-	await page.getByRole('button', { name: 'มัธยมศึกษาปีที่ 2', exact: true }).click();
-	await expect(page.getByRole('row', { name: 'ม.2/2 0 0 0 0', exact: true })).toBeVisible();
+	await expect(page.getByRole('rowheader', { name: /ยังไม่ได้จัดห้อง/ })).toBeVisible();
+	const table = page.getByTestId('school-student-summary');
+	await expect(page.locator('#statistics table')).toHaveCount(1);
+	await expect(table.getByRole('button')).toHaveCount(0);
+	await expect(table.getByRole('row', { name: 'ม.2/2 0 0 0 0', exact: true })).toBeVisible();
+	await expect
+		.poll(() =>
+			table
+				.locator('tr')
+				.evaluateAll((rows) =>
+					rows.map((row) =>
+						Array.from(row.querySelectorAll('th, td'), (cell) => cell.textContent?.trim())
+					)
+				)
+		)
+		.toEqual([
+			['ชั้น / ห้อง', 'ชาย', 'หญิง', 'อื่น ๆ / ไม่ระบุ', 'รวม'],
+			['ม.1/1', '16', '16', '1', '33'],
+			['ม.1/2', '15', '15', '0', '30'],
+			['มัธยมศึกษาปีที่ 1 · ยังไม่ได้จัดห้อง', '0', '1', '0', '1'],
+			['มัธยมศึกษาปีที่ 1', '31', '32', '1', '64'],
+			['ม.2/1', '30', '30', '0', '60'],
+			['ม.2/2', '0', '0', '0', '0'],
+			['มัธยมศึกษาปีที่ 2', '30', '30', '0', '60'],
+			['รวมมัธยมศึกษาตอนต้น', '61', '62', '1', '124'],
+			['รวมทั้งโรงเรียน', '61', '62', '1', '124']
+		]);
 });
 
 test('a failed statistics read can retry without refetching identity or organization', async ({
@@ -550,13 +575,12 @@ for (const width of [375, 1280]) {
 		await expect(page.locator('header').getByRole('link', { name: 'เข้าสู่ระบบ' })).toBeVisible();
 		await page.getByRole('link', { name: 'สำรวจบริการ' }).click();
 		await expect(page).toHaveURL(/#services$/);
-		await page.getByTestId('school-grade-summary').getByRole('button').first().click();
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
 		await expect(page.getByRole('img', { name: 'รูป ผู้บริหาร ทดสอบ' })).toBeVisible();
 		await expect(
-			page.getByRole('rowheader', { name: 'มัธยมศึกษาตอนต้น', exact: true })
+			page.getByRole('rowheader', { name: 'รวมมัธยมศึกษาตอนต้น', exact: true })
 		).toBeVisible();
 		const chartBounds = await page.getByTestId('public-organization-chart').boundingBox();
 		const rootBounds = await page.locator('#organization summary').first().boundingBox();
@@ -571,8 +595,8 @@ for (const width of [375, 1280]) {
 		await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).toBeVisible();
 		await expect(
 			page
-				.getByTestId('school-grade-summary')
-				.getByRole('row', { name: 'มัธยมศึกษาปีที่ 1 2 31 32 1 64', exact: true })
+				.getByTestId('school-student-summary')
+				.getByRole('row', { name: 'มัธยมศึกษาปีที่ 1 31 32 1 64', exact: true })
 		).toBeVisible();
 		await expect(
 			page.locator('#organization').getByText('กลุ่มสาระคณิตศาสตร์', { exact: true })
@@ -582,39 +606,76 @@ for (const width of [375, 1280]) {
 		).toHaveCount(0);
 		const canvas = page.getByTestId('public-organization-chart');
 		const content = page.getByTestId('organization-chart-content');
+		if (width >= 1024) {
+			expect(chartBounds.x).toBe(0);
+			expect(chartBounds.width).toBe(
+				await page.evaluate(() => document.documentElement.clientWidth)
+			);
+		}
+		await expect(page.locator('output[aria-label="ระดับซูม"]')).toHaveText('100%');
+		await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+		await page.screenshot({
+			path: `/tmp/schoolorbit-public-refinements-${width}-light.png`,
+			fullPage: true,
+			animations: 'disabled'
+		});
+		await page.evaluate(() => document.documentElement.classList.add('dark'));
+		await page.screenshot({
+			path: `/tmp/schoolorbit-public-refinements-${width}-dark.png`,
+			fullPage: true,
+			animations: 'disabled'
+		});
+		await page.evaluate(() => document.documentElement.classList.remove('dark'));
+		await page.getByRole('button', { name: 'พอดีจอ', exact: true }).click();
 		const original = await content.getAttribute('style');
 		await page.getByRole('button', { name: 'ซูมเข้า', exact: true }).click();
 		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
 		await page.getByRole('button', { name: 'พอดีจอ', exact: true }).click();
 		await expect.poll(() => content.getAttribute('style')).toBe(original);
+		await canvas.scrollIntoViewIfNeeded();
 		const bounds = await canvas.boundingBox();
 		if (!bounds) throw new Error('Canvas bounds must exist');
-		await page.mouse.move(bounds.x + 12, bounds.y + 12);
+		const gestureY = Math.max(bounds.y + 12, 80);
+		await page.mouse.move(bounds.x + 12, gestureY);
 		await page.mouse.down();
-		await page.mouse.move(bounds.x + 72, bounds.y + 42);
+		await page.mouse.move(bounds.x + 72, gestureY + 30);
 		await page.mouse.up();
 		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
+		await page.getByRole('button', { name: 'ซูมเข้า', exact: true }).click();
+		const zoomLevel = await page.locator('output[aria-label="ระดับซูม"]').textContent();
+		const rootSummary = page.locator('#organization summary').first();
+		const positioned = await rootSummary.boundingBox();
+		await rootSummary.click();
+		await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).not.toBeVisible();
+		await expect(page.locator('output[aria-label="ระดับซูม"]')).toHaveText(zoomLevel ?? '');
+		await expect
+			.poll(async () => {
+				const current = await rootSummary.boundingBox();
+				return current && positioned
+					? Math.max(Math.abs(current.x - positioned.x), Math.abs(current.y - positioned.y))
+					: Infinity;
+			})
+			.toBeLessThan(0.5);
+		await rootSummary.click();
+		await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).toBeVisible();
+		await expect(page.locator('output[aria-label="ระดับซูม"]')).toHaveText(zoomLevel ?? '');
+		await expect
+			.poll(async () => {
+				const current = await rootSummary.boundingBox();
+				return current && positioned
+					? Math.max(Math.abs(current.x - positioned.x), Math.abs(current.y - positioned.y))
+					: Infinity;
+			})
+			.toBeLessThan(0.5);
 		await page.getByRole('button', { name: 'พอดีจอ', exact: true }).click();
 		await page.getByRole('button', { name: 'เลื่อนและซูมผังบริหาร', exact: true }).focus();
 		await page.keyboard.press('ArrowRight');
 		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
 		await page.keyboard.press('0');
 		await expect.poll(() => content.getAttribute('style')).toBe(original);
-		await page.mouse.move(bounds.x + 12, bounds.y + 12);
+		await page.mouse.move(bounds.x + 12, gestureY);
 		await page.mouse.wheel(0, -100);
 		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
 		await page.getByRole('button', { name: 'พอดีจอ', exact: true }).click();
-		await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-		await page.screenshot({
-			path: `/tmp/schoolorbit-student-chart-${width}-light.png`,
-			fullPage: true,
-			animations: 'disabled'
-		});
-		await page.evaluate(() => document.documentElement.classList.add('dark'));
-		await page.screenshot({
-			path: `/tmp/schoolorbit-student-chart-${width}-dark.png`,
-			fullPage: true,
-			animations: 'disabled'
-		});
 	});
 }

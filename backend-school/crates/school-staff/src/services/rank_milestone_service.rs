@@ -81,7 +81,7 @@ pub async fn get_rank_milestone_overview(
     let as_of = Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
-    let mut sql=QueryBuilder::<Postgres>::new("SELECT u.id,concat_ws(' ',nullif(u.title,''),u.first_name,u.last_name) AS display_name,t.personnel_type,t.effective_date AS personnel_type_date,p.code AS position_code,j.effective_date AS position_date,r.academic_rank,r.effective_date AS rank_date FROM users u LEFT JOIN staff_info info ON info.user_id=u.id LEFT JOIN staff_career_history t ON t.id=info.current_personnel_type_history_id LEFT JOIN staff_career_history j ON j.id=info.current_job_position_history_id LEFT JOIN staff_job_positions p ON p.id=j.job_position_id LEFT JOIN staff_career_history r ON r.id=info.current_academic_rank_history_id WHERE u.user_type='staff'");
+    let mut sql=QueryBuilder::<Postgres>::new("SELECT u.id,concat_ws(' ',concat(btrim(u.title),btrim(u.first_name)),nullif(btrim(u.last_name),'')) AS display_name,t.personnel_type,t.effective_date AS personnel_type_date,p.code AS position_code,j.effective_date AS position_date,r.academic_rank,r.effective_date AS rank_date FROM users u LEFT JOIN staff_info info ON info.user_id=u.id LEFT JOIN staff_career_history t ON t.id=info.current_personnel_type_history_id LEFT JOIN staff_career_history j ON j.id=info.current_job_position_history_id LEFT JOIN staff_job_positions p ON p.id=j.job_position_id LEFT JOIN staff_career_history r ON r.id=info.current_academic_rank_history_id WHERE u.user_type='staff'");
     push_staff_access_filter(&mut sql, access);
     if status != PersonnelStatusFilter::All {
         sql.push(" AND u.status=").push_bind(status.as_str());
@@ -236,6 +236,13 @@ mod database_tests {
             tx.commit().await.unwrap();
             ids.push(id);
         }
+        sqlx::query(
+            "UPDATE users SET title=' นาย ',first_name=' ทดสอบ ',last_name=' บุคลากร ' WHERE id=$1",
+        )
+        .bind(ids[0])
+        .execute(&pool)
+        .await
+        .unwrap();
         let query = |page| RankMilestoneOverviewQuery {
             status: None,
             bucket: Some(RankMilestoneStatus::TimeReachedPendingReview),
@@ -262,6 +269,8 @@ mod database_tests {
             .await
             .unwrap();
         assert_eq!(own.total, 1);
+        assert_eq!(own.items[0].display_name, "นายทดสอบ บุคลากร");
+        assert_eq!(first.items[0].display_name, "Person 52 Test");
         assert_eq!(own.items[0].milestone.ordinary_date, Some(today));
         assert!(
             get_rank_milestone_overview(&pool, query(0), StaffListAccess::School)
