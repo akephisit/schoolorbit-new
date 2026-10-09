@@ -259,12 +259,12 @@
 												></DropdownMenu.Content
 											>
 										</DropdownMenu.Root>{/if}
-									{#if $can.hasAny(PERMISSIONS.HOMEROOM_READ_SCHOOL, PERMISSIONS.HOMEROOM_MANAGE_SCHOOL)}<Button
+									{#if $can.hasAny(PERMISSIONS.STUDENT_READ_SCHOOL, PERMISSIONS.STUDENT_READ_ASSIGNED, PERMISSIONS.STUDENT_READ_OWN)}<Button
 											size="sm"
 											variant="ghost"
 											data-sveltekit-preload-data="tap"
-											href={`/staff/academic/student-years?academicYearId=${data.academicYearId}&studentYearId=${student.studentAcademicYearId}`}
-											>ประวัติ</Button
+											href={`/staff/students/${student.studentId}?academicYearId=${data.academicYearId}&returnTo=${encodeURIComponent(`/staff/academic/homerooms/${data.roomId}/students?academicYearId=${data.academicYearId}`)}`}
+											>ข้อมูลนักเรียน</Button
 										>{/if}
 								</Table.Cell>
 							</Table.Row>

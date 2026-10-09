@@ -17,12 +17,16 @@ use school_file_platform::platform_service::FilePlatform;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+static PLACEMENT_ROSTERS: school_academic_delivery::services::roster_tracking::RoomRosterTracking =
+    school_academic_delivery::services::roster_tracking::RoomRosterTracking;
+
 impl FromRef<AppState> for AcademicHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
             result_locks: &RESULT_LOCKS,
+            placement_rosters: &PLACEMENT_ROSTERS,
             lifecycle_providers: &LIFECYCLE_PROVIDERS,
         }
     }

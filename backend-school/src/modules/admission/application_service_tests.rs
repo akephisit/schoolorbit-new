@@ -29,7 +29,7 @@ mod tests {
             .await
             .unwrap();
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
-        apply_migrations_through(&pool, 67).await.unwrap();
+        apply_migrations_through(&pool, 100).await.unwrap();
 
         let enroller_id = create_test_user(
             &pool,

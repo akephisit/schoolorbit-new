@@ -476,3 +476,25 @@ export const endDatedRosterMembership = (
 		),
 		'กำหนดวันสิ้นสุดสมาชิกกลุ่มไม่สำเร็จ'
 	);
+
+export type LearningGroupRosterTracking = Schemas['LearningGroupRosterTracking'];
+export type UpdateRosterTrackingRequest = Schemas['UpdateRosterTrackingRequest'];
+export const getLearningGroupRosterTracking = (id: string, options: ApiRequestOptions = {}) =>
+	deliveryData(
+		apiClient.get<LearningGroupRosterTracking>(
+			`/api/academic/learning-groups/${encodeURIComponent(id)}/roster-tracking`,
+			options
+		),
+		'โหลดวิธีจัดรายชื่อไม่สำเร็จ'
+	);
+export const updateLearningGroupRosterTracking = (
+	id: string,
+	request: UpdateRosterTrackingRequest
+) =>
+	deliveryData(
+		apiClient.put<LearningGroupRosterTracking>(
+			`/api/academic/learning-groups/${encodeURIComponent(id)}/roster-tracking`,
+			request
+		),
+		'บันทึกวิธีจัดรายชื่อไม่สำเร็จ'
+	);

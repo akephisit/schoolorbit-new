@@ -8,6 +8,7 @@ export function mountApiCalls(svelteSource) {
 	const source = ts.createSourceFile('route.ts', script, ts.ScriptTarget.Latest, true);
 	const apiNames = new Set(),
 		mountNames = new Set(),
+		eventRegistrationNames = new Set(),
 		functions = new Map();
 	for (const statement of source.statements) {
 		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
@@ -21,6 +22,14 @@ export function mountApiCalls(svelteSource) {
 				for (const binding of bindings.elements)
 					if (!binding.isTypeOnly) apiNames.add(binding.name.text);
 		}
+		if (
+			module === '#lib/academic/delivery-draft-reconcile.js' &&
+			bindings &&
+			ts.isNamedImports(bindings)
+		)
+			for (const binding of bindings.elements)
+				if ((binding.propertyName ?? binding.name).text === 'registerDeliveryDraftReconcile')
+					eventRegistrationNames.add(binding.name.text);
 		if (module === 'svelte' && bindings && ts.isNamedImports(bindings))
 			for (const binding of bindings.elements)
 				if ((binding.propertyName ?? binding.name).text === 'onMount')
@@ -40,8 +49,28 @@ export function mountApiCalls(svelteSource) {
 	}
 	collect(source);
 	const found = new Set();
+	function inspectCallback(node, seen, eventKind) {
+		if (ts.isIdentifier(node) && functions.has(node.text))
+			inspect(functions.get(node.text), new Set(seen).add(node.text), eventKind);
+		else if (ts.isIdentifier(node) && apiNames.has(node.text))
+			found.add(`${eventKind}${node.text}`);
+		else inspect(node, seen, eventKind);
+	}
 	function inspect(node, seen = new Set(), eventKind = '') {
 		if (ts.isCallExpression(node)) {
+			if (ts.isIdentifier(node.expression) && eventRegistrationNames.has(node.expression.text)) {
+				for (const [index, argument] of node.arguments.entries()) {
+					if (
+						index < 2 &&
+						(ts.isArrowFunction(argument) ||
+							ts.isFunctionExpression(argument) ||
+							ts.isIdentifier(argument))
+					)
+						inspectCallback(argument, seen, 'subscribe:');
+					else inspect(argument, seen, eventKind);
+				}
+				return;
+			}
 			let root = node.expression;
 			while (ts.isPropertyAccessExpression(root) || ts.isElementAccessExpression(root))
 				root = root.expression;

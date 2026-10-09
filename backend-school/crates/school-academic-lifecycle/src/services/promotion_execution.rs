@@ -264,6 +264,14 @@ pub async fn execute_item(pool: &PgPool, batch: &Batch, item_id: Uuid) -> Result
         &core_decision,
     )
     .await?;
+    let mut roster_students = vec![source.student_academic_year_id];
+    roster_students.extend(outcome.target_student_year_id);
+    school_academic_delivery::services::roster_tracking::sync_students(
+        &mut tx,
+        batch.actor_user_id,
+        &roster_students,
+    )
+    .await?;
     sqlx::query("INSERT INTO academic_promotion_execution_receipts(item_id,run_id,request_id,approval_id,source_year_id,target_year_id,student_id,target_student_year_id,target_placement_id,source_row_version,executed_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
         .bind(item_id).bind(run.id).bind(batch.request_id).bind(batch.approval_id).bind(run.source_year_id).bind(run.target_year_id).bind(item.student_id)
         .bind(outcome.target_student_year_id).bind(outcome.target_placement_id).bind(outcome.source_row_version).bind(batch.actor_user_id).execute(&mut *tx).await?;

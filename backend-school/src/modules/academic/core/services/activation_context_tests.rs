@@ -12,7 +12,7 @@ pub(crate) async fn empty_school(name: &str) -> (PgPool, Uuid) {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 3).await;
     apply_migrations_through(&pool, 40).await.unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 96).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     let actor: Uuid = sqlx::query_scalar("INSERT INTO users(username,password_hash,first_name,last_name,user_type) VALUES('E2E-LIFECYCLE-opening','!','ฝ่ายวิชาการ','ทดสอบ','staff') RETURNING id")
         .fetch_one(&pool).await.unwrap();
     (pool, actor)

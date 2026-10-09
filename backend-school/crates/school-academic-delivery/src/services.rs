@@ -1,6 +1,6 @@
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use school_academic_core::services::lifecycle_guard;
@@ -13,6 +13,7 @@ pub mod groups;
 pub mod offerings;
 pub mod opening;
 pub mod roster_memberships;
+pub mod roster_tracking;
 pub mod version_changes;
 pub mod versions;
 pub mod workspaces;
@@ -176,8 +177,8 @@ pub(super) async fn invalidate_group_academic_confirmations(
     Ok(())
 }
 
-pub(super) async fn append_audit<T: Serialize>(
-    pool: &PgPool,
+pub(super) async fn append_audit<'e, T: Serialize>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
     event_code: &str,
     entity_type: &str,
     entity_id: Uuid,
@@ -199,7 +200,7 @@ pub(super) async fn append_audit<T: Serialize>(
     .bind(academic_term_id)
     .bind(actor_user_id)
     .bind(sqlx::types::Json(payload))
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }

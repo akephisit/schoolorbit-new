@@ -1354,6 +1354,12 @@ pub async fn complete_enrollment(
         AppError::InternalServerError("ไม่สามารถอัปเดตสถานะได้".to_string())
     })?;
 
+    school_academic_delivery::services::roster_tracking::sync_students(
+        &mut tx,
+        enroller_id,
+        &[student_academic_year_id],
+    )
+    .await?;
     tx.commit()
         .await
         .map_err(|_| AppError::InternalServerError("Commit failed".to_string()))?;

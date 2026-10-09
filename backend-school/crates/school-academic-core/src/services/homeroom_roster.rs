@@ -262,6 +262,7 @@ struct SelectedStudentYear {
 
 pub async fn mutate_roster(
     pool: &PgPool,
+    rosters: &dyn crate::ports::PlacementRosterPort,
     actor: Uuid,
     id: Uuid,
     r: MutateHomeroomRosterRequest,
@@ -422,6 +423,7 @@ pub async fn mutate_roster(
     sqlx::query("UPDATE student_academic_years SET row_version=row_version+1,updated_at=now() WHERE id=ANY($1)").bind(&ids).execute(&mut *tx).await?;
     append_audit(&mut tx,"homeroom.roster_changed","homeroom",id,Some(room.academic_year_id),None,actor,
         serde_json::json!({"action":r.action,"studentYearIds":ids,"targetHomeroomId":r.target_homeroom_id,"effectiveDate":r.effective_date,"reason":r.reason.trim()})).await?;
+    rosters.reconcile(&mut tx, actor, &ids).await?;
     let updated = snapshot(&mut tx, id).await?;
     tx.commit().await?;
     Ok(updated)

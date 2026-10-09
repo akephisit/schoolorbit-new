@@ -2864,8 +2864,14 @@ pub async fn create_placement(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
-    let value =
-        student_years::create_placement(&pool, actor.user_id, student_year_id, request).await?;
+    let value = student_years::create_placement(
+        &pool,
+        state.placement_rosters,
+        actor.user_id,
+        student_year_id,
+        request,
+    )
+    .await?;
     signal_core_changed(
         &state,
         &session,
@@ -2904,7 +2910,14 @@ pub async fn transfer_placement(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)?;
-    let value = student_years::transfer_placement(&pool, actor.user_id, id, request).await?;
+    let value = student_years::transfer_placement(
+        &pool,
+        state.placement_rosters,
+        actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     signal_core_changed(
         &state,
         &session,
@@ -3097,7 +3110,9 @@ pub async fn mutate_homeroom_roster(
     let pool = context.tenant.pool;
     let actor = context.actor;
     require_roster_access(&actor, RosterAction::Manage)?;
-    let value = homeroom_roster::mutate_roster(&pool, actor.user_id, id, request).await?;
+    let value =
+        homeroom_roster::mutate_roster(&pool, state.placement_rosters, actor.user_id, id, request)
+            .await?;
     signal_core_changed(
         &state,
         &session,

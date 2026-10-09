@@ -573,7 +573,7 @@ async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 96).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     pool
 }
 
@@ -584,7 +584,7 @@ async fn prepare_concurrent_delivery_runtime_fixture(name: &str) -> PgPool {
         .await
         .unwrap();
     apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 96).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     pool
 }
 
@@ -6831,3 +6831,6 @@ async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_
         .unwrap();
     assert_eq!(before, after);
 }
+
+#[path = "roster_tracking_tests.rs"]
+mod roster_tracking_tests;

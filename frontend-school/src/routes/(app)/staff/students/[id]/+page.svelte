@@ -11,6 +11,8 @@
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { can } from '#lib/stores/permissions.js';
+	import StudentProfileHistory from '#lib/components/academic-core/StudentProfileHistory.svelte';
+	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
 	import { Edit } from '@lucide/svelte';
 	import { getStudent, type Student } from '#lib/api/students.js';
 
@@ -27,7 +29,7 @@
 	const academicYearQuery = $derived(
 		academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''
 	);
-	const listHref = $derived(`/staff/students${academicYearQuery}`);
+	const listHref = $derived(data.returnTo);
 	const editHref = $derived(
 		`/staff/students/${encodeURIComponent(studentId)}/edit${academicYearQuery}`
 	);
@@ -85,7 +87,9 @@
 </script>
 
 <PageShell
-	title={student && canReadStudent ? `${student.first_name} ${student.last_name}` : 'นักเรียน'}
+	title={student && canReadStudent
+		? `${student.title ?? ''}${student.first_name} ${student.last_name}`
+		: 'นักเรียน'}
 	description="รายละเอียดข้อมูลนักเรียน"
 	backHref={listHref}
 	backPreload={false}
@@ -131,7 +135,13 @@
 		{:else if student}
 			<!-- Student ID & Status -->
 			<Card class="p-6">
-				<div class="flex items-center justify-between">
+				<div class="flex items-center justify-between gap-4">
+					{#if student.profile_image_file_id}<PrivateFileImage
+							fileId={student.profile_image_file_id}
+							resourceId={student.id}
+							alt={`รูป ${student.first_name}`}
+							class="size-20 rounded-xl object-cover bg-muted"
+						/>{/if}
 					<div>
 						<p class="text-sm text-muted-foreground">รหัสนักเรียน</p>
 						<p class="text-2xl font-bold">{student.student_id}</p>
@@ -149,12 +159,11 @@
 			<Card class="p-6">
 				<h2 class="text-xl font-semibold mb-6">ข้อมูลพื้นฐาน</h2>
 
-				<div class="grid grid-cols-2 gap-6">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
 					<div>
 						<Label>ชื่อ-นามสกุล</Label>
 						<div class="px-3 py-2 bg-muted/50 rounded-md">
-							{student.title || ''}
-							{student.first_name}
+							{`${student.title ?? ''}${student.first_name}`}
 							{student.last_name}
 						</div>
 					</div>
@@ -203,7 +212,7 @@
 						</div>
 					</div>
 
-					<div class="col-span-2">
+					<div class="sm:col-span-2">
 						<Label>ที่อยู่</Label>
 						<div class="px-3 py-2 bg-muted/50 rounded-md">
 							{student.address || '-'}
@@ -216,7 +225,7 @@
 			<Card class="p-6">
 				<h2 class="text-xl font-semibold mb-6">ข้อมูลนักเรียน</h2>
 
-				<div class="grid grid-cols-3 gap-6">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-6">
 					<div>
 						<Label>ระดับชั้น</Label>
 						<div class="px-3 py-2 bg-muted/50 rounded-md">
@@ -245,7 +254,7 @@
 				<Card class="p-6">
 					<h2 class="text-xl font-semibold mb-6">ข้อมูลสุขภาพ</h2>
 
-					<div class="grid grid-cols-2 gap-6">
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
 						{#if student.blood_type}
 							<div>
 								<Label>หมู่เลือด</Label>
@@ -256,7 +265,7 @@
 						{/if}
 
 						{#if student.allergies}
-							<div class="col-span-2">
+							<div class="sm:col-span-2">
 								<Label>อาการแพ้</Label>
 								<div class="px-3 py-2 bg-muted/50 rounded-md">
 									{student.allergies}
@@ -265,7 +274,7 @@
 						{/if}
 
 						{#if student.medical_conditions}
-							<div class="col-span-2">
+							<div class="sm:col-span-2">
 								<Label>โรคประจำตัว</Label>
 								<div class="px-3 py-2 bg-muted/50 rounded-md">
 									{student.medical_conditions}
@@ -284,4 +293,10 @@
 			/>
 		{/if}
 	</section>
+	{#if canReadStudent}<StudentProfileHistory
+			source={data.history}
+			{profileKey}
+			{studentId}
+			{academicYearId}
+		/>{/if}
 </PageShell>

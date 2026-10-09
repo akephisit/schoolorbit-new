@@ -92,6 +92,20 @@ const organization = {
 			]
 		},
 		{
+			id: 'subject-group',
+			parentId: 'academic',
+			name: 'กลุ่มสาระคณิตศาสตร์',
+			unitType: 'subject_group',
+			members: []
+		},
+		{
+			id: 'subject-child',
+			parentId: 'subject-group',
+			name: 'งานย่อยกลุ่มสาระ',
+			unitType: 'work',
+			members: []
+		},
+		{
 			id: 'empty',
 			parentId: 'root',
 			name: 'กลุ่มบริหารทั่วไป',
@@ -370,9 +384,9 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 
 test('class details include unassigned students and an empty room', async ({ page }) => {
 	await page.goto(baseUrl);
-	await page.locator('#statistics summary').filter({ hasText: 'มัธยมศึกษาปีที่ 1' }).click();
+	await page.getByRole('button', { name: 'มัธยมศึกษาปีที่ 1', exact: true }).click();
 	await expect(page.getByRole('rowheader', { name: 'ยังไม่ได้จัดห้อง' })).toBeVisible();
-	await page.locator('#statistics summary').filter({ hasText: 'มัธยมศึกษาปีที่ 2' }).click();
+	await page.getByRole('button', { name: 'มัธยมศึกษาปีที่ 2', exact: true }).click();
 	await expect(page.getByRole('row', { name: 'ม.2/2 0 0 0 0', exact: true })).toBeVisible();
 });
 
@@ -536,7 +550,7 @@ for (const width of [375, 1280]) {
 		await expect(page.locator('header').getByRole('link', { name: 'เข้าสู่ระบบ' })).toBeVisible();
 		await page.getByRole('link', { name: 'สำรวจบริการ' }).click();
 		await expect(page).toHaveURL(/#services$/);
-		await page.locator('#statistics summary').first().click();
+		await page.getByTestId('school-grade-summary').getByRole('button').first().click();
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
@@ -555,15 +569,50 @@ for (const width of [375, 1280]) {
 		await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).not.toBeVisible();
 		await page.locator('#organization summary').first().click();
 		await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).toBeVisible();
+		await expect(
+			page
+				.getByTestId('school-grade-summary')
+				.getByRole('row', { name: 'มัธยมศึกษาปีที่ 1 2 31 32 1 64', exact: true })
+		).toBeVisible();
+		await expect(
+			page.locator('#organization').getByText('กลุ่มสาระคณิตศาสตร์', { exact: true })
+		).toHaveCount(0);
+		await expect(
+			page.locator('#organization').getByText('งานย่อยกลุ่มสาระ', { exact: true })
+		).toHaveCount(0);
+		const canvas = page.getByTestId('public-organization-chart');
+		const content = page.getByTestId('organization-chart-content');
+		const original = await content.getAttribute('style');
+		await page.getByRole('button', { name: 'ซูมเข้า', exact: true }).click();
+		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
+		await page.getByRole('button', { name: 'พอดีจอ', exact: true }).click();
+		await expect.poll(() => content.getAttribute('style')).toBe(original);
+		const bounds = await canvas.boundingBox();
+		if (!bounds) throw new Error('Canvas bounds must exist');
+		await page.mouse.move(bounds.x + 12, bounds.y + 12);
+		await page.mouse.down();
+		await page.mouse.move(bounds.x + 72, bounds.y + 42);
+		await page.mouse.up();
+		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
+		await page.getByRole('button', { name: 'พอดีจอ', exact: true }).click();
+		await page.getByRole('button', { name: 'เลื่อนและซูมผังบริหาร', exact: true }).focus();
+		await page.keyboard.press('ArrowRight');
+		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
+		await page.keyboard.press('0');
+		await expect.poll(() => content.getAttribute('style')).toBe(original);
+		await page.mouse.move(bounds.x + 12, bounds.y + 12);
+		await page.mouse.wheel(0, -100);
+		await expect.poll(() => content.getAttribute('style')).not.toBe(original);
+		await page.getByRole('button', { name: 'พอดีจอ', exact: true }).click();
 		await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
 		await page.screenshot({
-			path: `/tmp/schoolorbit-public-${width}-light.png`,
+			path: `/tmp/schoolorbit-student-chart-${width}-light.png`,
 			fullPage: true,
 			animations: 'disabled'
 		});
 		await page.evaluate(() => document.documentElement.classList.add('dark'));
 		await page.screenshot({
-			path: `/tmp/schoolorbit-public-${width}-dark.png`,
+			path: `/tmp/schoolorbit-student-chart-${width}-dark.png`,
 			fullPage: true,
 			animations: 'disabled'
 		});

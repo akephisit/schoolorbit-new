@@ -104,3 +104,15 @@ pub struct TermPreparationModuleOutcome {
     pub created_count: usize,
     pub target_ids: Vec<Uuid>,
 }
+
+/// Composes the roster provider inside a placement write's transaction.
+/// Core never reads or writes another domain's membership tables.
+#[async_trait::async_trait]
+pub trait PlacementRosterPort: Send + Sync {
+    async fn reconcile(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor_user_id: Uuid,
+        student_year_ids: &[Uuid],
+    ) -> Result<(), school_errors::AppError>;
+}

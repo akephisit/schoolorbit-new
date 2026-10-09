@@ -149,6 +149,14 @@ pub(crate) async fn activate_term(
         }
     }
 
+    let roster_students: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id").bind(request.academic_year_id).fetch_all(&mut *tx).await?;
+    school_academic_delivery::services::roster_tracking::sync_students(
+        &mut tx,
+        actor.user_id,
+        &roster_students,
+    )
+    .await?;
+
     let expected_year_statuses: &[AcademicYearStatus] = if workspace.opens_year {
         &[AcademicYearStatus::Planning, AcademicYearStatus::Ready]
     } else {

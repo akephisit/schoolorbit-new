@@ -19,7 +19,7 @@ use uuid::Uuid;
 #[tokio::test]
 async fn lifecycle_transition_rolls_back_state_and_receipt_when_audit_fails() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_atomic_audit").await;
-    apply_migrations_through(&pool, 69).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     let (year, term): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
             .fetch_one(&pool)
@@ -107,7 +107,7 @@ async fn transition_input(
 #[tokio::test]
 async fn lifecycle_activation_requires_closed_predecessors_and_blocks_reopening_after_successor() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_activation_guards").await;
-    apply_migrations_through(&pool, 78).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     let (year, source): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
             .fetch_one(&pool)
@@ -177,7 +177,7 @@ async fn lifecycle_activation_requires_closed_predecessors_and_blocks_reopening_
 #[tokio::test]
 async fn lifecycle_transition_rechecks_versions_replays_exact_receipt_and_keeps_scores_closed() {
     let pool = core::services_tests::prepare_core_fixture("lifecycle_transition_receipts").await;
-    apply_migrations_through(&pool, 69).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     let (year, term): (Uuid, Uuid) =
         sqlx::query_as("SELECT academic_year_id,id FROM academic_terms WHERE status='active'")
             .fetch_one(&pool)
@@ -310,7 +310,7 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
             PromotionDecisionOutcome::Promote,
         )
         .await;
-    apply_migrations_through(&pool, 78).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     let execution = super::execute_run(
         &pool,
         &executor,

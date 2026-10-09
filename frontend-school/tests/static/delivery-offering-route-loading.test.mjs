@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { mountApiCalls } from '../helpers/route-startup-policy.mjs';
 
 const routeDirectory = path.resolve(
 	import.meta.dirname,
@@ -34,7 +35,7 @@ test('offering, groups, versions, and selected group start as independent route 
 	assert.match(component, /data\.offering/);
 	assert.match(component, /data\.groups/);
 	assert.match(component, /data\.selectedGroup/);
-	assert.doesNotMatch(component, /\bonMount\s*\(/);
+	assert.deepEqual(mountApiCalls(component), ['subscribe:getLearningGroup']);
 	assert.match(roster, /initialMemberships/);
 	assert.doesNotMatch(roster, /\bonMount\s*\(/);
 	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions/);

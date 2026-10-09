@@ -534,89 +534,98 @@ pub async fn apply_roster(
             "รายชื่อนักเรียนต้นทางเปลี่ยนไป กรุณาโหลด preview ใหม่".to_string(),
         ));
     }
-    let current = current_roster_students(&mut transaction, group_id).await?;
-    let mut desired: HashMap<Uuid, (Uuid, &str)> = HashMap::new();
-    if source.registration_type != Some(ActivityRegistrationType::SelfRegistration) {
-        for candidate in &source.candidates {
-            desired.insert(
-                candidate.student_academic_year_id,
-                (candidate.student_id, "placement"),
-            );
-        }
-    } else {
-        for current_student in &current {
-            desired.insert(
-                current_student.student_academic_year_id,
-                (current_student.student_id, "self_registration"),
-            );
-        }
+    if !request.overrides.is_empty() {
+        super::roster_tracking::require_manual(&mut transaction, group_id).await?;
     }
-    let mut override_ids = HashSet::new();
-    for roster_override in request.overrides {
-        if !override_ids.insert(roster_override.student_academic_year_id) {
-            return Err(AppError::ValidationError(
-                "นักเรียนในรายการ override ซ้ำกัน".to_string(),
-            ));
-        }
-        match roster_override.action {
-            RosterOverrideAction::Add => {
-                let student_id = validate_manual_student_year(
-                    &mut transaction,
-                    roster_override.student_academic_year_id,
-                    group.academic_year_id,
-                )
-                .await?;
+    let automatic: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM learning_group_roster_tracking WHERE learning_group_id=$1 AND mode='homeroom')")
+        .bind(group_id).fetch_one(&mut *transaction).await?;
+    if automatic {
+        super::roster_tracking::sync_group(&mut transaction, actor_user_id, group_id, None).await?;
+    } else {
+        let current = current_roster_students(&mut transaction, group_id).await?;
+        let mut desired: HashMap<Uuid, (Uuid, &str)> = HashMap::new();
+        if source.registration_type != Some(ActivityRegistrationType::SelfRegistration) {
+            for candidate in &source.candidates {
                 desired.insert(
-                    roster_override.student_academic_year_id,
-                    (student_id, "manual_add"),
+                    candidate.student_academic_year_id,
+                    (candidate.student_id, "placement"),
                 );
             }
-            RosterOverrideAction::Remove => {
-                desired.remove(&roster_override.student_academic_year_id);
+        } else {
+            for current_student in &current {
+                desired.insert(
+                    current_student.student_academic_year_id,
+                    (current_student.student_id, "self_registration"),
+                );
             }
         }
-    }
-    for current_student in current {
-        if !desired.contains_key(&current_student.student_academic_year_id) {
-            sqlx::query(
-                "UPDATE learning_group_students SET membership_status = 'removed', \
+        let mut override_ids = HashSet::new();
+        for roster_override in request.overrides {
+            if !override_ids.insert(roster_override.student_academic_year_id) {
+                return Err(AppError::ValidationError(
+                    "นักเรียนในรายการ override ซ้ำกัน".to_string(),
+                ));
+            }
+            match roster_override.action {
+                RosterOverrideAction::Add => {
+                    let student_id = validate_manual_student_year(
+                        &mut transaction,
+                        roster_override.student_academic_year_id,
+                        group.academic_year_id,
+                    )
+                    .await?;
+                    desired.insert(
+                        roster_override.student_academic_year_id,
+                        (student_id, "manual_add"),
+                    );
+                }
+                RosterOverrideAction::Remove => {
+                    desired.remove(&roster_override.student_academic_year_id);
+                }
+            }
+        }
+        for current_student in current {
+            if !desired.contains_key(&current_student.student_academic_year_id) {
+                sqlx::query(
+                    "UPDATE learning_group_students SET membership_status = 'removed', \
                  left_at = GREATEST(joined_at, $1), row_version = row_version + 1, \
                  updated_at = now() WHERE id = $2 AND membership_status = 'active'",
-            )
-            .bind(term.start_date)
-            .bind(current_student.id)
-            .execute(&mut *transaction)
-            .await?;
+                )
+                .bind(term.start_date)
+                .bind(current_student.id)
+                .execute(&mut *transaction)
+                .await?;
+            }
         }
-    }
-    for (student_year_id, (student_id, roster_source)) in desired {
-        let active_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM learning_group_students \
+        for (student_year_id, (student_id, roster_source)) in desired {
+            let active_exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM learning_group_students \
              WHERE learning_group_id = $1 AND student_academic_year_id = $2 \
                AND membership_status = 'active')",
-        )
-        .bind(group_id)
-        .bind(student_year_id)
-        .fetch_one(&mut *transaction)
-        .await?;
-        if !active_exists {
-            sqlx::query(
-                r#"INSERT INTO learning_group_students (
+            )
+            .bind(group_id)
+            .bind(student_year_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if !active_exists {
+                sqlx::query(
+                    r#"INSERT INTO learning_group_students (
                        id, learning_group_id, academic_term_id, academic_year_id,
                        student_academic_year_id, student_id, membership_status,
                        roster_source, joined_at
                    ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8)"#,
-            )
-            .bind(Uuid::new_v4())
-            .bind(group_id)
-            .bind(group.academic_term_id)
-            .bind(group.academic_year_id)
-            .bind(student_year_id)
-            .bind(student_id)
-            .bind(roster_source)
-            .bind(term.start_date)
-            .execute(&mut *transaction)
-            .await?;
+                )
+                .bind(Uuid::new_v4())
+                .bind(group_id)
+                .bind(group.academic_term_id)
+                .bind(group.academic_year_id)
+                .bind(student_year_id)
+                .bind(student_id)
+                .bind(roster_source)
+                .bind(term.start_date)
+                .execute(&mut *transaction)
+                .await?;
+            }
         }
     }
     sqlx::query(
@@ -698,6 +707,7 @@ pub async fn publish_roster(
     .bind(group_id)
     .execute(&mut *transaction)
     .await?;
+    super::roster_tracking::sync_group(&mut transaction, actor_user_id, group_id, None).await?;
     transaction.commit().await?;
     append_group_audit(
         pool,

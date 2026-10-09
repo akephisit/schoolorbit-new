@@ -200,6 +200,17 @@ async fn adjusted_outcome(
         &core_decision,
     )
     .await?;
+    let mut roster_students = vec![source_student_year_id];
+    roster_students.extend(owned_target_student_year_id);
+    roster_students.extend(adjusted.target_student_year_id);
+    roster_students.sort_unstable();
+    roster_students.dedup();
+    school_academic_delivery::services::roster_tracking::sync_students(
+        tx,
+        actor_user_id,
+        &roster_students,
+    )
+    .await?;
     Ok(PromotionImpactResolutionOutcome {
         adjusted: true,
         target_student_year_id: adjusted.target_student_year_id,

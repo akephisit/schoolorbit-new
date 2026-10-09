@@ -1480,3 +1480,29 @@ impl From<LearningGroupStudentRow> for LearningGroupStudent {
 pub struct DeliveryPublicationPreviewQuery {
     pub effective_from: Option<NaiveDate>,
 }
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+pub enum RosterTrackingMode {
+    Manual,
+    Homeroom,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct LearningGroupRosterTracking {
+    pub mode: RosterTrackingMode,
+    pub effective_from: Option<NaiveDate>,
+    pub group_row_version: i64,
+    pub starts_on: NaiveDate,
+    pub ends_on: NaiveDate,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateRosterTrackingRequest {
+    pub mode: RosterTrackingMode,
+    pub effective_from: Option<NaiveDate>,
+    pub row_version: i64,
+}

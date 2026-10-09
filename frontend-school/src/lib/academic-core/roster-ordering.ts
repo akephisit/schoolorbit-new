@@ -12,7 +12,7 @@ function levelRank(value: string): number {
 export function compareHomerooms(left: Homeroom, right: Homeroom): number {
 	return (
 		levelRank(left.code) - levelRank(right.code) ||
-		natural.compare(left.code.split('-')[0], right.code.split('-')[0]) ||
+		natural.compare(left.code.split(/[-/]/u)[0], right.code.split(/[-/]/u)[0]) ||
 		Number(!left.roomNumber) - Number(!right.roomNumber) ||
 		natural.compare(left.roomNumber ?? '', right.roomNumber ?? '') ||
 		natural.compare(left.code, right.code) ||

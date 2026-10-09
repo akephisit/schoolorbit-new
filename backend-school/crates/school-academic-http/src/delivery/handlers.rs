@@ -12,7 +12,7 @@ use crate::policies::learning_offering_access_policy::{self, OfferingAction};
 use crate::state::AcademicHttpState;
 use school_academic_delivery::models::*;
 use school_academic_delivery::services::{
-    activities, change_sets, groups, offerings, roster_memberships, workspaces,
+    activities, change_sets, groups, offerings, roster_memberships, roster_tracking, workspaces,
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
@@ -1532,4 +1532,65 @@ fn signal_group_changed(
         Some(group.id),
         group.row_version,
     );
+}
+
+#[utoipa::path(
+    get, path = "/api/academic/learning-groups/{id}/roster-tracking",
+    operation_id = "getLearningGroupRosterTracking", tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")),
+    responses(
+        (status = 200, description = "Room tracking configuration and date bounds", body = ApiResponse<LearningGroupRosterTracking>),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Group read denied", body = ApiErrorResponse),
+        (status = 404, description = "Group not found", body = ApiErrorResponse)
+    )
+)]
+pub async fn get_group_roster_tracking(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    learning_offering_access_policy::require_learning_group_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        OfferingAction::Read,
+    )
+    .await?;
+    Ok(ok(roster_tracking::get(&context.tenant.pool, id).await?))
+}
+
+#[utoipa::path(
+    put, path = "/api/academic/learning-groups/{id}/roster-tracking",
+    operation_id = "updateLearningGroupRosterTracking", tag = "academic",
+    params(("id" = Uuid, Path, description = "Learning group ID")), request_body = UpdateRosterTrackingRequest,
+    responses(
+        (status = 200, description = "Room tracking configuration saved and published memberships reconciled", body = ApiResponse<LearningGroupRosterTracking>),
+        (status = 400, description = "Invalid tracking configuration", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Group management denied", body = ApiErrorResponse),
+        (status = 404, description = "Group not found", body = ApiErrorResponse),
+        (status = 409, description = "Stale revision, closed term, capacity or membership conflict", body = ApiErrorResponse)
+    )
+)]
+pub async fn update_group_roster_tracking(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateRosterTrackingRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    learning_offering_access_policy::require_learning_group_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        OfferingAction::Manage,
+    )
+    .await?;
+    let config =
+        roster_tracking::update(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let group = groups::get(&context.tenant.pool, id).await?;
+    signal_group_changed(&state, &session, &context.actor, &group);
+    Ok(ok(config))
 }

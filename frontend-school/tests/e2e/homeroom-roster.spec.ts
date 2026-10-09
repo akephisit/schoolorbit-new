@@ -221,7 +221,7 @@ test('reader and closed years never fetch action data or show mutation controls'
 	await expect(
 		page.getByRole('button', { name: 'เพิ่มนักเรียนเข้าห้อง', exact: true })
 	).toHaveCount(0);
-	await expect(page.getByRole('link', { name: 'ประวัติ', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('link', { name: 'ข้อมูลนักเรียน', exact: true })).toHaveCount(0);
 	expect(api.reads).toEqual([`/api/academic/homerooms/${room}/students`]);
 	await page.unroute((url) => url.pathname.startsWith(`/api/academic/homerooms/${room}`));
 	await mock(page, { closed: true });
@@ -229,75 +229,122 @@ test('reader and closed years never fetch action data or show mutation controls'
 	await expect(page.getByText('ปีการศึกษานี้ปิดแล้ว ดูข้อมูลย้อนหลังได้')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'จัดเลขที่', exact: true })).toHaveCount(0);
 });
-test('history links load the selected student outside the capped year list', async ({ page }) => {
-	await mock(page, {
-		reader: true,
-		permissions: ['student_academic_year.read.school', 'homeroom.read.school']
+for (const entry of ['homeroom', 'annual'] as const)
+	test(`${entry} information links open the profile and selected-year history directly`, async ({
+		page
+	}) => {
+		const entryPath =
+			entry === 'homeroom' ? path : `/staff/academic/student-years?academicYearId=${year}`;
+		await mock(page, {
+			reader: true,
+			permissions: [
+				'student_academic_year.read.school',
+				'student_academic_year.manage.school',
+				'homeroom.read.school',
+				'student.read.school'
+			]
+		});
+		const student: StudentAcademicYear = {
+			id: id(91),
+			studentId: id(92),
+			academicYearId: year,
+			gradeLevelId: id(82),
+			gradeLevelName: 'มัธยมศึกษาปีที่ 1',
+			studyProgramId: id(83),
+			studyProgramName: 'แผนหลัก',
+			studentCode: '69001',
+			studentName: 'ขวัญ ทดสอบ',
+			status: 'active',
+			rowVersion: 1,
+			migrated: false,
+			createdAt: '2026-05-01T00:00:00Z',
+			updatedAt: '2026-05-01T00:00:00Z'
+		};
+		const placement: HomeroomPlacement = {
+			id: id(90),
+			studentAcademicYearId: student.id,
+			academicYearId: year,
+			homeroomId: room,
+			classNumber: 7,
+			status: 'cancelled',
+			startDate: '2026-05-01',
+			endDate: null,
+			enrollmentType: 'regular',
+			rowVersion: 1,
+			migrated: false,
+			createdAt: '2026-05-01T00:00:00Z',
+			updatedAt: '2026-05-01T00:00:00Z'
+		};
+		await page.route(
+			(url) =>
+				url.pathname === '/api/academic/homerooms' ||
+				url.pathname.startsWith('/api/academic/student-years') ||
+				url.pathname === '/api/academic/placements',
+			async (route) => {
+				const resource = new URL(route.request().url()).pathname;
+				const data =
+					resource === '/api/academic/student-years'
+						? [student]
+						: resource === `/api/academic/student-years/${student.id}`
+							? student
+							: resource === `/api/academic/student-years/${student.id}/placements`
+								? [placement]
+								: resource === '/api/academic/homerooms'
+									? [fixture().homeroom]
+									: resource === '/api/academic/placements'
+										? [placement]
+										: [];
+				await route.fulfill({
+					contentType: 'application/json',
+					body: JSON.stringify({ success: true, data })
+				});
+			}
+		);
+		await page.route(
+			(url) => url.pathname === `/api/students/${student.studentId}`,
+			(route) =>
+				route.fulfill({
+					contentType: 'application/json',
+					body: JSON.stringify({
+						success: true,
+						data: {
+							id: student.studentId,
+							first_name: 'ขวัญ',
+							last_name: 'ทดสอบ',
+							title: 'เด็กหญิง',
+							student_id: '69001',
+							status: 'active',
+							parents: []
+						}
+					})
+				})
+		);
+		await page.goto(entryPath);
+		if (entry === 'homeroom') await expect(page.getByTestId('homeroom-roster-ready')).toBeVisible();
+		else await expect(page.getByRole('button', { name: 'จัดห้อง', exact: true })).toBeVisible();
+		await page
+			.getByRole('row')
+			.filter({ hasText: 'ขวัญ' })
+			.getByRole('link', { name: 'ข้อมูลนักเรียน' })
+			.click();
+		await expect(page).toHaveURL(
+			new RegExp(`/staff/students/${student.studentId}\\?academicYearId=${year}`)
+		);
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		await expect(page.getByTestId('student-profile')).toContainText('เด็กหญิงขวัญ ทดสอบ');
+		await expect(page.getByTestId('student-placement-history')).toContainText('ยกเลิก');
+		await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
+			'href',
+			entryPath
+		);
+		await page.goto(
+			`/staff/students/${student.studentId}?academicYearId=${year}&returnTo=${encodeURIComponent('//example.com/staff/students')}`
+		);
+		await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
+			'href',
+			`/staff/students?academicYearId=${year}`
+		);
 	});
-	const student: StudentAcademicYear = {
-		id: id(91),
-		studentId: id(92),
-		academicYearId: year,
-		gradeLevelId: id(82),
-		gradeLevelName: 'มัธยมศึกษาปีที่ 1',
-		studyProgramId: id(83),
-		studyProgramName: 'แผนหลัก',
-		studentCode: '69001',
-		studentName: 'ขวัญ ทดสอบ',
-		status: 'active',
-		rowVersion: 1,
-		migrated: false,
-		createdAt: '2026-05-01T00:00:00Z',
-		updatedAt: '2026-05-01T00:00:00Z'
-	};
-	const placement: HomeroomPlacement = {
-		id: id(90),
-		studentAcademicYearId: student.id,
-		academicYearId: year,
-		homeroomId: room,
-		classNumber: 7,
-		status: 'cancelled',
-		startDate: '2026-05-01',
-		endDate: null,
-		enrollmentType: 'regular',
-		rowVersion: 1,
-		migrated: false,
-		createdAt: '2026-05-01T00:00:00Z',
-		updatedAt: '2026-05-01T00:00:00Z'
-	};
-	await page.route(
-		(url) =>
-			url.pathname === '/api/academic/homerooms' ||
-			url.pathname.startsWith('/api/academic/student-years') ||
-			url.pathname === '/api/academic/placements',
-		async (route) => {
-			const resource = new URL(route.request().url()).pathname;
-			const data =
-				resource === `/api/academic/student-years/${student.id}`
-					? student
-					: resource === `/api/academic/student-years/${student.id}/placements`
-						? [placement]
-						: resource === '/api/academic/homerooms'
-							? [fixture().homeroom]
-							: [];
-			await route.fulfill({
-				contentType: 'application/json',
-				body: JSON.stringify({ success: true, data })
-			});
-		}
-	);
-	await page.goto(path);
-	await expect(page.getByTestId('homeroom-roster-ready')).toBeVisible();
-	await page
-		.getByRole('row')
-		.filter({ hasText: 'ขวัญ' })
-		.getByRole('link', { name: 'ประวัติ' })
-		.click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByRole('heading', { name: 'ขวัญ ทดสอบ' })).toBeVisible();
-	await expect(dialog.getByText('เลขที่ 7', { exact: true })).toBeVisible();
-	await expect(dialog.getByText(/ยกเลิกการจัดห้องก่อนเริ่มเรียน/)).toBeVisible();
-});
 test('a failed primary read can retry without presenting an empty room', async ({ page }) => {
 	const options = { fail: true };
 	await mock(page, options);

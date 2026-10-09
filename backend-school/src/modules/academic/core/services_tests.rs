@@ -124,7 +124,7 @@ async fn deactivation_lifecycle_fixture(
     historical_status: &str,
     future: bool,
 ) -> (PgPool, Uuid, Uuid, Option<Uuid>) {
-    let pool = prepare_core_fixture_through(name, 96).await;
+    let pool = prepare_core_fixture_through(name, 100).await;
     let (student, grade, program): (Uuid, Uuid, Uuid) = sqlx::query_as(
         "SELECT student_id,grade_level_id,study_program_id FROM student_academic_years WHERE academic_year_id=$1 AND status='active' ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
@@ -2832,6 +2832,7 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
     .unwrap();
     let wrong_year = student_years::create_placement(
         &pool,
+        &TestPlacementRosters,
         actor,
         future.id,
         CreateHomeroomPlacementRequest {
@@ -2854,6 +2855,7 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
         .unwrap();
     let blocked_placement = student_years::create_placement(
         &pool,
+        &TestPlacementRosters,
         actor,
         future.id,
         CreateHomeroomPlacementRequest {
@@ -2877,6 +2879,7 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
         .unwrap();
     let placement = student_years::create_placement(
         &pool,
+        &TestPlacementRosters,
         actor,
         future.id,
         CreateHomeroomPlacementRequest {
@@ -2893,6 +2896,7 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
     let idempotency_key = Uuid::new_v4();
     let blank_reason = student_years::transfer_placement(
         &pool,
+        &TestPlacementRosters,
         actor,
         placement.id,
         TransferHomeroomPlacementRequest {
@@ -2923,9 +2927,14 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
         .execute(&pool)
         .await
         .unwrap();
-    let blocked_transfer =
-        student_years::transfer_placement(&pool, actor, placement.id, transfer_request.clone())
-            .await;
+    let blocked_transfer = student_years::transfer_placement(
+        &pool,
+        &TestPlacementRosters,
+        actor,
+        placement.id,
+        transfer_request.clone(),
+    )
+    .await;
     assert!(
         matches!(blocked_transfer, Err(school_errors::AppError::Conflict(_))),
         "{blocked_transfer:?}"
@@ -2935,18 +2944,29 @@ async fn lifecycle_year_future_student_preparation_preserves_current_year_and_id
         .execute(&pool)
         .await
         .unwrap();
-    let first =
-        student_years::transfer_placement(&pool, actor, placement.id, transfer_request.clone())
-            .await
-            .unwrap();
+    let first = student_years::transfer_placement(
+        &pool,
+        &TestPlacementRosters,
+        actor,
+        placement.id,
+        transfer_request.clone(),
+    )
+    .await
+    .unwrap();
     sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
         .bind(FUTURE_YEAR_ID)
         .execute(&pool)
         .await
         .unwrap();
-    let replay = student_years::transfer_placement(&pool, actor, placement.id, transfer_request)
-        .await
-        .unwrap();
+    let replay = student_years::transfer_placement(
+        &pool,
+        &TestPlacementRosters,
+        actor,
+        placement.id,
+        transfer_request,
+    )
+    .await
+    .unwrap();
     assert!(!first.replayed);
     assert!(replay.replayed);
     assert_eq!(first.new_placement.id, replay.new_placement.id);
@@ -5867,9 +5887,11 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
         placement_id: None,
         placement_row_version: None,
     });
-    assert!(homeroom_roster::mutate_roster(&pool, actor, room, invalid)
-        .await
-        .is_err());
+    assert!(
+        homeroom_roster::mutate_roster(&pool, &TestPlacementRosters, actor, room, invalid)
+            .await
+            .is_err()
+    );
     assert_eq!(
         homeroom_roster::get_roster(&pool, room)
             .await
@@ -5878,13 +5900,15 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
             .len(),
         before_count
     );
-    roster = homeroom_roster::mutate_roster(&pool, actor, room, add.clone())
+    roster = homeroom_roster::mutate_roster(&pool, &TestPlacementRosters, actor, room, add.clone())
         .await
         .unwrap();
     assert_eq!(roster.students.len(), before_count + 2);
-    assert!(homeroom_roster::mutate_roster(&pool, actor, room, add)
-        .await
-        .is_err());
+    assert!(
+        homeroom_roster::mutate_roster(&pool, &TestPlacementRosters, actor, room, add)
+            .await
+            .is_err()
+    );
     let preview = homeroom_roster::preview_numbers(
         &pool,
         room,
@@ -5949,11 +5973,15 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
         target_homeroom_id: Some(other),
         reason: "ปรับการจัดห้องทดสอบ".into(),
     };
-    assert!(
-        homeroom_roster::mutate_roster(&pool, actor, room, move_request.clone())
-            .await
-            .is_err()
-    );
+    assert!(homeroom_roster::mutate_roster(
+        &pool,
+        &TestPlacementRosters,
+        actor,
+        room,
+        move_request.clone()
+    )
+    .await
+    .is_err());
     assert_eq!(
         homeroom_roster::get_roster(&pool, other)
             .await
@@ -5992,9 +6020,10 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
         .execute(&pool)
         .await
         .unwrap();
-    roster = homeroom_roster::mutate_roster(&pool, actor, room, move_request)
-        .await
-        .unwrap();
+    roster =
+        homeroom_roster::mutate_roster(&pool, &TestPlacementRosters, actor, room, move_request)
+            .await
+            .unwrap();
     assert_eq!(roster.students.len(), before_count);
     for (id, number) in untouched {
         assert_eq!(
@@ -6047,11 +6076,13 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
         target_homeroom_id: None,
         reason: "จัดห้องใหม่ภายหลัง".into(),
     };
-    assert!(homeroom_roster::mutate_roster(&pool, actor, other, remove)
-        .await
-        .unwrap()
-        .students
-        .is_empty());
+    assert!(
+        homeroom_roster::mutate_roster(&pool, &TestPlacementRosters, actor, other, remove)
+            .await
+            .unwrap()
+            .students
+            .is_empty()
+    );
     let candidate_ids: Vec<_> = homeroom_roster::list_candidates(
         &pool,
         room,
@@ -6085,6 +6116,7 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
     let empty_target = homeroom_roster::get_roster(&pool, other).await.unwrap();
     let planned = homeroom_roster::mutate_roster(
         &pool,
+        &TestPlacementRosters,
         actor,
         other,
         MutateHomeroomRosterRequest {
@@ -6107,6 +6139,7 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
     let cancelled = future.placement_id;
     homeroom_roster::mutate_roster(
         &pool,
+        &TestPlacementRosters,
         actor,
         other,
         MutateHomeroomRosterRequest {
@@ -6225,4 +6258,17 @@ async fn academic_lists_sort_numerically_and_attach_title_to_given_name() {
     assert!(added
         .iter()
         .all(|s| s.student_name.starts_with("นายทดสอบ ")));
+}
+
+struct TestPlacementRosters;
+#[async_trait::async_trait]
+impl school_academic_core::ports::PlacementRosterPort for TestPlacementRosters {
+    async fn reconcile(
+        &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _actor: Uuid,
+        _ids: &[Uuid],
+    ) -> Result<(), school_errors::AppError> {
+        Ok(())
+    }
 }

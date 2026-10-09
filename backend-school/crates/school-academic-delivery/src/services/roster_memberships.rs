@@ -113,6 +113,7 @@ pub async fn add_membership(
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
     require_published_roster(&group, request.group_row_version)?;
+    super::roster_tracking::require_manual(&mut transaction, group_id).await?;
 
     let (student_id, student_year_status): (Uuid, String) = sqlx::query_as(
         r#"SELECT student_id, status
@@ -209,6 +210,7 @@ pub async fn remove_membership(
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
     require_published_roster(&group, request.group_row_version)?;
+    super::roster_tracking::require_manual(&mut transaction, group_id).await?;
     validate_membership_date(&group, request.left_at)?;
 
     let (status, joined_at, row_version): (MembershipStatus, NaiveDate, i64) = sqlx::query_as(
