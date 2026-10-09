@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { GroupPhaseWorkspace } from '../../src/lib/api/academicGradebook.js';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -77,6 +78,17 @@ function subject() {
 	};
 }
 
+const roster: GroupPhaseWorkspace['students'] = [
+	{
+		membershipId: ids.membership,
+		studentAcademicYearId: ids.student,
+		displayName: 'เด็กชายทดสอบ ระบบ',
+		classNumber: 7,
+		homeroomName: 'ม.1/1',
+		rowVersion: 1
+	}
+];
+
 function workspace(
 	canManage: boolean,
 	phaseCode: (typeof phaseCodes)[number],
@@ -104,14 +116,7 @@ function workspace(
 				rowVersion: 1
 			}
 		],
-		students: [
-			{
-				membershipId: ids.membership,
-				studentAcademicYearId: ids.student,
-				displayName: 'เด็กชายทดสอบ ระบบ',
-				rowVersion: 1
-			}
-		],
+		students: roster,
 		scores:
 			scoreValue === null
 				? []
@@ -137,7 +142,9 @@ async function mockGradebook(
 	closedPhase?: string,
 	itemMaximum?: string,
 	initialScores?: Array<string | null>,
-	closedTerm = false
+	closedTerm = false,
+	students = roster,
+	withEvaluations = false
 ) {
 	const controlRequests: string[] = [];
 	const subjectRequests: string[] = [];
@@ -148,6 +155,7 @@ async function mockGradebook(
 	const workspaces = phaseCodes.map((phase, index) =>
 		workspace(canManage && !closedTerm && phase !== closedPhase, phase, initialScores?.[index])
 	);
+	for (const row of workspaces) row.students = students;
 	if (itemMaximum) for (const row of workspaces) row.items[0]!.maxScore = itemMaximum;
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
@@ -168,7 +176,16 @@ async function mockGradebook(
 					phone: null,
 					profileImageFileId: null,
 					permissions: canManage
-						? ['academic_gradebook.read.school', 'academic_gradebook.manage.school']
+						? [
+								'academic_gradebook.read.school',
+								'academic_gradebook.manage.school',
+								...(withEvaluations
+									? [
+											'academic_learner_evaluation.read.school',
+											'academic_learner_evaluation.manage.school'
+										]
+									: [])
+							]
 						: ['academic_gradebook.read.assigned']
 				});
 				return;
@@ -194,7 +211,7 @@ async function mockGradebook(
 			}
 			if (url.pathname === '/api/academic/learner-evaluations/subjects') {
 				subjectRequests.push(url.pathname);
-				await fulfill(route, []);
+				await fulfill(route, withEvaluations ? [subject()] : []);
 				return;
 			}
 			if (
@@ -215,6 +232,41 @@ async function mockGradebook(
 							}))
 						: []
 				);
+				return;
+			}
+
+			if (url.pathname.includes(`/api/academic/learner-evaluations/groups/${ids.group}/domains/`)) {
+				await fulfill(route, {
+					learningGroupId: ids.group,
+					subjectId: ids.subject,
+					domain: url.pathname.split('/domains/')[1],
+					criteria: [
+						{
+							id: ids.item,
+							name: 'หัวข้อทดสอบ',
+							lifecycle: 'active',
+							displayOrder: 1,
+							rowVersion: 1
+						}
+					],
+					students,
+					responses: [
+						{
+							subjectTermCriterionId: ids.item,
+							studentAcademicYearId: ids.student,
+							qualityLevel: 2,
+							rowVersion: 1
+						}
+					],
+					entryEnabled: true,
+					locked: false,
+					canManage: true,
+					canConfirm: true,
+					sourceChecksum: 'evaluation-1',
+					rosterChecksum: 'roster-1',
+					confirmation: null,
+					confirmationIsCurrent: false
+				});
 				return;
 			}
 			if (url.pathname.includes(`/api/academic/gradebook/groups/${ids.group}/phases/`)) {
@@ -645,3 +697,112 @@ test('entry settings open and close in a dialog instead of taking ledger space',
 	await expect(dialog.getByRole('switch')).toHaveCount(4);
 	expect(observed.controlRequests).toEqual(['/api/academic/gradebook/controls']);
 });
+
+for (const width of [390, 1440])
+	for (const dark of [false, true]) {
+		test(`actual class numbers and score identity: ${width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}) => {
+			await page.setViewportSize({ width, height: 900 });
+			const students: GroupPhaseWorkspace['students'] = [
+				{
+					...roster[0]!,
+					membershipId: '91000000-0000-4000-8000-000000000002',
+					studentAcademicYearId: '90000000-0000-4000-8000-000000000002',
+					displayName: 'นักเรียนเลขที่สอง ทดสอบ',
+					classNumber: 2
+				},
+				roster[0]!,
+				{
+					...roster[0]!,
+					membershipId: '91000000-0000-4000-8000-000000000003',
+					studentAcademicYearId: '90000000-0000-4000-8000-000000000003',
+					displayName: 'นักเรียนอีกห้อง ทดสอบ',
+					classNumber: 1,
+					homeroomName: 'ม.1/2'
+				},
+				{
+					...roster[0]!,
+					membershipId: '91000000-0000-4000-8000-000000000004',
+					studentAcademicYearId: '90000000-0000-4000-8000-000000000004',
+					displayName: 'ยังไม่มีเลขที่ ทดสอบ',
+					classNumber: null,
+					homeroomName: null
+				}
+			];
+			const observed = await mockGradebook(
+				page,
+				true,
+				undefined,
+				undefined,
+				['7.5'],
+				false,
+				students,
+				true
+			);
+			await page.goto(gradebookUrl());
+			await expect(page.getByRole('heading', { name: 'คะแนนทั้งภาคเรียน' })).toBeVisible();
+			if (dark) await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+			await expect(page.getByRole('columnheader', { name: 'เลขที่', exact: true })).toBeVisible();
+			await expect(page.locator('tbody tr td:first-child')).toHaveText(['2', '7', '1', '—']);
+			await expect(page.locator('tbody tr').nth(2)).toContainText('ม.1/2');
+			await expect(page.locator('tbody tr').nth(3)).toContainText('ยังไม่มีห้อง');
+			const cell = page.getByRole('textbox', {
+				name: 'ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ',
+				exact: true
+			});
+			await expect(cell).toHaveValue('7.5');
+			expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+				false
+			);
+			await page.screenshot({
+				path: `/tmp/gradebook-roster-${width}-${dark ? 'dark' : 'light'}.png`,
+				animations: 'disabled'
+			});
+			await page.getByRole('button', { name: 'เลือกทุกช่อง' }).click();
+			if (width >= 768) {
+				await cell.fill('8');
+				await cell.press('Tab');
+			} else {
+				await page
+					.getByRole('button', {
+						name: 'เปิดกรอก ก่อนกลางภาค ชีท 1 เด็กชายทดสอบ ระบบ',
+						exact: true
+					})
+					.click();
+				await page.getByRole('dialog').getByRole('textbox').fill('8');
+				await page.getByRole('dialog').getByRole('button', { name: 'ปิด', exact: true }).click();
+			}
+			await expect.poll(() => observed.scoreBodies.length).toBe(1);
+			expect(observed.scoreBodies[0]).toMatchObject({
+				cells: [{ studentAcademicYearId: ids.student, value: '8' }]
+			});
+			for (const [tab, label] of [
+				['desirable_characteristic', 'คุณลักษณะอันพึงประสงค์'],
+				['reading_thinking_writing', 'การอ่าน คิดวิเคราะห์ และเขียน']
+			]) {
+				await page.getByRole('tab', { name: label, exact: true }).click();
+				if (width >= 768) {
+					await expect(page.locator('tbody tr td:first-child')).toHaveText(['2', '7', '1', '—']);
+					await expect(page.locator('tbody tr').nth(1)).toContainText('ดี');
+					await expect(page.locator('tbody tr').nth(2)).toContainText('ม.1/2');
+				} else {
+					const rows = page.getByRole('button', { name: 'ประเมิน', exact: true }).locator('..');
+					await expect(rows.locator('span.rounded-full')).toHaveText(['2', '7', '1', '—']);
+					await expect(
+						page.getByText('นักเรียนอีกห้อง ทดสอบ', { exact: true }).filter({ visible: true })
+					).toBeVisible();
+					await expect(
+						page.getByText('ม.1/2', { exact: true }).filter({ visible: true })
+					).toBeVisible();
+					await expect(
+						page.getByText('ยังไม่มีห้อง', { exact: true }).filter({ visible: true })
+					).toBeVisible();
+				}
+				await page.screenshot({
+					path: `/tmp/gradebook-roster-${tab}-${width}-${dark ? 'dark' : 'light'}.png`,
+					animations: 'disabled'
+				});
+			}
+		});
+	}

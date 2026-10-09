@@ -164,12 +164,12 @@
 					<th
 						rowspan="2"
 						scope="col"
-						class="sticky left-0 z-20 w-12 min-w-12 bg-muted px-3 text-center">ที่</th
+						class="sticky left-0 z-20 w-16 min-w-16 bg-muted px-3 text-center">เลขที่</th
 					>
 					<th
 						rowspan="2"
 						scope="col"
-						class="sticky left-12 z-20 w-40 min-w-40 border-r bg-muted px-3 text-left md:w-56 md:min-w-56"
+						class="sticky left-16 z-20 w-40 min-w-40 border-r bg-muted px-3 text-left md:w-56 md:min-w-56"
 						>นักเรียน</th
 					>
 					{#each phases as phase (phase.code)}
@@ -259,16 +259,20 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each students as student, index (student.studentAcademicYearId)}
+				{#each students as student (student.studentAcademicYearId)}
 					<tr class="border-b last:border-b-0 hover:bg-muted/20">
 						<td class="sticky left-0 z-10 bg-card px-3 py-2 text-center text-muted-foreground"
-							>{index + 1}</td
+							>{student.classNumber ?? '—'}</td
 						>
 						<th
 							scope="row"
-							class="sticky left-12 z-10 border-r bg-card px-3 py-2 text-left font-medium"
-							>{student.displayName}</th
+							class="sticky left-16 z-10 border-r bg-card px-3 py-2 text-left font-medium"
 						>
+							{student.displayName}
+							<span class="block text-xs font-normal text-muted-foreground"
+								>{student.homeroomName ?? 'ยังไม่มีห้อง'}</span
+							>
+						</th>
 						{#each phases as phase (phase.code)}
 							{#each phase.items as item (item.id)}
 								{@const position = { itemId: item.id, studentId: student.studentAcademicYearId }}

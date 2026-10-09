@@ -292,8 +292,10 @@ async fn load_workspace(
     .bind(scope.group_id)
     .fetch_all(&mut **tx)
     .await?;
+    // Preparation uses membership revisions for Gradebook checksums. Room
+    // presentation is irrelevant here; retain the existing result ordering.
     let students: Vec<GradebookStudent> = sqlx::query_as(
-        "SELECT m.id AS membership_id,m.student_academic_year_id,concat_ws(' ',u.first_name,u.last_name) AS display_name,m.row_version FROM learning_group_students m JOIN users u ON u.id=m.student_id WHERE m.learning_group_id=$1 AND m.membership_status='active' ORDER BY m.student_academic_year_id LIMIT 2001",
+        "SELECT m.id AS membership_id,m.student_academic_year_id,concat_ws(' ',u.first_name,u.last_name) AS display_name,m.row_version,NULL::integer AS class_number,NULL::text AS homeroom_name FROM learning_group_students m JOIN users u ON u.id=m.student_id WHERE m.learning_group_id=$1 AND m.membership_status='active' ORDER BY m.student_academic_year_id LIMIT 2001",
     )
     .bind(scope.group_id)
     .fetch_all(&mut **tx)

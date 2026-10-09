@@ -21,7 +21,10 @@ pub(super) async fn load_workspace(
     scope: &Scope,
 ) -> Result<GroupPhaseWorkspace, AppError> {
     let items:Vec<ScoreItem>=sqlx::query_as("SELECT id,name,max_score::text AS max_score,display_order,lifecycle,row_version FROM learning_group_score_items WHERE learning_group_id=$1 AND assessment_phase_id=$2 ORDER BY display_order,id LIMIT 1001").bind(scope.group_id).bind(scope.phase_id).fetch_all(&mut **tx).await?;
-    let students:Vec<GradebookStudent>=sqlx::query_as("SELECT m.id AS membership_id,m.student_academic_year_id,concat_ws(' ',u.first_name,u.last_name) AS display_name,m.row_version FROM learning_group_students m JOIN users u ON u.id=m.student_id WHERE m.learning_group_id=$1 AND m.membership_status='active' ORDER BY m.student_academic_year_id LIMIT 2001").bind(scope.group_id).fetch_all(&mut **tx).await?;
+    let students: Vec<GradebookStudent> = sqlx::query_as(crate::student_roster::STUDENT_ROSTER_SQL)
+        .bind(scope.group_id)
+        .fetch_all(&mut **tx)
+        .await?;
     let scores:Vec<ScoreCell>=sqlx::query_as("SELECT s.score_item_id,s.student_academic_year_id,s.score::text AS value,s.row_version FROM learning_group_student_scores s JOIN learning_group_score_items i ON i.id=s.score_item_id WHERE s.learning_group_id=$1 AND i.assessment_phase_id=$2 ORDER BY s.score_item_id,s.student_academic_year_id LIMIT 200001").bind(scope.group_id).bind(scope.phase_id).fetch_all(&mut **tx).await?;
     if items.len() > 1000 || students.len() > 2000 || scores.len() > 200000 {
         return Err(AppError::ValidationError(

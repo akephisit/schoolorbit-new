@@ -132,11 +132,11 @@
 			<table class="min-w-max border-collapse text-sm">
 				<thead>
 					<tr class="border-b bg-muted/30">
-						<th class="sticky left-0 z-20 w-12 min-w-12 bg-muted px-3 py-3 text-center font-medium"
-							>ที่</th
+						<th class="sticky left-0 z-20 w-16 min-w-16 bg-muted px-3 py-3 text-center font-medium"
+							>เลขที่</th
 						>
 						<th
-							class="sticky left-12 z-20 w-56 min-w-56 border-r bg-muted px-3 py-3 text-left font-medium"
+							class="sticky left-16 z-20 w-56 min-w-56 border-r bg-muted px-3 py-3 text-left font-medium"
 							>นักเรียน</th
 						>
 						{#each activeCriteria as criterion (criterion.id)}
@@ -162,14 +162,17 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each workspace.students as student, index (student.studentAcademicYearId)}
+					{#each workspace.students as student (student.studentAcademicYearId)}
 						<tr class="border-b last:border-b-0 hover:bg-muted/20">
 							<td class="sticky left-0 z-10 bg-card px-3 py-2 text-center text-muted-foreground"
-								>{index + 1}</td
+								>{student.classNumber ?? '—'}</td
 							>
-							<td class="sticky left-12 z-10 border-r bg-card px-3 py-2 font-medium"
-								>{student.displayName}</td
-							>
+							<td class="sticky left-16 z-10 border-r bg-card px-3 py-2 font-medium">
+								{student.displayName}
+								<span class="block text-xs font-normal text-muted-foreground"
+									>{student.homeroomName ?? 'ยังไม่มีห้อง'}</span
+								>
+							</td>
 							{#each activeCriteria as criterion (criterion.id)}
 								<td
 									class={[
@@ -208,13 +211,18 @@
 		</div>
 
 		<div class="divide-y md:hidden">
-			{#each workspace.students as student, index (student.studentAcademicYearId)}
+			{#each workspace.students as student (student.studentAcademicYearId)}
 				<div class="flex items-center gap-3 px-4 py-3">
 					<span
 						class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium"
-						>{index + 1}</span
+						>{student.classNumber ?? '—'}</span
 					>
-					<p class="min-w-0 flex-1 truncate font-medium">{student.displayName}</p>
+					<div class="min-w-0 flex-1">
+						<p class="truncate font-medium">{student.displayName}</p>
+						<p class="truncate text-xs text-muted-foreground">
+							{student.homeroomName ?? 'ยังไม่มีห้อง'}
+						</p>
+					</div>
 					<Button
 						variant="outline"
 						size="sm"

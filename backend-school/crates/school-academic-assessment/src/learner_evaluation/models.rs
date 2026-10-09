@@ -115,6 +115,8 @@ pub struct EvaluationStudent {
     pub membership_id: Uuid,
     pub student_academic_year_id: Uuid,
     pub display_name: String,
+    pub class_number: Option<i32>,
+    pub homeroom_name: Option<String>,
     pub row_version: i64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]

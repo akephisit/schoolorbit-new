@@ -796,6 +796,163 @@ async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, GradebookContext, U
     )
 }
 
+#[tokio::test]
+async fn gradebook_roster_orders_grade_room_number_and_keeps_score_identity() {
+    use school_academic_assessment::learner_evaluation::{
+        models as evaluation, services as evaluations,
+    };
+    let (pool, mut actor, context, group, phase) = fixture("gradebook_roster_order").await;
+    apply_migrations_through(&pool, 61).await.unwrap();
+    actor
+        .permissions
+        .push(codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into());
+    sqlx::query(
+        "UPDATE learning_group_students SET membership_status='ended' WHERE learning_group_id=$1",
+    )
+    .bind(group)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let program: Uuid = sqlx::query_scalar(
+        "SELECT study_program_id FROM student_academic_years WHERE academic_year_id=$1 LIMIT 1",
+    )
+    .bind(context.academic_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // IDs run in reverse display order. Custom names and legacy codes must not
+    // determine the structural grade/room ordering. Numbers can have gaps.
+    let cases = [
+        ("kindergarten", 1, "1", Some(3), "current"),
+        ("primary", 1, "1", Some(2), "planned"),
+        ("secondary", 1, "1", Some(2), "current"),
+        ("secondary", 1, "1", Some(7), "current"),
+        ("secondary", 1, "2", Some(1), "current"),
+        ("secondary", 1, "10", Some(1), "current"),
+        ("secondary", 1, "10", None, "current"),
+        ("secondary", 1, "99", Some(1), "ended"),
+        ("secondary", 2, "1", Some(1), "current"),
+    ];
+    let mut expected = Vec::new();
+    for (index, (level, grade_year, room_number, number, status)) in cases.iter().enumerate() {
+        let student = Uuid::from_u128(900 - index as u128);
+        let annual = Uuid::from_u128(800 - index as u128);
+        let grade: Uuid =
+            sqlx::query_scalar("SELECT id FROM grade_levels WHERE level_type=$1 AND year=$2")
+                .bind(level)
+                .bind(grade_year)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM homerooms WHERE academic_year_id=$1 AND grade_level_id=$2 AND room_number=$3")
+            .bind(context.academic_year_id).bind(grade).bind(room_number).fetch_optional(&pool).await.unwrap();
+        let room = if let Some(id) = existing {
+            id
+        } else {
+            let id = Uuid::new_v4();
+            sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity) VALUES ($1,$2,$3,$4,$5,$6,$7,40)")
+                .bind(id).bind(format!("69-X-{index}")).bind(format!("Custom {index}"))
+                .bind(context.academic_year_id).bind(grade).bind(room_number).bind(program).execute(&pool).await.unwrap();
+            id
+        };
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES ($1,$2,'not-a-login',$2,'Fixture','student','active')")
+            .bind(student).bind(format!("roster-{index}")).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES ($1,$2,$3,$4,$5,'active')")
+            .bind(annual).bind(student).bind(context.academic_year_id).bind(grade).bind(program).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,end_date,status,enrollment_type,class_number) VALUES ($1,$2,$3,$4,'2025-05-01',CASE WHEN $5='ended' THEN DATE '2025-06-01' ELSE NULL END,$5,'regular',$6)")
+            .bind(Uuid::new_v4()).bind(annual).bind(context.academic_year_id).bind(room).bind(status).bind(number).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at) VALUES ($1,$2,$3,$4,$5,$6,'active','manual','2025-05-01')")
+            .bind(Uuid::new_v4()).bind(group).bind(context.academic_term_id).bind(context.academic_year_id).bind(annual).bind(student).execute(&pool).await.unwrap();
+        expected.push(annual);
+    }
+    let item = create_item(
+        &pool,
+        &actor,
+        group,
+        phase,
+        &context,
+        ItemInput {
+            name: "Retained score".into(),
+            max_score: "10".into(),
+            display_order: 0,
+            row_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    save_scores_batch(
+        &pool,
+        &actor,
+        group,
+        phase,
+        &context,
+        vec![ScoreCellMutation::Set {
+            score_item_id: item.id,
+            student_academic_year_id: expected[3],
+            value: "7.5".into(),
+            row_version: None,
+        }],
+    )
+    .await
+    .unwrap();
+    let before = get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        .await
+        .unwrap();
+    assert_eq!(
+        before
+            .students
+            .iter()
+            .map(|s| s.student_academic_year_id)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(before.students[3].class_number, Some(7));
+    assert_eq!(before.students[6].class_number, None);
+    assert!(before.students[7].homeroom_name.is_none());
+    let eval_ctx = evaluation::EvaluationContext {
+        academic_year_id: context.academic_year_id,
+        academic_term_id: context.academic_term_id,
+    };
+    for domain in [
+        evaluation::LearnerEvaluationDomain::DesirableCharacteristic,
+        evaluation::LearnerEvaluationDomain::ReadingThinkingWriting,
+    ] {
+        let ws = evaluations::get_workspace(&pool, &actor, group, domain, &eval_ctx)
+            .await
+            .unwrap();
+        assert_eq!(
+            ws.students
+                .iter()
+                .map(|s| s.student_academic_year_id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(ws.students[3].class_number, Some(7));
+    }
+    // Renumbering changes only presentation, retaining scores and calculation
+    // checksums (and therefore not invalidating confirmations).
+    sqlx::query("UPDATE homeroom_placements SET class_number=1 WHERE student_academic_year_id=$1 AND status='current'")
+        .bind(expected[3]).execute(&pool).await.unwrap();
+    let after = get_group_phase_workspace(&pool, &actor, group, phase, &context)
+        .await
+        .unwrap();
+    expected.swap(2, 3);
+    assert_eq!(
+        after
+            .students
+            .iter()
+            .map(|s| s.student_academic_year_id)
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(after.source_checksum, before.source_checksum);
+    assert_eq!(after.roster_checksum, before.roster_checksum);
+    assert_eq!(
+        serde_json::to_value(after.scores).unwrap(),
+        serde_json::to_value(before.scores).unwrap()
+    );
+}
+
 // Catches coercing blank to zero, per-cell partial writes, and stale updates.
 #[tokio::test]
 async fn gradebook_zero_clear_and_atomic_validation() {
@@ -1114,6 +1271,8 @@ fn gradebook_checksums_are_ordered_and_calculation_sensitive() {
         membership_id: Uuid::from_u128(5),
         student_academic_year_id: Uuid::from_u128(6),
         display_name: "Student".into(),
+        class_number: Some(7),
+        homeroom_name: Some("ม.1/2".into()),
         row_version: 1,
     }];
     let scores = vec![ScoreCell {
