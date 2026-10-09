@@ -128,7 +128,9 @@ starts the maintenance proxy before its first backend exists, without unresolved
 
 The School backend build pulls its Rust and Debian bases from the Docker Official Images mirror
 on Amazon ECR Public, pinned by index digest. These digests match the Docker Hub originals and
-avoid anonymous Docker Hub pull limits. Update each tag and digest together when upgrading a base.
+avoid anonymous Docker Hub pull limits. Disposable PostgreSQL and Nginx verification images use
+the same official mirror, and actionlint uses Google's Docker Hub cache; all keep verified upstream
+digests. Update tags and digests together when upgrading bases or verification images.
 
 Selected backend services use immutable digests, canonical rootless Podman topology, readiness,
 migration completion and cutover audits. Admin starts before School on a full release. School
