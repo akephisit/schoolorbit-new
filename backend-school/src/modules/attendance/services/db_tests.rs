@@ -495,14 +495,7 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
     let s = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
         .await
         .unwrap();
-    let file:Uuid=sqlx::query_scalar("INSERT INTO files(display_filename,purpose_code,visibility,lifecycle_status,retention_class,inspection_metadata,created_by,owner_user_id) VALUES('scan.jpg','attendance_evidence','private','ready','temporary','{\"kind\":\"image\",\"width_px\":640,\"height_px\":480}',$1,$2) RETURNING id").bind(TEACHER).bind(STUDENT).fetch_one(&f.pool).await.unwrap();
-    let version:Uuid=sqlx::query_scalar("INSERT INTO file_versions(file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,created_by) VALUES($1,1,'r2','private','stored',$2,'image/jpeg','jpg',50000,repeat('a',64),'clean',$3) RETURNING id").bind(file).bind(format!("tenants/{}/attendance/evidence/{file}/v1/original.jpg", Uuid::new_v4())).bind(TEACHER).fetch_one(&f.pool).await.unwrap();
-    sqlx::query("UPDATE files SET current_version_id=$2 WHERE id=$1")
-        .bind(file)
-        .bind(version)
-        .execute(&f.pool)
-        .await
-        .unwrap();
+    let file = evidence_file(&f.pool, STUDENT).await;
     let scan = AttendanceScan {
         event_id: Uuid::new_v4(),
         device_id: device.id,
@@ -566,6 +559,121 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         .unwrap();
     assert_eq!(status, "delete_requested");
     assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM file_operations WHERE file_id=$1 AND operation_type='delete_object')").bind(file).fetch_one(&f.pool).await.unwrap());
+    // The second pupil was marked absent at flag ceremony, then arrived late.
+    // Arrival still informs every guardian and proves school presence independently.
+    let second = f.students[1].student_id;
+    sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) SELECT $1,parent_user_id,'parent' FROM student_parents WHERE student_user_id=$2")
+        .bind(second).bind(STUDENT).execute(&f.pool).await.unwrap();
+    let descriptor = FaceDescriptor {
+        values: vec![0.2; 128],
+    };
+    faces::enroll(
+        &f.pool,
+        TEACHER,
+        second,
+        EnrollAttendanceFace {
+            model: FACE_MODEL.into(),
+            descriptors: vec![descriptor.clone(), descriptor.clone()],
+            consent_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let mut config = settings::get(&f.pool, TERM).await.unwrap();
+    config.configuration.late_after = NaiveTime::MIN;
+    config.configuration.weekdays = vec![1, 2, 3, 4, 5, 6, 7];
+    settings::save(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            configuration: config.configuration,
+            row_version: config.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    let late = AttendanceScan {
+        event_id: Uuid::new_v4(),
+        device_id: device.id,
+        session_id: s.id,
+        student_id: second,
+        descriptor,
+        evidence_file_id: evidence_file(&f.pool, second).await,
+        captured_at: Utc::now(),
+    };
+    assert_eq!(
+        faces::scan(&f.pool, &f.actor, late.clone())
+            .await
+            .unwrap()
+            .result,
+        AttendanceResult::Late
+    );
+    assert!(
+        faces::scan(&f.pool, &f.actor, late)
+            .await
+            .unwrap()
+            .duplicate
+    );
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM attendance_notifications WHERE student_id=$1 AND dedup_key LIKE 'arrival:%'").bind(second).fetch_one(&f.pool).await.unwrap(), 3);
+    let live = reports::summaries(&f.pool, TERM, Some(second), None)
+        .await
+        .unwrap();
+    let school = live
+        .summaries
+        .iter()
+        .find(|r| r.category == "school")
+        .unwrap();
+    assert_eq!((school.late, school.absent, school.expected), (1, 0, 1));
+    assert_eq!(
+        live.summaries
+            .iter()
+            .find(|r| r.category == "flag")
+            .unwrap()
+            .absent,
+        1
+    );
+    for n in notifications::pending(&f.pool).await.unwrap() {
+        notifications::store(&f.pool, &n).await.unwrap();
+        notifications::delivered(&f.pool, n.id).await.unwrap();
+    }
+    let impact = reports::impact(&f.pool, TERM).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on=$2 WHERE id=$1")
+        .bind(TERM)
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    reports::purge(
+        &f.pool,
+        TEACHER,
+        TERM,
+        PurgeAttendanceTerm {
+            expected_records: impact.records,
+            reason: "เก็บสรุปการมาหลังหน้าเสาธง".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let archived = reports::summaries(&f.pool, TERM, Some(second), None)
+        .await
+        .unwrap();
+    assert!(archived.archived);
+    let school = archived
+        .summaries
+        .iter()
+        .find(|r| r.category == "school")
+        .unwrap();
+    assert_eq!((school.late, school.absent, school.expected), (1, 0, 1));
+    assert_eq!(
+        archived
+            .summaries
+            .iter()
+            .find(|r| r.category == "flag")
+            .unwrap()
+            .absent,
+        1
+    );
 }
 
 #[tokio::test]
@@ -688,4 +796,74 @@ async fn attendance_concurrent_saves_keep_one_revision_and_do_not_grant_own_acce
     )
     .await
     .is_err());
+}
+
+async fn evidence_file(pool: &PgPool, student: Uuid) -> Uuid {
+    let file:Uuid=sqlx::query_scalar("INSERT INTO files(display_filename,purpose_code,visibility,lifecycle_status,retention_class,inspection_metadata,created_by,owner_user_id) VALUES('scan.jpg','attendance_evidence','private','ready','temporary','{\"kind\":\"image\",\"width_px\":640,\"height_px\":480}',$1,$2) RETURNING id").bind(TEACHER).bind(student).fetch_one(pool).await.unwrap();
+    let version:Uuid=sqlx::query_scalar("INSERT INTO file_versions(file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,created_by) VALUES($1,1,'r2','private','stored',$2,'image/jpeg','jpg',50000,repeat('a',64),'clean',$3) RETURNING id").bind(file).bind(format!("tenants/{}/attendance/evidence/{file}/v1/original.jpg", Uuid::new_v4())).bind(TEACHER).fetch_one(pool).await.unwrap();
+    sqlx::query("UPDATE files SET current_version_id=$2 WHERE id=$1")
+        .bind(file)
+        .bind(version)
+        .execute(pool)
+        .await
+        .unwrap();
+    file
+}
+
+#[tokio::test]
+async fn attendance_concurrent_arrival_and_flag_notices_do_not_notify_twice() {
+    let f = fixture("attendance_concurrent_daily_notice").await;
+    parents(&f).await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let arrival = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Arrival, date))
+        .await
+        .unwrap();
+    let flag = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Flag, date))
+        .await
+        .unwrap();
+    let mut arrival_tx = f.pool.begin().await.unwrap();
+    notifications::queue_result(
+        &mut arrival_tx,
+        &arrival,
+        STUDENT,
+        AttendanceResult::Present,
+        2,
+        false,
+    )
+    .await
+    .unwrap();
+    let mut flag_tx = f.pool.begin().await.unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *flag_tx)
+        .await
+        .unwrap();
+    let flag_task = tokio::spawn(async move {
+        notifications::queue_result(
+            &mut flag_tx,
+            &flag,
+            STUDENT,
+            AttendanceResult::Present,
+            2,
+            false,
+        )
+        .await
+        .unwrap();
+        flag_tx.commit().await.unwrap();
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory' AND NOT granted)").bind(pid).fetch_one(&f.pool).await.unwrap();
+            if waiting { break; }
+            tokio::task::yield_now().await;
+        }
+    }).await.expect("flag notice must wait for the uncommitted arrival decision");
+    arrival_tx.commit().await.unwrap();
+    flag_task.await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_notifications")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        3
+    );
 }

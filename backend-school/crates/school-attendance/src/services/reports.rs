@@ -4,8 +4,8 @@ use school_errors::AppError;
 use school_file_platform::repository::SqlFileRepository;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
-// Unchecked facts remain visible in coverage. School days use flag results when available,
-// otherwise arrival; ceremony and lessons retain their own independent units.
+// Unchecked facts remain visible in coverage. A positive arrival proves school presence,
+// even after a missed flag ceremony; ceremony and lessons retain independent units.
 const SUMMARY_SQL: &str = r#"WITH eligible AS (
  SELECT r.*,s.kind,s.date,s.title,s.offering_id,s.source_key,special.template_id,template.definition->>'title' special_title FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id
  LEFT JOIN attendance_special_rounds special ON special.id=s.special_round_id LEFT JOIN attendance_special_templates template ON template.id=special.template_id
@@ -13,7 +13,7 @@ const SUMMARY_SQL: &str = r#"WITH eligible AS (
  LEFT JOIN attendance_settings config ON config.academic_term_id=s.academic_term_id
  WHERE s.academic_term_id=$1 AND NOT s.cancelled AND COALESCE(s.count_override,d.counted,
  COALESCE(config.configuration->'weekdays','[1,2,3,4,5]'::jsonb) @> to_jsonb(EXTRACT(ISODOW FROM s.date)::integer)) AND ($2::uuid IS NULL OR r.student_id=$2) AND ($3::uuid IS NULL OR $3=ANY(s.teacher_ids))),
- daily AS (SELECT DISTINCT ON(student_id,date) * FROM eligible WHERE kind IN ('flag','arrival') ORDER BY student_id,date,(result<>'unchecked') DESC,(kind='flag') DESC),
+ daily AS (SELECT DISTINCT ON(student_id,date) * FROM eligible WHERE kind IN ('flag','arrival') ORDER BY student_id,date,(kind='arrival' AND result IN ('present','late')) DESC,(result<>'unchecked') DESC,(kind='flag') DESC),
  facts AS (SELECT student_id,result,kind category,CASE WHEN kind='lesson' THEN offering_id::text WHEN kind='special' THEN template_id::text ELSE '' END scope_key,CASE WHEN kind='special' THEN special_title WHEN kind='lesson' THEN title ELSE kind END scope_label FROM eligible WHERE kind<>'arrival'
  UNION ALL SELECT student_id,result,'school','', 'การมาโรงเรียน' FROM daily)
  SELECT $1::uuid academic_term_id,student_id,category,scope_key,min(scope_label) scope_label,

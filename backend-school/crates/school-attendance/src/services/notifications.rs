@@ -9,6 +9,8 @@ pub struct AttendanceNotice {
     pub key: String,
     pub title: String,
     pub message: String,
+    pub skip_if_key: Option<String>,
+    pub daily_slot: Option<String>,
 }
 pub async fn queue_result(
     tx: &mut Transaction<'_, Postgres>,
@@ -34,6 +36,8 @@ pub fn result_notice(
     let daily = matches!(s.kind, AttendanceKind::Arrival | AttendanceKind::Flag);
     let key = if correction {
         format!("correction:{}:{student}:{revision}", s.id)
+    } else if s.kind == AttendanceKind::Arrival {
+        format!("arrival:{}:{}:{student}", s.academic_term_id, s.date)
     } else if daily {
         format!("daily:{}:{}:{student}", s.academic_term_id, s.date)
     } else {
@@ -41,12 +45,16 @@ pub fn result_notice(
     };
     let title = if correction {
         "แก้ไขผลเช็คชื่อ"
-    } else if s.kind == AttendanceKind::Arrival {
+    } else if s.kind == AttendanceKind::Arrival
+        && matches!(result, AttendanceResult::Present | AttendanceResult::Late)
+    {
         "เข้าโรงเรียนแล้ว"
     } else {
         "ผลเช็คชื่อ"
     };
-    let message = if s.kind == AttendanceKind::Arrival {
+    let message = if s.kind == AttendanceKind::Arrival
+        && matches!(result, AttendanceResult::Present | AttendanceResult::Late)
+    {
         format!(
             "เข้าโรงเรียนวันที่ {} เวลา {} ({})",
             s.date,
@@ -61,6 +69,9 @@ pub fn result_notice(
         key,
         title: title.into(),
         message,
+        skip_if_key: (s.kind == AttendanceKind::Flag && !correction)
+            .then(|| format!("arrival:{}:{}:{student}", s.academic_term_id, s.date)),
+        daily_slot: daily.then(|| format!("{}:{}:{student}", s.academic_term_id, s.date)),
     }
 }
 pub async fn should_notify(
@@ -77,11 +88,17 @@ pub async fn queue_batch(
     term: Uuid,
     notices: &[AttendanceNotice],
 ) -> Result<(), AppError> {
-    sqlx::query(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text)), recipients AS (
+    // Arrival and flag transactions have different session locks. Serialize their
+    // initial recipient decision by student/day, using the same sorted lock order.
+    if notices.iter().any(|notice| notice.daily_slot.is_some()) {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended(daily_slot,1711)) FROM (SELECT DISTINCT daily_slot FROM jsonb_to_recordset($1) AS n(daily_slot text) WHERE daily_slot IS NOT NULL ORDER BY daily_slot) slots")
+            .bind(Json(notices)).execute(&mut **tx).await?;
+    }
+    sqlx::query(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text,skip_if_key text)), recipients AS (
  SELECT f.*,u.id recipient_id,u.user_type FROM facts f JOIN users u ON u.id=f.student_id AND u.status='active'
  UNION SELECT f.*,u.id,u.user_type FROM facts f JOIN student_parents p ON p.student_user_id=f.student_id JOIN users u ON u.id=p.parent_user_id AND u.status='active' AND u.user_type='parent')
  INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key,title,message,link)
- SELECT $1,recipient_id,student_id,key,title,message,CASE WHEN user_type='parent' THEN '/parent/attendance?academicTermId=' ELSE '/student/attendance?academicTermId=' END || $1::text || '&studentId=' || student_id::text FROM recipients ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(Json(notices)).execute(&mut **tx).await?;
+ SELECT $1,recipient_id,student_id,key,title,message,CASE WHEN user_type='parent' THEN '/parent/attendance?academicTermId=' ELSE '/student/attendance?academicTermId=' END || $1::text || '&studentId=' || student_id::text FROM recipients WHERE skip_if_key IS NULL OR NOT EXISTS(SELECT 1 FROM attendance_notifications previous WHERE previous.recipient_id=recipients.recipient_id AND previous.dedup_key=recipients.skip_if_key) ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(Json(notices)).execute(&mut **tx).await?;
     Ok(())
 }
 #[derive(sqlx::FromRow)]
