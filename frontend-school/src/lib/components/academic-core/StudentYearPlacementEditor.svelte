@@ -142,7 +142,11 @@
 						>{/if}
 				</div>
 				<p class="text-xs text-muted-foreground">
-					{placement.startDate} – {placement.endDate ?? 'ปัจจุบัน'}
+					{#if placement.status === 'cancelled'}
+						ยกเลิกการจัดห้องก่อนเริ่มเรียน (เดิมเริ่ม {placement.startDate})
+					{:else}
+						{placement.startDate} – {placement.endDate ?? 'ปัจจุบัน'}
+					{/if}
 				</p>
 			</li>
 		{:else}

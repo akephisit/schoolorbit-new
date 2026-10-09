@@ -5812,3 +5812,358 @@ async fn curriculum_publication_publish_and_discard_serialize_on_the_same_owner(
         expected_count as usize
     );
 }
+
+#[tokio::test]
+async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_writes() {
+    use school_academic_core::models::*;
+    use school_academic_core::services::homeroom_roster;
+    let pool = prepare_current_core_fixture("homeroom_roster_management").await;
+    apply_migrations_through(&pool, 99).await.unwrap();
+    let actor = fixture_actor(&pool).await;
+    let room: Uuid = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut roster = homeroom_roster::get_roster(&pool, room).await.unwrap();
+    assert!(!roster.students.is_empty());
+    let other = Uuid::new_v4();
+    sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT $1,'ROSTER-TARGET','ทดสอบห้องใหม่',academic_year_id,grade_level_id,'ROSTER-TARGET',study_program_id,1,true FROM homerooms WHERE id=$2")
+        .bind(other).bind(room).execute(&pool).await.unwrap();
+    // Add two synthetic student-years whose names expose Thai leading-vowel ordering.
+    let mut selections = Vec::new();
+    for (name, gender) in [("เกียรติ", "male"), ("ขวัญ", "female")] {
+        let user = Uuid::new_v4();
+        let year = Uuid::new_v4();
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status,gender) VALUES($1,$2,'synthetic-not-login',$3,'ทดสอบ','student','active',$4)")
+            .bind(user).bind(format!("roster-{user}")).bind(name).bind(gender).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) SELECT $1,$2,academic_year_id,grade_level_id,study_program_id,'active' FROM homerooms WHERE id=$3")
+            .bind(year).bind(user).bind(room).execute(&pool).await.unwrap();
+        selections.push(HomeroomRosterSelection {
+            student_academic_year_id: year,
+            student_year_row_version: 1,
+            placement_id: None,
+            placement_row_version: None,
+        });
+    }
+    let date = NaiveDate::from_ymd_opt(2025, 6, 1).unwrap();
+    let before_count = roster.students.len();
+    let add = MutateHomeroomRosterRequest {
+        revision: roster.revision.clone(),
+        action: HomeroomRosterAction::Add,
+        selections: selections.clone(),
+        effective_date: date,
+        target_homeroom_id: None,
+        reason: String::new(),
+    };
+    // An occupied student in the same batch rolls back the entire add.
+    let mut invalid = add.clone();
+    let existing = &roster.students[0];
+    invalid.selections.push(HomeroomRosterSelection {
+        student_academic_year_id: existing.student_academic_year_id,
+        student_year_row_version: existing.student_year_row_version,
+        placement_id: None,
+        placement_row_version: None,
+    });
+    assert!(homeroom_roster::mutate_roster(&pool, actor, room, invalid)
+        .await
+        .is_err());
+    assert_eq!(
+        homeroom_roster::get_roster(&pool, room)
+            .await
+            .unwrap()
+            .students
+            .len(),
+        before_count
+    );
+    roster = homeroom_roster::mutate_roster(&pool, actor, room, add.clone())
+        .await
+        .unwrap();
+    assert_eq!(roster.students.len(), before_count + 2);
+    assert!(homeroom_roster::mutate_roster(&pool, actor, room, add)
+        .await
+        .is_err());
+    let preview = homeroom_roster::preview_numbers(
+        &pool,
+        room,
+        HomeroomNumberingQuery {
+            method: HomeroomNumberingMethod::Name,
+            start_number: 1,
+        },
+    )
+    .await
+    .unwrap();
+    let ordered: Vec<_> = preview
+        .numbers
+        .iter()
+        .map(|n| {
+            preview
+                .roster
+                .students
+                .iter()
+                .find(|s| s.placement_id == n.placement_id)
+                .unwrap()
+                .first_name
+                .as_str()
+        })
+        .collect();
+    assert!(
+        ordered.iter().position(|name| *name == "เกียรติ").unwrap()
+            < ordered.iter().position(|name| *name == "ขวัญ").unwrap()
+    );
+    let numbers = UpdateHomeroomNumbersRequest {
+        revision: preview.roster.revision,
+        numbers: preview.numbers,
+    };
+    roster = homeroom_roster::update_numbers(&pool, actor, room, numbers.clone())
+        .await
+        .unwrap();
+    assert!(homeroom_roster::update_numbers(&pool, actor, room, numbers)
+        .await
+        .is_err());
+    let people: Vec<_> = roster
+        .students
+        .iter()
+        .filter(|s| {
+            selections
+                .iter()
+                .any(|selection| selection.student_academic_year_id == s.student_academic_year_id)
+        })
+        .collect();
+    let chosen: Vec<_> = people
+        .iter()
+        .map(|s| HomeroomRosterSelection {
+            student_academic_year_id: s.student_academic_year_id,
+            student_year_row_version: s.student_year_row_version,
+            placement_id: Some(s.placement_id),
+            placement_row_version: Some(s.row_version),
+        })
+        .collect();
+    let move_request = MutateHomeroomRosterRequest {
+        revision: roster.revision.clone(),
+        action: HomeroomRosterAction::Transfer,
+        selections: chosen.clone(),
+        effective_date: NaiveDate::from_ymd_opt(2025, 7, 1).unwrap(),
+        target_homeroom_id: Some(other),
+        reason: "ปรับการจัดห้องทดสอบ".into(),
+    };
+    assert!(
+        homeroom_roster::mutate_roster(&pool, actor, room, move_request.clone())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        homeroom_roster::get_roster(&pool, other)
+            .await
+            .unwrap()
+            .students
+            .len(),
+        0
+    );
+    // Number collisions and wrong-room IDs fail before any write.
+    assert!(homeroom_roster::update_numbers(
+        &pool,
+        actor,
+        room,
+        UpdateHomeroomNumbersRequest {
+            revision: roster.revision.clone(),
+            numbers: vec![HomeroomNumberInput {
+                placement_id: people[0].placement_id,
+                class_number: people[1].class_number.unwrap()
+            }]
+        }
+    )
+    .await
+    .is_err());
+    let untouched: Vec<_> = roster
+        .students
+        .iter()
+        .filter(|s| {
+            !chosen
+                .iter()
+                .any(|selection| selection.student_academic_year_id == s.student_academic_year_id)
+        })
+        .map(|s| (s.placement_id, s.class_number))
+        .collect();
+    sqlx::query("UPDATE homerooms SET capacity=40,row_version=row_version+1 WHERE id=$1")
+        .bind(other)
+        .execute(&pool)
+        .await
+        .unwrap();
+    roster = homeroom_roster::mutate_roster(&pool, actor, room, move_request)
+        .await
+        .unwrap();
+    assert_eq!(roster.students.len(), before_count);
+    for (id, number) in untouched {
+        assert_eq!(
+            roster
+                .students
+                .iter()
+                .find(|s| s.placement_id == id)
+                .unwrap()
+                .class_number,
+            number
+        );
+    }
+    let target = homeroom_roster::get_roster(&pool, other).await.unwrap();
+    assert_eq!(target.students.len(), 2);
+    assert_eq!(
+        target
+            .students
+            .iter()
+            .map(|s| s.class_number.unwrap())
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    let old: Vec<(String, NaiveDate)> =
+        sqlx::query_as("SELECT status,end_date FROM homeroom_placements WHERE id=ANY($1)")
+            .bind(
+                chosen
+                    .iter()
+                    .filter_map(|s| s.placement_id)
+                    .collect::<Vec<_>>(),
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(old.iter().all(|(status, date)| status == "ended"
+        && *date == NaiveDate::from_ymd_opt(2025, 6, 30).unwrap()));
+    let remove = MutateHomeroomRosterRequest {
+        revision: target.revision.clone(),
+        action: HomeroomRosterAction::Remove,
+        selections: target
+            .students
+            .iter()
+            .map(|s| HomeroomRosterSelection {
+                student_academic_year_id: s.student_academic_year_id,
+                student_year_row_version: s.student_year_row_version,
+                placement_id: Some(s.placement_id),
+                placement_row_version: Some(s.row_version),
+            })
+            .collect(),
+        effective_date: NaiveDate::from_ymd_opt(2025, 8, 1).unwrap(),
+        target_homeroom_id: None,
+        reason: "จัดห้องใหม่ภายหลัง".into(),
+    };
+    assert!(homeroom_roster::mutate_roster(&pool, actor, other, remove)
+        .await
+        .unwrap()
+        .students
+        .is_empty());
+    let candidate_ids: Vec<_> = homeroom_roster::list_candidates(
+        &pool,
+        room,
+        HomeroomCandidateQuery {
+            search: Some("ทดสอบ".into()),
+        },
+    )
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|c| c.student_academic_year_id)
+    .collect();
+    assert!(selections
+        .iter()
+        .all(|s| candidate_ids.contains(&s.student_academic_year_id)));
+    // Cancelling a future planned placement keeps its identity without inventing attendance.
+    let planned_year = selections[0].student_academic_year_id;
+    sqlx::query(
+        "UPDATE student_academic_years SET status='planned',row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(planned_year)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let version: i64 =
+        sqlx::query_scalar("SELECT row_version FROM student_academic_years WHERE id=$1")
+            .bind(planned_year)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let empty_target = homeroom_roster::get_roster(&pool, other).await.unwrap();
+    let planned = homeroom_roster::mutate_roster(
+        &pool,
+        actor,
+        other,
+        MutateHomeroomRosterRequest {
+            revision: empty_target.revision,
+            action: HomeroomRosterAction::Add,
+            selections: vec![HomeroomRosterSelection {
+                student_academic_year_id: planned_year,
+                student_year_row_version: version,
+                placement_id: None,
+                placement_row_version: None,
+            }],
+            effective_date: NaiveDate::from_ymd_opt(2025, 9, 1).unwrap(),
+            target_homeroom_id: None,
+            reason: String::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let future = &planned.students[0];
+    let cancelled = future.placement_id;
+    homeroom_roster::mutate_roster(
+        &pool,
+        actor,
+        other,
+        MutateHomeroomRosterRequest {
+            revision: planned.revision.clone(),
+            action: HomeroomRosterAction::Remove,
+            selections: vec![HomeroomRosterSelection {
+                student_academic_year_id: planned_year,
+                student_year_row_version: future.student_year_row_version,
+                placement_id: Some(cancelled),
+                placement_row_version: Some(future.row_version),
+            }],
+            effective_date: NaiveDate::from_ymd_opt(2025, 8, 15).unwrap(),
+            target_homeroom_id: None,
+            reason: "ยกเลิกแผนก่อนเริ่มเรียน".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let retained: (String, Option<NaiveDate>) =
+        sqlx::query_as("SELECT status,end_date FROM homeroom_placements WHERE id=$1")
+            .bind(cancelled)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(retained, ("cancelled".into(), None));
+    // Two staff saving the same snapshot cannot overwrite each other.
+    let competing = |number| UpdateHomeroomNumbersRequest {
+        revision: roster.revision.clone(),
+        numbers: vec![HomeroomNumberInput {
+            placement_id: roster.students[0].placement_id,
+            class_number: number,
+        }],
+    };
+    let (a, b) = tokio::join!(
+        homeroom_roster::update_numbers(&pool, actor, room, competing(100)),
+        homeroom_roster::update_numbers(&pool, actor, room, competing(101))
+    );
+    assert_ne!(a.is_ok(), b.is_ok());
+    roster = homeroom_roster::get_roster(&pool, room).await.unwrap();
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
+        .bind(CURRENT_YEAR_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(homeroom_roster::get_roster(&pool, room).await.is_ok());
+    assert!(homeroom_roster::update_numbers(
+        &pool,
+        actor,
+        room,
+        UpdateHomeroomNumbersRequest {
+            revision: roster.revision,
+            numbers: vec![HomeroomNumberInput {
+                placement_id: roster.students[0].placement_id,
+                class_number: 100
+            }]
+        }
+    )
+    .await
+    .is_err());
+}

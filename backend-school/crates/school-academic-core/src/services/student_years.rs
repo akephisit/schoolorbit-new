@@ -101,7 +101,10 @@ pub async fn list_homerooms(
     academic_year_id: Uuid,
 ) -> Result<Vec<Homeroom>, AppError> {
     let sql = format!(
-        "SELECT {HOMEROOM_COLUMNS} FROM homerooms WHERE academic_year_id = $1 \
+        "SELECT {HOMEROOM_COLUMNS}, COALESCE(occupancy.student_count, 0) AS student_count FROM homerooms \
+         LEFT JOIN (SELECT homeroom_id,count(*) AS student_count FROM homeroom_placements \
+                    WHERE academic_year_id=$1 AND status IN ('planned','current') GROUP BY homeroom_id) occupancy \
+             ON occupancy.homeroom_id=homerooms.id WHERE academic_year_id = $1 \
          ORDER BY grade_level_id, room_number NULLS LAST, code, id LIMIT 500"
     );
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))

@@ -539,14 +539,25 @@ export const createStudentAcademicYear = (body: CreateStudentAcademicYearRequest
 		apiClient.post<StudentAcademicYear>('/api/academic/student-years', body),
 		'สร้างข้อมูลนักเรียนประจำปีไม่สำเร็จ'
 	);
+export const getStudentAcademicYear = (id: string, options: ApiRequestOptions = {}) =>
+	academicData(
+		apiClient.get<StudentAcademicYear>(
+			`/api/academic/student-years/${encodeURIComponent(id)}`,
+			options
+		),
+		'โหลดข้อมูลนักเรียนประจำปีไม่สำเร็จ'
+	);
 export const updateStudentAcademicYear = (id: string, body: UpdateStudentAcademicYearRequest) =>
 	academicData(
 		apiClient.patch<StudentAcademicYear>(`/api/academic/student-years/${id}`, body),
 		'แก้ไขข้อมูลนักเรียนประจำปีไม่สำเร็จ'
 	);
-export const listHomeroomPlacements = (studentYearId: string) =>
+export const listHomeroomPlacements = (studentYearId: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<HomeroomPlacement[]>(`/api/academic/student-years/${studentYearId}/placements`),
+		apiClient.get<HomeroomPlacement[]>(
+			`/api/academic/student-years/${studentYearId}/placements`,
+			options
+		),
 		'ไม่สามารถโหลดประวัติการจัดห้องได้'
 	);
 export const createHomeroomPlacement = (

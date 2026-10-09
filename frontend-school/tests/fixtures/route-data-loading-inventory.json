@@ -389,6 +389,16 @@
 			"notes": "One bounded route-owned homeroom/advisor/grade/program workspace; staff lookup stays lazy on advisor action."
 		},
 		{
+			"route": "staff/academic/homerooms/[id]/students",
+			"wave": "academic-foundation",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "year_required + homeroom-id",
+			"status": "complete",
+			"backendOwner": "school-academic-core",
+			"notes": "Stream one bounded roster snapshot; clear old room/year state before paint. Candidates, compatible rooms and numbering previews load only on manager actions. Typed mutations patch the roster and retries invalidate only its dependency."
+		},
+		{
 			"route": "staff/academic/promotion",
 			"wave": "results-lifecycle",
 			"dataOwner": "route",
@@ -501,7 +511,7 @@
 			"context": "year_required",
 			"status": "complete",
 			"backendOwner": "school-academic-core",
-			"notes": "One route-owned student-year/placement/homeroom workspace; candidates and grade/program options load only in the manage-only create dialog."
+			"notes": "One route-owned student-year/placement/homeroom workspace; URL-requested history reads one student directly when outside the capped collection. Candidates and grade/program options load only in the manage-only create dialog."
 		},
 		{
 			"route": "staff/academic/supervision",

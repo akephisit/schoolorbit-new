@@ -8608,6 +8608,13 @@
                 "format": "int64",
                 "type": "integer"
               },
+              "studentCount": {
+                "format": "int64",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "studyProgramId": {
                 "format": "uuid",
                 "type": "string"
@@ -8702,6 +8709,39 @@
               "deliveryVersionEffectiveFrom",
               "homerooms",
               "unlinked"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_HomeroomNumberingPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "numbers": {
+                "items": {
+                  "$ref": "#/components/schemas/HomeroomNumberInput"
+                },
+                "type": "array"
+              },
+              "roster": {
+                "$ref": "#/components/schemas/HomeroomRoster"
+              }
+            },
+            "required": [
+              "roster",
+              "numbers"
             ],
             "type": "object"
           },
@@ -8824,6 +8864,47 @@
               "endedPlacement",
               "newPlacement",
               "replayed"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_HomeroomRoster": {
+        "properties": {
+          "data": {
+            "properties": {
+              "homeroom": {
+                "$ref": "#/components/schemas/Homeroom"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "students": {
+                "items": {
+                  "$ref": "#/components/schemas/HomeroomRosterStudent"
+                },
+                "type": "array"
+              },
+              "yearStatus": {
+                "$ref": "#/components/schemas/AcademicYearStatus"
+              }
+            },
+            "required": [
+              "homeroom",
+              "yearStatus",
+              "revision",
+              "students"
             ],
             "type": "object"
           },
@@ -19704,6 +19785,13 @@
                   "format": "int64",
                   "type": "integer"
                 },
+                "studentCount": {
+                  "format": "int64",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
                 "studyProgramId": {
                   "format": "uuid",
                   "type": "string"
@@ -19941,6 +20029,56 @@
                 "migrated",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_HomeroomRosterCandidate": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "studentAcademicYearId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "studentCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "studentId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "studentAcademicYearId",
+                "studentId",
+                "name",
+                "rowVersion"
               ],
               "type": "object"
             },
@@ -35935,6 +36073,13 @@
             "format": "int64",
             "type": "integer"
           },
+          "studentCount": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "studyProgramId": {
             "format": "uuid",
             "type": "string"
@@ -36021,6 +36166,18 @@
           "userId",
           "role"
         ],
+        "type": "object"
+      },
+      "HomeroomCandidateQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "HomeroomDeliveryGroupSummary": {
@@ -36340,6 +36497,67 @@
         ],
         "type": "object"
       },
+      "HomeroomNumberingMethod": {
+        "enum": [
+          "name",
+          "student_code",
+          "gender_name"
+        ],
+        "type": "string"
+      },
+      "HomeroomNumberingPreview": {
+        "properties": {
+          "numbers": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomNumberInput"
+            },
+            "type": "array"
+          },
+          "roster": {
+            "$ref": "#/components/schemas/HomeroomRoster"
+          }
+        },
+        "required": [
+          "roster",
+          "numbers"
+        ],
+        "type": "object"
+      },
+      "HomeroomNumberingQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/HomeroomNumberingMethod"
+          },
+          "startNumber": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "startNumber"
+        ],
+        "type": "object"
+      },
+      "HomeroomNumberInput": {
+        "additionalProperties": false,
+        "properties": {
+          "classNumber": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "placementId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "placementId",
+          "classNumber"
+        ],
+        "type": "object"
+      },
       "HomeroomOfferingState": {
         "enum": [
           "missing",
@@ -36426,7 +36644,8 @@
         "enum": [
           "planned",
           "current",
-          "ended"
+          "ended",
+          "cancelled"
         ],
         "type": "string"
       },
@@ -36446,6 +36665,178 @@
           "endedPlacement",
           "newPlacement",
           "replayed"
+        ],
+        "type": "object"
+      },
+      "HomeroomRoster": {
+        "properties": {
+          "homeroom": {
+            "$ref": "#/components/schemas/Homeroom"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomRosterStudent"
+            },
+            "type": "array"
+          },
+          "yearStatus": {
+            "$ref": "#/components/schemas/AcademicYearStatus"
+          }
+        },
+        "required": [
+          "homeroom",
+          "yearStatus",
+          "revision",
+          "students"
+        ],
+        "type": "object"
+      },
+      "HomeroomRosterAction": {
+        "enum": [
+          "add",
+          "transfer",
+          "remove"
+        ],
+        "type": "string"
+      },
+      "HomeroomRosterCandidate": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentAcademicYearId",
+          "studentId",
+          "name",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "HomeroomRosterSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "placementId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "placementRowVersion": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentYearRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "studentAcademicYearId",
+          "studentYearRowVersion"
+        ],
+        "type": "object"
+      },
+      "HomeroomRosterStudent": {
+        "properties": {
+          "classNumber": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "placementId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HomeroomPlacementStatus"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentYearRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "placementId",
+          "studentAcademicYearId",
+          "studentId",
+          "firstName",
+          "lastName",
+          "status",
+          "startDate",
+          "rowVersion",
+          "studentYearRowVersion"
         ],
         "type": "object"
       },
@@ -38922,6 +39313,45 @@
         },
         "required": [
           "group_id"
+        ],
+        "type": "object"
+      },
+      "MutateHomeroomRosterRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/HomeroomRosterAction"
+          },
+          "effectiveDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomRosterSelection"
+            },
+            "type": "array"
+          },
+          "targetHomeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "action",
+          "selections",
+          "effectiveDate",
+          "reason"
         ],
         "type": "object"
       },
@@ -52032,6 +52462,25 @@
         },
         "type": "object"
       },
+      "UpdateHomeroomNumbersRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "numbers": {
+            "items": {
+              "$ref": "#/components/schemas/HomeroomNumberInput"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "numbers"
+        ],
+        "type": "object"
+      },
       "UpdateHomeroomRequest": {
         "additionalProperties": false,
         "properties": {
@@ -62282,6 +62731,521 @@
               }
             },
             "description": "Homeroom row version conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/homerooms/{id}/numbering-preview": {
+      "get": {
+        "operationId": "previewHomeroomNumbers",
+        "parameters": [
+          {
+            "description": "Homeroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "method",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/HomeroomNumberingMethod"
+            }
+          },
+          {
+            "in": "query",
+            "name": "startNumber",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HomeroomNumberingPreview"
+                }
+              }
+            },
+            "description": "Homeroom roster operation"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Roster changed or academic context is closed"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/homerooms/{id}/numbers": {
+      "patch": {
+        "operationId": "updateHomeroomNumbers",
+        "parameters": [
+          {
+            "description": "Homeroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHomeroomNumbersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HomeroomRoster"
+                }
+              }
+            },
+            "description": "Homeroom roster operation"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Roster changed or academic context is closed"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/homerooms/{id}/student-candidates": {
+      "get": {
+        "operationId": "listHomeroomRosterCandidates",
+        "parameters": [
+          {
+            "description": "Homeroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_HomeroomRosterCandidate"
+                }
+              }
+            },
+            "description": "Homeroom roster operation"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Roster changed or academic context is closed"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/homerooms/{id}/students": {
+      "get": {
+        "operationId": "getHomeroomRoster",
+        "parameters": [
+          {
+            "description": "Homeroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HomeroomRoster"
+                }
+              }
+            },
+            "description": "Homeroom roster operation"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Roster changed or academic context is closed"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "post": {
+        "operationId": "mutateHomeroomRoster",
+        "parameters": [
+          {
+            "description": "Homeroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MutateHomeroomRosterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HomeroomRoster"
+                }
+              }
+            },
+            "description": "Homeroom roster operation"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation failed"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Roster changed or academic context is closed"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/homerooms/{id}/transfer-targets": {
+      "get": {
+        "operationId": "listHomeroomTransferTargets",
+        "parameters": [
+          {
+            "description": "Source homeroom ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_Homeroom"
+                }
+              }
+            },
+            "description": "Compatible rooms with occupancy"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom not found"
           }
         },
         "tags": [

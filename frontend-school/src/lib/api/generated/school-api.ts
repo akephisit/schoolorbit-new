@@ -1194,6 +1194,86 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/homerooms/{id}/numbering-preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['previewHomeroomNumbers'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/homerooms/{id}/numbers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateHomeroomNumbers'];
+		trace?: never;
+	};
+	'/api/academic/homerooms/{id}/student-candidates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listHomeroomRosterCandidates'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/homerooms/{id}/students': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getHomeroomRoster'];
+		put?: never;
+		post: operations['mutateHomeroomRoster'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/homerooms/{id}/transfer-targets': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listHomeroomTransferTargets'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/learner-evaluations/catalog': {
 		parameters: {
 			query?: never;
@@ -8631,6 +8711,8 @@ export interface components {
 				roomNumber?: string | null;
 				/** Format: int64 */
 				rowVersion: number;
+				/** Format: int64 */
+				studentCount?: number | null;
 				/** Format: uuid */
 				studyProgramId: string;
 				/** Format: date-time */
@@ -8652,6 +8734,14 @@ export interface components {
 				deliveryVersionStatus: null | components['schemas']['DeliveryVersionStatus'];
 				homerooms: components['schemas']['HomeroomDeliveryRoom'][];
 				unlinked: components['schemas']['UnlinkedDeliveryItem'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_HomeroomNumberingPreview: {
+			data: {
+				numbers: components['schemas']['HomeroomNumberInput'][];
+				roster: components['schemas']['HomeroomRoster'];
 			};
 			message?: string;
 			success: boolean;
@@ -8690,6 +8780,16 @@ export interface components {
 				endedPlacement: components['schemas']['HomeroomPlacement'];
 				newPlacement: components['schemas']['HomeroomPlacement'];
 				replayed: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_HomeroomRoster: {
+			data: {
+				homeroom: components['schemas']['Homeroom'];
+				revision: string;
+				students: components['schemas']['HomeroomRosterStudent'][];
+				yearStatus: components['schemas']['AcademicYearStatus'];
 			};
 			message?: string;
 			success: boolean;
@@ -11626,6 +11726,8 @@ export interface components {
 				roomNumber?: string | null;
 				/** Format: int64 */
 				rowVersion: number;
+				/** Format: int64 */
+				studentCount?: number | null;
 				/** Format: uuid */
 				studyProgramId: string;
 				/** Format: date-time */
@@ -11695,6 +11797,20 @@ export interface components {
 				studentAcademicYearId: string;
 				/** Format: date-time */
 				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_HomeroomRosterCandidate: {
+			data: {
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				studentAcademicYearId: string;
+				studentCode?: string | null;
+				/** Format: uuid */
+				studentId: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -16072,6 +16188,8 @@ export interface components {
 			roomNumber?: string | null;
 			/** Format: int64 */
 			rowVersion: number;
+			/** Format: int64 */
+			studentCount?: number | null;
 			/** Format: uuid */
 			studyProgramId: string;
 			/** Format: date-time */
@@ -16097,6 +16215,9 @@ export interface components {
 			role: string;
 			/** Format: uuid */
 			userId: string;
+		};
+		HomeroomCandidateQuery: {
+			search?: string | null;
 		};
 		HomeroomDeliveryGroupSummary: {
 			code: string;
@@ -16178,6 +16299,23 @@ export interface components {
 			name: string;
 		};
 		/** @enum {string} */
+		HomeroomNumberingMethod: 'name' | 'student_code' | 'gender_name';
+		HomeroomNumberingPreview: {
+			numbers: components['schemas']['HomeroomNumberInput'][];
+			roster: components['schemas']['HomeroomRoster'];
+		};
+		HomeroomNumberingQuery: {
+			method: components['schemas']['HomeroomNumberingMethod'];
+			/** Format: int32 */
+			startNumber: number;
+		};
+		HomeroomNumberInput: {
+			/** Format: int32 */
+			classNumber: number;
+			/** Format: uuid */
+			placementId: string;
+		};
+		/** @enum {string} */
 		HomeroomOfferingState: 'missing' | 'draft' | 'published' | 'closed';
 		HomeroomPlacement: {
 			/** Format: uuid */
@@ -16205,11 +16343,61 @@ export interface components {
 			updatedAt: string;
 		};
 		/** @enum {string} */
-		HomeroomPlacementStatus: 'planned' | 'current' | 'ended';
+		HomeroomPlacementStatus: 'planned' | 'current' | 'ended' | 'cancelled';
 		HomeroomPlacementTransfer: {
 			endedPlacement: components['schemas']['HomeroomPlacement'];
 			newPlacement: components['schemas']['HomeroomPlacement'];
 			replayed: boolean;
+		};
+		HomeroomRoster: {
+			homeroom: components['schemas']['Homeroom'];
+			revision: string;
+			students: components['schemas']['HomeroomRosterStudent'][];
+			yearStatus: components['schemas']['AcademicYearStatus'];
+		};
+		/** @enum {string} */
+		HomeroomRosterAction: 'add' | 'transfer' | 'remove';
+		HomeroomRosterCandidate: {
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			studentCode?: string | null;
+			/** Format: uuid */
+			studentId: string;
+		};
+		HomeroomRosterSelection: {
+			/** Format: uuid */
+			placementId?: string | null;
+			/** Format: int64 */
+			placementRowVersion?: number | null;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: int64 */
+			studentYearRowVersion: number;
+		};
+		HomeroomRosterStudent: {
+			/** Format: int32 */
+			classNumber?: number | null;
+			firstName: string;
+			gender?: string | null;
+			lastName: string;
+			/** Format: uuid */
+			placementId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date */
+			startDate: string;
+			status: components['schemas']['HomeroomPlacementStatus'];
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			studentCode?: string | null;
+			/** Format: uuid */
+			studentId: string;
+			/** Format: int64 */
+			studentYearRowVersion: number;
+			title?: string | null;
 		};
 		/** @enum {string} */
 		HomeroomTeacherState: 'deferred' | 'missing_primary' | 'assigned';
@@ -16890,6 +17078,16 @@ export interface components {
 		MoveItemToGroupRequest: {
 			/** Format: uuid */
 			group_id: string;
+		};
+		MutateHomeroomRosterRequest: {
+			action: components['schemas']['HomeroomRosterAction'];
+			/** Format: date */
+			effectiveDate: string;
+			reason: string;
+			revision: string;
+			selections: components['schemas']['HomeroomRosterSelection'][];
+			/** Format: uuid */
+			targetHomeroomId?: string | null;
 		};
 		Notification: {
 			/** Format: date-time */
@@ -20536,6 +20734,10 @@ export interface components {
 			description?: string | null;
 			examKind?: string | null;
 			name?: string | null;
+		};
+		UpdateHomeroomNumbersRequest: {
+			numbers: components['schemas']['HomeroomNumberInput'][];
+			revision: string;
 		};
 		UpdateHomeroomRequest: {
 			/** Format: int32 */
@@ -27295,6 +27497,409 @@ export interface operations {
 			};
 			/** @description Homeroom row version conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewHomeroomNumbers: {
+		parameters: {
+			query: {
+				method: components['schemas']['HomeroomNumberingMethod'];
+				startNumber: number;
+			};
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom roster operation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HomeroomNumberingPreview'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Roster changed or academic context is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateHomeroomNumbers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateHomeroomNumbersRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom roster operation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HomeroomRoster'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Roster changed or academic context is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listHomeroomRosterCandidates: {
+		parameters: {
+			query?: {
+				search?: string;
+			};
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom roster operation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomRosterCandidate'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Roster changed or academic context is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getHomeroomRoster: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Homeroom roster operation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HomeroomRoster'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Roster changed or academic context is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	mutateHomeroomRoster: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['MutateHomeroomRosterRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom roster operation */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_HomeroomRoster'];
+				};
+			};
+			/** @description Validation failed */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Roster changed or academic context is closed */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listHomeroomTransferTargets: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Source homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Compatible rooms with occupancy */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_Homeroom'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
 				headers: {
 					[name: string]: unknown;
 				};

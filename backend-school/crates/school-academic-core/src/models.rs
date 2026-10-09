@@ -1049,6 +1049,8 @@ pub struct Homeroom {
     pub migrated: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub student_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -1177,6 +1179,7 @@ pub enum HomeroomPlacementStatus {
     Planned,
     Current,
     Ended,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
@@ -1226,4 +1229,113 @@ pub struct HomeroomPlacementTransfer {
     pub ended_placement: HomeroomPlacement,
     pub new_placement: HomeroomPlacement,
     pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomRosterStudent {
+    pub placement_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub student_id: Uuid,
+    pub student_code: Option<String>,
+    pub title: Option<String>,
+    pub first_name: String,
+    pub last_name: String,
+    pub gender: Option<String>,
+    pub class_number: Option<i32>,
+    pub status: HomeroomPlacementStatus,
+    pub start_date: NaiveDate,
+    pub row_version: i64,
+    pub student_year_row_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomRoster {
+    pub homeroom: Homeroom,
+    pub year_status: AcademicYearStatus,
+    pub revision: String,
+    pub students: Vec<HomeroomRosterStudent>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomNumberingMethod {
+    Name,
+    StudentCode,
+    GenderName,
+}
+
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeroomNumberingQuery {
+    pub method: HomeroomNumberingMethod,
+    pub start_number: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeroomNumberInput {
+    pub placement_id: Uuid,
+    pub class_number: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateHomeroomNumbersRequest {
+    pub revision: String,
+    pub numbers: Vec<HomeroomNumberInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomNumberingPreview {
+    pub roster: HomeroomRoster,
+    pub numbers: Vec<HomeroomNumberInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomRosterCandidate {
+    pub student_academic_year_id: Uuid,
+    pub student_id: Uuid,
+    pub student_code: Option<String>,
+    pub name: String,
+    pub row_version: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeroomCandidateQuery {
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeroomRosterAction {
+    Add,
+    Transfer,
+    Remove,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HomeroomRosterSelection {
+    pub student_academic_year_id: Uuid,
+    pub student_year_row_version: i64,
+    pub placement_id: Option<Uuid>,
+    pub placement_row_version: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MutateHomeroomRosterRequest {
+    pub revision: String,
+    pub action: HomeroomRosterAction,
+    pub selections: Vec<HomeroomRosterSelection>,
+    pub effective_date: NaiveDate,
+    pub target_homeroom_id: Option<Uuid>,
+    pub reason: String,
 }
