@@ -16,6 +16,7 @@
 	let chart: HTMLDivElement, content: HTMLDivElement;
 	let view = $state<ChartTransform>({ x: 0, y: 0, scale: 1 });
 	let dragging = $state(false);
+	const toggleAnchors = new WeakMap<HTMLDetailsElement, DOMRect>();
 	const pointers = new SvelteMap<number, { x: number; y: number }>();
 	let start: ChartTransform = { x: 0, y: 0, scale: 1 },
 		startPoint = { x: 0, y: 0 },
@@ -107,9 +108,20 @@
 		else if (event.key === '-') zoom(1 / 1.2);
 		else if (event.key === '0') fit();
 	}
-	async function refit() {
+	function rememberToggle(event: MouseEvent) {
+		const summary = event.currentTarget;
+		if (summary instanceof HTMLElement && summary.parentElement instanceof HTMLDetailsElement)
+			toggleAnchors.set(summary.parentElement, summary.getBoundingClientRect());
+	}
+	async function keepTogglePosition(event: Event) {
+		const details = event.currentTarget;
+		if (!(details instanceof HTMLDetailsElement)) return;
+		const before = toggleAnchors.get(details);
+		if (!before) return;
+		toggleAnchors.delete(details);
 		await tick();
-		fit();
+		const after = details.querySelector('summary')?.getBoundingClientRect();
+		if (after) view = { ...view, x: view.x + before.x - after.x, y: view.y + before.y - after.y };
 	}
 	function keepFocusedNodeVisible(event: FocusEvent) {
 		const target = event.target;
@@ -137,10 +149,8 @@
 		view = { ...view, x: view.x + dx, y: view.y + dy };
 	}
 	onMount(() => {
-		fit();
-		const observer = new ResizeObserver(fit);
-		observer.observe(chart);
-		observer.observe(content);
+		// Begin at a readable size, centered on the root. Only explicit controls fit the whole tree.
+		view = { x: (chart.clientWidth - content.offsetWidth) / 2, y: 24, scale: 1 };
 		chart.addEventListener('wheel', wheel, { passive: false });
 		chart.addEventListener('pointerdown', pointerDown);
 		chart.addEventListener('pointermove', pointerMove);
@@ -149,7 +159,6 @@
 		chart.addEventListener('lostpointercapture', pointerEnd);
 		chart.addEventListener('focusin', keepFocusedNodeVisible);
 		return () => {
-			observer.disconnect();
 			chart.removeEventListener('wheel', wheel);
 			chart.removeEventListener('pointerdown', pointerDown);
 			chart.removeEventListener('pointermove', pointerMove);
@@ -166,8 +175,9 @@
 	<ul class="flex w-max min-w-full justify-center">
 		{#each items as unit (unit.id)}
 			<li class="relative flex flex-col items-center px-3" class:org-node={depth > 0}>
-				<details open={depth < 2} ontoggle={refit} class="flex flex-col items-center">
+				<details open={depth < 2} ontoggle={keepTogglePosition} class="flex flex-col items-center">
 					<summary
+						onclick={rememberToggle}
 						class="public-surface flex w-56 cursor-pointer list-none items-start gap-2 rounded-2xl border bg-card p-3 shadow-sm"
 					>
 						<Building2 class="mt-0.5 size-4 shrink-0 text-primary" />
@@ -233,32 +243,13 @@
 	</ul>
 {/snippet}
 
-<div class="overflow-hidden rounded-2xl border bg-muted/20">
-	<div class="flex flex-wrap items-center justify-between gap-3 border-b bg-card p-3">
-		<p class="text-xs text-muted-foreground" id="organization-chart-help">
-			ลากผังเพื่อเลื่อน · ล้อเมาส์หรือบีบนิ้วเพื่อซูม · ปุ่มลูกศรเพื่อเลื่อน และ 0 เพื่อพอดีจอ
-		</p>
-		<div class="flex items-center gap-1">
-			<Button
-				size="icon"
-				variant="outline"
-				aria-label="ซูมออก"
-				onclick={() => zoom(1 / 1.2)}
-				disabled={view.scale <= 0.08}><Minus class="size-4" /></Button
-			><output class="w-14 text-center text-xs tabular-nums" aria-label="ระดับซูม"
-				>{Math.round(view.scale * 100)}%</output
-			><Button
-				size="icon"
-				variant="outline"
-				aria-label="ซูมเข้า"
-				onclick={() => zoom(1.2)}
-				disabled={view.scale >= 2.5}><Plus class="size-4" /></Button
-			><Button size="sm" variant="outline" onclick={fit}><Maximize class="size-4" />พอดีจอ</Button>
-		</div>
-	</div>
+<div>
+	<p class="sr-only" id="organization-chart-help">
+		ลากผังเพื่อเลื่อน · ล้อเมาส์หรือบีบนิ้วเพื่อซูม · ปุ่มลูกศรเพื่อเลื่อน และ 0 เพื่อพอดีจอ
+	</p>
 	<div
 		bind:this={chart}
-		class="relative h-[440px] touch-none overflow-hidden select-none outline-none focus-visible:ring-2 focus-visible:ring-primary sm:h-[560px]"
+		class="relative h-[440px] touch-none overflow-hidden select-none outline-none focus-visible:ring-2 focus-visible:ring-primary sm:h-[560px] lg:h-[min(720px,80dvh)]"
 		class:cursor-grabbing={dragging}
 		class:cursor-grab={!dragging}
 		role="region"
@@ -284,6 +275,26 @@
 			style:transform={`translate(${view.x}px, ${view.y}px) scale(${view.scale})`}
 		>
 			{@render branch(visibleNodes, 0)}
+		</div>
+		<div
+			class="absolute bottom-4 right-4 z-10 flex items-center gap-1 rounded-xl border bg-card/95 p-2 shadow-sm"
+			data-testid="organization-chart-controls"
+		>
+			<Button
+				size="icon"
+				variant="outline"
+				aria-label="ซูมออก"
+				onclick={() => zoom(1 / 1.2)}
+				disabled={view.scale <= 0.08}><Minus class="size-4" /></Button
+			><output class="w-14 text-center text-xs tabular-nums" aria-label="ระดับซูม"
+				>{Math.round(view.scale * 100)}%</output
+			><Button
+				size="icon"
+				variant="outline"
+				aria-label="ซูมเข้า"
+				onclick={() => zoom(1.2)}
+				disabled={view.scale >= 2.5}><Plus class="size-4" /></Button
+			><Button size="sm" variant="outline" onclick={fit}><Maximize class="size-4" />พอดีจอ</Button>
 		</div>
 	</div>
 </div>

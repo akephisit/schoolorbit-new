@@ -141,10 +141,10 @@
 		<section
 			id="organization"
 			aria-labelledby="organization-heading"
-			class="section-anchor public-enter border-y border-border bg-muted/30 px-4 py-12 sm:px-6 sm:py-16"
+			class="section-anchor public-enter border-y border-border bg-muted/30 py-12 sm:py-16"
 		>
-			<div class="mx-auto max-w-6xl">
-				<div class="mb-6">
+			<div>
+				<div class="mx-auto mb-6 max-w-6xl px-4 sm:px-6">
 					<p class="text-xs font-medium tracking-widest text-primary">โครงสร้างองค์กร</p>
 					<h2 id="organization-heading" class="mt-3 text-2xl font-medium sm:text-3xl">
 						แผนผังการบริหาร

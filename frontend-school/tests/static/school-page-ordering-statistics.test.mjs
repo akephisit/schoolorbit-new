@@ -91,6 +91,14 @@ test('school summaries include configured stages and all gender counts without d
 		['อนุบาล', 'ประถมศึกษา', 'มัธยมศึกษาตอนต้น', 'มัธยมศึกษาตอนปลาย']
 	);
 	assert.deepEqual(groups[2].students, counts(4, 6, 1));
+	assert.deepEqual(
+		groups[2].grades.map((g) => g.year),
+		[1, 3]
+	);
+	assert.deepEqual(
+		groups.flatMap((g) => g.grades).map((g) => g.levelType),
+		['kindergarten', 'primary', 'secondary', 'secondary', 'secondary']
+	);
 	assert.deepEqual(summarizeEducationLevels({ grades: [] }), []);
 	assert.deepEqual(
 		summarizeEducationLevels({ grades: [grade('secondary', 4, counts(1, 1))] }).map((g) => g.label),

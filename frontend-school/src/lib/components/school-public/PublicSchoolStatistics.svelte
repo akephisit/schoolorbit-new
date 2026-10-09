@@ -2,10 +2,10 @@
 	import type { PublicSchoolStatistics } from '#lib/api/school.js';
 	import { summarizeEducationLevels } from '#lib/school-public/statistics.js';
 	import { PageState } from '#lib/components/app-state/index.js';
-	import { GraduationCap, BookOpen, UsersRound, DoorOpen, ChevronDown } from '@lucide/svelte';
+	import { GraduationCap, BookOpen, UsersRound, DoorOpen } from '@lucide/svelte';
 	let { statistics }: { statistics: PublicSchoolStatistics } = $props();
 	const number = new Intl.NumberFormat('th-TH');
-	let expandedGrades = $state<string[]>([]);
+	const showOther = $derived(statistics.students.otherOrUnspecified > 0);
 	const educationLevels = $derived(summarizeEducationLevels(statistics));
 	const cards = $derived([
 		{
@@ -65,7 +65,7 @@
 	<div>
 		<h3 class="text-xl font-medium sm:text-2xl">นักเรียนในแต่ละชั้น</h3>
 		<p class="mt-2 text-sm text-muted-foreground">
-			{statistics.academicYear?.name ?? 'ยังไม่มีปีการศึกษาที่เปิดใช้งาน'} · กดระดับชั้นเพื่อดูตารางรายห้อง
+			{statistics.academicYear?.name ?? 'ยังไม่มีปีการศึกษาที่เปิดใช้งาน'} · สรุปรายห้อง ระดับชั้น และช่วงชั้น
 		</p>
 	</div>
 	<p class="text-xs text-muted-foreground">
@@ -86,113 +86,53 @@
 {:else if !statistics.grades.length}
 	<div class="mt-5"><PageState title="ยังไม่มีข้อมูลนักเรียนและห้องเรียนในปีนี้" /></div>
 {:else}
-	<div class="mt-5 overflow-x-auto rounded-xl border bg-card" data-testid="school-level-summary">
+	<div class="mt-5 overflow-x-auto rounded-xl border bg-card" data-testid="school-student-summary">
 		<table class="w-full min-w-96 text-sm">
-			<caption class="px-4 py-3 text-left font-medium">สรุปนักเรียนแยกตามช่วงชั้น</caption>
-			<thead class="bg-muted/50 text-muted-foreground"
-				><tr>
-					<th scope="col" class="p-3 text-left font-medium">ช่วงชั้น</th>
-					<th scope="col" class="p-3 text-right font-medium">ชาย</th>
-					<th scope="col" class="p-3 text-right font-medium">หญิง</th>
-					<th scope="col" class="p-3 text-right font-medium">อื่น ๆ / ไม่ระบุ</th>
-					<th scope="col" class="p-3 text-right font-medium">ทั้งหมด</th>
-				</tr></thead
-			>
-			<tbody class="divide-y divide-border">
-				{#each educationLevels as level (level.id)}<tr>
-						<th scope="row" class="p-3 text-left font-medium">{level.label}</th>
-						<td class="p-3 text-right tabular-nums">{number.format(level.students.male)}</td>
-						<td class="p-3 text-right tabular-nums">{number.format(level.students.female)}</td>
-						<td class="p-3 text-right tabular-nums"
-							>{number.format(level.students.otherOrUnspecified)}</td
-						>
-						<td class="p-3 text-right font-semibold tabular-nums"
-							>{number.format(level.students.total)}</td
-						>
-					</tr>{/each}
-			</tbody>
-			<tfoot class="border-t bg-muted/50 font-semibold"
-				><tr>
-					<th scope="row" class="p-3 text-left">รวมทั้งโรงเรียน</th>
-					<td class="p-3 text-right tabular-nums">{number.format(statistics.students.male)}</td>
-					<td class="p-3 text-right tabular-nums">{number.format(statistics.students.female)}</td>
-					<td class="p-3 text-right tabular-nums"
-						>{number.format(statistics.students.otherOrUnspecified)}</td
-					>
-					<td class="p-3 text-right tabular-nums">{number.format(statistics.students.total)}</td>
-				</tr></tfoot
-			>
-		</table>
-	</div>
-	<div class="mt-5 overflow-x-auto rounded-xl border bg-card" data-testid="school-grade-summary">
-		<table class="w-full min-w-[520px] text-sm">
-			<caption class="px-4 py-3 text-left font-medium">นักเรียนรายระดับชั้น</caption>
-			<thead class="bg-muted/50 text-muted-foreground"
-				><tr
-					><th scope="col" class="p-3 text-left">ระดับชั้น</th><th
+			<caption class="px-4 py-3 text-left font-medium">สรุปจำนวนนักเรียนรายชั้นและห้อง</caption>
+			<thead class="bg-primary text-primary-foreground">
+				<tr
+					><th scope="col" class="p-3 text-left">ชั้น / ห้อง</th><th
 						scope="col"
-						class="p-3 text-right">ห้อง</th
-					><th scope="col" class="p-3 text-right">ชาย</th><th scope="col" class="p-3 text-right"
-						>หญิง</th
-					><th scope="col" class="p-3 text-right">อื่น ๆ / ไม่ระบุ</th><th
-						scope="col"
-						class="p-3 text-right">ทั้งหมด</th
-					></tr
-				></thead
-			>
-			<tbody class="divide-y divide-border">
-				{#each statistics.grades as grade (`${grade.levelType}-${grade.year}`)}
-					{@const key = `${grade.levelType}-${grade.year}`}
-					<tr
-						><th scope="row" class="p-3 text-left font-medium"
-							><button
-								class="flex items-center gap-2 rounded-md text-left hover:text-primary focus-visible:outline-2 focus-visible:outline-primary"
-								aria-expanded={expandedGrades.includes(key)}
-								onclick={() =>
-									(expandedGrades = expandedGrades.includes(key)
-										? expandedGrades.filter((item) => item !== key)
-										: [...expandedGrades, key])}
-								><ChevronDown
-									class={`size-4 shrink-0 transition-transform ${expandedGrades.includes(key) ? 'rotate-180' : ''}`}
-								/>{gradeName(grade.levelType, grade.year)}</button
-							></th
-						><td class="p-3 text-right">{number.format(grade.homerooms.length)}</td
-						>{@render genderCells(grade.students)}</tr
+						class="p-3 text-right">ชาย</th
+					><th scope="col" class="p-3 text-right">หญิง</th>{#if showOther}<th
+							scope="col"
+							class="p-3 text-right">อื่น ๆ / ไม่ระบุ</th
+						>{/if}<th scope="col" class="p-3 text-right">รวม</th></tr
+				>
+			</thead>
+			{#each educationLevels as level (level.id)}
+				<tbody class="divide-y divide-border">
+					{#each level.grades as grade (`${grade.levelType}-${grade.year}`)}
+						{#each [...grade.homerooms].sort( (a, b) => a.name.localeCompare( b.name, 'th', { numeric: true } ) ) as room, index (index)}
+							<tr class="bg-primary/5"
+								><th scope="row" class="px-4 py-2 text-left font-normal">{room.name}</th
+								>{@render genderCells(room.students)}</tr
+							>
+						{/each}
+						{#if grade.unassignedStudents.total}
+							<tr class="bg-primary/5"
+								><th scope="row" class="px-4 py-2 text-left font-normal"
+									>{gradeName(grade.levelType, grade.year)} · ยังไม่ได้จัดห้อง</th
+								>{@render genderCells(grade.unassignedStudents)}</tr
+							>
+						{/if}
+						<tr class="bg-primary/15 font-semibold"
+							><th scope="row" class="p-3 text-left">{gradeName(grade.levelType, grade.year)}</th
+							>{@render genderCells(grade.students)}</tr
+						>
+					{/each}
+					<tr class="bg-primary/25 font-semibold"
+						><th scope="row" class="p-3 text-left">รวม{level.label}</th>{@render genderCells(
+							level.students
+						)}</tr
 					>
-					{#if expandedGrades.includes(key)}<tr class="bg-muted/20"
-							><td colspan="6" class="p-3"
-								><table class="w-full text-left text-sm">
-									<caption class="mb-2 text-left font-medium"
-										>สถิติรายห้อง {gradeName(grade.levelType, grade.year)}</caption
-									><thead
-										><tr class="border-b"
-											><th scope="col" class="p-3">ห้องเรียน</th><th
-												scope="col"
-												class="p-3 text-right">ชาย</th
-											><th scope="col" class="p-3 text-right">หญิง</th><th
-												scope="col"
-												class="p-3 text-right">อื่น ๆ / ไม่ระบุ</th
-											><th scope="col" class="p-3 text-right">ทั้งหมด</th></tr
-										></thead
-									><tbody class="divide-y divide-border">
-										{#each grade.homerooms as room, index (index)}<tr
-												><th scope="row" class="p-3 font-normal">{room.name}</th
-												>{@render genderCells(room.students)}</tr
-											>{/each}
-										{#if grade.unassignedStudents.total}<tr
-												><th scope="row" class="p-3 font-normal">ยังไม่ได้จัดห้อง</th
-												>{@render genderCells(grade.unassignedStudents)}</tr
-											>{/if}
-									</tbody>
-								</table></td
-							></tr
-						>{/if}
-				{/each}
-			</tbody><tfoot class="border-t bg-muted/50 font-semibold"
+				</tbody>
+			{/each}
+			<tfoot class="border-t bg-primary text-primary-foreground font-semibold"
 				><tr
-					><th scope="row" class="p-3 text-left">รวมทั้งโรงเรียน</th><td class="p-3 text-right"
-						>{number.format(statistics.totalHomerooms)}</td
-					>{@render genderCells(statistics.students)}</tr
+					><th scope="row" class="p-3 text-left">รวมทั้งโรงเรียน</th>{@render genderCells(
+						statistics.students
+					)}</tr
 				></tfoot
 			>
 		</table>
@@ -205,7 +145,7 @@
 {#snippet genderCells(counts: PublicSchoolStatistics['students'])}
 	<td class="p-3 text-right tabular-nums">{number.format(counts.male)}</td><td
 		class="p-3 text-right tabular-nums">{number.format(counts.female)}</td
-	><td class="p-3 text-right tabular-nums">{number.format(counts.otherOrUnspecified)}</td><td
-		class="p-3 text-right font-semibold tabular-nums">{number.format(counts.total)}</td
-	>
+	>{#if showOther}<td class="p-3 text-right tabular-nums"
+			>{number.format(counts.otherOrUnspecified)}</td
+		>{/if}<td class="p-3 text-right font-semibold tabular-nums">{number.format(counts.total)}</td>
 {/snippet}
