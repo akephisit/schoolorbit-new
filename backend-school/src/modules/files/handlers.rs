@@ -342,6 +342,15 @@ pub async fn delete_file(
             )
             .await?,
         ),
+        FilePurpose::AttendanceEvidence => Some(
+            crate::modules::attendance::services::evidence_delete_guard(
+                repository.pool(),
+                &context.actor,
+                &file,
+                query.resource_id,
+            )
+            .await?,
+        ),
         FilePurpose::SchoolFont => Some(
             file_access_policy::authorize_school_font_delete_guard(
                 repository.pool(),

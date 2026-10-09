@@ -206,7 +206,7 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
-    let approved_graph: [(&str, &[&str]); 30] = [
+    let approved_graph: [(&str, &[&str]); 31] = [
         (
             "school-auth-http",
             &[
@@ -369,6 +369,17 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-core",
                 "school-academic-timetable",
                 "school-errors",
+            ],
+        ),
+        (
+            "school-attendance",
+            &[
+                "school-academic-core",
+                "school-authorization",
+                "school-crypto",
+                "school-errors",
+                "school-file-platform",
+                "school-permissions",
             ],
         ),
         ("school-staff", &["school-crypto", "school-errors"]),

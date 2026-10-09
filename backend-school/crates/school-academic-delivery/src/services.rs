@@ -1,3 +1,4 @@
+pub mod attendance_roster;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};

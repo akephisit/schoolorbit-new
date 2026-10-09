@@ -1149,6 +1149,76 @@
       "scope": "school",
       "name": "จัดการคลังฟอนต์โรงเรียน",
       "description": "ดู อัปโหลด และลบฟอนต์กลางของโรงเรียนโดยไม่ให้สิทธิ์แก้ไขระบบที่นำฟอนต์ไปใช้"
+    },
+    {
+      "module": "attendance",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูการเช็คชื่อที่รับผิดชอบ",
+      "description": "ดูการเช็คชื่อที่รับผิดชอบ"
+    },
+    {
+      "module": "attendance",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูการเช็คชื่อทั้งโรงเรียน",
+      "description": "ดูการเช็คชื่อทั้งโรงเรียน"
+    },
+    {
+      "module": "attendance",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูการเช็คชื่อของตนเองและบุตรหลาน",
+      "description": "ดูการเช็คชื่อของตนเองและบุตรหลาน"
+    },
+    {
+      "module": "attendance",
+      "action": "update",
+      "scope": "assigned",
+      "name": "เช็คชื่อห้องและกลุ่มที่รับผิดชอบ",
+      "description": "เช็คชื่อห้องและกลุ่มที่รับผิดชอบ"
+    },
+    {
+      "module": "attendance",
+      "action": "update",
+      "scope": "school",
+      "name": "เช็คชื่อทั้งโรงเรียน",
+      "description": "เช็คชื่อทั้งโรงเรียน"
+    },
+    {
+      "module": "attendance",
+      "action": "manage",
+      "scope": "school",
+      "name": "ตั้งค่าระบบเช็คชื่อและรอบพิเศษ",
+      "description": "ตั้งค่าระบบเช็คชื่อและรอบพิเศษ"
+    },
+    {
+      "module": "attendance",
+      "action": "enroll",
+      "scope": "assigned",
+      "name": "ลงทะเบียนใบหน้านักเรียนที่รับผิดชอบ",
+      "description": "ลงทะเบียนใบหน้านักเรียนที่รับผิดชอบ"
+    },
+    {
+      "module": "attendance",
+      "action": "enroll",
+      "scope": "school",
+      "name": "ลงทะเบียนใบหน้านักเรียนทั้งโรงเรียน",
+      "description": "ลงทะเบียนใบหน้านักเรียนทั้งโรงเรียน"
+    },
+    {
+      "module": "attendance",
+      "action": "verify",
+      "scope": "assigned",
+      "name": "ใช้เครื่องสแกนที่ได้รับมอบหมาย",
+      "description": "ใช้เครื่องสแกนที่ได้รับมอบหมาย"
+    },
+    {
+      "module": "attendance",
+      "action": "delete",
+      "scope": "school",
+      "name": "ล้างรายละเอียดเช็คชื่อภาคเรียนที่ปิดแล้ว",
+      "description": "ล้างรายละเอียดเช็คชื่อภาคเรียนที่ปิดแล้ว"
     }
   ]
 }

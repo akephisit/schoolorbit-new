@@ -4,6 +4,7 @@ use chrono::NaiveDate;
 use school_errors::AppError;
 use std::str::FromStr;
 pub mod activation_context;
+pub mod attendance_roster;
 pub mod bell_schedules;
 pub mod catalog;
 pub mod context;

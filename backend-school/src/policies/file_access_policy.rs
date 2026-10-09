@@ -66,7 +66,7 @@ pub fn simple_file_access(
                 }
             }
         }
-        FilePurpose::AchievementImage => None,
+        FilePurpose::AchievementImage | FilePurpose::AttendanceEvidence => None,
         FilePurpose::AdmissionApplicationDocument => Some(match action {
             FilePolicyAction::Read => actor.has_any_permission(&[
                 codes::ADMISSION_READ_ALL,
@@ -110,6 +110,12 @@ pub async fn authorize_create(
     resource_id: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
     match purpose {
+        FilePurpose::AttendanceEvidence => {
+            let student = required_resource(resource_id)?;
+            crate::modules::attendance::services::require_evidence_upload(pool, actor, student)
+                .await?;
+            Ok(student)
+        }
         FilePurpose::SchoolLogo | FilePurpose::SchoolBanner => {
             require_no_resource(resource_id)?;
             require_simple_access(actor, purpose, FilePolicyAction::Create, None, None)?;
@@ -187,6 +193,16 @@ pub async fn authorize_existing(
     resource_id: Option<Uuid>,
 ) -> Result<(), AppError> {
     match file.purpose {
+        FilePurpose::AttendanceEvidence => {
+            crate::modules::attendance::services::require_evidence_file(
+                pool,
+                actor,
+                file,
+                action,
+                resource_id,
+            )
+            .await
+        }
         FilePurpose::SchoolLogo | FilePurpose::SchoolBanner => {
             require_no_resource(resource_id)?;
             require_simple_access(actor, file.purpose, action, None, None)

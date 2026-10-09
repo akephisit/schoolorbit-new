@@ -41,3 +41,6 @@ BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_
 ./scripts/test_backend_school.sh modules::auth::profile_integration_tests -- --test-threads=4
 ./scripts/test_backend_school.sh modules::auth::staff_integration_tests -- --test-threads=4
 ./scripts/test_backend_school.sh modules::academic::websockets::security_tests -- --test-threads=4
+
+# Attendance facts, guardian fan-out, special-group uniqueness and verified archival.
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh modules::attendance -- --test-threads=4

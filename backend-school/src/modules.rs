@@ -1,6 +1,7 @@
 pub mod academic;
 pub mod achievement;
 pub mod admission;
+pub mod attendance;
 pub mod auth;
 pub mod calendar;
 pub mod certificates;

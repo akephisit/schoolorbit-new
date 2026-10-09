@@ -1,3 +1,4 @@
+pub mod attendance;
 pub mod daily_teaching;
 mod timetable_block_conflicts;
 mod timetable_block_queries;

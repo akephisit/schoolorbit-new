@@ -826,6 +826,7 @@ dependencies = [
  "school-academic-results",
  "school-academic-timetable",
  "school-admission",
+ "school-attendance",
  "school-auth",
  "school-auth-http",
  "school-authorization",
@@ -4218,6 +4219,25 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-attendance"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "school-academic-core",
+ "school-authorization",
+ "school-crypto",
+ "school-errors",
+ "school-file-platform",
+ "school-permissions",
+ "serde",
+ "serde_json",
+ "sqlx",
  "utoipa",
  "uuid",
 ]
