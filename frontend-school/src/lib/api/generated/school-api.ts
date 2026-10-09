@@ -3690,6 +3690,278 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/attendance/audiences/{term}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['attendance_create_audience'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/days': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_list_days'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/days/{term}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['attendance_save_days'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/devices/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['attendance_save_device'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/faces/{student}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['attendance_enroll_face'];
+		post?: never;
+		delete: operations['attendance_delete_face'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/history': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_history'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/kiosk/open': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['attendance_open_kiosk'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_get_options'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/report': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_report'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/scans': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['attendance_scan'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/sessions/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_get_session'];
+		put: operations['attendance_save_results'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/sessions/{id}/cancellation': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['attendance_cancel_session'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/sessions/open': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['attendance_open_session'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/settings/{term}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_get_settings'];
+		put: operations['attendance_save_settings'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/specials/{term}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['attendance_create_special'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/terms/{term}/purge': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_purge_impact'];
+		put?: never;
+		post: operations['attendance_purge_term'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/workspace': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_workspace'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/login': {
 		parameters: {
 			query?: never;
@@ -7526,6 +7798,124 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_AttendanceAudienceGroup: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				studentIds: string[];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceDetail: {
+			data: {
+				counted: boolean;
+				session: components['schemas']['AttendanceSession'];
+				students: components['schemas']['AttendanceRecord'][];
+				writable: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceDevice: {
+			data: {
+				enabled: boolean;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: uuid */
+				operatorId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceKioskWorkspace: {
+			data: {
+				configuration: components['schemas']['AttendanceConfiguration'];
+				faces: components['schemas']['AttendanceFace'][];
+				sessions: components['schemas']['AttendanceSession'][];
+				students: components['schemas']['AttendanceStudentOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceOptions: {
+			data: {
+				audiences: components['schemas']['AttendanceAudienceGroup'][];
+				devices: components['schemas']['AttendanceDevice'][];
+				specials: components['schemas']['SpecialAttendanceTemplate'][];
+				students: components['schemas']['AttendanceStudentOption'][];
+				teachers: components['schemas']['AttendanceTeacherOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendancePurgeImpact: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				archived: boolean;
+				canPurge: boolean;
+				/** Format: int64 */
+				evidence: number;
+				/** Format: int64 */
+				evidenceBytes: number;
+				/** Format: int64 */
+				records: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceReport: {
+			data: {
+				activityCountsAsPresent: boolean;
+				archived: boolean;
+				summaries: components['schemas']['AttendanceSummary'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceScanOutcome: {
+			data: {
+				duplicate: boolean;
+				/** Format: uuid */
+				eventId: string;
+				result: components['schemas']['AttendanceResult'];
+				/** Format: uuid */
+				studentId: string;
+				teacherConflict: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceSettings: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				archived: boolean;
+				configuration: components['schemas']['AttendanceConfiguration'];
+				/** Format: int64 */
+				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceWorkspace: {
+			data: {
+				counted: boolean;
+				/** Format: date */
+				date: string;
+				sessions: components['schemas']['AttendanceSession'][];
+				settings: components['schemas']['AttendanceSettings'];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_BellSchedule: {
 			data: {
 				/** Format: uuid */
@@ -9881,6 +10271,19 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_SpecialAttendanceTemplate: {
+			data: {
+				/** Format: uuid */
+				academicTermId: string;
+				definition: components['schemas']['SpecialAttendanceDefinition'];
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_StaffCareerHistoryPage: {
 			data: {
 				current: components['schemas']['StaffCareerCurrent'];
@@ -10995,6 +11398,35 @@ export interface components {
 				/** Format: uuid */
 				suggestedCoordinatorId?: string | null;
 				suggestedCoordinatorName?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AttendanceDay: {
+			data: {
+				counted: boolean;
+				/** Format: date */
+				date: string;
+				note: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_AttendanceHistoryItem: {
+			data: {
+				cancelled: boolean;
+				/** Format: date */
+				date: string;
+				/** Format: uuid */
+				evidenceFileId: string | null;
+				kind: components['schemas']['AttendanceKind'];
+				note: string;
+				/** Format: date-time */
+				observedAt: string | null;
+				result: components['schemas']['AttendanceResult'];
+				/** Format: uuid */
+				sessionId: string;
+				title: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -12916,6 +13348,245 @@ export interface components {
 		AttachSchoolFontBatchRequest: {
 			fileIds: string[];
 			rightsConfirmed?: boolean;
+		};
+		AttendanceAudienceGroup: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			studentIds: string[];
+		};
+		AttendanceCancellation: {
+			cancelled: boolean;
+			reason: string;
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		AttendanceConfiguration: {
+			activityCountsAsPresent: boolean;
+			digestTimes: string[];
+			enabled: boolean;
+			/** Format: int32 */
+			evidenceDays: number;
+			/** Format: float */
+			faceDistance: number;
+			/** Format: float */
+			faceMargin: number;
+			lateAfter: string;
+			weekdays: number[];
+		};
+		AttendanceDay: {
+			counted: boolean;
+			/** Format: date */
+			date: string;
+			note: string;
+		};
+		AttendanceDetail: {
+			counted: boolean;
+			session: components['schemas']['AttendanceSession'];
+			students: components['schemas']['AttendanceRecord'][];
+			writable: boolean;
+		};
+		AttendanceDevice: {
+			enabled: boolean;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: uuid */
+			operatorId: string;
+		};
+		AttendanceFace: {
+			descriptors: components['schemas']['FaceDescriptor'][];
+			model: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studentId: string;
+		};
+		AttendanceHistoryItem: {
+			cancelled: boolean;
+			/** Format: date */
+			date: string;
+			/** Format: uuid */
+			evidenceFileId: string | null;
+			kind: components['schemas']['AttendanceKind'];
+			note: string;
+			/** Format: date-time */
+			observedAt: string | null;
+			result: components['schemas']['AttendanceResult'];
+			/** Format: uuid */
+			sessionId: string;
+			title: string;
+		};
+		/** @enum {string} */
+		AttendanceKind: 'arrival' | 'flag' | 'lesson' | 'special';
+		AttendanceKioskWorkspace: {
+			configuration: components['schemas']['AttendanceConfiguration'];
+			faces: components['schemas']['AttendanceFace'][];
+			sessions: components['schemas']['AttendanceSession'][];
+			students: components['schemas']['AttendanceStudentOption'][];
+		};
+		AttendanceOptions: {
+			audiences: components['schemas']['AttendanceAudienceGroup'][];
+			devices: components['schemas']['AttendanceDevice'][];
+			specials: components['schemas']['SpecialAttendanceTemplate'][];
+			students: components['schemas']['AttendanceStudentOption'][];
+			teachers: components['schemas']['AttendanceTeacherOption'][];
+		};
+		AttendancePurgeImpact: {
+			/** Format: uuid */
+			academicTermId: string;
+			archived: boolean;
+			canPurge: boolean;
+			/** Format: int64 */
+			evidence: number;
+			/** Format: int64 */
+			evidenceBytes: number;
+			/** Format: int64 */
+			records: number;
+		};
+		AttendanceRecord: {
+			/** Format: date-time */
+			arrivalAt: string | null;
+			/** Format: int32 */
+			classNumber: number | null;
+			displayName: string;
+			/** Format: uuid */
+			evidenceFileId: string | null;
+			note: string;
+			/** Format: date-time */
+			observedAt: string | null;
+			origin: string;
+			result: components['schemas']['AttendanceResult'];
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			/** Format: uuid */
+			studentId: string;
+		};
+		AttendanceReport: {
+			activityCountsAsPresent: boolean;
+			archived: boolean;
+			summaries: components['schemas']['AttendanceSummary'][];
+		};
+		/** @enum {string} */
+		AttendanceResult: 'unchecked' | 'present' | 'late' | 'absent' | 'leave' | 'activity';
+		AttendanceResultInput: {
+			note: string;
+			result: components['schemas']['AttendanceResult'];
+			/** Format: uuid */
+			studentId: string;
+		};
+		AttendanceScan: {
+			/** Format: date-time */
+			capturedAt: string;
+			descriptor: components['schemas']['FaceDescriptor'];
+			/** Format: uuid */
+			deviceId: string;
+			/** Format: uuid */
+			eventId: string;
+			/** Format: uuid */
+			evidenceFileId: string;
+			/** Format: uuid */
+			sessionId: string;
+			/** Format: uuid */
+			studentId: string;
+		};
+		AttendanceScanOutcome: {
+			duplicate: boolean;
+			/** Format: uuid */
+			eventId: string;
+			result: components['schemas']['AttendanceResult'];
+			/** Format: uuid */
+			studentId: string;
+			teacherConflict: boolean;
+		};
+		AttendanceSession: {
+			/** Format: uuid */
+			academicTermId: string;
+			cancellationReason: string | null;
+			cancelled: boolean;
+			countOverride: boolean | null;
+			/** Format: date */
+			date: string;
+			endTime: string;
+			/** Format: uuid */
+			homeroomId: string | null;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['AttendanceKind'];
+			/** Format: uuid */
+			learningGroupId: string | null;
+			/** Format: uuid */
+			offeringId: string | null;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: date-time */
+			savedAt: string | null;
+			/** Format: uuid */
+			savedBy: string | null;
+			sourceKey: string;
+			/** Format: uuid */
+			specialRoundId: string | null;
+			startTime: string;
+			teacherIds: string[];
+			title: string;
+		};
+		AttendanceSettings: {
+			/** Format: uuid */
+			academicTermId: string;
+			archived: boolean;
+			configuration: components['schemas']['AttendanceConfiguration'];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		AttendanceStudentOption: {
+			/** Format: uuid */
+			homeroomId: string | null;
+			homeroomName: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		AttendanceSummary: {
+			/** Format: int64 */
+			absent: number;
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: int64 */
+			activity: number;
+			category: string;
+			displayName: string;
+			/** Format: int64 */
+			expected: number;
+			/** Format: int64 */
+			late: number;
+			/** Format: int64 */
+			leave: number;
+			/** Format: int64 */
+			present: number;
+			scopeKey: string;
+			scopeLabel: string;
+			/** Format: uuid */
+			studentId: string;
+			/** Format: int64 */
+			unchecked: number;
+		};
+		AttendanceTeacherOption: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		AttendanceWorkspace: {
+			counted: boolean;
+			/** Format: date */
+			date: string;
+			sessions: components['schemas']['AttendanceSession'][];
+			settings: components['schemas']['AttendanceSettings'];
 		};
 		BellSchedule: {
 			/** Format: uuid */
@@ -15460,6 +16131,11 @@ export interface components {
 			y: number;
 		};
 		EmptyData: Record<string, never>;
+		EnrollAttendanceFace: {
+			consentConfirmed: boolean;
+			descriptors: components['schemas']['FaceDescriptor'][];
+			model: string;
+		};
 		EvaluationConfiguration: {
 			canManage: boolean;
 			criteria: components['schemas']['EvaluationCriterion'][];
@@ -15962,6 +16638,9 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		FaceDescriptor: {
+			values: number[];
+		};
 		FeatureListResponse: {
 			data: components['schemas']['FeatureToggle'][];
 			success: boolean;
@@ -16013,6 +16692,7 @@ export interface components {
 		};
 		/** @enum {string} */
 		FilePurpose:
+			| 'attendance_evidence'
 			| 'school_logo'
 			| 'school_banner'
 			| 'profile_image'
@@ -17184,6 +17864,22 @@ export interface components {
 		};
 		/** @enum {string} */
 		OfferingTargetKind: 'homeroom' | 'grade_program';
+		OpenAttendanceKiosk: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: date */
+			date: string;
+			/** Format: uuid */
+			deviceId: string;
+		};
+		OpenAttendanceSession: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: date */
+			date: string;
+			kind: components['schemas']['AttendanceKind'];
+			sourceKey: string;
+		};
 		OpenCurriculumDraftRequest: {
 			/** Format: int64 */
 			rowVersion: number;
@@ -17990,6 +18686,11 @@ export interface components {
 			/** Format: int64 */
 			rowVersion: number;
 		};
+		PurgeAttendanceTerm: {
+			/** Format: int64 */
+			expectedRecords: number;
+			reason: string;
+		};
 		QrCertificateVerificationRequest: {
 			certificateNumber: string;
 			proof: string;
@@ -18642,6 +19343,36 @@ export interface components {
 			 */
 			rowVersion?: number | null;
 		};
+		SaveAttendanceAudience: {
+			/** Format: uuid */
+			id: string | null;
+			name: string;
+			/** Format: int64 */
+			rowVersion: number;
+			studentIds: string[];
+		};
+		SaveAttendanceDays: {
+			days: components['schemas']['AttendanceDay'][];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		SaveAttendanceDevice: {
+			enabled: boolean;
+			name: string;
+			/** Format: uuid */
+			operatorId: string;
+		};
+		SaveAttendanceResults: {
+			reason: string;
+			/** Format: int64 */
+			rowVersion: number;
+			students: components['schemas']['AttendanceResultInput'][];
+		};
+		SaveAttendanceSettings: {
+			configuration: components['schemas']['AttendanceConfiguration'];
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
 		};
@@ -18805,6 +19536,32 @@ export interface components {
 			/** Format: date-time */
 			lastSeenAt: string;
 			rememberMe: boolean;
+		};
+		SpecialAttendanceDefinition: {
+			counted: boolean;
+			dates: string[];
+			endTime: string;
+			groups: components['schemas']['SpecialAttendanceGroup'][];
+			notify: boolean;
+			startTime: string;
+			title: string;
+		};
+		SpecialAttendanceGroup: {
+			audienceGroupIds: string[];
+			homeroomIds: string[];
+			name: string;
+			studentIds: string[];
+			teacherIds: string[];
+			useHomeroomAdvisors: boolean;
+		};
+		SpecialAttendanceTemplate: {
+			/** Format: uuid */
+			academicTermId: string;
+			definition: components['schemas']['SpecialAttendanceDefinition'];
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		/** @enum {string} */
 		StaffAcademicRank:
@@ -38942,6 +39699,1000 @@ export interface operations {
 			};
 			/** @description Admission score permission required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_create_audience: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveAttendanceAudience'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceAudienceGroup'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_list_days: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				end: string;
+				start: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AttendanceDay'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_save_days: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveAttendanceDays'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceSettings'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_save_device: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveAttendanceDevice'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceDevice'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_enroll_face: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				student: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['EnrollAttendanceFace'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_delete_face: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				student: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_history: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				end: string;
+				start: string;
+				studentId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AttendanceHistoryItem'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_open_kiosk: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['OpenAttendanceKiosk'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceKioskWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_get_options: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceOptions'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_report: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				studentId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceReport'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_scan: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AttendanceScan'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceScanOutcome'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_get_session: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_save_results: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveAttendanceResults'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_cancel_session: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AttendanceCancellation'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_open_session: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['OpenAttendanceSession'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_get_settings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceSettings'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_save_settings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveAttendanceSettings'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceSettings'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_create_special: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SpecialAttendanceDefinition'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SpecialAttendanceTemplate'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_purge_impact: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendancePurgeImpact'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_purge_term: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				term: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PurgeAttendanceTerm'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendancePurgeImpact'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_workspace: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				date: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceWorkspace'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

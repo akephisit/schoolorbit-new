@@ -361,6 +361,7 @@ async fn main() {
         calendar_next_run,
     );
     sched.start().await.expect("Failed to start scheduler");
+    tokio::spawn(modules::attendance::runtime::start(state.clone()));
 
     axum::serve(
         listener,

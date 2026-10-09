@@ -4091,6 +4091,455 @@
         ],
         "type": "object"
       },
+      "ApiResponse_AttendanceAudienceGroup": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "studentIds": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "academicTermId",
+              "name",
+              "studentIds",
+              "rowVersion"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceDetail": {
+        "properties": {
+          "data": {
+            "properties": {
+              "counted": {
+                "type": "boolean"
+              },
+              "session": {
+                "$ref": "#/components/schemas/AttendanceSession"
+              },
+              "students": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceRecord"
+                },
+                "type": "array"
+              },
+              "writable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "session",
+              "students",
+              "counted",
+              "writable"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceDevice": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "operatorId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "enabled",
+              "operatorId"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceKioskWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "configuration": {
+                "$ref": "#/components/schemas/AttendanceConfiguration"
+              },
+              "faces": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceFace"
+                },
+                "type": "array"
+              },
+              "sessions": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceSession"
+                },
+                "type": "array"
+              },
+              "students": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceStudentOption"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "sessions",
+              "faces",
+              "students",
+              "configuration"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "audiences": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceAudienceGroup"
+                },
+                "type": "array"
+              },
+              "devices": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceDevice"
+                },
+                "type": "array"
+              },
+              "specials": {
+                "items": {
+                  "$ref": "#/components/schemas/SpecialAttendanceTemplate"
+                },
+                "type": "array"
+              },
+              "students": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceStudentOption"
+                },
+                "type": "array"
+              },
+              "teachers": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceTeacherOption"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "students",
+              "teachers",
+              "audiences",
+              "specials",
+              "devices"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendancePurgeImpact": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "archived": {
+                "type": "boolean"
+              },
+              "canPurge": {
+                "type": "boolean"
+              },
+              "evidence": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "evidenceBytes": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "records": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "academicTermId",
+              "records",
+              "evidence",
+              "evidenceBytes",
+              "archived",
+              "canPurge"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceReport": {
+        "properties": {
+          "data": {
+            "properties": {
+              "activityCountsAsPresent": {
+                "type": "boolean"
+              },
+              "archived": {
+                "type": "boolean"
+              },
+              "summaries": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceSummary"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "summaries",
+              "archived",
+              "activityCountsAsPresent"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceScanOutcome": {
+        "properties": {
+          "data": {
+            "properties": {
+              "duplicate": {
+                "type": "boolean"
+              },
+              "eventId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "result": {
+                "$ref": "#/components/schemas/AttendanceResult"
+              },
+              "studentId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "teacherConflict": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "eventId",
+              "studentId",
+              "result",
+              "duplicate",
+              "teacherConflict"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceSettings": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "archived": {
+                "type": "boolean"
+              },
+              "configuration": {
+                "$ref": "#/components/schemas/AttendanceConfiguration"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "academicTermId",
+              "configuration",
+              "rowVersion",
+              "archived"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_AttendanceWorkspace": {
+        "properties": {
+          "data": {
+            "properties": {
+              "counted": {
+                "type": "boolean"
+              },
+              "date": {
+                "format": "date",
+                "type": "string"
+              },
+              "sessions": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceSession"
+                },
+                "type": "array"
+              },
+              "settings": {
+                "$ref": "#/components/schemas/AttendanceSettings"
+              }
+            },
+            "required": [
+              "date",
+              "counted",
+              "sessions",
+              "settings"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_BellSchedule": {
         "properties": {
           "data": {
@@ -12894,6 +13343,47 @@
         ],
         "type": "object"
       },
+      "ApiResponse_SpecialAttendanceTemplate": {
+        "properties": {
+          "data": {
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "definition": {
+                "$ref": "#/components/schemas/SpecialAttendanceDefinition"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "academicTermId",
+              "definition",
+              "rowVersion"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_StaffCareerHistoryPage": {
         "properties": {
           "data": {
@@ -17001,6 +17491,116 @@
                 "learningGroupCount",
                 "phases",
                 "readiness"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_AttendanceDay": {
+        "properties": {
+          "data": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "counted": {
+                  "type": "boolean"
+                },
+                "date": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "date",
+                "counted",
+                "note"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_AttendanceHistoryItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "cancelled": {
+                  "type": "boolean"
+                },
+                "date": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "evidenceFileId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/AttendanceKind"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "observedAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "result": {
+                  "$ref": "#/components/schemas/AttendanceResult"
+                },
+                "sessionId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sessionId",
+                "date",
+                "kind",
+                "title",
+                "result",
+                "note",
+                "observedAt",
+                "evidenceFileId",
+                "cancelled"
               ],
               "type": "object"
             },
@@ -24106,6 +24706,869 @@
         },
         "required": [
           "fileIds"
+        ],
+        "type": "object"
+      },
+      "AttendanceAudienceGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "name",
+          "studentIds",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "AttendanceCancellation": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "cancelled",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "AttendanceConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "activityCountsAsPresent": {
+            "type": "boolean"
+          },
+          "digestTimes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "evidenceDays": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faceDistance": {
+            "format": "float",
+            "type": "number"
+          },
+          "faceMargin": {
+            "format": "float",
+            "type": "number"
+          },
+          "lateAfter": {
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "weekdays",
+          "lateAfter",
+          "digestTimes",
+          "evidenceDays",
+          "faceDistance",
+          "faceMargin",
+          "activityCountsAsPresent"
+        ],
+        "type": "object"
+      },
+      "AttendanceDay": {
+        "additionalProperties": false,
+        "properties": {
+          "counted": {
+            "type": "boolean"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "counted",
+          "note"
+        ],
+        "type": "object"
+      },
+      "AttendanceDetail": {
+        "properties": {
+          "counted": {
+            "type": "boolean"
+          },
+          "session": {
+            "$ref": "#/components/schemas/AttendanceSession"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceRecord"
+            },
+            "type": "array"
+          },
+          "writable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "session",
+          "students",
+          "counted",
+          "writable"
+        ],
+        "type": "object"
+      },
+      "AttendanceDevice": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "operatorId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "operatorId"
+        ],
+        "type": "object"
+      },
+      "AttendanceFace": {
+        "properties": {
+          "descriptors": {
+            "items": {
+              "$ref": "#/components/schemas/FaceDescriptor"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentId",
+          "model",
+          "descriptors",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "AttendanceHistoryItem": {
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "evidenceFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AttendanceKind"
+          },
+          "note": {
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "$ref": "#/components/schemas/AttendanceResult"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "date",
+          "kind",
+          "title",
+          "result",
+          "note",
+          "observedAt",
+          "evidenceFileId",
+          "cancelled"
+        ],
+        "type": "object"
+      },
+      "AttendanceKind": {
+        "enum": [
+          "arrival",
+          "flag",
+          "lesson",
+          "special"
+        ],
+        "type": "string"
+      },
+      "AttendanceKioskWorkspace": {
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/AttendanceConfiguration"
+          },
+          "faces": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceFace"
+            },
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceSession"
+            },
+            "type": "array"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceStudentOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions",
+          "faces",
+          "students",
+          "configuration"
+        ],
+        "type": "object"
+      },
+      "AttendanceOptions": {
+        "properties": {
+          "audiences": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceAudienceGroup"
+            },
+            "type": "array"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceDevice"
+            },
+            "type": "array"
+          },
+          "specials": {
+            "items": {
+              "$ref": "#/components/schemas/SpecialAttendanceTemplate"
+            },
+            "type": "array"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceStudentOption"
+            },
+            "type": "array"
+          },
+          "teachers": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceTeacherOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "students",
+          "teachers",
+          "audiences",
+          "specials",
+          "devices"
+        ],
+        "type": "object"
+      },
+      "AttendancePurgeImpact": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "canPurge": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evidenceBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "records": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "records",
+          "evidence",
+          "evidenceBytes",
+          "archived",
+          "canPurge"
+        ],
+        "type": "object"
+      },
+      "AttendanceRecord": {
+        "properties": {
+          "arrivalAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "classNumber": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "evidenceFileId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/AttendanceResult"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentId",
+          "studentAcademicYearId",
+          "displayName",
+          "classNumber",
+          "result",
+          "origin",
+          "note",
+          "observedAt",
+          "evidenceFileId",
+          "arrivalAt",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "AttendanceReport": {
+        "properties": {
+          "activityCountsAsPresent": {
+            "type": "boolean"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "summaries": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "summaries",
+          "archived",
+          "activityCountsAsPresent"
+        ],
+        "type": "object"
+      },
+      "AttendanceResult": {
+        "enum": [
+          "unchecked",
+          "present",
+          "late",
+          "absent",
+          "leave",
+          "activity"
+        ],
+        "type": "string"
+      },
+      "AttendanceResultInput": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/AttendanceResult"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentId",
+          "result",
+          "note"
+        ],
+        "type": "object"
+      },
+      "AttendanceScan": {
+        "additionalProperties": false,
+        "properties": {
+          "capturedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "descriptor": {
+            "$ref": "#/components/schemas/FaceDescriptor"
+          },
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "eventId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "evidenceFileId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventId",
+          "deviceId",
+          "sessionId",
+          "studentId",
+          "descriptor",
+          "evidenceFileId",
+          "capturedAt"
+        ],
+        "type": "object"
+      },
+      "AttendanceScanOutcome": {
+        "properties": {
+          "duplicate": {
+            "type": "boolean"
+          },
+          "eventId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/AttendanceResult"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "teacherConflict": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "eventId",
+          "studentId",
+          "result",
+          "duplicate",
+          "teacherConflict"
+        ],
+        "type": "object"
+      },
+      "AttendanceSession": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cancellationReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelled": {
+            "type": "boolean"
+          },
+          "countOverride": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": "string"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AttendanceKind"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offeringId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "savedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "savedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceKey": {
+            "type": "string"
+          },
+          "specialRoundId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startTime": {
+            "type": "string"
+          },
+          "teacherIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "date",
+          "kind",
+          "sourceKey",
+          "title",
+          "teacherIds",
+          "homeroomId",
+          "learningGroupId",
+          "offeringId",
+          "specialRoundId",
+          "startTime",
+          "endTime",
+          "countOverride",
+          "cancelled",
+          "cancellationReason",
+          "savedAt",
+          "savedBy",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "AttendanceSettings": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/AttendanceConfiguration"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "configuration",
+          "rowVersion",
+          "archived"
+        ],
+        "type": "object"
+      },
+      "AttendanceStudentOption": {
+        "properties": {
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "homeroomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "homeroomId",
+          "homeroomName"
+        ],
+        "type": "object"
+      },
+      "AttendanceSummary": {
+        "properties": {
+          "absent": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "activity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "category": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "expected": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "late": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "leave": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "present": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scopeKey": {
+            "type": "string"
+          },
+          "scopeLabel": {
+            "type": "string"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "unchecked": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "studentId",
+          "category",
+          "scopeKey",
+          "scopeLabel",
+          "displayName",
+          "present",
+          "late",
+          "absent",
+          "leave",
+          "activity",
+          "unchecked",
+          "expected"
+        ],
+        "type": "object"
+      },
+      "AttendanceTeacherOption": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AttendanceWorkspace": {
+        "properties": {
+          "counted": {
+            "type": "boolean"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceSession"
+            },
+            "type": "array"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AttendanceSettings"
+          }
+        },
+        "required": [
+          "date",
+          "counted",
+          "sessions",
+          "settings"
         ],
         "type": "object"
       },
@@ -33533,6 +34996,29 @@
       "EmptyData": {
         "type": "object"
       },
+      "EnrollAttendanceFace": {
+        "additionalProperties": false,
+        "properties": {
+          "consentConfirmed": {
+            "type": "boolean"
+          },
+          "descriptors": {
+            "items": {
+              "$ref": "#/components/schemas/FaceDescriptor"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "descriptors",
+          "consentConfirmed"
+        ],
+        "type": "object"
+      },
       "EvaluationConfiguration": {
         "properties": {
           "canManage": {
@@ -35206,6 +36692,22 @@
         ],
         "type": "object"
       },
+      "FaceDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "values": {
+            "items": {
+              "format": "float",
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "type": "object"
+      },
       "FeatureListResponse": {
         "properties": {
           "data": {
@@ -35382,6 +36884,7 @@
       },
       "FilePurpose": {
         "enum": [
+          "attendance_evidence",
           "school_logo",
           "school_banner",
           "profile_image",
@@ -39559,6 +41062,55 @@
         ],
         "type": "string"
       },
+      "OpenAttendanceKiosk": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "deviceId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "date",
+          "deviceId"
+        ],
+        "type": "object"
+      },
+      "OpenAttendanceSession": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AttendanceKind"
+          },
+          "sourceKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicTermId",
+          "date",
+          "kind",
+          "sourceKey"
+        ],
+        "type": "object"
+      },
       "OpenCurriculumDraftRequest": {
         "additionalProperties": false,
         "properties": {
@@ -42496,6 +44048,23 @@
         ],
         "type": "object"
       },
+      "PurgeAttendanceTerm": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRecords": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRecords",
+          "reason"
+        ],
+        "type": "object"
+      },
       "QrCertificateVerificationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -44800,6 +46369,121 @@
         ],
         "type": "object"
       },
+      "SaveAttendanceAudience": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "studentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "studentIds",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "SaveAttendanceDays": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceDay"
+            },
+            "type": "array"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "SaveAttendanceDevice": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "operatorId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "enabled",
+          "operatorId"
+        ],
+        "type": "object"
+      },
+      "SaveAttendanceResults": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceResultInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rowVersion",
+          "reason",
+          "students"
+        ],
+        "type": "object"
+      },
+      "SaveAttendanceSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/AttendanceConfiguration"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configuration",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
       "SaveEvaluationRequest": {
         "properties": {
           "responses": {
@@ -45349,6 +47033,123 @@
           "idleExpiresAt",
           "absoluteExpiresAt",
           "isCurrent"
+        ],
+        "type": "object"
+      },
+      "SpecialAttendanceDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "counted": {
+            "type": "boolean"
+          },
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endTime": {
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/SpecialAttendanceGroup"
+            },
+            "type": "array"
+          },
+          "notify": {
+            "type": "boolean"
+          },
+          "startTime": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "dates",
+          "startTime",
+          "endTime",
+          "counted",
+          "notify",
+          "groups"
+        ],
+        "type": "object"
+      },
+      "SpecialAttendanceGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "audienceGroupIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "studentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "teacherIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "useHomeroomAdvisors": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "teacherIds",
+          "homeroomIds",
+          "audienceGroupIds",
+          "studentIds",
+          "useHomeroomAdvisors"
+        ],
+        "type": "object"
+      },
+      "SpecialAttendanceTemplate": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/SpecialAttendanceDefinition"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "academicTermId",
+          "definition",
+          "rowVersion"
         ],
         "type": "object"
       },
@@ -78348,6 +80149,1429 @@
         },
         "tags": [
           "admission"
+        ]
+      }
+    },
+    "/api/attendance/audiences/{term}": {
+      "post": {
+        "operationId": "attendance_create_audience",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAttendanceAudience"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceAudienceGroup"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/days": {
+      "get": {
+        "operationId": "attendance_list_days",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AttendanceDay"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/days/{term}": {
+      "put": {
+        "operationId": "attendance_save_days",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAttendanceDays"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceSettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/devices/{id}": {
+      "put": {
+        "operationId": "attendance_save_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAttendanceDevice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceDevice"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/faces/{student}": {
+      "delete": {
+        "operationId": "attendance_delete_face",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "student",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      },
+      "put": {
+        "operationId": "attendance_enroll_face",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "student",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollAttendanceFace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/history": {
+      "get": {
+        "operationId": "attendance_history",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "studentId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AttendanceHistoryItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/kiosk/open": {
+      "post": {
+        "operationId": "attendance_open_kiosk",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenAttendanceKiosk"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceKioskWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/options": {
+      "get": {
+        "operationId": "attendance_get_options",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/report": {
+      "get": {
+        "operationId": "attendance_report",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "studentId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceReport"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/scans": {
+      "post": {
+        "operationId": "attendance_scan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendanceScan"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceScanOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/sessions/{id}": {
+      "get": {
+        "operationId": "attendance_get_session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      },
+      "put": {
+        "operationId": "attendance_save_results",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAttendanceResults"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/sessions/{id}/cancellation": {
+      "put": {
+        "operationId": "attendance_cancel_session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendanceCancellation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/sessions/open": {
+      "post": {
+        "operationId": "attendance_open_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenAttendanceSession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/settings/{term}": {
+      "get": {
+        "operationId": "attendance_get_settings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceSettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      },
+      "put": {
+        "operationId": "attendance_save_settings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAttendanceSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceSettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/specials/{term}": {
+      "post": {
+        "operationId": "attendance_create_special",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialAttendanceDefinition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SpecialAttendanceTemplate"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/terms/{term}/purge": {
+      "get": {
+        "operationId": "attendance_purge_impact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendancePurgeImpact"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      },
+      "post": {
+        "operationId": "attendance_purge_term",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "term",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeAttendanceTerm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendancePurgeImpact"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/workspace": {
+      "get": {
+        "operationId": "attendance_workspace",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceWorkspace"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
         ]
       }
     },

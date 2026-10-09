@@ -42,6 +42,16 @@
 			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
 		},
 		{
+			"route": "parent/attendance",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "selected term and actor-scoped student",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
+		},
+		{
 			"route": "parent/student/[id]",
 			"wave": "self-service",
 			"dataOwner": "route",
@@ -706,6 +716,46 @@
 			"notes": "Direct exact role/scoped route owner with captured identity and local first/retained error/retry and supersession. Own certificate component consumes loader result; renderer/download stays explicit. Self-recorded own list loads first, all tab and bounded minimal assignee lookup are interaction lazy; typed writes patch affected list with owner/closed-draft/disposal guards."
 		},
 		{
+			"route": "staff/attendance",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "selected term and actor-scoped student",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
+		},
+		{
+			"route": "staff/attendance/faces",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "selected term and actor-scoped student",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
+		},
+		{
+			"route": "staff/attendance/report",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "selected term and actor-scoped student",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
+		},
+		{
+			"route": "staff/attendance/settings",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "selected term and actor-scoped student",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
+		},
+		{
 			"route": "staff/calendar",
 			"wave": "staff",
 			"dataOwner": "route",
@@ -1124,6 +1174,16 @@
 			"status": "complete",
 			"backendOwner": "school-students",
 			"notes": "Direct learner-scoped loader owns one canonical context and selected-term registration list. First/retained focused retry, term history and identity/context/disposal guards. Typed enroll/withdraw patches affected offering/groups only; action owner epoch rejects stale continuations. Tap preload."
+		},
+		{
+			"route": "student/attendance",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "selected term and actor-scoped student",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
 		},
 		{
 			"route": "student/calendar",

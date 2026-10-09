@@ -136,6 +136,17 @@ pub fn purpose_from_code(code: &str) -> Result<FilePurpose, PurposeRegistryError
 
 pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, PurposeRegistryError> {
     let definition = match purpose {
+        FilePurpose::AttendanceEvidence => PurposeDefinition {
+            domain_segment: "attendance",
+            purpose_segment: "evidence",
+            visibility: FileVisibility::Private,
+            allowed_content: IMAGE_CONTENT,
+            limits: image_limits(1024 * 1024, 1280, 1280),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::ExplicitOwningResource,
+        },
         FilePurpose::SchoolLogo => PurposeDefinition {
             domain_segment: "school",
             purpose_segment: "logo",
@@ -688,7 +699,22 @@ mod tests {
             assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
         }
 
-        assert_eq!(FilePurpose::ALL.len(), 15);
+        assert_eq!(FilePurpose::ALL.len(), 16);
+    }
+
+    #[test]
+    fn attendance_evidence_requires_private_scanned_bounded_temporary_storage() {
+        let purpose = FilePurpose::AttendanceEvidence;
+        let policy = purpose_definition(purpose).unwrap();
+        assert_eq!(purpose_from_code("attendance_evidence"), Ok(purpose));
+        assert_eq!(policy.visibility, FileVisibility::Private);
+        assert_eq!(policy.scan_requirement, ScanRequirement::RequiredClean);
+        assert_eq!(policy.retention_class, RetentionClass::Temporary);
+        assert_eq!(policy.policy_key, PolicyKey::ExplicitOwningResource);
+        assert_eq!(policy.limits.max_bytes, 1024 * 1024);
+        assert_eq!(policy.limits.max_width, Some(1280));
+        assert!(!policy.allowed_content.contains(&DetectedContent::Pdf));
+        assert!(policy.derivatives.is_empty());
     }
 
     #[test]

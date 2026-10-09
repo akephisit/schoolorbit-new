@@ -73,7 +73,7 @@ try {
         run('cargo', ['check', '--workspace', '--all-targets', '--locked'], cwd);
         run('cargo', ['test', '--test', 'static_architecture', '--locked', ...testFlags], cwd);
         run('cargo', ['test', '--bin', 'backend-school', 'api_contract::tests', '--locked', ...testFlags], cwd);
-        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-http', '-p', 'school-certificates-http', '-p', 'school-notifications', '--lib', '--locked', ...testFlags], cwd);
+        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-http', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-attendance', '--lib', '--locked', ...testFlags], cwd);
         run('node', ['scripts/generate-api-contracts.mjs', '--check']);
         const executable = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--format-version', '1', '--no-deps'], { cwd, encoding: 'utf8' })).target_directory + '/debug/backend-school';
         JSON.parse(execFileSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));

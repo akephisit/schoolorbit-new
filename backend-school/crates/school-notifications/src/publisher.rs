@@ -51,6 +51,35 @@ impl NotificationType {
 }
 
 impl NotificationService {
+    /// Deliver an already durably stored notification without inserting a second row.
+    pub async fn deliver_stored(
+        pool: &sqlx::PgPool,
+        publisher: &TenantNotificationPublisher<'_>,
+        user_id: Uuid,
+        notification: Notification,
+    ) -> Result<(), &'static str> {
+        publisher.publish(user_id, notification.clone());
+        let subscribed: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM push_subscriptions WHERE user_id=$1)")
+                .bind(user_id)
+                .fetch_one(pool)
+                .await
+                .map_err(|_| "notification_subscription_unavailable")?;
+        if !subscribed {
+            return Ok(());
+        }
+        Self::send_web_push(
+            pool,
+            user_id,
+            notification.id,
+            &notification.title,
+            &notification.message,
+            notification.link.as_deref(),
+        )
+        .await
+        .map_err(|_| "notification_transport_unavailable")
+    }
+
     /// Send a notification to a specific user.
     /// This handles database insertion, real-time broadcasting via SSE, AND Web Push.
     pub async fn send(

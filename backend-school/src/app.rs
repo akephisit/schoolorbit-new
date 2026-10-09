@@ -144,6 +144,7 @@ fn internal_routes() -> Router<AppState> {
 
 fn protected_routes() -> Router<AppState> {
     Router::new()
+        .merge(modules::attendance::handlers::routes())
         .route("/api/auth/me", get(modules::auth::session_handlers::me))
         .route(
             "/api/auth/me/profile",
