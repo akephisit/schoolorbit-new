@@ -38,7 +38,11 @@ pub(super) async fn load_workspace(
     ctx: &EvaluationContext,
 ) -> Result<EvaluationWorkspace, AppError> {
     let criteria = configuration::criteria(tx, scope, ctx).await?;
-    let students:Vec<EvaluationStudent>=sqlx::query_as("SELECT m.id AS membership_id,m.student_academic_year_id,concat_ws(' ',u.first_name,u.last_name) AS display_name,m.row_version FROM learning_group_students m JOIN users u ON u.id=m.student_id WHERE m.learning_group_id=$1 AND m.membership_status='active' ORDER BY m.student_academic_year_id LIMIT 2001").bind(group.group_id).fetch_all(&mut **tx).await?;
+    let students: Vec<EvaluationStudent> =
+        sqlx::query_as(crate::student_roster::STUDENT_ROSTER_SQL)
+            .bind(group.group_id)
+            .fetch_all(&mut **tx)
+            .await?;
     let responses:Vec<EvaluationResponse>=sqlx::query_as("SELECT subject_term_criterion_id,student_academic_year_id,quality_level,row_version FROM learning_group_student_evaluations WHERE learning_group_id=$1 AND domain=$2 ORDER BY subject_term_criterion_id,student_academic_year_id LIMIT 200001").bind(group.group_id).bind(scope.domain.as_str()).fetch_all(&mut **tx).await?;
     if students.len() > 2000 || responses.len() > 200000 {
         return Err(AppError::ValidationError(

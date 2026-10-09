@@ -15536,7 +15536,10 @@ export interface components {
 			textResponse?: string | null;
 		};
 		EvaluationStudent: {
+			/** Format: int32 */
+			classNumber?: number | null;
 			displayName: string;
+			homeroomName?: string | null;
 			/** Format: uuid */
 			membershipId: string;
 			/** Format: int64 */
@@ -16096,7 +16099,10 @@ export interface components {
 			rowVersion: number;
 		};
 		GradebookStudent: {
+			/** Format: int32 */
+			classNumber?: number | null;
 			displayName: string;
+			homeroomName?: string | null;
 			/** Format: uuid */
 			membershipId: string;
 			/** Format: int64 */

@@ -33770,8 +33770,21 @@
       },
       "EvaluationStudent": {
         "properties": {
+          "classNumber": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "displayName": {
             "type": "string"
+          },
+          "homeroomName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "membershipId": {
             "format": "uuid",
@@ -35639,8 +35652,21 @@
       },
       "GradebookStudent": {
         "properties": {
+          "classNumber": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "displayName": {
             "type": "string"
+          },
+          "homeroomName": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "membershipId": {
             "format": "uuid",
