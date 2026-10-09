@@ -577,6 +577,8 @@ use utoipa::OpenApi;
         crate::modules::academic::delivery::handlers::replace_group_homerooms,
         crate::modules::academic::delivery::handlers::list_group_teachers,
         crate::modules::academic::delivery::handlers::replace_group_teachers,
+        crate::modules::academic::delivery::handlers::get_group_roster_tracking,
+        crate::modules::academic::delivery::handlers::update_group_roster_tracking,
         crate::modules::academic::delivery::handlers::preview_group_roster,
         crate::modules::academic::delivery::handlers::apply_group_roster,
         crate::modules::academic::delivery::handlers::publish_group_roster,

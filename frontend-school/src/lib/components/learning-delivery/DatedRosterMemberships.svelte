@@ -89,6 +89,7 @@
 	}
 
 	function stateLabel(membership: DatedRosterMembership): string {
+		if (membership.membershipStatus === 'removed') return 'ยกเลิกก่อนเริ่มเรียน';
 		const state = membershipState(membership);
 		return state === 'upcoming'
 			? 'กำลังจะเริ่ม'
@@ -215,12 +216,19 @@
 		}
 	}
 
+	let lastHistoryKey = '';
 	$effect.pre(() => {
-		const initial = untrack(() => initialMemberships);
+		const key = `${group.id}:${group.rowVersion}`;
+		if (key === lastHistoryKey) return;
+		const first = !lastHistoryKey;
+		const initial = untrack(() => (first ? initialMemberships : null));
+		lastHistoryKey = key;
 		let current = true;
 		untrack(() => {
-			memberships = [];
-			hasHistory = false;
+			if (first) {
+				memberships = [];
+				hasHistory = false;
+			}
 			loading = true;
 			errorMessage = '';
 		});
@@ -250,7 +258,7 @@
 			<div>
 				<h3 class="font-semibold">ประวัติสมาชิกกลุ่มเรียน</h3>
 				<p class="mt-1 text-sm text-muted-foreground">
-					หลังเผยแพร่แล้ว ให้เพิ่มหรือกำหนดวันสิ้นสุดเป็นรายคน โดยเก็บประวัติเดิมไว้
+					แสดงวันที่เริ่มและสิ้นสุดการเรียน โดยเก็บประวัติเดิมไว้
 				</p>
 			</div>
 		</div>

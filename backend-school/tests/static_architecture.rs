@@ -357,6 +357,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-admission",
             &[
                 "school-academic-core",
+                "school-academic-delivery",
                 "school-crypto",
                 "school-errors",
                 "school-file-platform",
@@ -373,7 +374,12 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ("school-staff", &["school-crypto", "school-errors"]),
         (
             "school-students",
-            &["school-academic-core", "school-crypto", "school-errors"],
+            &[
+                "school-academic-core",
+                "school-academic-delivery",
+                "school-crypto",
+                "school-errors",
+            ],
         ),
         (
             "school-calendar",

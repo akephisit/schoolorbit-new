@@ -367,12 +367,18 @@
 									><Badge variant="outline">{statusLabel(record.status)}</Badge></Table.Cell
 								>
 								<Table.Cell
-									><Button
-										type="button"
-										size="sm"
-										variant="ghost"
-										onclick={() => openDetail(record)}>ดูรายละเอียด</Button
-									></Table.Cell
+									>{#if $can.hasAny(PERMISSIONS.STUDENT_READ_SCHOOL, PERMISSIONS.STUDENT_READ_ASSIGNED, PERMISSIONS.STUDENT_READ_OWN)}<Button
+											type="button"
+											size="sm"
+											variant="ghost"
+											data-sveltekit-preload-data="tap"
+											href={`/staff/students/${record.studentId}?academicYearId=${academicYearId}&returnTo=${encodeURIComponent(`/staff/academic/student-years?academicYearId=${academicYearId}`)}`}
+											>ข้อมูลนักเรียน</Button
+										>{/if}{#if canManage}<Button
+											size="sm"
+											variant="ghost"
+											onclick={() => openDetail(record)}>จัดห้อง</Button
+										>{/if}</Table.Cell
 								>
 							</Table.Row>
 						{:else}

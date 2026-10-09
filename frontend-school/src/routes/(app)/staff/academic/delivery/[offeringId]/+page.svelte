@@ -2,7 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
+	import { registerDeliveryDraftReconcile } from '#lib/academic/delivery-draft-reconcile.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import {
 		applyLearningGroupRoster,
@@ -23,6 +24,7 @@
 		type ReplaceLearningGroupHomeroomsRequest,
 		type ReplaceLearningGroupTeachersRequest,
 		type RosterPreview,
+		type LearningGroupRosterTracking,
 		type UpdateLearningGroupRequest
 	} from '#lib/api/learning-delivery.js';
 	import {
@@ -38,6 +40,7 @@
 	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
 	import LearningGroupEditor from '#lib/components/learning-delivery/LearningGroupEditor.svelte';
 	import LearningGroupList from '#lib/components/learning-delivery/LearningGroupList.svelte';
+	import RosterTrackingPanel from '#lib/components/learning-delivery/RosterTrackingPanel.svelte';
 	import DatedRosterMemberships from '#lib/components/learning-delivery/DatedRosterMemberships.svelte';
 	import RosterPreviewPanel from '#lib/components/learning-delivery/RosterPreviewPanel.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -62,6 +65,13 @@
 	const groupRequest = new LatestRequest();
 	const optionsRequest = new LatestRequest();
 	onDestroy(() => optionsRequest.abort());
+	onMount(() =>
+		registerDeliveryDraftReconcile(
+			() => void reconcileTrackedGroup(),
+			() => rosterTracking?.mode === 'homeroom'
+		)
+	);
+
 	const offeringId = $derived(data.offeringId);
 
 	let offering = $state.raw<LearningOffering | null>(null);
@@ -72,6 +82,7 @@
 	let deliveryVersionSelectValue = $state('');
 	let managementOptions = $state.raw<DeliveryManagementOptions | null>(null);
 	let rosterPreview = $state.raw<RosterPreview | null>(null);
+	let rosterTracking = $state.raw<LearningGroupRosterTracking | null>(null);
 	let offeringLoading = $state(true);
 	let groupsLoading = $state(true);
 	let versionsLoading = $state(true);
@@ -181,7 +192,16 @@
 		if (selectedGroup?.id === updated.id) selectedGroup = updated;
 	}
 
+	function trackingUpdated(groupId: string, config: LearningGroupRosterTracking) {
+		if (!selectedGroup || selectedGroup.id !== groupId) return;
+		mutationRevision += 1;
+		updateGroupState({ ...selectedGroup, rowVersion: config.groupRowVersion });
+		rosterPreview = null;
+		rosterStale = true;
+	}
+
 	function resetSelectedWorkspace() {
+		rosterTracking = null;
 		editorVisible = false;
 		rosterVisible = false;
 		rosterPreview = null;
@@ -270,6 +290,29 @@
 				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นเปิดสอนไม่สำเร็จ';
 		} finally {
 			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
+		}
+	}
+
+	async function reconcileTrackedGroup() {
+		const owner = selectedGroup;
+		if (!owner || groupLoading || rosterTracking?.mode !== 'homeroom') return;
+		const { revision, signal } = groupRequest.begin();
+		try {
+			const updated = await getLearningGroup(owner.id, { signal });
+			if (
+				!groupRequest.isCurrent(revision) ||
+				selectedGroup?.id !== owner.id ||
+				updated.learningOfferingId !== offeringId
+			)
+				return;
+			if (updated.rowVersion > selectedGroup.rowVersion) {
+				updateGroupState(updated);
+				if (rosterPreview) rosterStale = true;
+			}
+		} catch (failure) {
+			if (!isAbortError(failure) && groupRequest.isCurrent(revision))
+				actionError =
+					failure instanceof Error ? failure.message : 'ตรวจรายชื่อกลุ่มล่าสุดไม่สำเร็จ';
 		}
 	}
 
@@ -664,10 +707,19 @@
 						onaction={() => loadSelectedGroup(page.url.searchParams.get('groupId') ?? '')}
 					/>
 				{:else if publishedRosterGroup}
+					{#key publishedRosterGroup.id}<RosterTrackingPanel
+							group={publishedRosterGroup}
+							canManage={canManageRoster}
+							bind:tracking={rosterTracking}
+							initialTracking={routeSelectedGroupId === publishedRosterGroup.id
+								? data.rosterTracking
+								: null}
+							onUpdated={trackingUpdated}
+						/>{/key}
 					{#if publishedRosterGroup.rosterStatus === 'published'}
 						{#key publishedRosterGroup.id}<DatedRosterMemberships
 								group={publishedRosterGroup}
-								canManage={canManageRoster}
+								canManage={canManageRoster && rosterTracking?.mode === 'manual'}
 								onGroupChanged={refreshSelectedGroupAfterMembership}
 								initialMemberships={routeSelectedGroupId === publishedRosterGroup.id
 									? data.memberships
@@ -951,6 +1003,16 @@
 						{/if}
 					</section>
 
+					{#key selectedGroup.id}<RosterTrackingPanel
+							group={selectedGroup}
+							canManage={canManageRoster}
+							bind:tracking={rosterTracking}
+							initialTracking={routeSelectedGroupId === selectedGroup.id
+								? data.rosterTracking
+								: null}
+							onUpdated={trackingUpdated}
+						/>{/key}
+
 					{#if editorVisible && managementOptions}
 						{#key `${selectedGroup.id}:${selectedGroup.rowVersion}`}
 							<LearningGroupEditor
@@ -968,7 +1030,7 @@
 						{#key selectedGroup.id}
 							<DatedRosterMemberships
 								group={selectedGroup}
-								canManage={canManageRoster}
+								canManage={canManageRoster && rosterTracking?.mode === 'manual'}
 								onGroupChanged={refreshSelectedGroupAfterMembership}
 								initialMemberships={routeSelectedGroupId === selectedGroup.id
 									? data.memberships

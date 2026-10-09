@@ -21,6 +21,15 @@ test('classrooms sort by education stage, grade and numeric room even with custo
 	);
 	assert.equal(rooms[0].code, 'M6-1');
 });
+test('Thai slash room codes group grades before numeric rooms', () => {
+	const rooms = ['ม.2/1', 'ม.1/10', 'ม.1/2', 'ม.1/1', 'ม.2/2', 'ป.6/1'].map((code) =>
+		room(code, code.split('/')[1])
+	);
+	assert.deepEqual(
+		rooms.sort(compareHomerooms).map((r) => r.code),
+		['ป.6/1', 'ม.1/1', 'ม.1/2', 'ม.1/10', 'ม.2/1', 'ม.2/2']
+	);
+});
 test('annual students sort by grade, room and class number, with unassigned entries last', () => {
 	const rooms = [room('M1-10', '10'), room('M1-2', '2')];
 	const student = (id, grade = 'มัธยมศึกษาปีที่ 1') => ({

@@ -15,7 +15,7 @@ async fn authorized_keep_existing_resolves_only_the_exact_impact_and_replays() {
             PromotionDecisionOutcome::Hold,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 92)
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 100)
         .await
         .unwrap();
     execute_run(
@@ -253,7 +253,7 @@ async fn replacement_decision_reconciles_only_receipt_owned_planned_target() {
             PromotionDecisionOutcome::Promote,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 92)
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 100)
         .await
         .unwrap();
     let execution = execute_run(
@@ -449,7 +449,7 @@ async fn replacement_resolution_rolls_back_core_rows_when_audit_write_fails() {
             PromotionDecisionOutcome::Promote,
         )
         .await;
-    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 92)
+    crate::modules::academic::cutover_test_support::apply_migrations_through(&pool, 100)
         .await
         .unwrap();
     let execution = execute_run(

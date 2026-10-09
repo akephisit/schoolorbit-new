@@ -10063,6 +10063,54 @@
         ],
         "type": "object"
       },
+      "ApiResponse_LearningGroupRosterTracking": {
+        "properties": {
+          "data": {
+            "properties": {
+              "effectiveFrom": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "endsOn": {
+                "format": "date",
+                "type": "string"
+              },
+              "groupRowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/RosterTrackingMode"
+              },
+              "startsOn": {
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "groupRowVersion",
+              "startsOn",
+              "endsOn"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_LearningOffering": {
         "properties": {
           "data": {
@@ -38196,6 +38244,39 @@
         },
         "type": "array"
       },
+      "LearningGroupRosterTracking": {
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endsOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "groupRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RosterTrackingMode"
+          },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "groupRowVersion",
+          "startsOn",
+          "endsOn"
+        ],
+        "type": "object"
+      },
       "LearningGroupStudent": {
         "properties": {
           "id": {
@@ -44558,6 +44639,13 @@
           "draft",
           "published",
           "closed"
+        ],
+        "type": "string"
+      },
+      "RosterTrackingMode": {
+        "enum": [
+          "manual",
+          "homeroom"
         ],
         "type": "string"
       },
@@ -53118,6 +53206,30 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "UpdateRosterTrackingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/RosterTrackingMode"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "rowVersion"
+        ],
         "type": "object"
       },
       "UpdateStaffCareerRequest": {
@@ -65563,6 +65675,158 @@
               }
             },
             "description": "Learning group roster source conflict"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
+    "/api/academic/learning-groups/{id}/roster-tracking": {
+      "get": {
+        "operationId": "getLearningGroupRosterTracking",
+        "parameters": [
+          {
+            "description": "Learning group ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LearningGroupRosterTracking"
+                }
+              }
+            },
+            "description": "Room tracking configuration and date bounds"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Group read denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Group not found"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      },
+      "put": {
+        "operationId": "updateLearningGroupRosterTracking",
+        "parameters": [
+          {
+            "description": "Learning group ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRosterTrackingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LearningGroupRosterTracking"
+                }
+              }
+            },
+            "description": "Room tracking configuration saved and published memberships reconciled"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid tracking configuration"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Group management denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Group not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale revision, closed term, capacity or membership conflict"
           }
         },
         "tags": [

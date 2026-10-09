@@ -69,6 +69,10 @@ pub fn routes() -> Router<AppState> {
             get(handlers::preview_group_roster).put(handlers::apply_group_roster),
         )
         .route(
+            "/learning-groups/{id}/roster-tracking",
+            get(handlers::get_group_roster_tracking).put(handlers::update_group_roster_tracking),
+        )
+        .route(
             "/learning-groups/{id}/roster/publish",
             post(handlers::publish_group_roster),
         )

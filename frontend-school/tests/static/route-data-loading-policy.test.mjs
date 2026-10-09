@@ -81,6 +81,30 @@ test('startup inspection follows aliases and local helpers without banning inter
 	]);
 });
 
+test('reviewed delivery reconciliation callbacks are event reads while evaluated mount arguments remain primary', () => {
+	const imports = `<script lang="ts">import {onMount as mounted} from 'svelte'; import {list as read} from '#lib/api/feature'; import {registerDeliveryDraftReconcile as register} from '#lib/academic/delivery-draft-reconcile.js';`;
+	assert.deepEqual(
+		mountApiCalls(
+			`${imports} function reconcile(){return read()} mounted(()=>register(reconcile,()=>true));</script>`
+		),
+		['subscribe:read']
+	);
+	assert.deepEqual(
+		mountApiCalls(`${imports} mounted(()=>register(()=>read(),()=>true,read()));</script>`),
+		['read', 'subscribe:read']
+	);
+	assert.deepEqual(mountApiCalls(`${imports} mounted(()=>register(read,()=>true));</script>`), [
+		'subscribe:read'
+	]);
+});
+
+test('evaluating a reconciliation callback factory still counts as a primary mount read', () => {
+	const imports = `<script lang="ts">import {onMount} from 'svelte'; import {list as read} from '#lib/api/feature'; import {registerDeliveryDraftReconcile as register} from '#lib/academic/delivery-draft-reconcile.js';`;
+	assert.deepEqual(mountApiCalls(`${imports} onMount(()=>register(read(),()=>true));</script>`), [
+		'read'
+	]);
+});
+
 test('API contract contains no route-wide page-view endpoint', async () => {
 	const contract = JSON.parse(
 		await readFile(path.join(projectRoot, '../contracts/openapi/school-api.json'), 'utf8')

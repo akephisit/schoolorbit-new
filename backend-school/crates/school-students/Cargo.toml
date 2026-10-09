@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+school-academic-delivery = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }
 school-academic-core = { workspace = true }

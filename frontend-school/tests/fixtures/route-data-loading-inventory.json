@@ -338,7 +338,15 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-delivery",
-			"notes": "Route starts offering identity, group list and explicit group independently. Opening summaries and the selected immutable graph follow offering identity; published snapshots expose separate dated roster history, while management options remain action-lazy."
+			"notes": "Route starts offering identity, group list and explicit group independently. Opening summaries and the selected immutable graph follow offering identity; published snapshots expose separate dated roster history, while management options remain action-lazy.",
+			"browserMount": {
+				"reason": "Register focus, visibility and visible-only polling for automatic room rosters. Registration performs no initial read; reconciliation refreshes only a changed selected group and retains unsaved policy drafts.",
+				"tests": [
+					"tests/e2e/delivery-offering-route-loading.spec.ts",
+					"tests/static/delivery-offering-route-loading.test.mjs"
+				],
+				"eventReads": ["subscribe:getLearningGroup"]
+			}
 		},
 		{
 			"route": "staff/academic/exam-schedules",

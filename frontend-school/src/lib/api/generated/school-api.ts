@@ -1626,6 +1626,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/learning-groups/{id}/roster-tracking': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getLearningGroupRosterTracking'];
+		put: operations['updateLearningGroupRosterTracking'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/learning-groups/{id}/roster/publish': {
 		parameters: {
 			query?: never;
@@ -9117,6 +9133,21 @@ export interface components {
 		};
 		ApiResponse_LearningGroupHomeroomIds: {
 			data: string[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LearningGroupRosterTracking: {
+			data: {
+				/** Format: date */
+				effectiveFrom?: string | null;
+				/** Format: date */
+				endsOn: string;
+				/** Format: int64 */
+				groupRowVersion: number;
+				mode: components['schemas']['RosterTrackingMode'];
+				/** Format: date */
+				startsOn: string;
+			};
 			message?: string;
 			success: boolean;
 		};
@@ -16785,6 +16816,17 @@ export interface components {
 			updatedAt: string;
 		};
 		LearningGroupHomeroomIds: string[];
+		LearningGroupRosterTracking: {
+			/** Format: date */
+			effectiveFrom?: string | null;
+			/** Format: date */
+			endsOn: string;
+			/** Format: int64 */
+			groupRowVersion: number;
+			mode: components['schemas']['RosterTrackingMode'];
+			/** Format: date */
+			startsOn: string;
+		};
 		LearningGroupStudent: {
 			/** Format: uuid */
 			id: string;
@@ -18556,6 +18598,8 @@ export interface components {
 		};
 		/** @enum {string} */
 		RosterStatus: 'draft' | 'published' | 'closed';
+		/** @enum {string} */
+		RosterTrackingMode: 'manual' | 'homeroom';
 		RoundRankingEntry: {
 			/** Format: uuid */
 			applicationId: string;
@@ -20897,6 +20941,13 @@ export interface components {
 			name_th?: string | null;
 			room_type?: string | null;
 			status?: string | null;
+		};
+		UpdateRosterTrackingRequest: {
+			/** Format: date */
+			effectiveFrom?: string | null;
+			mode: components['schemas']['RosterTrackingMode'];
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		UpdateStaffCareerRequest: {
 			changes: components['schemas']['StaffCareerCurrentChange'][];
@@ -29403,6 +29454,128 @@ export interface operations {
 				};
 			};
 			/** @description Learning group roster source conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getLearningGroupRosterTracking: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Room tracking configuration and date bounds */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroupRosterTracking'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Group read denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	updateLearningGroupRosterTracking: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Learning group ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateRosterTrackingRequest'];
+			};
+		};
+		responses: {
+			/** @description Room tracking configuration saved and published memberships reconciled */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LearningGroupRosterTracking'];
+				};
+			};
+			/** @description Invalid tracking configuration */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Group management denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Group not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale revision, closed term, capacity or membership conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;

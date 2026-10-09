@@ -458,6 +458,7 @@ pub async fn delete_student(
 
     school_academic_core::services::student_years::withdraw_for_account_deactivation(
         &mut tx,
+        &school_academic_delivery::services::roster_tracking::RoomRosterTracking,
         actor_user_id,
         student_id,
     )

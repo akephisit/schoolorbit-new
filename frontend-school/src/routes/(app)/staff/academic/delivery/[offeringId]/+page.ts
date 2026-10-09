@@ -1,13 +1,15 @@
 import type { PageLoad } from './$types';
 import {
 	getLearningGroup,
+	getLearningGroupRosterTracking,
 	getDeliveryVersion,
 	listDeliveryVersions,
 	getLearningOffering,
 	listDatedRosterMemberships,
 	listLearningGroups,
 	type DatedRosterMembership,
-	type LearningGroup
+	type LearningGroup,
+	type LearningGroupRosterTracking
 } from '#lib/api/learning-delivery.js';
 import { selectDeliveryVersion } from '#lib/academic/learning-delivery-page.js';
 import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
@@ -78,7 +80,17 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 					)
 				: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>)
 	);
+	const rosterTracking = selectedGroup.then(
+		async (result): Promise<RouteLoadResult<LearningGroupRosterTracking | null>> =>
+			result.ok && result.data
+				? captureRouteLoad(
+						getLearningGroupRosterTracking(result.data.id, { requestFetch: fetch }),
+						'โหลดวิธีจัดรายชื่อไม่สำเร็จ'
+					)
+				: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>)
+	);
 	return {
+		rosterTracking,
 		title: 'รายละเอียดรายการเปิดสอน',
 		offeringId,
 		requestedGroupId,

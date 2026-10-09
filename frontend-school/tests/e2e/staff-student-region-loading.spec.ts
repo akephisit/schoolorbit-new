@@ -205,3 +205,90 @@ test('same-person refresh keeps data and exposes updating status while pending',
 	api.release();
 	await expect(region.getByRole('status')).toHaveCount(0);
 });
+for (const width of [375, 1280])
+	test(`placement history streams and retries independently at ${width}px`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 900 });
+		const api = await mockStaffStudents(page, {
+			permissions: [
+				'student.read.school',
+				'student_academic_year.read.school',
+				'homeroom.read.school'
+			]
+		});
+		let release = () => {};
+		const held = new Promise<void>((resolve) => (release = resolve));
+		let years = 0,
+			rooms = 0,
+			placements = 0;
+		await page.route(
+			(url) => url.pathname.startsWith('/api/academic/'),
+			async (route) => {
+				const url = new URL(route.request().url());
+				if (url.pathname === '/api/academic/context/options') return route.fallback();
+				if (url.pathname === '/api/academic/student-years') {
+					years += 1;
+					expect(url.searchParams.get('studentId')).toBe(firstStudent);
+					expect(url.searchParams.get('academicYearId')).toBe(year);
+					if (years === 1) {
+						await held;
+						return route.fulfill({
+							status: 503,
+							contentType: 'application/json',
+							body: JSON.stringify({ success: false, error: 'ประวัติยังไม่พร้อม' })
+						});
+					}
+					return route.fulfill({
+						contentType: 'application/json',
+						body: JSON.stringify({
+							success: true,
+							data: [
+								{
+									id: '55000000-0000-4000-8000-000000000088',
+									studentId: firstStudent,
+									academicYearId: year,
+									gradeLevelName: 'มัธยมศึกษาปีที่ 1',
+									studyProgramName: 'แผนหลัก',
+									status: 'active'
+								}
+							]
+						})
+					});
+				}
+				if (url.pathname === '/api/academic/homerooms') rooms += 1;
+				else if (url.pathname.endsWith('/placements')) placements += 1;
+				else return route.fallback();
+				return route.fulfill({
+					contentType: 'application/json',
+					body: JSON.stringify({ success: true, data: [] })
+				});
+			}
+		);
+		await page.goto(studentPath());
+		const history = page.getByTestId('student-placement-history');
+		try {
+			await expect(page.getByTestId('student-profile')).toContainText('นักเรียนแรก');
+			await expect(history).toHaveAttribute('aria-busy', 'true');
+			await expect(history.getByRole('table')).toBeVisible();
+		} finally {
+			release();
+		}
+		await expect(history).toContainText('ประวัติยังไม่พร้อม');
+		await page.screenshot({
+			path: `/tmp/schoolorbit-profile-history-${width}-error.png`,
+			fullPage: true
+		});
+		await history.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+		await expect(history).toContainText('มัธยมศึกษาปีที่ 1');
+		await expect(history).toContainText('ยังไม่มีประวัติการจัดห้องในปีนี้');
+		expect(api.count(`/api/students/${firstStudent}`)).toBe(1);
+		expect({ years, rooms, placements }).toEqual({ years: 2, rooms: 2, placements: 1 });
+		await page.screenshot({
+			path: `/tmp/schoolorbit-profile-history-${width}-light.png`,
+			fullPage: true
+		});
+		await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+		await page.screenshot({
+			path: `/tmp/schoolorbit-profile-history-${width}-dark.png`,
+			fullPage: true
+		});
+	});

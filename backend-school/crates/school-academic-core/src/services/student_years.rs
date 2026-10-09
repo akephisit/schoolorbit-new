@@ -487,6 +487,7 @@ pub async fn create_student_year(
 /// retains this transaction for its account update and commits both together.
 pub async fn withdraw_for_account_deactivation(
     transaction: &mut Transaction<'_, Postgres>,
+    rosters: &dyn crate::ports::PlacementRosterPort,
     actor_user_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), AppError> {
@@ -523,6 +524,9 @@ pub async fn withdraw_for_account_deactivation(
         "UPDATE student_academic_years SET status='withdrawn',row_version=row_version+1,updated_at=now()
          WHERE student_id=$1 AND academic_year_id=ANY($2) AND status IN ('planned','active') RETURNING id",
     ).bind(student_id).bind(&years).fetch_all(&mut **transaction).await?;
+    rosters
+        .reconcile(transaction, actor_user_id, &student_year_ids)
+        .await?;
     if !placement_ids.is_empty() || !student_year_ids.is_empty() {
         placement_ids.sort_unstable();
         student_year_ids.sort_unstable();
@@ -596,6 +600,7 @@ pub async fn update_student_year(
 
 pub async fn create_placement(
     pool: &PgPool,
+    rosters: &dyn crate::ports::PlacementRosterPort,
     actor_user_id: Uuid,
     student_year_id: Uuid,
     request: CreateHomeroomPlacementRequest,
@@ -670,12 +675,16 @@ pub async fn create_placement(
         serde_json::json!({"status": request.status}),
     )
     .await?;
+    rosters
+        .reconcile(&mut transaction, actor_user_id, &[student_year_id])
+        .await?;
     transaction.commit().await?;
     get_placement(pool, id).await
 }
 
 pub async fn transfer_placement(
     pool: &PgPool,
+    rosters: &dyn crate::ports::PlacementRosterPort,
     actor_user_id: Uuid,
     placement_id: Uuid,
     request: TransferHomeroomPlacementRequest,
@@ -779,6 +788,13 @@ pub async fn transfer_placement(
         }),
     )
     .await?;
+    rosters
+        .reconcile(
+            &mut transaction,
+            actor_user_id,
+            &[old.student_academic_year_id],
+        )
+        .await?;
     transaction.commit().await?;
     Ok(HomeroomPlacementTransfer {
         ended_placement: get_placement(pool, old.id).await?,

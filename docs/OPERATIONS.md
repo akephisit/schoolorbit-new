@@ -27,6 +27,14 @@ The migration expands constraints without rewriting data. Older binaries remain 
 zero targets are stored in opening revisions. After that point, use a roll-forward fix: older
 validation rejects those revisions. Do not roll back by deleting opening or timetable history.
 
+## Automatic room roster tracking
+
+Migration [100](../backend-school/migrations/100_learning_group_roster_tracking.sql) adds opt-in group roster policy. Existing groups remain manual. An authorized group manager selects room tracking and its effective date using the group's existing source-room coverage. Published group memberships then reconcile in the same transaction as room add, transfer, removal, admission enrollment, account deactivation, promotion execution/correction or term activation. Capacity and date conflicts roll back the originating write. Draft rosters reconcile when prepared and published. Planned placements in a planning or ready year produce dated upcoming memberships; activation reconciles them again. Reads never synchronize memberships.
+
+Tracking is operational roster policy and does not change immutable opening or timetable snapshots. Existing membership identities, results and scores are retained. Cancelled-before-start (`removed`) episodes retain their history but occupy no teaching dates. Switching to manual preserves the current roster. Group managers must explicitly publish rosters before automatic room mutations apply to them.
+
+Deploy the backend, generated API contracts and frontend through the normal maintenance and all-tenant migration gates. An older binary can read the expanded schema, but must not be restored once automatic tracking is enabled: it cannot maintain that invariant. Recover with a compatible forward fix; never delete membership history or alter migration checksums to roll back.
+
 ## Required Environment and Secrets
 
 All secrets and environment-specific URLs come from the runtime environment or deployment secret store. Example files are templates only.

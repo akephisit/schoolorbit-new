@@ -59,3 +59,10 @@ export function groupPublicOrganizationMembers(members: Unit['members']) {
 		})
 		.map(([code, members]) => ({ code, label: publicPositionLabel(code), members }));
 }
+
+/** Hide academic subject-group branches in the public administration chart only. */
+export function administrationTree(nodes: PublicOrganizationNode[]): PublicOrganizationNode[] {
+	return nodes
+		.filter((node) => node.unitType !== 'subject_group')
+		.map((node) => ({ ...node, children: administrationTree(node.children) }));
+}

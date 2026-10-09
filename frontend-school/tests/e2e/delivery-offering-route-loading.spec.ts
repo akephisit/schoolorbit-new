@@ -72,7 +72,7 @@ function group(id: string, published = false) {
 		rosterPublishedAt: published ? '2026-05-01T00:00:00Z' : null,
 		teachersLocked: published,
 		teacherAssignments: [],
-		homeroomIds: [],
+		homeroomIds: [ids.year],
 		preferredRoomIds: [],
 		rowVersion: 1
 	};
@@ -136,6 +136,7 @@ function versionGraph(published = false) {
 async function fulfill(route: Route, data: unknown) {
 	await route.fulfill({
 		contentType: 'application/json',
+		headers: { 'X-CSRF-Token': 'synthetic-test-csrf' },
 		body: JSON.stringify({ success: true, data })
 	});
 }
@@ -147,9 +148,19 @@ async function mockOffering(
 		failOnce?: string;
 		published?: boolean;
 		permissions?: string[];
+		trackingMode?: 'manual' | 'homeroom';
+		failTrackingSave?: boolean;
+		saveGate?: Promise<void>;
 	} = {}
 ) {
 	const counts = new Map<string, number>();
+	let tracking = {
+		mode: options.trackingMode ?? 'manual',
+		effectiveFrom: options.trackingMode === 'homeroom' ? '2026-10-09' : null,
+		groupRowVersion: 1,
+		startsOn: '2026-05-01',
+		endsOn: '2027-04-30'
+	};
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
@@ -201,6 +212,25 @@ async function mockOffering(
 				});
 				return;
 			}
+			if (path.endsWith('/roster-tracking')) {
+				if (route.request().method() === 'PUT') {
+					if (options.saveGate) await options.saveGate;
+					if (options.failTrackingSave)
+						return void (await route.fulfill({
+							status: 409,
+							contentType: 'application/json',
+							body: JSON.stringify({ success: false, error: 'กลุ่มนี้เปลี่ยนแล้ว กรุณาโหลดใหม่' })
+						}));
+					const body = route.request().postDataJSON();
+					tracking = {
+						...tracking,
+						mode: body.mode,
+						effectiveFrom: body.effectiveFrom,
+						groupRowVersion: tracking.groupRowVersion + 1
+					};
+				}
+				return void (await fulfill(route, tracking));
+			}
 			if (path === paths.offering) return void (await fulfill(route, offering()));
 			if (path === paths.groups)
 				return void (await fulfill(route, [
@@ -211,7 +241,10 @@ async function mockOffering(
 			if (path === paths.version)
 				return void (await fulfill(route, versionGraph(options.published)));
 			if (path === paths.groupA)
-				return void (await fulfill(route, group(ids.groupA, options.published)));
+				return void (await fulfill(route, {
+					...group(ids.groupA, options.published),
+					rowVersion: tracking.groupRowVersion
+				}));
 			if (path === paths.groupB) return void (await fulfill(route, group(ids.groupB)));
 			if (path === paths.membershipsA) return void (await fulfill(route, []));
 			if (path === paths.management)
@@ -219,7 +252,11 @@ async function mockOffering(
 			await fulfill(route, {});
 		}
 	);
-	return (path: string) => counts.get(path) ?? 0;
+	return Object.assign((path: string) => counts.get(path) ?? 0, {
+		bumpTrackingRevision() {
+			tracking = { ...tracking, groupRowVersion: tracking.groupRowVersion + 1 };
+		}
+	});
 }
 
 function url(groupId: string | null = ids.groupA) {
@@ -374,6 +411,106 @@ test('a failed versions region retries without rerunning offering or groups', as
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect(page.getByTestId('delivery-versions-ready')).toBeVisible();
 	expect(count(paths.versions)).toBe(2);
+	expect(count(paths.offering)).toBe(1);
+	expect(count(paths.groups)).toBe(1);
+});
+
+for (const width of [375, 1280]) {
+	test(`automatic roster mode is editable on published versions at ${width}px`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		const count = await mockOffering(page, {
+			published: true,
+			permissions: ['learning_offering.read.school', 'learning_offering.manage.school']
+		});
+		await page.goto(url());
+		const panel = page.getByTestId('roster-tracking');
+		await expect(panel).toContainText('จัดรายชื่อเอง');
+		await panel.getByRole('button', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+		await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
+		await expect(
+			panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })
+		).toBeVisible();
+		await panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true }).click();
+		await expect(panel).toContainText('บันทึกวิธีจัดรายชื่อแล้ว');
+		await expect(
+			page.getByRole('button', { name: 'เพิ่มนักเรียนตามวันที่', exact: true })
+		).toHaveCount(0);
+		expect(count(paths.offering)).toBe(1);
+		expect(count(paths.groups)).toBe(1);
+		await page.screenshot({
+			path: `/tmp/schoolorbit-roster-tracking-${width}-light.png`,
+			fullPage: true
+		});
+		await page.evaluate(() => document.documentElement.classList.add('dark'));
+		await page.screenshot({
+			path: `/tmp/schoolorbit-roster-tracking-${width}-dark.png`,
+			fullPage: true
+		});
+		await panel.getByRole('button', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+		await page.getByRole('option', { name: 'จัดรายชื่อเอง', exact: true }).click();
+		await panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true }).click();
+		await expect(
+			page.getByRole('button', { name: 'เพิ่มนักเรียนตามวันที่', exact: true })
+		).toBeVisible();
+	});
+}
+test('tracking save is pending locally and a conflict preserves mode and date', async ({
+	page
+}) => {
+	const gate = deferred();
+	await mockOffering(page, {
+		published: true,
+		permissions: ['learning_offering.read.school', 'learning_offering.manage.school'],
+		failTrackingSave: true,
+		saveGate: gate.promise
+	});
+	await page.goto(url());
+	const panel = page.getByTestId('roster-tracking');
+	await panel.getByRole('button', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
+	await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
+	const date = await panel
+		.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })
+		.innerText();
+	await panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true }).click();
+	await expect(panel.getByRole('button', { name: 'กำลังบันทึก', exact: true })).toBeDisabled();
+	gate.release();
+	await expect(panel.getByRole('alert')).toContainText('กลุ่มนี้เปลี่ยนแล้ว');
+	await expect(panel.getByRole('button', { name: 'วิธีจัดรายชื่อ', exact: true })).toContainText(
+		'ติดตามห้องอัตโนมัติ'
+	);
+	await expect(panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })).toHaveText(
+		date
+	);
+});
+
+test('automatic roster focus refresh retains draft and updates only changed group regions', async ({
+	page
+}) => {
+	const count = await mockOffering(page, {
+		published: true,
+		trackingMode: 'homeroom',
+		permissions: ['learning_offering.read.school', 'learning_offering.manage.school']
+	});
+	await page.goto(url());
+	const panel = page.getByTestId('roster-tracking');
+	const mode = panel.getByRole('button', { name: 'วิธีจัดรายชื่อ', exact: true });
+	await expect(mode).toContainText('ติดตามห้องอัตโนมัติ');
+	await mode.click();
+	await page.getByRole('option', { name: 'จัดรายชื่อเอง', exact: true }).click();
+	await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+	await expect.poll(() => count(paths.groupA)).toBe(2);
+	await expect(mode).toContainText('จัดรายชื่อเอง');
+	expect(count(`${paths.groupA}/roster-tracking`)).toBe(1);
+	count.bumpTrackingRevision();
+	await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+	await expect.poll(() => count(`${paths.groupA}/roster-tracking`)).toBe(2);
+	await expect.poll(() => count(paths.membershipsA)).toBe(2);
+	await expect(mode).toContainText('จัดรายชื่อเอง');
+	await expect(
+		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
+	).toBeEnabled();
 	expect(count(paths.offering)).toBe(1);
 	expect(count(paths.groups)).toBe(1);
 });

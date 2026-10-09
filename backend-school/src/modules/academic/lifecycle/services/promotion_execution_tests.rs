@@ -20,7 +20,7 @@ async fn promotion_execution_partial_batch_preserves_completed_items_after_anoth
             "promotion_execution_partial",
         )
         .await;
-    apply_migrations_through(&pool, 96).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     assert_eq!(calc.items.len(), 2);
     let mut reviewed = Vec::new();
     let mut run = calc.run.clone();
@@ -301,7 +301,7 @@ pub(crate) async fn approved_fixture(
     PromotionRun,
 ) {
     let (pool, reviewer, results_actor, context, calc) = ready_run(name).await;
-    apply_migrations_through(&pool, 96).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     let mut decision = hold(1);
     decision.decision.outcome = outcome;
     if outcome == PromotionDecisionOutcome::Promote {
@@ -562,7 +562,7 @@ async fn promotion_execution_can_finish_after_reload_when_all_item_receipts_alre
 #[tokio::test]
 async fn promotion_execution_requires_approval_and_exact_permission_then_replays_hold_receipt() {
     let (pool, reviewer, _, _, calc) = ready_run("promotion_execution_hold").await;
-    apply_migrations_through(&pool, 96).await.unwrap();
+    apply_migrations_through(&pool, 100).await.unwrap();
     let executor = ActorContext {
         user_id: reviewer.user_id,
         permissions: vec![
@@ -691,4 +691,55 @@ async fn promotion_execution_requires_approval_and_exact_permission_then_replays
         execute_run(&pool, &executor, calc.run.id, input).await,
         Err(AppError::Conflict(_))
     ));
+}
+
+#[tokio::test]
+async fn promotion_execution_tracks_room_rosters_without_deleting_evidence() {
+    let (pool, executor, _, _, calc, approved) = approved_fixture(
+        "promotion_room_tracking",
+        PromotionDecisionOutcome::TransferOut,
+    )
+    .await;
+    let student_year = calc.items[0].student_academic_year_id;
+    let (membership, group): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT id,learning_group_id FROM learning_group_students WHERE student_academic_year_id=$1 AND membership_status='active' ORDER BY id LIMIT 1"
+    ).bind(student_year).fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id) SELECT gen_random_uuid(),g.id,g.academic_term_id,g.academic_year_id,p.homeroom_id FROM learning_groups g JOIN homeroom_placements p ON p.student_academic_year_id=$2 AND p.status='current' WHERE g.id=$1 AND NOT EXISTS(SELECT 1 FROM learning_group_homerooms c WHERE c.learning_group_id=g.id AND c.homeroom_id=p.homeroom_id)")
+        .bind(group).bind(student_year).execute(&pool).await.unwrap();
+    // The group was explicitly opted in when its term started; simulate that saved policy.
+    sqlx::query("INSERT INTO learning_group_roster_tracking(learning_group_id,mode,effective_from) SELECT g.id,'homeroom',t.start_date FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id WHERE g.id=$1")
+        .bind(group).execute(&pool).await.unwrap();
+    let count_before: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_group_students WHERE learning_group_id=$1 AND student_academic_year_id=$2")
+        .bind(group).bind(student_year).fetch_one(&pool).await.unwrap();
+    let result = execute_run(
+        &pool,
+        &executor,
+        calc.run.id,
+        ExecutePromotionRunInput {
+            request_id: Uuid::new_v4(),
+            row_version: approved.row_version,
+            limit: 100,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.receipts.len(), 1);
+    let (status, left_at): (String, Option<chrono::NaiveDate>) =
+        sqlx::query_as("SELECT membership_status,left_at FROM learning_group_students WHERE id=$1")
+            .bind(membership)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "ended");
+    assert!(left_at.is_some());
+    let count_after: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_group_students WHERE learning_group_id=$1 AND student_academic_year_id=$2")
+        .bind(group).bind(student_year).fetch_one(&pool).await.unwrap();
+    assert_eq!(count_after, count_before);
+    let version: i64 =
+        sqlx::query_scalar("SELECT row_version FROM learning_group_students WHERE id=$1")
+            .bind(membership)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(version > 1);
 }
