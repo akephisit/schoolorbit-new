@@ -8,4 +8,4 @@
 	<title>{data.title}</title>
 </svelte:head>
 
-<PublicCalendarView mode="page" />
+<PublicCalendarView mode="page" {data} />

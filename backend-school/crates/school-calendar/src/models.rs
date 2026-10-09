@@ -271,6 +271,9 @@ pub struct CalendarEventQuery {
     pub audience: Option<CalendarAudienceType>,
     pub visibility: Option<CalendarVisibility>,
     pub q: Option<String>,
+    /// Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel).
+    pub search: Option<bool>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]

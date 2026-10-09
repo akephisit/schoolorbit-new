@@ -5597,6 +5597,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/school/public/organization-members/{id}/avatar': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPublicOrganizationAvatar'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/school/public/statistics': {
 		parameters: {
 			query?: never;
@@ -17801,6 +17817,7 @@ export interface components {
 			students: components['schemas']['PublicStudentCounts'];
 		};
 		PublicOrganizationMember: {
+			avatarUrl?: string | null;
 			name: string;
 			positionCode: string;
 			positionTitle: string | null;
@@ -39210,7 +39227,10 @@ export interface operations {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;
+				offset?: number;
 				q?: string;
+				/** @description Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel). */
+				search?: boolean;
 				tagId?: string;
 				to?: string;
 				visibility?: components['schemas']['CalendarVisibility'];
@@ -43820,7 +43840,10 @@ export interface operations {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;
+				offset?: number;
 				q?: string;
+				/** @description Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel). */
+				search?: boolean;
 				tagId?: string;
 				to?: string;
 				visibility?: components['schemas']['CalendarVisibility'];
@@ -45093,7 +45116,10 @@ export interface operations {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;
+				offset?: number;
 				q?: string;
+				/** @description Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel). */
+				search?: boolean;
 				tagId?: string;
 				to?: string;
 				visibility?: components['schemas']['CalendarVisibility'];
@@ -45343,7 +45369,10 @@ export interface operations {
 				audience?: components['schemas']['CalendarAudienceType'];
 				categoryId?: string;
 				from?: string;
+				offset?: number;
 				q?: string;
+				/** @description Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel). */
+				search?: boolean;
 				tagId?: string;
 				to?: string;
 				visibility?: components['schemas']['CalendarVisibility'];
@@ -46126,6 +46155,36 @@ export interface operations {
 				};
 			};
 			/** @description School not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPublicOrganizationAvatar: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Current public organization membership */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Short-lived profile image delivery */
+			307: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Published staff photo not found */
 			404: {
 				headers: {
 					[name: string]: unknown;

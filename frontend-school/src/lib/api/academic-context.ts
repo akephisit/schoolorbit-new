@@ -18,11 +18,12 @@ export async function listAcademicContextOptions(
 }
 
 export async function listPublicAcademicContextOptions(
-	signal?: AbortSignal
+	signal?: AbortSignal,
+	options: ApiRequestOptions = {}
 ): Promise<AcademicContextOptionsResponse> {
-	const response = await apiClient.get<AcademicContextOptionsResponse>(
+	const response = await apiClient.getPublic<AcademicContextOptionsResponse>(
 		'/api/public/academic-context/options',
-		{ signal }
+		{ ...options, signal: signal ?? options.signal }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดปีและภาคเรียนของปฏิทินได้');
 }

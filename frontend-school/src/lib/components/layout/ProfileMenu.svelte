@@ -16,7 +16,7 @@
 		if ($authStore.isAuthenticated || authStore.sessionEpoch !== epoch + 1) return;
 		// Clear redirectAfterLogin to prevent layout from redirecting back to protected page
 		sessionStorage.removeItem('redirectAfterLogin');
-		await goto(resolve('login'), { refreshAll: true });
+		await goto(resolve('/'), { refreshAll: true });
 	}
 
 	// Get initials from first and last name
@@ -72,6 +72,7 @@
 {:else if user}
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger
+			aria-label="เปิดเมนูบัญชี"
 			class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-accent transition-colors outline-none"
 		>
 			<!-- Avatar Only -->

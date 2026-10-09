@@ -41927,6 +41927,12 @@
       },
       "PublicOrganizationMember": {
         "properties": {
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "name": {
             "type": "string"
           },
@@ -78620,6 +78626,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel).",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -84744,6 +84768,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel).",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -86428,6 +86470,24 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel).",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -86783,6 +86843,24 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "Cross-month partial-text search. Results are capped at 101 (100 plus a next-page sentinel).",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
             }
           }
         ],
@@ -87706,6 +87784,41 @@
               }
             },
             "description": "School not found"
+          }
+        },
+        "tags": [
+          "school"
+        ]
+      }
+    },
+    "/api/school/public/organization-members/{id}/avatar": {
+      "get": {
+        "operationId": "getPublicOrganizationAvatar",
+        "parameters": [
+          {
+            "description": "Current public organization membership",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Short-lived profile image delivery"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Published staff photo not found"
           }
         },
         "tags": [

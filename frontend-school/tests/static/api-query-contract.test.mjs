@@ -32,6 +32,14 @@ async function importApiWrapper(relativePath) {
 					data: globalThis.__schoolOrbitApiResponseData,
 					status: 200
 				});
+			},
+			getPublic(endpoint, options) {
+				globalThis.__schoolOrbitApiCalls.push({ method: 'getPublic', endpoint, options });
+				return Promise.resolve({
+					success: true,
+					data: globalThis.__schoolOrbitApiResponseData,
+					status: 200
+				});
 			}
 		};
 		export function requireApiData(response, fallback) {
@@ -319,13 +327,16 @@ test('calendar wrappers send generated query objects through the central transpo
 		to: '2026-08-31',
 		categoryId: 'category-1',
 		tagId: 'tag-1',
-		q: 'สอบ'
+		q: 'สอบ',
+		search: true,
+		offset: 100
 	};
-	await calendar.listPublicCalendarEvents(publicFilters);
+	const publicOptions = { requestFetch: fetch, signal: new AbortController().signal };
+	await calendar.listPublicCalendarEvents(publicFilters, publicOptions);
 	assert.deepEqual(globalThis.__schoolOrbitApiCalls.pop(), {
-		method: 'get',
+		method: 'getPublic',
 		endpoint: '/api/public/calendar/events',
-		options: { query: publicFilters }
+		options: { ...publicOptions, query: publicFilters }
 	});
 });
 

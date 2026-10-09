@@ -21,6 +21,85 @@ use super::services;
 
 static NEXT_YEAR: AtomicI32 = AtomicI32::new(50_000);
 
+#[tokio::test]
+async fn cross_month_search_is_partial_bounded_and_keeps_public_visibility_and_year_dates() {
+    let pool = migrated_pool("calendar_cross_month_search").await;
+    let fixture = insert_fixture(&pool).await;
+    let today = calendar_today();
+    for (title, date, public) in [
+        ("ทัศนศึกษาตุลาคม", today - Duration::days(200), true),
+        ("ทัศนศึกษาพฤศจิกายน", today + Duration::days(200), true),
+        ("ทัศนศึกษาภายใน", today, false),
+        ("ทัศนศึกษา 100%_จริง", today + Duration::days(201), true),
+    ] {
+        services::create_event(
+            &pool,
+            fixture.staff_user_id,
+            event_request(
+                fixture.academic_year_id,
+                title,
+                date,
+                public,
+                vec![],
+                vec![target(CalendarAudienceType::All, None, None)],
+                vec![],
+            ),
+        )
+        .await
+        .unwrap();
+    }
+    let mut query = query_around(today, fixture.academic_year_id);
+    query.from = None;
+    query.to = None;
+    query.search = Some(true);
+    query.q = Some("ทัศน".into());
+    assert_eq!(
+        services::list_management_events(&pool, query.clone())
+            .await
+            .unwrap()
+            .len(),
+        4
+    );
+    let public = services::list_public_events(&pool, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(public.len(), 3);
+    assert!(!public.iter().any(|event| event.title.contains("ภายใน")));
+    query.from = Some(today + Duration::days(100));
+    query.to = Some(today + Duration::days(200));
+    assert_eq!(
+        services::list_public_events(&pool, query.clone())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    query.from = None;
+    query.to = None;
+    query.q = Some("100%_".into());
+    assert_eq!(
+        services::list_public_events(&pool, query.clone())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    sqlx::query("INSERT INTO calendar_events(title,start_date,end_date,all_day,is_public,created_by,updated_by) SELECT 'bounded search '||n,$1,$1,true,true,$2,$2 FROM generate_series(1,105) n")
+        .bind(today).bind(fixture.staff_user_id).execute(&pool).await.unwrap();
+    query.q = Some("bounded".into());
+    let first = services::list_public_events(&pool, query.clone())
+        .await
+        .unwrap();
+    assert_eq!(first.len(), 101);
+    query.offset = Some(100);
+    let second = services::list_public_events(&pool, query).await.unwrap();
+    assert_eq!(second.len(), 5);
+    assert_eq!(first[100].id, second[0].id);
+    assert!(!first[..100]
+        .iter()
+        .any(|event| second.iter().any(|next| next.id == event.id)));
+}
+
 struct CalendarFixture {
     staff_user_id: Uuid,
     student_user_id: Uuid,
@@ -182,6 +261,8 @@ fn query_around(today: NaiveDate, _academic_year_id: Uuid) -> CalendarEventQuery
         audience: None,
         visibility: None,
         q: None,
+        search: None,
+        offset: None,
     }
 }
 

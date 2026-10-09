@@ -6167,3 +6167,62 @@ async fn homeroom_roster_batches_preserve_history_and_reject_stale_or_invalid_wr
     .await
     .is_err());
 }
+
+#[tokio::test]
+async fn academic_lists_sort_numerically_and_attach_title_to_given_name() {
+    let pool = prepare_current_core_fixture("academic_list_ordering").await;
+    let (grade, program): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT grade_level_id,study_program_id FROM homerooms WHERE academic_year_id=$1 LIMIT 1",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let room_twenty = Uuid::new_v4();
+    let room_hundred = Uuid::new_v4();
+    sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,study_program_id,room_number) VALUES($1,'ORDER-100','ห้องร้อย',$3,$4,$5,'100'),($2,'ORDER-20','ห้องยี่สิบ',$3,$4,$5,'20')")
+        .bind(room_hundred).bind(room_twenty).bind(CURRENT_YEAR_ID).bind(grade).bind(program).execute(&pool).await.unwrap();
+    let rooms = student_years::list_homerooms(&pool, CURRENT_YEAR_ID)
+        .await
+        .unwrap();
+    assert!(
+        rooms.iter().position(|r| r.id == room_twenty).unwrap()
+            < rooms.iter().position(|r| r.id == room_hundred).unwrap()
+    );
+    let mut expected = vec![];
+    for (number, room, class_number) in [
+        (1, Some(room_twenty), Some(1)),
+        (2, Some(room_twenty), Some(2)),
+        (3, Some(room_twenty), None),
+        (4, Some(room_hundred), Some(1)),
+        (5, None, None),
+    ] {
+        let student = Uuid::new_v4();
+        let student_year = Uuid::new_v4();
+        sqlx::query("INSERT INTO users(id,password_hash,title,first_name,last_name,user_type,status) VALUES($1,'synthetic-hash','นาย','ทดสอบ',$2,'student','active')").bind(student).bind(format!("คนที่{number}")).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES($1,$2,$3,$4,$5,'active')").bind(student_year).bind(student).bind(CURRENT_YEAR_ID).bind(grade).bind(program).execute(&pool).await.unwrap();
+        if let Some(room) = room {
+            sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number) VALUES($1,$2,$3,$4,CURRENT_DATE,'current','normal',$5)")
+                .bind(Uuid::new_v4()).bind(student_year).bind(CURRENT_YEAR_ID).bind(room).bind(class_number).execute(&pool).await.unwrap();
+        }
+        expected.push(student_year);
+    }
+    let listed = student_years::list_student_years(
+        &pool,
+        StudentAcademicYearFilter {
+            academic_year_id: CURRENT_YEAR_ID,
+            student_id: None,
+            grade_level_id: None,
+            study_program_id: None,
+            homeroom_id: None,
+            status: None,
+        },
+    )
+    .await
+    .unwrap();
+    let added: Vec<_> = listed.iter().filter(|s| expected.contains(&s.id)).collect();
+    assert_eq!(added.iter().map(|s| s.id).collect::<Vec<_>>(), expected);
+    assert!(added
+        .iter()
+        .all(|s| s.student_name.starts_with("นายทดสอบ ")));
+}

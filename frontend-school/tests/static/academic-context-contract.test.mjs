@@ -757,7 +757,7 @@ test('student activity registration uses learner term context and canonical deli
 	assert.doesNotMatch(page, /Promise\.all/);
 });
 
-test('public calendar loads date ranges without academic context discovery', async () => {
+test('public calendar scopes date ranges using public academic year dates', async () => {
 	const api = await readProjectFile('src/lib/api/academic-context.ts');
 	const view = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
@@ -768,7 +768,11 @@ test('public calendar loads date ranges without academic context discovery', asy
 
 	assert.match(api, /listPublicAcademicContextOptions/);
 	assert.match(api, /\/api\/public\/academic-context\/options/);
-	assert.doesNotMatch(view, /listPublicAcademicContextOptions|selectedYearId/);
+	assert.match(view, /listPublicAcademicContextOptions|selectedYearId/);
+	const loader = await readProjectFile('src/lib/calendar/public-route.ts');
+	assert.match(loader, /listPublicAcademicContextOptions/);
+	assert.match(loader, /publicCalendarRange\(month, year\)/);
+	assert.doesNotMatch(loader, /listMyAcademicContextOptions|apiClient\.get\(/);
 	assert.match(view, /listPublicCalendarEvents/);
 	assert.match(app, /"\/api\/public\/academic-context\/options"/);
 	assert.match(handlers, /pub async fn list_public_context_options/);

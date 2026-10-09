@@ -22,7 +22,7 @@ const HOMEROOM_COLUMNS: &str = r#"
 "#;
 const STUDENT_YEAR_COLUMNS: &str = r#"
     student_year.id, student_year.student_id, student_info.student_id AS student_code,
-    concat_ws(' ', nullif(btrim(student.title), ''), student.first_name, student.last_name)
+    concat(coalesce(btrim(student.title), ''), student.first_name, ' ', student.last_name)
         AS student_name,
     student_year.academic_year_id, student_year.grade_level_id,
     CASE grade.level_type
@@ -104,8 +104,14 @@ pub async fn list_homerooms(
         "SELECT {HOMEROOM_COLUMNS}, COALESCE(occupancy.student_count, 0) AS student_count FROM homerooms \
          LEFT JOIN (SELECT homeroom_id,count(*) AS student_count FROM homeroom_placements \
                     WHERE academic_year_id=$1 AND status IN ('planned','current') GROUP BY homeroom_id) occupancy \
-             ON occupancy.homeroom_id=homerooms.id WHERE academic_year_id = $1 \
-         ORDER BY grade_level_id, room_number NULLS LAST, code, id LIMIT 500"
+             ON occupancy.homeroom_id=homerooms.id \
+         JOIN (SELECT id AS grade_id,level_type,year AS grade_year FROM grade_levels) grade \
+             ON grade.grade_id=homerooms.grade_level_id WHERE academic_year_id = $1 \
+         ORDER BY CASE grade.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2 \
+                    WHEN 'secondary' THEN 3 ELSE 4 END,grade.grade_year, \
+             CASE WHEN room_number ~ '^[0-9]+$' THEN length(ltrim(room_number,'0')) ELSE 2147483647 END, \
+             CASE WHEN room_number ~ '^[0-9]+$' THEN ltrim(room_number,'0') END, \
+             room_number NULLS LAST,code,id LIMIT 500"
     );
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(academic_year_id)
@@ -330,6 +336,13 @@ pub async fn list_student_years(
         SELECT {STUDENT_YEAR_COLUMNS}
         FROM student_academic_years student_year
         {STUDENT_YEAR_JOINS}
+        LEFT JOIN LATERAL (
+            SELECT room.room_number, placement.class_number
+            FROM homeroom_placements placement JOIN homerooms room ON room.id=placement.homeroom_id
+            WHERE placement.student_academic_year_id=student_year.id
+              AND placement.status IN ('planned','current')
+            ORDER BY placement.start_date DESC,placement.id LIMIT 1
+        ) current_room ON TRUE
         WHERE student_year.academic_year_id = $1
           AND ($2::uuid IS NULL OR student_year.student_id = $2)
           AND ($3::uuid IS NULL OR student_year.grade_level_id = $3)
@@ -341,8 +354,14 @@ pub async fn list_student_years(
                 AND placement.homeroom_id = $6
                 AND placement.status IN ('planned', 'current')
           ))
-        ORDER BY student_info.student_id NULLS LAST, student.first_name, student.last_name,
-                 student_year.id
+        ORDER BY CASE grade.level_type WHEN 'kindergarten' THEN 1 WHEN 'primary' THEN 2
+                    WHEN 'secondary' THEN 3 ELSE 4 END,grade.year,
+            (current_room.room_number IS NULL),
+            CASE WHEN current_room.room_number ~ '^[0-9]+$' THEN length(ltrim(current_room.room_number,'0')) ELSE 2147483647 END,
+            CASE WHEN current_room.room_number ~ '^[0-9]+$' THEN ltrim(current_room.room_number,'0') END,
+            current_room.room_number NULLS LAST,
+            current_room.class_number NULLS LAST,student_info.student_id NULLS LAST,
+            student.first_name,student.last_name,student_year.id
         LIMIT 1000
         "#
     );

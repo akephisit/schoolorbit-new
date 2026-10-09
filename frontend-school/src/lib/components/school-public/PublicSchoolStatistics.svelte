@@ -1,9 +1,11 @@
 <script lang="ts">
 	import type { PublicSchoolStatistics } from '#lib/api/school.js';
+	import { summarizeEducationLevels } from '#lib/school-public/statistics.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { GraduationCap, BookOpen, UsersRound, DoorOpen, ChevronDown } from '@lucide/svelte';
 	let { statistics }: { statistics: PublicSchoolStatistics } = $props();
 	const number = new Intl.NumberFormat('th-TH');
+	const educationLevels = $derived(summarizeEducationLevels(statistics));
 	const cards = $derived([
 		{
 			label: 'นักเรียน',
@@ -83,6 +85,44 @@
 {:else if !statistics.grades.length}
 	<div class="mt-5"><PageState title="ยังไม่มีข้อมูลนักเรียนและห้องเรียนในปีนี้" /></div>
 {:else}
+	<div class="mt-5 overflow-x-auto rounded-xl border bg-card" data-testid="school-level-summary">
+		<table class="w-full min-w-96 text-sm">
+			<caption class="px-4 py-3 text-left font-medium">สรุปนักเรียนแยกตามช่วงชั้น</caption>
+			<thead class="bg-muted/50 text-muted-foreground"
+				><tr>
+					<th scope="col" class="p-3 text-left font-medium">ช่วงชั้น</th>
+					<th scope="col" class="p-3 text-right font-medium">ชาย</th>
+					<th scope="col" class="p-3 text-right font-medium">หญิง</th>
+					<th scope="col" class="p-3 text-right font-medium">อื่น ๆ / ไม่ระบุ</th>
+					<th scope="col" class="p-3 text-right font-medium">ทั้งหมด</th>
+				</tr></thead
+			>
+			<tbody class="divide-y divide-border">
+				{#each educationLevels as level (level.id)}<tr>
+						<th scope="row" class="p-3 text-left font-medium">{level.label}</th>
+						<td class="p-3 text-right tabular-nums">{number.format(level.students.male)}</td>
+						<td class="p-3 text-right tabular-nums">{number.format(level.students.female)}</td>
+						<td class="p-3 text-right tabular-nums"
+							>{number.format(level.students.otherOrUnspecified)}</td
+						>
+						<td class="p-3 text-right font-semibold tabular-nums"
+							>{number.format(level.students.total)}</td
+						>
+					</tr>{/each}
+			</tbody>
+			<tfoot class="border-t bg-muted/50 font-semibold"
+				><tr>
+					<th scope="row" class="p-3 text-left">รวมทั้งโรงเรียน</th>
+					<td class="p-3 text-right tabular-nums">{number.format(statistics.students.male)}</td>
+					<td class="p-3 text-right tabular-nums">{number.format(statistics.students.female)}</td>
+					<td class="p-3 text-right tabular-nums"
+						>{number.format(statistics.students.otherOrUnspecified)}</td
+					>
+					<td class="p-3 text-right tabular-nums">{number.format(statistics.students.total)}</td>
+				</tr></tfoot
+			>
+		</table>
+	</div>
 	<div class="mt-5 flex flex-wrap gap-3 text-sm">
 		<span class="rounded-full bg-primary/10 px-4 py-2 text-primary"
 			>ชาย {number.format(statistics.students.male)} คน</span

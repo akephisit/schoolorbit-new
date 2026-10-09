@@ -150,6 +150,7 @@ struct OrganizationRow {
     member_name: Option<String>,
     position_code: Option<String>,
     position_title: Option<String>,
+    avatar_member_id: Option<Uuid>,
 }
 
 fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganization {
@@ -171,6 +172,9 @@ fn organization_from_rows(rows: Vec<OrganizationRow>) -> PublicSchoolOrganizatio
                 name,
                 position_code,
                 position_title: row.position_title,
+                avatar_url: row
+                    .avatar_member_id
+                    .map(|id| format!("/api/school/public/organization-members/{id}/avatar")),
             });
         }
     }
@@ -181,11 +185,15 @@ pub async fn get_organization(pool: &PgPool) -> Result<PublicSchoolOrganization,
     let rows = sqlx::query_as::<_, OrganizationRow>(r#"
 SELECT o.id, o.parent_unit_id AS parent_id, o.name, o.unit_type,
     CASE WHEN u.id IS NOT NULL THEN CONCAT(u.title, u.first_name, ' ', u.last_name) END AS member_name,
-    CASE WHEN u.id IS NOT NULL THEN m.position_code END AS position_code, m.position_title
+    CASE WHEN u.id IS NOT NULL THEN m.position_code END AS position_code, m.position_title,
+    CASE WHEN profile.id IS NOT NULL THEN m.id END AS avatar_member_id
 FROM organization_units o
 LEFT JOIN organization_members m ON m.organization_unit_id = o.id
     AND m.started_at <= CURRENT_DATE AND (m.ended_at IS NULL OR m.ended_at > CURRENT_DATE)
 LEFT JOIN users u ON u.id = m.user_id AND u.user_type = 'staff' AND u.status = 'active'
+LEFT JOIN files profile ON profile.id=u.profile_image_file_id AND profile.owner_user_id=u.id
+    AND profile.purpose_code='profile_image' AND profile.visibility='private'
+    AND profile.lifecycle_status='ready' AND profile.deleted_at IS NULL
 WHERE o.is_active IS TRUE
 ORDER BY o.display_order, o.name, o.id,
     CASE m.position_code WHEN 'director' THEN 1 WHEN 'deputy_director' THEN 2 WHEN 'head' THEN 3 WHEN 'deputy_head' THEN 4 WHEN 'coordinator' THEN 5 ELSE 6 END,
@@ -197,6 +205,21 @@ ORDER BY o.display_order, o.name, o.id,
 fn database_error(error: sqlx::Error) -> AppError {
     tracing::error!(%error, "Failed to load public school aggregates");
     AppError::InternalServerError("ไม่สามารถโหลดข้อมูลโรงเรียนได้".into())
+}
+
+/// Only the profile image of a currently published staff membership is a public directory photo.
+/// General private-file URLs and student/parent profiles remain inaccessible anonymously.
+pub async fn organization_avatar_file(pool: &PgPool, member_id: Uuid) -> Result<Uuid, AppError> {
+    sqlx::query_scalar(r#"SELECT profile.id FROM organization_members member
+        JOIN organization_units unit ON unit.id=member.organization_unit_id AND unit.is_active
+        JOIN users staff ON staff.id=member.user_id AND staff.user_type='staff' AND staff.status='active'
+        JOIN files profile ON profile.id=staff.profile_image_file_id AND profile.owner_user_id=staff.id
+            AND profile.purpose_code='profile_image' AND profile.visibility='private'
+            AND profile.lifecycle_status='ready' AND profile.deleted_at IS NULL
+        WHERE member.id=$1 AND member.started_at<=CURRENT_DATE
+            AND (member.ended_at IS NULL OR member.ended_at>CURRENT_DATE)"#)
+        .bind(member_id).fetch_optional(pool).await.map_err(database_error)?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรูปบุคลากรที่เผยแพร่".into()))
 }
 
 #[cfg(test)]
@@ -245,6 +268,7 @@ mod tests {
             member_name: None,
             position_code: None,
             position_title: None,
+            avatar_member_id: None,
         }]);
         assert!(result.units[0].members.is_empty());
         let serialized = serde_json::to_string(&result).unwrap();

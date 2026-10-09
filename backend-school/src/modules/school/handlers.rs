@@ -1,7 +1,7 @@
 use axum::{
-    extract::{Extension, State},
+    extract::{Extension, Path, State},
     http::HeaderMap,
-    response::IntoResponse,
+    response::{IntoResponse, Redirect, Response},
     Json,
 };
 use serde::Serialize;
@@ -64,6 +64,34 @@ pub async fn get_public_organization(
         [(axum::http::header::CACHE_CONTROL, "no-store")],
         Json(ApiResponse::ok(data)),
     ))
+}
+
+#[utoipa::path(
+    get, path = "/api/school/public/organization-members/{id}/avatar", operation_id = "getPublicOrganizationAvatar", tag = "school",
+    params(("id" = uuid::Uuid, Path, description = "Current public organization membership")),
+    responses((status = 307, description = "Short-lived profile image delivery"),
+        (status = 404, description = "Published staff photo not found", body = ApiErrorResponse))
+)]
+pub async fn get_public_organization_avatar(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(member_id): Path<uuid::Uuid>,
+) -> Result<Response, AppError> {
+    let tenant = tenant_context(&state, &headers).await?;
+    let file_id = school_service::public::organization_avatar_file(&tenant.pool, member_id).await?;
+    let repository = school_file_platform::repository::SqlFileRepository::new(tenant.pool);
+    let grant = state
+        .file_platform
+        .private_download(&repository, file_id)
+        .await
+        .map_err(crate::modules::files::consumer_service::map_platform_error)?;
+    let grant = crate::modules::files::models::FileDownloadGrantResponse::try_from(grant)
+        .map_err(|_| AppError::ServiceUnavailable("ส่งรูปบุคลากรไม่สำเร็จ".into()))?;
+    Ok((
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Redirect::temporary(&grant.url),
+    )
+        .into_response())
 }
 
 /// GET /api/school/settings — staff only (SETTINGS_READ_ALL)
