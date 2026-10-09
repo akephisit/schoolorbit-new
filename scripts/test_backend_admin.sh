@@ -6,7 +6,7 @@ cleanup() { docker rm -f -v "$container" >/dev/null; }
 trap cleanup EXIT
 docker run -d --name "$container" -p '127.0.0.1::5432' \
     -e POSTGRES_USER=schoolorbit_test -e POSTGRES_PASSWORD=schoolorbit_test -e POSTGRES_DB=schoolorbit_test \
-    docker.io/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 >/dev/null
+    public.ecr.aws/docker/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 >/dev/null
 for attempt in {1..120}; do
     if docker exec "$container" pg_isready -h 127.0.0.1 -U schoolorbit_test -q; then break; fi
     [[ $attempt != 120 ]] || exit 70

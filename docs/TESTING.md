@@ -449,7 +449,9 @@ When the VPS installer, canonical Compose runtime, Nginx templates, deployment w
 This runs ShellCheck/shfmt against the real scripts, installer Bats, pipeline/database-runner and
 migration-completion fixtures, deployment source guards, R2 CORS checks, Docker Compose config
 resolution and actionlint in Docker. Tests inspect moved implementations rather than workflow
-wrappers. Production itself retains rootless Podman; local fixtures and verification use Docker.
+wrappers. Verification pulls digest-pinned PostgreSQL/Nginx from the Docker Official Images mirror
+on ECR Public and actionlint from Google's Docker Hub cache, using the same upstream image digests.
+Production itself retains rootless Podman; local fixtures and verification use Docker.
 Report unavailable dependencies explicitly instead of narrowing the checks.
 
 For focused deployment-runtime work, run:

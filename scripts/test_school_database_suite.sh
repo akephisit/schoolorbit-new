@@ -14,7 +14,7 @@ docker run -d --name "$SCHOOLORBIT_TEST_CONTAINER" \
     --label "schoolorbit.test-owner=$SCHOOLORBIT_TEST_OWNER" \
     -p '127.0.0.1::5432' --shm-size 1g \
     -e POSTGRES_USER=schoolorbit_test -e POSTGRES_PASSWORD=schoolorbit_test \
-    docker.io/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
+    public.ecr.aws/docker/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
     postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 >/dev/null
 for attempt in {1..120}; do
     if docker exec "$SCHOOLORBIT_TEST_CONTAINER" pg_isready -h 127.0.0.1 -U schoolorbit_test -q; then break; fi

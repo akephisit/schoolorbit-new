@@ -12,7 +12,7 @@ if ! REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"; then
 fi
 readonly REPOSITORY_ROOT
 readonly BACKEND_DIR="$REPOSITORY_ROOT/backend-school"
-readonly POSTGRES_IMAGE='docker.io/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
+readonly POSTGRES_IMAGE='public.ecr.aws/docker/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
 readonly POSTGRES_USER='schoolorbit_test'
 readonly POSTGRES_PASSWORD='schoolorbit_test'
 POSTGRES_DATABASE="schoolorbit_test_$$_${RANDOM}"

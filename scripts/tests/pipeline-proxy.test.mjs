@@ -16,7 +16,7 @@ test('real Nginx serves public maintenance, CORS preflight and token probes with
   try{docker('network','rm',network)}catch{}
   rmSync(temp,{recursive:true,force:true});
  });
- const image='docker.io/library/nginx:stable-alpine';
+ const image='public.ecr.aws/docker/library/nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94';
  docker('network','create',network);
  docker('create','--name',backend,'--network',network,'--network-alias','schoolorbit-backend-school','--network-alias','schoolorbit-backend-admin',image);
  const upstream=path.join(temp,'upstream.conf');

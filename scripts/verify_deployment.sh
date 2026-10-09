@@ -18,5 +18,5 @@ set -a
 source scripts/tests/installer/fixtures/runtime.env
 set +a
 docker compose -f podman-compose.yml config --quiet
-tar -cf - .github | docker run --rm -i --entrypoint sh docker.io/rhysd/actionlint:1.7.7 \
+tar -cf - .github | docker run --rm -i --entrypoint sh mirror.gcr.io/rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 \
     -c 'mkdir -p /tmp/repo/.git; tar -xf - -C /tmp/repo; cd /tmp/repo; actionlint'

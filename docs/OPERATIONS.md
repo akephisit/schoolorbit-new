@@ -126,6 +126,12 @@ through the proxy while users remain blocked; tokens bypass only maintenance, no
 Backend-authenticated Admin `/internal/` remains available for control-plane calls. A fresh origin
 starts the maintenance proxy before its first backend exists, without unresolved upstream names.
 
+The School backend build pulls its Rust and Debian bases from the Docker Official Images mirror
+on Amazon ECR Public, pinned by index digest. These digests match the Docker Hub originals and
+avoid anonymous Docker Hub pull limits. Disposable PostgreSQL and Nginx verification images use
+the same official mirror, and actionlint uses Google's Docker Hub cache; all keep verified upstream
+digests. Update tags and digests together when upgrading bases or verification images.
+
 Selected backend services use immutable digests, canonical rootless Podman topology, readiness,
 migration completion and cutover audits. Admin starts before School on a full release. School
 frontends consume one prepared bundle, synchronize menus through authenticated VPS loopback,
