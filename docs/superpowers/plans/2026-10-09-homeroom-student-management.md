@@ -1,0 +1,11 @@
+# Homeroom student management
+
+Implement the user-approved chat design: a child roster route from Homerooms, room links from Student Years, previewed three-method numbering, individual number edits, and atomic multi-student add/transfer/remove dialogs. Manual drag ordering is deferred as agreed in the first-release scope.
+
+Core retains ownership in a focused `homeroom_roster` service module: the capability has the same identity/lifecycle and dependencies as Student Years, so another crate would add no meaningful compile or ownership boundary. HTTP remains in school-academic-http. Reuse school-wide Student Academic Year read/manage permissions and generated contracts. Reads never require manage access. No new sidebar menu.
+
+Use existing year transition locks, a room/member revision digest, optimistic selection versions, whole-batch rollback, bounded queries, capacity checks, unique positive active numbers, and audit events without names. Planned removals become cancelled; current removals end the dated placement without deleting the student-year or downstream records. Transfers preserve old placements and append numbers in the target; other students are never implicitly renumbered. Closed/archived years are read-only. Thai name ordering uses a database ICU collation, excludes titles and uses stable tie breakers.
+
+Add the next migration for cancelled placements and Thai collation. Regenerate Rust-owned OpenAPI/TypeScript. Stream the primary roster read from the child loader, clear old room state before paint, and lazily fetch dialog candidates/previews. Patch mutation-returned roster; invalidation is limited to the roster dependency. Preserve drafts on failure; use accessible primitives and responsive scrolling tables.
+
+Verification: Core unit and disposable database tests (atomicity, conflicts, history, scope, number collision, Thai sorting, closed-year guard), HTTP authorization tests, generated API/permission checks, frontend lint/type/static and focused Playwright fixtures for desktop/mobile, both themes, read-only, loading, failure and preview-before-save. Finish with `./scripts/pipeline verify --scope auto`, `git diff --check`, and status/diff review. Push a dedicated branch and open/attach a PR after applicable checks pass.

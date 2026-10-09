@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::policies::{
     academic_catalog_access_policy::{self, CatalogAction, CatalogResourceRef},
     academic_curriculum_access_policy::{self, CurriculumAction},
+    homeroom_roster_access_policy::{require_roster_access, RosterAction},
 };
 const SCHOOL_TIMEZONE: chrono_tz::Tz = chrono_tz::Asia::Bangkok;
 use crate::state::AcademicHttpState;
@@ -25,7 +26,7 @@ use school_permissions::registry::codes;
 use school_academic_core::models::*;
 use school_academic_core::services::{
     bell_schedules, catalog, context, curriculum, curriculum_publications, curriculum_structure,
-    progressions, student_years, workspaces, years_terms,
+    homeroom_roster, progressions, student_years, workspaces, years_terms,
 };
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -2978,4 +2979,149 @@ pub async fn get_curriculum_publication_history(
     .await?;
     let value = curriculum_publications::history(&context.tenant.pool, id, publication_id).await?;
     Ok(ok(value))
+}
+
+#[utoipa::path(
+    get, path="/api/academic/homerooms/{id}/students",operation_id="getHomeroomRoster",tag="academic",
+    params(("id"=Uuid,Path,description="Homeroom ID")),
+    responses((status=200,description="Homeroom roster operation",body=ApiResponse<HomeroomRoster>),
+        (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
+        (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
+)]
+pub async fn get_homeroom_roster(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    require_roster_access(&actor, RosterAction::Read)?;
+    let value = homeroom_roster::get_roster(&pool, id).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(
+    get, path="/api/academic/homerooms/{id}/student-candidates",operation_id="listHomeroomRosterCandidates",tag="academic",
+    params(("id"=Uuid,Path,description="Homeroom ID"), HomeroomCandidateQuery),
+    responses((status=200,description="Homeroom roster operation",body=ApiResponse<Vec<HomeroomRosterCandidate>>),
+        (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
+        (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
+)]
+pub async fn list_homeroom_candidates(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<HomeroomCandidateQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    require_roster_access(&actor, RosterAction::Manage)?;
+    let value = homeroom_roster::list_candidates(&pool, id, query).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(
+    get, path="/api/academic/homerooms/{id}/numbering-preview",operation_id="previewHomeroomNumbers",tag="academic",
+    params(("id"=Uuid,Path,description="Homeroom ID"), HomeroomNumberingQuery),
+    responses((status=200,description="Homeroom roster operation",body=ApiResponse<HomeroomNumberingPreview>),
+        (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
+        (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
+)]
+pub async fn preview_homeroom_numbers(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<HomeroomNumberingQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    require_roster_access(&actor, RosterAction::Manage)?;
+    let value = homeroom_roster::preview_numbers(&pool, id, query).await?;
+    Ok(ok(value))
+}
+
+#[utoipa::path(
+    patch, path="/api/academic/homerooms/{id}/numbers",operation_id="updateHomeroomNumbers",tag="academic",
+    params(("id"=Uuid,Path,description="Homeroom ID")),
+    request_body=UpdateHomeroomNumbersRequest,
+    responses((status=200,description="Homeroom roster operation",body=ApiResponse<HomeroomRoster>),
+        (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
+        (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
+)]
+pub async fn update_homeroom_numbers(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateHomeroomNumbersRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    require_roster_access(&actor, RosterAction::Manage)?;
+    let value = homeroom_roster::update_numbers(&pool, actor.user_id, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "homeroom_placement",
+        Some(id),
+        Some(value.homeroom.academic_year_id),
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(
+    post, path="/api/academic/homerooms/{id}/students",operation_id="mutateHomeroomRoster",tag="academic",
+    params(("id"=Uuid,Path,description="Homeroom ID")),
+    request_body=MutateHomeroomRosterRequest,
+    responses((status=200,description="Homeroom roster operation",body=ApiResponse<HomeroomRoster>),
+        (status=400,description="Validation failed",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse),
+        (status=409,description="Roster changed or academic context is closed",body=ApiErrorResponse))
+)]
+pub async fn mutate_homeroom_roster(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<MutateHomeroomRosterRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let pool = context.tenant.pool;
+    let actor = context.actor;
+    require_roster_access(&actor, RosterAction::Manage)?;
+    let value = homeroom_roster::mutate_roster(&pool, actor.user_id, id, request).await?;
+    signal_core_changed(
+        &state,
+        &session,
+        &actor,
+        "homeroom_placement",
+        Some(id),
+        Some(value.homeroom.academic_year_id),
+        None,
+    );
+    Ok(ok(value))
+}
+
+#[utoipa::path(get,path="/api/academic/homerooms/{id}/transfer-targets",operation_id="listHomeroomTransferTargets",tag="academic",
+ params(("id"=Uuid,Path,description="Source homeroom ID")),responses((status=200,description="Compatible rooms with occupancy",body=ApiResponse<Vec<Homeroom>>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Homeroom not found",body=ApiErrorResponse)))]
+pub async fn list_homeroom_transfer_targets(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    require_roster_access(&context.actor, RosterAction::Manage)?;
+    Ok(ok(homeroom_roster::transfer_targets(
+        &context.tenant.pool,
+        id,
+    )
+    .await?))
 }

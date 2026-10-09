@@ -69,7 +69,7 @@
 	$effect.pre(() => {
 		const result = data.workspace;
 		const yearId = data.academicYearId;
-		const initialMutationRevision = mutationRevision;
+		const initialMutationRevision = untrack(() => mutationRevision);
 		let current = true;
 		untrack(() => {
 			if (loadedYearId !== yearId) {
@@ -101,6 +101,13 @@
 							placementsByStudentYear.set(recordId, placements);
 						homerooms = outcome.data.homerooms;
 						hasWorkspace = true;
+						const requested = outcome.data.studentYears.find(
+							(record) => record.id === data.studentYearId
+						);
+						if (requested) {
+							selectedStudentYear = requested;
+							detailDialogOpen = true;
+						}
 					} else if (!outcome.ok) errorMessage = outcome.error;
 					loading = false;
 				});
@@ -342,9 +349,12 @@
 								<Table.Cell class="whitespace-normal">{record.studyProgramName}</Table.Cell>
 								<Table.Cell>
 									{#if !placement}<span class="text-muted-foreground">ยังไม่ได้จัดห้อง</span
-										>{:else if homeroomName(placement.homeroomId)}{homeroomName(
-											placement.homeroomId
-										)}{:else}<span class="text-destructive">ไม่พบห้องประจำชั้นที่อ้างอิง</span>{/if}
+										>{:else if homeroomName(placement.homeroomId)}<a
+											class="hover:underline"
+											data-sveltekit-preload-data="tap"
+											href={`/staff/academic/homerooms/${placement.homeroomId}/students?academicYearId=${academicYearId}`}
+											>{homeroomName(placement.homeroomId)}</a
+										>{:else}<span class="text-destructive">ไม่พบห้องประจำชั้นที่อ้างอิง</span>{/if}
 								</Table.Cell>
 								<Table.Cell class="text-center tabular-nums"
 									>{placement?.classNumber ?? '—'}</Table.Cell

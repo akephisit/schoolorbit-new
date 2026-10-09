@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+
 	import type {
 		CreateHomeroomRequest,
 		GradeLevelOption,
@@ -251,7 +254,7 @@
 					<Table.Head class="min-w-40 ps-5">ห้อง</Table.Head>
 					<Table.Head class="min-w-44">ระดับชั้น</Table.Head>
 					<Table.Head class="min-w-56">แผนการเรียน</Table.Head>
-					<Table.Head class="text-center">ความจุ</Table.Head>
+					<Table.Head class="text-center">นักเรียน / ความจุ</Table.Head>
 					<Table.Head class="text-center">ครูที่ปรึกษา</Table.Head>
 					<Table.Head class="w-28"><span class="sr-only">จัดการ</span></Table.Head>
 				</Table.Row>
@@ -265,20 +268,34 @@
 									<DoorOpen class="size-4" />
 								</div>
 								<div>
-									<p class="font-medium">{room.name}</p>
+									{#if $can.hasAny(PERMISSIONS.STUDENT_ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)}<a
+											class="font-medium hover:underline"
+											data-sveltekit-preload-data="tap"
+											href={`/staff/academic/homerooms/${room.id}/students?academicYearId=${room.academicYearId}`}
+											>{room.name}</a
+										>{:else}<p class="font-medium">{room.name}</p>{/if}
 									<p class="text-xs text-muted-foreground">เลขห้อง {room.roomNumber}</p>
 								</div>
 							</div>
 						</Table.Cell>
 						<Table.Cell>{gradeLabel(room.gradeLevelId)}</Table.Cell>
 						<Table.Cell class="whitespace-normal">{programLabel(room.studyProgramId)}</Table.Cell>
-						<Table.Cell class="text-center tabular-nums">{room.capacity}</Table.Cell>
+						<Table.Cell class="text-center tabular-nums"
+							>{room.studentCount ?? '—'} / {room.capacity}</Table.Cell
+						>
 						<Table.Cell class="text-center">
 							<Badge variant="secondary"
 								><Users class="size-3" /> {advisorsByHomeroom.get(room.id)?.length ?? 0} คน</Badge
 							>
 						</Table.Cell>
 						<Table.Cell>
+							{#if $can.hasAny(PERMISSIONS.STUDENT_ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL)}<Button
+									size="sm"
+									variant="outline"
+									data-sveltekit-preload-data="tap"
+									href={`/staff/academic/homerooms/${room.id}/students?academicYearId=${room.academicYearId}`}
+									>ดูนักเรียน</Button
+								>{/if}
 							{#if canManage}
 								<div class="flex justify-end gap-1">
 									<Button

@@ -55,7 +55,7 @@ pub(crate) mod services {
 }
 
 use crate::AppState;
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::Router;
 
 pub fn routes() -> Router<AppState> {
@@ -250,6 +250,26 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/homerooms/{id}",
             get(handlers::get_homeroom).patch(handlers::update_homeroom),
+        )
+        .route(
+            "/homerooms/{id}/students",
+            get(handlers::get_homeroom_roster).post(handlers::mutate_homeroom_roster),
+        )
+        .route(
+            "/homerooms/{id}/transfer-targets",
+            get(handlers::list_homeroom_transfer_targets),
+        )
+        .route(
+            "/homerooms/{id}/student-candidates",
+            get(handlers::list_homeroom_candidates),
+        )
+        .route(
+            "/homerooms/{id}/numbering-preview",
+            get(handlers::preview_homeroom_numbers),
+        )
+        .route(
+            "/homerooms/{id}/numbers",
+            patch(handlers::update_homeroom_numbers),
         )
         .route(
             "/homerooms/{id}/advisors",
