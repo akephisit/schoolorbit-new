@@ -283,6 +283,8 @@ fn normalized_event_range_uses_complete_query_range() {
         audience: None,
         visibility: None,
         q: None,
+        search: None,
+        offset: None,
     };
 
     assert_eq!(normalized_event_range(&query, today).unwrap(), (from, to));
@@ -301,6 +303,8 @@ fn normalized_event_range_rejects_reversed_complete_query_range() {
         audience: None,
         visibility: None,
         q: None,
+        search: None,
+        offset: None,
     };
 
     assert!(matches!(
@@ -320,6 +324,8 @@ fn normalized_event_range_defaults_to_current_month_when_bound_is_missing() {
         audience: None,
         visibility: None,
         q: None,
+        search: None,
+        offset: None,
     };
 
     assert_eq!(
@@ -342,6 +348,8 @@ fn normalized_event_range_handles_december_current_month() {
         audience: None,
         visibility: None,
         q: None,
+        search: None,
+        offset: None,
     };
 
     assert_eq!(

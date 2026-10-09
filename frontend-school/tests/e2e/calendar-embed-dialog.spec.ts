@@ -1,6 +1,15 @@
 import { devices, expect, test } from '@playwright/test';
 import { makeApprovedCalendarEvent } from './fixtures/calendar-route-data';
 import { year } from './fixtures/staff-home-route-data';
+import { startPublicCalendarServer } from './fixtures/public-calendar-server';
+let fixture: Awaited<ReturnType<typeof startPublicCalendarServer>>;
+test.describe.configure({ timeout: 60000 });
+test.beforeAll(async () => {
+	fixture = await startPublicCalendarServer();
+});
+test.afterAll(async () => {
+	await fixture?.close();
+});
 
 test.use({ ...devices['iPhone 13'], defaultBrowserType: 'chromium', serviceWorkers: 'block' });
 
@@ -18,9 +27,9 @@ test('closes the embedded calendar day dialog when its overlay is tapped', async
 							id: year,
 							name: '2569',
 							year: 2569,
-							status: 'open',
+							status: 'active',
 							startDate: '2026-05-01',
-							plannedEndDate: '2027-04-30',
+							endDate: '2027-04-09',
 							closedOn: null
 						}
 					],
@@ -40,8 +49,9 @@ test('closes the embedded calendar day dialog when its overlay is tapped', async
 		});
 	});
 
-	await page.goto(`/calendar/embed?academicYearId=${year}`);
-	await page.locator('button[aria-label*="กิจกรรม"]').first().tap();
+	await page.goto(`${fixture.baseUrl}/calendar/embed?month=2026-10&academicYearId=${year}`);
+	await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
+	await page.locator('[data-calendar-date="2026-10-01"]').tap();
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
@@ -75,7 +85,7 @@ for (const width of [375, 620]) {
 				json: { success: true, data: [event] }
 			})
 		);
-		await page.goto('/calendar');
+		await page.goto(`${fixture.baseUrl}/calendar?month=2026-10`);
 		const entry = page.locator('[title="08:30 สอบช่วงเช้า"]');
 		await expect(entry).toBeVisible();
 		expect(await entry.innerText()).toBe('สอบช่วงเช้า');

@@ -19,6 +19,12 @@ let releaseIdentity: (() => void) | undefined;
 let statisticsGate: Promise<void> | undefined;
 let releaseStatistics: (() => void) | undefined;
 const requests: { path: string; cookie?: string; origin?: string }[] = [];
+const isRegionRead = (resource: string) =>
+	[
+		'/api/school/public',
+		'/api/school/public/statistics',
+		'/api/school/public/organization'
+	].includes(resource);
 const counts = (male: number, female: number, other = 0) => ({
 	total: male + female + other,
 	male,
@@ -63,7 +69,14 @@ const organization = {
 			parentId: null,
 			name: 'โรงเรียนสาธิตทดสอบ',
 			unitType: 'school',
-			members: [{ name: 'ผู้บริหาร ทดสอบ', positionCode: 'director', positionTitle: null }]
+			members: [
+				{
+					name: 'ผู้บริหาร ทดสอบ',
+					positionCode: 'director',
+					positionTitle: null,
+					avatarUrl: '/api/school/public/organization-members/fixture/avatar'
+				}
+			]
 		},
 		{
 			id: 'academic',
@@ -88,7 +101,7 @@ const organization = {
 	]
 };
 
-test.describe.configure({ mode: 'serial' });
+test.describe.configure({ mode: 'serial', timeout: 60000 });
 test.use({ serviceWorkers: 'block' });
 test.beforeAll(async () => {
 	apiServer = createHttpServer(async (req, res) => {
@@ -101,7 +114,7 @@ test.beforeAll(async () => {
 			res.writeHead(204).end();
 			return;
 		}
-		if (endpoint.startsWith('/api/public/files/')) {
+		if (endpoint.startsWith('/api/public/files/') || endpoint.endsWith('/avatar')) {
 			if (brokenLogo) {
 				res.writeHead(404).end();
 				return;
@@ -161,8 +174,9 @@ test.beforeAll(async () => {
 	process.env.PUBLIC_VAPID_KEY = 'test';
 	devServer = await createServer({
 		root: frontendRoot,
+		configFile: path.join(frontendRoot, 'vite.config.ts'),
 		cacheDir: path.resolve(frontendRoot, 'node_modules/.vite-public-school-layout-test'),
-		logLevel: 'silent',
+		logLevel: 'error',
 		server: { host: '127.0.0.1', port: 0 }
 	});
 	await devServer.listen();
@@ -197,7 +211,7 @@ test.afterAll(async () => {
 test('anonymous visitors see real school regions and existing services', async ({ page }) => {
 	await page.goto(baseUrl);
 	await expect(
-		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true })
+		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true, level: 1 })
 	).toBeVisible();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
 	await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
@@ -212,7 +226,7 @@ test('anonymous visitors see real school regions and existing services', async (
 	]) {
 		await expect(page.getByRole('link', { name: new RegExp(label) })).toHaveAttribute('href', href);
 	}
-	const reads = requests.filter((r) => r.path.startsWith('/api/school/public'));
+	const reads = requests.filter((r) => isRegionRead(r.path));
 	expect(reads).toHaveLength(3);
 	expect(reads.every((r) => !r.cookie && r.origin === baseUrl)).toBe(true);
 	expect(requests.some((r) => r.path === '/api/auth/me')).toBe(false);
@@ -228,7 +242,9 @@ test('school identity and SEO are readable without JavaScript in the first HTML 
 		const page = await context.newPage();
 		const response = await page.goto(`${baseUrl}/?utm_source=fixture`);
 		expect(response?.headers()['x-robots-tag']).toBe('noindex');
-		await expect(page.getByRole('heading', { name: schoolName, exact: true })).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
+		).toBeVisible();
 		await expect(page).toHaveTitle(`${schoolName} — ข้อมูลและบริการสาธารณะ`);
 		await expect(page.locator('head title')).toHaveCount(1);
 		await expect(page.locator('meta[name="description"]')).toHaveCount(1);
@@ -269,7 +285,7 @@ test('fresh HTML metadata follows each school name and escapes hostile text safe
 		schoolName = name;
 		await page.goto(baseUrl);
 		await expect(page).toHaveTitle(`${name} — ข้อมูลและบริการสาธารณะ`);
-		await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+		await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
 		const schema = await page.locator('script[type="application/ld+json"]').textContent();
 		expect(JSON.parse(schema || 'null').name).toBe(name);
 		expect(schema).not.toContain('</script>');
@@ -328,9 +344,7 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	identityGate = new Promise<void>((done) => (releaseIdentity = done));
 	const started = Date.now();
 	const navigation = page.goto(baseUrl);
-	await expect
-		.poll(() => requests.filter((r) => r.path.startsWith('/api/school/public')).length)
-		.toBe(3);
+	await expect.poll(() => requests.filter((r) => isRegionRead(r.path)).length).toBe(3);
 	await navigation;
 	expect(Date.now() - started).toBeLessThan(6_000);
 	await expect(page.getByText('โหลดข้อมูลโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
@@ -340,13 +354,15 @@ test('a slow identity read is bounded while sibling reads start concurrently and
 	await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(0);
 	releaseIdentity?.();
 	identityGate = undefined;
-	const before = requests.filter((r) => r.path.startsWith('/api/school/public')).length;
+	const before = requests.filter((r) => isRegionRead(r.path)).length;
 	await page.getByRole('button', { name: 'ลองใหม่: ข้อมูลโรงเรียน' }).click();
-	await expect(page.getByRole('heading', { name: schoolName, exact: true })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { name: schoolName, exact: true, level: 1 })
+	).toBeVisible();
 	await expect(page).toHaveTitle(`${schoolName} — ข้อมูลและบริการสาธารณะ`);
 	expect(
 		requests
-			.filter((r) => r.path.startsWith('/api/school/public'))
+			.filter((r) => isRegionRead(r.path))
 			.slice(before)
 			.map((r) => r.path)
 	).toEqual(['/api/school/public']);
@@ -366,15 +382,15 @@ test('a failed statistics read can retry without refetching identity or organiza
 	failStatistics = true;
 	await page.goto(baseUrl);
 	await expect(
-		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true })
+		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true, level: 1 })
 	).toBeVisible();
 	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
 	await expect(page.getByText('โหลดสถิติโรงเรียนไม่สำเร็จ', { exact: true })).toBeVisible();
-	const before = requests.filter((r) => r.path.startsWith('/api/school/public')).map((r) => r.path);
+	const before = requests.filter((r) => isRegionRead(r.path)).map((r) => r.path);
 	failStatistics = false;
 	await page.getByRole('button', { name: 'ลองใหม่: สถิติโรงเรียน' }).click();
 	await expect(page.getByTestId('school-statistics')).toContainText('124');
-	const after = requests.filter((r) => r.path.startsWith('/api/school/public')).map((r) => r.path);
+	const after = requests.filter((r) => isRegionRead(r.path)).map((r) => r.path);
 	expect(after.slice(before.length)).toEqual(['/api/school/public/statistics']);
 	await page.screenshot({
 		path: '/tmp/schoolorbit-public-retry-desktop.png',
@@ -392,17 +408,17 @@ for (const [endpoint, label] of [
 		await page.goto(baseUrl);
 		await expect(page.getByTestId('school-statistics')).toContainText('124');
 		await expect(page.getByText(`โหลด${label}ไม่สำเร็จ`, { exact: true })).toBeVisible();
-		const before = requests.filter((r) => r.path.startsWith('/api/school/public')).length;
+		const before = requests.filter((r) => isRegionRead(r.path)).length;
 		failedRegion = undefined;
 		await page.getByRole('button', { name: `ลองใหม่: ${label}` }).click();
 		await expect(
-			page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true })
+			page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true, level: 1 })
 		).toBeVisible();
 		await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
 		await expect(page.getByTestId('school-brand')).toContainText('โรงเรียนสาธิตทดสอบ');
 		expect(
 			requests
-				.filter((r) => r.path.startsWith('/api/school/public'))
+				.filter((r) => isRegionRead(r.path))
 				.slice(before)
 				.map((r) => r.path)
 		).toEqual([endpoint]);
@@ -486,7 +502,7 @@ test('slow statistics do not block successful sibling regions', async ({ page })
 	statisticsGate = new Promise<void>((done) => (releaseStatistics = done));
 	await page.goto(baseUrl, { waitUntil: 'commit' });
 	await expect(
-		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true })
+		page.getByRole('heading', { name: 'โรงเรียนสาธิตทดสอบ', exact: true, level: 1 })
 	).toBeVisible();
 	await expect(page.getByRole('status', { name: 'กำลังโหลดสถิติโรงเรียน' })).toBeVisible();
 	await expect(page.getByText('ผู้บริหาร ทดสอบ', { exact: true })).toBeVisible();
@@ -524,6 +540,17 @@ for (const width of [375, 1280]) {
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
+		await expect(page.getByRole('img', { name: 'รูป ผู้บริหาร ทดสอบ' })).toBeVisible();
+		await expect(
+			page.getByRole('rowheader', { name: 'มัธยมศึกษาตอนต้น', exact: true })
+		).toBeVisible();
+		const chartBounds = await page.getByTestId('public-organization-chart').boundingBox();
+		const rootBounds = await page.locator('#organization summary').first().boundingBox();
+		expect(chartBounds).not.toBeNull();
+		expect(rootBounds).not.toBeNull();
+		if (!chartBounds || !rootBounds) throw new Error('Organization chart must have visible bounds');
+		expect(rootBounds.x).toBeGreaterThanOrEqual(chartBounds.x);
+		expect(rootBounds.x + rootBounds.width).toBeLessThanOrEqual(chartBounds.x + chartBounds.width);
 		await page.locator('#organization summary').first().click();
 		await expect(page.getByText('หัวหน้า ทดสอบ', { exact: true })).not.toBeVisible();
 		await page.locator('#organization summary').first().click();

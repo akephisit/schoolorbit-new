@@ -228,9 +228,8 @@ pub async fn list_management_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarEvent>, AppError> {
-    let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     push_event_query_filters(&mut builder, &query);
 
     if let Some(audience) = &query.audience {
@@ -245,6 +244,7 @@ pub async fn list_management_events(
 
     push_search_filter(&mut builder, query.q.as_deref());
     push_event_order(&mut builder);
+    push_search_page(&mut builder, search_offset);
 
     let rows = builder
         .build_query_as::<CalendarEventRow>()
@@ -260,13 +260,13 @@ pub async fn list_my_events(
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
     let user_type = active_user_type(pool, user_id).await?;
     self_calendar_user_type_access(&user_type)?;
-    let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     push_event_query_filters(&mut builder, &query);
     push_my_event_target_filter(&mut builder, user_id, &user_type, query.audience.as_ref());
     push_search_filter(&mut builder, query.q.as_deref());
     push_event_order(&mut builder);
+    push_search_page(&mut builder, search_offset);
 
     let rows = builder
         .build_query_as::<CalendarEventRow>()
@@ -283,13 +283,13 @@ pub async fn list_child_events(
     student_id: Uuid,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarViewerEvent>, AppError> {
-    let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     push_event_query_filters(&mut builder, &query);
     push_child_event_target_filter(&mut builder, parent_id, student_id, query.audience.as_ref());
     push_search_filter(&mut builder, query.q.as_deref());
     push_event_order(&mut builder);
+    push_search_page(&mut builder, search_offset);
 
     let rows = builder
         .build_query_as::<CalendarEventRow>()
@@ -304,14 +304,14 @@ pub async fn list_public_events(
     pool: &PgPool,
     query: CalendarEventQuery,
 ) -> Result<Vec<CalendarPublicEvent>, AppError> {
-    let (from, to) = normalized_event_range(&query, tenant_today())?;
     let mut builder = QueryBuilder::<Postgres>::new(EVENT_SELECT_WITH_CATEGORY);
-    push_base_event_filters(&mut builder, from, to);
+    let search_offset = push_search_or_calendar_range(&mut builder, &query)?;
     builder.push(" AND e.is_public = true");
     push_category_and_tag_query_filters(&mut builder, &query);
 
     push_search_filter(&mut builder, query.q.as_deref());
     push_event_order(&mut builder);
+    push_search_page(&mut builder, search_offset);
 
     let rows = builder
         .build_query_as::<CalendarEventRow>()
@@ -327,6 +327,43 @@ fn push_base_event_filters(builder: &mut QueryBuilder<Postgres>, from: NaiveDate
     builder.push_bind(to);
     builder.push(" AND e.end_date >= ");
     builder.push_bind(from);
+}
+
+fn search_offset(query: &CalendarEventQuery) -> Result<Option<i64>, AppError> {
+    if query.search != Some(true) {
+        return Ok(None);
+    }
+    let text = query.q.as_deref().unwrap_or_default().trim();
+    let offset = query.offset.unwrap_or(0);
+    if text.is_empty() || text.chars().count() > 200 || !(0..=10_000).contains(&offset) {
+        return Err(AppError::BadRequest(
+            "ระบุคำค้นหา 1–200 ตัวอักษร และหน้าค้นหาที่ถูกต้อง".into(),
+        ));
+    }
+    if query.from.is_some() != query.to.is_some() {
+        return Err(AppError::BadRequest("เลือกวันเริ่มต้นและสิ้นสุดให้ครบ".into()));
+    }
+    Ok(Some(offset))
+}
+
+fn push_search_or_calendar_range(
+    builder: &mut QueryBuilder<Postgres>,
+    query: &CalendarEventQuery,
+) -> Result<Option<i64>, AppError> {
+    let offset = search_offset(query)?;
+    if offset.is_some() && query.from.is_none() {
+        builder.push(" WHERE e.deleted_at IS NULL");
+    } else {
+        let (from, to) = normalized_event_range(query, tenant_today())?;
+        push_base_event_filters(builder, from, to);
+    }
+    Ok(offset)
+}
+
+fn push_search_page(builder: &mut QueryBuilder<Postgres>, offset: Option<i64>) {
+    if let Some(offset) = offset {
+        builder.push(" LIMIT 101 OFFSET ").push_bind(offset);
+    }
 }
 
 fn push_event_query_filters(builder: &mut QueryBuilder<Postgres>, query: &CalendarEventQuery) {
@@ -600,5 +637,31 @@ pub(super) fn calendar_search_pattern(search: &str) -> String {
 }
 
 fn push_event_order(builder: &mut QueryBuilder<Postgres>) {
-    builder.push(" ORDER BY e.start_date, e.start_time NULLS FIRST, e.created_at");
+    builder.push(" ORDER BY e.start_date, e.start_time NULLS FIRST, e.created_at, e.id");
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+    #[test]
+    fn cross_month_search_requires_a_bounded_text_and_page_with_complete_dates() {
+        let mut query: CalendarEventQuery =
+            serde_json::from_value(serde_json::json!({"search":true,"q":" ทัศน "})).unwrap();
+        assert_eq!(search_offset(&query).unwrap(), Some(0));
+        query.offset = Some(-1);
+        assert!(search_offset(&query).is_err());
+        query.offset = Some(10_001);
+        assert!(search_offset(&query).is_err());
+        query.offset = Some(100);
+        assert_eq!(search_offset(&query).unwrap(), Some(100));
+        query.q = Some(" ".into());
+        assert!(search_offset(&query).is_err());
+        query.q = Some("ก".repeat(201));
+        assert!(search_offset(&query).is_err());
+        query.q = Some("ทัศน".into());
+        query.from = NaiveDate::from_ymd_opt(2026, 5, 1);
+        assert!(search_offset(&query).is_err());
+        query.search = Some(false);
+        assert_eq!(search_offset(&query).unwrap(), None);
+    }
 }

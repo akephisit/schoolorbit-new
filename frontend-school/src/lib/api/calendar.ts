@@ -107,9 +107,11 @@ export async function listChildCalendarEvents(
 }
 
 export async function listPublicCalendarEvents(
-	filters: CalendarPublicEventFilters
+	filters: CalendarPublicEventFilters,
+	options: ApiRequestOptions = {}
 ): Promise<CalendarPublicEvent[]> {
-	const response = await apiClient.get<CalendarPublicEvent[]>('/api/public/calendar/events', {
+	const response = await apiClient.getPublic<CalendarPublicEvent[]>('/api/public/calendar/events', {
+		...options,
 		query: { ...filters } satisfies GeneratedPublicCalendarQuery
 	});
 	return requireApiData(response, 'ไม่สามารถโหลดปฏิทินสาธารณะได้');

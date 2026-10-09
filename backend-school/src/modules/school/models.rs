@@ -75,6 +75,7 @@ pub struct PublicOrganizationMember {
     pub position_code: String,
     #[schema(required = true)]
     pub position_title: Option<String>,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

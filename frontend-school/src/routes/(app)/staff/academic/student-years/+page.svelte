@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { untrack } from 'svelte';
+	import { orderStudentYears } from '#lib/academic-core/roster-ordering.js';
 	import { studyProgramLabel } from '#lib/academic-core/curriculum-presentation.js';
 	import {
 		createHomeroomPlacement,
@@ -39,6 +40,9 @@
 	let studentYears = $state<StudentAcademicYear[]>([]);
 	const placementsByStudentYear = new SvelteMap<string, HomeroomPlacement[]>();
 	let homerooms = $state<Homeroom[]>([]);
+	const orderedStudentYears = $derived(
+		orderStudentYears(studentYears, placementsByStudentYear, homerooms)
+	);
 	let gradeLevelOptions = $state<GradeLevelOption[]>([]);
 	let programOptions = $state<StudyProgramOption[]>([]);
 	let loading = $state(true);
@@ -338,7 +342,7 @@
 						></Table.Header
 					>
 					<Table.Body>
-						{#each studentYears as record (record.id)}
+						{#each orderedStudentYears as record (record.id)}
 							{@const placement = activePlacement(record)}
 							<Table.Row>
 								<Table.Cell class="border-s-4 border-s-primary ps-5 font-mono text-xs"

@@ -45,7 +45,7 @@ for (const kind of ['events', 'categories', 'tags']) {
 			expect(api.count(path)).toBe(other === kind ? 2 : 1);
 	});
 }
-test('month and committed search preserve URL history while rereading events only', async ({
+test('month history and cross-month search reread events without catalog reloads', async ({
 	page
 }) => {
 	const api = await mockCalendar(page);
@@ -57,16 +57,14 @@ test('month and committed search preserve URL history while rereading events onl
 	await page.getByRole('button', { name: 'เปิดตัวกรองปฏิทิน', exact: true }).click();
 	await page.getByPlaceholder('ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก').fill('ไม่มีรายการ');
 	await page.getByRole('button', { name: /^กรอง(?: \d+)?$/ }).click();
-	await expect(page).toHaveURL(/q=/);
-	await expect(page.getByRole('button', { name: /^ดูรายละเอียด / })).toHaveCount(0);
-	await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
-	await page.goBack();
-	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมพฤศจิกายน');
+	await expect(page.getByRole('dialog')).toContainText('ไม่พบกิจกรรมที่ตรงกับคำค้นหา');
+	await page.keyboard.press('Escape');
+	await expect(page).toHaveURL(/month=2026-11/);
 	await page.goBack();
 	await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
 	expect(api.count(categoriesPath)).toBe(1);
 	expect(api.count(tagsPath)).toBe(1);
-	expect(api.count(eventsPath)).toBe(5);
+	expect(api.count(eventsPath)).toBe(4);
 });
 test('same-context failed refresh retains events and retries only them', async ({ page }) => {
 	const api = await mockCalendar(page, { fail: 'events', failAt: 2 });

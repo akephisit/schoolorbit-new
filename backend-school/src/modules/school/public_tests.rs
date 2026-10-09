@@ -34,6 +34,109 @@ async fn user(pool: &PgPool, label: &str, kind: &str, gender: Option<&str>, stat
         .bind(label).bind(kind).bind(gender).bind(status).fetch_one(pool).await.unwrap()
 }
 
+#[tokio::test]
+async fn public_staff_avatar_requires_current_membership_and_exact_owned_ready_private_profile() {
+    use super::services::public::organization_avatar_file;
+    let pool = create_named_test_pool("public_organization_avatar").await;
+    run_test_migrations(&pool).await;
+    let staff = user(&pool, "avatar-staff", "staff", None, "active").await;
+    let other = user(&pool, "avatar-other", "staff", None, "active").await;
+    let unit: Uuid = sqlx::query_scalar("INSERT INTO organization_units(code,name,unit_type,is_active) VALUES('AVATAR-TEST','ฝ่ายทดสอบ','division',true) RETURNING id").fetch_one(&pool).await.unwrap();
+    let member: Uuid = sqlx::query_scalar("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at) VALUES($1,$2,'member',CURRENT_DATE-1) RETURNING id").bind(staff).bind(unit).fetch_one(&pool).await.unwrap();
+    let file = Uuid::new_v4();
+    let version = Uuid::new_v4();
+    sqlx::query("INSERT INTO files(id,owner_user_id,display_filename,created_by,purpose_code,visibility,lifecycle_status,retention_class) VALUES($1,$2,'fixture.jpg',$2,'profile_image','private','processing','standard')").bind(file).bind(staff).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO file_versions(id,file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,scanner_result_code,scanned_at,created_by) VALUES($1,$2,1,'test','private','stored','fixture/profile.jpg','image/jpeg','jpg',1,repeat('a',64),'clean','clean',now(),$3)").bind(version).bind(file).bind(staff).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE files SET current_version_id=$1,lifecycle_status='ready' WHERE id=$2")
+        .bind(version)
+        .bind(file)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET profile_image_file_id=$1 WHERE id=$2")
+        .bind(file)
+        .bind(staff)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(organization_avatar_file(&pool, member).await.unwrap(), file);
+    let org = get_organization(&pool).await.unwrap();
+    let photo = &org
+        .units
+        .iter()
+        .find(|node| node.id == unit)
+        .unwrap()
+        .members[0];
+    assert_eq!(
+        photo.avatar_url.as_deref(),
+        Some(format!("/api/school/public/organization-members/{member}/avatar").as_str())
+    );
+    assert!(!serde_json::to_string(&org)
+        .unwrap()
+        .contains(&staff.to_string()));
+    for (table, changed, restored, id) in [
+        (
+            "organization_members",
+            "ended_at=CURRENT_DATE",
+            "ended_at=NULL",
+            member,
+        ),
+        (
+            "organization_members",
+            "started_at=CURRENT_DATE+1",
+            "started_at=CURRENT_DATE-1",
+            member,
+        ),
+        (
+            "organization_units",
+            "is_active=false",
+            "is_active=true",
+            unit,
+        ),
+        ("users", "status='inactive'", "status='active'", staff),
+        ("users", "user_type='student'", "user_type='staff'", staff),
+        (
+            "files",
+            "lifecycle_status='processing'",
+            "lifecycle_status='ready'",
+            file,
+        ),
+        ("files", "deleted_at=now()", "deleted_at=NULL", file),
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {table} SET {changed} WHERE id=$1"
+        )))
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            matches!(
+                organization_avatar_file(&pool, member).await,
+                Err(school_errors::AppError::NotFound(_))
+            ),
+            "{table} {changed}"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {table} SET {restored} WHERE id=$1"
+        )))
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query("UPDATE files SET owner_user_id=$1 WHERE id=$2")
+        .bind(other)
+        .bind(file)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(organization_avatar_file(&pool, member).await.is_err());
+    assert!(organization_avatar_file(&pool, Uuid::new_v4())
+        .await
+        .is_err());
+}
+
 async fn statistics_fixture() -> PgPool {
     let pool = create_named_test_pool("public_school_statistics").await;
     seed_release_two_predecessor(&pool).await.unwrap();

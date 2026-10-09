@@ -13,6 +13,7 @@
 		UpdateHomeroomRequest
 	} from '#lib/api/academic-core.js';
 	import { customNameFromStored } from '#lib/academic-core/foundation-presentation.js';
+	import { compareHomerooms } from '#lib/academic-core/roster-ordering.js';
 	import {
 		programsForGrade,
 		studyProgramLabel
@@ -260,7 +261,7 @@
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
-				{#each homerooms as room (room.id)}
+				{#each [...homerooms].sort(compareHomerooms) as room (room.id)}
 					<Table.Row>
 						<Table.Cell class="border-s-4 border-s-primary ps-5">
 							<div class="flex items-center gap-3">

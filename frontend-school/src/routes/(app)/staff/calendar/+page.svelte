@@ -32,6 +32,7 @@
 	import CalendarRequestDialog from '#lib/components/calendar/CalendarRequestDialog.svelte';
 	import CalendarRequestReviewDialog from '#lib/components/calendar/CalendarRequestReviewDialog.svelte';
 	import CalendarColorKey from '#lib/components/calendar/CalendarColorKey.svelte';
+	import CalendarSearchDialog from '#lib/components/calendar/CalendarSearchDialog.svelte';
 	import {
 		type CalendarAudienceType,
 		type CalendarTargetOptions,
@@ -109,6 +110,7 @@
 	let detailId = $state('');
 	let detailAnchor = $state.raw<HTMLElement | null>(null);
 	let search = $state('');
+	let searchOpen = $state(false);
 	let categoryId = $state('');
 	let tagId = $state('');
 	let audience = $state<AudienceFilter>('');
@@ -350,6 +352,11 @@
 			state: { ...page.state, calendarUrl: url.href }
 		});
 	}
+	function selectSearchEvent(event: { startDate: string }) {
+		search = '';
+		selectedDate = event.startDate;
+		commitFilters(monthRange(event.startDate).from);
+	}
 	$effect.pre(() => {
 		const identity = `${authStore.sessionEpoch}|${$authStore.user?.id ?? ''}|${canReadCalendar}|${canManageCalendar}|${canRequestCalendar}`;
 		untrack(() => {
@@ -372,6 +379,7 @@
 			requesting = false;
 			showPendingRequests = false;
 			filterOpen = false;
+			searchOpen = false;
 			detailOpen = false;
 			detailAnchor = null;
 			reviewTarget = null;
@@ -1143,6 +1151,12 @@
 							<ClipboardList class="size-4" />แสดงคำร้องรออนุมัติ
 						</Button>
 					{/if}
+					<Button
+						variant="outline"
+						size="sm"
+						aria-label="ค้นหากิจกรรม"
+						onclick={() => (searchOpen = true)}><Search class="size-4" />ค้นหา</Button
+					>
 					<Popover.Root bind:open={filterOpen}>
 						<Popover.Trigger>
 							{#snippet child({ props })}
@@ -1171,7 +1185,8 @@
 									filterOpen = false;
 									detailOpen = false;
 									detailAnchor = null;
-									commitFilters();
+									if (search.trim()) searchOpen = true;
+									else commitFilters();
 								}}
 							>
 								<div class="relative sm:col-span-2">
@@ -1554,3 +1569,18 @@
 			origin={page.url.origin}
 		/>{/if}
 </PageShell>
+
+{#if canReadCalendar}
+	<CalendarSearchDialog
+		bind:open={searchOpen}
+		kind="staff"
+		initialQuery={search}
+		filters={{
+			categoryId: categoryId || undefined,
+			tagId: tagId || undefined,
+			audience: audience || undefined,
+			visibility: visibility || undefined
+		}}
+		onselect={selectSearchEvent}
+	/>
+{/if}

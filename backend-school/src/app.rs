@@ -80,6 +80,10 @@ fn public_routes() -> Router<AppState> {
             get(modules::school::handlers::get_public_organization),
         )
         .route(
+            "/api/school/public/organization-members/{id}/avatar",
+            get(modules::school::handlers::get_public_organization_avatar),
+        )
+        .route(
             "/api/admin/routes/sync",
             post(modules::system::handlers::register_routes::register_routes),
         )

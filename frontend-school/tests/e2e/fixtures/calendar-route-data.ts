@@ -28,6 +28,28 @@ export async function mockCalendar(
 	const base = await mockStaffHome(page, {
 		permissions: options.permissions ?? ['calendar.read.school', 'calendar.manage.school']
 	});
+	await page.route('**/api/public/academic-context/options', (route) =>
+		route.fulfill({
+			json: {
+				success: true,
+				data: {
+					years: [
+						{
+							id: year,
+							year: 2569,
+							name: 'ปีการศึกษา 2569',
+							status: 'active',
+							startDate: '2026-05-01',
+							endDate: '2027-04-30'
+						}
+					],
+					terms: [],
+					activeAcademicYearId: year,
+					activeAcademicTermId: null
+				}
+			}
+		})
+	);
 	const timestamp = '2026-10-01T00:00:00Z';
 	let categories: CalendarCategory[] = [
 		{

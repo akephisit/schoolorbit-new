@@ -654,6 +654,7 @@ use utoipa::OpenApi;
         crate::modules::school::handlers::get_public_info,
         crate::modules::school::handlers::get_public_statistics,
         crate::modules::school::handlers::get_public_organization,
+        crate::modules::school::handlers::get_public_organization_avatar,
         crate::modules::school::handlers::get_settings,
         crate::modules::notification::handlers::list_notifications,
         crate::modules::staff::handlers::roles::list_roles,
@@ -3319,6 +3320,8 @@ mod tests {
             ("categoryId".to_string(), false),
             ("from".to_string(), false),
             ("q".to_string(), false),
+            ("search".to_string(), false),
+            ("offset".to_string(), false),
             ("tagId".to_string(), false),
             ("to".to_string(), false),
             ("visibility".to_string(), false),
@@ -4456,8 +4459,8 @@ mod tests {
             ["properties"]
             .as_object()
             .expect("public member schema must exist");
-        assert_eq!(member_fields.len(), 3);
-        for field in ["name", "positionCode", "positionTitle"] {
+        assert_eq!(member_fields.len(), 4);
+        for field in ["name", "positionCode", "positionTitle", "avatarUrl"] {
             assert!(member_fields.contains_key(field));
         }
 
