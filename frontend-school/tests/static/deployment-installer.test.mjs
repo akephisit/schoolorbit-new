@@ -830,15 +830,28 @@ test('backend runtime images use deterministic builders without ownership copy-u
 
 	for (const [directory, binary] of images) {
 		const dockerfile = await readRepo(`${directory}/Dockerfile`);
-		const runtimeStart = dockerfile.indexOf('FROM debian:bookworm-slim AS runtime');
-		const runtime = dockerfile.slice(runtimeStart);
+		const runtimeStage = dockerfile.match(/^FROM \S+ AS runtime$/m);
+		assert.ok(runtimeStage, 'the runtime stage must exist');
+		const runtime = dockerfile.slice(runtimeStage.index);
 		const userCreate = runtime.indexOf('useradd -m -u 1000 appuser');
 		const binaryCopy = runtime.indexOf(
 			`COPY --chown=1000:1000 --from=builder /app/target/release/${binary} /app/${binary}`
 		);
 
 		assert.match(dockerfile, /^# syntax=docker\/dockerfile:1\.10$/m);
-		assert.match(dockerfile, /FROM rust:1\.98\.1-slim-bookworm AS base/);
+		if (binary === 'backend-school') {
+			assert.match(
+				dockerfile,
+				/^FROM public\.ecr\.aws\/docker\/library\/rust:1\.98\.1-slim-bookworm@sha256:[a-f0-9]{64} AS base$/m
+			);
+			assert.match(
+				runtimeStage[0],
+				/^FROM public\.ecr\.aws\/docker\/library\/debian:bookworm-slim@sha256:[a-f0-9]{64} AS runtime$/
+			);
+		} else {
+			assert.match(dockerfile, /FROM rust:1\.98\.1-slim-bookworm AS base/);
+			assert.equal(runtimeStage[0], 'FROM debian:bookworm-slim AS runtime');
+		}
 		assert.match(dockerfile, /cargo install cargo-chef --version 0\.1\.78 --locked/);
 		if (binary === 'backend-admin') {
 			assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
