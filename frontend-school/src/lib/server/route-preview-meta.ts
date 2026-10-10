@@ -31,10 +31,9 @@ interface RoutePreviewEntry extends RoutePreviewMeta {
 	specificity: number;
 }
 
-const routeModules = import.meta.glob('/src/routes/(app)/**/+page.ts', { eager: true }) as Record<
-	string,
-	PageRouteModule
->;
+const routeModules = import.meta.glob('/src/routes/[(]app[)]/**/+page.ts', {
+	eager: true
+}) as Record<string, PageRouteModule>;
 
 const routePreviewEntries = buildRoutePreviewEntries(routeModules);
 

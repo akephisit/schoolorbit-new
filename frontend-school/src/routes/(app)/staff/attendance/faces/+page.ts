@@ -1,7 +1,8 @@
 import type { PageLoad } from './$types';
 import { currentAttendanceDate, attendanceOptions } from '#lib/api/attendance.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
-import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { waitForAttendanceAccess } from '#lib/features/attendance/attendance-access.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 export const _meta = {
 	academicContext: 'term_required' as const,
 	menu: {
@@ -9,7 +10,11 @@ export const _meta = {
 		icon: 'ScanFace',
 		group: 'academic_delivery',
 		workspace: 'academic',
-		permission: PERMISSION_MODULES.ATTENDANCE,
+		permission: [
+			PERMISSIONS.ATTENDANCE_ENROLL_ASSIGNED,
+			PERMISSIONS.ATTENDANCE_ENROLL_SCHOOL,
+			PERMISSIONS.ATTENDANCE_VERIFY_ASSIGNED
+		],
 		order: 42,
 		user_type: 'staff'
 	}
@@ -23,7 +28,9 @@ export const load: PageLoad = ({ fetch, url }) => {
 		date,
 		initial: term
 			? captureRouteLoad(
-					attendanceOptions(term, { requestFetch: fetch }),
+					waitForAttendanceAccess(_meta.menu.permission).then((allowed) =>
+						allowed ? attendanceOptions(term, { requestFetch: fetch }) : null
+					),
 					'โหลดข้อมูลเช็คชื่อไม่ได้'
 				)
 			: null

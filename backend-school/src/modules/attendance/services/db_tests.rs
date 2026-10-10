@@ -89,6 +89,50 @@ async fn parents(f: &Fixture) {
     }
 }
 #[tokio::test]
+async fn attendance_calendar_can_be_first_save_and_stale_settings_cannot_overwrite_it() {
+    let f = fixture("attendance_first_calendar").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let before = settings::get(&f.pool, TERM).await.unwrap();
+    assert_eq!(before.row_version, 0);
+    let saved = settings::save_days(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceDays {
+            row_version: 0,
+            days: vec![AttendanceDay {
+                date,
+                counted: false,
+                note: "วันหยุด".into(),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.row_version, 1);
+    assert_eq!(
+        saved.configuration.late_after,
+        before.configuration.late_after
+    );
+    assert!(
+        !settings::is_counted(&f.pool, TERM, date, &saved.configuration)
+            .await
+            .unwrap()
+    );
+    assert!(settings::save(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            row_version: 0,
+            configuration: before.configuration,
+        }
+    )
+    .await
+    .is_err());
+    assert_eq!(settings::get(&f.pool, TERM).await.unwrap().row_version, 1);
+}
+#[tokio::test]
 async fn attendance_save_infers_only_on_nonempty_save_and_deduplicates_every_guardian() {
     let f = fixture("attendance_save_results").await;
     parents(&f).await;

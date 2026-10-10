@@ -1,10 +1,13 @@
 <script lang="ts">
 	import AttendanceSelect from './AttendanceSelect.svelte';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { get } from 'svelte/store';
+	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { uploadFile, deleteFile } from '#lib/api/files.js';
 	import {
@@ -40,10 +43,13 @@
 		message = $state('เปิดเว็บแคมเพื่อเริ่มต้น'),
 		gallery = $state<AttendanceKioskWorkspace | null>(null),
 		samples = $state<number[][]>([]),
-		mode = $state<'scan' | 'enroll'>('scan'),
+		mode = $state<'scan' | 'enroll'>(
+			untrack(() => (get(can).has(PERMISSIONS.ATTENDANCE_VERIFY_ASSIGNED) ? 'scan' : 'enroll'))
+		),
 		sampleTarget = $state<'center' | 'turn' | 'return'>('center'),
 		challenge = $state(''),
-		lastStudent = $state('');
+		lastStudent = $state(''),
+		committing = $state(false);
 	let timer: ReturnType<typeof setTimeout> | null = null,
 		generation = 0;
 	let cameraController: AbortController | null = null;
@@ -107,9 +113,13 @@
 			toast.error('เลือกนักเรียนและยืนยันการลงทะเบียน');
 			return;
 		}
+		if (busy || !active) return;
+		const token = generation,
+			selected = student;
 		busy = true;
 		try {
 			const face = await readFace(video);
+			if (token !== generation || selected !== student || !active) return;
 			if (!face) throw new Error('ต้องเห็นใบหน้าชัดเจนเพียงคนเดียว');
 			if (samples.length && Math.abs(face.yaw) < 0.04)
 				throw new Error('หันหน้าซ้ายหรือขวาเล็กน้อยเพื่อเก็บมุมเพิ่ม');
@@ -118,32 +128,36 @@
 			samples = [...samples, face.values];
 			message = `เก็บ ${samples.length}/3 ตัวอย่างแล้ว`;
 			if (samples.length >= 3) {
-				await enrollAttendanceFace(student, {
+				await enrollAttendanceFace(selected, {
 					model: FACE_MODEL,
 					descriptors: samples.map((values) => ({ values })),
 					consentConfirmed: consent
 				});
+				if (token !== generation) return;
 				toast.success('ลงทะเบียนใบหน้าแล้ว');
 				samples = [];
 				consent = false;
 			}
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'เก็บใบหน้าไม่ได้');
+			if (token === generation) toast.error(e instanceof Error ? e.message : 'เก็บใบหน้าไม่ได้');
 		} finally {
-			busy = false;
+			if (token === generation) busy = false;
 		}
 	}
 	async function remove() {
-		if (!student || !consent) return;
+		if (!student || !consent || busy) return;
+		const token = generation,
+			selected = student;
 		busy = true;
 		try {
-			await removeAttendanceFace(student);
+			await removeAttendanceFace(selected);
+			if (token !== generation || selected !== student) return;
 			toast.success('ลบข้อมูลใบหน้าแล้ว');
 			samples = [];
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'ลบไม่ได้');
+			if (token === generation) toast.error(e instanceof Error ? e.message : 'ลบไม่ได้');
 		} finally {
-			busy = false;
+			if (token === generation) busy = false;
 		}
 	}
 	async function beginScanning() {
@@ -172,7 +186,13 @@
 	async function commit() {
 		if (!pending) return;
 		const queued = pending;
-		const result = await scanAttendance(queued.payload);
+		committing = true;
+		let result;
+		try {
+			result = await scanAttendance(queued.payload);
+		} finally {
+			committing = false;
+		}
 		seen.add(result.studentId);
 		if (pending !== queued) return;
 		message = result.teacherConflict
@@ -280,17 +300,17 @@
 	ใช้คอมพิวเตอร์กับเว็บแคมให้เห็นทีละคน และมีครูดูแล กรณีจับคู่ไม่ได้ให้ครูเช็คชื่อด้วยมือ
 	การหันหน้าช่วยตรวจภาพนิ่ง แต่ยังต้องทดสอบแสงและความแม่นยำก่อนใช้เป็นหลัก
 </p>
-<div class="flex gap-2">
+<div class="flex flex-wrap gap-2">
 	{#if scanAllowed}<Button
 			variant={mode === 'scan' ? 'default' : 'outline'}
-			disabled={running}
+			disabled={running || busy}
 			onclick={() => {
 				mode = 'scan';
 				samples = [];
 			}}>สแกนเข้าโรงเรียน</Button
 		>{/if}{#if enrollAllowed}<Button
 			variant={mode === 'enroll' ? 'default' : 'outline'}
-			disabled={running}
+			disabled={running || busy}
 			onclick={() => {
 				mode = 'enroll';
 			}}>ลงทะเบียนใบหน้า</Button
@@ -307,12 +327,16 @@
 			aria-label="ภาพสดจากเว็บแคม"><track kind="captions" /></video
 		>
 		<p role="status" aria-live="polite" class="rounded-lg border p-4 font-medium">{message}</p>
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
 			<Button onclick={start} disabled={busy || active}>เปิดเว็บแคม</Button><Button
 				variant="outline"
 				onclick={stop}
-				disabled={!active}>หยุดและปิดกล้อง</Button
-			>{#if pending}<Button onclick={retry} disabled={busy}>ส่งรายการเดิมอีกครั้ง</Button>{/if}
+				disabled={!active && !busy}>หยุดและปิดกล้อง</Button
+			>{#if pending}<LoadingButton
+					loading={committing}
+					onclick={retry}
+					disabled={busy || committing}>ส่งรายการเดิมอีกครั้ง</LoadingButton
+				>{/if}
 		</div>
 	</section>
 	<section class="space-y-4">
@@ -337,9 +361,11 @@
 				>นักเรียน<AttendanceSelect
 					label="นักเรียน"
 					placeholder="เลือกนักเรียน"
+					disabled={busy}
 					bind:value={student}
 					onValueChange={() => {
 						samples = [];
+						consent = false;
 					}}
 					options={initial.students.map((s) => ({
 						value: s.id,
@@ -347,9 +373,9 @@
 					}))}
 				/></label
 			><label class="flex gap-2"
-				><input
-					type="checkbox"
+				><Checkbox
 					bind:checked={consent}
+					disabled={busy}
 				/>ยืนยันว่าได้รับความยินยอมและตรวจว่าเป็นนักเรียนคนที่เลือก</label
 			>
 			<p>เก็บ 3 ตัวอย่าง: หน้าตรง แล้วหันซ้ายและขวาเล็กน้อย</p>
@@ -359,7 +385,8 @@
 				variant="outline"
 				onclick={() => {
 					samples = [];
-				}}>เริ่มเก็บใหม่</Button
+				}}
+				disabled={busy}>เริ่มเก็บใหม่</Button
 			><Button
 				variant="destructive"
 				onclick={remove}

@@ -2,6 +2,7 @@
 	import AttendanceSelect from '#lib/features/attendance/AttendanceSelect.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import AttendanceReportPanel from '#lib/features/attendance/AttendanceReportPanel.svelte';
 	import type { PageProps } from './$types';
@@ -14,7 +15,7 @@
 </script>
 
 <PageShell title={data.title}
-	>{#await data.initial}<p role="status">กำลังโหลด…</p>{:then result}{#if result.ok}<div
+	>{#await data.initial}<PageSkeleton variant="table" />{:then result}{#if result.ok}<div
 				class="flex flex-wrap gap-3"
 			>
 				<label
@@ -41,9 +42,12 @@
 						date={data.date}
 						initial={result.data.report}
 						studentId={result.data.studentId}
-					/>{/key}{:else}<p>ยังไม่มีภาคเรียนหรือนักเรียนที่เชื่อมกับบัญชีนี้</p>{/if}{:else}<p
-				role="alert"
-			>
-				{result.error}
-			</p>{/if}{/await}</PageShell
+					/>{/key}{:else}<PageState
+					title="ยังไม่มีข้อมูลเช็คชื่อ"
+					description="ยังไม่มีภาคเรียนหรือนักเรียนที่เชื่อมกับบัญชีนี้"
+				/>{/if}{:else}<PageState
+				variant="error"
+				title="โหลดผลเช็คชื่อไม่ได้"
+				description={result.error}
+			/>{/if}{/await}</PageShell
 >

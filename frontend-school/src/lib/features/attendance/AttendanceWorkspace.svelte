@@ -1,8 +1,11 @@
 <script lang="ts">
 	import AttendanceSelect from './AttendanceSelect.svelte';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { ATTENDANCE_FACE_PERMISSIONS } from './attendance-access.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
@@ -29,6 +32,10 @@
 		kind = $state<AttendanceKind>('flag'),
 		detail = $state<AttendanceDetail | null>(null),
 		busy = $state(false),
+		pendingAction = $state(''),
+		workspaceError = $state(''),
+		detailError = $state(''),
+		failedSession = $state.raw<AttendanceSession | null>(null),
 		reason = $state(''),
 		search = $state('');
 	const canWrite = $derived(
@@ -38,23 +45,44 @@
 			PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL
 		)
 	);
-	const choices = $derived(workspace.sessions.filter((s) => s.kind === kind));
+	const choices = $derived(
+		workspaceError || (pendingAction === 'workspace' && selectedDate !== workspace.date)
+			? []
+			: workspace.sessions.filter((s) => s.kind === kind)
+	);
+	const request = new LatestRequest();
+	onDestroy(() => request.abort());
 	const students = $derived(detail?.students.filter((s) => s.displayName.includes(search)) ?? []);
 	async function refresh() {
+		const t = request.begin();
 		busy = true;
+		pendingAction = 'workspace';
+		workspaceError = '';
+		detailError = '';
 		detail = null;
 		try {
-			workspace = await attendanceWorkspace(term, selectedDate);
+			const result = await attendanceWorkspace(term, selectedDate, { signal: t.signal });
+			if (request.isCurrent(t.revision)) workspace = result;
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'โหลดไม่ได้');
+			if (request.isCurrent(t.revision))
+				workspaceError = e instanceof Error ? e.message : 'โหลดไม่ได้';
 		} finally {
-			busy = false;
+			if (request.isCurrent(t.revision)) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	async function select(s: AttendanceSession) {
+		if (busy || (s.rowVersion === 0 && !canWrite)) return;
+		const t = request.begin();
 		busy = true;
+		pendingAction = 'detail';
+		detail = null;
+		detailError = '';
+		failedSession = s;
 		try {
-			detail =
+			const loaded =
 				s.rowVersion === 0
 					? await openAttendanceSession({
 							academicTermId: term,
@@ -62,19 +90,34 @@
 							kind: s.kind,
 							sourceKey: s.sourceKey
 						})
-					: await attendanceDetail(s.id);
+					: await attendanceDetail(s.id, { signal: t.signal });
+			if (!request.isCurrent(t.revision)) return;
+			detail = loaded;
+			failedSession = null;
+			workspace = {
+				...workspace,
+				sessions: workspace.sessions.map((row) =>
+					row.kind === loaded.session.kind && row.sourceKey === loaded.session.sourceKey
+						? loaded.session
+						: row
+				)
+			};
 			reason = '';
 		} catch (e) {
-			toast.error(e instanceof Error ? e.message : 'เปิดรอบไม่ได้');
+			if (request.isCurrent(t.revision))
+				detailError = e instanceof Error ? e.message : 'เปิดรอบไม่ได้';
 		} finally {
-			busy = false;
+			if (request.isCurrent(t.revision)) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	function markAll(result: AttendanceResult) {
 		if (detail) detail = { ...detail, students: detail.students.map((s) => ({ ...s, result })) };
 	}
 	async function save() {
-		if (!detail) return;
+		if (!detail || busy) return;
 		const records = detail.students
 			.filter((s) => s.result !== 'unchecked')
 			.map((s) => ({ studentId: s.studentId, result: s.result, note: s.note }));
@@ -83,6 +126,7 @@
 			return;
 		}
 		busy = true;
+		pendingAction = 'save';
 		try {
 			detail = await saveAttendanceResults(detail.session.id, {
 				rowVersion: detail.session.rowVersion,
@@ -99,15 +143,17 @@
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่ได้');
 		} finally {
 			busy = false;
+			pendingAction = '';
 		}
 	}
 	async function cancel() {
-		if (!detail) return;
+		if (!detail || busy) return;
 		if (!reason.trim()) {
 			toast.error('ระบุเหตุผลงดหรือคืนคาบ');
 			return;
 		}
 		busy = true;
+		pendingAction = 'cancel';
 		try {
 			detail = await cancelAttendance(detail.session.id, {
 				rowVersion: detail.session.rowVersion,
@@ -124,16 +170,19 @@
 			toast.error(e instanceof Error ? e.message : 'บันทึกไม่ได้');
 		} finally {
 			busy = false;
+			pendingAction = '';
 		}
 	}
 </script>
 
 <nav class="flex flex-wrap gap-3">
-	<Button variant="outline" href={`/staff/attendance/settings?academicTermId=${term}`}
-		>ตั้งค่าปฏิทินและรอบพิเศษ</Button
-	><Button variant="outline" href={`/staff/attendance/faces?academicTermId=${term}`}
-		>เว็บแคม / ลงทะเบียนใบหน้า</Button
-	><Button variant="outline" href={`/staff/attendance/report?academicTermId=${term}`}
+	{#if $can.has(PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL)}<Button
+			variant="outline"
+			href={`/staff/attendance/settings?academicTermId=${term}`}>ตั้งค่าปฏิทินและรอบพิเศษ</Button
+		>{/if}{#if $can.hasAny(...ATTENDANCE_FACE_PERMISSIONS)}<Button
+			variant="outline"
+			href={`/staff/attendance/faces?academicTermId=${term}`}>เว็บแคม / ลงทะเบียนใบหน้า</Button
+		>{/if}<Button variant="outline" href={`/staff/attendance/report?academicTermId=${term}`}
 		>สรุป / ล้างภาคเรียน</Button
 	>
 </nav>
@@ -147,21 +196,37 @@
 			ariaLabel="วันที่"
 			disabled={busy}
 		/></label
-	><Button variant="outline" onclick={refresh} disabled={busy}>โหลดผลล่าสุด</Button><span
-		class="text-sm text-muted-foreground"
-		>{workspace.counted ? 'นับในสรุป' : 'บันทึกได้ แต่วันนี้ไม่นับในสรุป'}</span
+	><LoadingButton
+		loading={pendingAction === 'workspace'}
+		variant="outline"
+		onclick={refresh}
+		disabled={busy}>โหลดผลล่าสุด</LoadingButton
+	><span class="text-sm text-muted-foreground"
+		>{selectedDate !== workspace.date
+			? 'กำลังโหลดวันที่เลือก'
+			: workspace.counted
+				? 'นับในสรุป'
+				: 'บันทึกได้ แต่วันนี้ไม่นับในสรุป'}</span
 	>
 </div>
 <div class="flex flex-wrap gap-2">
 	{#each Object.entries(kindLabels) as [value, label] (value)}
 		<Button
 			variant={kind === value ? 'default' : 'outline'}
+			disabled={busy}
 			onclick={() => {
 				kind = value as AttendanceKind;
 				detail = null;
 			}}>{label}</Button
 		>{/each}
 </div>
+{#if workspaceError}<PageState
+		variant="error"
+		title="โหลดวันเช็คชื่อไม่ได้"
+		description={workspaceError}
+		actionLabel="ลองโหลดวันเช็คชื่อใหม่"
+		onaction={refresh}
+	/>{/if}
 <div class="grid gap-4 lg:grid-cols-[minmax(200px,300px)_1fr]">
 	<aside class="space-y-2">
 		{#each choices as s (s.id)}
@@ -169,7 +234,7 @@
 				class="h-auto w-full justify-start whitespace-normal py-3 text-left"
 				variant={detail?.session.id === s.id ? 'default' : 'outline'}
 				onclick={() => select(s)}
-				disabled={busy}
+				disabled={busy || (s.rowVersion === 0 && !canWrite)}
 				>{s.startTime.slice(0, 5)} · {s.title}{s.cancelled
 					? ' · งด'
 					: s.savedAt
@@ -177,8 +242,20 @@
 						: ''}</Button
 			>{:else}<p class="text-muted-foreground">ไม่มีรอบที่ได้รับมอบหมายในวันนี้</p>{/each}
 	</aside>
-	<section class="min-w-0 space-y-4">
-		{#if detail}<h2 class="text-lg font-semibold">{detail.session.title}</h2>
+	<section class="min-w-0 space-y-4" aria-busy={pendingAction === 'detail'}>
+		{#if pendingAction === 'detail'}<PageSkeleton
+				variant="table"
+				rows={4}
+				columns={4}
+			/>{:else if detailError}<PageState
+				variant="error"
+				title="เปิดรอบไม่ได้"
+				description={detailError}
+				actionLabel="ลองเปิดรอบใหม่"
+				onaction={() => {
+					if (failedSession) void select(failedSession);
+				}}
+			/>{:else if detail}<h2 class="text-lg font-semibold">{detail.session.title}</h2>
 			<p class="text-sm text-muted-foreground">
 				{detail.counted ? 'นับในสรุป' : 'ไม่นับในสรุป'} · นักเรียน {detail.students.length} คน
 			</p>
@@ -191,6 +268,7 @@
 					placeholder="ค้นหาชื่อนักเรียน"
 					bind:value={search}
 					class="max-w-xs"
+					aria-label="ค้นหาชื่อนักเรียน"
 				/>{#if detail.writable && canWrite}<Button
 						variant="outline"
 						onclick={() => markAll('present')}
@@ -199,7 +277,7 @@
 						>ขาดทั้งหมด</Button
 					>{/if}
 			</div>
-			<Table.Root
+			<Table.Root class="min-w-[640px]"
 				><Table.Header
 					><Table.Row
 						><Table.Head>เลขที่ / ชื่อ</Table.Head><Table.Head>ผล</Table.Head><Table.Head
@@ -244,14 +322,20 @@
 							: 'เช่น งดเรียนเพราะกิจกรรมโรงเรียน'}
 					/></label
 				>
-				<div class="flex gap-2">
-					<Button onclick={save} disabled={busy || !detail.writable}>บันทึก</Button><Button
-						variant="outline"
-						onclick={cancel}
-						disabled={busy}
+				<div class="flex flex-wrap gap-2">
+					<LoadingButton
+						loading={pendingAction === 'save'}
+						onclick={save}
+						disabled={busy || !detail.writable}>บันทึก</LoadingButton
+					><Button variant="outline" onclick={cancel} disabled={busy}
 						>{detail.session.cancelled ? 'คืนคาบเช็คชื่อ' : 'งดคาบ / กิจกรรมแทนการเรียน'}</Button
 					>
 				</div>{/if}
-		{:else}<p class="rounded-lg border p-8 text-muted-foreground">เลือกรอบเช็คชื่อทางซ้าย</p>{/if}
+		{:else}<PageState
+				title="เลือกรอบเช็คชื่อ"
+				description={canWrite
+					? 'เลือกรอบที่ต้องการจากรายการ'
+					: 'ดูผลรอบที่ครูเปิดเช็คชื่อแล้วได้จากรายการ'}
+			/>{/if}
 	</section>
 </div>

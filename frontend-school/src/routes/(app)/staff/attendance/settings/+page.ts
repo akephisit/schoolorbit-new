@@ -6,7 +6,8 @@ import {
 	attendanceDays
 } from '#lib/api/attendance.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
-import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { waitForAttendanceAccess } from '#lib/features/attendance/attendance-access.js';
 export const _meta = {
 	academicContext: 'term_required' as const,
 	menu: {
@@ -14,7 +15,7 @@ export const _meta = {
 		icon: 'CalendarDays',
 		group: 'academic_delivery',
 		workspace: 'academic',
-		permission: PERMISSION_MODULES.ATTENDANCE,
+		permission: PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL,
 		order: 41,
 		user_type: 'staff'
 	}
@@ -26,18 +27,30 @@ export const load: PageLoad = ({ fetch, url }) => {
 	const monthEnd = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0))
 		.toISOString()
 		.slice(0, 10);
+	const access = waitForAttendanceAccess([PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL]);
 	return {
 		title: _meta.menu.title,
 		term,
 		date,
-		initial: term
+		settings: term
 			? captureRouteLoad(
-					Promise.all([
-						attendanceSettings(term, { requestFetch: fetch }),
-						attendanceOptions(term, { requestFetch: fetch }),
-						attendanceDays(term, monthStart, monthEnd, { requestFetch: fetch })
-					]),
+					access.then((allowed) =>
+						allowed
+							? Promise.all([
+									attendanceSettings(term, { requestFetch: fetch }),
+									attendanceDays(term, monthStart, monthEnd, { requestFetch: fetch })
+								])
+							: null
+					),
 					'โหลดข้อมูลเช็คชื่อไม่ได้'
+				)
+			: null,
+		options: term
+			? captureRouteLoad(
+					access.then((allowed) =>
+						allowed ? attendanceOptions(term, { requestFetch: fetch }) : null
+					),
+					'โหลดกลุ่มและเครื่องสแกนไม่ได้'
 				)
 			: null
 	};
