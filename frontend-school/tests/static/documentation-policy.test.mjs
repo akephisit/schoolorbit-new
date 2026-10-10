@@ -26,16 +26,16 @@ const MARKDOWN_ALLOWLIST = [
 	'frontend-school/README.md'
 ].sort();
 
-const SUPERPOWERS_SPEC_PATTERN =
-	/^docs\/superpowers\/specs\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*-design\.md$/;
-const SUPERPOWERS_PLAN_PATTERN =
-	/^docs\/superpowers\/plans\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
+const WORKFLOW_SPEC_PATTERN =
+	/^docs\/workflows\/specs\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*-design\.md$/;
+const WORKFLOW_PLAN_PATTERN =
+	/^docs\/workflows\/plans\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
 
 function isAllowedMarkdown(relativePath) {
 	return (
 		MARKDOWN_ALLOWLIST.includes(relativePath) ||
-		SUPERPOWERS_SPEC_PATTERN.test(relativePath) ||
-		SUPERPOWERS_PLAN_PATTERN.test(relativePath)
+		WORKFLOW_SPEC_PATTERN.test(relativePath) ||
+		WORKFLOW_PLAN_PATTERN.test(relativePath)
 	);
 }
 
@@ -87,17 +87,17 @@ function requiredSection(source, startHeading, endHeading) {
 	return source.slice(start, end);
 }
 
-test('Superpowers Markdown is limited to dated spec and plan artifacts', () => {
+test('Workflow Markdown is limited to dated spec and plan artifacts', () => {
 	const accepted = [
-		'docs/superpowers/specs/2026-07-26-admin-auth-design.md',
-		'docs/superpowers/plans/2026-07-26-admin-auth.md'
+		'docs/workflows/specs/2026-07-26-admin-auth-design.md',
+		'docs/workflows/plans/2026-07-26-admin-auth.md'
 	];
 	const rejected = [
-		'docs/superpowers/README.md',
-		'docs/superpowers/specs/admin-auth-design.md',
-		'docs/superpowers/specs/2026-07-26-admin-auth.md',
-		'docs/superpowers/plans/admin-auth.md',
-		'docs/superpowers/notes/2026-07-26-admin-auth.md',
+		'docs/workflows/README.md',
+		'docs/workflows/specs/admin-auth-design.md',
+		'docs/workflows/specs/2026-07-26-admin-auth.md',
+		'docs/workflows/plans/admin-auth.md',
+		'docs/workflows/notes/2026-07-26-admin-auth.md',
 		'docs/another-plan.md'
 	];
 
@@ -109,7 +109,7 @@ test('Superpowers Markdown is limited to dated spec and plan artifacts', () => {
 	}
 });
 
-test('repository Markdown is limited to canonical docs and Superpowers artifacts', async () => {
+test('repository Markdown is limited to canonical docs and workflow artifacts', async () => {
 	const existing = await existingRepositoryMarkdown();
 	const missingCanonical = MARKDOWN_ALLOWLIST.filter(
 		(relativePath) => !existing.includes(relativePath)
@@ -152,8 +152,8 @@ test('project rules own durable development and verification workflows', async (
 		'## 11. Verification Matrix',
 		'### Canonical replacements and data preservation',
 		'TODO.md',
-		'docs/superpowers/specs/',
-		'docs/superpowers/plans/',
+		'docs/workflows/specs/',
+		'docs/workflows/plans/',
 		'contracts/permissions.json',
 		'npm run generate:permissions',
 		'npm run check:permissions',
