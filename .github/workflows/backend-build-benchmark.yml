@@ -14,6 +14,10 @@ on:
         description: Comma-separated final-crate profiles, starting with default
         type: string
         default: default,cgu64
+      baseline:
+        description: Exact School baseline SHA for a paired API-registry-only source comparison
+        type: string
+        default: ""
 permissions:
   contents: read
 jobs:
@@ -31,10 +35,32 @@ jobs:
           BENCH_BACKEND: ${{ matrix.backend }}
           BENCH_SAMPLES: ${{ inputs.samples }}
           BENCH_VARIANTS: ${{ inputs.variants }}
+          BENCH_BASELINE: ${{ inputs.baseline }}
         run: |
           case "$BENCH_BACKEND" in backend-school|backend-admin) ;; *) exit 64 ;; esac
           [[ "$BENCH_SAMPLES" =~ ^[2-5]$ ]]
-          [[ "$BENCH_VARIANTS" =~ ^default(,(opt2|cgu64|cgu256)){0,3}$ ]]
+          if [ -n "$BENCH_BASELINE" ]; then
+            [[ "$BENCH_BACKEND" = backend-school && "$BENCH_BASELINE" =~ ^[a-f0-9]{40}$ && "$BENCH_VARIANTS" = default,api-batches ]]
+          else
+            [[ "$BENCH_VARIANTS" =~ ^default(,(opt2|cgu64|cgu256)){0,3}$ ]]
+          fi
+      - name: Select exact baseline source when comparing API registry construction
+        id: source
+        env:
+          BENCH_BACKEND: ${{ matrix.backend }}
+          BENCH_BASELINE: ${{ inputs.baseline }}
+        run: |
+          set -euo pipefail
+          context="$GITHUB_WORKSPACE/$BENCH_BACKEND"
+          if [ -n "$BENCH_BASELINE" ]; then
+            git fetch --no-tags origin "$BENCH_BASELINE"
+            changed=$(git diff --name-only "$BENCH_BASELINE" HEAD -- backend-school)
+            test "$changed" = backend-school/src/api_contract.rs
+            context="$RUNNER_TEMP/baseline/backend-school"
+            mkdir -p "$context"
+            git archive "$BENCH_BASELINE:backend-school" | tar -xf - -C "$context"
+          fi
+          printf 'context=%s\n' "$context" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
       - name: Configure compiler cache transport
         uses: actions/github-script@v8
@@ -45,7 +71,7 @@ jobs:
       - name: Restore exact production builder
         uses: docker/build-push-action@v7
         with:
-          context: ./${{ matrix.backend }}
+          context: ${{ steps.source.outputs.context }}
           target: builder
           load: true
           tags: schoolorbit-benchmark:builder
@@ -59,11 +85,17 @@ jobs:
           BENCH_BACKEND: ${{ matrix.backend }}
           BENCH_SAMPLES: ${{ inputs.samples }}
           BENCH_VARIANTS: ${{ inputs.variants }}
+          BENCH_BASELINE: ${{ inputs.baseline }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/build-benchmark"
+          mounts=()
+          if [ "$BENCH_BACKEND" = backend-school ]; then
+            mounts+=(-v "$PWD/backend-school/src/api_contract.rs:/candidate-api.rs:ro")
+          fi
           docker create --name schoolorbit-benchmark --cpus=2 \
             -e BENCH_SAMPLES \
+            "${mounts[@]}" \
             -v "$PWD/scripts/benchmark_backend_build.sh:/benchmark.sh:ro" \
             -v "$PWD/scripts/summarize_backend_benchmark.py:/summarize_backend_benchmark.py:ro" \
             -v "$RUNNER_TEMP/build-benchmark:/benchmark-results" \
@@ -73,7 +105,7 @@ jobs:
           docker exec schoolorbit-benchmark sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 >/dev/null'
           docker cp schoolorbit-benchmark:/app/target/cargo-timings "$RUNNER_TEMP/build-benchmark/builder-evidence"
           {
-            printf 'sha=%s backend=%s cpu_quota=2 cargo_jobs=2 incremental=off\n' "$GITHUB_SHA" "$BENCH_BACKEND"
+            printf 'candidate_sha=%s baseline_sha=%s backend=%s cpu_quota=2 cargo_jobs=2 incremental=off\n' "$GITHUB_SHA" "${BENCH_BASELINE:-$GITHUB_SHA}" "$BENCH_BACKEND"
             docker image inspect schoolorbit-benchmark:builder --format '{{.Id}}'
             docker exec schoolorbit-benchmark rustc -vV
             docker exec schoolorbit-benchmark sh -c 'cat /sys/fs/cgroup/cpu.max; cat /sys/fs/cgroup/memory.max; uname -m'
@@ -82,7 +114,7 @@ jobs:
           IFS=',' read -r -a variants <<< "$BENCH_VARIANTS"
           for variant in "${variants[@]}"; do
             docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/application"
-            if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ]; then
+            if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ] && [ -z "$BENCH_BASELINE" ]; then
               for owner in academic attendance; do
                 docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" default "/benchmark-results/default/$owner" "$owner"
               done

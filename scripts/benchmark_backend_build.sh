@@ -8,7 +8,7 @@ output=${3:?output directory is required}
 owner=${4:-application}
 samples=${BENCH_SAMPLES:-2}
 case "$backend" in backend-school | backend-admin) ;; *) exit 64 ;; esac
-case "$variant" in default | opt2 | cgu64 | cgu256) ;; *) exit 64 ;; esac
+case "$variant" in default | opt2 | cgu64 | cgu256 | api-batches) ;; *) exit 64 ;; esac
 [[ $samples =~ ^[2-5]$ ]] || exit 64
 case "$backend/$owner" in
     */application) source_file=src/main.rs ;;
@@ -17,6 +17,10 @@ case "$backend/$owner" in
     *) exit 64 ;;
 esac
 test -f "$source_file"
+if [[ "$variant" == api-batches ]]; then
+    [[ "$backend/$owner" == backend-school/application ]] || exit 64
+    cp /candidate-api.rs src/api_contract.rs
+fi
 mkdir -p "$output"
 unset RUSTC_WRAPPER
 export CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
@@ -61,6 +65,8 @@ if [[ "$backend" == backend-school ]]; then
         cp "$output/openapi-baseline.json" "$reference"
     fi
 fi
+sha256sum src/main.rs >"$output/source-sha256.txt"
+if [[ "$backend" == backend-school ]]; then sha256sum src/api_contract.rs >>"$output/source-sha256.txt"; fi
 
 original=$(mktemp)
 cp "$source_file" "$original"

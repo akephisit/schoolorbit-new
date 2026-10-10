@@ -62,6 +62,7 @@ jobs:
       backend: ${{ fromJson(inputs.options).backend || 'both' }}
       samples: ${{ fromJson(inputs.options).samples || '2' }}
       variants: ${{ fromJson(inputs.options).variants || 'default,cgu64' }}
+      baseline: ${{ fromJson(inputs.options).baseline || '' }}
   http-benchmark:
     if: inputs.operation == 'http-benchmark'
     uses: ./.github/workflows/backend-http-boundary-experiment.yml
