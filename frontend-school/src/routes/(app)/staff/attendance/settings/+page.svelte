@@ -1,17 +1,21 @@
 <script lang="ts">
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import AttendanceSettingsPanel from '#lib/features/attendance/AttendanceSettingsPanel.svelte';
+	import AttendanceSettingsRegions from '#lib/features/attendance/AttendanceSettingsRegions.svelte';
 	import type { PageProps } from './$types';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
 	let { data }: PageProps = $props();
 </script>
 
 <PageShell title={data.title}>
-	{#if !data.term}<p>กรุณาเลือกภาคเรียนจากแถบด้านบน</p>
-	{:else}{#await data.initial}<p role="status">
-				กำลังโหลด…
-			</p>{:then result}{#if result?.ok}{#key data.term + data.date}<AttendanceSettingsPanel
-						term={data.term}
-						date={data.date}
-						initial={result.data}
-					/>{/key}{:else}<p role="alert">{result?.error}</p>{/if}{/await}{/if}
+	<Button variant="outline" href={`/staff/attendance?academicTermId=${data.term ?? ''}`}
+		>กลับหน้าเช็คชื่อ</Button
+	>
+	{#if !data.term}<PageState title="เลือกภาคเรียน" description="กรุณาเลือกภาคเรียนจากแถบด้านบน" />
+	{:else if data.settings && data.options}{#key data.term + data.date}<AttendanceSettingsRegions
+				term={data.term}
+				date={data.date}
+				initialSettings={data.settings}
+				initialOptions={data.options}
+			/>{/key}{/if}
 </PageShell>

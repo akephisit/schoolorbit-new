@@ -2,7 +2,10 @@
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -30,6 +33,8 @@
 		history = $state<AttendanceHistoryItem[]>([]),
 		selectedStudent = $state(untrack(() => studentId ?? '')),
 		busy = $state(false),
+		historyError = $state(''),
+		historyLoaded = $state(false),
 		start = $state(untrack(() => date.slice(0, 7)) + '-01'),
 		end = $state(untrack(() => date)),
 		impact = $state<AttendancePurgeImpact | null>(null),
@@ -38,6 +43,7 @@
 		image = $state(''),
 		search = $state('');
 	let imageGeneration = 0;
+	const historyRequest = new LatestRequest();
 	const labels: Record<string, string> = {
 		school: 'มาโรงเรียน (วัน)',
 		flag: 'หน้าเสาธง (ครั้ง)',
@@ -71,10 +77,33 @@
 		}
 	}
 	async function loadHistory(id = selectedStudent) {
-		if (!id) return;
+		if (!id || busy) return;
+		const t = historyRequest.begin();
+		closeImage();
+		history = [];
+		historyError = '';
+		historyLoaded = false;
+		selectedStudent = id;
 		await run(async () => {
-			history = await attendanceHistory(term, id, start, end);
-			selectedStudent = id;
+			try {
+				const first = Date.parse(start + 'T00:00:00Z'),
+					last = Date.parse(end + 'T00:00:00Z');
+				if (
+					!Number.isFinite(first) ||
+					!Number.isFinite(last) ||
+					last < first ||
+					(last - first) / 86400000 >= 31
+				)
+					throw new Error('เลือกช่วงวันที่ไม่เกิน 31 วัน');
+				const rows = await attendanceHistory(term, id, start, end, { signal: t.signal });
+				if (historyRequest.isCurrent(t.revision)) {
+					history = rows;
+					historyLoaded = true;
+				}
+			} catch (e) {
+				if (historyRequest.isCurrent(t.revision))
+					historyError = e instanceof Error ? e.message : 'โหลดรายละเอียดไม่ได้';
+			}
 		});
 	}
 	async function preview(s: AttendanceHistoryItem) {
@@ -92,7 +121,10 @@
 		if (image) URL.revokeObjectURL(image);
 		image = '';
 	}
-	onDestroy(closeImage);
+	onDestroy(() => {
+		closeImage();
+		historyRequest.abort();
+	});
 	async function checkPurge() {
 		await run(async () => {
 			impact = await attendancePurgeImpact(term);
@@ -165,13 +197,13 @@
 		? ' · ภาคเรียนนี้ล้างรายละเอียดแล้ว แต่ยังเก็บสรุปไว้'
 		: ''}
 </p>
-<div class="flex gap-3">
+<div class="flex flex-wrap gap-3">
 	<Input aria-label="ค้นหาสรุป" bind:value={search} placeholder="ค้นหารายวิชา / รอบ" /><Button
 		variant="outline"
 		onclick={exportCsv}>ส่งออก CSV</Button
 	>
 </div>
-<Table.Root
+<Table.Root class="min-w-[800px]"
 	><Table.Header
 		><Table.Row
 			>{#each ['นักเรียน', 'ประเภท / รอบ', 'มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม', 'ยังไม่เช็ค', 'ทั้งหมด', 'ร้อยละ'] as label (label)}
@@ -202,8 +234,19 @@
 		<div class="flex flex-wrap items-end gap-3">
 			<label>จาก<DatePicker bind:value={start} /></label><label
 				>ถึง<DatePicker bind:value={end} /></label
-			><Button onclick={() => loadHistory()} disabled={busy}>ดูรายละเอียด (ไม่เกิน 31 วัน)</Button>
+			><LoadingButton loading={busy} onclick={() => loadHistory()} disabled={busy}
+				>ดูรายละเอียด (ไม่เกิน 31 วัน)</LoadingButton
+			>
 		</div>
+		{#if historyError}<PageState
+				variant="error"
+				title="โหลดรายละเอียดไม่ได้"
+				description={historyError}
+				actionLabel="ลองโหลดรายละเอียดใหม่"
+				onaction={() => {
+					void loadHistory();
+				}}
+			/>{/if}
 		{#each history as h (h.sessionId)}
 			<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3">
 				<span
@@ -214,15 +257,17 @@
 				>{#if h.evidenceFileId}<Button variant="outline" onclick={() => preview(h)} disabled={busy}
 						>ภาพตอนสแกน</Button
 					>{/if}
-			</div>{:else}<p>กดดูรายละเอียดเพื่อโหลดรายการ</p>{/each}{#if image}<div>
+			</div>{:else}{#if !historyError}<p>
+					{historyLoaded ? 'ไม่มีรายการในช่วงวันที่เลือก' : 'กดดูรายละเอียดเพื่อโหลดรายการ'}
+				</p>{/if}{/each}{#if image}<div>
 				<Button variant="outline" onclick={closeImage}>ปิดภาพ</Button><img
 					src={image}
 					alt="ภาพหลักฐานตอนสแกนเข้าโรงเรียน"
-					class="mt-3 max-w-lg rounded-lg"
+					class="mt-3 w-full max-w-lg rounded-lg"
 				/>
 			</div>{/if}
 	</section>{/if}
-{#if canPurge}<section class="space-y-4 rounded-xl border p-5">
+{#if canPurge}<section class="space-y-4 rounded-xl border bg-card p-4 sm:p-5">
 		<h2 class="font-semibold">ล้างรายละเอียดภาคเรียน</h2>
 		<p class="text-sm text-muted-foreground">
 			ทำได้หลังปิดภาคเรียน ระบบตรวจยอดและเก็บสรุปรายคนก่อนล้างผลรายครั้งและภาพหลักฐาน
@@ -239,10 +284,8 @@
 			{#if impact.canPurge}<label class="block"
 					>เหตุผล<Input bind:value={reason} maxlength={1000} /></label
 				><label class="flex gap-2"
-					><input
-						type="checkbox"
-						bind:checked={confirmed}
-					/>ยืนยันล้างรายละเอียดและภาพของภาคเรียนนี้ โดยคงยอดสรุป</label
+					><Checkbox bind:checked={confirmed} />ยืนยันล้างรายละเอียดและภาพของภาคเรียนนี้
+					โดยคงยอดสรุป</label
 				><Button
 					variant="destructive"
 					onclick={purge}

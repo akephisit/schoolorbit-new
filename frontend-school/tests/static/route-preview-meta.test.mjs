@@ -21,7 +21,7 @@ test('protected app route previews derive titles from route metadata automatical
 
 	assert.match(
 		routePreview,
-		/import\.meta\.glob\(['"]\/src\/routes\/\(app\)\/\*\*\/\+page\.ts['"],\s*\{\s*eager:\s*true\s*\}/,
+		/import\.meta\.glob\(['"]\/src\/routes\/\[\(\]app\[\)\]\/\*\*\/\+page\.ts['"],\s*\{\s*eager:\s*true\s*\}/,
 		'route preview registry should be built from app route modules, not a hand-written URL map'
 	);
 	assert.match(

@@ -29,7 +29,7 @@ export type RouteAccess = {
 
 export type DashboardPath = '/staff' | '/student' | '/parent';
 
-const routeModules = import.meta.glob('/src/routes/(app)/**/+page.ts', {
+const routeModules = import.meta.glob('/src/routes/[(]app[)]/**/+page.ts', {
 	eager: true
 }) as Record<string, RouteMetaModule>;
 
