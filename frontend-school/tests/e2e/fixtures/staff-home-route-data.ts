@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { MenuGroup } from '../../../src/lib/api/menu.js';
 export const id = (n: number) => `55000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 export const year = id(1),
 	nextYear = id(2),
@@ -16,6 +17,7 @@ export async function mockStaffHome(
 		failAt?: number;
 		permissions?: string[];
 		userType?: string;
+		menuGroups?: MenuGroup[];
 	} = {}
 ) {
 	const reads: string[] = [],
@@ -118,7 +120,7 @@ export async function mockStaffHome(
 				return reply(route, 'region ไม่พร้อม', 503);
 			if (resource === '/api/menu/user')
 				return reply(route, {
-					groups: [
+					groups: options.menuGroups ?? [
 						{
 							code: 'test-services',
 							name: 'บริการทดสอบ',
