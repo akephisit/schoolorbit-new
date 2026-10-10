@@ -2,33 +2,63 @@
 	import { onDestroy, untrack, type Snippet } from 'svelte';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+	import {
+		attendanceIdentity,
+		captureAttendanceRead,
+		type AttendanceRead
+	} from './attendance-access.js';
 	let {
 		initial,
 		retry,
 		children,
-		variant = 'table'
+		variant = 'table',
+		errorTitle = 'โหลดข้อมูลเช็คชื่อไม่ได้',
+		retryLabel = 'ลองโหลดข้อมูลใหม่'
 	}: {
-		initial: Promise<RouteLoadResult<T | null>>;
+		initial: Promise<RouteLoadResult<AttendanceRead<T>>>;
 		retry: (signal: AbortSignal) => Promise<T>;
 		children: Snippet<[T]>;
 		variant?: 'table' | 'form' | 'detail';
+		errorTitle?: string;
+		retryLabel?: string;
 	} = $props();
 	let source = $state.raw(untrack(() => initial));
-	const controller = new AbortController();
+	let previous = untrack(() => initial);
+	let controller = new AbortController();
+	$effect.pre(() => {
+		if (initial !== previous) {
+			previous = initial;
+			controller.abort();
+			controller = new AbortController();
+			source = initial;
+		}
+	});
 	onDestroy(() => controller.abort());
 	function reload() {
-		source = captureRouteLoad(retry(controller.signal), 'โหลดข้อมูลเช็คชื่อไม่ได้');
+		const identityKey = $attendanceIdentity;
+		source = captureRouteLoad(
+			captureAttendanceRead(identityKey, retry(controller.signal), errorTitle),
+			errorTitle
+		);
 	}
 </script>
 
 {#await source}<PageSkeleton {variant} />{:then result}
-	{#if result.ok && result.data}{@render children(result.data)}
+	{#if result.ok && result.data.identityKey !== $attendanceIdentity}<PageSkeleton {variant} />
+	{:else if result.ok && result.data.error}<PageState
+			variant="error"
+			title={errorTitle}
+			description={result.data.error}
+			actionLabel={retryLabel}
+			onaction={reload}
+		/>
+	{:else if result.ok && result.data.resource}{@render children(result.data.resource)}
 	{:else if result.ok}<PageState variant="permission" title="ไม่มีสิทธิ์ใช้งานส่วนนี้" />
 	{:else}<PageState
 			variant="error"
-			title="โหลดข้อมูลเช็คชื่อไม่ได้"
+			title={errorTitle}
 			description={result.error}
-			actionLabel="ลองโหลดข้อมูลใหม่"
+			actionLabel={retryLabel}
 			onaction={reload}
 		/>{/if}
 {/await}

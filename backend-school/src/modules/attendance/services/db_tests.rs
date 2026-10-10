@@ -549,6 +549,65 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         evidence_file_id: file,
         captured_at: Utc::now(),
     };
+    let old_gallery = faces::gallery(&f.pool, TERM).await.unwrap();
+    faces::remove(&f.pool, TEACHER, STUDENT).await.unwrap();
+    faces::enroll(
+        &f.pool,
+        TEACHER,
+        STUDENT,
+        EnrollAttendanceFace {
+            model: FACE_MODEL.into(),
+            descriptors: vec![
+                FaceDescriptor {
+                    values: vec![0.8; 128]
+                };
+                2
+            ],
+            consent_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        old_gallery[0].row_version,
+        faces::gallery(&f.pool, TERM).await.unwrap()[0].row_version
+    );
+    assert!(matches!(
+        faces::scan_with_gallery(&f.pool, &f.actor, scan.clone(), &old_gallery).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_scan_events")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_notifications")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert!(sessions::detail(&f.pool, &f.actor, s.id)
+        .await
+        .unwrap()
+        .students
+        .iter()
+        .all(|r| r.result == AttendanceResult::Unchecked));
+    faces::enroll(
+        &f.pool,
+        TEACHER,
+        STUDENT,
+        EnrollAttendanceFace {
+            model: FACE_MODEL.into(),
+            descriptors: vec![scan.descriptor.clone(); 2],
+            consent_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
     let result = faces::scan(&f.pool, &f.actor, scan.clone()).await.unwrap();
     assert!(!result.duplicate);
     assert_eq!(result.result, AttendanceResult::Present);
@@ -910,4 +969,206 @@ async fn attendance_concurrent_arrival_and_flag_notices_do_not_notify_twice() {
             .unwrap(),
         3
     );
+}
+
+#[tokio::test]
+async fn attendance_mixed_own_and_assigned_permissions_cannot_expand_student_history() {
+    let f = fixture("attendance_mixed_scope").await;
+    parents(&f).await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let own = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Flag, date))
+        .await
+        .unwrap();
+    let another_teacher = Uuid::new_v4();
+    let other_actor = ActorContext {
+        user_id: another_teacher,
+        permissions: vec![codes::ATTENDANCE_UPDATE_ASSIGNED.into()],
+    };
+    let mut other_seed = seed(&f, AttendanceKind::Lesson, date);
+    other_seed.session.teacher_ids = vec![another_teacher];
+    let other = sessions::ensure(&f.pool, &other_actor, other_seed)
+        .await
+        .unwrap();
+    let mut mixed = f.actor.clone();
+    mixed.permissions.push(codes::ATTENDANCE_READ_OWN.into());
+    let query = || AttendanceHistoryQuery {
+        academic_term_id: TERM,
+        student_id: STUDENT,
+        start: date,
+        end: date,
+    };
+    let items = history(&f.pool, &mixed, query()).await.unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].session_id, own.id);
+    assert_ne!(items[0].session_id, other.id);
+    let parent: Uuid = sqlx::query_scalar(
+        "SELECT parent_user_id FROM student_parents WHERE student_user_id=$1 LIMIT 1",
+    )
+    .bind(STUDENT)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    for user_id in [STUDENT, parent] {
+        let actor = ActorContext {
+            user_id,
+            permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
+        };
+        assert_eq!(history(&f.pool, &actor, query()).await.unwrap().len(), 2);
+    }
+    let school = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_READ_SCHOOL.into()],
+    };
+    assert_eq!(history(&f.pool, &school, query()).await.unwrap().len(), 2);
+    let unrelated = ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
+    };
+    assert!(history(&f.pool, &unrelated, query()).await.is_err());
+    let file = evidence_file(&f.pool, STUDENT).await;
+    sqlx::query("INSERT INTO attendance_scan_events(id,session_id,student_id,device_id,evidence_file_id,captured_at) VALUES(gen_random_uuid(),$1,$2,$4,$3,now())").bind(other.id).bind(STUDENT).bind(file).bind(specials::save_device(&f.pool, TEACHER, Uuid::new_v4(), SaveAttendanceDevice { name: "fixture".into(), enabled: true, operator_id: TEACHER }).await.unwrap().id).execute(&f.pool).await.unwrap();
+    use school_file_platform::repository::FileRepository;
+    let repository = school_file_platform::repository::SqlFileRepository::new(f.pool.clone());
+    let platform_file = repository.load_delivery(file).await.unwrap().unwrap().file;
+    assert!(require_evidence_file(
+        &f.pool,
+        &mixed,
+        &platform_file,
+        crate::policies::file_access_policy::FilePolicyAction::Read,
+        Some(STUDENT)
+    )
+    .await
+    .is_err());
+    let linked = ActorContext {
+        user_id: parent,
+        permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
+    };
+    require_evidence_file(
+        &f.pool,
+        &linked,
+        &platform_file,
+        crate::policies::file_access_policy::FilePolicyAction::Read,
+        Some(STUDENT),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn attendance_retention_drains_more_than_one_batch_after_term_closes() {
+    let f = fixture("attendance_retention_batches").await;
+    for _ in 0..105 {
+        evidence_file(&f.pool, STUDENT).await;
+    }
+    sqlx::query("UPDATE files SET expires_at=now()-interval '1 minute' WHERE purpose_code='attendance_evidence'").execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed',closed_on='2025-10-31' WHERE id=$1")
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        faces::expire_evidence(&f.pool).await.unwrap(),
+        faces::EVIDENCE_EXPIRY_BATCH
+    );
+    assert_eq!(faces::expire_evidence(&f.pool).await.unwrap(), 5);
+    assert_eq!(faces::expire_evidence(&f.pool).await.unwrap(), 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM file_operations WHERE operation_type='delete_object'"
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        105
+    );
+}
+
+mod retention_tests {
+    use super::*;
+    use crate::services::cleaner::FileCleaner;
+    use async_trait::async_trait;
+    use bytes::Bytes;
+    use school_file_platform::platform_service::FilePlatform;
+    use school_file_platform::{
+        malware_scanner::{MalwareScanner, ScanOutcome},
+        platform_types::DownloadGrant,
+        storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{sync::Arc, time::Duration};
+    use url::Url;
+
+    #[derive(Default)]
+    struct RetentionStorage(AtomicUsize);
+    #[async_trait]
+    impl StorageProvider for RetentionStorage {
+        async fn check_readiness(&self) -> Result<(), StorageError> {
+            panic!("retention must not probe readiness")
+        }
+        async fn put(&self, _: &StoredObject, _: Bytes) -> Result<(), StorageError> {
+            panic!("retention must not upload")
+        }
+        async fn get(&self, _: &StoredObject, _: u64) -> Result<Bytes, StorageError> {
+            panic!("retention must not read bytes")
+        }
+        async fn head(&self, _: &StoredObject) -> Result<Option<ObjectMetadata>, StorageError> {
+            panic!("retention must not inspect objects")
+        }
+        async fn delete(&self, _: &StoredObject) -> Result<(), StorageError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        async fn private_download_grant(
+            &self,
+            _: &StoredObject,
+            _: &str,
+            _: Duration,
+        ) -> Result<DownloadGrant, StorageError> {
+            panic!("retention must not grant downloads")
+        }
+        fn public_location(&self, _: &StoredObject) -> Result<Url, StorageError> {
+            panic!("private evidence must not become public")
+        }
+    }
+    struct RetentionScanner;
+    #[async_trait]
+    impl MalwareScanner for RetentionScanner {
+        async fn scan(&self, _: &[u8]) -> ScanOutcome {
+            panic!("retention must not scan content")
+        }
+    }
+
+    #[tokio::test]
+    async fn attendance_expiry_and_queued_deletions_drain_past_first_hourly_batch() {
+        let f = fixture("attendance_file_cleaner_capacity").await;
+        let pool = f.pool;
+        let actor = f.actor.user_id;
+        for _ in 0..105 {
+            let file = Uuid::new_v4();
+            sqlx::query("INSERT INTO files(id,owner_user_id,purpose_code,display_filename,visibility,lifecycle_status,retention_class,created_by,expires_at,inspection_metadata) VALUES($1,$2,'attendance_evidence','fixture.jpg','private','ready','temporary',$2,now()-interval '1 minute','{\"kind\":\"image\",\"width_px\":640,\"height_px\":480}')").bind(file).bind(actor).execute(&pool).await.unwrap();
+            let version:Uuid=sqlx::query_scalar("INSERT INTO file_versions(file_id,version_number,provider_code,storage_class,storage_status,object_key,detected_mime_type,canonical_extension,byte_size,checksum,scan_status,created_by) VALUES($1,1,'r2','private','stored',$2,'image/jpeg','jpg',50000,repeat('a',64),'clean',$3) RETURNING id").bind(file).bind(format!("tenants/{}/attendance/evidence/{file}/v1/original.jpg", Uuid::new_v4())).bind(actor).fetch_one(&pool).await.unwrap();
+            sqlx::query("UPDATE files SET current_version_id=$2 WHERE id=$1")
+                .bind(file)
+                .bind(version)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            school_attendance::services::faces::expire_evidence(&pool)
+                .await
+                .unwrap(),
+            100
+        );
+        let storage = Arc::new(RetentionStorage::default());
+        let platform = Arc::new(FilePlatform::new(
+            storage.clone(),
+            Arc::new(RetentionScanner),
+        ));
+        FileCleaner::new(pool.clone(), platform)
+            .reconcile_file_operations()
+            .await;
+        assert_eq!(storage.0.load(Ordering::SeqCst), 105);
+        assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM files WHERE lifecycle_status='deleted' AND purpose_code='attendance_evidence'").fetch_one(&pool).await.unwrap(), 105);
+    }
 }

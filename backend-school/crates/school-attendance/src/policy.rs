@@ -9,6 +9,16 @@ pub fn read_school(actor: &ActorContext) -> bool {
         codes::ATTENDANCE_MANAGE_SCHOOL,
     ])
 }
+pub fn require_settings_read(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_any_permission(&[
+        codes::ATTENDANCE_READ_ASSIGNED,
+        codes::ATTENDANCE_READ_SCHOOL,
+        codes::ATTENDANCE_UPDATE_ASSIGNED,
+        codes::ATTENDANCE_UPDATE_SCHOOL,
+        codes::ATTENDANCE_MANAGE_SCHOOL,
+        codes::ATTENDANCE_VERIFY_ASSIGNED,
+    ])
+}
 pub fn write_school(actor: &ActorContext) -> bool {
     actor.has_any_permission(&[
         codes::ATTENDANCE_UPDATE_SCHOOL,
@@ -43,6 +53,16 @@ mod tests {
     use crate::models::AttendanceKind;
     use chrono::{NaiveDate, NaiveTime};
     use uuid::Uuid;
+    #[test]
+    fn school_writer_can_read_configuration_without_separate_read_grant() {
+        let mut actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::ATTENDANCE_UPDATE_SCHOOL.into()],
+        };
+        assert!(require_settings_read(&actor).is_ok());
+        actor.permissions = vec![codes::ATTENDANCE_READ_OWN.into()];
+        assert!(require_settings_read(&actor).is_err());
+    }
     #[test]
     fn assignment_never_grants_unrelated_access() {
         let id = Uuid::new_v4();

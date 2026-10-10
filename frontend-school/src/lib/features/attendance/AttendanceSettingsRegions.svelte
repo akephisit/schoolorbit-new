@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+	import { onDestroy } from 'svelte';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		attendanceSettings,
 		attendanceDays,
@@ -10,6 +9,8 @@
 		type AttendanceDay,
 		type AttendanceOptions
 	} from '#lib/api/attendance.js';
+	import { attendanceIdentity, type AttendanceRead } from './attendance-access.js';
+	import AttendanceRouteRegion from './AttendanceRouteRegion.svelte';
 	import AttendanceSettingsPanel from './AttendanceSettingsPanel.svelte';
 	import AttendanceManagementPanel from './AttendanceManagementPanel.svelte';
 	let {
@@ -20,73 +21,69 @@
 	}: {
 		term: string;
 		date: string;
-		initialSettings: Promise<RouteLoadResult<[AttendanceSettings, AttendanceDay[]] | null>>;
-		initialOptions: Promise<RouteLoadResult<AttendanceOptions | null>>;
+		initialSettings: Promise<
+			RouteLoadResult<AttendanceRead<[AttendanceSettings, AttendanceDay[]]>>
+		>;
+		initialOptions: Promise<RouteLoadResult<AttendanceRead<AttendanceOptions>>>;
 	} = $props();
-	let settings = $state.raw(untrack(() => initialSettings)),
-		options = $state.raw(untrack(() => initialOptions));
 	let archived = $state(true),
 		disposed = false;
-	const settingsController = new AbortController(),
-		optionsController = new AbortController();
-	$effect(() => {
-		const source = settings;
-		void source.then((result) => {
-			if (!disposed && source === settings)
-				archived = !result.ok || !result.data || result.data[0].archived;
-		});
-	});
 	onDestroy(() => {
 		disposed = true;
-		settingsController.abort();
-		optionsController.abort();
 	});
-	function retrySettings() {
+	$effect.pre(() => {
+		const source = initialSettings,
+			identityKey = $attendanceIdentity;
+		archived = true;
+		void source.then((result) => {
+			if (!disposed && source === initialSettings && identityKey === $attendanceIdentity)
+				archived =
+					!result.ok ||
+					result.data.identityKey !== identityKey ||
+					!result.data.resource ||
+					result.data.resource[0].archived;
+		});
+	});
+	async function retrySettings(
+		signal: AbortSignal
+	): Promise<[AttendanceSettings, AttendanceDay[]]> {
+		const identityKey = $attendanceIdentity;
 		const end = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0))
 			.toISOString()
 			.slice(0, 10);
-		settings = captureRouteLoad(
-			Promise.all([
-				attendanceSettings(term, { signal: settingsController.signal }),
-				attendanceDays(term, date.slice(0, 7) + '-01', end, { signal: settingsController.signal })
-			]),
-			'โหลดการตั้งค่าไม่ได้'
-		);
-	}
-	function retryOptions() {
-		options = captureRouteLoad(
-			attendanceOptions(term, { signal: optionsController.signal }),
-			'โหลดกลุ่มและเครื่องสแกนไม่ได้'
-		);
+		const result = await Promise.all([
+			attendanceSettings(term, { signal }),
+			attendanceDays(term, date.slice(0, 7) + '-01', end, { signal })
+		]);
+		if (!disposed && identityKey === $attendanceIdentity) archived = result[0].archived;
+		return result;
 	}
 </script>
 
 <section aria-label="เกณฑ์และปฏิทินเช็คชื่อ" class="space-y-4">
-	{#await settings}<PageSkeleton variant="form" rows={4} />{:then result}
-		{#if result.ok && result.data}<AttendanceSettingsPanel {term} {date} initial={result.data} />
-		{:else}<PageState
-				variant="error"
-				title="โหลดการตั้งค่าไม่ได้"
-				description={result.error ?? undefined}
-				actionLabel="ลองโหลดการตั้งค่าใหม่"
-				onaction={retrySettings}
-			/>{/if}
-	{/await}
+	<AttendanceRouteRegion
+		initial={initialSettings}
+		retry={retrySettings}
+		variant="form"
+		errorTitle="โหลดการตั้งค่าไม่ได้"
+		retryLabel="ลองโหลดการตั้งค่าใหม่"
+	>
+		{#snippet children(result)}<AttendanceSettingsPanel {term} {date} initial={result} />{/snippet}
+	</AttendanceRouteRegion>
 </section>
 <section aria-label="กลุ่ม รอบพิเศษ และเครื่องสแกน" class="space-y-4">
-	{#await options}<PageSkeleton variant="form" rows={3} />{:then result}
-		{#if result.ok && result.data}<AttendanceManagementPanel
+	<AttendanceRouteRegion
+		initial={initialOptions}
+		errorTitle="โหลดกลุ่มและเครื่องสแกนไม่ได้"
+		retryLabel="ลองโหลดกลุ่มและเครื่องสแกนใหม่"
+		retry={(signal) => attendanceOptions(term, { signal })}
+		variant="form"
+	>
+		{#snippet children(result)}<AttendanceManagementPanel
 				{term}
 				{date}
 				{archived}
-				initial={result.data}
-			/>
-		{:else}<PageState
-				variant="error"
-				title="โหลดกลุ่มและเครื่องสแกนไม่ได้"
-				description={result.error ?? undefined}
-				actionLabel="ลองโหลดกลุ่มและเครื่องสแกนใหม่"
-				onaction={retryOptions}
-			/>{/if}
-	{/await}
+				initial={result}
+			/>{/snippet}
+	</AttendanceRouteRegion>
 </section>

@@ -238,9 +238,10 @@ async fn run(tenant: &str, r: &mut Registration) -> Result<(), AppError> {
         }
         r.pending = notifications::has_pending(&r.pool).await?;
     }
-    if !r.terms.is_empty() && r.last_retention != Some(date) {
-        faces::expire_evidence(&r.pool).await?;
-        r.last_retention = Some(date);
+    if r.last_retention != Some(date) {
+        if faces::expire_evidence(&r.pool).await? < faces::EVIDENCE_EXPIRY_BATCH {
+            r.last_retention = Some(date);
+        }
     }
     Ok(())
 }

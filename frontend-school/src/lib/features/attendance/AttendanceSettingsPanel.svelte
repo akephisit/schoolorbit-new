@@ -109,6 +109,7 @@
 		}
 	}
 	async function setDays(values: AttendanceDay[]) {
+		if (calendarLoading || calendarError) return;
 		await run('days', async () => {
 			settings = await saveAttendanceDays(term, { days: values, rowVersion: settings.rowVersion });
 			days = [...days.filter((d) => !values.some((v) => v.date === d.date)), ...values];
@@ -242,11 +243,11 @@
 				>ถึง<DatePicker bind:value={rangeEnd} /></label
 			><Button
 				variant="outline"
-				disabled={busy || settings.archived}
+				disabled={busy || calendarLoading || !!calendarError || settings.archived}
 				onclick={() => applyRange(true)}>นับช่วงนี้</Button
 			><Button
 				variant="outline"
-				disabled={busy || settings.archived}
+				disabled={busy || calendarLoading || !!calendarError || settings.archived}
 				onclick={() => applyRange(false)}>วันหยุด / ไม่นับช่วงนี้</Button
 			>
 		</div>

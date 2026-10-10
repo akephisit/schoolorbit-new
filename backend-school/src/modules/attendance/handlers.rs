@@ -20,13 +20,7 @@ pub async fn get_settings(
 ) -> Result<Json<ApiResponse<AttendanceSettings>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = &context.tenant.pool;
-    context.actor.require_any_permission(&[
-        codes::ATTENDANCE_READ_ASSIGNED,
-        codes::ATTENDANCE_READ_SCHOOL,
-        codes::ATTENDANCE_UPDATE_ASSIGNED,
-        codes::ATTENDANCE_MANAGE_SCHOOL,
-        codes::ATTENDANCE_VERIFY_ASSIGNED,
-    ])?;
+    school_attendance::policy::require_settings_read(&context.actor)?;
     let result = settings::get(pool, term).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
