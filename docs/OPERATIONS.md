@@ -177,6 +177,14 @@ Compiler evidence artifacts include Cargo HTML timings and sccache statistics wh
 runs. Compare compilation, restore, push and deployment durations separately; an exact cache marker
 alone is not evidence of a faster release. A failed release does not advance accepted baselines.
 
+When retiring a cache-producing workflow, inspect the repository Actions cache inventory and
+remove only exact IDs in its unused namespace after confirming no current workflow consumes it.
+The retired `rust-ci-v3-*` test snapshots have no consumer in the local-only test flow. Keeping
+large obsolete snapshots consumes the repository cache allowance and can evict useful release
+entries. Preserve current `index-backend-*`, shared `buildkit-blob-*`, `sccache/*`, prepared
+frontend bundles and deployed-browser caches; never use a broad cache purge. Cache cleanup
+improves retention capacity, not the compilation speed of an already-warm application binary.
+
 A source-only edit invalidates the final source/build layer, so the changed application crate and
 final executable must be compiled and linked again. It does not discard the cargo-chef dependency
 layer when `Cargo.toml` and `Cargo.lock` are unchanged. sccache may reuse eligible compiler outputs,
