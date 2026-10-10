@@ -242,7 +242,10 @@ do not establish a percentage reduction in complete deployment time.
 
 The pinned Rust toolchain already passes `-fuse-ld=lld` on this Linux target. Selecting lld again
 does not remove compiler work. The manual build benchmark records the actual driver flag and
-compares default/GNU BFD/lld using the same object files. Keep production optimization unchanged
+one linker invocation per timed build, separating flag priming from warm samples. It compares
+default and selected final-crate codegen profiles sequentially in one two-CPU Docker container;
+Academic HTTP and attendance edits show the default profile's dependent rebuild scope.
+Keep production optimization unchanged
 unless both repeatable compile improvements and representative runtime performance support a
 new profile; profile/exporter experiments alone do not establish production request latency.
 
@@ -706,7 +709,7 @@ For the Release 2 deployment:
 
 1. Create and retain a protected snapshot before dispatching the release.
 2. Use one reviewed commit for the migration, backend, contracts, frontend, and deployment gate.
-   Dispatch the manual Neon compatibility workflow first; it must use a fresh disposable child
+   Run the local Neon compatibility command first; it must use a fresh disposable child
    branch and its direct non-pooled endpoint to run the migration-060 schema and status-audit tests.
 3. Deploy through the centralized runner and apply every pending migration through the repository's
    latest version. Do not apply migration 060 or later files manually.

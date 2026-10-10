@@ -10,18 +10,31 @@ on:
         description: Source-changing samples per compiler profile
         type: string
         default: "2"
+      variants:
+        description: Comma-separated final-crate profiles, starting with default
+        type: string
+        default: default,cgu64
 permissions:
   contents: read
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         backend: ${{ fromJSON(inputs.backend == 'both' && '["backend-school","backend-admin"]' || format('["{0}"]', inputs.backend)) }}
     steps:
       - uses: actions/checkout@v6
+      - name: Validate bounded benchmark selection
+        env:
+          BENCH_BACKEND: ${{ matrix.backend }}
+          BENCH_SAMPLES: ${{ inputs.samples }}
+          BENCH_VARIANTS: ${{ inputs.variants }}
+        run: |
+          case "$BENCH_BACKEND" in backend-school|backend-admin) ;; *) exit 64 ;; esac
+          [[ "$BENCH_SAMPLES" =~ ^[2-5]$ ]]
+          [[ "$BENCH_VARIANTS" =~ ^default(,(opt2|cgu64|cgu256)){0,3}$ ]]
       - uses: docker/setup-buildx-action@v4
       - name: Configure compiler cache transport
         uses: actions/github-script@v8
@@ -45,35 +58,65 @@ jobs:
         env:
           BENCH_BACKEND: ${{ matrix.backend }}
           BENCH_SAMPLES: ${{ inputs.samples }}
+          BENCH_VARIANTS: ${{ inputs.variants }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/build-benchmark"
           docker create --name schoolorbit-benchmark --cpus=2 \
-            -e BENCH_COMPARE_LINKERS=compare -e BENCH_SAMPLES \
+            -e BENCH_SAMPLES \
             -v "$PWD/scripts/benchmark_backend_build.sh:/benchmark.sh:ro" \
+            -v "$PWD/scripts/summarize_backend_benchmark.py:/summarize_backend_benchmark.py:ro" \
             -v "$RUNNER_TEMP/build-benchmark:/benchmark-results" \
             --entrypoint sleep schoolorbit-benchmark:builder infinity
           trap 'docker rm --force schoolorbit-benchmark >/dev/null' EXIT
           docker start schoolorbit-benchmark
-          for variant in default opt2 cgu64; do
-            docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant"
+          docker exec schoolorbit-benchmark sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 >/dev/null'
+          docker cp schoolorbit-benchmark:/app/target/cargo-timings "$RUNNER_TEMP/build-benchmark/builder-evidence"
+          {
+            printf 'sha=%s backend=%s cpu_quota=2 cargo_jobs=2 incremental=off\n' "$GITHUB_SHA" "$BENCH_BACKEND"
+            docker image inspect schoolorbit-benchmark:builder --format '{{.Id}}'
+            docker exec schoolorbit-benchmark rustc -vV
+            docker exec schoolorbit-benchmark sh -c 'cat /sys/fs/cgroup/cpu.max; cat /sys/fs/cgroup/memory.max; uname -m'
+            lscpu
+          } > "$RUNNER_TEMP/build-benchmark/environment.txt"
+          IFS=',' read -r -a variants <<< "$BENCH_VARIANTS"
+          for variant in "${variants[@]}"; do
+            docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/application"
+            if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ]; then
+              for owner in academic attendance; do
+                docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" default "/benchmark-results/default/$owner" "$owner"
+              done
+            fi
           done
-          for cpus in 1 4; do
-            docker update --cpus="$cpus" schoolorbit-benchmark
-            docker exec -e BENCH_SAMPLES=1 schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "cpu$cpus" "/benchmark-results/cpu$cpus"
-          done
+          # Diagnostic compilation only: stable release settings remain unchanged.
+          # Bootstrap enables logging/monomorphization statistics on the pinned compiler.
+          mkdir -p "$RUNNER_TEMP/build-benchmark/compiler-profile"
+          profile_flags=(-Z time-passes -Z dump-mono-stats=/benchmark-results/compiler-profile/mono -Z dump-mono-stats-format=json)
+          if [ "$BENCH_BACKEND" = backend-school ]; then profile_flags+=(-C lto=off); fi
+          docker exec -e RUSTC_BOOTSTRAP=1 -e CARGO_INCREMENTAL=0 -e CARGO_BUILD_JOBS=2 \
+            schoolorbit-benchmark bash -c 'unset RUSTC_WRAPPER; cargo rustc --release --locked --bin "$1" -- "${@:2}"' \
+            bash "$BENCH_BACKEND" "${profile_flags[@]}" 2>&1 | tee "$RUNNER_TEMP/build-benchmark/compiler-profile/passes.log"
+          if [ "$BENCH_BACKEND" = backend-school ]; then
+            docker exec schoolorbit-benchmark env -i PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin HOME=/tmp \
+              target/release/backend-school export-openapi > "$RUNNER_TEMP/build-benchmark/compiler-profile/openapi.json"
+            python3 - "$RUNNER_TEMP/build-benchmark" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          if json.loads((root / 'openapi-baseline.json').read_text()) != json.loads((root / 'compiler-profile/openapi.json').read_text()):
+              raise SystemExit('Profiled binary changed the OpenAPI contract')
+          PY
+          fi
           {
             echo "### $BENCH_BACKEND / $GITHUB_SHA"
             echo 'Source-changing Cargo/link timings on one runner; dependencies already built.'
-            echo 'Cargo includes three linker comparisons using the same object files; see their individual timings.'
-            echo 'CPU quotas do not create extra host CPUs. Results are not deployment or API latency.'
-            for variant in default opt2 cgu64 cpu1 cpu4; do
-              echo "#### $variant"
+            echo 'Each timed build links once. Profile/graph priming is reported separately.'
+            echo 'Wrapper disabled for Cargo invalidation; builder cache evidence is separate.'
+            echo 'Two CPU quota and two Cargo jobs throughout. Results are not deployment or API latency.'
+            for result in "$RUNNER_TEMP"/build-benchmark/*/*/result.json; do
+              echo "#### ${result#"$RUNNER_TEMP/build-benchmark/"}"
               echo '```json'
-              cat "$RUNNER_TEMP/build-benchmark/$variant/result.json"
+              cat "$result"
               echo '```'
-              cat "$RUNNER_TEMP/build-benchmark/$variant/link-nanoseconds.txt.compare"
-              cat "$RUNNER_TEMP/build-benchmark/$variant/link-nanoseconds.txt.driver"
             done
           } >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v6
@@ -82,3 +125,4 @@ jobs:
           name: backend-build-${{ matrix.backend }}
           path: ${{ runner.temp }}/build-benchmark
           retention-days: 7
+          if-no-files-found: error
