@@ -938,7 +938,10 @@ test('leaving during model loading never opens a webcam after the page closes', 
 	);
 	await page.goto(path('/faces'));
 	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
-	await page.getByRole('link', { name: 'กลับหน้าเช็คชื่อ', exact: true }).click();
+	await page
+		.getByRole('navigation', { name: 'เมนูเช็คชื่อ' })
+		.getByRole('link', { name: 'เช็คชื่อ', exact: true })
+		.click();
 	await expect(page.getByRole('heading', { name: 'เช็คชื่อ', exact: true })).toBeVisible();
 	await page.evaluate(() => window.dispatchEvent(new Event('test-engine-ready')));
 	await expect(page.locator('html')).toHaveAttribute('data-engine-resolved', 'yes');
@@ -1138,6 +1141,22 @@ for (const viewport of [
 							path: `/tmp/attendance-review-${viewport.name}-${theme}-${heading}.png`
 						});
 					}
+				}
+				if (!suffix) {
+					for (const label of ['ค้นหาชื่อนักเรียน', 'เหตุผลแก้ไข / งดคาบ']) {
+						await page.getByLabel(label).scrollIntoViewIfNeeded();
+						await page.screenshot({
+							path: `/tmp/attendance-review-${viewport.name}-${theme}-${label.replaceAll('/', '-')}.png`
+						});
+					}
+				}
+				if (suffix === '/faces') {
+					await page
+						.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true })
+						.scrollIntoViewIfNeeded();
+					await page.screenshot({
+						path: `/tmp/attendance-review-${viewport.name}-${theme}-camera-controls.png`
+					});
 				}
 				await page.screenshot({
 					path: `/tmp/attendance-review-${viewport.name}-${theme}-${suffix.replace('/', '') || 'workspace'}.png`,
