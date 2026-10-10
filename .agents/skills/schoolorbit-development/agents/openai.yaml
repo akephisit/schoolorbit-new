@@ -1,0 +1,6 @@
+interface:
+  display_name: "SchoolOrbit Development"
+  short_description: "Coordinate project roles, rules, local checks and PR delivery"
+  default_prompt: "Use $schoolorbit-development to complete this SchoolOrbit task with the roles and verification required by the current repository rules."
+policy:
+  allow_implicit_invocation: true
