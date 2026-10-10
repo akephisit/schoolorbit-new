@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { SvelteDate } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import AttendanceSelect from './AttendanceSelect.svelte';
@@ -46,6 +46,10 @@
 		groups = $state<SpecialAttendanceGroup[]>([newGroup()]),
 		deviceName = $state('เครื่องหน้าโรงเรียน'),
 		operator = $state('');
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	const weekdays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 	const rooms = $derived(
 		Array.from(
@@ -67,20 +71,23 @@
 		};
 	}
 	async function run(name: string, action: () => Promise<void>) {
-		if (busy || archived) return;
+		if (disposed || busy || archived) return;
 		busy = true;
 		pendingAction = name;
 		errors[name.startsWith('device') ? 'device' : name] = '';
 		try {
 			await action();
+			if (disposed) return;
 			toast.success('บันทึกแล้ว');
 		} catch (e) {
+			if (disposed) return;
 			const message = e instanceof Error ? e.message : 'บันทึกไม่ได้';
 			errors[name.startsWith('device') ? 'device' : name] = message;
-			toast.error(message);
 		} finally {
-			busy = false;
-			pendingAction = '';
+			if (!disposed) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	function dateRange(start: string, end: string) {
@@ -114,6 +121,7 @@
 				studentIds: audienceStudents,
 				rowVersion: audienceVersion
 			});
+			if (disposed) return;
 			options = {
 				...options,
 				audiences: [...options.audiences.filter((a) => a.id !== result.id), result]
@@ -146,11 +154,11 @@
 			} catch (error) {
 				fieldErrors.specialDates =
 					error instanceof Error ? error.message : 'เลือกช่วงวันที่ให้ถูกต้อง';
-				throw error;
+				throw new Error('ตรวจช่วงวันที่ของรอบพิเศษที่ระบุไว้', { cause: error });
 			}
 			if (!dates.length) {
 				fieldErrors.specialDates = 'เลือกวันในช่วงวันที่อย่างน้อยหนึ่งวัน';
-				throw new Error(fieldErrors.specialDates);
+				throw new Error('ตรวจช่วงวันที่ของรอบพิเศษที่ระบุไว้');
 			}
 			const result = await createAttendanceSpecial(term, {
 				title,
@@ -161,6 +169,7 @@
 				notify,
 				groups
 			});
+			if (disposed) return;
 			options = { ...options, specials: [...options.specials, result] };
 			title = '';
 		});
@@ -176,6 +185,7 @@
 				enabled: true,
 				operatorId: operator
 			});
+			if (disposed) return;
 			options = { ...options, devices: [...options.devices, device] };
 		});
 	}
@@ -188,6 +198,7 @@
 				operatorId: device.operatorId,
 				enabled: !device.enabled
 			});
+			if (disposed) return;
 			options = { ...options, devices: options.devices.map((d) => (d.id === id ? saved : d)) };
 		});
 	}

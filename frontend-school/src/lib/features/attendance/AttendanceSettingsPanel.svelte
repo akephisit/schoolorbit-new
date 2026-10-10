@@ -57,8 +57,12 @@
 			...Array.from({ length: total }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
 		] as (string | null)[];
 	});
+	let disposed = false;
 	const calendarRequest = new LatestRequest();
-	onDestroy(() => calendarRequest.abort());
+	onDestroy(() => {
+		disposed = true;
+		calendarRequest.abort();
+	});
 	const weekdays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 	function isCounted(value: string) {
 		return (
@@ -69,22 +73,25 @@
 		);
 	}
 	async function run(name: string, action: () => Promise<void>) {
-		if (busy || settings.archived || !manager) return;
+		if (disposed || busy || settings.archived || !manager) return;
 		busy = true;
 		pendingAction = name;
 		if (name === 'settings') settingsError = '';
 		else daysError = '';
 		try {
 			await action();
+			if (disposed) return;
 			toast.success('บันทึกแล้ว');
 		} catch (e) {
+			if (disposed) return;
 			const message = e instanceof Error ? e.message : 'บันทึกไม่ได้';
 			if (name === 'settings') settingsError = message;
 			else daysError = message;
-			toast.error(message);
 		} finally {
-			busy = false;
-			pendingAction = '';
+			if (!disposed) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	async function saveConfig() {
@@ -131,14 +138,17 @@
 						: configuration.lateAfter,
 				digestTimes: digestTimes.map((t) => (t.length === 5 ? t + ':00' : t))
 			};
-			settings = await saveAttendanceSettings(term, {
+			const saved = await saveAttendanceSettings(term, {
 				configuration: savedConfiguration,
 				rowVersion: settings.rowVersion
 			});
+			if (disposed) return;
+			settings = saved;
 			configuration = $state.snapshot(settings.configuration);
 		});
 	}
 	async function loadMonth() {
+		if (disposed) return;
 		const t = calendarRequest.begin();
 		calendarError = '';
 		daysError = '';
@@ -157,13 +167,18 @@
 		}
 	}
 	async function setDays(values: AttendanceDay[]) {
-		if (calendarLoading || calendarError) return;
+		if (disposed || calendarLoading || calendarError) return;
 		if (new TextEncoder().encode(note).length > 500) {
 			daysError = 'หมายเหตุยาวเกินกำหนด กรุณาย่อข้อความ';
 			return;
 		}
 		await run('days', async () => {
-			settings = await saveAttendanceDays(term, { days: values, rowVersion: settings.rowVersion });
+			const saved = await saveAttendanceDays(term, {
+				days: values,
+				rowVersion: settings.rowVersion
+			});
+			if (disposed) return;
+			settings = saved;
 			days = [...days.filter((d) => !values.some((v) => v.date === d.date)), ...values];
 		});
 	}
@@ -187,13 +202,14 @@
 		return values;
 	}
 	async function applyRange(value: boolean) {
+		if (disposed) return;
 		try {
 			await setDays(
 				dateRange(rangeStart, rangeEnd).map((d) => ({ date: d, counted: value, note }))
 			);
 		} catch (e) {
+			if (disposed) return;
 			daysError = e instanceof Error ? e.message : 'ช่วงวันที่ไม่ถูกต้อง';
-			toast.error(daysError);
 		}
 	}
 </script>

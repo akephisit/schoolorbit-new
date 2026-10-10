@@ -51,7 +51,8 @@
 		confirmed = $state(false),
 		image = $state(''),
 		search = $state('');
-	let imageGeneration = 0;
+	let imageGeneration = 0,
+		disposed = false;
 	const historyRequest = new LatestRequest();
 	const reportRequest = new LatestRequest();
 	const labels: Record<string, string> = {
@@ -77,23 +78,25 @@
 		);
 	}
 	async function run(name: string, action: () => Promise<void>) {
-		if (busy) return;
+		if (disposed || busy) return;
 		busy = true;
 		pendingAction = name;
 		errors[name.startsWith('image:') ? 'image' : name] = '';
 		try {
 			await action();
 		} catch (e) {
+			if (disposed) return;
 			const message = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
 			errors[name.startsWith('image:') ? 'image' : name] = message;
-			toast.error(message);
 		} finally {
-			busy = false;
-			pendingAction = '';
+			if (!disposed) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	async function loadHistory(id = selectedStudent) {
-		if (!id || busy) return;
+		if (disposed || !id || busy) return;
 		const t = historyRequest.begin();
 		closeImage();
 		history = [];
@@ -123,11 +126,11 @@
 		});
 	}
 	async function preview(s: AttendanceHistoryItem) {
-		if (!s.evidenceFileId) return;
+		if (disposed || busy || !s.evidenceFileId) return;
 		const token = ++imageGeneration;
 		await run(`image:${s.sessionId}`, async () => {
 			const blob = await downloadFile(s.evidenceFileId!, selectedStudent);
-			if (token !== imageGeneration) return;
+			if (disposed || token !== imageGeneration) return;
 			if (image) URL.revokeObjectURL(image);
 			image = URL.createObjectURL(blob);
 		});
@@ -139,11 +142,13 @@
 		image = '';
 	}
 	onDestroy(() => {
+		disposed = true;
 		closeImage();
 		historyRequest.abort();
 		reportRequest.abort();
 	});
 	async function refreshSummary() {
+		if (disposed) return;
 		const ticket = reportRequest.begin();
 		errors.summary = '';
 		try {
@@ -155,20 +160,32 @@
 		}
 	}
 	async function checkPurge() {
-		if (!canPurge || report.archived || busy) return;
+		if (disposed || !canPurge || report.archived || busy) return;
 		impact = null;
 		confirmed = false;
 		errors.purge = '';
 		await run('impact', async () => {
-			impact = await attendancePurgeImpact(term);
+			const result = await attendancePurgeImpact(term);
+			if (disposed) return;
+			impact = result;
 			confirmed = false;
 		});
 	}
 	async function purge() {
-		if (!canPurge || report.archived || !impact?.canPurge || !confirmed || !reason.trim() || busy)
+		if (
+			disposed ||
+			!canPurge ||
+			report.archived ||
+			!impact?.canPurge ||
+			!confirmed ||
+			!reason.trim() ||
+			busy
+		)
 			return;
 		await run('purge', async () => {
-			impact = await purgeAttendanceTerm(term, { expectedRecords: impact!.records, reason });
+			const result = await purgeAttendanceTerm(term, { expectedRecords: impact!.records, reason });
+			if (disposed) return;
+			impact = result;
 			report = { ...report, archived: impact.archived };
 			historyLoaded = false;
 			purgeOpen = false;
