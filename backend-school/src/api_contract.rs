@@ -733,11 +733,11 @@ use utoipa::OpenApi;
 )]
 struct SchoolApiDoc;
 
-// Keep generated path and explicit schema registries in separate stack frames.
-// Their combined debug build exceeds the default Rust test-thread stack.
+// Bound each generated schema constructor to keep LLVM optimisation and stack usage local.
+// Groups retain the original registration order; later explicit definitions still win.
+// The application remains the single OpenAPI composition owner.
 #[derive(OpenApi)]
-#[openapi(
-    components(schemas(
+#[openapi(components(schemas(
         ConsentRecordResponse,
         UserConsentStatus,
         ApiResponse<UserConsentStatus>,
@@ -801,7 +801,17 @@ struct SchoolApiDoc;
         Room,
         Building,
         CreateBuildingRequest,
-        UpdateBuildingRequest,
+        UpdateBuildingRequest
+)))]
+struct SchoolApiSchemasGroup1;
+
+#[inline(never)]
+fn build_schema_group_1() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup1::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         CreateRoomRequest,
         UpdateRoomRequest,
         ApiResponse<Vec<Building>>,
@@ -865,7 +875,17 @@ struct SchoolApiDoc;
         CertificateTemplateDeleteResult,
         CertificateTemplateVariableCatalog,
         CertificatePreviewManifestRequest,
-        CertificateRenderFileGrant,
+        CertificateRenderFileGrant
+)))]
+struct SchoolApiSchemasGroup2;
+
+#[inline(never)]
+fn build_schema_group_2() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup2::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         CertificateBuiltInFont,
         CertificateRenderFontGrant,
         CertificateRenderImageGrant,
@@ -929,7 +949,17 @@ struct SchoolApiDoc;
         RevokeCertificateRequest,
         CertificateReplacementCandidate,
         RevokeCertificateResult,
-        CertificateRenderManifestBatchRequest,
+        CertificateRenderManifestBatchRequest
+)))]
+struct SchoolApiSchemasGroup3;
+
+#[inline(never)]
+fn build_schema_group_3() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup3::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ManualCertificateVerificationRequest,
         QrCertificateVerificationRequest,
         PublicCertificateRenderRequest,
@@ -993,7 +1023,17 @@ struct SchoolApiDoc;
         UpdateStaffInfoRequest, JobPositionPage,
         ApiResponse<JobPositionPage>,
         StaffPersonnelType,StaffCareerKind,StaffCareerSource,StaffCareerFact,StaffCareerEntryInput,StaffCareerReference,StaffCareerCurrent,StaffCareerEntry,CreateStaffCareerRequest,StaffCareerCurrentChange,UpdateStaffCareerRequest,CreateStaffCareerHistoryRequest,CorrectStaffCareerHistoryRequest,StaffCareerHistoryPage,StaffCareerMutationAck,ApiResponse<StaffCareerHistoryPage>,ApiResponse<StaffCareerMutationAck>,
-        RankMilestone,RankMilestoneStatus,RankMilestoneReason,RankCriteriaVersion,RankCriteriaSource,RankMilestoneOverview,RankMilestonePerson,RankMilestoneCounts,ApiResponse<RankMilestoneOverview>,
+        RankMilestone,RankMilestoneStatus,RankMilestoneReason,RankCriteriaVersion,RankCriteriaSource,RankMilestoneOverview,RankMilestonePerson,RankMilestoneCounts,ApiResponse<RankMilestoneOverview>
+)))]
+struct SchoolApiSchemasGroup4;
+
+#[inline(never)]
+fn build_schema_group_4() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup4::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         StaffInfoResponse,
         StaffProfileResponse,
         CreateStaffInfoRequest,
@@ -1057,71 +1097,91 @@ struct SchoolApiDoc;
         CatalogOwnerOption,
         CatalogSubjectGroupOption,
         CatalogSubject,
-        CatalogSubjectOverviewItem,
-        CatalogSubjectOverview,
-        CreateCatalogSubjectRequest,
-        UpdateCatalogSubjectRequest,
-        SubjectVersion,
-        CreateSubjectVersionRequest,
-        UpdateSubjectVersionRequest,
-        CatalogActivity,
-        CatalogActivityOverviewItem,
-        CatalogActivityOverview,
-        CreateCatalogActivityRequest,
-        UpdateCatalogActivityRequest,
-        ActivityVersion,
-        CreateActivityVersionRequest,
-        UpdateActivityVersionRequest,
-        DefaultTeacher,
-        ReplaceDefaultTeachersRequest,
-        SubjectGroup,
-        CreateSubjectGroupRequest,
-        UpdateSubjectGroupRequest,
-        CurriculumEdition,
-                CurriculumOverviewItem,
-        CurriculumOverview,
-        CreateCurriculumRequest,
-        UpdateCurriculumRequest,
-        CurriculumLevel,
-        CurriculumLevelView,
-        CreateCurriculumLevelRequest,
-        UpdateCurriculumLevelRequest,
-        StudyProgram,
-        StudyProgramOption,
-        CreateStudyProgramRequest,
-        UpdateStudyProgramRequest,
-        RequirementKind,
-        RequirementResourceKind,
-        CurriculumCatalogVersionOption,
-        CurriculumCreateOptions,
-        CurriculumManagementOptions,
-        CurriculumTermSlot,
-        CatalogWeeklyUnit,
-        CurriculumDocumentSection,
-        CatalogCurriculumMetrics,
-        CurriculumStructureRequirement,
-        CurriculumValidationNotice,
-        CurriculumStructureValidation,
-        CurriculumStructureWorkspace,
-        CurriculumTermSlotInput,
-        ReplaceCurriculumTermSlotsRequest,
-        CurriculumStructureRequirementInput,
-        ReplaceCurriculumStructureRequest,
-        AcademicSetupWorkspace,
-        PublishVersionRequest,
-        Homeroom,
-        CreateHomeroomRequest,
-        UpdateHomeroomRequest,
-        HomeroomAdvisor,
-        HomeroomAdvisorAssignment,
-        HomeroomAdvisorInput,
-        ReplaceHomeroomAdvisorsRequest,
-        StudentAcademicYear,
-        StudentYearCandidate,
-        CreateStudentAcademicYearRequest,
-        UpdateStudentAcademicYearRequest,
-        StudentAcademicYearFilter,
-        HomeroomPlacementStatus,
+        CatalogSubjectOverviewItem
+)))]
+struct SchoolApiSchemasGroup5;
+
+#[inline(never)]
+fn build_schema_group_5() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup5::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    CatalogSubjectOverview,
+    CreateCatalogSubjectRequest,
+    UpdateCatalogSubjectRequest,
+    SubjectVersion,
+    CreateSubjectVersionRequest,
+    UpdateSubjectVersionRequest,
+    CatalogActivity,
+    CatalogActivityOverviewItem,
+    CatalogActivityOverview,
+    CreateCatalogActivityRequest,
+    UpdateCatalogActivityRequest,
+    ActivityVersion,
+    CreateActivityVersionRequest,
+    UpdateActivityVersionRequest,
+    DefaultTeacher,
+    ReplaceDefaultTeachersRequest,
+    SubjectGroup,
+    CreateSubjectGroupRequest,
+    UpdateSubjectGroupRequest,
+    CurriculumEdition,
+    CurriculumOverviewItem,
+    CurriculumOverview,
+    CreateCurriculumRequest,
+    UpdateCurriculumRequest,
+    CurriculumLevel,
+    CurriculumLevelView,
+    CreateCurriculumLevelRequest,
+    UpdateCurriculumLevelRequest,
+    StudyProgram,
+    StudyProgramOption,
+    CreateStudyProgramRequest,
+    UpdateStudyProgramRequest,
+    RequirementKind,
+    RequirementResourceKind,
+    CurriculumCatalogVersionOption,
+    CurriculumCreateOptions,
+    CurriculumManagementOptions,
+    CurriculumTermSlot,
+    CatalogWeeklyUnit,
+    CurriculumDocumentSection,
+    CatalogCurriculumMetrics,
+    CurriculumStructureRequirement,
+    CurriculumValidationNotice,
+    CurriculumStructureValidation,
+    CurriculumStructureWorkspace,
+    CurriculumTermSlotInput,
+    ReplaceCurriculumTermSlotsRequest,
+    CurriculumStructureRequirementInput,
+    ReplaceCurriculumStructureRequest,
+    AcademicSetupWorkspace,
+    PublishVersionRequest,
+    Homeroom,
+    CreateHomeroomRequest,
+    UpdateHomeroomRequest,
+    HomeroomAdvisor,
+    HomeroomAdvisorAssignment,
+    HomeroomAdvisorInput,
+    ReplaceHomeroomAdvisorsRequest,
+    StudentAcademicYear,
+    StudentYearCandidate,
+    CreateStudentAcademicYearRequest,
+    UpdateStudentAcademicYearRequest,
+    StudentAcademicYearFilter,
+    HomeroomPlacementStatus
+)))]
+struct SchoolApiSchemasGroup6;
+
+#[inline(never)]
+fn build_schema_group_6() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup6::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         HomeroomPlacement,
         CreateHomeroomPlacementRequest,
         TransferHomeroomPlacementRequest,
@@ -1141,7 +1201,6 @@ struct SchoolApiDoc;
         ApiResponse<HomeroomRoster>,
         ApiResponse<HomeroomNumberingPreview>,
         ApiResponse<Vec<HomeroomRosterCandidate>>,
-
         ApiResponse<AcademicContextOptions>,
         ApiResponse<Vec<AcademicYear>>,
         ApiResponse<AcademicYear>,
@@ -1186,7 +1245,17 @@ struct SchoolApiDoc;
         ApiResponse<Vec<HomeroomPlacement>>,
         ApiResponse<HomeroomPlacement>,
         ApiResponse<HomeroomPlacementTransfer>,
-        SaveAssessmentPlanRequest,
+        SaveAssessmentPlanRequest
+)))]
+struct SchoolApiSchemasGroup7;
+
+#[inline(never)]
+fn build_schema_group_7() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup7::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         SaveAssessmentPhaseRequest,
         AssessmentPhaseCode,
         AssessmentExamArrangement,
@@ -1250,7 +1319,17 @@ struct SchoolApiDoc;
         EvaluationLock,
         LockBlocker,
         LockOutcome,
-        LearnerEvaluationGroupLockReadiness,
+        LearnerEvaluationGroupLockReadiness
+)))]
+struct SchoolApiSchemasGroup8;
+
+#[inline(never)]
+fn build_schema_group_8() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup8::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         LearnerEvaluationSubjectLockReadiness,
         CriterionRemoval,
         VersionInput,
@@ -1314,7 +1393,17 @@ struct SchoolApiDoc;
         ApiResponse<Vec<AggregateStudent>>,
         TermTransitionAction,
         TermTransitionRequest,
-        TermTransitionOutcome,
+        TermTransitionOutcome
+)))]
+struct SchoolApiSchemasGroup9;
+
+#[inline(never)]
+fn build_schema_group_9() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup9::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         TermLifecycleContext,
         TermLifecycleQuery,
         TermLifecycleWorkspace,
@@ -1378,7 +1467,17 @@ struct SchoolApiDoc;
         PromotionRecommendationFinding,
         ApiResponse<PromotionPolicyVersion>,
         ApiResponse<Vec<PromotionPolicyVersion>>,
-        ApiResponse<YearLifecycleWorkspace>,
+        ApiResponse<YearLifecycleWorkspace>
+)))]
+struct SchoolApiSchemasGroup10;
+
+#[inline(never)]
+fn build_schema_group_10() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup10::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<YearTransitionOutcome>,
         ApiResponse<YearReopeningOutcome>,
         ApiResponse<YearReopeningWorkspace>,
@@ -1442,7 +1541,17 @@ struct SchoolApiDoc;
         EffectiveResult,
         EffectiveResultKind,
         EffectiveResultSearch,
-        EffectiveResultSearchItem,
+        EffectiveResultSearchItem
+)))]
+struct SchoolApiSchemasGroup11;
+
+#[inline(never)]
+fn build_schema_group_11() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup11::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<Vec<GradingPolicyVersion>>,
         ApiResponse<GradingPolicyVersion>,
         ApiResponse<CoursePreparationWorkspace>,
@@ -1506,7 +1615,17 @@ struct SchoolApiDoc;
         CreateLearningGroupRequest,
         UpdateLearningGroupRequest,
         TeacherAssignmentInput,
-        LearningGroupTeacherAssignment,
+        LearningGroupTeacherAssignment
+)))]
+struct SchoolApiSchemasGroup12;
+
+#[inline(never)]
+fn build_schema_group_12() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup12::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ReplaceLearningGroupTeachersRequest,
         ReplaceLearningGroupHomeroomsRequest,
         LearningGroupHomeroomIds,
@@ -1570,7 +1689,17 @@ struct SchoolApiDoc;
         ApiResponse<ApplyTeacherHandoffResponse>,
         ApiResponse<HomeroomDeliveryWorkspace>,
         ApiResponse<DeliveryManagementOptions>,
-        ApiResponse<CurriculumOfferingPreview>,
+        ApiResponse<CurriculumOfferingPreview>
+)))]
+struct SchoolApiSchemasGroup13;
+
+#[inline(never)]
+fn build_schema_group_13() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup13::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<ApplyCurriculumOfferingsResult>,
         ApiResponse<Vec<LearningGroup>>,
         ApiResponse<LearningGroup>,
@@ -1634,7 +1763,17 @@ struct SchoolApiDoc;
         SwapTimetableBlocksRequest,
         SwapTimetableBlocksResponse,
         ApiResponse<TimetableBlock>,
-        ApiResponse<Vec<TimetableBlock>>,
+        ApiResponse<Vec<TimetableBlock>>
+)))]
+struct SchoolApiSchemasGroup14;
+
+#[inline(never)]
+fn build_schema_group_14() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup14::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<TimetableBlockWorkspace>,
         ApiResponse<TimetableBlockPlacementPreview>,
         ApiResponse<SwapTimetableBlocksResponse>,
@@ -1698,7 +1837,17 @@ struct SchoolApiDoc;
         ExamInvigilatorView,
         ExamScheduleItem,
         ExamScheduleItemView,
-        ExamPaperReceiptItem,
+        ExamPaperReceiptItem
+)))]
+struct SchoolApiSchemasGroup15;
+
+#[inline(never)]
+fn build_schema_group_15() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup15::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ExamSession,
         ExamSessionView,
         ExamScheduleWorkspace,
@@ -1762,7 +1911,17 @@ struct SchoolApiDoc;
         FileDeleteResult,
         FileDownloadGrantResponse,
         PublicFileDeliveryResponse,
-        ApiResponse<FileMetadata>,
+        ApiResponse<FileMetadata>
+)))]
+struct SchoolApiSchemasGroup16;
+
+#[inline(never)]
+fn build_schema_group_16() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup16::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<FileDeleteResult>,
         ApiResponse<FileDownloadGrantResponse>,
         ApiResponse<PublicFileDeliveryResponse>,
@@ -1826,7 +1985,17 @@ struct SchoolApiDoc;
         SupervisionTimetableOption,
         ItemsData<SupervisionCycle>,
         ItemsData<SupervisionTemplate>,
-        ItemsData<SupervisionTemplateSummary>,
+        ItemsData<SupervisionTemplateSummary>
+)))]
+struct SchoolApiSchemasGroup17;
+
+#[inline(never)]
+fn build_schema_group_17() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup17::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ItemsData<SupervisionObservation>,
         ItemsData<SupervisionEvaluatorAvailability>,
         ItemsData<SupervisionTimetableOption>,
@@ -1871,9 +2040,55 @@ struct SchoolApiDoc;
         ListNotificationsResponse,
         ApiResponse<ListNotificationsResponse>,
         ApiErrorResponse
-    ))
-)]
+)))]
+struct SchoolApiSchemasGroup18;
+
+#[inline(never)]
+fn build_schema_group_18() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup18::openapi()
+}
+
 struct SchoolApiSchemasDoc;
+
+impl OpenApi for SchoolApiSchemasDoc {
+    fn openapi() -> utoipa::openapi::OpenApi {
+        let mut document = build_schema_group_1();
+        append_schema_registry(&mut document, build_schema_group_2());
+        append_schema_registry(&mut document, build_schema_group_3());
+        append_schema_registry(&mut document, build_schema_group_4());
+        append_schema_registry(&mut document, build_schema_group_5());
+        append_schema_registry(&mut document, build_schema_group_6());
+        append_schema_registry(&mut document, build_schema_group_7());
+        append_schema_registry(&mut document, build_schema_group_8());
+        append_schema_registry(&mut document, build_schema_group_9());
+        append_schema_registry(&mut document, build_schema_group_10());
+        append_schema_registry(&mut document, build_schema_group_11());
+        append_schema_registry(&mut document, build_schema_group_12());
+        append_schema_registry(&mut document, build_schema_group_13());
+        append_schema_registry(&mut document, build_schema_group_14());
+        append_schema_registry(&mut document, build_schema_group_15());
+        append_schema_registry(&mut document, build_schema_group_16());
+        append_schema_registry(&mut document, build_schema_group_17());
+        append_schema_registry(&mut document, build_schema_group_18());
+        document
+    }
+}
+
+fn append_schema_registry(
+    document: &mut utoipa::openapi::OpenApi,
+    mut group: utoipa::openapi::OpenApi,
+) {
+    // OpenApi::merge keeps existing names. Explicit registration instead has
+    // last-definition priority, just like the original ComponentsBuilder.
+    let schemas = match group.components.as_mut() {
+        Some(components) => std::mem::take(&mut components.schemas),
+        None => std::collections::BTreeMap::new(),
+    };
+    document.merge(group);
+    if let Some(components) = document.components.as_mut() {
+        components.schemas.extend(schemas);
+    }
+}
 
 fn sort_json(value: &mut Value) {
     match value {
@@ -1908,6 +2123,33 @@ pub fn render_school_api() -> Result<String, serde_json::Error> {
 mod tests {
     use serde_json::Value;
     use std::collections::{BTreeSet, HashSet};
+
+    #[test]
+    fn schema_groups_preserve_explicit_override_order_and_handler_priority() {
+        fn fixture(schema_type: &str) -> utoipa::openapi::OpenApi {
+            serde_json::from_value(serde_json::json!({
+                "openapi": "3.1.0",
+                "info": { "title": "fixture", "version": "test" },
+                "paths": {},
+                "components": { "schemas": { "SharedName": { "type": schema_type } } }
+            }))
+            .expect("valid isolated schema fixture")
+        }
+        let mut explicit = fixture("string");
+        super::append_schema_registry(&mut explicit, fixture("integer"));
+        assert_eq!(
+            serde_json::to_value(&explicit).expect("serializable fixture")["components"]["schemas"]
+                ["SharedName"]["type"],
+            "integer"
+        );
+        let mut handlers = fixture("boolean");
+        handlers.merge(explicit);
+        assert_eq!(
+            serde_json::to_value(&handlers).expect("serializable fixture")["components"]["schemas"]
+                ["SharedName"]["type"],
+            "boolean"
+        );
+    }
 
     // Generated schema construction uses the exporter's normal main-thread stack size.
     // Rust test workers default to 2 MiB, so keep the same construction capacity in CI.

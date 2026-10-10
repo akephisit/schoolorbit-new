@@ -192,11 +192,39 @@ database fixtures continue to exercise the HTTP/lifecycle adapters and shared tr
 The Operations `benchmark` task calls [Backend Build Benchmark](../.github/workflows/backend-build-benchmark.yml) and uses
 the pinned Docker builder for both backends. It records repeated source-changing Cargo/link
 times, binary size, unchanged persistent-target reuse, and exact School OpenAPI equality.
-Compiler options apply only to the application package; dependency optimization stays unchanged.
-CPU quota experiments do not provision hosted/self-hosted runners. Compare compiler variants
+Compiler options apply only to the final application binary; dependency optimization stays unchanged.
+Select `options={"backend":"both","samples":"2","variants":"default,cgu64"}`;
+the optional `opt2` and `cgu256` variants are experiments, not production settings.
+Each case primes its compiler flags before two to five timed source changes and links exactly once.
+School also measures Academic HTTP and attendance domain changes under the default profile.
+Artifacts include per-unit Cargo times, actual linker flags, binary sizes, CPU/toolchain identity,
+and the original builder's cache evidence separately from warm Cargo measurements. All School
+exports must equal the default-profile OpenAPI, including across compiler variants.
+The final diagnostic compilation records compiler pass times and monomorphization estimates.
+Actions displays a bounded timing table; full per-unit JSON and compiler evidence stay in the
+downloadable artifact, avoiding GitHub's 1 MiB step-summary limit.
+It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only in the disposable benchmark
+container; that compilation is excluded from warm sample means and never produces a release
+artifact. Production builds keep the pinned stable compiler and normal release flags.
+The container keeps a two-CPU quota and two Cargo jobs throughout. Compare compiler variants
 sequentially on one runner before attributing a change to a flag: different hosted machines
 can produce substantially different timings. A runtime performance claim requires a separate
 representative load test; exporter equality establishes the API contract only.
+
+To compare the bounded application-owned schema registry against its preceding source, select
+`options={"backend":"backend-school","samples":"2","variants":"default,api-batches","baseline":"<exact-40-character-SHA>"}`.
+The comparison refuses any other backend source, manifest, lockfile or Dockerfile difference.
+It restores the baseline production builder, then replaces only `src/api_contract.rs` in the same
+container. Flag priming is separate, both cases use unchanged release settings, and every export
+must equal the baseline document. This paired mode measures application-source changes; the normal
+benchmark mode retains the Academic HTTP and attendance invalidation cases.
+
+Explicit schema registration uses bounded constructors in `src/api_contract.rs` to limit one
+generated function's optimiser and stack workload. Keep each group near 64 registrations and
+preserve their order when adding types. Later explicit declarations override earlier explicit
+declarations; handler-derived schemas retain priority over the combined explicit registry.
+The precedence regression and full generated-contract check protect both rules. The application
+continues owning the entire OpenAPI composition, and the exporter runs without runtime credentials.
 
 The Operations `http-benchmark` task calls [Backend HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml) and
 compares a selected pre-extraction commit with the workflow's candidate commit. Both use
@@ -718,6 +746,10 @@ workspace, learner-evaluation subject workspace, and result-readiness summary fo
 Response bodies remain in the smoke script's private temporary directory and are removed on exit.
 
 ### Manual Neon migration compatibility
+
+These values are required only for the optional local Neon compatibility run. Ordinary local
+PostgreSQL/Docker suites, builds and GitHub delivery do not require `NEON_TEST_*`; do not add
+them to GitHub solely for this command.
 
 Run `node scripts/test_neon_compatibility.mjs` locally after `node --test scripts/tests/neon-compatibility.test.mjs` discovers the selected tests. Install `psql` and use a private ignored environment file or secret manager to provide these names; never commit their values:
 

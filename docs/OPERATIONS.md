@@ -177,6 +177,14 @@ Compiler evidence artifacts include Cargo HTML timings and sccache statistics wh
 runs. Compare compilation, restore, push and deployment durations separately; an exact cache marker
 alone is not evidence of a faster release. A failed release does not advance accepted baselines.
 
+When retiring a cache-producing workflow, inspect the repository Actions cache inventory and
+remove only exact IDs in its unused namespace after confirming no current workflow consumes it.
+The retired `rust-ci-v3-*` test snapshots have no consumer in the local-only test flow. Keeping
+large obsolete snapshots consumes the repository cache allowance and can evict useful release
+entries. Preserve current `index-backend-*`, shared `buildkit-blob-*`, `sccache/*`, prepared
+frontend bundles and deployed-browser caches; never use a broad cache purge. Cache cleanup
+improves retention capacity, not the compilation speed of an already-warm application binary.
+
 A source-only edit invalidates the final source/build layer, so the changed application crate and
 final executable must be compiled and linked again. It does not discard the cargo-chef dependency
 layer when `Cargo.toml` and `Cargo.lock` are unchanged. sccache may reuse eligible compiler outputs,
@@ -242,9 +250,24 @@ do not establish a percentage reduction in complete deployment time.
 
 The pinned Rust toolchain already passes `-fuse-ld=lld` on this Linux target. Selecting lld again
 does not remove compiler work. The manual build benchmark records the actual driver flag and
-compares default/GNU BFD/lld using the same object files. Keep production optimization unchanged
+one linker invocation per timed build, separating flag priming from warm samples. It compares
+default and selected final-crate codegen profiles sequentially in one two-CPU Docker container;
+Academic HTTP and attendance edits show the default profile's dependent rebuild scope.
+Keep production optimization unchanged
 unless both repeatable compile improvements and representative runtime performance support a
 new profile; profile/exporter experiments alone do not establish production request latency.
+
+The application-owned explicit OpenAPI registry uses bounded schema constructors instead of
+one very large generated function; release optimization settings are unchanged. The
+[paired source experiment](https://github.com/akephisit/schoolorbit-new/actions/runs/38028625695)
+compared baseline `fe3cce4a` with candidate `81f76e30` on the same runner and persistent
+two-CPU Docker container. Application-only warm builds took 249.19/245.08 seconds before
+and 186.99/190.98 seconds after, reducing the mean from 247.13 to 188.98 seconds (23.5%).
+Only `backend-school` rebuilt in all four samples; links took 0.62–0.65 seconds and the
+binary grew by 38,512 bytes (0.03%). All eight API exports were equal. Prime builds of
+256.91 and 200.23 seconds and the final diagnostic compilation are excluded from these
+means. This source comparison did not remeasure domain edits or complete deployment time;
+do not compare its absolute times with another runner's profile experiment.
 
 The school Dockerfile uses `cargo rustc` with `-C lto=off` only for the final application
 crate to reduce source-changing release build work. Dependencies retain their existing
@@ -706,7 +729,7 @@ For the Release 2 deployment:
 
 1. Create and retain a protected snapshot before dispatching the release.
 2. Use one reviewed commit for the migration, backend, contracts, frontend, and deployment gate.
-   Dispatch the manual Neon compatibility workflow first; it must use a fresh disposable child
+   Run the local Neon compatibility command first; it must use a fresh disposable child
    branch and its direct non-pooled endpoint to run the migration-060 schema and status-audit tests.
 3. Deploy through the centralized runner and apply every pending migration through the repository's
    latest version. Do not apply migration 060 or later files manually.
