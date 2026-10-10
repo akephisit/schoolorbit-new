@@ -508,10 +508,10 @@ test('project rules document generated API contract ownership', async () => {
 	}
 });
 
-test('API contract CI protects the offline exporter boundary', async () => {
-	const workflow = await readRepoFile('.github/workflows/verify.yml');
+test('Local API contract verification protects the offline exporter boundary', async () => {
+	const workflow = await readRepoFile('.github/workflows/pipeline.yml');
 	const runner = await readRepoFile('scripts/pipeline.mjs');
-	assert.match(workflow, /scripts\/pipeline verify/);
+	assert.doesNotMatch(workflow, /scripts\/pipeline verify/);
 	assert.match(runner, /'test', '--test', 'static_architecture'/);
 	assert.match(runner, /generate-api-contracts\.mjs', '--check'/);
 	assert.match(runner, /env', \['-i',[\s\S]*export-openapi/);

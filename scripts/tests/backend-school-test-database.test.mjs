@@ -458,80 +458,22 @@ test('TERM preserves signal status and removes the owned container', async (t) =
     await assert.rejects(read(f.containerState));
 });
 
-test('Neon gate is manual, direct, disposable, and test-scoped', async () => {
-    const workflow = await read(
-        path.join(repoRoot, '.github/workflows/backend-school-neon-compatibility.yml')
-    );
-
-    assert.match(workflow, /workflow_call:/);
-    const owner = await read(path.join(repoRoot, '.github/workflows/operations.yml'));
-    assert.match(owner, /workflow_dispatch:/);
-    assert.match(owner, /inputs.operation == 'neon'/);
-    assert.doesNotMatch(workflow, /^\s{2}(?:push|pull_request|schedule):/m);
-    for (const name of [
-        'NEON_TEST_API_KEY',
-        'NEON_TEST_PROJECT_ID',
-        'NEON_TEST_PARENT_BRANCH_ID',
-        'NEON_TEST_DATABASE',
-        'NEON_TEST_ROLE'
-    ]) {
-        assert.match(workflow, new RegExp(name));
-    }
-    assert.doesNotMatch(workflow, /neondatabase\/create-branch-action/);
-    assert.match(workflow, /node scripts\/neon-create-test-branch\.mjs/);
-    assert.doesNotMatch(workflow, /^\s*branch_type:/m);
-    assert.doesNotMatch(workflow, /suspend_timeout/);
-    assert.match(workflow, /NEON_BRANCH_EXPIRES_AT:/);
-    assert.match(
-        workflow,
-        /TEST_DATABASE_URL:\s*\$\{\{ steps\.create_branch\.outputs\.db_url \}\}/
-    );
-    assert.doesNotMatch(workflow, /db_url_pooled/);
-
-    const createAt = workflow.indexOf('id: create_branch');
-    const provisionAt = workflow.indexOf('name: Provision migration prerequisite extensions');
-    const testAt = workflow.indexOf('name: Run direct-endpoint compatibility tests');
-    const deleteAt = workflow.indexOf('name: Delete disposable Neon branch');
-    assert.ok(createAt >= 0 && provisionAt > createAt && testAt > provisionAt && deleteAt > testAt);
-    const creation = workflow.slice(createAt, provisionAt);
-    assert.match(
-        creation,
-        /NEON_BRANCH_NAME:\s*schoolorbit-test-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/
-    );
-    assert.match(
-        creation,
-        /NEON_BRANCH_EXPIRES_AT:\s*\$\{\{ steps\.expiration\.outputs\.expires_at \}\}/
-    );
-    const provision = workflow.slice(provisionAt, testAt);
-    assert.match(
-        provision,
-        /TEST_DATABASE_URL:\s*\$\{\{ steps\.create_branch\.outputs\.db_url \}\}/
-    );
-    assert.match(provision, /command -v psql/);
-    assert.match(provision, /--set=ON_ERROR_STOP=1/);
-    assert.match(provision, /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;/);
-    assert.match(provision, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;/);
-    const compatibilityTests = workflow.slice(testAt, deleteAt);
-    assert.match(
-        compatibilityTests,
-        /migration_060 --bin backend-school -- --nocapture --test-threads=4/
-    );
-    assert.match(
-        compatibilityTests,
-        /gradebook_results_status --bin backend-school -- --nocapture --test-threads=4/
-    );
-    const academicSelections = compatibilityTests.split('\n').filter(line => line.includes('cargo test modules::'));
-    assert.doesNotMatch(academicSelections.join('\n'), /--test-threads=1/);
-    assert.match(workflow, /test_scope:[\s\S]*?default: full/);
-    assert.match(compatibilityTests, /NEON_COMPATIBILITY_SCOPE: \$\{\{ inputs\.test_scope \}\}/);
-    assert.match(compatibilityTests, /migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture/);
-    const deletion = workflow.slice(deleteAt);
-    assert.match(deletion, /if:\s*\$\{\{ always\(\)/);
-    assert.match(deletion, /steps\.create_branch\.outputs\.created == 'true'/);
-    assert.match(
-        deletion,
-        /\/projects\/\$\{NEON_TEST_PROJECT_ID\}\/branches\/\$\{NEON_BRANCH_ID\}/
-    );
-    assert.match(deletion, /200\|204/);
-    assert.doesNotMatch(workflow, /SERVER_|SSH_|docker|deploy/i);
+test('Neon compatibility has one local direct disposable owner with prerequisite extensions', async () => {
+    const owner = await read(path.join(repoRoot, 'scripts/test_neon_compatibility.mjs'));
+    const tests = await read(path.join(repoRoot, 'scripts/test_neon_compatibility.sh'));
+    const operations = await read(path.join(repoRoot, '.github/workflows/operations.yml'));
+    assert.doesNotMatch(operations, /inputs.operation == 'neon'/);
+    assert.match(owner, /createNeonTestBranch/);
+    assert.match(owner, /NEON_BRANCH_EXPIRES_AT/);
+    assert.match(owner, /TEST_DATABASE_URL: outputs.db_url/);
+    assert.match(owner, /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;/);
+    assert.match(owner, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;/);
+    assert.match(owner, /finally/);
+    assert.match(owner, /method: 'DELETE'/);
+    assert.match(owner, /\[200, 204\]/);
+    assert.match(tests, /migration_060 --bin backend-school -- --nocapture --test-threads=4/);
+    assert.match(tests, /gradebook_results_status --bin backend-school -- --nocapture --test-threads=4/);
+    assert.match(tests, /migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture/);
+    assert.match(tests, /NEON_COMPATIBILITY_SCOPE:-full/);
+    assert.doesNotMatch(owner, /db_url_pooled|SERVER_|SSH_|deploy/i);
 });

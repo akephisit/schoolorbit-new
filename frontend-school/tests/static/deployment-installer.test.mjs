@@ -53,11 +53,6 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 			const rustSetupIndexes = [];
 
 			for (const [stepIndex, step] of steps.entries()) {
-				if (step.uses === './.github/actions/setup-contract-rust') {
-					rustSetupIndexes.push(stepIndex);
-					const setup = parseYaml(await readRepo('.github/actions/setup-contract-rust/action.yml'));
-					assert.equal(setup.runs.steps[0].uses, 'dtolnay/rust-toolchain@1.98.1');
-				}
 				if (typeof step.uses === 'string' && step.uses.startsWith('actions/setup-node@')) {
 					nodeSetupIndexes.push(stepIndex);
 					assert.equal(step.uses, 'actions/setup-node@v6', `${file}:${jobName} setup-node action`);
@@ -424,7 +419,7 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 
 test('Release 2 deployment remains in maintenance until the Gradebook/results cutover passes', async () => {
 	const deployment = await readRepo('.github/workflows/deploy-school-release.yml');
-	const compatibility = await readRepo('.github/workflows/backend-school-neon-compatibility.yml');
+	const compatibility = await readRepo('scripts/test_neon_compatibility.sh');
 	const migrationHandler = await readRepo(
 		'backend-school/src/modules/system/handlers/migration.rs'
 	);
@@ -433,13 +428,8 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 	);
 	const smoke = await readRepo('scripts/smoke_test.sh');
 
-	assert.match(compatibility, /uses: actions\/setup-node@v6/);
-	assert.match(compatibility, /node-version: "24"/);
 	assert.match(compatibility, /cargo test modules::academic::core::schema_tests::migration_060/);
-	assert.match(
-		compatibility,
-		/TEST_DATABASE_URL: \$\{\{ steps\.create_branch\.outputs\.db_url \}\}/
-	);
+	assert.match(compatibility, /TEST_DATABASE_URL/);
 	assert.match(migrationHandler, /gradebook_results_cutover/);
 	assert.match(migrationHandler, /gradebookResultsCutover/);
 	assert.match(cutoverAudit, /GRADEBOOK_RESULTS_REQUIRED_TABLES_PRESENT/);
@@ -987,14 +977,12 @@ test('GHCR retention is bounded, dry-run by default, and isolated from deploymen
 	assert.match(retention, /method = 'GET'/);
 });
 
-test('central verification retains every API, architecture and database consumer gate', async () => {
-	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
+test('local verification retains every API, architecture and database consumer gate', async () => {
+	const d = parseYaml(await readRepo('.github/workflows/pipeline.yml'));
 	const runner = await readRepo('scripts/pipeline.mjs');
 	const database = await readRepo('scripts/test_school_database_suite.sh');
-	assert.deepEqual(
-		d.jobs.verify.strategy.matrix.suite,
-		'${{ fromJson(needs.reuse.outputs.remaining) }}'
-	);
+	assert.equal(d.jobs.verify, undefined);
+	assert.deepEqual(d.jobs.gate.needs, ['plan', 'prepare']);
 	assert.match(runner, /cargo.*'fmt'.*'--all'/);
 	assert.match(runner, /'check', '--workspace', '--all-targets'/);
 	assert.match(runner, /'test', '--test', 'static_architecture'/);
@@ -1005,32 +993,18 @@ test('central verification retains every API, architecture and database consumer
 	assert.match(database, /curriculum_revision_schema_tests/);
 	assert.match(database, /--package school-navigation/);
 	assert.match(database, /purge_rejects_admission_logo_and_question_bank_file_consumers/);
-	assert.equal(
-		d.jobs.verify.steps.filter((x) => x.uses?.startsWith('actions/cache/restore')).length,
-		1
-	);
-	assert.match(await readRepo('scripts/rust_ci_cache.mjs'), /saved.sources\[file\] === hash/);
-	assert.match(
-		d.jobs.verify.steps.find((x) => x.uses?.startsWith('actions/cache/save')).if,
-		/github.ref == 'refs\/heads\/main'/
+	assert.doesNotMatch(
+		JSON.stringify(d.jobs),
+		/pipeline verify|pipeline prime|verification_evidence/
 	);
 });
 
-test('permission verification shares its required checks without duplicate Rust owners', async () => {
-	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
+test('local permission verification retains generated contracts and frontend consumers', async () => {
 	const runner = await readRepo('scripts/pipeline.mjs');
 	assert.match(runner, /generate-permissions.mjs.*--check/);
 	assert.match(runner, /generate-permissions.test.mjs/);
 	assert.match(runner, /test:static/);
 	assert.match(runner, /'npm', \['run', 'check'/);
-	assert.match(
-		d.jobs.verify.steps.find((x) => x.uses?.startsWith('actions/cache/save')).if,
-		/!inputs.candidate/
-	);
-	assert.match(
-		d.jobs.verify.steps.find((x) => x.id === 'rust-cache').with['restore-keys'],
-		/steps.rust-key.outputs.prefix/
-	);
 });
 
 test('frontend deployments keep environment values out of committed Worker configuration', async () => {
@@ -1104,7 +1078,7 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.doesNotMatch(workflow, /curl[^\n]*-[^\n]*k/);
 });
 
-test('installer CI enforces shell provider topology and workflow guards', async () => {
+test('local installer verification enforces shell provider topology and workflow guards', async () => {
 	const runner = await readRepo('scripts/verify_deployment.sh');
 	for (const command of [
 		'shellcheck',
@@ -1117,30 +1091,9 @@ test('installer CI enforces shell provider topology and workflow guards', async 
 		'rhysd/actionlint:1.7.7'
 	])
 		assert.ok(runner.includes(command), command);
-	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
-	assert.match(
-		d.jobs.verify.steps.find((x) => x.name === 'Install deployment checker tools').if,
-		/deployment/
-	);
-	assert.match(
-		d.jobs.verify.steps.find((x) => x.name === 'Install deployment checker tools').run,
-		/bats shellcheck shfmt gettext-base jq/
-	);
-});
-
-test('deployment tools are available before cross-stack static contracts', async () => {
-	const d = parseYaml(await readRepo('.github/workflows/verify.yml'));
-	const steps = d.jobs.verify.steps;
-	assert.ok(
-		steps.findIndex((x) => x.name === 'Install deployment checker tools') <
-			steps.findIndex((x) => x.name === 'Run owned local and CI verification')
-	);
-	assert.match(
-		steps.find((x) => x.name === 'Install deployment checker tools').if,
-		/frontend-school/
-	);
-	const runner = await readRepo('scripts/verify_deployment.sh');
-	assert.match(runner, /docker compose/);
+	const testing = await readRepo('docs/TESTING.md');
+	for (const tool of ['ShellCheck', 'shfmt', 'Bats', 'envsubst', 'jq'])
+		assert.ok(testing.includes(tool), tool);
 });
 
 test('Cockpit management stays loopback-only, secret-safe, and documented', async () => {

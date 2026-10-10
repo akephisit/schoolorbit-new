@@ -10,11 +10,9 @@ on:
         options:
           - provision
           - smoke
-          - e2e
           - diagnostics
           - benchmark
           - http-benchmark
-          - neon
       request_id:
         description: Exact provisioning request identifier
         type: string
@@ -52,12 +50,6 @@ jobs:
       origin: ${{ fromJson(inputs.options).origin || '' }}
       timeout_seconds: ${{ fromJson(inputs.options).timeout_seconds || '20' }}
       run_authenticated: ${{ fromJson(inputs.options).run_authenticated != false }}
-  e2e:
-    if: inputs.operation == 'e2e'
-    uses: ./.github/workflows/e2e-sandbox.yml
-    secrets: inherit
-    with:
-      base_url: ${{ fromJson(inputs.options).base_url || 'https://sandbox.schoolorbit.app' }}
   diagnostics:
     if: inputs.operation == 'diagnostics'
     uses: ./.github/workflows/runtime-diagnostics.yml
@@ -75,13 +67,6 @@ jobs:
     secrets: inherit
     with:
       baseline: ${{ fromJson(inputs.options).baseline || '75b46a688de810cd23c058da26daf4cc93496a35' }}
-  neon:
-    if: inputs.operation == 'neon'
-    uses: ./.github/workflows/backend-school-neon-compatibility.yml
-    secrets: inherit
-    with:
-      confirm_disposable_branch: ${{ fromJson(inputs.options).confirm_disposable_branch == true }}
-      test_scope: ${{ fromJson(inputs.options).test_scope || 'full' }}
   provision:
     if: inputs.operation == 'provision' && github.ref == 'refs/heads/main'
     concurrency:

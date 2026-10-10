@@ -34,7 +34,7 @@ if(response.binary)process.stdout.write(fs.readFileSync(response.binary));else p
  return {dir,routes,sequences,zip,run,env,calls:()=>readFileSync(env.FAKE_GH_LOG,'utf8').trim().split('\n').map(JSON.parse)};
 }
 function runIdentity(id=21){return {id,repository:{full_name:repo},head_repository:{full_name:repo},head_sha:head,head_branch:'feature',path:'.github/workflows/pipeline.yml',event:'pull_request',status:'completed',conclusion:'success',run_attempt:1};}
-function proof(f) {
+function candidatePlan(f) {
  const pr={number:7,user:{login:'writer'},head:{sha:head,repo:{full_name:repo}},base:{ref:'main'},merged_at:'2026-10-08',merge_commit_sha:sha,draft:false,mergeable_state:'clean'};
  const plan={schemaVersion:1,sha,base,tree,prHead:head,verify:['frontend-school'],runId:'21',attempt:1};
  const run=runIdentity();
@@ -43,47 +43,12 @@ function proof(f) {
  f.routes[`/repos/${repo}/collaborators/writer/permission`]={permission:'write'};
  f.routes[`/repos/${repo}/commits/${head}/check-runs?per_page=100`]={check_runs:[{id:99,name:'Pipeline gate',app:{slug:'github-actions'},conclusion:'success',details_url:`https://github.com/${repo}/actions/runs/21`}]};
  f.routes[`/repos/${repo}/actions/runs/21`]=run;
- f.routes[`/repos/${repo}/actions/runs/21/artifacts?per_page=100`]={artifacts:[{id:10,name:'pipeline-plan'},{id:11,name:'verification-frontend-school'}]};
- f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'verify / Verify frontend-school',conclusion:'success',run_attempt:1},{name:'Pipeline gate',conclusion:'success',run_attempt:1,head_sha:head}]}];
+ f.routes[`/repos/${repo}/actions/runs/21/artifacts?per_page=100`]={artifacts:[{id:10,name:'pipeline-plan'}]};
+ f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'Pipeline gate',conclusion:'success',run_attempt:1,head_sha:head}]}];
  f.zip(10,'plan.json',plan);
- f.zip(11,'verification-frontend-school.json',{schemaVersion:1,runId:'21',attempt:1,suite:'frontend-school',tree,node:process.versions.node,runnerImage:f.env.ImageVersion,runnerOS:'Linux',docker:'28.5.0',rust:null,profile:{incremental:'0',devDebug:'0',testDebug:'0'}});
+
  return {pr,plan,run};
 }
-test('main reuses equivalent verified PR suites, independently of SHA after squash',t=>{
- const f=fixture(t);proof(f);const result=f.run('reuse_pipeline_verification.mjs');assert.equal(result.status,0,result.stderr);
- assert.match(readFileSync(f.env.GITHUB_OUTPUT,'utf8'),/remaining=\[\]/);
-});
-test('missing backend proof keeps full verification instead of compiler-only priming',t=>{
- const f=fixture(t);proof(f);const result=f.run('reuse_pipeline_verification.mjs',{REQUESTED_SUITES:'["frontend-school","backend-school","backend-admin"]'});assert.equal(result.status,0,result.stderr);
- assert.match(readFileSync(f.env.GITHUB_OUTPUT,'utf8'),/remaining=\["backend-school","backend-admin"\]/);
- assert.match(readFileSync(f.env.GITHUB_OUTPUT,'utf8'),/prime=\[\]/);
-});
-function backendProof(f,extra={}) {
- const p=proof(f);p.plan.verify.push('backend-school');f.zip(10,'plan.json',p.plan);
- f.routes[`/repos/${repo}/actions/runs/21/artifacts?per_page=100`].artifacts.push({id:13,name:'verification-backend-school'});
- f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`][0].jobs.push({name:'verify / Verify backend-school',conclusion:'success',run_attempt:1});
- f.zip(13,'verification-backend-school.json',{kind:'verification',schemaVersion:1,runId:'21',attempt:1,suite:'backend-school',tree,node:process.versions.node,runnerImage:f.env.ImageVersion,runnerOS:'Linux',docker:'28.5.0',rust:'rustc 1.98.1 (fixture)',profile:{incremental:'0',devDebug:'0',testDebug:'0',rustflags:''},...extra});
- return p;
-}
-test('equivalent backend fixture proof is reused while main still primes its compiled snapshot',t=>{
- const f=fixture(t);backendProof(f);const result=f.run('reuse_pipeline_verification.mjs',{REQUESTED_SUITES:'["backend-school"]'});assert.equal(result.status,0,result.stderr);
- const out=readFileSync(f.env.GITHUB_OUTPUT,'utf8');assert.match(out,/reused=\["backend-school"\]/);assert.match(out,/remaining=\["backend-school"\]/);assert.match(out,/prime=\["backend-school"\]/);
- assert.match(out,/proof=\{"runId":"21","attempt":1,"tree"/);
-});
-for(const mismatch of [{kind:'compiler-snapshot'},{rust:'rustc 1.99.0 (fixture)'},{profile:{incremental:'0',devDebug:'0',testDebug:'0',rustflags:'-C target-cpu=native'}},{attempt:2}])test(`backend ${JSON.stringify(mismatch)} cannot replace actual fixture verification`,t=>{
- const f=fixture(t);backendProof(f,mismatch);const result=f.run('reuse_pipeline_verification.mjs',{REQUESTED_SUITES:'["backend-school"]'});assert.equal(result.status,0,result.stderr);
- const out=readFileSync(f.env.GITHUB_OUTPUT,'utf8');assert.match(out,/reused=\[\]/);assert.match(out,/prime=\[\]/);assert.match(out,/remaining=\["backend-school"\]/);
-});
-for(const changed of ['tree','failed-check','missing-receipt','different-runner','rerun-race'])test(`${changed} cannot reuse PR verification`,t=>{
- const f=fixture(t);const p=proof(f);
- if(changed==='tree')f.zip(10,'plan.json',{...p.plan,tree:base});
- if(changed==='failed-check')f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`][0].jobs[0].conclusion='failure';
- if(changed==='missing-receipt')f.routes[`/repos/${repo}/actions/runs/21/artifacts?per_page=100`].artifacts.pop();
- if(changed==='different-runner')f.env.ImageVersion='changed';
- if(changed==='rerun-race')f.sequences[`/repos/${repo}/actions/runs/21`]=[p.run,{...p.run,run_attempt:2,conclusion:null}];
- const result=f.run('reuse_pipeline_verification.mjs');assert.equal(result.status,0,result.stderr);
- assert.match(readFileSync(f.env.GITHUB_OUTPUT,'utf8'),/remaining=\["frontend-school"\]/);
-});
 function acceptedState(){return {schemaVersion:2,runId:'21',attempt:1,sha:head,components:Object.fromEntries(components.map(part=>[part,{sha:head,inputHash:'e'.repeat(64),digest:'sha256:'+'f'.repeat(64),bundleDigest:'e'.repeat(64),artifactRunId:21,versionId:'12345678-abcd-1234-abcd-123456789abc',workers:{sandbox:'12345678-abcd-1234-abcd-123456789abc'}}]))};}
 for(const accepted of [true,false])test(`accepted state requires its acceptance attempt job success=${accepted}, even on a later rerun`,t=>{
  const f=fixture(t);const run={...runIdentity(),head_branch:'main',event:'push',status:'in_progress',conclusion:null,run_attempt:2};
@@ -92,15 +57,17 @@ for(const accepted of [true,false])test(`accepted state requires its acceptance 
  f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'release / accept',head_sha:head,conclusion:accepted?'success':'failure'}]}];f.zip(12,'pipeline-state.json',acceptedState());
  const result=f.run('lib/pipeline-state.mjs');assert.equal(result.status,0,result.stderr);assert.equal(JSON.parse(result.stdout)?.runId,accepted?'21':undefined);
 });
-for(const stale of [false,true])test(`merge controller serializes two ready PRs and rechecks stale base=${stale}`,t=>{
- const f=fixture(t);const p=proof(f);f.routes[`/repos/${repo}/pulls?state=open&base=main&sort=created&direction=asc&per_page=100`]=[p.pr,{...p.pr,number:8}];
+for(const stale of [false,true])test(`merge controller serializes two ready PRs and blocks stale base=${stale}`,t=>{
+ const f=fixture(t);const p=candidatePlan(f);f.routes[`/repos/${repo}/pulls?state=open&base=main&sort=created&direction=asc&per_page=100`]=[p.pr,{...p.pr,number:8}];
  for(const number of [7,8])f.routes[`/repos/${repo}/pulls/${number}`]=p.pr;
  f.routes[`/repos/${repo}/git/ref/heads/main`]={object:{sha:stale?head:base}};
  f.routes[`/repos/${repo}/pulls/7/merge`]={merged:true};f.routes[`/repos/${repo}/actions/workflows/pipeline.yml/dispatches`]={};
  const result=f.run('team_merge.mjs');assert.equal(result.status,0,result.stderr);
  const merges=f.calls().filter(x=>x.route.endsWith('/merge'));assert.equal(merges.length,stale?0:1);
  const inputs=f.calls().filter(x=>x.input).map(x=>JSON.parse(x.input));
- assert.ok(inputs.some(x=>stale?x.inputs?.pr_number==='7':x.inputs?.automatic==='true'));
+ if(stale) assert.equal(inputs.length,0);
+ else assert.ok(inputs.some(x=>x.inputs?.automatic==='true'));
+ assert.ok(f.calls().every(x=>!x.route.endsWith('/update-branch')));
 });
 for(const mode of ['valid','stale-main','failed-gate','wrong-attempt','rollout-disabled'])test(`release preflight ${mode} validates before any production mutation`,t=>{
  const f=fixture(t);const checkout=path.join(f.dir,'checkout');mkdirSync(checkout);execFileSync('git',['init','-q',checkout]);
@@ -114,4 +81,12 @@ for(const mode of ['valid','stale-main','failed-gate','wrong-attempt','rollout-d
  f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]={artifacts:[]};
  const result=f.run('release_preflight.mjs',{PLAN:JSON.stringify(plan),GITHUB_SHA:commit,RUNTIME_DEPLOY_ENABLED:mode==='rollout-disabled'?'false':'true',FRONTEND_DEPLOY_ENABLED:'true',PUBLIC_BACKEND_URL:'',PUBLIC_VAPID_KEY:'',PUBLIC_API_URL:'',BACKEND_SCHOOL_URL:''},checkout);
  assert.equal(result.status,mode==='valid'?0:1,result.stderr);
+});
+
+test('a behind branch waits for its developer instead of mutating untested source',t=>{
+ const f=fixture(t);const p=candidatePlan(f);p.pr.mergeable_state='behind';
+ f.routes[`/repos/${repo}/pulls?state=open&base=main&sort=created&direction=asc&per_page=100`]=[p.pr];
+ f.routes[`/repos/${repo}/pulls/7`]=p.pr;f.routes[`/repos/${repo}/git/ref/heads/main`]={object:{sha:base}};
+ const result=f.run('team_merge.mjs');assert.equal(result.status,0,result.stderr);
+ assert.ok(f.calls().every(x=>!x.args.includes('PUT')&&!x.args.includes('POST')));
 });

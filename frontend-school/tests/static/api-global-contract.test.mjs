@@ -626,16 +626,15 @@ test('permission contract developer workflow is complete and non-deploying', asy
 		}
 	);
 
-	const workflow = await readFile(path.join(repoRoot, '.github/workflows/verify.yml'), 'utf8');
+	const workflow = await readFile(path.join(repoRoot, '.github/workflows/pipeline.yml'), 'utf8');
 	const runner = await readFile(path.join(repoRoot, 'scripts/pipeline.mjs'), 'utf8');
 	const policy = await readFile(path.join(repoRoot, 'scripts/lib/pipeline-policy.mjs'), 'utf8');
 	for (const required of [
 		'actions/checkout@v6',
 		'actions/setup-node@v6',
-		'npm ci',
-		'scripts/pipeline verify'
+		'./scripts/pipeline plan'
 	]) {
-		assert.ok(workflow.includes(required), `verification owner must contain: ${required}`);
+		assert.ok(workflow.includes(required), `planning owner must contain: ${required}`);
 	}
 	assert.match(runner, /generate-permissions\.mjs', '--check'/);
 	assert.match(runner, /scripts\/tests\/generate-permissions\.test\.mjs/);
@@ -647,10 +646,8 @@ test('permission contract developer workflow is complete and non-deploying', asy
 	assert.match(workflow, /permissions:\s*\n\s*contents:\s*read/);
 	assert.match(workflow, /PUBLIC_BACKEND_URL:/);
 	assert.match(workflow, /PUBLIC_VAPID_KEY:/);
-	assert.doesNotMatch(
-		JSON.stringify(parseYaml(workflow).jobs),
-		/(?:docker|git)\s+push|\bssh\b|sqlx\s+(?:database|migrate)/i
-	);
+	assert.equal(parseYaml(workflow).jobs.verify, undefined);
+	assert.doesNotMatch(workflow, /scripts\/pipeline verify/);
 });
 
 test('daily teaching overview permission is registered across backend and frontend', async () => {

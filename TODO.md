@@ -152,13 +152,6 @@ This file is the single active backlog for verified, unfinished technical work t
   - Add Rust advisory scanning, JavaScript audit policy, CodeQL or equivalent static analysis, secret scanning, SBOM generation, and artifact signing.
   - Define how vulnerabilities are triaged, waived with expiry, and verified after upgrades.
 
-- [ ] **CI-003: Implement trusted local verification handoff.**
-  - The current [reuse owner](./scripts/reuse_pipeline_verification.mjs) accepts GitHub PR workflow receipts only; local test results cannot currently skip PR CI.
-  - Follow the local-verification policy in [the development rules](./.rules): run the existing suite owner against the exact merged candidate in a pinned isolated Docker environment and use a registered verifier whose signing identity is outside test code.
-  - Add receipt submission and a trusted-main validator for source/base, complete coverage, environment, issuer, expiry and original execution provenance. Run every suite without valid evidence normally; keep fork/external PRs on ordinary CI.
-  - Cover tampering, partial/empty/failed coverage, stale bases, changed inputs/environments, expired receipts and unregistered issuers; preserve Pipeline gate, release builds and production acceptance.
-  - Done when a valid local execution avoids repeating that suite on GitHub, rejected evidence falls back correctly, and repeated end-to-end measurements show lower delivery time.
-
 - [ ] **OPS-002: Add production observability.**
   - Propagate request/correlation IDs across frontends, services, provider calls, jobs, and deployment history.
   - Add metrics, traces, dashboards, alerts, SLOs, and runbooks for authentication, tenant resolution, database pools, file access, jobs, and deployments.

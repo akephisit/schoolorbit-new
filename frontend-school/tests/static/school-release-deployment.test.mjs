@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { access, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -207,7 +207,7 @@ test('CI refusal blocks backend-only, frontend-only and full production paths', 
 	}
 });
 
-test('selected verification or artifact failure blocks the stable gate for every release scope', async () => {
+test('planning or selected artifact failure blocks the stable gate for every release scope', async () => {
 	const pipeline = parseYaml(
 		await readFile(path.join(repoRoot, '.github/workflows/pipeline.yml'), 'utf8')
 	);
@@ -215,13 +215,11 @@ test('selected verification or artifact failure blocks the stable gate for every
 	const good = {
 		...process.env,
 		PLAN_RESULT: 'success',
-		VERIFY_RESULT: 'success',
 		PREPARE_RESULT: 'success',
-		CANDIDATE: 'false',
 		BUILDS: '["backend-school"]'
 	};
 	assert.equal(spawnSync('bash', ['-eu', '-c', script], { env: good }).status, 0);
-	for (const key of ['PLAN_RESULT', 'VERIFY_RESULT', 'PREPARE_RESULT'])
+	for (const key of ['PLAN_RESULT', 'PREPARE_RESULT'])
 		for (const status of ['failure', 'cancelled', 'skipped', 'timed_out', '']) {
 			assert.notEqual(
 				spawnSync('bash', ['-eu', '-c', script], { env: { ...good, [key]: status } }).status,
@@ -231,10 +229,58 @@ test('selected verification or artifact failure blocks the stable gate for every
 		}
 	assert.equal(
 		spawnSync('bash', ['-eu', '-c', script], {
-			env: { ...good, CANDIDATE: 'true', PREPARE_RESULT: 'skipped' }
+			env: { ...good, BUILDS: '[]', PREPARE_RESULT: 'skipped' }
 		}).status,
 		0
 	);
+});
+
+test('PR planning rejects a conflict-free stale branch until its developer updates it', async (t) => {
+	const workflow = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/pipeline.yml'), 'utf8')
+	);
+	const body = workflow.jobs.plan.steps.find((step) => step.id === 'plan').run;
+	const script = body.slice(0, body.indexOf('cat "$RUNNER_TEMP/plan.json"'));
+	for (const updated of [false, true]) {
+		const root = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-pr-base-'));
+		t.after(() => rm(root, { recursive: true, force: true }));
+		const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+		git('init', '-q', '-b', 'main');
+		git('config', 'user.name', 'Fixture');
+		git('config', 'user.email', 'fixture@example.invalid');
+		await mkdir(path.join(root, 'scripts'));
+		await writeFile(
+			path.join(root, 'scripts/pipeline'),
+			'#!/bin/sh\ntouch "$RUNNER_TEMP/planned"\n',
+			{
+				mode: 0o755
+			}
+		);
+		git('add', '.');
+		git('commit', '-qm', 'base');
+		git('checkout', '-qb', 'feature');
+		await writeFile(path.join(root, 'feature'), 'feature');
+		git('add', '.');
+		git('commit', '-qm', 'feature');
+		git('checkout', '-q', 'main');
+		await writeFile(path.join(root, 'main'), 'advance');
+		git('add', '.');
+		git('commit', '-qm', 'advance main');
+		if (updated) {
+			git('checkout', '-q', 'feature');
+			git('merge', '--no-ff', '-qm', 'developer updates branch', 'main');
+			git('checkout', '-q', 'main');
+		}
+		git('merge', '--no-ff', '-qm', 'GitHub merge candidate', 'feature');
+		const result = spawnSync('bash', ['-c', script], {
+			cwd: root,
+			env: { ...process.env, EVENT: 'pull_request', PR_NUMBER: '7', RUNNER_TEMP: root },
+			encoding: 'utf8'
+		});
+		assert.equal(result.status, updated ? 0 : 1, result.stderr);
+		if (updated) await access(path.join(root, 'planned'));
+		else await assert.rejects(access(path.join(root, 'planned')));
+	}
 });
 
 test('all Wrangler actions use Node 24 runtime release and the tracked CLI lock', async () => {

@@ -46,7 +46,7 @@ export function classify(files) {
     }
     if (file === 'compose.local.yml' || file.startsWith('scripts/tests/') || file.startsWith('scripts/test_')) {
       verify.add('deployment');
-      if (file.includes('backend_school') || file.includes('school_database_suite')) verify.add('backend-school');
+      if (file.includes('backend_school') || file.includes('school_database_suite') || file.includes('neon_compatibility')) verify.add('backend-school');
       if (file.includes('backend_admin')) verify.add('backend-admin');
       continue;
     }
