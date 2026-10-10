@@ -673,7 +673,7 @@ test('school reader with assigned write can only open assigned unsaved rounds', 
 	await expect(page.getByRole('button', { name: /08:00.*รอบครูคนอื่น/ })).toBeDisabled();
 	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
 	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
-	expect(api.writes.filter((write) => write.path.endsWith('/sessions'))).toHaveLength(1);
+	expect(api.writes.filter((write) => write.path.endsWith('/sessions/open'))).toHaveLength(1);
 });
 test('changing the workspace date also updates module destinations', async ({ page }) => {
 	await mockAttendance(page);
@@ -687,7 +687,7 @@ test('changing the workspace date also updates module destinations', async ({ pa
 	);
 	await page.goto(path());
 	await page.getByRole('button', { name: 'วันที่', exact: true }).click();
-	await page.getByRole('button', { name: /October 8, 2026|8 ตุลาคม 2569/ }).click();
+	await page.getByRole('button', { name: 'วันพฤหัสบดีที่ 8 ตุลาคม 2569', exact: true }).click();
 	await expect(
 		page
 			.getByRole('navigation', { name: 'เมนูเช็คชื่อ' })

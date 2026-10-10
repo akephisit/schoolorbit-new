@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { UserCheck, CalendarDays, ChartColumn, Camera } from '@lucide/svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -18,7 +19,7 @@
 		current: 'workspace' | 'settings' | 'report' | 'faces';
 	} = $props();
 	function destination(suffix = '') {
-		const query = new URLSearchParams({ academicTermId: term, date });
+		const query = new SvelteURLSearchParams({ academicTermId: term, date });
 		const year = page.url.searchParams.get('academicYearId');
 		if (year) query.set('academicYearId', year);
 		return `/staff/attendance${suffix}?${query}`;
