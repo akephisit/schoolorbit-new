@@ -1,6 +1,11 @@
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
+
+const MAX_RECONCILIATION_BATCHES: usize = 100;
+const RECONCILIATION_BUDGET: Duration = Duration::from_secs(120);
+const EXPIRY_BATCH_SIZE: i64 = 50;
 use uuid::Uuid;
 
 use school_certificates::services::purge_service;
@@ -28,23 +33,35 @@ impl FileCleaner {
     /// explicit expiry and durable File Platform operations; it never guesses
     /// liveness from provider paths or hard-deletes immutable metadata.
     pub async fn reconcile_file_operations(&self) {
-        self.request_expired_file_deletions().await;
-        match reconcile_due_operations(&self.file_platform, &self.repository, &self.worker_id).await
-        {
-            Ok(summary) => {
-                info!(
-                    leased = summary.leased,
-                    succeeded = summary.succeeded,
-                    retried = summary.retried,
-                    terminal = summary.terminal,
-                    "File Platform reconciliation batch completed"
-                );
+        let started = Instant::now();
+        for _ in 0..MAX_RECONCILIATION_BATCHES {
+            let expired = self.request_expired_file_deletions().await;
+            let mut leased = 0;
+            match reconcile_due_operations(&self.file_platform, &self.repository, &self.worker_id)
+                .await
+            {
+                Ok(summary) => {
+                    leased = summary.leased;
+                    info!(
+                        leased = summary.leased,
+                        succeeded = summary.succeeded,
+                        retried = summary.retried,
+                        terminal = summary.terminal,
+                        "File Platform reconciliation batch completed"
+                    );
+                }
+                Err(error) => {
+                    warn!(
+                        error_code = error.log_safe_code(),
+                        "File Platform reconciliation batch could not be leased"
+                    );
+                }
             }
-            Err(error) => {
-                warn!(
-                    error_code = error.log_safe_code(),
-                    "File Platform reconciliation batch could not be leased"
-                );
+
+            if started.elapsed() >= RECONCILIATION_BUDGET
+                || (expired < EXPIRY_BATCH_SIZE as usize && leased == 0)
+            {
+                break;
             }
         }
 
@@ -64,7 +81,7 @@ impl FileCleaner {
         }
     }
 
-    async fn request_expired_file_deletions(&self) {
+    async fn request_expired_file_deletions(&self) -> usize {
         let file_ids = match sqlx::query_scalar::<_, Uuid>(
             r#"
 SELECT id
@@ -72,21 +89,23 @@ FROM files
 WHERE retention_class = 'temporary'
   AND expires_at <= now()
   AND deleted_at IS NULL
-  AND lifecycle_status <> 'deleted'
+  AND lifecycle_status NOT IN ('deleted', 'delete_requested')
 ORDER BY expires_at, id
-LIMIT 50
+LIMIT $1
 "#,
         )
+        .bind(EXPIRY_BATCH_SIZE)
         .fetch_all(self.repository.pool())
         .await
         {
             Ok(file_ids) => file_ids,
             Err(_) => {
                 warn!("Expired File Platform rows could not be listed");
-                return;
+                return 0;
             }
         };
 
+        let selected = file_ids.len();
         for file_id in file_ids {
             match self
                 .file_platform
@@ -109,5 +128,6 @@ LIMIT 50
                 }
             }
         }
+        selected
     }
 }

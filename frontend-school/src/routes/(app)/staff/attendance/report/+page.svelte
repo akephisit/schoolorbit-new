@@ -4,13 +4,14 @@
 	import { attendanceReport } from '#lib/api/attendance.js';
 	import AttendanceRouteRegion from '#lib/features/attendance/AttendanceRouteRegion.svelte';
 	import AttendanceReportPanel from '#lib/features/attendance/AttendanceReportPanel.svelte';
+	import { attendanceIdentity } from '#lib/features/attendance/attendance-access.js';
 	import type { PageProps } from './$types';
 	let { data }: PageProps = $props();
 </script>
 
 <PageShell title={data.title}>
 	{#if !data.term}<PageState title="เลือกภาคเรียน" description="กรุณาเลือกภาคเรียนจากแถบด้านบน" />
-	{:else if data.initial}{#key data.term + data.date}<AttendanceRouteRegion
+	{:else if data.initial}{#key $attendanceIdentity + data.term + data.date}<AttendanceRouteRegion
 				initial={data.initial}
 				retry={(signal) => attendanceReport(data.term!, undefined, { signal })}
 				variant="table"

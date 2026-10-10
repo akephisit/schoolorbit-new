@@ -36,6 +36,261 @@ const configuration = {
 	faceMargin: 0.1,
 	activityCountsAsPresent: true
 };
+
+for (const invalidDate of ['bad', '2026-02-30'])
+	test(`invalid attendance date ${invalidDate} is repaired without crashing settings`, async ({
+		page
+	}) => {
+		await mockAttendance(page);
+		await page.goto(path('/settings').replace(`date=${date}`, `date=${invalidDate}`));
+		await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
+		await expect(page.getByLabel('เดือน', { exact: true })).toHaveValue('2026-10');
+	});
+
+test('calendar range saves wait for an in-flight month read', async ({ page }) => {
+	const api = await mockAttendance(page);
+	await page.goto(path('/settings'));
+	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route(
+		(url) => url.pathname === '/api/attendance/days',
+		async (route) => {
+			await held;
+			await reply(route, []);
+		}
+	);
+	await page.getByLabel('เดือน', { exact: true }).fill('2026-11');
+	await expect(page.getByRole('button', { name: 'นับช่วงนี้', exact: true })).toBeDisabled();
+	await expect(
+		page.getByRole('button', { name: 'วันหยุด / ไม่นับช่วงนี้', exact: true })
+	).toBeDisabled();
+	expect(api.writes).toHaveLength(0);
+	release();
+	await expect(page.getByRole('button', { name: 'นับช่วงนี้', exact: true })).toBeEnabled();
+});
+
+test('parent keeps child context and retries only a failed report', async ({ page }) => {
+	await mockAttendance(page, {
+		userType: 'parent',
+		permissions: ['attendance.read.own']
+	});
+	await page.route('**/api/parent/profile?**', (route) =>
+		reply(route, { children: [{ id: student, first_name: 'นักเรียน', last_name: 'คนแรก' }] })
+	);
+	let contextReads = 0;
+	page.on('request', (request) => {
+		if (
+			/\/api\/(parent\/(profile|academic-context)|academic\/context)/.test(
+				new URL(request.url()).pathname
+			)
+		)
+			contextReads++;
+	});
+	let failures = 1;
+	await page.route(
+		(url) => url.pathname === '/api/attendance/report',
+		async (route) => {
+			if (failures-- > 0) return reply(route, 'รายงานไม่พร้อม', 500);
+			await route.fallback();
+		}
+	);
+	await page.goto(`/parent/attendance?academicTermId=${term}`);
+	await expect(page.getByRole('button', { name: 'นักเรียน', exact: true })).toBeVisible();
+	await expect(page.getByText('รายงานไม่พร้อม', { exact: true })).toBeVisible();
+	const before = contextReads;
+	await page.getByRole('button', { name: 'ลองโหลดข้อมูลใหม่', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ของนักเรียน', exact: true })).toBeVisible();
+	expect(contextReads).toBe(before);
+});
+
+for (const role of ['parent', 'student'])
+	test(`${role} discards an old identity context failure while replacement context is pending`, async ({
+		page
+	}) => {
+		await mockAttendance(page, {
+			userType: role,
+			permissions: ['attendance.read.own', 'attendance.read.school']
+		});
+		await page.route('**/api/parent/profile?**', (route) =>
+			reply(route, { children: [{ id: student, first_name: 'นักเรียน', last_name: 'คนแรก' }] })
+		);
+		let count = 0,
+			releaseOld!: () => void,
+			releaseNew!: () => void;
+		const old = new Promise<void>((resolve) => (releaseOld = resolve));
+		const next = new Promise<void>((resolve) => (releaseNew = resolve));
+		const endpoint =
+			role === 'parent'
+				? '/api/parent/academic-context/options'
+				: '/api/me/academic-context/options';
+		await page.route(
+			(url) => url.pathname === endpoint,
+			async (route) => {
+				if (++count === 1) {
+					await old;
+					return reply(route, 'ข้อมูลบัญชีเดิมไม่พร้อม', 500);
+				}
+				await next;
+				await route.fallback();
+			}
+		);
+		await page.goto(`/${role}/attendance?academicTermId=${term}`);
+		await expect.poll(() => count).toBe(1);
+		await page.evaluate(async () => {
+			const modulePath = '/src/lib/stores/permissions.ts';
+			const { setPermissions } = await import(modulePath);
+			setPermissions(['attendance.read.own']);
+		});
+		await expect.poll(() => count).toBe(2);
+		const oldResponse = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === endpoint
+		);
+		releaseOld();
+		await (await oldResponse).finished();
+		await expect(page.getByText('ข้อมูลบัญชีเดิมไม่พร้อม', { exact: true })).toHaveCount(0);
+		releaseNew();
+		await expect(page.getByRole('button', { name: 'ของนักเรียน', exact: true })).toBeVisible();
+	});
+
+test('permission-scope changes discard the old attendance report and reload', async ({ page }) => {
+	await mockAttendance(page, {
+		permissions: ['attendance.read.school', 'academic_context.read.school']
+	});
+	let count = 0,
+		release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route(
+		(url) => url.pathname === '/api/attendance/report',
+		async (route) => {
+			if (++count === 1) return route.fallback();
+			await held;
+			await reply(route, { archived: false, activityCountsAsPresent: true, summaries: [] });
+		}
+	);
+	await page.goto(path('/report'));
+	await expect(page.getByRole('cell', { name: 'นักเรียนคนที่สอง', exact: true })).toBeVisible();
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/stores/permissions.ts';
+		const { setPermissions } = await import(modulePath);
+		setPermissions(['attendance.read.assigned', 'academic_context.read.school']);
+	});
+	await expect.poll(() => count).toBe(2);
+	await expect(page.getByRole('cell', { name: 'นักเรียนคนที่สอง', exact: true })).toHaveCount(0);
+	release();
+	await expect(page.getByRole('table')).toBeVisible();
+	await expect(page.getByText('ยังไม่มีผลที่นับในสรุป', { exact: true })).toBeVisible();
+});
+test('a delayed report from the previous permission scope cannot repopulate the page', async ({
+	page
+}) => {
+	await mockAttendance(page, {
+		permissions: ['attendance.read.school', 'academic_context.read.school']
+	});
+	let reads = 0,
+		release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route(
+		(url) => url.pathname === '/api/attendance/report',
+		async (route) => {
+			if (++reads === 1) {
+				await held;
+				return route.fallback();
+			}
+			await reply(route, { archived: false, activityCountsAsPresent: true, summaries: [] });
+		}
+	);
+	await page.goto(path('/report'));
+	await expect.poll(() => reads).toBe(1);
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/stores/permissions.ts';
+		const { setPermissions } = await import(modulePath);
+		setPermissions(['attendance.read.assigned', 'academic_context.read.school']);
+	});
+	await expect(page.getByText('ยังไม่มีผลที่นับในสรุป', { exact: true })).toBeVisible();
+	const oldResponse = page.waitForResponse(
+		(response) => new URL(response.url()).pathname === '/api/attendance/report'
+	);
+	release();
+	await (await oldResponse).finished();
+	await expect
+		.poll(() => page.getByRole('cell', { name: 'นักเรียนคนที่สอง', exact: true }).count())
+		.toBe(0);
+	await expect(page.getByText('ยังไม่มีผลที่นับในสรุป', { exact: true })).toBeVisible();
+});
+
+test('revoking scan permission closes the running webcam while enrollment remains allowed', async ({
+	page
+}) => {
+	const api = await mockAttendance(page, {
+		permissions: [
+			'attendance.verify.assigned',
+			'attendance.enroll.assigned',
+			'academic_context.read.school'
+		]
+	});
+	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
+		route.fulfill({
+			contentType: 'application/javascript',
+			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(stream){if(stream) document.body.dataset.attendanceStopped='yes'};export async function readFace(){return null};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw new Error('unexpected capture')};`
+		})
+	);
+	await page.goto(path('/faces'));
+	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
+	await page.getByRole('button', { name: 'เครื่องสแกน', exact: true }).click();
+	await page.getByRole('option', { name: 'เว็บแคมหน้าโรงเรียน', exact: true }).click();
+	await page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true }).click();
+	await expect(page.getByRole('status').filter({ hasText: 'มองตรงเข้ากล้องทีละคน' })).toBeVisible();
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/stores/permissions.ts';
+		const { setPermissions } = await import(modulePath);
+		setPermissions(['attendance.enroll.assigned', 'academic_context.read.school']);
+	});
+	await expect(page.locator('body')).toHaveAttribute('data-attendance-stopped', 'yes');
+	await expect(page.getByRole('button', { name: 'สแกนเข้าโรงเรียน', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'เก็บตัวอย่าง (0/3)', exact: true })).toBeVisible();
+	expect(
+		api.writes.filter((write) => write.path.endsWith('/scans') || write.path === '/api/files')
+	).toHaveLength(0);
+});
+
+test('webcam discards a pending capture across Bangkok midnight and reopens today', async ({
+	page
+}) => {
+	const api = await mockAttendance(page);
+	await page.addInitScript(() => {
+		Math.random = () => 0.1;
+	});
+	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
+		route.fulfill({
+			contentType: 'application/javascript',
+			body: `let frame=0, release;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){document.body.dataset.capturePending='yes';await new Promise(resolve=>release=resolve);return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};export function releaseEvidence(){release()};`
+		})
+	);
+	await page.goto(path('/faces'));
+	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
+	await page.getByRole('button', { name: 'เครื่องสแกน', exact: true }).click();
+	await page.getByRole('option', { name: 'เว็บแคมหน้าโรงเรียน', exact: true }).click();
+	await page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true }).click();
+	await expect(page.locator('body')).toHaveAttribute('data-capture-pending', 'yes');
+	await page.clock.setFixedTime(new Date('2026-10-09T17:01:00Z'));
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/features/attendance/face-camera.ts';
+		const { releaseEvidence } = await import(modulePath);
+		releaseEvidence();
+	});
+	await expect(page.getByRole('status').filter({ hasText: 'เปลี่ยนวันแล้ว' })).toBeVisible();
+	expect(
+		api.writes.filter((write) => write.path.endsWith('/scans') || write.path === '/api/files')
+	).toHaveLength(0);
+	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
+	await page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true }).click();
+	await expect
+		.poll(() => api.writes.filter((write) => write.path.endsWith('/kiosk/open')).at(-1)?.data)
+		.toMatchObject({ date: '2026-10-10' });
+	await page.getByRole('button', { name: 'หยุดและปิดกล้อง', exact: true }).click();
+});
+
 const settings: AttendanceSettings = {
 	academicTermId: term,
 	configuration,

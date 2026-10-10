@@ -404,29 +404,36 @@ pub async fn require_enrollment(
         ))
     }
 }
-pub async fn require_student_read(
+async fn own_student_read(
     pool: &PgPool,
     actor: &ActorContext,
     student: Uuid,
-) -> Result<(), AppError> {
-    if policy::read_school(actor) {
-        return Ok(());
+) -> Result<bool, AppError> {
+    if !actor.has_permission(codes::ATTENDANCE_READ_OWN) {
+        return Ok(false);
     }
-    if actor.has_permission(codes::ATTENDANCE_READ_OWN) {
-        if actor.user_id == student {
-            return Ok(());
-        }
-        let linked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM student_parents p JOIN users u ON u.id=p.parent_user_id AND u.status='active' WHERE p.parent_user_id=$1 AND p.student_user_id=$2)").bind(actor.user_id).bind(student).fetch_one(pool).await?;
-        if linked {
-            return Ok(());
-        }
+    if actor.user_id == student {
+        return Ok(true);
+    }
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM student_parents p JOIN users u ON u.id=p.parent_user_id AND u.status='active' WHERE p.parent_user_id=$1 AND p.student_user_id=$2)").bind(actor.user_id).bind(student).fetch_one(pool).await?)
+}
+async fn student_read_scope(
+    pool: &PgPool,
+    actor: &ActorContext,
+    student: Uuid,
+) -> Result<bool, AppError> {
+    if policy::read_school(actor) {
+        return Ok(true);
+    }
+    if own_student_read(pool, actor, student).await? {
+        return Ok(true);
     }
     if actor.has_any_permission(&[
         codes::ATTENDANCE_READ_ASSIGNED,
         codes::ATTENDANCE_UPDATE_ASSIGNED,
     ]) {
         let assigned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_sessions s JOIN attendance_records r ON r.session_id=s.id WHERE r.student_id=$1 AND $2=ANY(s.teacher_ids))").bind(student).bind(actor.user_id).fetch_one(pool).await?;
-        if assigned||sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM attendance_term_teacher_summaries WHERE student_id=$1 AND teacher_id=$2)").bind(student).bind(actor.user_id).fetch_one(pool).await?{return Ok(());}
+        if assigned||sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM attendance_term_teacher_summaries WHERE student_id=$1 AND teacher_id=$2)").bind(student).bind(actor.user_id).fetch_one(pool).await?{return Ok(false);}
     }
     Err(AppError::Forbidden("ไม่มีสิทธิ์ดูการเช็คชื่อนักเรียนคนนี้".into()))
 }
@@ -507,11 +514,11 @@ pub async fn history(
     actor: &ActorContext,
     q: AttendanceHistoryQuery,
 ) -> Result<Vec<AttendanceHistoryItem>, AppError> {
-    require_student_read(pool, actor, q.student_id).await?;
+    let full = student_read_scope(pool, actor, q.student_id).await?;
     if q.end < q.start || (q.end - q.start).num_days() > 31 {
         return Err(invalid("ดูรายละเอียดครั้งละไม่เกิน 31 วัน"));
     }
-    Ok(sqlx::query_as("SELECT s.id session_id,s.date,s.kind,s.title,r.result,r.note,r.observed_at,e.evidence_file_id,s.cancelled FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id LEFT JOIN attendance_scan_events e ON e.session_id=s.id AND e.student_id=r.student_id WHERE s.academic_term_id=$1 AND r.student_id=$2 AND s.date BETWEEN $3 AND $4 AND ($5 OR $6=ANY(s.teacher_ids)) ORDER BY s.date DESC,s.start_time,s.id LIMIT 1000").bind(q.academic_term_id).bind(q.student_id).bind(q.start).bind(q.end).bind(policy::read_school(actor)||actor.has_permission(codes::ATTENDANCE_READ_OWN)).bind(actor.user_id).fetch_all(pool).await?)
+    Ok(sqlx::query_as("SELECT s.id session_id,s.date,s.kind,s.title,r.result,r.note,r.observed_at,e.evidence_file_id,s.cancelled FROM attendance_records r JOIN attendance_sessions s ON s.id=r.session_id LEFT JOIN attendance_scan_events e ON e.session_id=s.id AND e.student_id=r.student_id WHERE s.academic_term_id=$1 AND r.student_id=$2 AND s.date BETWEEN $3 AND $4 AND ($5 OR $6=ANY(s.teacher_ids)) ORDER BY s.date DESC,s.start_time,s.id LIMIT 1000").bind(q.academic_term_id).bind(q.student_id).bind(q.start).bind(q.end).bind(full).bind(actor.user_id).fetch_all(pool).await?)
 }
 pub async fn scan(
     _state: &crate::AppState,
@@ -605,8 +612,8 @@ pub async fn require_evidence_file(
         if policy::require_session(actor, &s, false).is_ok() {
             return Ok(());
         }
-        if actor.has_permission(codes::ATTENDANCE_READ_OWN) {
-            require_student_read(pool, actor, student).await
+        if own_student_read(pool, actor, student).await? {
+            Ok(())
         } else {
             Err(AppError::Forbidden("ไม่มีสิทธิ์ดูภาพหลักฐานนี้".into()))
         }
@@ -653,10 +660,7 @@ pub async fn report(
 ) -> Result<AttendanceReport, AppError> {
     let mut full = policy::read_school(actor);
     if let Some(student) = q.student_id {
-        require_student_read(pool, actor, student).await?;
-        if actor.has_permission(codes::ATTENDANCE_READ_OWN) {
-            full|=actor.user_id==student||sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM student_parents WHERE parent_user_id=$1 AND student_user_id=$2)").bind(actor.user_id).bind(student).fetch_one(pool).await?;
-        }
+        full = student_read_scope(pool, actor, student).await?;
     } else {
         actor.require_any_permission(&[
             codes::ATTENDANCE_READ_SCHOOL,

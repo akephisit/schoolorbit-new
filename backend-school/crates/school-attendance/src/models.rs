@@ -298,7 +298,7 @@ pub struct SaveAttendanceDevice {
     pub enabled: bool,
     pub operator_id: Uuid,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FaceDescriptor {
     pub values: Vec<f32>,

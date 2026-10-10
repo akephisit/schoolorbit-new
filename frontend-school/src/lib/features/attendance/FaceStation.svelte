@@ -14,6 +14,7 @@
 		enrollAttendanceFace,
 		removeAttendanceFace,
 		openAttendanceKiosk,
+		currentAttendanceDate,
 		scanAttendance,
 		resultLabels,
 		type AttendanceOptions,
@@ -29,7 +30,7 @@
 		matchFace,
 		evidence,
 		distance
-	} from './face-camera';
+	} from './face-camera.js';
 	let { term, date, initial }: { term: string; date: string; initial: AttendanceOptions } =
 		$props();
 	let video: HTMLVideoElement,
@@ -42,6 +43,7 @@
 		running = $state(false),
 		message = $state('เปิดเว็บแคมเพื่อเริ่มต้น'),
 		gallery = $state<AttendanceKioskWorkspace | null>(null),
+		scanDate = $state(untrack(() => date)),
 		samples = $state<number[][]>([]),
 		mode = $state<'scan' | 'enroll'>(
 			untrack(() => (get(can).has(PERMISSIONS.ATTENDANCE_VERIFY_ASSIGNED) ? 'scan' : 'enroll'))
@@ -161,10 +163,16 @@
 		}
 	}
 	async function beginScanning() {
+		if (!scanAllowed || !active || busy || !device) return;
+		scanDate = currentAttendanceDate();
 		const token = ++generation;
 		busy = true;
 		try {
-			const opened = await openAttendanceKiosk({ academicTermId: term, date, deviceId: device });
+			const opened = await openAttendanceKiosk({
+				academicTermId: term,
+				date: scanDate,
+				deviceId: device
+			});
 			if (token !== generation || !active) return;
 			gallery = opened;
 			if (!gallery.faces.length) throw new Error('ยังไม่มีใบหน้าที่ลงทะเบียน');
@@ -183,8 +191,14 @@
 			if (token === generation) busy = false;
 		}
 	}
+	function currentScanDay() {
+		if (scanDate === currentAttendanceDate()) return true;
+		stop();
+		message = 'เปลี่ยนวันแล้ว กรุณาเปิดกล้องและเริ่มเช็คชื่อวันนี้ใหม่';
+		return false;
+	}
 	async function commit() {
-		if (!pending) return;
+		if (!pending || !scanAllowed || !currentScanDay()) return;
 		const queued = pending;
 		committing = true;
 		let result;
@@ -205,6 +219,7 @@
 		lastStudent = '';
 	}
 	async function retry() {
+		if (!currentScanDay()) return;
 		busy = true;
 		try {
 			await commit();
@@ -219,11 +234,11 @@
 		}
 	}
 	async function tick(token: number) {
-		if (token !== generation || !running || !gallery) return;
+		if (token !== generation || !running || !gallery || !scanAllowed || !currentScanDay()) return;
 		try {
 			if (pending) return;
 			const face = await readFace(video);
-			if (token !== generation) return;
+			if (token !== generation || !currentScanDay()) return;
 			if (!face) {
 				sampleTarget = 'center';
 				lastStudent = '';
@@ -248,9 +263,9 @@
 						if (!s || !session) throw new Error('นักเรียนยังไม่มีห้องประจำชั้นในวันนี้');
 						const capturedAt = new Date().toISOString();
 						const image = await evidence(video);
-						if (token !== generation) return;
+						if (token !== generation || !currentScanDay()) return;
 						const file = await uploadFile(image, 'attendance_evidence', id);
-						if (token !== generation) {
+						if (token !== generation || !currentScanDay()) {
 							await deleteFile(file.id, id);
 							return;
 						}
@@ -355,7 +370,7 @@
 				disabled={!active || !device || busy || running || !scanAllowed}>เริ่มเช็คชื่อวันนี้</Button
 			>
 			<p class="text-sm text-muted-foreground">
-				ทำงานทีละคน เก็บภาพเฉพาะรายการที่ส่งบันทึก แจ้งนักเรียนและผู้ปกครองทุกคนที่เชื่อมกับนักเรียน
+				วันที่เช็คชื่อ: {scanDate} · ทำงานทีละคน เก็บภาพเฉพาะรายการที่ส่งบันทึก แจ้งนักเรียนและผู้ปกครองทุกคนที่เชื่อมกับนักเรียน
 				เมื่อหยุดกล้อง ข้อมูลใบหน้าในหน้านี้จะถูกล้าง
 			</p>{:else}<label class="block"
 				>นักเรียน<AttendanceSelect

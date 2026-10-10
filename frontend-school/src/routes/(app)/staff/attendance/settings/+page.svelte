@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import AttendanceSettingsRegions from '#lib/features/attendance/AttendanceSettingsRegions.svelte';
+	import { attendanceIdentity } from '#lib/features/attendance/attendance-access.js';
 	import type { PageProps } from './$types';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -12,7 +13,7 @@
 		>กลับหน้าเช็คชื่อ</Button
 	>
 	{#if !data.term}<PageState title="เลือกภาคเรียน" description="กรุณาเลือกภาคเรียนจากแถบด้านบน" />
-	{:else if data.settings && data.options}{#key data.term + data.date}<AttendanceSettingsRegions
+	{:else if data.settings && data.options}{#key $attendanceIdentity + data.term + data.date}<AttendanceSettingsRegions
 				term={data.term}
 				date={data.date}
 				initialSettings={data.settings}

@@ -218,16 +218,24 @@ pub async fn scan_with_gallery(
     if match_face(faces, &p.descriptor, &configuration)? != p.student_id {
         return Err(invalid("ผลจับคู่ไม่ตรงกับนักเรียนที่ส่งมา"));
     }
-    let revision = faces
+    let enrolled = faces
         .iter()
         .find(|f| f.student_id == p.student_id)
-        .map(|f| f.row_version)
         .ok_or_else(|| invalid("ไม่พบใบหน้า"))?;
     let mut tx = pool.begin().await?;
     // Serialize acceptance with enrollment replacement/withdrawal, including cached galleries.
-    let enrollment_current: Option<Uuid> = sqlx::query_scalar("SELECT student_id FROM attendance_face_enrollments WHERE student_id=$1 AND model=$2 AND row_version=$3 FOR SHARE")
-        .bind(p.student_id).bind(FACE_MODEL).bind(revision).fetch_optional(&mut *tx).await?;
-    if enrollment_current.is_none() {
+    let enrollment_current: Option<String> = sqlx::query_scalar("SELECT encrypted_descriptors FROM attendance_face_enrollments WHERE student_id=$1 AND model=$2 AND row_version=$3 FOR SHARE")
+        .bind(p.student_id).bind(FACE_MODEL).bind(enrolled.row_version).fetch_optional(&mut *tx).await?;
+    let current_descriptors = enrollment_current
+        .map(|encrypted| {
+            let plain = school_crypto::decrypt(&encrypted)
+                .map_err(|_| AppError::ServiceUnavailable("อ่านข้อมูลใบหน้าไม่ได้".into()))?;
+            serde_json::from_str::<Vec<FaceDescriptor>>(&plain)
+                .map_err(|_| invalid("ข้อมูลใบหน้าเสียหาย"))
+        })
+        .transpose()?;
+    // A withdrawn/recreated enrollment can reuse a row version; compare the authoritative template too.
+    if current_descriptors.as_ref() != Some(&enrolled.descriptors) {
         return Err(AppError::Conflict(
             "ใบหน้าลงทะเบียนเปลี่ยนแล้ว กรุณาหยุดและเปิดสแกนใหม่".into(),
         ));
@@ -320,9 +328,10 @@ pub async fn scan_with_gallery(
         teacher_conflict: conflict,
     })
 }
+pub const EVIDENCE_EXPIRY_BATCH: i64 = 100;
 pub async fn expire_evidence(pool: &PgPool) -> Result<i64, AppError> {
     let mut tx = pool.begin().await?;
-    let files:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM files WHERE purpose_code='attendance_evidence' AND expires_at<=now() AND lifecycle_status='ready' ORDER BY expires_at,id LIMIT 100 FOR UPDATE SKIP LOCKED").fetch_all(&mut *tx).await?;
+    let files:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM files WHERE purpose_code='attendance_evidence' AND expires_at<=now() AND lifecycle_status='ready' ORDER BY expires_at,id LIMIT $1 FOR UPDATE SKIP LOCKED").bind(EVIDENCE_EXPIRY_BATCH).fetch_all(&mut *tx).await?;
     let repository = SqlFileRepository::new(pool.clone());
     for id in &files {
         repository
