@@ -144,12 +144,7 @@ jobs:
             echo 'Each timed build links once. Profile/graph priming is reported separately.'
             echo 'Wrapper disabled for Cargo invalidation; builder cache evidence is separate.'
             echo 'Two CPU quota and two Cargo jobs throughout. Results are not deployment or API latency.'
-            for result in "$RUNNER_TEMP"/build-benchmark/*/*/result.json; do
-              echo "#### ${result#"$RUNNER_TEMP/build-benchmark/"}"
-              echo '```json'
-              cat "$result"
-              echo '```'
-            done
+            python3 scripts/render_backend_benchmark_summary.py "$RUNNER_TEMP/build-benchmark"
           } >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v6
         if: always()

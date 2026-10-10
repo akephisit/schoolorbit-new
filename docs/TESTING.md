@@ -209,6 +209,21 @@ sequentially on one runner before attributing a change to a flag: different host
 can produce substantially different timings. A runtime performance claim requires a separate
 representative load test; exporter equality establishes the API contract only.
 
+To compare the bounded application-owned schema registry against its preceding source, select
+`options={"backend":"backend-school","samples":"2","variants":"default,api-batches","baseline":"<exact-40-character-SHA>"}`.
+The comparison refuses any other backend source, manifest, lockfile or Dockerfile difference.
+It restores the baseline production builder, then replaces only `src/api_contract.rs` in the same
+container. Flag priming is separate, both cases use unchanged release settings, and every export
+must equal the baseline document. This paired mode measures application-source changes; the normal
+benchmark mode retains the Academic HTTP and attendance invalidation cases.
+
+Explicit schema registration uses bounded constructors in `src/api_contract.rs` to limit one
+generated function's optimiser and stack workload. Keep each group near 64 registrations and
+preserve their order when adding types. Later explicit declarations override earlier explicit
+declarations; handler-derived schemas retain priority over the combined explicit registry.
+The precedence regression and full generated-contract check protect both rules. The application
+continues owning the entire OpenAPI composition, and the exporter runs without runtime credentials.
+
 The Operations `http-benchmark` task calls [Backend HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml) and
 compares a selected pre-extraction commit with the workflow's candidate commit. Both use
 the production Docker builder, two CPU quota, the same release profile, and one persistent

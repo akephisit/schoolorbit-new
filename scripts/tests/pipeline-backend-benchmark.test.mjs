@@ -44,6 +44,23 @@ test('summary excludes flag priming, counts the final link once and ranks binary
   assert.equal(value.samples[0].link_seconds, 0.25);
   assert.equal(value.samples[0].units_by_duration[0].target, 'bin');
 });
+test('Actions summary stays small even when full evidence contains many long compiler unit names', t => {
+  const f = fixture(t), result = f.run();
+  assert.equal(result.status, 0, result.stderr);
+  const data = JSON.parse(result.stdout);
+  for (const sample of data.samples) sample.units_by_duration = Array.from({ length: 5000 }, () => ({ name: 'detailed-generic-symbol'.repeat(100), duration_seconds: 1 }));
+  writeFileSync(path.join(f.folder, 'result.json'), JSON.stringify(data));
+  const other = path.join(f.root, 'default/academic');
+  mkdirSync(other, { recursive: true });
+  writeFileSync(path.join(other, 'result.json'), JSON.stringify(data));
+  const report = spawnSync('python3', [path.join(repo, 'scripts/render_backend_benchmark_summary.py'), f.root], { encoding: 'utf8' });
+  assert.equal(report.status, 0, report.stderr);
+  assert.ok(Buffer.byteLength(report.stdout) < 4096);
+  assert.match(report.stdout, /default\/application/);
+  assert.match(report.stdout, /\| default\/academic [^\n]*\n\| default\/application /);
+  assert.doesNotMatch(report.stdout, /detailed-generic-symbol/);
+  assert.equal(JSON.parse(readFileSync(path.join(f.folder, 'result.json'))).samples[0].units_by_duration.length, 5000);
+});
 for (const [description, file, content] of [
   ['duplicate link timings', 'link-nanoseconds-1.txt', '1\n2\n'],
   ['unchanged-source sample', 'compile-1.log', 'Finished release'],
