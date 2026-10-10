@@ -338,7 +338,7 @@ pub struct AttendanceScanOutcome {
     pub duplicate: bool,
     pub teacher_conflict: bool,
 }
-#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceSummary {
     pub academic_term_id: Uuid,
@@ -358,6 +358,9 @@ pub struct AttendanceSummary {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceReport {
+    pub page: i64,
+    pub page_size: i64,
+    pub total: i64,
     pub summaries: Vec<AttendanceSummary>,
     pub archived: bool,
     pub activity_counts_as_present: bool,
@@ -418,12 +421,39 @@ pub struct AttendanceKioskWorkspace {
     pub students: Vec<AttendanceStudentOption>,
     pub configuration: AttendanceConfiguration,
 }
-#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[into_params(parameter_in=Query)]
 pub struct AttendanceReportQuery {
     pub academic_term_id: Uuid,
     pub student_id: Option<Uuid>,
+    #[serde(default = "report_first_page")]
+    pub page: i64,
+    #[serde(default = "report_page_size")]
+    pub page_size: i64,
+    #[serde(default)]
+    pub search: String,
+    pub category: Option<String>,
+}
+fn report_first_page() -> i64 {
+    1
+}
+fn report_page_size() -> i64 {
+    50
+}
+impl AttendanceReportQuery {
+    pub fn validate(&self) -> Result<(), school_errors::AppError> {
+        if !(1..=1_000_000).contains(&self.page)
+            || !(1..=100).contains(&self.page_size)
+            || self.search.chars().count() > 120
+            || self.category.as_deref().is_some_and(|category| {
+                !["school", "flag", "lesson", "special"].contains(&category)
+            })
+        {
+            return Err(crate::rules::invalid("หน้ารายงานหรือตัวกรองไม่ถูกต้อง"));
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

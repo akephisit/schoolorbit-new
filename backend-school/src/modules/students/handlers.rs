@@ -133,7 +133,8 @@ pub async fn list_students(
         (status = 201, description = "Student created", body = ApiResponse<school_students::models::CreateStudentResponse>),
         (status = 400, description = "Invalid or duplicate student data", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Student creation permission denied", body = ApiErrorResponse)
+        (status = 403, description = "Student creation permission denied", body = ApiErrorResponse),
+        (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse)
     )
 )]
 pub async fn create_student(
@@ -146,7 +147,14 @@ pub async fn create_student(
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_CREATE_ALL)?;
 
-    let student = student_service::create_student(&pool, payload).await?;
+    let created = student_service::create_student(&pool, payload).await?;
+    for parent_id in &created.parent_ids {
+        state.invalidate_permission_user(&context.tenant.subdomain, *parent_id);
+    }
+    for parent_id in &created.parent_ids {
+        state.notify_permission_changed(&context.tenant.subdomain, *parent_id);
+    }
+    let student = created.student;
 
     Ok((
         StatusCode::CREATED,

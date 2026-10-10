@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
@@ -13,6 +14,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import AttendanceSelect from './AttendanceSelect.svelte';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -51,21 +53,23 @@
 		confirmed = $state(false),
 		image = $state(''),
 		search = $state('');
+	let appliedSearch = $state(''),
+		category = $state('all'),
+		appliedCategory = $state('all'),
+		exported = $state(0);
 	let imageGeneration = 0,
 		disposed = false;
 	const historyRequest = new LatestRequest();
 	const reportRequest = new LatestRequest();
+	const exportRequest = new LatestRequest();
+	let lastSummaryQuery = $state({ page: untrack(() => initial.page), search: '', category: 'all' });
 	const labels: Record<string, string> = {
 		school: 'มาโรงเรียน (วัน)',
 		flag: 'หน้าเสาธง (ครั้ง)',
 		lesson: 'รายวิชา (คาบ)',
 		special: 'รอบพิเศษ (ครั้ง)'
 	};
-	const summaries = $derived(
-		report.summaries.filter(
-			(s) => !search || s.displayName.includes(search) || s.scopeLabel.includes(search)
-		)
-	);
+	const summaries = $derived(report.summaries);
 	const canPurge = $derived($can.has(PERMISSIONS.ATTENDANCE_DELETE_SCHOOL) && !studentId);
 	function percent(s: AttendanceSummary) {
 		const known = s.present + s.late + s.absent + s.leave + s.activity;
@@ -86,7 +90,12 @@
 			await action();
 		} catch (e) {
 			if (disposed) return;
-			const message = e instanceof Error ? e.message : 'โหลดไม่สำเร็จ';
+			const message =
+				name === 'export' && e instanceof Error && e.name === 'AbortError'
+					? 'ยกเลิกการส่งออกแล้ว'
+					: e instanceof Error
+						? e.message
+						: 'โหลดไม่สำเร็จ';
 			errors[name.startsWith('image:') ? 'image' : name] = message;
 		} finally {
 			if (!disposed) {
@@ -146,14 +155,33 @@
 		closeImage();
 		historyRequest.abort();
 		reportRequest.abort();
+		exportRequest.abort();
 	});
-	async function refreshSummary() {
+	async function refreshSummary(
+		page = report.page,
+		filter = { search: appliedSearch, category: appliedCategory }
+	) {
 		if (disposed) return;
 		const ticket = reportRequest.begin();
 		errors.summary = '';
+		lastSummaryQuery = { page, ...filter };
 		try {
-			const latest = await attendanceReport(term, studentId, { signal: ticket.signal });
-			if (reportRequest.isCurrent(ticket.revision)) report = latest;
+			const latest = await attendanceReport(
+				term,
+				studentId,
+				{ signal: ticket.signal },
+				{
+					page,
+					pageSize: 50,
+					search: filter.search,
+					category: filter.category === 'all' ? undefined : filter.category
+				}
+			);
+			if (reportRequest.isCurrent(ticket.revision)) {
+				report = latest;
+				appliedSearch = filter.search;
+				appliedCategory = filter.category;
+			}
 		} catch (error) {
 			if (reportRequest.isCurrent(ticket.revision))
 				errors.summary = error instanceof Error ? error.message : 'โหลดสรุปล่าสุดไม่ได้';
@@ -196,33 +224,23 @@
 			await refreshSummary();
 		});
 	}
-	function exportCsv() {
-		const header = [
-			'นักเรียน',
-			'ประเภท',
-			'รายวิชา/รอบ',
-			'มา',
-			'สาย',
-			'ขาด',
-			'ลา',
-			'กิจกรรม',
-			'ยังไม่เช็ค',
-			'ทั้งหมด'
-		];
-		const rows = report.summaries.map((s) => [
-			s.displayName,
-			labels[s.category],
-			s.scopeLabel,
-			s.present,
-			s.late,
-			s.absent,
-			s.leave,
-			s.activity,
-			s.unchecked,
-			s.expected
-		]);
-		const csv = [header, ...rows]
-			.map((row) =>
+	async function exportCsv() {
+		await run('export', async () => {
+			const ticket = exportRequest.begin();
+			exported = 0;
+			const header = [
+				'นักเรียน',
+				'ประเภท',
+				'รายวิชา/รอบ',
+				'มา',
+				'สาย',
+				'ขาด',
+				'ลา',
+				'กิจกรรม',
+				'ยังไม่เช็ค',
+				'ทั้งหมด'
+			];
+			const quoteRow = (row: (string | number)[]) =>
 				row
 					.map((value) => {
 						const text = String(value);
@@ -230,15 +248,57 @@
 							typeof value === 'string' && /^[=+@\-\t\r]/u.test(text) ? "'" + text : text;
 						return '"' + cell.replaceAll('"', '""') + '"';
 					})
-					.join(',')
-			)
-			.join('\r\n');
-		const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = 'attendance-summary.csv';
-		a.click();
-		URL.revokeObjectURL(url);
+					.join(',');
+			const chunks = ['\uFEFF' + quoteRow(header)];
+			let page = 1,
+				total: number | null = null;
+			const seen = new SvelteSet<string>();
+			do {
+				const next = await attendanceReport(
+					term,
+					studentId,
+					{ signal: ticket.signal },
+					{
+						page,
+						pageSize: 100,
+						search: appliedSearch,
+						category: appliedCategory === 'all' ? undefined : appliedCategory
+					}
+				);
+				if (!exportRequest.isCurrent(ticket.revision) || disposed) return;
+				if (total !== null && total !== next.total)
+					throw new Error('รายงานเปลี่ยนระหว่างส่งออก กรุณาลองส่งออกใหม่');
+				total = next.total;
+				if (!next.summaries.length && exported < total)
+					throw new Error('รายงานเปลี่ยนระหว่างส่งออก กรุณาลองส่งออกใหม่');
+				for (const row of next.summaries) {
+					const key = JSON.stringify([row.studentId, row.category, row.scopeKey]);
+					if (seen.has(key)) throw new Error('รายงานเปลี่ยนระหว่างส่งออก กรุณาลองส่งออกใหม่');
+					seen.add(key);
+				}
+				const rows = next.summaries.map((s) => [
+					s.displayName,
+					labels[s.category],
+					s.scopeLabel,
+					s.present,
+					s.late,
+					s.absent,
+					s.leave,
+					s.activity,
+					s.unchecked,
+					s.expected
+				]);
+				for (const row of rows) chunks.push('\r\n' + quoteRow(row));
+				exported += rows.length;
+				page++;
+			} while (exported < total);
+			const url = URL.createObjectURL(new Blob(chunks, { type: 'text/csv;charset=utf-8' }));
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = 'attendance-summary.csv';
+			a.click();
+			URL.revokeObjectURL(url);
+		});
 	}
 </script>
 
@@ -260,73 +320,153 @@
 		</Card.Content>
 	</Card.Root>
 	<Card.Root class="gap-0 py-0">
-		<Card.Content class="flex flex-wrap items-end gap-3 p-3 sm:p-4"
-			><div class="min-w-0 flex-1 space-y-2">
-				<Label for="attendance-report-search">ค้นหาสรุป</Label><Input
-					id="attendance-report-search"
-					bind:value={search}
-					placeholder="ค้นหารายวิชา / รอบ"
-				/>
-			</div>
-			<Button type="button" variant="outline" onclick={exportCsv}
-				><Download class="size-4" />ส่งออก CSV</Button
-			></Card.Content
+		<Card.Content class="p-3 sm:p-4"
+			><form
+				class="flex flex-wrap items-end gap-3"
+				onsubmit={(event) => {
+					event.preventDefault();
+					void run('summary', () => refreshSummary(1, { search: search.trim(), category }));
+				}}
+			>
+				<div class="w-full min-w-0 space-y-2 sm:w-auto sm:flex-1">
+					<Label for="attendance-report-search">ค้นหาสรุป</Label><Input
+						id="attendance-report-search"
+						bind:value={search}
+						placeholder="ค้นหาชื่อ / รายวิชา / รอบ"
+						maxlength={120}
+						disabled={busy}
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label for="attendance-report-category">ประเภท</Label><AttendanceSelect
+						id="attendance-report-category"
+						label="ประเภทสรุป"
+						bind:value={category}
+						disabled={busy}
+						options={[
+							{ value: 'all', label: 'ทุกประเภท' },
+							...Object.entries(labels).map(([value, label]) => ({ value, label }))
+						]}
+					/>
+				</div>
+				<LoadingButton type="submit" loading={pendingAction === 'summary'} disabled={busy}
+					>ค้นหา</LoadingButton
+				>
+				<LoadingButton
+					type="button"
+					variant="outline"
+					loading={pendingAction === 'export'}
+					disabled={busy}
+					onclick={exportCsv}><Download class="size-4" />ส่งออก CSV</LoadingButton
+				>
+				{#if pendingAction === 'export'}<p role="status" class="text-sm text-muted-foreground">
+						ส่งออกแล้ว {exported} รายการ
+					</p>
+					<Button type="button" variant="outline" onclick={() => exportRequest.abort()}
+						>ยกเลิกการส่งออก</Button
+					>{/if}
+				{#if errors.export}<p role="alert" class="w-full text-sm text-destructive">
+						{errors.export}
+					</p>{/if}
+			</form></Card.Content
 		>
 	</Card.Root>
 	<Card.Root class="min-w-0">
 		<Card.Header
 			><Card.Title><h2>ยอดสรุปการเช็คชื่อ</h2></Card.Title><Card.Description
-				>เลือกชื่อนักเรียนเพื่อดูรายละเอียดรายวัน เลื่อนตารางแนวนอนเพื่อดูข้อมูลครบทุกคอลัมน์</Card.Description
+				>เลือกนักเรียนเพื่อดูรายละเอียดรายวัน · แสดงครั้งละ 50 รายการ</Card.Description
 			></Card.Header
 		>
 		<Card.Content class="min-w-0 space-y-4">
 			{#if errors.summary}<PageState
 					variant="error"
-					title="ล้างรายละเอียดแล้ว แต่โหลดสรุปล่าสุดไม่ได้"
+					title="โหลดสรุปล่าสุดไม่ได้"
 					description={errors.summary}
 					actionLabel="ลองโหลดสรุปล่าสุดใหม่"
 					onaction={() => {
-						void run('summary', refreshSummary);
+						void run('summary', () => refreshSummary(lastSummaryQuery.page, lastSummaryQuery));
 					}}
 				/>{/if}
-			<Table.Root class="min-w-[800px]"
-				><Table.Header
+			<Table.Root class="block min-w-0 sm:table sm:min-w-[800px]"
+				><Table.Header class="hidden sm:table-header-group"
 					><Table.Row
 						>{#each ['นักเรียน', 'ประเภท / รอบ', 'มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม', 'ยังไม่เช็ค', 'ทั้งหมด', 'ร้อยละ'] as label (label)}<Table.Head
 								>{label}</Table.Head
 							>{/each}</Table.Row
 					></Table.Header
 				>
-				<Table.Body
-					>{#each summaries as s (s.studentId + s.category + s.scopeKey)}<Table.Row>
-							<Table.Cell
+				<Table.Body class="block sm:table-row-group"
+					>{#each summaries as s (s.studentId + s.category + s.scopeKey)}<Table.Row
+							class="grid grid-cols-4 gap-3 py-4 sm:table-row"
+						>
+							<Table.Cell class="col-span-4 block sm:table-cell"
 								><Button
 									type="button"
 									variant="link"
+									class="h-auto max-w-full justify-start whitespace-normal text-left"
 									onclick={() => loadHistory(s.studentId)}
 									disabled={busy || report.archived}
 									>{studentId ? 'ของนักเรียน' : s.displayName}</Button
 								></Table.Cell
-							><Table.Cell
+							><Table.Cell class="col-span-4 block break-words sm:table-cell"
 								>{labels[s.category] ?? s.category}{s.scopeKey
 									? ` · ${s.scopeLabel}`
 									: ''}</Table.Cell
-							><Table.Cell>{s.present}</Table.Cell><Table.Cell>{s.late}</Table.Cell><Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">มา</span
+								>{s.present}</Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">สาย</span
+								>{s.late}</Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">ขาด</span
 								>{s.absent}</Table.Cell
-							><Table.Cell>{s.leave}</Table.Cell><Table.Cell>{s.activity}</Table.Cell><Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">ลา</span
+								>{s.leave}</Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">กิจกรรม</span
+								>{s.activity}</Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">ยังไม่เช็ค</span
 								>{s.unchecked}</Table.Cell
-							><Table.Cell>{s.expected}</Table.Cell><Table.Cell class="font-medium"
-								>{percent(s)}</Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">ทั้งหมด</span
+								>{s.expected}</Table.Cell
+							><Table.Cell class="block font-medium sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">ร้อยละ</span>{percent(
+									s
+								)}</Table.Cell
 							>
 						</Table.Row>{:else}<Table.Row
 							><Table.Cell colspan={10} class="py-8 text-center text-muted-foreground"
-								>{search
+								>{appliedSearch
 									? 'ไม่พบข้อมูลที่ตรงกับคำค้น ลองเปลี่ยนคำค้น'
 									: 'ยังไม่มีผลที่นับในสรุป'}</Table.Cell
 							></Table.Row
 						>{/each}</Table.Body
 				>
 			</Table.Root>
+			<div class="flex flex-wrap items-center justify-between gap-3" aria-label="หน้ารายงาน">
+				<p class="text-sm text-muted-foreground">หน้า {report.page} · {report.total} รายการ</p>
+				<div class="flex gap-2">
+					<Button
+						type="button"
+						variant="outline"
+						disabled={busy || report.page <= 1}
+						onclick={() => {
+							void run('summary', () => refreshSummary(report.page - 1));
+						}}>ก่อนหน้า</Button
+					><Button
+						type="button"
+						variant="outline"
+						disabled={busy || report.page * report.pageSize >= report.total}
+						onclick={() => {
+							void run('summary', () => refreshSummary(report.page + 1));
+						}}>ถัดไป</Button
+					>
+				</div>
+			</div>
 		</Card.Content>
 	</Card.Root>
 	{#if selectedStudent && !report.archived}

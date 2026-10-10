@@ -260,10 +260,15 @@ fn bind_student_list_access_filter<'q>(
     }
 }
 
+pub struct CreatedStudent {
+    pub student: CreateStudentResponse,
+    pub parent_ids: Vec<Uuid>,
+}
+
 pub async fn create_student(
     pool: &PgPool,
     payload: CreateStudentRequest,
-) -> Result<CreateStudentResponse, AppError> {
+) -> Result<CreatedStudent, AppError> {
     let password_hash = hash(&payload.password, DEFAULT_COST).map_err(|e| {
         tracing::error!("Student password hashing failed: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการสร้างรหัสผ่าน".to_string())
@@ -300,8 +305,8 @@ pub async fn create_student(
     .await?;
 
     insert_student_info(&mut tx, user_id, &payload).await?;
-    link_initial_parents(&mut tx, user_id, payload.parents.as_deref()).await?;
-    assign_active_role_if_available(
+    let parent_ids = link_initial_parents(&mut tx, user_id, payload.parents.as_deref()).await?;
+    assign_required_role(
         &mut tx,
         user_id,
         "STUDENT",
@@ -315,9 +320,12 @@ pub async fn create_student(
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
-    Ok(CreateStudentResponse {
-        id: user_id,
-        username,
+    Ok(CreatedStudent {
+        student: CreateStudentResponse {
+            id: user_id,
+            username,
+        },
+        parent_ids,
     })
 }
 
@@ -496,7 +504,7 @@ pub async fn add_parent_to_student(
     pool: &PgPool,
     student_id: Uuid,
     payload: CreateParentRequest,
-) -> Result<(), AppError> {
+) -> Result<Uuid, AppError> {
     let mut tx = pool.begin().await.map_err(|e| {
         tracing::error!("Failed to begin add parent transaction: {}", e);
         AppError::InternalServerError("เกิดข้อผิดพลาดในการเริ่มต้น transaction".to_string())
@@ -527,7 +535,7 @@ pub async fn add_parent_to_student(
         AppError::InternalServerError("ไม่สามารถบันทึกข้อมูลได้".to_string())
     })?;
 
-    Ok(())
+    Ok(parent_id)
 }
 
 pub async fn remove_parent_from_student(
@@ -706,11 +714,12 @@ async fn link_initial_parents(
     tx: &mut Transaction<'_, Postgres>,
     student_id: Uuid,
     parents: Option<&[CreateParentRequest]>,
-) -> Result<(), AppError> {
+) -> Result<Vec<Uuid>, AppError> {
     let Some(parents) = parents else {
-        return Ok(());
+        return Ok(vec![]);
     };
 
+    let mut parent_ids = Vec::with_capacity(parents.len());
     for (index, parent) in parents.iter().enumerate() {
         let parent_id = get_or_create_parent_user(tx, parent).await?;
         link_parent_to_student_if_absent(
@@ -721,26 +730,44 @@ async fn link_initial_parents(
             index == 0,
         )
         .await?;
+        parent_ids.push(parent_id);
     }
 
-    Ok(())
+    Ok(parent_ids)
 }
 
 async fn get_or_create_parent_user(
     tx: &mut Transaction<'_, Postgres>,
     payload: &CreateParentRequest,
 ) -> Result<Uuid, AppError> {
-    let existing_parent = sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE username = $1")
-        .bind(&payload.phone)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check for existing parent: {}", e);
-            AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
-        })?;
+    let existing_parent = sqlx::query_as::<_, (Uuid, String, String)>(
+        "SELECT id,user_type,status FROM users WHERE username = $1 FOR UPDATE",
+    )
+    .bind(&payload.phone)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to check for existing parent: {}", e);
+        AppError::InternalServerError("เกิดข้อผิดพลาดในการตรวจสอบผู้ปกครอง".to_string())
+    })?;
 
     match existing_parent {
-        Some(parent_id) => Ok(parent_id),
+        Some((parent_id, user_type, status)) => {
+            if user_type != "parent" || status != "active" {
+                return Err(AppError::Conflict(
+                    "บัญชีนี้ไม่ใช่ผู้ปกครองที่เปิดใช้งาน กรุณาตรวจสอบบัญชีก่อนเชื่อมโยง".into(),
+                ));
+            }
+            let has_history: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_roles WHERE user_id=$1)")
+                    .bind(parent_id)
+                    .fetch_one(&mut **tx)
+                    .await?;
+            if !has_history {
+                assign_parent_role(tx, parent_id).await?;
+            }
+            Ok(parent_id)
+        }
         None => create_parent_user(tx, payload).await,
     }
 }
@@ -793,12 +820,12 @@ async fn create_parent_user(
         AppError::InternalServerError("ไม่สามารถสร้างบัญชีผู้ปกครองได้".to_string())
     })?;
 
-    assign_parent_role_if_available(tx, parent_id).await?;
+    assign_parent_role(tx, parent_id).await?;
 
     Ok(parent_id)
 }
 
-async fn assign_active_role_if_available(
+async fn assign_required_role(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     role_code: &str,
@@ -806,8 +833,9 @@ async fn assign_active_role_if_available(
     assign_error_message: &str,
 ) -> Result<(), AppError> {
     let role_id: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM roles WHERE code = $1 AND is_active = true")
+        sqlx::query_scalar("SELECT r.id FROM roles r JOIN users u ON u.user_type=r.user_type WHERE r.code=$1 AND r.is_active=true AND u.id=$2 FOR SHARE OF r")
             .bind(role_code)
+            .bind(user_id)
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| {
@@ -815,7 +843,10 @@ async fn assign_active_role_if_available(
                 AppError::InternalServerError(load_error_message.to_string())
             })?;
 
-    if let Some(role_id) = role_id {
+    let role_id = role_id.ok_or_else(|| {
+        AppError::Conflict("บทบาทมาตรฐานยังไม่พร้อม กรุณาให้ผู้ดูแลตรวจสอบก่อนสร้างบัญชี".into())
+    })?;
+    {
         sqlx::query(
             r#"
             INSERT INTO user_roles (user_id, role_id, is_primary)
@@ -835,11 +866,11 @@ async fn assign_active_role_if_available(
     Ok(())
 }
 
-async fn assign_parent_role_if_available(
+async fn assign_parent_role(
     tx: &mut Transaction<'_, Postgres>,
     parent_id: Uuid,
 ) -> Result<(), AppError> {
-    assign_active_role_if_available(
+    assign_required_role(
         tx,
         parent_id,
         "PARENT",

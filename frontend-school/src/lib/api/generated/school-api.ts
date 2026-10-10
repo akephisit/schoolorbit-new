@@ -7875,7 +7875,13 @@ export interface components {
 			data: {
 				activityCountsAsPresent: boolean;
 				archived: boolean;
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
 				summaries: components['schemas']['AttendanceSummary'][];
+				/** Format: int64 */
+				total: number;
 			};
 			message?: string;
 			success: boolean;
@@ -13471,7 +13477,25 @@ export interface components {
 		AttendanceReport: {
 			activityCountsAsPresent: boolean;
 			archived: boolean;
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
 			summaries: components['schemas']['AttendanceSummary'][];
+			/** Format: int64 */
+			total: number;
+		};
+		AttendanceReportQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+			category?: string | null;
+			/** Format: int64 */
+			page?: number;
+			/** Format: int64 */
+			pageSize?: number;
+			search?: string;
+			/** Format: uuid */
+			studentId?: string | null;
 		};
 		/** @enum {string} */
 		AttendanceResult: 'unchecked' | 'present' | 'late' | 'absent' | 'leave' | 'activity';
@@ -40140,6 +40164,10 @@ export interface operations {
 		parameters: {
 			query: {
 				academicTermId: string;
+				category?: string;
+				page?: number;
+				pageSize?: number;
+				search?: string;
 				studentId?: string;
 			};
 			header?: never;
@@ -49121,6 +49149,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Required default role or parent account is unavailable */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	getStudent: {
@@ -49324,6 +49361,15 @@ export interface operations {
 			};
 			/** @description Student not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Required default role or parent account is unavailable */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};

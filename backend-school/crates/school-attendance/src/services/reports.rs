@@ -19,6 +19,13 @@ const SUMMARY_SQL: &str = r#"WITH eligible AS (
  SELECT $1::uuid academic_term_id,student_id,category,scope_key,min(scope_label) scope_label,
  COUNT(*) FILTER(WHERE result='present') present,COUNT(*) FILTER(WHERE result='late') late,COUNT(*) FILTER(WHERE result='absent') absent,COUNT(*) FILTER(WHERE result='leave') leave,COUNT(*) FILTER(WHERE result='activity') activity,COUNT(*) FILTER(WHERE result='unchecked') unchecked,COUNT(*) expected,min(concat_ws(' ',u.title,u.first_name,u.last_name)) display_name
  FROM facts JOIN users u ON u.id=facts.student_id GROUP BY student_id,category,scope_key ORDER BY student_id,category,scope_key"#;
+fn archived_summary_sql(teacher: bool) -> &'static str {
+    if teacher {
+        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',u.title,u.first_name,u.last_name) display_name FROM attendance_term_teacher_summaries s JOIN users u ON u.id=s.student_id WHERE s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND s.teacher_id=$3 ORDER BY s.student_id,s.category,s.scope_key"
+    } else {
+        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',u.title,u.first_name,u.last_name) display_name FROM attendance_term_summaries s JOIN users u ON u.id=s.student_id WHERE s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND $3::uuid IS NULL ORDER BY s.student_id,s.category,s.scope_key"
+    }
+}
 pub async fn summaries(
     pool: &PgPool,
     term: Uuid,
@@ -27,11 +34,7 @@ pub async fn summaries(
 ) -> Result<AttendanceReport, AppError> {
     let settings = settings::get(pool, term).await?;
     let summaries = if settings.archived {
-        let sql = if teacher.is_some() {
-            "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',u.title,u.first_name,u.last_name) display_name FROM attendance_term_teacher_summaries s JOIN users u ON u.id=s.student_id WHERE s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND s.teacher_id=$3 ORDER BY s.student_id,s.category,s.scope_key"
-        } else {
-            "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',u.title,u.first_name,u.last_name) display_name FROM attendance_term_summaries s JOIN users u ON u.id=s.student_id WHERE s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND $3::uuid IS NULL ORDER BY s.student_id,s.category,s.scope_key"
-        };
+        let sql = archived_summary_sql(teacher.is_some());
         sqlx::query_as(sql)
             .bind(term)
             .bind(student)
@@ -47,7 +50,49 @@ pub async fn summaries(
             .await?
     };
     Ok(AttendanceReport {
+        page: 1,
+        page_size: summaries.len() as i64,
+        total: summaries.len() as i64,
         summaries,
+        archived: settings.archived,
+        activity_counts_as_present: settings.configuration.activity_counts_as_present,
+    })
+}
+pub async fn page(
+    pool: &PgPool,
+    q: &AttendanceReportQuery,
+    teacher: Option<Uuid>,
+) -> Result<AttendanceReport, AppError> {
+    q.validate()?;
+    let settings = settings::get(pool, q.academic_term_id).await?;
+    let source = if settings.archived {
+        archived_summary_sql(teacher.is_some())
+    } else {
+        SUMMARY_SQL
+    };
+    let sql = format!(
+        r#"WITH summary AS ({source}), filtered AS (
+        SELECT * FROM summary WHERE ($4='' OR strpos(lower(display_name),lower($4))>0 OR strpos(lower(scope_label),lower($4))>0)
+            AND ($5::text IS NULL OR category=$5)
+    ), page AS (SELECT academic_term_id AS "academicTermId", student_id AS "studentId", category AS "category", scope_key AS "scopeKey", scope_label AS "scopeLabel", display_name AS "displayName", present AS "present", late AS "late", absent AS "absent", leave AS "leave", activity AS "activity", unchecked AS "unchecked", expected AS "expected" FROM filtered ORDER BY student_id,category,scope_key LIMIT $6 OFFSET $7)
+    SELECT COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p."studentId",p.category,p."scopeKey") FROM page p),'[]'::jsonb), (SELECT count(*) FROM filtered)"#
+    );
+    let (Json(summaries), total): (Json<Vec<AttendanceSummary>>, i64) =
+        sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(q.academic_term_id)
+            .bind(q.student_id)
+            .bind(teacher)
+            .bind(q.search.trim())
+            .bind(q.category.as_deref())
+            .bind(q.page_size)
+            .bind((q.page - 1) * q.page_size)
+            .fetch_one(pool)
+            .await?;
+    Ok(AttendanceReport {
+        summaries,
+        total,
+        page: q.page,
+        page_size: q.page_size,
         archived: settings.archived,
         activity_counts_as_present: settings.configuration.activity_counts_as_present,
     })

@@ -32,7 +32,8 @@ use school_students::models::CreateParentRequest;
         (status = 200, description = "Parent linked to student", body = ApiResponse<school_http::EmptyData>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Student update permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Student not found", body = ApiErrorResponse)
+        (status = 404, description = "Student not found", body = ApiErrorResponse),
+        (status = 409, description = "Required default role or parent account is unavailable", body = ApiErrorResponse)
     )
 )]
 pub async fn add_parent_to_student(
@@ -46,7 +47,9 @@ pub async fn add_parent_to_student(
     let actor = context.actor;
     actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
 
-    student_service::add_parent_to_student(&pool, student_id, payload).await?;
+    let parent_id = student_service::add_parent_to_student(&pool, student_id, payload).await?;
+    state.invalidate_permission_user(&context.tenant.subdomain, parent_id);
+    state.notify_permission_changed(&context.tenant.subdomain, parent_id);
 
     Ok((
         StatusCode::OK,
@@ -83,6 +86,8 @@ pub async fn remove_parent_from_student(
     actor.require_permission(codes::STUDENT_UPDATE_ALL)?;
 
     student_service::remove_parent_from_student(&pool, student_id, parent_id).await?;
+    state.invalidate_permission_user(&context.tenant.subdomain, parent_id);
+    state.notify_permission_changed(&context.tenant.subdomain, parent_id);
 
     Ok((
         StatusCode::OK,

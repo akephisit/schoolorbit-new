@@ -738,6 +738,7 @@ struct SchoolApiDoc;
 // The application remains the single OpenAPI composition owner.
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        school_attendance::models::AttendanceReportQuery,
         ConsentRecordResponse,
         UserConsentStatus,
         ApiResponse<UserConsentStatus>,

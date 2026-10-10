@@ -526,24 +526,11 @@ pub async fn scan(
     p: AttendanceScan,
 ) -> Result<AttendanceScanOutcome, AppError> {
     let file = p.evidence_file_id;
-    school_attendance::services::faces::require_device(
-        &context.tenant.pool,
-        &context.actor,
-        p.device_id,
-    )
-    .await?;
-    let session = sessions::get(&context.tenant.pool, p.session_id).await?;
-    let gallery = school_attendance::services::faces::cached_gallery(
+    let outcome = school_attendance::services::faces::scan_with_cached_gallery(
         &context.tenant.pool,
         &context.tenant.subdomain,
-        session.academic_term_id,
-    )
-    .await?;
-    let outcome = school_attendance::services::faces::scan_with_gallery(
-        &context.tenant.pool,
         &context.actor,
         p.clone(),
-        &gallery,
     )
     .await;
     // Keep uncommitted evidence available for retryable storage/database failures.
@@ -552,6 +539,7 @@ pub async fn scan(
         || matches!(
             &outcome,
             Err(AppError::ValidationError(_)
+                | AppError::Conflict(_)
                 | AppError::BadRequest(_)
                 | AppError::Forbidden(_)
                 | AppError::NotFound(_))
@@ -670,10 +658,9 @@ pub async fn report(
             codes::ATTENDANCE_UPDATE_ASSIGNED,
         ])?;
     }
-    school_attendance::services::reports::summaries(
+    school_attendance::services::reports::page(
         pool,
-        q.academic_term_id,
-        q.student_id,
+        &q,
         if full { None } else { Some(actor.user_id) },
     )
     .await

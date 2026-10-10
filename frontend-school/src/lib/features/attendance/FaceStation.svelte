@@ -17,6 +17,7 @@
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
+	import { ApiClientError } from '#lib/api/client.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -67,7 +68,8 @@
 		lastStudent = $state(''),
 		committing = $state(false);
 	let timer: ReturnType<typeof setTimeout> | null = null,
-		generation = 0;
+		generation = 0,
+		commitGeneration = 0;
 	let cameraController: AbortController | null = null;
 	let pending = $state<{ payload: AttendanceScan; name: string } | null>(null);
 	const seen = new SvelteSet<string>();
@@ -115,6 +117,8 @@
 	}
 	function stop() {
 		generation++;
+		commitGeneration++;
+		committing = false;
 		busy = false;
 		pendingAction = '';
 		cameraController?.abort();
@@ -233,15 +237,31 @@
 	async function commit() {
 		if (!pending || !scanAllowed || !currentScanDay()) return;
 		const queued = pending;
+		const commitToken = ++commitGeneration;
 		committing = true;
 		let result;
 		try {
 			result = await scanAttendance(queued.payload);
+		} catch (error) {
+			if (
+				pending === queued &&
+				error instanceof ApiClientError &&
+				[400, 403, 404, 409, 422].includes(error.status)
+			) {
+				pending = null;
+				running = false;
+				gallery = null;
+				sampleTarget = 'center';
+				lastStudent = '';
+				message = error.message + ' · กดเริ่มเช็คชื่อวันนี้เพื่อถ่ายภาพใหม่';
+				return;
+			}
+			throw error;
 		} finally {
-			committing = false;
+			if (commitToken === commitGeneration) committing = false;
 		}
-		seen.add(result.studentId);
 		if (pending !== queued) return;
+		seen.add(result.studentId);
 		message = result.teacherConflict
 			? `${queued.name}: บันทึกหลักฐานแล้ว แต่คงผลของครู (${resultLabels[result.result]})`
 			: result.duplicate
@@ -253,17 +273,18 @@
 	}
 	async function retry() {
 		if (!currentScanDay()) return;
+		const token = generation;
 		busy = true;
 		try {
 			await commit();
-			if (active && running) {
-				generation++;
-				await tick(generation);
+			if (token === generation && active && running) {
+				await tick(token);
 			}
 		} catch (e) {
+			if (token !== generation) return;
 			message = e instanceof Error ? e.message : 'ยังบันทึกไม่ได้ กดลองส่งอีกครั้ง';
 		} finally {
-			busy = false;
+			if (token === generation) busy = false;
 		}
 	}
 	async function tick(token: number) {
@@ -329,6 +350,7 @@
 				}
 			}
 		} catch (e) {
+			if (token !== generation) return;
 			message = e instanceof Error ? e.message : 'สแกนไม่ได้';
 			if (pending) {
 				message += ' · กดส่งรายการเดิมอีกครั้ง';

@@ -11,6 +11,7 @@ export type AttendanceDetail = Schemas['AttendanceDetail'];
 export type AttendanceWorkspace = Schemas['AttendanceWorkspace'];
 export type AttendanceOptions = Schemas['AttendanceOptions'];
 export type AttendanceReport = Schemas['AttendanceReport'];
+export type AttendanceReportQuery = Schemas['AttendanceReportQuery'];
 export type AttendanceHistoryItem = Schemas['AttendanceHistoryItem'];
 export type AttendancePurgeImpact = Schemas['AttendancePurgeImpact'];
 export type AttendanceKioskWorkspace = Schemas['AttendanceKioskWorkspace'];
@@ -125,12 +126,13 @@ export async function attendanceDetail(
 export async function attendanceReport(
 	academicTermId: string,
 	studentId?: string,
-	options: ApiRequestOptions = {}
+	options: ApiRequestOptions = {},
+	filters: Pick<AttendanceReportQuery, 'page' | 'pageSize' | 'search' | 'category'> = {}
 ): Promise<AttendanceReport> {
 	return requireApiData(
 		await apiClient.get<AttendanceReport>(`${base}/report`, {
 			...options,
-			query: { academicTermId, studentId }
+			query: { academicTermId, studentId, ...filters }
 		}),
 		'โหลดข้อมูลเช็คชื่อไม่สำเร็จ'
 	);
