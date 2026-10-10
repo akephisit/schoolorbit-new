@@ -6,11 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 const repo = path.resolve(import.meta.dirname, '../..');
 async function compatibilityScript() {
-    const text = await readFile(path.join(repo, '.github/workflows/backend-school-neon-compatibility.yml'), 'utf8');
-    const step = text.split('      - name: Run direct-endpoint compatibility tests\n')[1]?.split('\n      - name:')[0];
-    const body = step?.split('        run: |\n')[1];
-    assert.ok(body, 'the compatibility step must have an executable shell body');
-    return body.split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+    return readFile(path.join(repo, 'scripts/test_neon_compatibility.sh'), 'utf8');
 }
 async function runStub(mode, scope = 'full') {
     const root = await mkdtemp(path.join(tmpdir(), 'schoolorbit-neon-selection-'));

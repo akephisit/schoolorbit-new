@@ -17,10 +17,7 @@ for (const listed of prs) {
   if (!trusted(pr)) continue;
   const main = api(`/repos/${repo}/git/ref/heads/main`).object.sha;
   if (pr.mergeable_state === 'behind') {
-    api(`/repos/${repo}/pulls/${pr.number}/update-branch`, 'PUT', { expected_head_sha: pr.head.sha });
-    // GITHUB_TOKEN branch updates do not emit a new PR workflow event. Explicit
-    // dispatch is supported and publishes the required check on the updated head.
-    api(`/repos/${repo}/actions/workflows/pipeline.yml/dispatches`, 'POST', { ref: 'main', inputs: { pr_number: String(pr.number) } });
+    console.log(`PR #${pr.number} needs its developer to update from main and rerun affected local tests.`);
     continue;
   }
   if (!['clean', 'unstable'].includes(pr.mergeable_state)) continue;
@@ -30,7 +27,7 @@ for (const listed of prs) {
   const details = gate.details_url?.match(/\/actions\/runs\/([0-9]+)/);
   if (!details) continue;
   const run = api(`/repos/${repo}/actions/runs/${details[1]}`);
-  if (run.status !== 'completed' || run.conclusion !== 'success' || run.repository?.full_name !== repo || run.head_repository?.full_name !== repo || run.path !== '.github/workflows/pipeline.yml' || !((run.event === 'pull_request' && run.head_sha === pr.head.sha) || (run.event === 'workflow_dispatch' && run.head_branch === 'main'))) continue;
+  if (run.status !== 'completed' || run.conclusion !== 'success' || run.repository?.full_name !== repo || run.head_repository?.full_name !== repo || run.path !== '.github/workflows/pipeline.yml' || run.event !== 'pull_request' || run.head_sha !== pr.head.sha) continue;
   const artifacts = api(`/repos/${repo}/actions/runs/${run.id}/artifacts?per_page=100`).artifacts;
   const artifact = artifacts.find((entry) => entry.name === 'pipeline-plan' && !entry.expired);
   if (!artifact) continue;
@@ -45,7 +42,7 @@ for (const listed of prs) {
   const gates = jobPages.flatMap(page => page.jobs).filter(job => job.name === 'Pipeline gate');
   if (gates.length !== 1 || gates[0].conclusion !== 'success' || gates[0].run_attempt !== run.run_attempt || gates[0].head_sha !== run.head_sha || plan.runId !== String(run.id) || plan.attempt !== run.run_attempt) continue;
   if (plan.base !== main || plan.prHead !== pr.head.sha || plan.tree !== api(`/repos/${repo}/git/commits/${pr.merge_commit_sha}`).tree.sha) {
-    api(`/repos/${repo}/actions/workflows/pipeline.yml/dispatches`, 'POST', { ref: 'main', inputs: { pr_number: String(pr.number) } });
+    console.log(`PR #${pr.number} has a stale candidate; update and retest locally before merging.`);
     continue;
   }
   if (api(`/repos/${repo}/git/ref/heads/main`).object.sha !== main) break;
@@ -53,6 +50,6 @@ for (const listed of prs) {
   // A GITHUB_TOKEN merge suppresses push workflows; dispatch the production pipeline
   // explicitly. It resolves accumulated changes against accepted baselines.
   api(`/repos/${repo}/actions/workflows/pipeline.yml/dispatches`, 'POST', { ref: 'main', inputs: { scope: 'auto', automatic: 'true' } });
-  console.log(`Squash-merged PR #${pr.number} after verified latest-main CI.`);
+  console.log(`Squash-merged PR #${pr.number} after the latest-main Pipeline gate.`);
   break;
 }

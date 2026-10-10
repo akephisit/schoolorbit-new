@@ -17,8 +17,8 @@ test('UI, service, docs, tests and control changes have separate verification/de
   assert.deepEqual(classify(['README.md']).deploy, []);
   assert.ok(classify(['scripts/test_backend_admin.sh']).verify.includes('backend-admin'));
   assert.ok(classify(['scripts/test_school_database_suite.sh']).verify.includes('backend-school'));
-  assert.deepEqual(classify(['.github/workflows/verify.yml']).deploy, []);
-  assert.deepEqual(classify(['.github/workflows/verify.yml']).verify, suites);
+  assert.deepEqual(classify(['.github/workflows/pipeline.yml']).deploy, []);
+  assert.deepEqual(classify(['.github/workflows/pipeline.yml']).verify, suites);
   assert.deepEqual(classify(['contracts/openapi/school.json']).deploy, ['backend-school', 'frontend-school']);
   assert.deepEqual(classify(['new-unmapped-owner/input.json']).verify, suites);
   assert.throws(() => classify(['../outside']), /Invalid/);

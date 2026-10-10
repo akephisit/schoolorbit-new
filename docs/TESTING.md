@@ -13,45 +13,32 @@ Record:
 
 Do not replace a failed check by disabling it or by running a narrower command that misses the failure.
 
-## Local and CI pipeline
+## Local verification and GitHub delivery
 
-From the repository root, run `./scripts/pipeline verify --scope auto` before opening a PR.
-The command includes uncommitted/untracked paths. `--scope full` runs every suite; a comma-separated
-list such as `backend-school,contracts` selects explicit suites. Install Node 24, pinned Rust,
-Docker, and the owning application's locked npm dependencies. Deployment checks also need
-ShellCheck, shfmt, Bats, envsubst and jq. Local test profiles use no debug information or Cargo
-incremental data; production release optimization is unchanged.
+From the repository root, refresh `origin/main`, update your feature branch if needed, and run
+`./scripts/pipeline verify --scope auto` before opening or updating a ready PR. The command includes
+uncommitted/untracked paths. `--scope full` runs every suite; a comma-separated list such as
+`backend-school,contracts` selects explicit suites. Install Node 24, pinned Rust, Docker, and the
+owning application's locked npm dependencies. Deployment/static checks need ShellCheck, shfmt,
+Bats, envsubst and jq. Local test profiles use no debug information or Cargo incremental data;
+production release optimization is unchanged. Keep incomplete or failing work in a draft PR.
 
-The same command owns CI verification. School performs workspace checking, architecture/unit
-checks, generated OpenAPI and clean-environment export once, then database consumers with one
-Docker PostgreSQL server and a fresh owned database per invocation. Admin applies migrations only
-to its disposable Docker fixture before SQLx all-target compilation and tests. Frontend suites run
-lint, type checks and their actual contract/unit tests. CI records command timings, compiler cache
-outcomes and verification environment receipts separately. Auth/session Playwright discovery uses
-synthetic values with `--list` and loopback URLs only; it performs no browser or network execution.
-Live session acceptance still requires a dedicated disposable account and the explicit E2E owner.
+School performs workspace checking, architecture/unit checks, generated OpenAPI and clean-environment
+export, then database consumers with one Docker PostgreSQL server and a fresh owned database per
+invocation. Admin applies migrations only to its disposable Docker fixture before SQLx all-target
+compilation and tests. Frontend suites run lint, type checks and actual contract/unit tests.
+Auth/session Playwright discovery uses synthetic values with `--list` and loopback URLs only;
+it performs no browser or network execution. Run affected browser workflows locally as required
+by the change-type matrix; discovery alone is not browser coverage.
 
-After an equivalent trusted PR passes, main reuses its test receipts, including fresh database
-fixtures, and runs the internal `prime` command to compile the same backend targets and refresh
-the shared snapshot. A compiler-snapshot receipt names the original verification run and cannot
-authorize another test reuse. Missing, changed or expired proof runs the complete selected suite.
-
-Local-to-CI result reuse is an intended extension, specified in the **Reusing local verification
-in CI** section of [the development rules](../.rules). It is not implemented: the current
-[reuse owner](../scripts/reuse_pipeline_verification.mjs) accepts equivalent GitHub PR workflow
-evidence for main and has no local-receipt importer. There is no supported command or commit flag
-that makes a local pass skip PR CI today.
-
-The intended handoff tests the exact merged candidate once in a pinned disposable Docker
-environment, submits a receipt issued by a registered trusted verifier, and lets Pipeline validate
-the tree, base, complete suite coverage, environment, issuer, and expiry. Only proven suites are
-reused; the rest run normally. A signed self-report alone does not establish that tests executed.
-Track the verifier, receipt submission and validation work in [the technical backlog](../TODO.md).
-Release builds and deployed acceptance still execute after integration.
-
-Rust snapshots include the tracked cross-component permission lock and fonts consumed by School's
-compiler. Migration directory timestamps are restored only when their complete tracked contents
-match the saved snapshot; changed, removed, untracked or ignored inputs keep Cargo dirty.
+GitHub runs `plan → selected build → Pipeline gate → selected deployment → deployed acceptance`.
+PRs only plan their scope and require an up-to-date base. Main builds selected immutable artifacts
+using release caches, then deploys under the production lock. GitHub does not run unit/database/
+architecture/lint/type/E2E suites, receive local results or refresh compiled test snapshots.
+Record local commands and results in the PR for the team; Pipeline does not certify those results.
+If main advances, update the branch yourself and rerun affected local checks before making it ready.
+Production readiness, migration audits, browser mount/assets and authenticated smoke still run
+while both APIs remain in Maintenance Mode; users are admitted only after acceptance succeeds.
 
 Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, provenance, merge and
 maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
@@ -404,7 +391,7 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
 
 Mocked route suites block service workers so same-origin requests reach Playwright interception. Confirm preview readiness and warm the server before starting the command; do not edit product files or run another Playwright invocation concurrently.
 
-For deployed readonly route acceptance, use the ignored `frontend-school/.env.e2e.local` (mode `0600`) with HTTPS `E2E_BASE_URL`, `E2E_API_URL`, and pairs `E2E_STAFF_USERNAME/PASSWORD`, `E2E_STUDENT_USERNAME/PASSWORD`, `E2E_PARENT_USERNAME/PASSWORD`. The parent account must have a linked child with academic history in the same tenant. Supply values locally or through CI secrets, never in a chat, command argument or Git. Node 24 loads this file explicitly; Playwright does not load it automatically.
+For deployed readonly route acceptance, use the ignored `frontend-school/.env.e2e.local` (mode `0600`) with HTTPS `E2E_BASE_URL`, `E2E_API_URL`, and pairs `E2E_STAFF_USERNAME/PASSWORD`, `E2E_STUDENT_USERNAME/PASSWORD`, `E2E_PARENT_USERNAME/PASSWORD`. The parent account must have a linked child with academic history in the same tenant. Supply values locally, never in a chat, command argument or Git. Node 24 loads this file explicitly; Playwright does not load it automatically.
 
 ```bash
 E2E_ROUTE_LOADING_LIVE=1 node --env-file=.env.e2e.local \
@@ -491,25 +478,16 @@ docker image inspect schoolorbit/backend-school:verification \
   --format '{{.Config.User}} {{json .Config.Cmd}}'
 ```
 
-Backend release builds use separate BuildKit/sccache namespaces for Admin and School. Backend
-verification caches include source hashes, the pinned compiler and debug/test profile and have one writer per
-component. PRs restore shared caches; trusted main runs save. Frontend bundle keys include source,
-actual Node version, build recipe and compiled public configuration. Bundles are hashed and checked
-again before unpacking. Test targets and release binaries never share interchangeable cache keys.
-
-Backend verification uses `setup-contract-rust` before restoring a source-keyed target cache.
-Only unchanged, content-verified source files have their checkout timestamps normalized; edited
-files are forced newer than the saved compile outputs. Main primes the selected compiler targets
-after exact-tree PR fixture verification is proven; otherwise it runs the complete database owners.
-Compiler snapshots remain separate from verification receipts. The setup removes
-unused preinstalled toolchains only on the disposable GitHub runner. Do not run this runner setup on a developer machine. The offline OpenAPI gate
-executes the binary already compiled by `check:api-contracts` under `env -i`; it still verifies export
-without runtime configuration while preserving the compiler environment used to build the binary.
+Backend release builds use separate BuildKit/sccache namespaces for Admin and School. Main writes
+shared release caches; local Cargo targets and npm dependencies stay on each developer's machine.
+Frontend bundle keys include source, actual Node version, build recipe and compiled public configuration.
+Bundles are hashed and checked again before unpacking. Test targets and release binaries never share
+interchangeable cache keys. The offline OpenAPI gate executes the locally compiled binary under
+`env -i`, verifying export without runtime configuration while preserving its compiler environment.
 
 The `setup-chromium` action caches the exact installed Playwright version's Chromium headless shell.
 It always verifies browser files and launches the browser, including on a cache hit, installing
-host dependencies when the runner cannot launch it. School promotion and E2E Sandbox retain their
-browser checks. Verify a change to the browser setup with
+host dependencies when the runner cannot launch it. School promotion retains its deployed browser mount check; browser E2E suites run locally. Verify a change to the browser setup with
 the deployment static guards and the release-scope tests above, then confirm a real headless
 Chromium launch; a reported browser cache hit alone is insufficient.
 
@@ -540,7 +518,7 @@ Commit the contract, `contracts/permissions.lock.json`, backend registry, fronte
 
 ## API Contract
 
-The Pipeline Backend School verification owner also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the Docker database runner. Frontend validation includes full lint. Pull requests restore the shared Rust cache; main owns compiler snapshot writes and reuses fixture results only under the exact-tree evidence rules above.
+The local Backend School verification owner also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the Docker database runner. Frontend validation includes full lint. Developer machines retain compiled test targets; GitHub prepares release artifacts without repeating these tests.
 
 Rust DTOs and OpenAPI annotations own the wire contract. The tracked output is `contracts/openapi/school-api.json`; generated TypeScript lives under `frontend-school/src/lib/api/generated/`. These are generated files; do not edit generated files directly.
 
@@ -613,7 +591,7 @@ The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-s
 
 For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual SQLx version and bounded preservation/current-pointer integrity checks afterward; for migration 085 require imported dates/orders/actors to remain unknown and unchanged existing staff fields. Retain the historical `staff_personnel_simplification_audit` checks where relevant. Do not emit credentials, names, source values or national IDs.
 
-The 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The explicit Operations `neon` task calls `backend-school-neon-compatibility.yml`, which discovers every declared test selection before creating a branch, runs auth/file schema checks in their current crate owners, and rejects successful Cargo commands with zero passing tests. Run `node --test scripts/tests/neon-compatibility.test.mjs` to verify discovery and failure propagation. The workflow runs the staff migration fixtures and the remaining schema/status selections against a fresh disposable direct-endpoint child; cleanup and expiry stay with that workflow. Run `node --test scripts/tests/migration-completion-gate.test.mjs` to exercise the actual all-tenant release filter through its Docker jq image, including healthy reports without retired personnel fields, all-tenant coverage, future migration versions, other domain audit failures, and the complete thirty-check delivery/timetable reconciliation. Missing, partial, failed or stale delivery cutover evidence must refuse promotion.
+The 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The local `node scripts/test_neon_compatibility.mjs` owner runs auth/file/schema compatibility checks in their current crate owners and rejects successful Cargo commands with zero passing tests. Run `node --test scripts/tests/neon-compatibility.test.mjs` to verify discovery and failure propagation. The local owner runs the staff migration fixtures and schema/status selections against a fresh disposable direct-endpoint child and deletes its owned branch in finalization, with two-hour expiry as a fallback. Run `node --test scripts/tests/migration-completion-gate.test.mjs` to exercise the actual all-tenant release filter through its Docker jq image, including healthy reports without retired personnel fields, all-tenant coverage, future migration versions, other domain audit failures, and the complete thirty-check delivery/timetable reconciliation. Missing, partial, failed or stale delivery cutover evidence must refuse promotion.
 
 Against a production build running in local preview:
 
@@ -695,8 +673,8 @@ tenant connection inventory, keep output outside the repository, apply 041-044, 
 multi-year/multi-term reads, and record only duration, aggregate counts/checksums, finding codes, and
 pass/fail. When a separately reviewed Phase B branch contains migration 045, rehearse that review
 copy on the same disposable clone after a current success marker and verify its cleanup manifest.
-Never commit clone data or its output. The Operations `neon` compatibility task remains a
-separate credentialed external gate and is unrun when its repository secret/variables are unavailable.
+Never commit clone data or its output. The local Neon compatibility command remains a
+separate credentialed external gate and is unrun when its test-only environment is unavailable.
 
 For browser coverage, discovery does not equal execution. Discovery must work without tenant
 credentials:
@@ -730,30 +708,30 @@ bounded check codes, counts, versions, and pass/fail state; it must never contai
 scores, outcomes, credentials, or source rows. A legitimate school edit to grading or evaluation
 configuration is not a deployment invariant and must not keep the tenant in maintenance.
 
-The Operations `neon` compatibility task runs the same focused checks on a fresh disposable
+The local Neon compatibility command runs the same focused checks on a fresh disposable
 child branch through its direct non-pooled endpoint. Schema-isolated migration cases use four test
 threads so network round trips do not serialize the entire gate, while each individual test pool
-still has one connection. The workflow then deletes the branch. Repository secrets and variables
-remain the only credential source, and workflow output must not expose the connection URI.
+still has one connection. The local owner then deletes the branch. Use test-only environment variables
+from a private local environment file; output must not expose the connection URI.
 An authenticated academic smoke samples at most two canonical terms and reads the Gradebook subject
 workspace, learner-evaluation subject workspace, and result-readiness summary for each selected term.
 Response bodies remain in the smoke script's private temporary directory and are removed on exit.
 
 ### Manual Neon migration compatibility
 
-The Operations `neon` task calls [Backend School Neon Compatibility](../.github/workflows/backend-school-neon-compatibility.yml) with `options={"confirm_disposable_branch":true}`. Configure names only in repository settings; never put their values in source:
+Run `node scripts/test_neon_compatibility.mjs` locally after `node --test scripts/tests/neon-compatibility.test.mjs` discovers the selected tests. Install `psql` and use a private ignored environment file or secret manager to provide these names; never commit their values:
 
 ```text
-Secret:    NEON_TEST_API_KEY
-Variables: NEON_TEST_PROJECT_ID
-           NEON_TEST_PARENT_BRANCH_ID
-           NEON_TEST_DATABASE
-           NEON_TEST_ROLE
+NEON_TEST_API_KEY
+NEON_TEST_PROJECT_ID
+NEON_TEST_PARENT_BRANCH_ID
+NEON_TEST_DATABASE
+NEON_TEST_ROLE
 ```
 
-The project and parent branch must be dedicated to testing and contain no production data. Each confirmed run creates a unique ordinary copy-on-write child branch from that parent, retrieves a direct non-pooled connection URI, and provisions `uuid-ossp` plus `pg_trgm` explicitly in the child's `public` schema before migration/schema tests. The tests then create isolated schemas and run the active migrations themselves, so the parent needs only the configured empty database and an owner role allowed to create those Neon-supported extensions. The create request deliberately omits `suspend_timeout_seconds` because the test account owns that setting and rejects attempts to modify it. Branch ownership outputs are published before connection retrieval so later failures still clean up; the two-hour expiration is a fallback if finalization cannot run. API failures expose only bounded, sanitized code/message fields. The gate never requests a pooled URI because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
+The project and parent branch must be dedicated to testing and contain no production data. Each local run creates a unique ordinary copy-on-write child branch from that parent, retrieves a direct non-pooled connection URI, and provisions `uuid-ossp` plus `pg_trgm` explicitly in the child's `public` schema before migration/schema tests. The tests then create isolated schemas and run the active migrations themselves, so the parent needs only the configured empty database and an owner role allowed to create those Neon-supported extensions. The create request deliberately omits `suspend_timeout_seconds` because the test account owns that setting and rejects attempts to modify it. Branch ownership is retained in memory before connection retrieval so later failures still clean up; the two-hour expiration is a fallback if finalization cannot run. API failures expose only bounded, sanitized code/message fields. The gate never requests a pooled URI because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
 
-The Operations task defaults to `test_scope=full`, which retains all staff, auth, file, and academic compatibility selections. Add `"test_scope":"course-zero-periods"` to `options` for migration 090 and the zero-course opening/publication lifecycle, including rejection of negative targets, preserved curriculum/teachers/history, zero waiting demand, refused new placement and explicit removal of existing lessons. Add `"test_scope":"timetable-subject-groups"` for the focused timetable report metadata regression; it exercises the real course and current staff affiliation queries after migration 060 and retains nonempty-test enforcement, disposable branch creation, expiry, and cleanup.
+The local command defaults to `NEON_COMPATIBILITY_SCOPE=full`, which retains all staff, auth, file, and academic compatibility selections. Set `NEON_COMPATIBILITY_SCOPE=course-zero-periods` for migration 090 and the zero-course opening/publication lifecycle, including rejection of negative targets, preserved curriculum/teachers/history, zero waiting demand, refused new placement and explicit removal of existing lessons. Set `NEON_COMPATIBILITY_SCOPE=timetable-subject-groups` for the focused timetable report metadata regression; it exercises the real course and current staff affiliation queries after migration 060 and retains nonempty-test enforcement, disposable branch creation, expiry, and cleanup.
 
 The backend static architecture suite validates that active migrations remain a contiguous timeline beginning at `001_baseline.sql`. Runtime rollout and all-tenant migration verification are documented in [Operations](./OPERATIONS.md).
 

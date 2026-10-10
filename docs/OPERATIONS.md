@@ -80,19 +80,19 @@ There are four public workflow entry points:
 
 | Owner | Trigger and responsibility |
 | --- | --- |
-| [pipeline.yml](../.github/workflows/pipeline.yml) | PR checks; main or manual preparation and production release |
+| [pipeline.yml](../.github/workflows/pipeline.yml) | PR scope/base planning; main or manual preparation and production release |
 | [merge.yml](../.github/workflows/merge.yml) | Serialize trusted team PR integration after `Pipeline gate` |
-| [operations.yml](../.github/workflows/operations.yml) | Explicit smoke, browser E2E, diagnostics, benchmarks, Neon compatibility and tenant provisioning |
+| [operations.yml](../.github/workflows/operations.yml) | Explicit deployed smoke, diagnostics, benchmarks and tenant provisioning |
 | [maintenance.yml](../.github/workflows/maintenance.yml) | Bounded GHCR retention; dry-run unless explicitly enabled |
 
-The callable [verify.yml](../.github/workflows/verify.yml), [prepare.yml](../.github/workflows/prepare.yml)
-and [release.yml](../.github/workflows/release.yml) implement the pipeline. The [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml) and other `deploy-*` files
+The callable [prepare.yml](../.github/workflows/prepare.yml) and [release.yml](../.github/workflows/release.yml) implement the pipeline. The [deploy-school-release.yml](../.github/workflows/deploy-school-release.yml) and other `deploy-*` files
 are callable component implementations, with no separate push or manual writers.
 
-The flow is `plan → selected verification + artifact preparation → Pipeline gate → production lock
+The flow is `plan → selected artifact preparation → Pipeline gate → production lock
 → recheck main/baselines → universal maintenance → selected deployment → readiness/acceptance
-→ publish accepted baselines → open maintenance`. PRs verify without production credentials or
-release builds. Main builds selected immutable images and frontend bundles in parallel with checks.
+→ publish accepted baselines → open maintenance`. PRs only plan affected scopes and require an up-to-date main base. Main builds selected immutable
+images and frontend bundles. Test suites execute on developer machines before a ready PR, as described
+in [Testing](./TESTING.md); GitHub neither runs those suites nor imports local test results.
 All production mutations, including Admin and tenant provisioning, share `schoolorbit-production`
 with cancellation disabled. Cloudflare Workers Builds must remain disconnected from the managed
 Admin/School Workers: repository-linked automatic deployment is a competing writer and bypasses
@@ -152,15 +152,14 @@ exact request UUID; it has the same maintenance and acceptance discipline.
 Team development uses one branch/worktree per independent developer and a PR for every main
 change. Write collaborators automatically squash merge when the latest-main candidate passes;
 no human approval is mandatory. Fork/external PRs cannot auto-merge. The trusted controller
-updates and explicitly rechecks a stale candidate, merges one at a time, then dispatches the main
+leaves stale branches blocked until their developer updates and reruns affected local tests, merges one at a time, then dispatches the main
 pipeline because `GITHUB_TOKEN` merges do not emit push workflows. Native protection for `main`
 requires a PR, the GitHub Actions `Pipeline gate`, and an up-to-date branch, including for admins.
 It requires zero human approvals, linear history, and forbids force pushes and branch deletion.
-Equivalent PR verification may be reused only with exact tree/base, latest successful attempt,
-suite receipts and matching runner/toolchain/profile evidence; otherwise main executes its checks.
-Backend owners prime the main-owned compiled snapshot after proven PR verification; the PR's
-fresh fixtures are reused once rather than repeated. Compiler-snapshot receipts are distinct from
-test verification, and deployed readiness, migrations and authenticated smoke always execute.
+The `Pipeline gate` certifies planning and selected build success, not local test execution.
+Local commands/results belong in each PR; keep work in draft until affected checks pass.
+GitHub does not maintain test receipts or compiler snapshots. Deployed readiness, migrations,
+browser mount/assets and authenticated smoke always execute under universal maintenance.
 
 ### Build, deployment timing, and image retention
 

@@ -8,7 +8,7 @@ import { classify, changes, git, makePlan, suites } from './lib/pipeline-policy.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const command = args.shift();
-if (command === 'verify' || command === 'prime') {
+if (command === 'verify') {
   process.env.CARGO_INCREMENTAL ||= '0';
   process.env.CARGO_PROFILE_DEV_DEBUG ||= '0';
   process.env.CARGO_PROFILE_TEST_DEBUG ||= '0';
@@ -41,17 +41,8 @@ try {
     if (process.env.GITHUB_OUTPUT) {
       appendFileSync(process.env.GITHUB_OUTPUT, `plan=${JSON.stringify(plan)}\nverify=${JSON.stringify(plan.verify)}\nbuild=${JSON.stringify(plan.build)}\ndeploy=${JSON.stringify(plan.deploy)}\n`);
     }
-  } else if (command === 'verify' || command === 'prime') {
-    const prime = command === 'prime';
+  } else if (command === 'verify') {
     let selected = option('--scope', 'auto');
-    if (prime) {
-      const proof = JSON.parse(process.env.PR_VERIFICATION_PROOF || 'null');
-      if (process.env.GITHUB_REF !== 'refs/heads/main' || !['push','workflow_dispatch'].includes(process.env.GITHUB_EVENT_NAME) ||
-          !['backend-school','backend-admin'].includes(selected) || !proof || !/^\d+$/.test(proof.runId) || !Number.isInteger(proof.attempt) || proof.attempt < 1 ||
-          proof.tree !== git(root, 'rev-parse', 'HEAD^{tree}') || !Array.isArray(proof.suites) || !proof.suites.includes(selected)) throw new Error('Compiler priming requires exact-tree verified PR evidence on main');
-      console.log(`Reuse successful PR run ${proof.runId} attempt ${proof.attempt}; compile snapshot only, no duplicate database fixture execution.`);
-    }
-    const testFlags = prime ? ['--no-run'] : [];
     if (selected === 'auto') {
       const base = git(root, 'merge-base', 'origin/main', 'HEAD');
       const tracked = git(root, 'diff', '--no-renames', '--name-only', '-z', base).split('\0').filter(Boolean);
@@ -71,26 +62,18 @@ try {
         const cwd = path.join(root, suite);
         run('cargo', ['fmt', '--all', '--', '--check'], cwd);
         run('cargo', ['check', '--workspace', '--all-targets', '--locked'], cwd);
-        run('cargo', ['test', '--test', 'static_architecture', '--locked', ...testFlags], cwd);
-        run('cargo', ['test', '--bin', 'backend-school', 'api_contract::tests', '--locked', ...testFlags], cwd);
-        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-http', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-attendance', '--lib', '--locked', ...testFlags], cwd);
+        run('cargo', ['test', '--test', 'static_architecture', '--locked'], cwd);
+        run('cargo', ['test', '--bin', 'backend-school', 'api_contract::tests', '--locked'], cwd);
+        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-http', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-attendance', '--lib', '--locked'], cwd);
         run('node', ['scripts/generate-api-contracts.mjs', '--check']);
         const executable = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--format-version', '1', '--no-deps'], { cwd, encoding: 'utf8' })).target_directory + '/debug/backend-school';
         JSON.parse(execFileSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
-        run('node', ['--test', 'scripts/tests/neon-compatibility.test.mjs']);
-        if (prime) {
-          run('cargo', ['test', '--bin', 'seed_sandbox', '--locked', '--no-run'], cwd);
-          run('cargo', ['test', '--test', 'delivery_versions', '--locked', '--no-run'], cwd);
-          // Match the fixture owner's individual feature graphs, rather than
-          // unifying packages and starving its next PR of those cached variants.
-          run('cargo', ['test', '-p', 'school-navigation', '--locked', '--no-run'], cwd);
-          run('cargo', ['test', '-p', 'school-auth', '--lib', '--locked', '--no-run'], cwd);
-          run('cargo', ['test', '-p', 'school-certificates', '--locked', '--no-run'], cwd);
-        } else run('bash', ['scripts/test_school_database_suite.sh']);
+        run('node', ['--test', 'scripts/tests/neon-compatibility.test.mjs', 'scripts/tests/neon-create-test-branch.test.mjs']);
+        run('bash', ['scripts/test_school_database_suite.sh']);
       }
       if (suite === 'backend-admin') {
         run('cargo', ['fmt', '--all', '--', '--check'], path.join(root, suite));
-        run('bash', ['scripts/test_backend_admin.sh'], root, {SCHOOLORBIT_COMPILE_ONLY:prime ? 'true' : 'false'});
+        run('bash', ['scripts/test_backend_admin.sh']);
       }
       if (suite.startsWith('frontend-')) {
         run('npm', ['run', 'lint'], path.join(root, suite));
@@ -99,7 +82,7 @@ try {
         if (suite === 'frontend-school') run('npx', ['playwright', 'test', '--list', 'tests/e2e/login.spec.ts', 'tests/e2e/session-security.spec.ts'], path.join(root, suite), { E2E_SESSION_USERNAME: 'discovery-only', E2E_SESSION_PASSWORD: 'discovery-only', E2E_BASE_URL: 'http://127.0.0.1:4173', E2E_API_URL: 'http://127.0.0.1:3000' });
       }
     }
-  } else throw new Error('Usage: scripts/pipeline plan [--release true --state FILE --scope COMPONENT] | verify --scope auto|full|SUITE | prime --scope BACKEND (internal, verified main only)');
+  } else throw new Error('Usage: scripts/pipeline plan [--release true --state FILE --scope COMPONENT] | verify --scope auto|full|SUITE');
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

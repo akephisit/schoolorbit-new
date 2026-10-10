@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-container="schoolorbit-admin-ci-$$-$RANDOM"
+container="schoolorbit-admin-test-$$-$RANDOM"
 cleanup() { docker rm -f -v "$container" >/dev/null; }
 trap cleanup EXIT
 docker run -d --name "$container" -p '127.0.0.1::5432' \
@@ -22,8 +22,4 @@ binding=$(docker port "$container" 5432/tcp)
 export DATABASE_URL="postgresql://schoolorbit_test:schoolorbit_test@${binding}/schoolorbit_test?sslmode=disable"
 cd backend-admin
 cargo check --all-targets --locked
-if [[ ${SCHOOLORBIT_COMPILE_ONLY:-false} == true ]]; then
-    cargo test --locked --no-run
-else
-    cargo test --locked
-fi
+cargo test --locked
