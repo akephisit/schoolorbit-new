@@ -172,6 +172,21 @@ Feature toggles are optional. Add one only for staged rollout or operational con
 
 Both backends keep HTTP handling, business decisions, and persistence in their owning layers. The crate, tenant-context, and feature-module paths below describe backend-school. Backend-admin uses its existing application/service owners; do not copy school tenant or permission adapters into control-plane handlers. Existing Admin deviations do not waive the general error, typing, security, or API requirements; repair a changed boundary with its actual callers and tests.
 
+### Layer ownership and implementation references
+
+For each endpoint, establish this flow before writing code: router/session middleware → typed handler → resource policy and domain service → database operation → typed HTTP envelope. Keep external delivery in the owning application adapter when the domain cannot depend on it.
+
+| Responsibility | School owner and rule |
+| --- | --- |
+| Startup and router composition | [Application router](backend-school/src/app.rs) and application-owned state. Register the route under the existing authentication/tenant boundary; do not create a feature-local auth flow. |
+| HTTP transport | The owning domain HTTP crate or existing `src/modules/<feature>/handlers.rs`. Read [timetable handlers](backend-school/crates/school-academic-http/src/handlers/timetable_blocks.rs) for narrow HTTP state and typed service calls, or [calendar request handlers](backend-school/src/modules/calendar/request_handlers.rs) for a root-owned transport. Neither is a license to copy an unrelated feature's state or permissions. |
+| Business rules and persistence | The existing domain crate's typed models, policy, and service operations. Read [calendar requests](backend-school/crates/school-calendar/src/requests.rs) for validation, bounded reads, and transactional decisions. Keep remaining application-owned feature services with their existing owner until a justified crate boundary is introduced. |
+| Resource scope | The owning domain policy or existing application policy. [Staff access policy](backend-school/src/policies/staff_access_policy.rs) illustrates reuse of the shared resource policy and separate PII access; select the policy matching the actual resource. |
+| Cross-domain side effects | Application adapters use provider-owned operations/ports. [Calendar notification workflow](backend-school/src/modules/calendar/services/request_workflow.rs) illustrates post-commit delivery; do not pull notification infrastructure into the calendar domain crate. |
+| Response and wire schema | [School HTTP types](backend-school/crates/school-http/src/lib.rs), typed domain DTOs, and [OpenAPI composition](backend-school/src/api_contract.rs). Follow section 5 for generation and consumers. |
+
+Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](backend-admin/src/handlers/), [services](backend-admin/src/services/), and [models](backend-admin/src/models/), consumed by [the Admin API client](frontend-admin/src/lib/api/client.ts). These links identify ownership, not blanket approval of existing implementation details. Inspect each changed endpoint's actual authentication, error mapping, wire types, and callers before reuse.
+
 ### Backend-school Cargo workspace
 
 - `backend-school/Cargo.toml` is both the application package and the non-virtual workspace root.
@@ -217,7 +232,7 @@ Both backends keep HTTP handling, business decisions, and persistence in their o
 - Browser mutations require the exact tenant `Origin` plus `X-CSRF-Token`. The backend-host-only `__Host-schoolorbit_session` cookie is opaque, `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, and has no `Domain` attribute.
 - Keep handlers thin: request context → permission/policy → service → typed response → realtime signal when required.
 - Feature handlers must not contain `sqlx::query*`, `.fetch_*`, `.execute`, `.begin`, `sqlx::FromRow`, or database helpers typed as `PgPool`.
-- Business logic and SQL belong in `modules/<feature>/services/`; DB-facing types belong in services/models. Services receive `&PgPool` and return `Result<T, AppError>` or a meaningful outcome enum.
+- Business logic and SQL belong to the owning domain crate's service/model layer, or to `modules/<feature>/services/` for an existing application-owned capability. DB-facing types stay with that owner, not in handlers. DB service operations receive `&PgPool` or the existing transaction interface and return `Result<T, AppError>` or a meaningful outcome enum; pure helpers need no pool.
 - Extract validation, grouping, defaults, formatting, parsing, ID generation, and decision logic into testable helpers. New logic-bearing service files require focused `#[cfg(test)]` tests.
 - Prefer validated bulk SQL for same-kind multi-row mutations. Normalize and deduplicate before writing. Per-row writes are reserved for genuinely different side effects or ordering.
 - Never create `mod.rs`; use sibling module files such as `handlers.rs`.
@@ -232,6 +247,16 @@ Both backends keep HTTP handling, business decisions, and persistence in their o
 - Stable-shape JSON/JSONB uses named domain types or `sqlx::types::Json<T>`. `serde_json::Value` is limited to genuinely dynamic metadata, flexible configuration, audit records, or third-party payloads.
 - A service feeding a JSON endpoint returns typed structs/outcomes, not ad-hoc `serde_json::Value`.
 - Prefer compile-time-checked SQLx queries where practical.
+
+### Validation, transactions, and side effects
+
+- Validate client input in the backend even when the form already validates it. Define required/optional/null fields, lengths, allowed values, date ranges, and state transitions in typed domain validation. Derive actor identity and protected ownership from authenticated context; never accept a client-selected actor or tenant as authorization.
+- Parameterize SQL values. Dynamic sort directions, identifiers, or clauses come from a closed server-owned mapping, never direct interpolation of request text. Bound page sizes and date ranges, use deterministic ordering with a stable tie-breaker, and preserve resource-scope predicates before pagination.
+- When several writes form one business decision, use one transaction, including required durable audit records. Enforce uniqueness and relationships with database constraints as appropriate. Use existing row locks or revision checks for concurrent decisions; stale or already-decided resources must not silently overwrite current state or create duplicate outcomes.
+- Define replay behavior for non-idempotent mutations. Do not automatically retry creation, approval, publication, or deletion after an ambiguous transport failure unless the operation has a verified idempotency design; reconcile authoritative state instead.
+- Emit realtime signals and initiate best-effort notifications only after the authoritative mutation commits. A delivery failure must not be presented as proof that the committed mutation failed. Record safe actionable diagnostics; use a durable delivery mechanism only when the feature's delivery guarantees require it and its owner/recovery behavior are designed explicitly.
+- Keep civil dates and local times distinct from timestamps using the owning domain's typed date/time model. Reuse existing timezone and academic-context rules; do not silently convert a school calendar date to a UTC instant or infer year/term ownership from an unrelated UI selection.
+- Cover validation, denied access, rollback, stale/concurrent writes, and retry behavior when relevant to the changed operation. Database and external-provider fixtures remain disposable and owned; do not exercise mutations or notifications against real tenant users.
 
 ### SQL read efficiency
 
@@ -338,11 +363,25 @@ Both frontends use their pinned SvelteKit/Svelte versions and owning configurati
 - Prefer `+page.server.ts` loaders/actions where server-only credentials or server-side behavior are involved. Load route-specific data only.
 - Reuse the owning shared client-state API for auth, permissions, realtime connectivity, notifications, and toasts. School uses its existing Svelte stores; Admin auth uses [its rune-based owner](frontend-admin/src/lib/stores/auth.svelte.ts). Do not add a second store or convert the owner just to match local component state.
 - Type component props. Prefer existing local components and patterns before adding abstractions.
-- Use Tailwind CSS and local shadcn-svelte primitives for standard buttons, forms, tables, dialogs, sheets, tabs, menus, alerts, badges, skeletons, pagination, and tooltips.
+- Use Tailwind CSS with the owning theme and the standard controls specified in `Required School UI primitives`. Compose pagination and other missing higher-level controls from actual local exports rather than assuming an upstream component exists here.
 - Large browser-only PDF, spreadsheet, image-conversion, and document-export libraries must load lazily after a user action and resolve to a lightweight server stub during SSR. Do not bundle them into the Cloudflare Worker.
 - Dense fixed-format inputs need explicit readable column and input widths. Prefer horizontal scrolling to unreadable shrinking.
 - Use shared app states from `src/lib/components/app-state/`: `PageSkeleton`, `PageState`, and `LoadingButton`.
 - Mutation controls use action-specific loading state. When a typed mutation returns a resource, patch only the affected local state; reserve broad reloads for intentionally broad dependencies or manual refresh.
+
+### Frontend file ownership
+
+| Responsibility | Owning file or component |
+| --- | --- |
+| Route identity, context, and primary reads | `+page.ts` / the narrowest `+layout.ts`, typed load output, and School `_meta`. For a focused example read [school-font loader](frontend-school/src/routes/%28app%29/staff/school-fonts/+page.ts) and [calendar loader](frontend-school/src/routes/%28app%29/staff/calendar/+page.ts); reuse their responsibility boundaries, not their domain-specific permissions. |
+| Route presentation and composition | `+page.svelte` composes the header, independently renderable regions, and workflow actions. Use generated route `PageProps` when consuming load data; do not duplicate transport or domain rules inside the markup. |
+| Reusable domain UI | `src/lib/components/<domain>/` owns typed props, domain presentation, and interaction-specific state. Extract cohesive forms, dialogs, grids, and editors when they have an independent responsibility; file length alone is not a reason to create a generic abstraction. |
+| API transport and wire types | `src/lib/api/<feature>.ts` uses the owning central client; School imports generated wire types. Pages/components call typed feature operations, including lazy interaction reads, instead of reimplementing cookies, CSRF, tenant headers, or HTTP envelope parsing. |
+| Pure calculations and draft transformations | The existing feature helper owner under `src/lib/`. Keep these typed and independently testable; do not bury sorting, date normalization, payload mapping, or validation in repeated markup expressions. |
+| Shared identity and app state | Existing auth/permission/realtime stores and app-state components. Feature drafts and per-action pending state stay local unless a shared owner is required. |
+
+- For School streamed reads, reuse [route result handling](frontend-school/src/lib/navigation/route-load.ts). For superseded browser reads, reuse [LatestRequest](frontend-school/src/lib/async/latest-request.ts) when its lifecycle matches the feature; cancel/dispose and reject late results after route-context, user, or permission changes. Do not reset a user's active draft merely because unrelated load data refreshed.
+- Use frontend validation for useful field feedback while retaining backend authority. Reuse the feature's existing schema/normalizer; if none exists, choose typed helpers or the installed Zod according to complexity. Align required/null, length, date, and enum semantics with the wire contract rather than inventing frontend-only business restrictions.
 
 ### Route data loading and navigation performance
 
@@ -387,6 +426,25 @@ Choose controls and detail surfaces according to the task on each page. These pr
 - Keep text hierarchy consistent through `PageHeader`, shared form labels, and component defaults. Use the configured app font and Tailwind spacing scale; change app-wide density or typography at its shared owner rather than compensating with route-local font sizes, heights, or arbitrary spacing.
 - Reuse a shared component for repeated filter bars, form sections, action groups, and status presentations when their visual and interaction requirements match. Keep domain data and permissions with the feature owner; do not build a universal page component with unrelated workflow flags.
 
+#### Required School UI primitives
+
+All new or coherently changed School standard controls use the local shadcn-svelte owners under `src/lib/components/ui/`, composed with app-layout/app-state where applicable. Do not recreate an ordinary control with route-local HTML/CSS, copy a styled control from another page, or introduce a second component library for the same responsibility. Native semantic layout elements and domain-specific interactive surfaces remain valid.
+
+| UI need | Required owner and convention |
+| --- | --- |
+| Actions and navigation | [Button](frontend-school/src/lib/components/ui/button/index.ts); use its `href` support for button-styled navigation. Primary actions use `default`, cancel/secondary actions use `outline` or the established secondary variant, low-emphasis tools use `ghost`, and destructive actions use `destructive`. Pending mutations use [LoadingButton](frontend-school/src/lib/components/app-state/LoadingButton.svelte) or an equivalent composition of the same Button for a domain-specific pending label. |
+| Form fields | Local `Label`, `Input`, `Textarea`, `Select`, `Checkbox`, `RadioGroup`, and `Switch` as appropriate to the value. Use [DatePicker](frontend-school/src/lib/components/ui/date-picker/DatePicker.svelte) for standard date selection; reuse a domain-specific time/editor control when its input semantics require it. |
+| Content and results | Local `Card` for a meaningful content group, `Table` for tabular results, and `Badge` for compact status. Plain semantic sections/lists are appropriate without a card wrapper. Paginated views reuse their existing Button-based controls; do not import a Pagination or DataTable component that does not exist in this tree. |
+| Focused forms and confirmations | Local `Dialog` for a focused form, `AlertDialog` for an irreversible decision, `Sheet` for an appropriate side workflow, and `Popover` for brief contextual content. Keep titles, descriptions, focus handling, and dismiss behavior supplied by the primitive. |
+| Navigation and tools | Local `Tabs` for in-place regions with one workflow owner, `DropdownMenu` for grouped commands, and `Tooltip` for supplemental hints. Routes remain the owner of workflows needing history or deep links; tooltips do not replace accessible labels. |
+| Loading and feedback | [App-state components](frontend-school/src/lib/components/app-state/) (`PageSkeleton`, `TableSkeleton`, `PageState`, `LoadingButton`), local `Skeleton`/`Alert`, and the existing `svelte-sonner` toast owner. Durable errors and required recovery actions remain visible in the affected region or form; a transient toast alone is insufficient. |
+| Icons | The installed `@lucide/svelte` set, with the owning component's size convention and an accessible name for icon-only actions. Do not mix another icon family incidentally. |
+
+- Import the actual exports from `#lib/components/ui/<component>/index.js` or the documented existing component path. Inspect the local implementation for its props, snippets, and exports; upstream examples or [registry configuration](frontend-school/components.json) may use older aliases and are not the application's runtime import contract.
+- A domain component such as [CalendarMonthGrid](frontend-school/src/lib/components/calendar/CalendarMonthGrid.svelte) or [TimetableBoard](frontend-school/src/lib/components/academic/timetable/TimetableBoard.svelte) owns a specialized workspace; compose it with standard controls instead of forcing that workspace into an unrelated primitive. State its necessary interaction/layout exception in the working agreement.
+- If a standard primitive is missing, first verify local exports and existing compositions. Add it once under the UI owner only when the workflow requires it, with compatible dependencies and the project's imports/theme; do not rerun initialization or overwrite customized primitives as part of adding a page.
+- frontend-admin currently has its own Tailwind controls and no local shadcn-svelte library. Preserve its local owners for scoped Admin work. Establishing shadcn there requires an explicit component-library migration with its own local owner, dependency/configuration updates, and affected workflow checks; neither claim it already exists nor import School internals to simulate it.
+
 #### Page patterns
 
 Pages serving the same kind of task use the same visual order and action placement. Keep only regions that the workflow needs; domain-specific boards and dense editors may use their appropriate pattern while retaining the shared header, controls, and state conventions.
@@ -398,6 +456,17 @@ Pages serving the same kind of task use the same visual order and action placeme
 | Detail | Page header with resource actions → summary/status → related detail sections or independently navigable workflows. |
 | Dashboard | Page header → summary regions → detailed regions; each independent region follows the route-loading policy. |
 | Board/timetable | Page header → context selectors and tools → the scrollable workspace, following the full-height layout rules below. |
+
+Apply these details to the selected pattern; they describe new or coherently changed workflows, not a mandate to rewrite every existing page at once:
+
+- **List/search:** keep creation in header actions with its exact permission; keep filters together and results below them. Apply sorting/filtering/pagination to the complete authorized result scope, not only the visible page. Reset the page/cursor when its filter context changes. Show pending/error/empty states in the result region; preserve usable results for a background refresh. Use tables for comparable fields and cards/lists when the task needs a compact item presentation. Read [SchoolFontLibrary](frontend-school/src/lib/components/school-fonts/SchoolFontLibrary.svelte) for feature-owned result grouping, targeted mutation patches, and guarded deletion; add search/paging only when the actual workflow requires them.
+- **Create/edit:** use a semantic form with an explicit submit action, grouped sections, associated labels, field-local errors, and a constrained inner form width. Keep cancel before save in the trailing action group, mark non-submit controls `type="button"`, prevent duplicate submission, and retain entered values on validation, network, or conflict errors. Separate saved data from the editable draft. Read [CertificateCampaignForm](frontend-school/src/lib/components/certificates/CertificateCampaignForm.svelte) for typed form inputs, lazy-option states, and the action group; do not copy certificate-specific rules into other forms.
+- **Detail:** put identity/status and exact-permission actions before related information. Load independently authorized related regions independently; basic resource reads must not depend on edit/approval-only requests. Keep back navigation tied to valid context, and give deep workflows their own routes. Read [student detail loader](frontend-school/src/routes/%28app%29/staff/students/%5Bid%5D/+page.ts) for separate profile/history ownership, without copying student or academic permissions to unrelated details.
+- **Dashboard:** expose only real, authorized summaries with clear scope and destinations. Independent summaries and work regions follow the streaming/retry policy; never replace a failed count with zero or add placeholder metrics as if they were live. Read [staff home loader](frontend-school/src/routes/%28app%29/staff/+page.ts) and its page for the actual overview owner; preserve each shared region's existing lifecycle.
+- **Calendar/board/timetable:** keep date/version/scope navigation and tools in stable positions and render the workspace immediately for the selected context. Reuse the feature's grid/board owner; permit readable overflow and contextual detail surfaces. Preserve usable content while independent reads refresh, distinguish view/edit/pending states, and restrict creation/movement/deletion separately. Inspect the owning [calendar page](frontend-school/src/routes/%28app%29/staff/calendar/+page.svelte) or timetable components for the relevant interaction, not as an all-purpose CRUD template.
+- **Public pages:** use the public layout and bounded public API owner. Do not impose the authenticated `PageShell`, staff navigation, or permission stores on public pages; use the same theme and standard controls when appropriate and preserve their SSR/SEO requirements.
+
+Before adding a route, name its pattern, primary action, data/permission/context owners, and loading/empty/error/pending states in the working agreement. If no existing pattern fits, explain the workflow need and define the smallest coherent extension at the shared owner rather than silently inventing a new visual system.
 
 #### Workflow controls and detail
 
