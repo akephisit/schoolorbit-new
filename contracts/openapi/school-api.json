@@ -4387,14 +4387,29 @@
               "archived": {
                 "type": "boolean"
               },
+              "page": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "pageSize": {
+                "format": "int64",
+                "type": "integer"
+              },
               "summaries": {
                 "items": {
                   "$ref": "#/components/schemas/AttendanceSummary"
                 },
                 "type": "array"
+              },
+              "total": {
+                "format": "int64",
+                "type": "integer"
               }
             },
             "required": [
+              "page",
+              "pageSize",
+              "total",
               "summaries",
               "archived",
               "activityCountsAsPresent"
@@ -25167,17 +25182,69 @@
           "archived": {
             "type": "boolean"
           },
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pageSize": {
+            "format": "int64",
+            "type": "integer"
+          },
           "summaries": {
             "items": {
               "$ref": "#/components/schemas/AttendanceSummary"
             },
             "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
+          "page",
+          "pageSize",
+          "total",
           "summaries",
           "archived",
           "activityCountsAsPresent"
+        ],
+        "type": "object"
+      },
+      "AttendanceReportQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pageSize": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "search": {
+            "type": "string"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "academicTermId"
         ],
         "type": "object"
       },
@@ -80804,6 +80871,40 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -92714,6 +92815,16 @@
               }
             },
             "description": "Student creation permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Required default role or parent account is unavailable"
           }
         },
         "summary": "POST /api/students - เพิ่มนักเรียนใหม่",
@@ -92991,6 +93102,16 @@
               }
             },
             "description": "Student not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Required default role or parent account is unavailable"
           }
         },
         "summary": "POST /api/students/:id/parents - เพิ่มผู้ปกครองให้นักเรียนที่มีอยู่",

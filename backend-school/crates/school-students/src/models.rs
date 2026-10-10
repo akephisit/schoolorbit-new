@@ -123,7 +123,7 @@ pub struct CreateStudentRequest {
     pub parents: Option<Vec<CreateParentRequest>>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateParentRequest {
     pub title: Option<String>,
     pub first_name: String,

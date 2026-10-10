@@ -185,14 +185,66 @@ pub async fn cached_gallery(
     }
     Ok(faces)
 }
+async fn scan_context(
+    pool: &PgPool,
+    actor: &ActorContext,
+    p: &AttendanceScan,
+) -> Result<(AttendanceSession, Option<AttendanceScanOutcome>), AppError> {
+    require_device(pool, actor, p.device_id).await?;
+    let session = sessions::get(pool, p.session_id).await?;
+    if session.kind != AttendanceKind::Arrival {
+        policy::require_session(actor, &session, true)?;
+    }
+    // Reconcile committed events before fresh-capture or enrollment validation.
+    let accepted: Option<(Uuid, Uuid, Uuid, Uuid, chrono::DateTime<Utc>, AttendanceResult, String)> =
+        sqlx::query_as("SELECT e.session_id,e.student_id,e.device_id,e.evidence_file_id,e.captured_at,r.result,r.origin FROM attendance_scan_events e JOIN attendance_records r ON r.session_id=e.session_id AND r.student_id=e.student_id WHERE e.id=$1")
+        .bind(p.event_id).fetch_optional(pool).await?;
+    let outcome =
+        if let Some((session_id, student_id, device_id, file_id, captured_at, result, origin)) =
+            accepted
+        {
+            if (session_id, student_id, device_id, file_id)
+                != (p.session_id, p.student_id, p.device_id, p.evidence_file_id)
+                || captured_at.timestamp_micros() != p.captured_at.timestamp_micros()
+            {
+                return Err(AppError::Conflict("รหัสสแกนถูกใช้กับรายการอื่น".into()));
+            }
+            Some(AttendanceScanOutcome {
+                event_id: p.event_id,
+                student_id,
+                result,
+                duplicate: true,
+                teacher_conflict: origin == "teacher",
+            })
+        } else {
+            None
+        };
+    Ok((session, outcome))
+}
 pub async fn scan(
     pool: &PgPool,
     actor: &ActorContext,
     p: AttendanceScan,
 ) -> Result<AttendanceScanOutcome, AppError> {
-    let session = sessions::get(pool, p.session_id).await?;
+    let (session, accepted) = scan_context(pool, actor, &p).await?;
+    if let Some(outcome) = accepted {
+        return Ok(outcome);
+    }
     let faces = gallery(pool, session.academic_term_id).await?;
-    scan_with_gallery(pool, actor, p, &faces).await
+    accept_scan(pool, actor, p, &faces, session).await
+}
+pub async fn scan_with_cached_gallery(
+    pool: &PgPool,
+    tenant: &str,
+    actor: &ActorContext,
+    p: AttendanceScan,
+) -> Result<AttendanceScanOutcome, AppError> {
+    let (session, accepted) = scan_context(pool, actor, &p).await?;
+    if let Some(outcome) = accepted {
+        return Ok(outcome);
+    }
+    let faces = cached_gallery(pool, tenant, session.academic_term_id).await?;
+    accept_scan(pool, actor, p, &faces, session).await
 }
 pub async fn scan_with_gallery(
     pool: &PgPool,
@@ -200,11 +252,19 @@ pub async fn scan_with_gallery(
     p: AttendanceScan,
     faces: &[AttendanceFace],
 ) -> Result<AttendanceScanOutcome, AppError> {
-    require_device(pool, actor, p.device_id).await?;
-    let s = sessions::get(pool, p.session_id).await?;
-    if s.kind != AttendanceKind::Arrival {
-        policy::require_session(actor, &s, true)?;
+    let (session, accepted) = scan_context(pool, actor, &p).await?;
+    if let Some(outcome) = accepted {
+        return Ok(outcome);
     }
+    accept_scan(pool, actor, p, faces, session).await
+}
+async fn accept_scan(
+    pool: &PgPool,
+    actor: &ActorContext,
+    p: AttendanceScan,
+    faces: &[AttendanceFace],
+    s: AttendanceSession,
+) -> Result<AttendanceScanOutcome, AppError> {
     if s.date
         != Utc::now()
             .with_timezone(&chrono_tz::Asia::Bangkok)
@@ -249,11 +309,16 @@ pub async fn scan_with_gallery(
     if cancelled {
         return Err(invalid("รอบนี้งดเช็คชื่อ"));
     }
-    let existing:Option<(Uuid,Uuid,Uuid)>=sqlx::query_as("SELECT id,session_id,student_id FROM attendance_scan_events WHERE id=$1 OR (session_id=$2 AND student_id=$3)").bind(p.event_id).bind(s.id).bind(p.student_id).fetch_optional(&mut *tx).await?;
+    let existing:Option<(Uuid,Uuid,Uuid,Uuid,Uuid,chrono::DateTime<Utc>)>=sqlx::query_as("SELECT id,session_id,student_id,device_id,evidence_file_id,captured_at FROM attendance_scan_events WHERE id=$1 OR (session_id=$2 AND student_id=$3)").bind(p.event_id).bind(s.id).bind(p.student_id).fetch_optional(&mut *tx).await?;
     let current:Option<(AttendanceResult,String,i64)>=sqlx::query_as("SELECT result,origin,row_version FROM attendance_records WHERE session_id=$1 AND student_id=$2 FOR UPDATE").bind(s.id).bind(p.student_id).fetch_optional(&mut *tx).await?;
     let (current, origin, revision) = current.ok_or_else(|| invalid("นักเรียนไม่อยู่ในรอบนี้"))?;
-    if let Some((event, session, student)) = existing {
-        if session != s.id || student != p.student_id {
+    if let Some((event, session, student, device, file, captured)) = existing {
+        if session != s.id
+            || student != p.student_id
+            || (event == p.event_id
+                && ((device, file) != (p.device_id, p.evidence_file_id)
+                    || captured.timestamp_micros() != p.captured_at.timestamp_micros()))
+        {
             return Err(AppError::Conflict("รหัสสแกนถูกใช้กับรายการอื่น".into()));
         }
         return Ok(AttendanceScanOutcome {

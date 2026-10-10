@@ -16,6 +16,12 @@
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { ApiClientError } from '#lib/api/client.js';
+	import {
+		copyAttendanceDetail,
+		mergeAttendanceDetail,
+		type AttendanceConflict
+	} from './session-merge.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -62,6 +68,10 @@
 		failedSession = $state.raw<AttendanceSession | null>(null),
 		reason = $state(''),
 		search = $state('');
+	let baseline = $state.raw<AttendanceDetail | null>(null);
+	let conflicts = $state<AttendanceConflict[]>([]);
+	let rosterPage = $state(1);
+	const rosterPageSize = 40;
 	const canStartAny = $derived(
 		$can.hasAny(
 			PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED,
@@ -86,10 +96,26 @@
 	const request = new LatestRequest();
 	onDestroy(() => request.abort());
 	const students = $derived(detail?.students.filter((s) => s.displayName.includes(search)) ?? []);
+	const visibleStudents = $derived(
+		students.slice((rosterPage - 1) * rosterPageSize, rosterPage * rosterPageSize)
+	);
+	function chooseConflict(conflict: AttendanceConflict, source: 'local' | 'latest') {
+		const row = detail?.students.find((row) => row.studentId === conflict.studentId);
+		if (!row) return;
+		if (conflict.fields.includes('result')) row.result = conflict[source].result;
+		if (conflict.fields.includes('note')) row.note = conflict[source].note;
+		conflicts = conflicts.filter((item) => item.studentId !== conflict.studentId);
+	}
 	async function refresh() {
+		if (busy) return;
+		const selected = selectedDate === workspace.date ? detail?.session.id : undefined;
 		const t = request.begin();
 		busy = true;
 		pendingAction = 'workspace';
+		conflicts = [];
+		baseline = null;
+		detail = null;
+		rosterPage = 1;
 		workspaceError = '';
 		detailError = '';
 		if (selectedDate !== workspace.date) {
@@ -98,8 +124,24 @@
 			reason = '';
 		}
 		try {
-			const result = await attendanceWorkspace(term, selectedDate, { signal: t.signal });
-			if (request.isCurrent(t.revision)) workspace = result;
+			const [result, loaded] = await Promise.all([
+				attendanceWorkspace(term, selectedDate, { signal: t.signal }),
+				selected ? attendanceDetail(selected, { signal: t.signal }) : Promise.resolve(null)
+			]);
+			if (request.isCurrent(t.revision)) {
+				workspace = loaded
+					? {
+							...result,
+							sessions: result.sessions.map((row) =>
+								row.id === loaded.session.id ? loaded.session : row
+							)
+						}
+					: result;
+				detail = loaded;
+				baseline = loaded ? copyAttendanceDetail(loaded) : null;
+				mutationError = '';
+				reason = '';
+			}
 		} catch (e) {
 			if (request.isCurrent(t.revision))
 				workspaceError = e instanceof Error ? e.message : 'โหลดไม่ได้';
@@ -116,6 +158,9 @@
 		busy = true;
 		pendingAction = 'detail';
 		detail = null;
+		baseline = null;
+		conflicts = [];
+		rosterPage = 1;
 		detailError = '';
 		failedSession = s;
 		mutationError = '';
@@ -131,6 +176,7 @@
 					: await attendanceDetail(s.id, { signal: t.signal });
 			if (!request.isCurrent(t.revision)) return;
 			detail = loaded;
+			baseline = copyAttendanceDetail(loaded);
 			failedSession = null;
 			workspace = {
 				...workspace,
@@ -156,7 +202,7 @@
 			detail = { ...detail, students: detail.students.map((s) => ({ ...s, result })) };
 	}
 	async function save() {
-		if (!detail || busy || !detail.writable || !canWrite) return;
+		if (!detail || busy || conflicts.length || !detail.writable || !canWrite) return;
 		mutationError = '';
 		const records = detail.students
 			.filter((s) => s.result !== 'unchecked')
@@ -180,6 +226,8 @@
 			});
 			if (!request.isCurrent(t.revision)) return;
 			detail = saved;
+			baseline = copyAttendanceDetail(saved);
+			conflicts = [];
 			workspace = {
 				...workspace,
 				sessions: workspace.sessions.map((s) => (s.id === detail?.session.id ? detail.session : s))
@@ -187,8 +235,29 @@
 			toast.success('บันทึกแล้ว');
 			reason = '';
 		} catch (e) {
-			if (request.isCurrent(t.revision))
+			if (request.isCurrent(t.revision)) {
 				mutationError = e instanceof Error ? e.message : 'บันทึกไม่ได้';
+				if (e instanceof ApiClientError && e.status === 409 && detail && baseline) {
+					try {
+						const latest = await attendanceDetail(detail.session.id, { signal: t.signal });
+						if (!request.isCurrent(t.revision)) return;
+						const merged = mergeAttendanceDetail(baseline, detail, latest);
+						detail = merged.detail;
+						baseline = copyAttendanceDetail(latest);
+						conflicts = merged.conflicts;
+						workspace = {
+							...workspace,
+							sessions: workspace.sessions.map((row) =>
+								row.id === latest.session.id ? latest.session : row
+							)
+						};
+					} catch (error) {
+						if (request.isCurrent(t.revision))
+							mutationError +=
+								' · ' + (error instanceof Error ? error.message : 'โหลดผลล่าสุดไม่ได้');
+					}
+				}
+			}
 		} finally {
 			if (request.isCurrent(t.revision)) {
 				busy = false;
@@ -278,6 +347,8 @@
 				disabled={busy}
 				onclick={() => {
 					kind = value as AttendanceKind;
+					baseline = null;
+					conflicts = [];
 					detail = null;
 					detailError = '';
 					mutationError = '';
@@ -402,6 +473,9 @@
 								id="attendance-search"
 								placeholder="ค้นหาชื่อนักเรียน"
 								bind:value={search}
+								oninput={() => {
+									rosterPage = 1;
+								}}
 								onkeydown={(event) => {
 									if (event.key === 'Enter') event.preventDefault();
 								}}
@@ -421,8 +495,8 @@
 								>
 							</div>{/if}
 					</div>
-					<Table.Root class="min-w-[640px]">
-						<Table.Header
+					<Table.Root class="block min-w-0 sm:table sm:min-w-[640px]">
+						<Table.Header class="hidden sm:table-header-group"
 							><Table.Row
 								><Table.Head class="w-56">เลขที่ / ชื่อ</Table.Head><Table.Head class="w-40"
 									>ผล</Table.Head
@@ -431,13 +505,14 @@
 								></Table.Row
 							></Table.Header
 						>
-						<Table.Body
-							>{#each students as s (s.studentId)}<Table.Row
-									><Table.Cell
+						<Table.Body class="block sm:table-row-group"
+							>{#each visibleStudents as s (s.studentId)}<Table.Row
+									class="grid grid-cols-2 gap-3 py-4 sm:table-row"
+									><Table.Cell class="col-span-2 block whitespace-normal sm:table-cell"
 										><span class="text-muted-foreground">{s.classNumber ?? '-'} · </span><span
 											class="font-medium">{s.displayName}</span
 										></Table.Cell
-									><Table.Cell
+									><Table.Cell class="block sm:table-cell"
 										><AttendanceSelect
 											label={`ผลของ ${s.displayName}`}
 											value={s.result}
@@ -449,14 +524,17 @@
 												.filter(([value]) => value !== 'unchecked' || !detail?.session.savedAt)
 												.map(([value, label]) => ({ value, label }))}
 										/></Table.Cell
-									><Table.Cell class="text-muted-foreground"
-										>{s.arrivalAt
+									><Table.Cell class="block text-muted-foreground sm:table-cell"
+										><span class="block text-xs sm:hidden">เข้าโรงเรียน</span>{s.arrivalAt
 											? new Date(s.arrivalAt).toLocaleTimeString('th-TH', {
 													timeZone: 'Asia/Bangkok'
 												})
 											: '—'}</Table.Cell
-									><Table.Cell
+									><Table.Cell class="col-span-2 block whitespace-normal sm:table-cell"
+										><Label for={`attendance-note-${s.studentId}`} class="mb-2 sm:hidden"
+											>หมายเหตุ</Label
 										><Input
+											id={`attendance-note-${s.studentId}`}
 											aria-label={`หมายเหตุของ ${s.displayName}`}
 											bind:value={s.note}
 											maxlength={1000}
@@ -470,6 +548,65 @@
 								>{/each}</Table.Body
 						>
 					</Table.Root>
+					<div
+						class="flex flex-wrap items-center justify-between gap-3"
+						aria-label="หน้ารายชื่อนักเรียน"
+					>
+						<p class="text-sm text-muted-foreground">
+							แสดง {visibleStudents.length} จาก {students.length} คน · คำสั่งทั้งหมดและการบันทึกครอบคลุมทั้งรอบ
+						</p>
+						<div class="flex gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								disabled={rosterPage <= 1 || busy}
+								onclick={() => {
+									rosterPage--;
+								}}>ก่อนหน้า</Button
+							><Button
+								type="button"
+								variant="outline"
+								disabled={rosterPage * rosterPageSize >= students.length || busy}
+								onclick={() => {
+									rosterPage++;
+								}}>ถัดไป</Button
+							>
+						</div>
+					</div>
+					{#each conflicts as conflict (conflict.studentId)}
+						<Alert
+							><AlertTitle>ข้อมูลเปลี่ยนพร้อมกัน: {conflict.local.displayName}</AlertTitle
+							><AlertDescription>
+								<p>
+									ตรวจสอบ{conflict.fields.includes('result')
+										? 'ผลเช็คชื่อ'
+										: ''}{conflict.fields.includes('note') ? ' และหมายเหตุ' : ''}ก่อนบันทึก
+								</p>
+								<p>
+									ของคุณ: {resultLabels[conflict.local.result]} · {conflict.local.note ||
+										'ไม่มีหมายเหตุ'}
+								</p>
+								<p>
+									ล่าสุด: {resultLabels[conflict.latest.result]} · {conflict.latest.note ||
+										'ไม่มีหมายเหตุ'}
+								</p>
+								<div class="mt-3 flex flex-wrap gap-2">
+									<Button
+										type="button"
+										variant="outline"
+										onclick={() => chooseConflict(conflict, 'latest')}
+										>ใช้ข้อมูลล่าสุดของ {conflict.local.displayName}</Button
+									><Button
+										type="button"
+										variant="outline"
+										onclick={() => chooseConflict(conflict, 'local')}
+										>ใช้ข้อมูลของฉันสำหรับ {conflict.local.displayName}</Button
+									>
+								</div>
+							</AlertDescription></Alert
+						>
+					{/each}
+
 					{#if mutationError}<Alert variant="destructive"
 							><AlertTitle>ยังบันทึกไม่สำเร็จ</AlertTitle><AlertDescription
 								>{mutationError}</AlertDescription
@@ -502,7 +639,7 @@
 							><LoadingButton
 								type="submit"
 								loading={pendingAction === 'save'}
-								disabled={busy || !detail.writable}>บันทึก</LoadingButton
+								disabled={busy || !detail.writable || conflicts.length > 0}>บันทึก</LoadingButton
 							>
 						</div>
 					{:else}<p class="text-sm text-muted-foreground">

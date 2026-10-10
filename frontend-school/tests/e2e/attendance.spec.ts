@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { mockStaffHome, id, year, actor } from './fixtures/staff-home-route-data';
 import type {
@@ -165,7 +166,14 @@ test('permission-scope changes discard the old attendance report and reload', as
 		async (route) => {
 			if (++count === 1) return route.fallback();
 			await held;
-			await reply(route, { archived: false, activityCountsAsPresent: true, summaries: [] });
+			await reply(route, {
+				archived: false,
+				activityCountsAsPresent: true,
+				summaries: [],
+				page: 1,
+				pageSize: 50,
+				total: 0
+			});
 		}
 	);
 	await page.goto(path('/report'));
@@ -197,7 +205,14 @@ test('a delayed report from the previous permission scope cannot repopulate the 
 				await held;
 				return route.fallback();
 			}
-			await reply(route, { archived: false, activityCountsAsPresent: true, summaries: [] });
+			await reply(route, {
+				archived: false,
+				activityCountsAsPresent: true,
+				summaries: [],
+				page: 1,
+				pageSize: 50,
+				total: 0
+			});
 		}
 	);
 	await page.goto(path('/report'));
@@ -481,6 +496,9 @@ async function mockAttendance(
 			if (resource.endsWith('/report'))
 				return reply(route, {
 					archived,
+					page: 1,
+					pageSize: 50,
+					total: new URL(request.url()).searchParams.get('studentId') ? 1 : 2,
 					activityCountsAsPresent: true,
 					summaries: (new URL(request.url()).searchParams.get('studentId')
 						? [new URL(request.url()).searchParams.get('studentId')!]
@@ -608,7 +626,9 @@ test('module navigation keeps academic context and marks the current page', asyn
 		}
 	}
 });
-test('refresh and search preserve the roster draft without submitting it', async ({ page }) => {
+test('explicit refresh discards input while search preserves current edits without submitting', async ({
+	page
+}) => {
 	const api = await mockAttendance(page);
 	await page.goto(path());
 	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
@@ -616,8 +636,10 @@ test('refresh and search preserve the roster draft without submitting it', async
 	await page.getByRole('option', { name: 'มา', exact: true }).click();
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
 	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
-	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('ตรวจซ้ำ');
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('ยังไม่เช็ค');
+	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('');
+	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
+	await page.getByRole('option', { name: 'มา', exact: true }).click();
 	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่มีชื่อนี้');
 	await page.getByLabel('ค้นหาชื่อนักเรียน').press('Enter');
 	await expect(page.getByText('ไม่พบชื่อนักเรียนที่ค้นหา', { exact: true })).toBeVisible();
@@ -728,9 +750,7 @@ test('successful purge remains archived when only the summary refresh fails', as
 		.getByRole('alertdialog')
 		.getByRole('button', { name: 'ยืนยันล้างข้อมูล', exact: true })
 		.click();
-	await expect(
-		page.getByText('ล้างรายละเอียดแล้ว แต่โหลดสรุปล่าสุดไม่ได้', { exact: true })
-	).toBeVisible();
+	await expect(page.getByText('โหลดสรุปล่าสุดไม่ได้', { exact: true })).toBeVisible();
 	await expect(page.getByText(/หลักฐานคนแรก/)).toHaveCount(0);
 	await expect(
 		page.getByRole('button', { name: 'ตรวจผลกระทบก่อนล้าง', exact: true })
@@ -1198,3 +1218,210 @@ for (const role of ['student', 'parent']) {
 		}
 	});
 }
+
+for (const overlap of [false, true])
+	test(`save conflict reconciles latest revision with overlap=${overlap}`, async ({ page }) => {
+		await mockAttendance(page);
+		const current = detail(),
+			writes: SaveAttendanceResults[] = [];
+		await page.route(
+			(url) => url.pathname === `/api/attendance/sessions/${sessionId}`,
+			async (route) => {
+				if (route.request().method() === 'PUT') {
+					const payload = route.request().postDataJSON() as SaveAttendanceResults;
+					writes.push(payload);
+					if (writes.length === 1) {
+						current.session.rowVersion = 2;
+						current.students[overlap ? 0 : 1].result = 'late';
+						return reply(route, 'มีการสแกนเพิ่มแล้ว กรุณาโหลดรายชื่อใหม่', 409);
+					}
+					current.session.rowVersion++;
+					current.session.savedAt = date + 'T01:00:00Z';
+					current.students = current.students.map((row) => ({
+						...row,
+						...payload.students.find((input) => input.studentId === row.studentId)
+					}));
+				}
+				return reply(route, current);
+			}
+		);
+		await page.goto(path());
+		await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+		await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
+		await page.getByRole('option', { name: 'มา', exact: true }).click();
+		await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ข้อมูลของครู');
+		await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+		await expect(page.getByText('มีการสแกนเพิ่มแล้ว กรุณาโหลดรายชื่อใหม่')).toBeVisible();
+		if (overlap) {
+			await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeDisabled();
+			await page
+				.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดของ นักเรียนคนแรก', exact: true })
+				.click();
+		} else
+			await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText('สาย');
+		await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+		await expect.poll(() => writes.length).toBe(2);
+		expect(writes[1].rowVersion).toBe(2);
+		expect(writes[1].students.find((row) => row.studentId === student)?.note).toBe('ข้อมูลของครู');
+		expect(
+			writes[1].students.find((row) => row.studentId === (overlap ? student : second))?.result
+		).toBe('late');
+	});
+test('manual workspace refresh reloads selected detail and discards unsaved input', async ({
+	page
+}) => {
+	await mockAttendance(page);
+	const current = detail();
+	await page.route(
+		(url) => url.pathname === `/api/attendance/sessions/${sessionId}`,
+		(route) => reply(route, current)
+	);
+	await page.goto(path());
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ยังไม่บันทึก');
+	current.session.rowVersion = 2;
+	current.students[0].result = 'late';
+	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('สาย');
+	await expect(page.getByLabel('หมายเหตุของ นักเรียนคนแรก')).toHaveValue('');
+});
+test('reports page at the server and export all filtered rows from any visible page', async ({
+	page
+}) => {
+	await mockAttendance(page);
+	const rows = Array.from({ length: 125 }, (_, i) => ({
+		academicTermId: term,
+		studentId: id(1000 + i),
+		displayName: `นักเรียนทดสอบ ${i}`,
+		category: 'school',
+		scopeKey: '',
+		scopeLabel: 'การมาโรงเรียน',
+		present: 10,
+		late: 1,
+		absent: 1,
+		leave: 0,
+		activity: 0,
+		unchecked: 0,
+		expected: 12
+	}));
+	const queries: URLSearchParams[] = [];
+	await page.route(
+		(url) => url.pathname === '/api/attendance/report',
+		(route) => {
+			const query = new URL(route.request().url()).searchParams;
+			queries.push(query);
+			const number = Number(query.get('page') || 1),
+				size = Number(query.get('pageSize') || 50);
+			const filtered = rows.filter((row) => row.displayName.includes(query.get('search') || ''));
+			return reply(route, {
+				archived: false,
+				activityCountsAsPresent: true,
+				page: number,
+				pageSize: size,
+				total: filtered.length,
+				summaries: filtered.slice((number - 1) * size, number * size)
+			});
+		}
+	);
+	await page.goto(path('/report'));
+	await expect(page.locator('tbody tr')).toHaveCount(50);
+	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
+	await expect(page.getByText('หน้า 2 · 125 รายการ')).toBeVisible();
+	const downloadPromise = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'ส่งออก CSV', exact: true }).click();
+	const download = await downloadPromise;
+	const csv = await readFile((await download.path())!, 'utf8');
+	expect(csv.split('\r\n')).toHaveLength(126);
+	expect(csv).toContain('นักเรียนทดสอบ 0');
+	expect(csv).toContain('นักเรียนทดสอบ 124');
+	expect(
+		queries.filter((query) => query.get('pageSize') === '100').map((query) => query.get('page'))
+	).toEqual(['1', '2']);
+	await page.getByLabel('ค้นหาสรุป', { exact: true }).fill('นักเรียนทดสอบ 12');
+	await page.getByRole('button', { name: 'ค้นหา', exact: true }).click();
+	await expect(page.getByText('หน้า 1 · 6 รายการ')).toBeVisible();
+	await expect(page.locator('tbody tr')).toHaveCount(6);
+});
+test('large roster keeps DOM bounded while mark-all saves the complete round on mobile', async ({
+	page
+}) => {
+	const api = await mockAttendance(page);
+	const current = detail();
+	current.students = Array.from({ length: 85 }, (_, i) => ({
+		...current.students[0],
+		studentId: id(2000 + i),
+		displayName: `นักเรียนมือถือ ${i}`,
+		classNumber: i + 1
+	}));
+	await page.route(
+		(url) => url.pathname === `/api/attendance/sessions/${sessionId}`,
+		async (route) => {
+			if (route.request().method() === 'GET') return reply(route, current);
+			await route.fallback();
+		}
+	);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto(path());
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await expect(page.locator('tbody tr')).toHaveCount(40);
+	await expect(page.getByLabel('หมายเหตุของ นักเรียนมือถือ 0')).toBeVisible();
+	expect(
+		await page
+			.locator('[data-slot="table-container"]')
+			.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
+	).toBe(true);
+	await page.getByRole('button', { name: 'มาทั้งหมด', exact: true }).click();
+	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนมือถือ 40' })).toHaveText('มา');
+	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	const saved = api.writes.find((write) => write.path === `/api/attendance/sessions/${sessionId}`)
+		?.data as SaveAttendanceResults;
+	expect(saved.students).toHaveLength(85);
+	expect(saved.students.every((row) => row.result === 'present')).toBe(true);
+});
+test('expired uncommitted scan releases retry state and permits a fresh capture', async ({
+	page
+}) => {
+	await mockAttendance(page);
+	await page.clock.setFixedTime(new Date('2026-10-09T01:00:00Z'));
+	await page.addInitScript(() => {
+		Math.random = () => 0.1;
+	});
+	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
+		route.fulfill({
+			contentType: 'application/javascript',
+			body: `let frame=0;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};`
+		})
+	);
+	const attempts: AttendanceScan[] = [];
+	await page.route(
+		(url) => url.pathname === '/api/attendance/scans',
+		(route) => {
+			const payload = route.request().postDataJSON() as AttendanceScan;
+			attempts.push(payload);
+			return reply(
+				route,
+				attempts.length === 1 ? 'เน็ตขัดข้อง' : 'ภาพหมดอายุ',
+				attempts.length === 1 ? 503 : 400
+			);
+		}
+	);
+	await page.goto(path('/faces'));
+	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
+	await page.getByRole('button', { name: 'เครื่องสแกน', exact: true }).click();
+	await page.getByRole('option', { name: 'เว็บแคมหน้าโรงเรียน', exact: true }).click();
+	await page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'ส่งรายการเดิมอีกครั้ง', exact: true })
+	).toBeVisible();
+	await page.clock.setFixedTime(new Date('2026-10-09T01:06:00Z'));
+	await page.getByRole('button', { name: 'ส่งรายการเดิมอีกครั้ง', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'ส่งรายการเดิมอีกครั้ง', exact: true })
+	).toHaveCount(0);
+	await expect(
+		page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true })
+	).toBeEnabled();
+	expect(attempts[1]).toEqual(attempts[0]);
+	await page.getByRole('button', { name: 'หยุดและปิดกล้อง', exact: true }).click();
+});

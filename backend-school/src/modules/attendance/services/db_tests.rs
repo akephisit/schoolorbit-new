@@ -388,6 +388,7 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
     .await
     .unwrap();
     let after = reports::summaries(&f.pool, TERM, None, None).await.unwrap();
+    let archived_first = serde_json::to_value(&after.summaries[0]).unwrap();
     assert!(after.archived);
     assert_eq!(
         serde_json::to_value(before.summaries).unwrap(),
@@ -402,6 +403,16 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
                 .summaries
         )
         .unwrap()
+    );
+    let archived_page = report(&f.pool, &f.actor, report_query(None, 1, 1))
+        .await
+        .unwrap();
+    assert!(archived_page.archived);
+    assert_eq!(archived_page.total, scoped.total);
+    assert_eq!(archived_page.summaries.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&archived_page.summaries[0]).unwrap(),
+        archived_first
     );
     assert_eq!(reports::impact(&f.pool, TERM).await.unwrap().records, 0);
     assert!(sessions::save(
@@ -612,11 +623,36 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
     assert!(!result.duplicate);
     assert_eq!(result.result, AttendanceResult::Present);
     assert!(
-        faces::scan(&f.pool, &f.actor, scan)
+        faces::scan(&f.pool, &f.actor, scan.clone())
             .await
             .unwrap()
             .duplicate
     );
+    let mut expired_replay = scan.clone();
+    expired_replay.captured_at -= chrono::Duration::minutes(6);
+    sqlx::query("UPDATE attendance_scan_events SET captured_at=$2 WHERE id=$1")
+        .bind(scan.event_id)
+        .bind(expired_replay.captured_at)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    faces::remove(&f.pool, TEACHER, STUDENT).await.unwrap();
+    assert!(
+        faces::scan(&f.pool, &f.actor, expired_replay.clone())
+            .await
+            .unwrap()
+            .duplicate
+    );
+    let mut altered = expired_replay.clone();
+    altered.evidence_file_id = Uuid::new_v4();
+    assert!(matches!(
+        faces::scan(&f.pool, &f.actor, altered).await,
+        Err(AppError::Conflict(_))
+    ));
+    expired_replay.event_id = Uuid::new_v4();
+    assert!(faces::scan(&f.pool, &f.actor, expired_replay)
+        .await
+        .is_err());
     let d = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
     assert_eq!(
         d.students
@@ -867,38 +903,21 @@ async fn attendance_concurrent_saves_keep_one_revision_and_do_not_grant_own_acce
         user_id: STUDENT,
         permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
     };
-    let own = report(
-        &f.pool,
-        &student,
-        AttendanceReportQuery {
-            academic_term_id: TERM,
-            student_id: Some(STUDENT),
-        },
-    )
-    .await
-    .unwrap();
+    let own = report(&f.pool, &student, report_query(Some(STUDENT), 1, 50))
+        .await
+        .unwrap();
     assert!(own.summaries.iter().all(|s| s.student_id == STUDENT));
     assert!(!own.summaries.is_empty());
     assert!(report(
         &f.pool,
         &student,
-        AttendanceReportQuery {
-            academic_term_id: TERM,
-            student_id: Some(f.students[1].student_id)
-        }
+        report_query(Some(f.students[1].student_id), 1, 50)
     )
     .await
     .is_err());
-    assert!(report(
-        &f.pool,
-        &student,
-        AttendanceReportQuery {
-            academic_term_id: TERM,
-            student_id: None
-        }
-    )
-    .await
-    .is_err());
+    assert!(report(&f.pool, &student, report_query(None, 1, 50))
+        .await
+        .is_err());
 }
 
 async fn evidence_file(pool: &PgPool, student: Uuid) -> Uuid {
@@ -1170,5 +1189,133 @@ mod retention_tests {
             .await;
         assert_eq!(storage.0.load(Ordering::SeqCst), 105);
         assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM files WHERE lifecycle_status='deleted' AND purpose_code='attendance_evidence'").fetch_one(&pool).await.unwrap(), 105);
+    }
+}
+
+fn report_query(student: Option<Uuid>, page: i64, page_size: i64) -> AttendanceReportQuery {
+    AttendanceReportQuery {
+        academic_term_id: TERM,
+        student_id: student,
+        page,
+        page_size,
+        search: String::new(),
+        category: None,
+    }
+}
+#[tokio::test]
+async fn attendance_report_pages_preserve_counts_filters_and_teacher_scope() {
+    let f = fixture("attendance_report_pages").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let own = sessions::ensure(&f.pool, &f.actor, seed(&f, AttendanceKind::Flag, date))
+        .await
+        .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, own.id).await.unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        own.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let mut foreign = seed(&f, AttendanceKind::Flag, date + chrono::Duration::days(1));
+    foreign.session.source_key = "other-room".into();
+    foreign.session.id = Uuid::new_v4();
+    foreign.session.teacher_ids = vec![Uuid::new_v4()];
+    let admin = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_UPDATE_SCHOOL.into()],
+    };
+    sessions::ensure(&f.pool, &admin, foreign).await.unwrap();
+    let full = reports::summaries(&f.pool, TERM, None, Some(TEACHER))
+        .await
+        .unwrap();
+    let mut rows = vec![];
+    for page_number in 1..=full.total {
+        let page = report(&f.pool, &f.actor, report_query(None, page_number, 1))
+            .await
+            .unwrap();
+        assert_eq!(page.total, full.total);
+        assert_eq!(page.summaries.len(), 1);
+        rows.extend(page.summaries);
+    }
+    assert_eq!(
+        serde_json::to_value(rows).unwrap(),
+        serde_json::to_value(full.summaries).unwrap()
+    );
+    let empty = report(&f.pool, &f.actor, report_query(None, 100, 1))
+        .await
+        .unwrap();
+    assert!(empty.summaries.is_empty());
+    assert_eq!(empty.total, full.total);
+    let mut filtered = report_query(None, 1, 100);
+    filtered.category = Some("school".into());
+    let school = report(&f.pool, &f.actor, filtered.clone()).await.unwrap();
+    assert_eq!(school.total, 2);
+    assert!(school.summaries.iter().all(|row| row.expected == 1));
+    filtered.search = "%".into();
+    assert_eq!(report(&f.pool, &f.actor, filtered).await.unwrap().total, 0);
+    assert!(report(&f.pool, &f.actor, report_query(None, 0, 1))
+        .await
+        .is_err());
+    assert!(report(&f.pool, &f.actor, report_query(None, 1, 101))
+        .await
+        .is_err());
+    let outsider = ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: vec![codes::ATTENDANCE_READ_ASSIGNED.into()],
+    };
+    assert_eq!(
+        report(&f.pool, &outsider, report_query(None, 1, 50))
+            .await
+            .unwrap()
+            .total,
+        0
+    );
+    assert!(matches!(
+        report(&f.pool, &outsider, report_query(Some(STUDENT), 1, 50)).await,
+        Err(AppError::Forbidden(_))
+    ));
+}
+#[tokio::test]
+async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_history() {
+    let f = fixture("attendance_parent_role").await;
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM roles WHERE code='PARENT')"
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
+    let mut parents = vec![];
+    for index in 0..3 {
+        let parent = Uuid::new_v4();
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,'not-a-login','Parent','Fixture','parent',$3)")
+            .bind(parent).bind(format!("parent-{parent}" )).bind(if index == 2 { "inactive" } else { "active" }).execute(&f.pool).await.unwrap();
+        sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'parent')").bind(STUDENT).bind(parent).execute(&f.pool).await.unwrap();
+        parents.push(parent);
+    }
+    let custom = Uuid::new_v4();
+    sqlx::query("INSERT INTO roles(id,code,name,user_type) VALUES($1,'CUSTOM_PARENT','Custom parent','parent')").bind(custom).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO user_roles(user_id,role_id,started_at,ended_at) VALUES($1,$2,CURRENT_DATE-2,CURRENT_DATE-1)").bind(parents[1]).bind(custom).execute(&f.pool).await.unwrap();
+    apply_migrations_through(&f.pool, 102).await.unwrap();
+    let cache = school_authorization::PermissionCache::new();
+    let actor = school_authorization::load_actor_context(parents[0], "fixture", &f.pool, &cache)
+        .await
+        .unwrap();
+    assert!(actor.has_permission(codes::ATTENDANCE_READ_OWN));
+    assert!(report(&f.pool, &actor, report_query(Some(STUDENT), 1, 50))
+        .await
+        .is_ok());
+    assert!(matches!(
+        report(
+            &f.pool,
+            &actor,
+            report_query(Some(f.students[1].student_id), 1, 50)
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+    for parent in &parents[1..] {
+        assert!(!sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=$1 AND r.code='PARENT')").bind(parent).fetch_one(&f.pool).await.unwrap());
     }
 }
