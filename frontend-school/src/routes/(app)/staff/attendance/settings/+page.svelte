@@ -6,7 +6,6 @@
 	import { attendanceIdentity } from '#lib/features/attendance/attendance-access.js';
 	import type { PageProps } from './$types';
 	import { PageState } from '#lib/components/app-state/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
 	let { data }: PageProps = $props();
 </script>
 
@@ -16,9 +15,7 @@
 	icon={CalendarDays}
 >
 	{#if data.term}<AttendanceNavigation term={data.term} date={data.date} current="settings" />{/if}
-	<Button variant="outline" href={`/staff/attendance?academicTermId=${data.term ?? ''}`}
-		>กลับหน้าเช็คชื่อ</Button
-	>
+
 	{#if !data.term}<PageState title="เลือกภาคเรียน" description="กรุณาเลือกภาคเรียนจากแถบด้านบน" />
 	{:else if data.settings && data.options}{#key $attendanceIdentity + data.term + data.date}<AttendanceSettingsRegions
 				term={data.term}
