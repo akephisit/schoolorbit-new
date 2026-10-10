@@ -641,6 +641,102 @@ test('read-only teacher cannot create an unsaved session', async ({ page }) => {
 	await expect(page.getByRole('button', { name: /08:00.*หน้าเสาธง/ })).toBeDisabled();
 	expect(api.writes).toHaveLength(0);
 });
+test('school reader with assigned write can only open assigned unsaved rounds', async ({
+	page
+}) => {
+	const api = await mockAttendance(page, {
+		permissions: [
+			'attendance.read.school',
+			'attendance.update.assigned',
+			'academic_context.read.school'
+		]
+	});
+	await page.route('**/api/attendance/workspace?**', (route) =>
+		reply(route, {
+			date,
+			counted: true,
+			settings,
+			sessions: [
+				{ ...session, rowVersion: 0 },
+				{
+					...session,
+					id: id(240),
+					sourceKey: id(241),
+					title: 'รอบครูคนอื่น',
+					teacherIds: [id(242)],
+					rowVersion: 0
+				}
+			]
+		} satisfies AttendanceWorkspace)
+	);
+	await page.goto(path());
+	await expect(page.getByRole('button', { name: /08:00.*รอบครูคนอื่น/ })).toBeDisabled();
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+	expect(api.writes.filter((write) => write.path.endsWith('/sessions'))).toHaveLength(1);
+});
+test('changing the workspace date also updates module destinations', async ({ page }) => {
+	await mockAttendance(page);
+	await page.route('**/api/attendance/workspace?**', (route) =>
+		reply(route, {
+			date: new URL(route.request().url()).searchParams.get('date')!,
+			counted: true,
+			sessions: [],
+			settings
+		} satisfies AttendanceWorkspace)
+	);
+	await page.goto(path());
+	await page.getByRole('button', { name: 'วันที่', exact: true }).click();
+	await page.getByRole('button', { name: /October 8, 2026|8 ตุลาคม 2569/ }).click();
+	await expect(
+		page
+			.getByRole('navigation', { name: 'เมนูเช็คชื่อ' })
+			.getByRole('link', { name: 'สรุป / ล้างภาคเรียน', exact: true })
+	).toHaveAttribute('href', /date=2026-10-08/);
+});
+test('successful purge remains archived when only the summary refresh fails', async ({ page }) => {
+	await mockAttendance(page, {
+		permissions: [
+			'attendance.read.school',
+			'attendance.delete.school',
+			'academic_context.read.school'
+		]
+	});
+	let purges = 0;
+	await page.route('**/api/attendance/terms/*/purge', (route) => {
+		if (route.request().method() === 'POST') purges++;
+		return reply(route, {
+			academicTermId: term,
+			archived: purges > 0,
+			canPurge: purges === 0,
+			records: 2,
+			evidence: 0,
+			evidenceBytes: 0
+		});
+	});
+	await page.route('**/api/attendance/report?**', (route) =>
+		purges ? reply(route, 'สรุปยังไม่พร้อม', 500) : route.fallback()
+	);
+	await page.goto(path('/report'));
+	await page.getByRole('button', { name: 'นักเรียนคนแรก', exact: true }).click();
+	await expect(page.getByText(/หลักฐานคนแรก/)).toBeVisible();
+	await page.getByRole('button', { name: 'ตรวจผลกระทบก่อนล้าง', exact: true }).click();
+	await page.getByLabel('เหตุผล', { exact: false }).fill('จบภาคเรียน');
+	await page.getByLabel('ยืนยันล้างรายละเอียดและภาพของภาคเรียนนี้ โดยคงยอดสรุป').check();
+	await page.getByRole('button', { name: 'ล้างข้อมูลภาคเรียนนี้', exact: true }).click();
+	await page
+		.getByRole('alertdialog')
+		.getByRole('button', { name: 'ยืนยันล้างข้อมูล', exact: true })
+		.click();
+	await expect(
+		page.getByText('ล้างรายละเอียดแล้ว แต่โหลดสรุปล่าสุดไม่ได้', { exact: true })
+	).toBeVisible();
+	await expect(page.getByText(/หลักฐานคนแรก/)).toHaveCount(0);
+	await expect(
+		page.getByRole('button', { name: 'ตรวจผลกระทบก่อนล้าง', exact: true })
+	).toBeDisabled();
+	expect(purges).toBe(1);
+});
 test('cancelling a session needs a reason and a final confirmation', async ({ page }) => {
 	await mockAttendance(page);
 	let cancellationWrites = 0;

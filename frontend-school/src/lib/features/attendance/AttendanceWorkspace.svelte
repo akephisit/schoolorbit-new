@@ -22,6 +22,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { can } from '#lib/stores/permissions.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import {
 		attendanceWorkspace,
@@ -37,8 +38,17 @@
 		type AttendanceKind,
 		type AttendanceResult
 	} from '#lib/api/attendance.js';
-	let { term, date, initial }: { term: string; date: string; initial: AttendanceWorkspace } =
-		$props();
+	let {
+		term,
+		date,
+		initial,
+		onDateChange
+	}: {
+		term: string;
+		date: string;
+		initial: AttendanceWorkspace;
+		onDateChange?: (date: string) => void;
+	} = $props();
 	let workspace = $state(untrack(() => initial)),
 		selectedDate = $state(untrack(() => date)),
 		kind = $state<AttendanceKind>('flag'),
@@ -52,13 +62,22 @@
 		failedSession = $state.raw<AttendanceSession | null>(null),
 		reason = $state(''),
 		search = $state('');
-	const canWrite = $derived(
+	const canStartAny = $derived(
 		$can.hasAny(
 			PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED,
 			PERMISSIONS.ATTENDANCE_UPDATE_SCHOOL,
 			PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL
 		)
 	);
+	function mayWrite(session: AttendanceSession) {
+		return (
+			$can.hasAny(PERMISSIONS.ATTENDANCE_UPDATE_SCHOOL, PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL) ||
+			($can.has(PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED) &&
+				!!$authStore.user &&
+				session.teacherIds.includes($authStore.user.id))
+		);
+	}
+	const canWrite = $derived(detail ? mayWrite(detail.session) : canStartAny);
 	const choices = $derived(
 		workspaceError || (pendingAction === 'workspace' && selectedDate !== workspace.date)
 			? []
@@ -92,7 +111,7 @@
 		}
 	}
 	async function select(s: AttendanceSession) {
-		if (busy || (s.rowVersion === 0 && !canWrite)) return;
+		if (busy || (s.rowVersion === 0 && !mayWrite(s))) return;
 		const t = request.begin();
 		busy = true;
 		pendingAction = 'detail';
@@ -231,7 +250,8 @@
 				<Label for="attendance-date">วันที่</Label><DatePicker
 					id="attendance-date"
 					bind:value={selectedDate}
-					onValueChange={() => {
+					onValueChange={(value) => {
+						if (value) onDateChange?.(value);
 						void refresh();
 					}}
 					ariaLabel="วันที่"
@@ -307,7 +327,7 @@
 						variant="outline"
 						aria-pressed={detail?.session.id === s.id}
 						onclick={() => select(s)}
-						disabled={busy || (s.rowVersion === 0 && !canWrite)}
+						disabled={busy || (s.rowVersion === 0 && !mayWrite(s))}
 					>
 						<span class="flex w-full min-w-0 flex-col gap-1"
 							><span class="font-medium">{s.startTime.slice(0, 5)} · {s.title}</span><span
