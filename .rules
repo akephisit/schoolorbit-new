@@ -426,6 +426,15 @@ Choose controls and detail surfaces according to the task on each page. These pr
 - Keep text hierarchy consistent through `PageHeader`, shared form labels, and component defaults. Use the configured app font and Tailwind spacing scale; change app-wide density or typography at its shared owner rather than compensating with route-local font sizes, heights, or arbitrary spacing.
 - Reuse a shared component for repeated filter bars, form sections, action groups, and status presentations when their visual and interaction requirements match. Keep domain data and permissions with the feature owner; do not build a universal page component with unrelated workflow flags.
 
+#### Modern visual direction and color
+
+- New and coherently redesigned pages should feel modern, calm, and deliberate: clear text hierarchy, generous but consistent spacing, aligned sections, subtle borders, and selective emphasis. Choose the page pattern first, then use color to clarify its summary, context, and primary action.
+- Use restrained theme-based color in welcome, summary, and workflow-context surfaces: a low-opacity `primary` tint or soft gradient fading into `card`, a subtle tinted border, and accent text or icons. Keep tables, long forms, and dense information regions on readable neutral surfaces; not every card needs a gradient or a different color.
+- Read the [staff welcome card](frontend-school/src/routes/%28app%29/staff/+page.svelte) and the context header in [AcademicYearTermEditor](frontend-school/src/lib/components/academic-core/AcademicYearTermEditor.svelte) as the approved visual references for this treatment. Reuse their hierarchy and restrained theme-token composition; their permissions, data flow, and workflow-specific content are not general templates.
+- Keep primary actions visually prominent through the existing Button variant. Decorative accent colors must not compete with that action or change the established meaning of status, warning, error, or destructive controls. Use the owning semantic status variant plus text or an icon, not color alone.
+- Compose colors from the owning theme tokens, including opacity modifiers and gradients. Additional category/chart colors need a real information purpose and the existing semantic/chart owner; do not scatter route-local hex values, independent palettes, or arbitrary accent choices across similar pages. Put a repeated new treatment or variant at the appropriate shared component owner.
+- Check text, icons, borders, focus, and hover states on every tinted or gradient surface in light and dark themes and at mobile/desktop widths. Keep long content wrapping and card gaps intact; decoration must not clip content, obscure controls, or make a page's loading/error states harder to read.
+
 #### Required School UI primitives
 
 All new or coherently changed School standard controls use the local shadcn-svelte owners under `src/lib/components/ui/`, composed with app-layout/app-state where applicable. Do not recreate an ordinary control with route-local HTML/CSS, copy a styled control from another page, or introduce a second component library for the same responsibility. Native semantic layout elements and domain-specific interactive surfaces remain valid.
@@ -467,6 +476,19 @@ Apply these details to the selected pattern; they describe new or coherently cha
 - **Public pages:** use the public layout and bounded public API owner. Do not impose the authenticated `PageShell`, staff navigation, or permission stores on public pages; use the same theme and standard controls when appropriate and preserve their SSR/SEO requirements.
 
 Before adding a route, name its pattern, primary action, data/permission/context owners, and loading/empty/error/pending states in the working agreement. If no existing pattern fits, explain the workflow need and define the smallest coherent extension at the shared owner rather than silently inventing a new visual system.
+
+#### Selected School reference pages
+
+These six reviewed references guide the matching page responsibility. Inspect the current component, loader, and relevant tests before reuse; the applicability rules still govern each changed boundary. A reference's approval does not make all of its domain behavior appropriate for another feature.
+
+| Reference route | Implementation and intended example |
+| --- | --- |
+| `/staff/school-fonts` | [SchoolFontLibrary](frontend-school/src/lib/components/school-fonts/SchoolFontLibrary.svelte): result grouping, permissions, and focused resource actions. |
+| `/staff/certificates/new` | [CertificateCampaignForm](frontend-school/src/lib/components/certificates/CertificateCampaignForm.svelte): grouped creation form, option states, validation, and trailing actions. |
+| `/staff` | [Staff home](frontend-school/src/routes/%28app%29/staff/+page.svelte): restrained welcome color, independent summaries, and natural-height workspace cards that fill vertical gaps. |
+| `/staff/calendar` | [Calendar page](frontend-school/src/routes/%28app%29/staff/calendar/+page.svelte): date/context tools, calendar workspace, and independently authorized interactions. |
+| `/staff/timetable` | [Timetable page](frontend-school/src/routes/%28app%29/staff/timetable/+page.svelte) and [TimetableBoard](frontend-school/src/lib/components/academic/timetable/TimetableBoard.svelte): context/version tools and a readable scheduling board. |
+| `/staff/students/[id]` | [Student detail](frontend-school/src/routes/%28app%29/staff/students/%5Bid%5D/+page.svelte): identity/status summary, spaced read-only sections, wrapping values, and independently authorized history. |
 
 #### Workflow controls and detail
 
