@@ -6,6 +6,14 @@
 	import { PageState, PageSkeleton, RegionUpdatingState } from '#lib/components/app-state/index.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '#lib/components/ui/card/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
 	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	let {
 		source,
@@ -69,57 +77,70 @@
 	};
 </script>
 
-<section
-	class="relative rounded-xl border bg-card p-4 sm:p-6"
-	data-testid="student-placement-history"
-	aria-busy={loading}
->
-	<h2 class="mb-4 text-xl font-semibold">ประวัติการเรียนและการจัดห้องในปีที่เลือก</h2>
-	{#if !allowed}<PageState variant="permission" title="ไม่มีสิทธิ์ดูประวัติการจัดห้อง" />
-	{:else if loading && !history}<PageSkeleton variant="table" rows={3} />
-	{:else if error && !history}<PageState
-			variant="error"
-			title="โหลดประวัติการจัดห้องไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={retry}
-		/>
-	{:else if history?.studentYear}
-		{#if loading}<RegionUpdatingState label="กำลังอัปเดตประวัติการจัดห้อง" />{/if}
-		{#if error}<PageState
-				variant="error"
-				title="อัปเดตประวัติการจัดห้องไม่สำเร็จ"
-				description={error}
-				actionLabel="ลองอีกครั้ง"
-				onaction={retry}
-			/>{/if}
-		<p class="mb-4 text-sm text-muted-foreground">
-			{history.studentYear.gradeLevelName} · {history.studentYear.studyProgramName}
-		</p>
-		<div class="overflow-x-auto">
-			<table class="w-full min-w-96 text-left text-sm">
-				<caption class="sr-only">ประวัติห้องประจำชั้น</caption><thead
-					><tr class="border-b"
-						><th class="p-2">ห้อง</th><th class="p-2">เลขที่</th><th class="p-2">เริ่มต้น</th><th
-							class="p-2">สิ้นสุด</th
-						><th class="p-2">สถานะ</th></tr
-					></thead
-				><tbody>
-					{#each history.placements as placement (placement.id)}<tr class="border-b"
-							><td class="p-2"
-								>{history.homerooms.find((room) => room.id === placement.homeroomId)?.name ??
-									'ห้องที่ไม่ได้เปิดใช้งาน'}</td
-							><td class="p-2">{placement.classNumber ?? '—'}</td><td class="p-2"
-								>{formatCalendarDate(placement.startDate)}</td
-							><td class="p-2">{placement.endDate ? formatCalendarDate(placement.endDate) : '—'}</td
-							><td class="p-2">{statusLabels[placement.status]}</td></tr
-						>{:else}<tr
-							><td colspan="5" class="p-4 text-muted-foreground"
-								>ยังไม่มีประวัติการจัดห้องในปีนี้</td
-							></tr
-						>{/each}
-				</tbody>
-			</table>
-		</div>
-	{:else}<PageState title="ยังไม่มีข้อมูลนักเรียนในปีที่เลือก" />{/if}
+<section data-testid="student-placement-history" aria-busy={loading}>
+	<Card class="relative min-w-0">
+		<CardHeader>
+			<CardTitle><h2>ประวัติการเรียนและการจัดห้องในปีที่เลือก</h2></CardTitle>
+			<CardDescription>การจัดห้องประจำชั้นและช่วงเวลาที่มีผล</CardDescription>
+		</CardHeader>
+		<CardContent class="min-w-0 space-y-4">
+			{#if !allowed}
+				<PageState variant="permission" title="ไม่มีสิทธิ์ดูประวัติการจัดห้อง" />
+			{:else if loading && !history}
+				<PageSkeleton variant="table" rows={3} />
+			{:else if error && !history}
+				<PageState
+					variant="error"
+					title="โหลดประวัติการจัดห้องไม่สำเร็จ"
+					description={error}
+					actionLabel="ลองอีกครั้ง"
+					onaction={retry}
+				/>
+			{:else if history?.studentYear}
+				{#if loading}<RegionUpdatingState label="กำลังอัปเดตประวัติการจัดห้อง" />{/if}
+				{#if error}<PageState
+						variant="error"
+						title="อัปเดตประวัติการจัดห้องไม่สำเร็จ"
+						description={error}
+						actionLabel="ลองอีกครั้ง"
+						onaction={retry}
+					/>{/if}
+				<p class="text-sm text-muted-foreground">
+					{history.studentYear.gradeLevelName} · {history.studentYear.studyProgramName}
+				</p>
+				<Table.Root class="min-w-96">
+					<Table.Caption class="sr-only">ประวัติห้องประจำชั้น</Table.Caption>
+					<Table.Header>
+						<Table.Row>
+							<Table.Head>ห้อง</Table.Head><Table.Head>เลขที่</Table.Head><Table.Head
+								>เริ่มต้น</Table.Head
+							><Table.Head>สิ้นสุด</Table.Head><Table.Head>สถานะ</Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each history.placements as placement (placement.id)}
+							<Table.Row>
+								<Table.Cell
+									>{history.homerooms.find((room) => room.id === placement.homeroomId)?.name ??
+										'ห้องที่ไม่ได้เปิดใช้งาน'}</Table.Cell
+								>
+								<Table.Cell>{placement.classNumber ?? '—'}</Table.Cell>
+								<Table.Cell>{formatCalendarDate(placement.startDate)}</Table.Cell>
+								<Table.Cell
+									>{placement.endDate ? formatCalendarDate(placement.endDate) : '—'}</Table.Cell
+								>
+								<Table.Cell>{statusLabels[placement.status]}</Table.Cell>
+							</Table.Row>
+						{:else}
+							<Table.Row
+								><Table.Cell colspan={5} class="h-24 text-center text-muted-foreground"
+									>ยังไม่มีประวัติการจัดห้องในปีนี้</Table.Cell
+								></Table.Row
+							>
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			{:else}<PageState title="ยังไม่มีข้อมูลนักเรียนในปีที่เลือก" />{/if}
+		</CardContent>
+	</Card>
 </section>

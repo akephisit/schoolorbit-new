@@ -255,10 +255,10 @@
 				description="เมนูจะปรากฏที่นี่เมื่อบัญชีได้รับสิทธิ์ในระบบที่เกี่ยวข้อง"
 			/>
 		{:else}
-			<div class="grid items-start gap-4 xl:grid-cols-2">
+			<div class="columns-1 gap-4 xl:columns-2" data-testid="staff-service-workspaces">
 				{#each serviceWorkspaces as workspace (workspace.code)}
 					{@const WorkspaceIcon = getIconComponent(workspace.icon)}
-					<Card>
+					<Card class="mb-4 w-full break-inside-avoid" data-workspace={workspace.code}>
 						<CardHeader class="border-b">
 							<div class="flex items-center gap-3">
 								<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">

@@ -1,4 +1,5 @@
 import type { Page, Route } from '@playwright/test';
+import type { Student } from '../../../src/lib/api/students.js';
 import { mockStaffHome, id, year, nextYear } from './staff-home-route-data';
 export { year, nextYear };
 export const firstStudent = id(60),
@@ -15,6 +16,7 @@ export async function mockStaffStudents(
 		failAt?: number;
 		permissions?: string[];
 		fullPage?: boolean;
+		profile?: Partial<Student>;
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
@@ -111,7 +113,7 @@ export async function mockStaffStudents(
 				else if (method === 'PUT') firstName = route.request().postDataJSON().first_name;
 				return reply(route, {});
 			}
-			if (kind === 'profile') return reply(route, snapshot);
+			if (kind === 'profile') return reply(route, { ...snapshot, ...options.profile });
 			const pageNumber = Number(url.searchParams.get('page') ?? 1),
 				search = url.searchParams.get('search');
 			const items = Array.from(
