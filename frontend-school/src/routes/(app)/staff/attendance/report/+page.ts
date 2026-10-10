@@ -3,9 +3,9 @@ import { attendanceReport } from '#lib/api/attendance.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import {
 	readAttendance,
-	resolveAttendanceDate
+	resolveAttendanceDate,
+	ATTENDANCE_STAFF_PERMISSIONS
 } from '#lib/features/attendance/attendance-access.js';
-import { PERMISSIONS } from '#lib/permissions/registry.js';
 export const _meta = {
 	academicContext: 'term_required' as const,
 	menu: {
@@ -13,13 +13,7 @@ export const _meta = {
 		icon: 'ChartColumn',
 		group: 'academic_delivery',
 		workspace: 'academic',
-		permission: [
-			PERMISSIONS.ATTENDANCE_READ_ASSIGNED,
-			PERMISSIONS.ATTENDANCE_READ_SCHOOL,
-			PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED,
-			PERMISSIONS.ATTENDANCE_UPDATE_SCHOOL,
-			PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL
-		],
+		permission: ATTENDANCE_STAFF_PERMISSIONS,
 		order: 43,
 		user_type: 'staff'
 	}

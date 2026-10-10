@@ -2,6 +2,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	let {
+		id,
 		value = $bindable(''),
 		options,
 		label,
@@ -9,6 +10,7 @@
 		disabled = false,
 		onValueChange
 	}: {
+		id?: string;
 		value?: string;
 		options: { value: string; label: string }[];
 		label: string;
@@ -30,7 +32,7 @@
 		if (!open) search = '';
 	}}
 >
-	<Select.Trigger aria-label={label}>{current}</Select.Trigger>
+	<Select.Trigger {id} aria-label={label}>{current}</Select.Trigger>
 	<Select.Content>
 		{#if options.length > 20}<Input
 				aria-label={`ค้นหา ${label}`}

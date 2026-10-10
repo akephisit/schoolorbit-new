@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { CalendarDays } from '@lucide/svelte';
+	import AttendanceNavigation from '#lib/features/attendance/AttendanceNavigation.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import AttendanceSettingsRegions from '#lib/features/attendance/AttendanceSettingsRegions.svelte';
 	import { attendanceIdentity } from '#lib/features/attendance/attendance-access.js';
@@ -8,7 +10,12 @@
 	let { data }: PageProps = $props();
 </script>
 
-<PageShell title={data.title}>
+<PageShell
+	title={data.title}
+	description="กำหนดวันประมวลผล การแจ้งเตือน รอบพิเศษ และเครื่องเว็บแคม"
+	icon={CalendarDays}
+>
+	{#if data.term}<AttendanceNavigation term={data.term} date={data.date} current="settings" />{/if}
 	<Button variant="outline" href={`/staff/attendance?academicTermId=${data.term ?? ''}`}
 		>กลับหน้าเช็คชื่อ</Button
 	>

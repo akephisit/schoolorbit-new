@@ -584,6 +584,123 @@ async function mockAttendance(
 	return { reads, writes, release };
 }
 test.use({ serviceWorkers: 'block' });
+test('module navigation keeps academic context and marks the current page', async ({ page }) => {
+	await mockAttendance(page);
+	for (const [suffix, label] of [
+		['', 'เช็คชื่อ'],
+		['/settings', 'ตั้งค่าปฏิทินและรอบพิเศษ'],
+		['/report', 'สรุป / ล้างภาคเรียน'],
+		['/faces', 'เว็บแคม / ลงทะเบียนใบหน้า']
+	]) {
+		await page.goto(path(suffix));
+		const nav = page.getByRole('navigation', { name: 'เมนูเช็คชื่อ' });
+		await expect(nav.getByRole('link', { name: label, exact: true })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+		for (const href of await nav
+			.getByRole('link')
+			.evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href))) {
+			const query = new URL(href).searchParams;
+			expect(query.get('academicYearId')).toBe(year);
+			expect(query.get('academicTermId')).toBe(term);
+			expect(query.get('date')).toBe(date);
+		}
+	}
+});
+test('refresh and search preserve the roster draft without submitting it', async ({ page }) => {
+	const api = await mockAttendance(page);
+	await page.goto(path());
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
+	await page.getByRole('option', { name: 'มา', exact: true }).click();
+	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
+	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
+	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('ตรวจซ้ำ');
+	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่มีชื่อนี้');
+	await page.getByLabel('ค้นหาชื่อนักเรียน').press('Enter');
+	await expect(page.getByText('ไม่พบชื่อนักเรียนที่ค้นหา', { exact: true })).toBeVisible();
+	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('');
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
+	expect(api.writes).toHaveLength(0);
+});
+test('read-only teacher cannot create an unsaved session', async ({ page }) => {
+	const api = await mockAttendance(page, {
+		permissions: ['attendance.read.assigned', 'academic_context.read.school']
+	});
+	await page.route('**/api/attendance/workspace?**', (route) =>
+		reply(route, {
+			date,
+			counted: true,
+			sessions: [{ ...session, rowVersion: 0 }],
+			settings
+		} satisfies AttendanceWorkspace)
+	);
+	await page.goto(path());
+	await expect(page.getByRole('button', { name: /08:00.*หน้าเสาธง/ })).toBeDisabled();
+	expect(api.writes).toHaveLength(0);
+});
+test('cancelling a session needs a reason and a final confirmation', async ({ page }) => {
+	await mockAttendance(page);
+	let cancellationWrites = 0;
+	await page.route('**/api/attendance/sessions/*/cancellation', (route) => {
+		cancellationWrites++;
+		const result = detail();
+		result.session = {
+			...result.session,
+			cancelled: true,
+			cancellationReason: 'กิจกรรมโรงเรียน',
+			rowVersion: 2
+		};
+		result.writable = false;
+		return reply(route, result);
+	});
+	await page.goto(path());
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
+	await expect(page.getByText('ระบุเหตุผลงดหรือคืนคาบ', { exact: true })).toBeVisible();
+	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('กิจกรรมโรงเรียน');
+	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
+	await page.getByRole('alertdialog').getByRole('button', { name: 'กลับไปตรวจสอบ' }).click();
+	expect(cancellationWrites).toBe(0);
+	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
+	await page.getByRole('alertdialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'คืนคาบเช็คชื่อ', exact: true })).toBeVisible();
+	expect(cancellationWrites).toBe(1);
+});
+test('face withdrawal requires consent and confirmation for the selected student', async ({
+	page
+}) => {
+	await mockAttendance(page, {
+		permissions: ['attendance.enroll.assigned', 'academic_context.read.school']
+	});
+	let deletions = 0;
+	await page.route(`**/api/attendance/faces/${student}`, (route) => {
+		deletions++;
+		return reply(route, {});
+	});
+	await page.goto(path('/faces'));
+	await page.getByRole('button', { name: 'นักเรียน', exact: true }).click();
+	await page.getByRole('option', { name: 'ม.1/1 · นักเรียนคนแรก', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true })
+	).toBeDisabled();
+	await page.getByLabel('ยืนยันว่าได้รับความยินยอมและตรวจว่าเป็นนักเรียนคนที่เลือก').check();
+	await page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true }).click();
+	await expect(page.getByRole('alertdialog')).toContainText('นักเรียนคนแรก');
+	await page.getByRole('alertdialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	expect(deletions).toBe(0);
+	await page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true }).click();
+	await page
+		.getByRole('alertdialog')
+		.getByRole('button', { name: 'ยืนยันถอนข้อมูลใบหน้า', exact: true })
+		.click();
+	await expect(
+		page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true })
+	).toBeDisabled();
+	expect(deletions).toBe(1);
+});
 test('teacher saves, infers unchecked and patches without rereading workspace', async ({
 	page
 }) => {
