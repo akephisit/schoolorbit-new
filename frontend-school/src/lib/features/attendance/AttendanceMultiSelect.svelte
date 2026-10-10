@@ -2,11 +2,13 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	let {
+		id,
 		value = $bindable([]),
 		options,
 		label,
 		disabled = false
 	}: {
+		id?: string;
 		value?: string[];
 		options: { value: string; label: string }[];
 		label: string;
@@ -24,7 +26,7 @@
 		if (!open) search = '';
 	}}
 >
-	<Select.Trigger aria-label={label}
+	<Select.Trigger {id} aria-label={label}
 		>{value.length ? `เลือกแล้ว ${value.length} รายการ` : 'เลือกได้หลายรายการ'}</Select.Trigger
 	>
 	<Select.Content>

@@ -1,4 +1,16 @@
 <script lang="ts">
+	import { Camera, ShieldCheck, ScanFace } from '@lucide/svelte';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '#lib/components/ui/card/index.js';
+	import { Alert, AlertDescription, AlertTitle } from '#lib/components/ui/alert/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import AttendanceSelect from './AttendanceSelect.svelte';
 	import { onDestroy, untrack } from 'svelte';
 	import { get } from 'svelte/store';
@@ -38,8 +50,10 @@
 		device = $state(''),
 		student = $state(''),
 		consent = $state(false),
+		confirmRemoval = $state(false),
 		active = $state(false),
 		busy = $state(false),
+		pendingAction = $state(''),
 		running = $state(false),
 		message = $state('เปิดเว็บแคมเพื่อเริ่มต้น'),
 		gallery = $state<AttendanceKioskWorkspace | null>(null),
@@ -77,6 +91,7 @@
 		const controller = new AbortController();
 		cameraController = controller;
 		busy = true;
+		pendingAction = 'camera';
 		try {
 			await faceEngine();
 			if (token !== generation) return;
@@ -91,14 +106,17 @@
 		} catch (e) {
 			if (token !== generation) return;
 			message = e instanceof Error ? e.message : 'เปิดกล้องไม่ได้';
-			toast.error(message);
 		} finally {
-			if (token === generation) busy = false;
+			if (token === generation) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	function stop() {
 		generation++;
 		busy = false;
+		pendingAction = '';
 		cameraController?.abort();
 		running = false;
 		if (timer) clearTimeout(timer);
@@ -112,13 +130,14 @@
 	}
 	async function collect() {
 		if (!student || !consent) {
-			toast.error('เลือกนักเรียนและยืนยันการลงทะเบียน');
+			message = 'เลือกนักเรียนและยืนยันการลงทะเบียน';
 			return;
 		}
 		if (busy || !active) return;
 		const token = generation,
 			selected = student;
 		busy = true;
+		pendingAction = 'enroll';
 		try {
 			const face = await readFace(video);
 			if (token !== generation || selected !== student || !active) return;
@@ -136,30 +155,40 @@
 					consentConfirmed: consent
 				});
 				if (token !== generation) return;
-				toast.success('ลงทะเบียนใบหน้าแล้ว');
+				message = 'ลงทะเบียนใบหน้าแล้ว';
+				toast.success(message);
 				samples = [];
 				consent = false;
 			}
 		} catch (e) {
-			if (token === generation) toast.error(e instanceof Error ? e.message : 'เก็บใบหน้าไม่ได้');
+			if (token === generation) message = e instanceof Error ? e.message : 'เก็บใบหน้าไม่ได้';
 		} finally {
-			if (token === generation) busy = false;
+			if (token === generation) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	async function remove() {
-		if (!student || !consent || busy) return;
+		if (!student || !consent || busy || !enrollAllowed) return;
 		const token = generation,
 			selected = student;
 		busy = true;
+		pendingAction = 'withdraw';
 		try {
 			await removeAttendanceFace(selected);
 			if (token !== generation || selected !== student) return;
-			toast.success('ลบข้อมูลใบหน้าแล้ว');
+			message = 'ลบข้อมูลใบหน้าแล้ว';
+			toast.success(message);
 			samples = [];
+			consent = false;
 		} catch (e) {
-			if (token === generation) toast.error(e instanceof Error ? e.message : 'ลบไม่ได้');
+			if (token === generation) message = e instanceof Error ? e.message : 'ถอนการลงทะเบียนไม่ได้';
 		} finally {
-			if (token === generation) busy = false;
+			if (token === generation) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	async function beginScanning() {
@@ -167,6 +196,7 @@
 		scanDate = currentAttendanceDate();
 		const token = ++generation;
 		busy = true;
+		pendingAction = 'kiosk';
 		try {
 			const opened = await openAttendanceKiosk({
 				academicTermId: term,
@@ -185,10 +215,13 @@
 			await tick(generation);
 		} catch (e) {
 			if (token !== generation) return;
-			toast.error(e instanceof Error ? e.message : 'เปิดเครื่องสแกนไม่ได้');
+			message = e instanceof Error ? e.message : 'เปิดเครื่องสแกนไม่ได้';
 			running = false;
 		} finally {
-			if (token === generation) busy = false;
+			if (token === generation) {
+				busy = false;
+				pendingAction = '';
+			}
 		}
 	}
 	function currentScanDay() {
@@ -309,103 +342,191 @@
 	}
 </script>
 
-<Button variant="outline" href={`/staff/attendance?academicTermId=${term}`}>กลับหน้าเช็คชื่อ</Button
->
-<p class="rounded-lg bg-muted p-4 text-sm">
-	ใช้คอมพิวเตอร์กับเว็บแคมให้เห็นทีละคน และมีครูดูแล กรณีจับคู่ไม่ได้ให้ครูเช็คชื่อด้วยมือ
-	การหันหน้าช่วยตรวจภาพนิ่ง แต่ยังต้องทดสอบแสงและความแม่นยำก่อนใช้เป็นหลัก
-</p>
-<div class="flex flex-wrap gap-2">
+<Alert class="border-primary/20 bg-gradient-to-r from-primary/10 to-card">
+	<ShieldCheck class="text-primary" /><AlertTitle>เช็คชื่อโดยมีครูดูแล</AlertTitle><AlertDescription
+		>ใช้คอมพิวเตอร์กับเว็บแคมให้เห็นทีละคน และมีครูดูแล กรณีจับคู่ไม่ได้ให้ครูเช็คชื่อด้วยมือ
+		การหันหน้าช่วยตรวจภาพนิ่ง แต่ยังต้องทดสอบแสงและความแม่นยำก่อนใช้เป็นหลัก</AlertDescription
+	>
+</Alert>
+<div class="flex flex-wrap gap-2" aria-label="วิธีใช้งานเว็บแคม">
 	{#if scanAllowed}<Button
-			variant={mode === 'scan' ? 'default' : 'outline'}
+			type="button"
+			variant={mode === 'scan' ? 'secondary' : 'outline'}
+			aria-pressed={mode === 'scan'}
 			disabled={running || busy}
 			onclick={() => {
 				mode = 'scan';
 				samples = [];
-			}}>สแกนเข้าโรงเรียน</Button
-		>{/if}{#if enrollAllowed}<Button
-			variant={mode === 'enroll' ? 'default' : 'outline'}
+			}}><ScanFace class="size-4" />สแกนเข้าโรงเรียน</Button
+		>{/if}
+	{#if enrollAllowed}<Button
+			type="button"
+			variant={mode === 'enroll' ? 'secondary' : 'outline'}
+			aria-pressed={mode === 'enroll'}
 			disabled={running || busy}
 			onclick={() => {
 				mode = 'enroll';
 			}}>ลงทะเบียนใบหน้า</Button
 		>{/if}
 </div>
-<div class="grid gap-5 lg:grid-cols-2">
-	<section class="space-y-3">
-		<video
-			bind:this={video}
-			class="aspect-[4/3] w-full rounded-xl bg-black"
-			autoplay
-			muted
-			playsinline
-			aria-label="ภาพสดจากเว็บแคม"><track kind="captions" /></video
+<div class="grid items-start gap-6 xl:grid-cols-2">
+	<Card class="min-w-0">
+		<CardHeader
+			><CardTitle
+				><h2 class="flex items-center gap-2">
+					<Camera class="size-4 text-primary" />ภาพสดจากเว็บแคม
+				</h2></CardTitle
+			><CardDescription>วางใบหน้าให้อยู่ในกรอบและให้แสงสว่างเพียงพอ</CardDescription></CardHeader
 		>
-		<p role="status" aria-live="polite" class="rounded-lg border p-4 font-medium">{message}</p>
-		<div class="flex flex-wrap gap-2">
-			<Button onclick={start} disabled={busy || active}>เปิดเว็บแคม</Button><Button
-				variant="outline"
-				onclick={stop}
-				disabled={!active && !busy}>หยุดและปิดกล้อง</Button
-			>{#if pending}<LoadingButton
-					loading={committing}
-					onclick={retry}
-					disabled={busy || committing}>ส่งรายการเดิมอีกครั้ง</LoadingButton
-				>{/if}
-		</div>
-	</section>
-	<section class="space-y-4">
-		{#if mode === 'scan'}<label class="block"
-				>เครื่องสแกน<AttendanceSelect
-					label="เครื่องสแกน"
-					placeholder="เลือกเครื่องที่ได้รับมอบหมาย"
-					bind:value={device}
-					disabled={running || busy}
-					options={initial.devices
-						.filter((d) => d.enabled)
-						.map((d) => ({ value: d.id, label: d.name }))}
-				/></label
-			><Button
-				onclick={beginScanning}
-				disabled={!active || !device || busy || running || !scanAllowed}>เริ่มเช็คชื่อวันนี้</Button
+		<CardContent class="space-y-4">
+			<video
+				bind:this={video}
+				class="aspect-[4/3] w-full rounded-lg bg-black"
+				autoplay
+				muted
+				playsinline
+				aria-label="ภาพสดจากเว็บแคม"><track kind="captions" /></video
 			>
-			<p class="text-sm text-muted-foreground">
-				วันที่เช็คชื่อ: {scanDate} · ทำงานทีละคน เก็บภาพเฉพาะรายการที่ส่งบันทึก แจ้งนักเรียนและผู้ปกครองทุกคนที่เชื่อมกับนักเรียน
-				เมื่อหยุดกล้อง ข้อมูลใบหน้าในหน้านี้จะถูกล้าง
-			</p>{:else}<label class="block"
-				>นักเรียน<AttendanceSelect
-					label="นักเรียน"
-					placeholder="เลือกนักเรียน"
-					disabled={busy}
-					bind:value={student}
-					onValueChange={() => {
-						samples = [];
-						consent = false;
-					}}
-					options={initial.students.map((s) => ({
-						value: s.id,
-						label: `${s.homeroomName ?? '-'} · ${s.name}`
-					}))}
-				/></label
-			><label class="flex gap-2"
-				><Checkbox
-					bind:checked={consent}
-					disabled={busy}
-				/>ยืนยันว่าได้รับความยินยอมและตรวจว่าเป็นนักเรียนคนที่เลือก</label
+			<p
+				role="status"
+				aria-live="polite"
+				class="rounded-lg border bg-muted/30 p-4 text-sm font-medium"
 			>
-			<p>เก็บ 3 ตัวอย่าง: หน้าตรง แล้วหันซ้ายและขวาเล็กน้อย</p>
-			<Button onclick={collect} disabled={!active || !student || !consent || busy || !enrollAllowed}
-				>เก็บตัวอย่าง ({samples.length}/3)</Button
-			><Button
-				variant="outline"
-				onclick={() => {
-					samples = [];
-				}}
-				disabled={busy}>เริ่มเก็บใหม่</Button
-			><Button
+				{message}
+			</p>
+			<div class="flex flex-wrap gap-2">
+				<LoadingButton
+					type="button"
+					loading={pendingAction === 'camera'}
+					onclick={start}
+					disabled={busy || active}>เปิดเว็บแคม</LoadingButton
+				><Button type="button" variant="outline" onclick={stop} disabled={!active && !busy}
+					>หยุดและปิดกล้อง</Button
+				>{#if pending}<LoadingButton
+						type="button"
+						loading={committing}
+						onclick={retry}
+						disabled={busy || committing}>ส่งรายการเดิมอีกครั้ง</LoadingButton
+					>{/if}
+			</div>
+		</CardContent>
+	</Card>
+	<Card class="min-w-0">
+		<CardHeader
+			><CardTitle
+				><h2>
+					{mode === 'scan' ? 'เริ่มเช็คชื่อเข้าโรงเรียน' : 'ลงทะเบียนและจัดการใบหน้า'}
+				</h2></CardTitle
+			><CardDescription
+				>{mode === 'scan'
+					? 'เลือกเครื่องที่ได้รับมอบหมายแล้วเริ่มเช็คชื่อทีละคน'
+					: 'เลือกนักเรียนและยืนยันความยินยอมก่อนเก็บตัวอย่าง'}</CardDescription
+			></CardHeader
+		>
+		<CardContent class="space-y-5">
+			{#if mode === 'scan'}
+				<div class="space-y-2">
+					<Label for="attendance-camera-device">เครื่องสแกน</Label><AttendanceSelect
+						id="attendance-camera-device"
+						label="เครื่องสแกน"
+						placeholder="เลือกเครื่องที่ได้รับมอบหมาย"
+						bind:value={device}
+						disabled={running || busy}
+						options={initial.devices
+							.filter((d) => d.enabled)
+							.map((d) => ({ value: d.id, label: d.name }))}
+					/>
+				</div>
+				<LoadingButton
+					type="button"
+					loading={pendingAction === 'kiosk'}
+					onclick={beginScanning}
+					disabled={!active || !device || busy || running || !scanAllowed}
+					>เริ่มเช็คชื่อวันนี้</LoadingButton
+				>
+				<div class="space-y-2 rounded-lg bg-muted/30 p-4 text-sm">
+					<p class="font-medium">วันที่เช็คชื่อ: {formatCalendarDate(scanDate)}</p>
+					<p class="text-muted-foreground">
+						ทำงานทีละคน เก็บภาพเฉพาะรายการที่ส่งบันทึก
+						แจ้งนักเรียนและผู้ปกครองทุกคนที่เชื่อมกับนักเรียน เมื่อหยุดกล้อง
+						ข้อมูลใบหน้าในหน้านี้จะถูกล้าง
+					</p>
+				</div>
+			{:else}
+				<div class="space-y-2">
+					<Label for="attendance-camera-student">นักเรียน</Label><AttendanceSelect
+						id="attendance-camera-student"
+						label="นักเรียน"
+						placeholder="เลือกนักเรียน"
+						disabled={busy}
+						bind:value={student}
+						onValueChange={() => {
+							samples = [];
+							consent = false;
+						}}
+						options={initial.students.map((s) => ({
+							value: s.id,
+							label: `${s.homeroomName ?? '-'} · ${s.name}`
+						}))}
+					/>
+				</div>
+				<div class="flex items-start gap-3 rounded-lg border p-4">
+					<Checkbox id="attendance-camera-consent" bind:checked={consent} disabled={busy} /><Label
+						for="attendance-camera-consent"
+						class="leading-relaxed">ยืนยันว่าได้รับความยินยอมและตรวจว่าเป็นนักเรียนคนที่เลือก</Label
+					>
+				</div>
+				<p class="text-sm text-muted-foreground">
+					เก็บ 3 ตัวอย่าง: หน้าตรง แล้วหันซ้ายและขวาเล็กน้อย
+				</p>
+				<div class="flex flex-wrap gap-2">
+					<LoadingButton
+						type="button"
+						loading={pendingAction === 'enroll'}
+						onclick={collect}
+						disabled={!active || !student || !consent || busy || !enrollAllowed}
+						>เก็บตัวอย่าง ({samples.length}/3)</LoadingButton
+					><Button
+						type="button"
+						variant="outline"
+						onclick={() => {
+							samples = [];
+						}}
+						disabled={busy}>เริ่มเก็บใหม่</Button
+					>
+				</div>
+				<div class="space-y-3 border-t pt-4">
+					<p class="text-sm text-muted-foreground">
+						ถอนข้อมูลใบหน้าของนักเรียนที่เลือกได้เมื่อยืนยันความยินยอมแล้ว
+						ระบบจะให้ตรวจสอบอีกครั้งก่อนลบ
+					</p>
+					<Button
+						type="button"
+						variant="destructive"
+						onclick={() => {
+							confirmRemoval = true;
+						}}
+						disabled={!student || !consent || busy || !enrollAllowed}>ถอนการลงทะเบียนใบหน้า</Button
+					>
+				</div>
+			{/if}
+		</CardContent>
+	</Card>
+</div>
+<AlertDialog.Root bind:open={confirmRemoval}
+	><AlertDialog.Content
+		><AlertDialog.Header
+			><AlertDialog.Title>ยืนยันถอนการลงทะเบียนใบหน้า</AlertDialog.Title><AlertDialog.Description
+				>ลบข้อมูลใบหน้าของ {initial.students.find((s) => s.id === student)?.name} นักเรียนจะต้องลงทะเบียนและให้ความยินยอมใหม่ก่อนใช้เว็บแคมเช็คชื่อ
+				การเช็คชื่อด้วยมือยังใช้งานได้</AlertDialog.Description
+			></AlertDialog.Header
+		><AlertDialog.Footer
+			><AlertDialog.Cancel>ยกเลิก</AlertDialog.Cancel><AlertDialog.Action
 				variant="destructive"
 				onclick={remove}
-				disabled={!student || !consent || busy || !enrollAllowed}>ถอนการลงทะเบียนใบหน้า</Button
-			>{/if}
-	</section>
-</div>
+				disabled={!student || !consent || busy || !enrollAllowed}
+				>ยืนยันถอนข้อมูลใบหน้า</AlertDialog.Action
+			></AlertDialog.Footer
+		></AlertDialog.Content
+	></AlertDialog.Root
+>

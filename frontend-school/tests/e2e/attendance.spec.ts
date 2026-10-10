@@ -584,6 +584,219 @@ async function mockAttendance(
 	return { reads, writes, release };
 }
 test.use({ serviceWorkers: 'block' });
+test('module navigation keeps academic context and marks the current page', async ({ page }) => {
+	await mockAttendance(page);
+	for (const [suffix, label] of [
+		['', 'เช็คชื่อ'],
+		['/settings', 'ตั้งค่าปฏิทินและรอบพิเศษ'],
+		['/report', 'สรุป / ล้างภาคเรียน'],
+		['/faces', 'เว็บแคม / ลงทะเบียนใบหน้า']
+	]) {
+		await page.goto(path(suffix));
+		const nav = page.getByRole('navigation', { name: 'เมนูเช็คชื่อ' });
+		await expect(nav.getByRole('link', { name: label, exact: true })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+		for (const href of await nav
+			.getByRole('link')
+			.evaluateAll((links) => links.map((link) => (link as HTMLAnchorElement).href))) {
+			const query = new URL(href).searchParams;
+			expect(query.get('academicYearId')).toBe(year);
+			expect(query.get('academicTermId')).toBe(term);
+			expect(query.get('date')).toBe(date);
+		}
+	}
+});
+test('refresh and search preserve the roster draft without submitting it', async ({ page }) => {
+	const api = await mockAttendance(page);
+	await page.goto(path());
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
+	await page.getByRole('option', { name: 'มา', exact: true }).click();
+	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
+	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
+	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('ตรวจซ้ำ');
+	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่มีชื่อนี้');
+	await page.getByLabel('ค้นหาชื่อนักเรียน').press('Enter');
+	await expect(page.getByText('ไม่พบชื่อนักเรียนที่ค้นหา', { exact: true })).toBeVisible();
+	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('');
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
+	expect(api.writes).toHaveLength(0);
+});
+test('read-only teacher cannot create an unsaved session', async ({ page }) => {
+	const api = await mockAttendance(page, {
+		permissions: ['attendance.read.assigned', 'academic_context.read.school']
+	});
+	await page.route('**/api/attendance/workspace?**', (route) =>
+		reply(route, {
+			date,
+			counted: true,
+			sessions: [{ ...session, rowVersion: 0 }],
+			settings
+		} satisfies AttendanceWorkspace)
+	);
+	await page.goto(path());
+	await expect(page.getByRole('button', { name: /08:00.*หน้าเสาธง/ })).toBeDisabled();
+	expect(api.writes).toHaveLength(0);
+});
+test('school reader with assigned write can only open assigned unsaved rounds', async ({
+	page
+}) => {
+	const api = await mockAttendance(page, {
+		permissions: [
+			'attendance.read.school',
+			'attendance.update.assigned',
+			'academic_context.read.school'
+		]
+	});
+	await page.route('**/api/attendance/workspace?**', (route) =>
+		reply(route, {
+			date,
+			counted: true,
+			settings,
+			sessions: [
+				{ ...session, rowVersion: 0 },
+				{
+					...session,
+					id: id(240),
+					sourceKey: id(241),
+					title: 'รอบครูคนอื่น',
+					teacherIds: [id(242)],
+					rowVersion: 0
+				}
+			]
+		} satisfies AttendanceWorkspace)
+	);
+	await page.goto(path());
+	await expect(page.getByRole('button', { name: /08:00.*รอบครูคนอื่น/ })).toBeDisabled();
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
+	expect(api.writes.filter((write) => write.path.endsWith('/sessions/open'))).toHaveLength(1);
+});
+test('changing the workspace date also updates module destinations', async ({ page }) => {
+	await mockAttendance(page);
+	await page.route('**/api/attendance/workspace?**', (route) =>
+		reply(route, {
+			date: new URL(route.request().url()).searchParams.get('date')!,
+			counted: true,
+			sessions: [],
+			settings
+		} satisfies AttendanceWorkspace)
+	);
+	await page.goto(path());
+	await page.getByRole('button', { name: 'วันที่', exact: true }).click();
+	await page.getByRole('button', { name: 'วันพฤหัสบดีที่ 8 ตุลาคม 2569', exact: true }).click();
+	await expect(
+		page
+			.getByRole('navigation', { name: 'เมนูเช็คชื่อ' })
+			.getByRole('link', { name: 'สรุป / ล้างภาคเรียน', exact: true })
+	).toHaveAttribute('href', /date=2026-10-08/);
+});
+test('successful purge remains archived when only the summary refresh fails', async ({ page }) => {
+	await mockAttendance(page, {
+		permissions: [
+			'attendance.read.school',
+			'attendance.delete.school',
+			'academic_context.read.school'
+		]
+	});
+	let purges = 0;
+	await page.route('**/api/attendance/terms/*/purge', (route) => {
+		if (route.request().method() === 'POST') purges++;
+		return reply(route, {
+			academicTermId: term,
+			archived: purges > 0,
+			canPurge: purges === 0,
+			records: 2,
+			evidence: 0,
+			evidenceBytes: 0
+		});
+	});
+	await page.route('**/api/attendance/report?**', (route) =>
+		purges ? reply(route, 'สรุปยังไม่พร้อม', 500) : route.fallback()
+	);
+	await page.goto(path('/report'));
+	await page.getByRole('button', { name: 'นักเรียนคนแรก', exact: true }).click();
+	await expect(page.getByText(/หลักฐานคนแรก/)).toBeVisible();
+	await page.getByRole('button', { name: 'ตรวจผลกระทบก่อนล้าง', exact: true }).click();
+	await page.getByLabel('เหตุผล', { exact: false }).fill('จบภาคเรียน');
+	await page.getByLabel('ยืนยันล้างรายละเอียดและภาพของภาคเรียนนี้ โดยคงยอดสรุป').check();
+	await page.getByRole('button', { name: 'ล้างข้อมูลภาคเรียนนี้', exact: true }).click();
+	await page
+		.getByRole('alertdialog')
+		.getByRole('button', { name: 'ยืนยันล้างข้อมูล', exact: true })
+		.click();
+	await expect(
+		page.getByText('ล้างรายละเอียดแล้ว แต่โหลดสรุปล่าสุดไม่ได้', { exact: true })
+	).toBeVisible();
+	await expect(page.getByText(/หลักฐานคนแรก/)).toHaveCount(0);
+	await expect(
+		page.getByRole('button', { name: 'ตรวจผลกระทบก่อนล้าง', exact: true })
+	).toBeDisabled();
+	expect(purges).toBe(1);
+});
+test('cancelling a session needs a reason and a final confirmation', async ({ page }) => {
+	await mockAttendance(page);
+	let cancellationWrites = 0;
+	await page.route('**/api/attendance/sessions/*/cancellation', (route) => {
+		cancellationWrites++;
+		const result = detail();
+		result.session = {
+			...result.session,
+			cancelled: true,
+			cancellationReason: 'กิจกรรมโรงเรียน',
+			rowVersion: 2
+		};
+		result.writable = false;
+		return reply(route, result);
+	});
+	await page.goto(path());
+	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
+	await expect(page.getByText('ระบุเหตุผลงดหรือคืนคาบ', { exact: true })).toBeVisible();
+	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('กิจกรรมโรงเรียน');
+	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
+	await page.getByRole('alertdialog').getByRole('button', { name: 'กลับไปตรวจสอบ' }).click();
+	expect(cancellationWrites).toBe(0);
+	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
+	await page.getByRole('alertdialog').getByRole('button', { name: 'ยืนยัน', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'คืนคาบเช็คชื่อ', exact: true })).toBeVisible();
+	expect(cancellationWrites).toBe(1);
+});
+test('face withdrawal requires consent and confirmation for the selected student', async ({
+	page
+}) => {
+	await mockAttendance(page, {
+		permissions: ['attendance.enroll.assigned', 'academic_context.read.school']
+	});
+	let deletions = 0;
+	await page.route(`**/api/attendance/faces/${student}`, (route) => {
+		deletions++;
+		return reply(route, {});
+	});
+	await page.goto(path('/faces'));
+	await page.getByRole('button', { name: 'นักเรียน', exact: true }).click();
+	await page.getByRole('option', { name: 'ม.1/1 · นักเรียนคนแรก', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true })
+	).toBeDisabled();
+	await page.getByLabel('ยืนยันว่าได้รับความยินยอมและตรวจว่าเป็นนักเรียนคนที่เลือก').check();
+	await page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true }).click();
+	await expect(page.getByRole('alertdialog')).toContainText('นักเรียนคนแรก');
+	await page.getByRole('alertdialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	expect(deletions).toBe(0);
+	await page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true }).click();
+	await page
+		.getByRole('alertdialog')
+		.getByRole('button', { name: 'ยืนยันถอนข้อมูลใบหน้า', exact: true })
+		.click();
+	await expect(
+		page.getByRole('button', { name: 'ถอนการลงทะเบียนใบหน้า', exact: true })
+	).toBeDisabled();
+	expect(deletions).toBe(1);
+});
 test('teacher saves, infers unchecked and patches without rereading workspace', async ({
 	page
 }) => {
@@ -725,7 +938,10 @@ test('leaving during model loading never opens a webcam after the page closes', 
 	);
 	await page.goto(path('/faces'));
 	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
-	await page.getByRole('link', { name: 'กลับหน้าเช็คชื่อ', exact: true }).click();
+	await page
+		.getByRole('navigation', { name: 'เมนูเช็คชื่อ' })
+		.getByRole('link', { name: 'เช็คชื่อ', exact: true })
+		.click();
 	await expect(page.getByRole('heading', { name: 'เช็คชื่อ', exact: true })).toBeVisible();
 	await page.evaluate(() => window.dispatchEvent(new Event('test-engine-ready')));
 	await expect(page.locator('html')).toHaveAttribute('data-engine-resolved', 'yes');
@@ -925,6 +1141,22 @@ for (const viewport of [
 							path: `/tmp/attendance-review-${viewport.name}-${theme}-${heading}.png`
 						});
 					}
+				}
+				if (!suffix) {
+					for (const label of ['ค้นหาชื่อนักเรียน', 'เหตุผลแก้ไข / งดคาบ']) {
+						await page.getByLabel(label).scrollIntoViewIfNeeded();
+						await page.screenshot({
+							path: `/tmp/attendance-review-${viewport.name}-${theme}-${label.replaceAll('/', '-')}.png`
+						});
+					}
+				}
+				if (suffix === '/faces') {
+					await page
+						.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true })
+						.scrollIntoViewIfNeeded();
+					await page.screenshot({
+						path: `/tmp/attendance-review-${viewport.name}-${theme}-camera-controls.png`
+					});
 				}
 				await page.screenshot({
 					path: `/tmp/attendance-review-${viewport.name}-${theme}-${suffix.replace('/', '') || 'workspace'}.png`,

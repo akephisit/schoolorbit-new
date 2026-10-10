@@ -60,7 +60,7 @@
 	}
 </script>
 
-<section aria-label="เกณฑ์และปฏิทินเช็คชื่อ" class="space-y-4">
+<section aria-label="เกณฑ์และปฏิทินเช็คชื่อ" class="min-w-0 space-y-6">
 	<AttendanceRouteRegion
 		initial={initialSettings}
 		retry={retrySettings}
@@ -71,7 +71,7 @@
 		{#snippet children(result)}<AttendanceSettingsPanel {term} {date} initial={result} />{/snippet}
 	</AttendanceRouteRegion>
 </section>
-<section aria-label="กลุ่ม รอบพิเศษ และเครื่องสแกน" class="space-y-4">
+<section aria-label="กลุ่ม รอบพิเศษ และเครื่องสแกน" class="min-w-0 space-y-6">
 	<AttendanceRouteRegion
 		initial={initialOptions}
 		errorTitle="โหลดกลุ่มและเครื่องสแกนไม่ได้"

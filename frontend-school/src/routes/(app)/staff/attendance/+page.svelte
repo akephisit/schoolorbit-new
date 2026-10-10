@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { UserCheck } from '@lucide/svelte';
+	import AttendanceNavigation from '#lib/features/attendance/AttendanceNavigation.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { attendanceWorkspace } from '#lib/api/attendance.js';
@@ -7,9 +9,19 @@
 	import { attendanceIdentity } from '#lib/features/attendance/attendance-access.js';
 	import type { PageProps } from './$types';
 	let { data }: PageProps = $props();
+	let navigationDate = $derived(data.date);
 </script>
 
-<PageShell title={data.title}>
+<PageShell
+	title={data.title}
+	description="เลือกวันที่และรอบเช็คชื่อ บันทึกผลและติดตามนักเรียนที่ได้รับมอบหมาย"
+	icon={UserCheck}
+>
+	{#if data.term}<AttendanceNavigation
+			term={data.term}
+			date={navigationDate}
+			current="workspace"
+		/>{/if}
 	{#if !data.term}<PageState title="เลือกภาคเรียน" description="กรุณาเลือกภาคเรียนจากแถบด้านบน" />
 	{:else if data.initial}{#key $attendanceIdentity + data.term + data.date}<AttendanceRouteRegion
 				initial={data.initial}
@@ -20,6 +32,7 @@
 						term={data.term!}
 						date={data.date}
 						initial={result}
+						onDateChange={(date) => (navigationDate = date)}
 					/>{/snippet}
 			</AttendanceRouteRegion>{/key}{/if}
 </PageShell>
