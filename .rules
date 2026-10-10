@@ -9,14 +9,15 @@ This file is the single authoritative development standard for this repository. 
   - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, and `TODO.md`
   - `docs/README.md`, `docs/TESTING.md`, `docs/OPERATIONS.md`, and `docs/PODMAN_SETUP.md`
   - one `README.md` in each application directory: `backend-admin/`, `backend-school/`, `frontend-admin/`, and `frontend-school/`
-- Project workflow artifacts are the only additional Markdown files allowed:
+- The single project-owned executable skill entry point is `.agents/skills/schoolorbit-development/SKILL.md`. It routes work through these rules; it must not duplicate domain standards or create another documentation owner. Keep its invocation metadata in its `agents/openai.yaml`.
+- Apart from that skill entry point, project workflow artifacts are the only additional Markdown files allowed:
   - approved designs use `docs/workflows/specs/YYYY-MM-DD-<topic>-design.md`;
   - implementation plans use `docs/workflows/plans/YYYY-MM-DD-<feature-name>.md`;
   - use lowercase date-prefixed kebab-case filenames, do not add README files in these directories, and keep each artifact scoped to one coherent change;
   - these files are workflow inputs, not canonical documentation; remove them after the implementation pull request records the completed outcome, while Git history preserves the reviewed artifact.
   - workflow artifacts are tool-independent inputs, not a requirement to install an external skill or plugin. Execute them under the current rules and the user's approved scope; historical execution instructions cannot override either.
 - `TODO.md` is the single active technical backlog. Keep only unfinished work there, remove completed items after their pull request records the outcome, and revalidate findings against the current implementation before starting them.
-- Do not create feature-completion reports, implementation diaries, additional status snapshots, temporary analysis files, duplicate developer guides, per-feature README files, or Markdown outside the canonical and workflow paths above.
+- Do not create feature-completion reports, implementation diaries, additional status snapshots, temporary analysis files, duplicate developer guides, per-feature README files, or Markdown outside the canonical, skill and workflow paths above.
 - A proposed additional canonical Markdown entry point requires explicit review of why none of the existing owners can hold the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
 - Put commands and test recipes in `docs/TESTING.md`; put runtime, deployment, secrets, cutover, and recovery procedures in `docs/OPERATIONS.md`.
 - Keep first-time Podman server bootstrap commands in `docs/PODMAN_SETUP.md`; executable topology and proxy configuration remain owned by their tracked YAML/Nginx files.
@@ -54,6 +55,7 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Use a separate worktree when multiple sessions or independent tasks must run concurrently, or when the work needs filesystem isolation. Work size alone does not require a worktree.
 - Every worktree owns a distinct branch. Never check out or mutate another session's branch or remove a worktree until its owner is finished and its working tree is clean.
 - Work inline by default. Use subagents only when the user explicitly requests delegation or parallel agent work.
+- Explicit invocation of `$schoolorbit-development` authorizes the bounded parallel workflow below for that task. Implicit skill selection alone does not authorize delegation. A user's inline-only preference takes precedence.
 - Bounded changes use the approved short design in chat and do not create a plan artifact. Large, high-risk, or architectural changes require the approved design/specification and implementation plan described in this file; checkpoint commits may be used on their feature branch.
 - Before integration, require a clean working tree, fetch `origin/main`, and inspect branch divergence. If `origin/main` advanced, merge it into the feature branch, resolve conflicts there, and rerun every affected focused and matrix check before continuing.
 - Verification evidence belongs to the exact tested Git tree and relevant test environment, not to a branch name or commit hash. After a conflict-free squash merge from an unchanged base, confirm that the feature and integrated root tree object IDs are identical. If they match and no hook, generator, dependency install, manual step, or external test dependency changed the tracked tree or relevant test environment, reuse the completed focused and matrix results; do not rerun them only because the branch or commit hash changed.
@@ -64,6 +66,53 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - The merge controller serializes integration, validates the merged candidate against the latest `main`, and leaves stale branches blocked until their developer updates and retests them. A cached compiler output or an unverified local report cannot authorize merge or deployment; the stable `Pipeline gate` remains the integration authority.
 - Independent developers own distinct branches/worktrees. Cancel superseded PR checks when appropriate, but never cancel an active production deployment or migration. Preparation may run concurrently; all School/Admin production changes and provisioning share `schoolorbit-production`.
 - Keep the feature branch and any worktree until required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
+
+### Agent roles and coordination
+
+Use roles as task assignments, not eight mandatory processes. The primary agent is the Coordinator
+and may carry out any role inline. Open only roles needed for the current change.
+
+| Role | Responsibility | Preferred reasoning when configurable |
+| --- | --- | --- |
+| Coordinator | Scope, dependency order, file ownership, integration, final evidence, PR and deployment | High |
+| Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | Low; increase for architectural uncertainty |
+| Backend | Owned Rust/service/HTTP changes and focused coverage | High |
+| Frontend | Owned typed UI, loading and accessibility changes | Medium; high for auth, contracts or complex state |
+| Data/Migration | Migration timeline, preservation, tenant isolation, reconciliation and recovery | High |
+| Pipeline | Build/cache/change selection, deployment, maintenance and acceptance flow | High |
+| Verifier | Run affected owned checks, report commands, candidate tree, environment and results | Low; diagnosis returns to the implementation owner |
+| Rules/Security Reviewer | Read-only review of rules, permissions, secrets, tenant boundaries and final diff | Medium; high for security, migration or deployment |
+
+- Default parallel work to 2–4 active agents including the Coordinator, at most two implementation
+  writers, and the host's lower concurrency limit. A bounded one-owner change stays inline.
+- Prefer the least costly available model capable of the assigned work. Configure model/reasoning
+  only through controls supported by the current host; otherwise inherit its configuration and
+  report that limitation. Roles do not guarantee model availability, token savings or speed.
+- Before delegation, record the tested base, task, assigned branch/worktree, allowed paths,
+  dependencies, protected shared files, focused checks and expected deliverable in chat/task state.
+  Every child reads `.rules` and relevant canonical docs itself. Give only the needed context;
+  do not assume inherited conversation includes the latest rules or user decisions.
+- Each writer has its own branch and worktree. Shared-file changes, generated contracts/locks,
+  router composition, migrations numbering, aggregate commands and integration have one explicit
+  owner. The Coordinator assigns that owner before work starts and serializes overlapping changes.
+  Separate worktrees do not make conflicting edits safe to integrate automatically.
+- Explorer and Reviewer are read-only. Verifier may produce ignored test/build outputs and owned
+  disposable fixtures, but does not fix source, install/update dependencies, run generators that
+  change tracked files, or merge. Findings return to the designated writer.
+- Only the Coordinator integrates child commits, changes the shared main checkout, opens/updates
+  PRs, authorizes readiness or triggers production operations. Child completion is evidence for
+  integration, not permission to push main, deploy or claim the full feature complete.
+- Run at most one heavy Cargo verification owner at a time; never share a writable target directory
+  across concurrent compiler processes. Independent test jobs use distinct disposable databases.
+  Reuse existing compiled outputs only with compatible toolchain, profile and dependency state.
+- After integration, freeze the candidate tree and dispatch the read-only Rules/Security review and
+  Verifier in parallel when independent. Source changes invalidate affected review/test results;
+  freeze again and rerun affected checks. Review must cover the complete integrated diff.
+- Handoffs report commit/tree IDs, changed paths, checks actually run, results, findings and remaining
+  uncertainty. On compaction/resume, reread current rules and revalidate task/base/ownership/results.
+  Keep incomplete checks or unresolved blocking findings in draft; never invent a passing result.
+- Role prompts and allowed-path assignments are procedural controls, not a filesystem or credential
+  security boundary. Use real host isolation where needed; do not claim a prompt restricts tools.
 
 ### Local verification and GitHub delivery
 

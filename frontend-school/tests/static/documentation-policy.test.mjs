@@ -34,6 +34,7 @@ const WORKFLOW_PLAN_PATTERN =
 function isAllowedMarkdown(relativePath) {
 	return (
 		MARKDOWN_ALLOWLIST.includes(relativePath) ||
+		relativePath === '.agents/skills/schoolorbit-development/SKILL.md' ||
 		WORKFLOW_SPEC_PATTERN.test(relativePath) ||
 		WORKFLOW_PLAN_PATTERN.test(relativePath)
 	);
@@ -89,10 +90,13 @@ function requiredSection(source, startHeading, endHeading) {
 
 test('Workflow Markdown is limited to dated spec and plan artifacts', () => {
 	const accepted = [
+		'.agents/skills/schoolorbit-development/SKILL.md',
 		'docs/workflows/specs/2026-07-26-admin-auth-design.md',
 		'docs/workflows/plans/2026-07-26-admin-auth.md'
 	];
 	const rejected = [
+		'.agents/skills/another-skill/SKILL.md',
+		'.agents/skills/schoolorbit-development/README.md',
 		'docs/workflows/README.md',
 		'docs/workflows/specs/admin-auth-design.md',
 		'docs/workflows/specs/2026-07-26-admin-auth.md',

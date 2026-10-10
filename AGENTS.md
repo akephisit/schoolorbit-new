@@ -7,6 +7,7 @@ Active references:
 - [Documentation index](./docs/README.md)
 - [Testing](./docs/TESTING.md)
 - [Operations](./docs/OPERATIONS.md)
+- [Project development skill](./.agents/skills/schoolorbit-development/SKILL.md)
 
 High-risk invariants:
 

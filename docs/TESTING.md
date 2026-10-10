@@ -47,6 +47,18 @@ browser verification after integration. Caches never replace a required test res
 
 ## Every Change
 
+The repository-owned [development skill](../.agents/skills/schoolorbit-development/SKILL.md)
+is discovered from `.agents/skills/` by supported Codex hosts. Invoke
+`$schoolorbit-development` for the approved coordinated workflow. Role ownership, concurrency,
+reasoning preferences and delegation authorization are defined in `.rules`; implicit discovery
+does not itself authorize subagents. The same workflow can run inline when the host lacks them.
+
+For a skill change, run `node --test frontend-school/tests/static/documentation-policy.test.mjs`
+and the applicable `./scripts/pipeline verify --scope auto` owners. Verify the skill appears in the
+target host's skill selector after checkout refresh; Codex detects skill changes automatically,
+and restarting it is the documented fallback when an update does not appear. File/metadata checks
+prove repository packaging, not live discovery or agent isolation in a different host.
+
 From the repository root:
 
 ```bash
