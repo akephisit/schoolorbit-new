@@ -201,6 +201,8 @@ Artifacts include per-unit Cargo times, actual linker flags, binary sizes, CPU/t
 and the original builder's cache evidence separately from warm Cargo measurements. All School
 exports must equal the default-profile OpenAPI, including across compiler variants.
 The final diagnostic compilation records compiler pass times and monomorphization estimates.
+Actions displays a bounded timing table; full per-unit JSON and compiler evidence stay in the
+downloadable artifact, avoiding GitHub's 1 MiB step-summary limit.
 It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only in the disposable benchmark
 container; that compilation is excluded from warm sample means and never produces a release
 artifact. Production builds keep the pinned stable compiler and normal release flags.

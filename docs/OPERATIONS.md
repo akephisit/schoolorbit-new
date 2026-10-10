@@ -257,6 +257,18 @@ Keep production optimization unchanged
 unless both repeatable compile improvements and representative runtime performance support a
 new profile; profile/exporter experiments alone do not establish production request latency.
 
+The application-owned explicit OpenAPI registry uses bounded schema constructors instead of
+one very large generated function; release optimization settings are unchanged. The
+[paired source experiment](https://github.com/akephisit/schoolorbit-new/actions/runs/38028625695)
+compared baseline `fe3cce4a` with candidate `81f76e30` on the same runner and persistent
+two-CPU Docker container. Application-only warm builds took 249.19/245.08 seconds before
+and 186.99/190.98 seconds after, reducing the mean from 247.13 to 188.98 seconds (23.5%).
+Only `backend-school` rebuilt in all four samples; links took 0.62–0.65 seconds and the
+binary grew by 38,512 bytes (0.03%). All eight API exports were equal. Prime builds of
+256.91 and 200.23 seconds and the final diagnostic compilation are excluded from these
+means. This source comparison did not remeasure domain edits or complete deployment time;
+do not compare its absolute times with another runner's profile experiment.
+
 The school Dockerfile uses `cargo rustc` with `-C lto=off` only for the final application
 crate to reduce source-changing release build work. Dependencies retain their existing
 release settings and cargo-chef cache; release optimization level is unchanged. This is
