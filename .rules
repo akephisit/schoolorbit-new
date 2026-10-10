@@ -60,9 +60,20 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - Feature branches may contain multiple focused or checkpoint commits. Integrate an approved feature into `main` with a squash merge so `main` receives one coherent commit for that feature.
 - Every change enters `main` through a pull request. Do not push directly to `main` or force-push shared branches. After required local checks pass, commit and push the feature branch, open a PR and attach it to the task.
 - Trusted team collaborators with write access use automatic squash merge after the stable `Pipeline gate` succeeds; human approval is not mandatory. External/fork PRs are never auto-merged.
-- The merge controller serializes integration, validates the merged candidate against the latest `main`, and updates/rechecks a stale candidate. A cached compiler output or a local report cannot authorize merge or deployment.
+- The merge controller serializes integration, validates the merged candidate against the latest `main`, and updates/rechecks a stale candidate. A cached compiler output or an unverified local report cannot authorize merge or deployment; the stable `Pipeline gate` remains the integration authority.
 - Independent developers own distinct branches/worktrees. Cancel superseded PR checks when appropriate, but never cancel an active production deployment or migration. Preparation may run concurrently; all School/Admin production changes and provisioning share `schoolorbit-production`.
 - Keep the feature branch and any worktree until required deployment and acceptance checks pass. Remove them only after confirming no session or recovery work still depends on them.
+
+### Reusing local verification in CI
+
+- The intended flow is `verify once locally → submit verification receipt → Pipeline validates evidence → run only uncovered suites → Pipeline gate → normal release acceptance`. Eligible local results may satisfy an affected CI suite only after its executable evidence validator is implemented and enabled. Until then, local checks and the current GitHub checks remain separate; writing these rules does not enable CI skipping.
+- Use the existing `scripts/pipeline` suite owner. Reusable evidence must cover every required command and test selection, including fresh disposable database fixtures where applicable. Focused tests, compiler snapshots, dependency caches, test discovery, and an empty test selection cannot replace a complete suite result.
+- Test a clean checkout of the exact merged candidate containing the PR head and latest `main` base. Include tracked cross-component inputs and reject untracked, ignored, generated, or post-test changes that alter verification inputs. A feature-tree result cannot cover a different merged candidate; base updates or conflicts require rechecking affected suites.
+- A registered trusted verifier must execute the owned commands and issue authenticated evidence only after success. Keep its signing identity outside the source checkout and test containers. A signature on a developer-authored report authenticates the author, not test execution; GitHub must validate the registered issuer and tamper-evident receipt through a controller from trusted `main`.
+- Receipts bind repository, PR head, tested tree, base, suite, command/coverage digests, outcomes and nonempty required test selections, toolchain/dependency/verification-recipe identities, platform/architecture/compiler profile, fixture image and relevant nonsecret configuration hashes, verifier identity, execution time, expiry, and evidence digest. The validator defines bounded expiry and compatible pinned Docker environments. Branch names, commit messages, PR comments, and caller-provided `testsPassed` flags are insufficient.
+- Accept evidence only for trusted same-repository team candidates and only for proven suites. Missing, expired, incomplete, failed, unverifiable, or environment-mismatched evidence leaves the relevant suite for ordinary CI execution; fork/external PRs use normal CI. Record executed and reused suites separately, retain the original execution provenance, and never promote compiler snapshots or inherited success markers into fresh test evidence.
+- Keep planner/gate validation and selected release builds required. Production readiness, tenant migrations, deployed browser/asset acceptance, authenticated proxy smoke, and universal Maintenance Mode remain under their existing deployment owners; local evidence cannot replace them.
+- Measure local execution, evidence transfer/validation, remaining CI, and end-to-end delivery separately before rollout. Verifiers isolate concurrent developers and disposable databases and clean up owned resources. Receipts and uploaded logs exclude credentials, PII, database URLs, and production data.
 
 ## 2. Adding or Changing a Feature
 
@@ -236,7 +247,7 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 - If any source value cannot be mapped unambiguously or reconciliation is absent, stale, incomplete, or failed, it blocks both consumer cutover and destructive cleanup. Report only bounded finding codes and aggregate counts; never discard or guess data or expose raw rows, PII, credentials, secrets, or database URLs. Correct the data through an explicit reviewed remediation or recovery plan, then reconcile again.
 - Database-backed tests use `TEST_DATABASE_URL` and isolated test state. Routine backend-school
   database tests run through `scripts/test_backend_school.sh`, which supplies PostgreSQL in a
-  uniquely named rootless Podman container and removes that exact container and its anonymous
+  uniquely named Docker container and removes that exact container and its anonymous
   volumes after the command, including handled failure and signal paths. Neon migration/schema
   compatibility runs only through the explicit disposable-branch gate and uses its direct
   endpoint, never a `-pooler` transaction endpoint.

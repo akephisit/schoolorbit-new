@@ -36,6 +36,19 @@ fixtures, and runs the internal `prime` command to compile the same backend targ
 the shared snapshot. A compiler-snapshot receipt names the original verification run and cannot
 authorize another test reuse. Missing, changed or expired proof runs the complete selected suite.
 
+Local-to-CI result reuse is an intended extension, specified in the **Reusing local verification
+in CI** section of [the development rules](../.rules). It is not implemented: the current
+[reuse owner](../scripts/reuse_pipeline_verification.mjs) accepts equivalent GitHub PR workflow
+evidence for main and has no local-receipt importer. There is no supported command or commit flag
+that makes a local pass skip PR CI today.
+
+The intended handoff tests the exact merged candidate once in a pinned disposable Docker
+environment, submits a receipt issued by a registered trusted verifier, and lets Pipeline validate
+the tree, base, complete suite coverage, environment, issuer, and expiry. Only proven suites are
+reused; the rest run normally. A signed self-report alone does not establish that tests executed.
+Track the verifier, receipt submission and validation work in [the technical backlog](../TODO.md).
+Release builds and deployed acceptance still execute after integration.
+
 Rust snapshots include the tracked cross-component permission lock and fonts consumed by School's
 compiler. Migration directory timestamps are restored only when their complete tracked contents
 match the saved snapshot; changed, removed, untracked or ignored inputs keep Cargo dirty.
