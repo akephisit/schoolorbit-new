@@ -24,6 +24,15 @@ This file is the single authoritative development standard for this repository. 
 - Code, contracts, migrations, generated artifacts, and executable configuration remain the source of truth for runtime behavior. Documentation must link to them instead of copying large inventories that become stale.
 - Minimal AI entry-point files are intentional. Do not expand `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` into competing rule sets.
 
+### Applicability and conflicting examples
+
+- Apply the current user's authorized scope and decisions, then this file's applicable requirements. Entry points, the project skill, workflow artifacts, comments, and example code route or illustrate work; they cannot silently replace the development standard.
+- Explicit domain rules take precedence over general pattern reuse. Existing code that violates a current requirement is migration debt, not permission to reproduce the violation. Correct the affected boundary coherently; put unrelated unfinished remediation in `TODO.md` only after verifying it.
+- Follow the owning application's executable formatter, lint, TypeScript, Cargo, and dependency configuration. Do not change configuration to make a preferred coding style pass, and do not infer installed framework APIs from memory or old examples; inspect manifests, locks, and current usage.
+- School-specific tenant/session middleware, permission registries, OpenAPI generation, domain crates, and shared page components apply to the School applications. Admin uses its own control-plane authentication, API client, services, and UI owners. General typing, validation, authorization, data preservation, security, and verification requirements apply to both.
+- Do not import another application's internals or invent a shared owner merely to make School and Admin look alike. A cross-application standardization is a separate architectural decision with explicit consumers and verification.
+- If a rule conflicts with executable behavior, name the exact conflict before implementing the affected boundary. Resolve routine choices within the authorized scope; request a decision only when the conflict changes product behavior, a public contract, data safety, or the approved architecture beyond that scope. Independent work may continue.
+
 ## 1. Required Analysis Workflow
 
 Before every change:
@@ -40,6 +49,17 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - UI subcomponents may be consumed through `frontend-school/src/lib/components/ui/**/index.ts` aliases.
 - Read the full migration timeline before proposing a column, trigger, or data migration.
 - Minimal AI entry-point files are loaded by tools and are not unused placeholders.
+
+### Consistency decisions and final review
+
+- Before editing, record a brief working agreement in chat/task state: affected application/domain, authoritative contract and component owners, representative implementation paths, chosen data/error/state flow, and applicable checks. Keep it proportional to the change; this is not an additional Markdown artifact or an approval checkpoint for routine work.
+- Choose examples by matching responsibility, authorization scope, and workflow, not by proximity, age, or file size alone. Inspect their callers and tests and confirm they comply with the current rules. For a full-stack change, trace the actual handler/service/DTO/API-wrapper/loader/component path instead of combining unrelated examples.
+- Keep that agreement stable across files and turns: naming, module placement, imports, response/error handling, validation, state ownership, and UI controls must follow the selected owners. Do not introduce a second pattern halfway through the change because it is easier locally.
+- When new evidence requires a different pattern, explain the evidence and update the agreement before dependent edits. Reconcile all already-changed consumers in the same coherent change, update this file only if the durable convention changed, and rerun affected checks. Pattern consistency must not preserve an incorrect or unsafe design.
+- Keep existing domain vocabulary. Rust symbols and SQL identifiers follow their owning layer's convention; JSON field names follow the actual wire contract; TypeScript names and component props follow their feature owner. Do not invent parallel names or manually rename generated fields to match a local preference.
+- Use the owning formatter for mechanical style and preserve unrelated files. Dependency or toolchain changes need a concrete requirement, consumer impact, and compatible lockfile updates; do not upgrade or substitute libraries incidentally.
+- Before delivery, inspect every changed file against the agreement and this file, including matching API producers/consumers, denied paths, async disposal, and relevant UI states. Separate checks actually passed from failed or unrun checks; a static check is not proof of runtime or visual behavior.
+- On handoff or compaction, retain the working agreement, any justified exceptions, candidate/base, completed checks, and remaining work in chat/task state. Revalidate it against the current rules and tree before continuing; do not choose a fresh convention merely because the conversation resumed.
 
 ### Recommendation and decision quality
 
@@ -149,6 +169,8 @@ Feature toggles are optional. Add one only for staged rollout or operational con
 - Data preservation does not override authorized retention, deletion, legal-hold, or PDPA requirements. Do not retain data longer than policy allows merely because it originated in a legacy model.
 
 ## 3. Backend: Rust, Axum, SQLx
+
+Both backends keep HTTP handling, business decisions, and persistence in their owning layers. The crate, tenant-context, and feature-module paths below describe backend-school. Backend-admin uses its existing application/service owners; do not copy school tenant or permission adapters into control-plane handlers. Existing Admin deviations do not waive the general error, typing, security, or API requirements; repair a changed boundary with its actual callers and tests.
 
 ### Backend-school Cargo workspace
 
@@ -265,6 +287,8 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 
 ## 5. API Contracts
 
+The generated OpenAPI/TypeScript workflow below owns the School API. Admin changes must trace their typed Rust request/response models to the actual frontend-admin API consumer and test that boundary; do not claim a generated Admin contract exists or reuse School wire DTOs for unrelated control-plane data. Adding an Admin generator requires an explicit architectural change.
+
 - Rust DTOs plus domain-owned `utoipa::path` declarations own the HTTP wire contract.
   `backend-school/src/api_contract.rs` owns composition and registration of the complete document.
 - Tracked OpenAPI output lives at `contracts/openapi/school-api.json`; generated frontend DTOs live under `frontend-school/src/lib/api/generated/`.
@@ -301,14 +325,18 @@ Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-h
 
 ## 7. Frontend: SvelteKit 3 / Svelte 5
 
+Both frontends use their pinned SvelteKit/Svelte versions and owning configuration. School permission/menu metadata, generated DTOs, and the shared layout/UI paths below belong to frontend-school. In frontend-admin, reuse the local API/state/component owners and [theme](frontend-admin/src/routes/layout.css); do not import School components or fabricate School route metadata to achieve visual consistency.
+
 ### Data, state, and components
 
 - Configure SvelteKit through `sveltekit({...})` in `vite.config.ts`. Use package subpath imports (`#lib/*`) with explicit module extensions, `$app/env`, and `$app/state`; do not restore retired Kit 2 configuration or aliases.
 - UI primitives may use Runed's portable utilities. Do not import `runed/kit` while its Kit integration still depends on retired Kit 2 APIs; the scoped peer override does not make those utilities compatible.
 
 - Use TypeScript throughout and keep the API boundary strictly typed.
+- New or coherently rewritten Svelte components use typed `$props`, `$state`, and `$derived` for local reactive state and event properties such as `onclick`. Do not mix legacy `$:`/`export let`/`on:click` patterns into the same component or convert unrelated components as a side effect.
+- Use derived state for computed values. Reserve `$effect` for synchronization with external state or browser resources, with disposal for listeners, subscriptions, timers, and pending work; do not use effect chains to duplicate authoritative state or trigger primary route reads.
 - Prefer `+page.server.ts` loaders/actions where server-only credentials or server-side behavior are involved. Load route-specific data only.
-- Use Svelte stores for shared client state such as auth, permissions, realtime connectivity, notifications, and toasts.
+- Reuse the owning shared client-state API for auth, permissions, realtime connectivity, notifications, and toasts. School uses its existing Svelte stores; Admin auth uses [its rune-based owner](frontend-admin/src/lib/stores/auth.svelte.ts). Do not add a second store or convert the owner just to match local component state.
 - Type component props. Prefer existing local components and patterns before adding abstractions.
 - Use Tailwind CSS and local shadcn-svelte primitives for standard buttons, forms, tables, dialogs, sheets, tabs, menus, alerts, badges, skeletons, pagination, and tooltips.
 - Large browser-only PDF, spreadsheet, image-conversion, and document-export libraries must load lazily after a user action and resolve to a lightweight server stub during SSR. Do not bundle them into the Cloudflare Worker.

@@ -15,6 +15,8 @@ This skill routes work; domain conventions and agent policy stay in `.rules`.
 1. Establish the user's requested outcome and current authorization, inspect the actual implementation,
    and refresh GitHub as required by `.rules`. Preserve work owned by other sessions.
 2. State a short plan, impacted owners, dependencies and applicable verification before editing.
+   Apply `.rules` → `Applicability and conflicting examples` and record the working agreement
+   from `Consistency decisions and final review`; retain it through implementation and resume.
    Use the approved specification/plan process for architectural work.
 3. Consult `.rules` → `Agent roles and coordination`. The primary agent acts as Coordinator.
    Use a bounded inline workflow for a one-owner change. When explicitly invoked as
@@ -61,6 +63,7 @@ Coordinator and obtain a revised assignment. Independent work can continue.
    Report exact commands, tested tree/environment, failures and unrun required checks.
 4. The Reviewer reads current `.rules` and inspects the complete integrated diff for scope, ownership,
    API/permission contracts, tenant isolation, data preservation and operational invariants.
+   Check the working agreement and justified exceptions under `Consistency decisions and final review`.
    Report actionable findings with file/line evidence, severity and required correction.
 5. Return failures to the assigned writer. After any source/base/environment change, apply the
    evidence invalidation rules in `.rules`; repeat affected checks/review on the new candidate.
