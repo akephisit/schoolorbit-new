@@ -9,6 +9,13 @@
 		categoryColor?: string | null;
 		pending?: boolean;
 	}
+	export interface CalendarDayState {
+		active: boolean;
+		label: string;
+		disabled?: boolean;
+		pending?: boolean;
+		description?: string;
+	}
 </script>
 
 <script lang="ts">
@@ -26,7 +33,7 @@
 		monthDate,
 		events = [],
 		pendingRequests = [],
-		annotations = [],
+		dayStates = {},
 		selectedDate = '',
 		onselect,
 		oneventselect,
@@ -36,7 +43,7 @@
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
 		pendingRequests?: CalendarDisplayEvent[];
-		annotations?: CalendarDisplayEvent[];
+		dayStates?: Record<string, CalendarDayState>;
 		selectedDate?: string;
 		onselect?: (date: string, anchor: HTMLElement) => void;
 		oneventselect?: (event: CalendarDisplayEvent, date: string, anchor: HTMLElement) => void;
@@ -47,7 +54,7 @@
 	const fallbackColor = '#64748b';
 	const todayDate = toIsoDate(new Date());
 
-	let displayEvents = $derived([...annotations, ...events, ...pendingRequests]);
+	let displayEvents = $derived([...events, ...pendingRequests]);
 	let weeks = $derived(buildCalendarMonthWeeks(monthDate, displayEvents));
 
 	function eventsForDate(date: string) {
@@ -86,6 +93,7 @@
 				{#each week.cells as cell, dayIndex (cell.date)}
 					{@const dayEvents = eventsForDate(cell.date)}
 					{@const dayRequests = requestsForDate(cell.date)}
+					{@const dayState = dayStates[cell.date]}
 					<button
 						type="button"
 						class={cn(
@@ -93,14 +101,19 @@
 							fillHeight && 'h-full min-h-0 sm:h-full',
 							!oneventselect && 'focus-visible:z-20',
 							!cell.inCurrentMonth && 'bg-muted/30 text-muted-foreground',
-							selectedDate === cell.date && 'bg-primary/5 ring-2 ring-inset ring-primary'
+							dayState?.active && 'bg-primary/15 hover:bg-primary/20',
+							dayState && !dayState.active && 'bg-muted/10 hover:bg-muted/40',
+							dayState?.disabled && 'cursor-default',
+							!dayState &&
+								selectedDate === cell.date &&
+								'bg-primary/5 ring-2 ring-inset ring-primary'
 						)}
-						aria-pressed={selectedDate === cell.date}
+						aria-pressed={dayState?.active ?? selectedDate === cell.date}
+						aria-busy={dayState?.pending || undefined}
+						disabled={dayState?.disabled ?? false}
+						title={dayState?.description}
 						data-calendar-date={cell.date}
-						aria-label={`${formatCalendarDate(cell.date)}, ${dayEvents.length} กิจกรรม${annotations
-							.filter((annotation) => eventOverlapsDate(annotation, cell.date))
-							.map((annotation) => `, ${annotation.title}`)
-							.join('')}${dayRequests.length ? `, ${dayRequests.length} คำร้องรออนุมัติ` : ''}`}
+						aria-label={`${formatCalendarDate(cell.date)}, ${dayEvents.length} กิจกรรม${dayState ? `, ${dayState.label}` : ''}${dayRequests.length ? `, ${dayRequests.length} คำร้องรออนุมัติ` : ''}`}
 						onclick={(event) => onselect?.(cell.date, event.currentTarget)}
 					>
 						<span
@@ -112,6 +125,10 @@
 						>
 							{cell.dayNumber}
 						</span>
+						{#if dayState}<span
+								class="mt-auto break-words text-[10px] font-medium leading-snug sm:text-xs"
+								aria-hidden="true">{dayState.label}</span
+							>{/if}
 
 						{#if (week.hiddenEventCounts[dayIndex] ?? 0) > 0}
 							<span

@@ -139,12 +139,21 @@ const attendancePath = (studentId = child) =>
 	`/parent/student/${studentId}/attendance?academicYearId=${year}&academicTermId=${term}`;
 
 for (const role of ['student', 'parent'] as const) {
-	for (const mobile of [false, true]) {
-		test(`${role} timetable activities use shared display at ${mobile ? 'mobile' : 'desktop'} width`, async ({
+	for (const { mobile, theme } of [
+		{ mobile: false, theme: 'light' },
+		{ mobile: false, theme: 'dark' },
+		{ mobile: true, theme: 'light' },
+		{ mobile: true, theme: 'dark' }
+	] as const) {
+		test(`${role} timetable activities use shared display at ${mobile ? 'mobile' : 'desktop'} width in ${theme}`, async ({
 			page
 		}) => {
 			if (role === 'student') await mockStudentSchedules(page);
 			else await mockParent(page);
+			await page.addInitScript(
+				(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
+				theme
+			);
 			await page.setViewportSize({ width: mobile ? 375 : 1280, height: 900 });
 			await page.route(
 				role === 'student'
@@ -169,12 +178,75 @@ for (const role of ['student', 'parent'] as const) {
 				workspace.locator(`[data-personal-timetable-block="${id(803)}"]`)
 			).toContainText('กิจกรรมอิสระทดสอบ');
 			await familyExpect(workspace).toContainText('COURSE-CODE');
+			if (!mobile) {
+				const cardSizes = await workspace
+					.locator('[data-personal-timetable-block]')
+					.evaluateAll((cards) =>
+						cards.map((card) => {
+							const cell = card.closest('td')!;
+							const rectangle = card.getBoundingClientRect();
+							const bounds = cell.getBoundingClientRect();
+							const style = getComputedStyle(cell);
+							return {
+								height: rectangle.height,
+								width: rectangle.width,
+								expectedHeight:
+									bounds.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom),
+								expectedWidth:
+									bounds.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+							};
+						})
+					);
+				for (const size of cardSizes) {
+					expect(Math.abs(size.height - size.expectedHeight)).toBeLessThanOrEqual(2);
+					expect(Math.abs(size.width - size.expectedWidth)).toBeLessThanOrEqual(2);
+				}
+			}
 			await familyExpect
 				.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 				.toBe(true);
+			await page.screenshot({
+				path: `/tmp/attendance-cell-timetable-${role}-${mobile ? 'mobile' : 'desktop'}-${theme}.png`,
+				animations: 'disabled'
+			});
 		});
 	}
 }
+
+test('multiple lessons share the full desktop cell without overlap or clipped long names', async ({
+	page
+}) => {
+	await mockStudentSchedules(page);
+	const lessons = blocks();
+	lessons[0].offeringName =
+		'รายวิชาที่มีชื่อยาวสำหรับตรวจสอบการแสดงผลและการจัดพื้นที่ภายในช่องตารางเรียน';
+	lessons.push({ ...lessons[1], id: id(899), title: 'กิจกรรมที่สองในคาบเดียวกัน' });
+	await page.route('**/api/me/timetable?**', (route) => reply(route, lessons));
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.goto(`/student/timetable?academicYearId=${year}&academicTermId=${term}`);
+	const workspace = page.getByTestId('personal-timetable');
+	await familyExpect(workspace.locator('[data-personal-timetable-block]')).toHaveCount(5);
+	const geometry = await workspace
+		.locator(`[data-personal-timetable-block="${id(801)}"]`)
+		.evaluate((first) => {
+			const last = first.closest('td')!.querySelectorAll('article')[1];
+			const cell = first.closest('td')!;
+			const style = getComputedStyle(cell);
+			const bounds = cell.getBoundingClientRect(),
+				upper = first.getBoundingClientRect(),
+				lower = last.getBoundingClientRect();
+			return {
+				topGap: upper.top - bounds.top - parseFloat(style.paddingTop),
+				bottomGap: bounds.bottom - lower.bottom - parseFloat(style.paddingBottom),
+				gap: lower.top - upper.bottom,
+				clipped: [first, last].some((card) => card.scrollHeight > card.clientHeight + 1)
+			};
+		});
+	expect(Math.abs(geometry.topGap)).toBeLessThanOrEqual(2);
+	expect(Math.abs(geometry.bottomGap)).toBeLessThanOrEqual(2);
+	expect(geometry.gap).toBeGreaterThanOrEqual(7);
+	expect(geometry.clipped).toBe(false);
+});
 
 for (const theme of ['light', 'dark'] as const) {
 	for (const role of ['student', 'parent'] as const) {
@@ -185,6 +257,19 @@ for (const theme of ['light', 'dark'] as const) {
 			else await mockParent(page);
 			await ownPermission(page, role);
 			await page.route(
+				(url) =>
+					url.pathname ===
+					(role === 'student' ? contextPath : '/api/parent/academic-context/options'),
+				(route) =>
+					reply(route, {
+						...academicOptions,
+						years: academicOptions.years.map((item) => ({
+							...item,
+							name: theme === 'dark' ? `ปีการศึกษา ${item.year}` : String(item.year)
+						}))
+					})
+			);
+			await page.route(
 				role === 'student' ? '**/api/student/profile?**' : `**/api/parent/students/${child}?**`,
 				(route) => reply(route, profile(role === 'student' ? actor : child))
 			);
@@ -194,6 +279,9 @@ for (const theme of ['light', 'dark'] as const) {
 			await page.setViewportSize({ width: 375, height: 844 });
 			await page.goto(role === 'student' ? `/student?academicYearId=${year}` : childRoute());
 			await familyExpect(page.getByText('5471', { exact: true })).toBeVisible();
+			await familyExpect(
+				page.locator('[data-slot="badge"]').filter({ hasText: 'ปีการศึกษา' })
+			).toHaveText('ปีการศึกษา 2569');
 			await familyExpect
 				.poll(() => page.evaluate(() => document.documentElement.classList.contains('dark')))
 				.toBe(theme === 'dark');

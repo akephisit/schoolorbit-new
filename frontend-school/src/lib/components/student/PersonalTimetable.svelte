@@ -30,7 +30,7 @@
 	<article
 		data-personal-timetable-block={block.id}
 		data-block-kind={block.blockKind}
-		class="min-w-0 space-y-2 rounded-lg border bg-card p-3 text-left text-sm whitespace-normal shadow-xs"
+		class="min-w-0 space-y-2 rounded-lg border bg-card p-3 text-left text-sm whitespace-normal shadow-xs md:flex-1"
 	>
 		{#if block.blockKind === 'course' && block.offeringCode}<p
 				class="break-words font-semibold text-primary"
@@ -86,12 +86,12 @@
 						<Table.Cell
 							class={[
 								cellBlocks.length ? 'block' : 'hidden',
-								'p-0 align-top md:table-cell md:border-r md:p-2'
+								'p-0 align-top md:table-cell md:h-px md:border-r md:p-2'
 							]}
 						>
-							<div class="space-y-3 md:space-y-2">
+							<div class="space-y-3 md:flex md:h-full md:flex-col md:gap-2 md:space-y-0">
 								{#each cellBlocks as block (block.id)}<div
-										class="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 md:block"
+										class="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 md:flex md:flex-1 md:flex-col"
 									>
 										<p class="pt-3 text-xs text-muted-foreground md:hidden">
 											{block.startTime.slice(0, 5)}–{block.endTime.slice(0, 5)}

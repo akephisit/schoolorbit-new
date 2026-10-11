@@ -855,8 +855,11 @@ test('calendar toggles a single processing date', async ({ page }) => {
 	const api = await mockAttendance(page);
 	await page.goto(path('/settings'));
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
-	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
+	await page.locator(`[data-calendar-date="${date}"]`).click();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
+		'aria-pressed',
+		'false'
+	);
 	expect(api.writes.find((w) => w.path.includes('/days/'))?.data).toMatchObject({
 		rowVersion: 1,
 		days: [{ date, counted: false }]
@@ -872,8 +875,11 @@ test('settings save succeeds twice and calendar uses the returned revision', asy
 	await expect(page.getByText('บันทึกแล้ว', { exact: true })).toBeVisible();
 	await page.getByLabel('เข้าสายหลังเวลา').fill('08:45');
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
-	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
+	await page.locator(`[data-calendar-date="${date}"]`).click();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
+		'aria-pressed',
+		'false'
+	);
 	expect(api.writes.filter((w) => w.path.includes('/settings/')).map((w) => w.data)).toMatchObject([
 		{ rowVersion: 1, configuration: { lateAfter: '08:30:00' } },
 		{ rowVersion: 2, configuration: { lateAfter: '08:45:00' } }
@@ -988,8 +994,11 @@ test('slow options do not block calendar use', async ({ page }) => {
 	const api = await mockAttendance(page, { holdOptions: true });
 	await page.goto(path('/settings'));
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
-	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
+	await page.locator(`[data-calendar-date="${date}"]`).click();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
+		'aria-pressed',
+		'false'
+	);
 	api.release();
 	await expect(page.getByRole('heading', { name: 'เครื่องเว็บแคม' })).toBeVisible();
 });
@@ -1000,10 +1009,15 @@ test('unsaved weekday edits do not alter the saved processing calendar', async (
 		.getByRole('region', { name: 'เกณฑ์และปฏิทินเช็คชื่อ' })
 		.getByLabel('ส', { exact: true })
 		.check();
-	await page.locator('[data-calendar-date="2026-10-10"]').click();
-	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
+	await expect(page.locator('[data-calendar-date="2026-10-10"]')).toHaveAttribute(
+		'aria-pressed',
+		'false'
+	);
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true })).toBeVisible();
+	await expect(page.locator('[data-calendar-date="2026-10-10"]')).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
 });
 test('month controls prevent empty selection and failed reads cannot write guessed days', async ({
 	page
