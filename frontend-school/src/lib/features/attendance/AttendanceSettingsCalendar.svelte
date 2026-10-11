@@ -109,7 +109,7 @@
 						title: isCounted(cell.date) ? '✓ นับยอด' : '— ไม่นับยอด',
 						startDate: cell.date,
 						endDate: cell.date,
-						allDay: true,
+						allDay: false,
 						categoryColor: isCounted(cell.date) ? 'var(--primary)' : 'var(--muted-foreground)'
 					}))
 	);

@@ -236,7 +236,8 @@ test('month navigation supersedes slow day and calendar reads without writes', a
 	await page.route(
 		(url) =>
 			['/api/attendance/days', '/api/calendar/events'].includes(url.pathname) &&
-			url.searchParams.get('from')?.startsWith('2026-11') === true,
+			(url.searchParams.get('start') ?? url.searchParams.get('from'))?.startsWith('2026-11') ===
+				true,
 		async (route) => {
 			await held;
 			await reply(route, []);
@@ -277,10 +278,14 @@ for (const viewport of [
 			await page
 				.getByRole('heading', { name: 'ปฏิทินวันประมวลผล', exact: true })
 				.evaluate((element) => element.scrollIntoView({ block: 'start' }));
-			await page.screenshot({ path: `/tmp/attendance-settings-${viewport.name}-${theme}.png` });
+			await page.screenshot({
+				animations: 'disabled',
+				path: `/tmp/attendance-settings-${viewport.name}-${theme}.png`
+			});
 			await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
 			await expect(page.getByRole('dialog')).toBeVisible();
 			await page.screenshot({
+				animations: 'disabled',
 				path: `/tmp/attendance-settings-groups-${viewport.name}-${theme}.png`
 			});
 			await page.keyboard.press('Escape');
