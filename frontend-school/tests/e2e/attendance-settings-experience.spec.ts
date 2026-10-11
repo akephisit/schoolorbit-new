@@ -1,6 +1,10 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { mockStaffHome, id, year, actor } from './fixtures/staff-home-route-data';
-import type { AttendanceSettings, AttendanceOptions } from '../../src/lib/api/attendance';
+import type {
+	AttendanceSettings,
+	AttendanceOptions,
+	SaveAttendanceDays
+} from '../../src/lib/api/attendance';
 import type { CalendarViewerEvent } from '../../src/lib/api/calendar';
 const term = id(200),
 	date = '2026-10-09',
@@ -191,10 +195,11 @@ test('real school events inform explicit day decisions without automatic countin
 		'aria-pressed',
 		'true'
 	);
+	await expect.poll(() => api.writes.length).toBe(2);
 	expect(api.writes[1].data).toMatchObject({ rowVersion: 2, days: [{ date, counted: true }] });
 });
 
-test('day click highlights immediately while saving and restores the saved state after rejection', async ({
+test('day click stays usable while saving and retains pending selection after rejection', async ({
 	page
 }) => {
 	const api = await fixture(page);
@@ -219,18 +224,278 @@ test('day click highlights immediately while saving and restores the saved state
 	await cell.click({ position: { x: dimensions!.width * 0.7, y: dimensions!.height * 0.8 } });
 	await expect(cell).toHaveAttribute('aria-pressed', 'false');
 	await expect(cell).toHaveAttribute('aria-busy', 'true');
-	await expect(cell).toBeDisabled();
-	await expect(page.locator('[data-calendar-date="2026-10-12"]')).toBeDisabled();
+	await expect(cell).toBeEnabled();
+	await expect(page.locator('[data-calendar-date="2026-10-12"]')).toBeEnabled();
 	expect(attempts).toBe(1);
 	release();
 	await expect(
 		page.getByText('การตั้งค่าถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่', { exact: true })
 	).toBeVisible();
 	await expect(cell).toBeEnabled();
-	await expect(cell).toHaveAttribute('aria-pressed', 'true');
-	await expect(cell).not.toHaveAttribute('aria-busy', 'true');
+	await expect(cell).toHaveAttribute('aria-pressed', 'false');
+	await expect(cell).toHaveAttribute('aria-busy', 'true');
+	await expect(
+		page.getByRole('button', { name: 'โหลดล่าสุดแล้วลองใหม่', exact: true })
+	).toBeEnabled();
 	expect(attempts).toBe(1);
 	expect(api.writes).toHaveLength(0);
+});
+
+test('rapid day edits coalesce and serialize batches without losing newer selections', async ({
+	page
+}) => {
+	const api = await fixture(page);
+	const gates: Array<() => void> = [];
+	const holds = [0, 1].map(() => new Promise<void>((resolve) => gates.push(resolve)));
+	const writes: SaveAttendanceDays[] = [];
+	let active = 0,
+		peak = 0;
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/days/'),
+		async (route) => {
+			const index = writes.length;
+			writes.push(route.request().postDataJSON());
+			active++;
+			peak = Math.max(peak, active);
+			await holds[index];
+			active--;
+			await reply(route, { ...settings, rowVersion: index + 2 });
+		}
+	);
+	await page.goto(path);
+	const first = page.locator(`[data-calendar-date="${date}"]`);
+	await expect(first).toBeEnabled();
+	await first.click();
+	await expect.poll(() => writes.length).toBe(1);
+	await page.locator('[data-calendar-date="2026-10-12"]').click();
+	await page.locator('[data-calendar-date="2026-10-10"]').click();
+	await first.click();
+	await page.locator('[data-calendar-date="2026-10-11"]').click();
+	await page.locator('[data-calendar-date="2026-10-11"]').click();
+	await expect(first).toHaveAttribute('aria-pressed', 'true');
+	expect(writes).toHaveLength(1);
+	await expect(page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'เดือนถัดไป', exact: true })).toBeDisabled();
+	await page.getByRole('link', { name: 'สรุป / ล้างภาคเรียน', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp('/attendance/settings\\?'));
+	await expect(page.getByText(/รอให้ปฏิทินบันทึกเสร็จ/)).toBeVisible();
+	gates[0]();
+	await expect.poll(() => writes.length).toBe(2);
+	expect(writes[0]).toMatchObject({ rowVersion: 1, days: [{ date, counted: false }] });
+	expect(writes[1].rowVersion).toBe(2);
+	expect(writes[1].days).toHaveLength(4);
+	expect(writes[1].days).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ date, counted: true }),
+			expect.objectContaining({ date: '2026-10-12', counted: false }),
+			expect.objectContaining({ date: '2026-10-10', counted: true }),
+			expect.objectContaining({ date: '2026-10-11', counted: false })
+		])
+	);
+	await expect(first).toHaveAttribute('aria-pressed', 'true');
+	await expect(first).toHaveAttribute('aria-busy', 'true');
+	gates[1]();
+	await expect(first).not.toHaveAttribute('aria-busy', 'true');
+	await expect(page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true })).toBeEnabled();
+	expect(peak).toBe(1);
+	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
+	await expect.poll(() => api.writes.length).toBe(1);
+	expect(api.writes[0].data).toMatchObject({ rowVersion: 3 });
+});
+
+test('failed queue pauses automatic writes and retry reconciles only settings and dates', async ({
+	page
+}) => {
+	const api = await fixture(page);
+	const writes: SaveAttendanceDays[] = [];
+	let releaseRetry!: () => void;
+	const heldRetry = new Promise<void>((resolve) => {
+		releaseRetry = resolve;
+	});
+	let conflicted = false,
+		failReload = false;
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/days/'),
+		async (route) => {
+			writes.push(route.request().postDataJSON());
+			if (writes.length === 1) {
+				conflicted = true;
+				return reply(route, 'การตั้งค่าถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่', 409);
+			}
+			if (writes.length === 2) await heldRetry;
+			return reply(route, { ...settings, rowVersion: writes.length + 5 });
+		}
+	);
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/settings/'),
+		async (route) => {
+			if (route.request().method() !== 'GET') return route.fallback();
+			if (failReload) return reply(route, 'โหลดข้อมูลล่าสุดไม่พร้อม', 503);
+			return reply(route, { ...settings, rowVersion: conflicted ? 6 : 1 });
+		}
+	);
+	await page.goto(path);
+	await page.getByLabel('เข้าสายหลังเวลา').fill('0830');
+	const first = page.locator(`[data-calendar-date="${date}"]`);
+	await first.click();
+	await expect(
+		page.getByText('การตั้งค่าถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่', { exact: true })
+	).toBeVisible();
+	await page.locator('[data-calendar-date="2026-10-12"]').click();
+	await first.click();
+	expect(writes).toHaveLength(1);
+	const otherReads = api.reads.filter(
+		(value) => value !== '/api/attendance/days' && !value.includes('/settings/')
+	).length;
+	failReload = true;
+	await page.getByRole('button', { name: 'โหลดล่าสุดแล้วลองใหม่', exact: true }).click();
+	await expect(page.getByText('โหลดข้อมูลล่าสุดไม่พร้อม', { exact: true })).toBeVisible();
+	expect(writes).toHaveLength(1);
+	failReload = false;
+	await page.getByRole('button', { name: 'โหลดล่าสุดแล้วลองใหม่', exact: true }).click();
+	await expect.poll(() => writes.length).toBe(2);
+	const next = page.locator('[data-calendar-date="2026-10-13"]');
+	await expect(next).toBeEnabled();
+	await next.click();
+	expect(writes).toHaveLength(2);
+	releaseRetry();
+	await expect(next).not.toHaveAttribute('aria-busy', 'true');
+	expect(writes).toHaveLength(3);
+	expect(writes[2]).toMatchObject({
+		rowVersion: 7,
+		days: [{ date: '2026-10-13', counted: false }]
+	});
+	expect(writes[1]).toMatchObject({ rowVersion: 6 });
+	expect(writes[1].days).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ date, counted: true }),
+			expect.objectContaining({ date: '2026-10-12', counted: false })
+		])
+	);
+	expect(
+		api.reads.filter((value) => value !== '/api/attendance/days' && !value.includes('/settings/'))
+			.length
+	).toBe(otherReads);
+	await expect(page.getByLabel('เข้าสายหลังเวลา')).toHaveValue('08:30');
+	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
+	await expect.poll(() => api.writes.length).toBe(1);
+	expect(api.writes[0].data).toMatchObject({
+		rowVersion: 8,
+		configuration: { lateAfter: '08:30:00' }
+	});
+});
+
+for (const enteredNote of [false, true]) {
+	test(`retry preserves the latest stored note unless explicitly entered=${enteredNote}`, async ({
+		page
+	}) => {
+		await fixture(page);
+		let conflicted = false;
+		const writes: SaveAttendanceDays[] = [];
+		await page.route(
+			(url) => url.pathname === '/api/attendance/days',
+			(route) =>
+				reply(route, [
+					{ date, counted: true, note: conflicted ? 'หมายเหตุใหม่จากอีกคน' : 'หมายเหตุเดิม' }
+				])
+		);
+		await page.route(
+			(url) => url.pathname.includes('/api/attendance/settings/'),
+			(route) => reply(route, { ...settings, rowVersion: conflicted ? 4 : 1 })
+		);
+		await page.route(
+			(url) => url.pathname.includes('/api/attendance/days/'),
+			(route) => {
+				writes.push(route.request().postDataJSON());
+				if (writes.length === 1) {
+					conflicted = true;
+					return reply(route, 'ข้อมูลเปลี่ยนแล้ว', 409);
+				}
+				return reply(route, { ...settings, rowVersion: 5 });
+			}
+		);
+		await page.goto(path);
+		if (enteredNote)
+			await page
+				.getByLabel('หมายเหตุวันหยุด / กิจกรรม', { exact: true })
+				.fill('หมายเหตุที่กรอกเอง');
+		const cell = page.locator(`[data-calendar-date="${date}"]`);
+		await expect(cell).toBeEnabled();
+		await cell.click();
+		await expect(page.getByText('ข้อมูลเปลี่ยนแล้ว', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'โหลดล่าสุดแล้วลองใหม่', exact: true }).click();
+		await expect(cell).not.toHaveAttribute('aria-busy', 'true');
+		expect(writes).toHaveLength(2);
+		expect(writes[1]).toMatchObject({
+			rowVersion: 4,
+			days: [
+				{ date, counted: false, note: enteredNote ? 'หมายเหตุที่กรอกเอง' : 'หมายเหตุใหม่จากอีกคน' }
+			]
+		});
+		await expect(cell).toHaveAttribute(
+			'title',
+			enteredNote ? 'หมายเหตุที่กรอกเอง' : 'หมายเหตุใหม่จากอีกคน'
+		);
+	});
+}
+
+test('discarding failed edits loads authoritative dates and never replays the queue', async ({
+	page
+}) => {
+	await fixture(page);
+	let attempts = 0;
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/days/'),
+		(route) => {
+			attempts++;
+			return reply(route, 'เครือข่ายไม่พร้อม', 503);
+		}
+	);
+	await page.goto(path);
+	const cell = page.locator(`[data-calendar-date="${date}"]`);
+	await cell.click();
+	await expect(page.getByText('เครือข่ายไม่พร้อม', { exact: true })).toBeVisible();
+	await page.route(
+		(url) => url.pathname === '/api/attendance/days',
+		(route) => reply(route, [{ date, counted: true, note: 'ข้อมูลจากเซิร์ฟเวอร์' }])
+	);
+	await page.getByRole('button', { name: 'ยกเลิกรายการค้าง', exact: true }).click();
+	await expect(cell).not.toHaveAttribute('aria-busy', 'true');
+	await expect(cell).toHaveAttribute('aria-pressed', 'true');
+	await expect(cell).toHaveAttribute('title', 'ข้อมูลจากเซิร์ฟเวอร์');
+	expect(attempts).toBe(1);
+	await expect(page.getByRole('button', { name: 'เดือนถัดไป', exact: true })).toBeEnabled();
+});
+
+test('logout disposes unsent calendar edits and ignores the in-flight response', async ({
+	page
+}) => {
+	await fixture(page);
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	let attempts = 0;
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/days/'),
+		async (route) => {
+			attempts++;
+			await held;
+			await reply(route, { ...settings, rowVersion: 2 });
+		}
+	);
+	await page.goto(path);
+	await page.locator(`[data-calendar-date="${date}"]`).click();
+	await page.locator('[data-calendar-date="2026-10-12"]').click();
+	await page.getByRole('banner').getByRole('button').last().click();
+	await page.getByRole('menuitem', { name: 'ออกจากระบบ' }).click();
+	await expect(page).toHaveURL(new URL('/', page.url()).href);
+	release();
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+	expect(attempts).toBe(1);
 });
 
 test('archived calendar exposes saved counting but never writes from its day cells', async ({
@@ -359,7 +624,7 @@ for (const viewport of [
 		test(`settings experience ${viewport.name} ${theme}`, async ({ page }) => {
 			await page.setViewportSize(viewport);
 			await page.emulateMedia({ colorScheme: theme });
-			await fixture(page);
+			const api = await fixture(page);
 			await page.goto(path);
 			await expect(
 				page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล', exact: true })
@@ -370,6 +635,74 @@ for (const viewport of [
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
 			);
+			const digestSection = page.getByRole('region', { name: 'เวลาส่งสรุปครู', exact: true });
+			await expect(digestSection).toBeVisible();
+			const separation = await page
+				.getByRole('region', { name: 'เกณฑ์และปฏิทินเช็คชื่อ', exact: true })
+				.locator('form')
+				.evaluate((form) => {
+					const late = form.querySelector<HTMLInputElement>('#attendance-late-after')!,
+						evidence = form.querySelector<HTMLInputElement>('#attendance-evidence-days')!;
+					const section = form.querySelector('#attendance-digest-heading')!.closest('section')!;
+					const time = form.querySelector('#attendance-digest-0')!,
+						hint = form.querySelector('#attendance-digest-0-hint')!;
+					const label = form.querySelector('label[for="attendance-digest-0"]')!;
+					return {
+						before: section.getBoundingClientRect().top - evidence.getBoundingClientRect().bottom,
+						inputGap: time.getBoundingClientRect().top - label.getBoundingClientRect().bottom,
+						hintGap: hint.getBoundingClientRect().top - time.getBoundingClientRect().bottom,
+						topDifference: Math.abs(
+							late.getBoundingClientRect().top - evidence.getBoundingClientRect().top
+						)
+					};
+				});
+			expect(separation.before).toBeGreaterThanOrEqual(16);
+			expect(separation.inputGap).toBeGreaterThanOrEqual(8);
+			expect(separation.hintGap).toBeGreaterThanOrEqual(7);
+			if (viewport.name === 'desktop') expect(separation.topDifference).toBeLessThanOrEqual(2);
+			await page
+				.getByRole('region', { name: 'เกณฑ์และปฏิทินเช็คชื่อ', exact: true })
+				.locator('form')
+				.screenshot({
+					animations: 'disabled',
+					path: `/tmp/attendance-queue-form-${viewport.name}-${theme}.png`
+				});
+			for (let i = 1; i < 8; i++)
+				await digestSection.getByRole('button', { name: 'เพิ่มเวลาสรุป', exact: true }).click();
+			await expect(digestSection.locator('input')).toHaveCount(8);
+			await expect(
+				digestSection.getByRole('button', { name: 'เพิ่มเวลาสรุป', exact: true })
+			).toBeDisabled();
+			for (let i = 0; i < 8; i++)
+				await page
+					.getByLabel(`เวลาสรุป ${i + 1}`, { exact: true })
+					.fill(`${String(8 + i).padStart(2, '0')}:00`);
+			const widths = await digestSection
+				.locator('input')
+				.evaluateAll((inputs) => inputs.map((input) => input.getBoundingClientRect().width));
+			for (const width of widths) expect(width).toBeGreaterThanOrEqual(160);
+			await digestSection.screenshot({
+				animations: 'disabled',
+				path: `/tmp/attendance-queue-digests-${viewport.name}-${theme}.png`
+			});
+			await digestSection.getByRole('button', { name: 'ลบเวลาสรุป 4', exact: true }).click();
+			await expect(digestSection.locator('input')).toHaveCount(7);
+			await expect(page.getByLabel('เวลาสรุป 7', { exact: true })).toHaveValue('15:00');
+			await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
+			await expect.poll(() => api.writes.length).toBe(1);
+			expect(api.writes[0].data).toMatchObject({
+				configuration: {
+					digestTimes: [
+						'08:00:00',
+						'09:00:00',
+						'10:00:00',
+						'12:00:00',
+						'13:00:00',
+						'14:00:00',
+						'15:00:00'
+					]
+				}
+			});
 			await page
 				.getByRole('heading', { name: 'ปฏิทินวันประมวลผล', exact: true })
 				.evaluate((element) => element.scrollIntoView({ block: 'start' }));

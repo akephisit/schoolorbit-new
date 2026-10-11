@@ -10,6 +10,7 @@
 	import CalendarTimeInput from '#lib/components/calendar/CalendarTimeInput.svelte';
 	import { normalizeCalendarTime } from '#lib/utils/calendar.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Plus, Trash2 } from '@lucide/svelte';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import type { AttendanceRead } from './attendance-access.js';
 	import type { AttendanceDay } from '#lib/api/attendance.js';
@@ -174,7 +175,7 @@
 									</div>{/each}
 							</div>
 						</div>
-						<div class="grid gap-4 md:grid-cols-3">
+						<div class="grid gap-6 sm:grid-cols-2">
 							<div class="space-y-2">
 								<Label for="attendance-late-after"
 									>เข้าสายหลังเวลา <span aria-hidden="true" class="text-destructive">*</span></Label
@@ -187,42 +188,6 @@
 										class="text-sm text-destructive"
 									>
 										{fieldErrors.lateAfter}
-									</p>{/if}
-							</div>
-							<div class="space-y-2">
-								<p class="text-sm font-medium">เวลาส่งสรุปครู</p>
-								{#each digestTimes as _, i (i)}
-									<div class="flex items-start gap-2">
-										<div class="min-w-0 flex-1">
-											<Label for={`attendance-digest-${i}`}>เวลาสรุป {i + 1}</Label
-											><CalendarTimeInput
-												id={`attendance-digest-${i}`}
-												bind:value={digestTimes[i]}
-												disabled={busy || settings.archived}
-											/>
-										</div>
-										<Button
-											type="button"
-											variant="ghost"
-											aria-label={`ลบเวลาสรุป ${i + 1}`}
-											onclick={() => {
-												digestTimes = digestTimes.filter((_, index) => index !== i);
-											}}>ลบ</Button
-										>
-									</div>
-								{/each}
-								<Button
-									type="button"
-									variant="outline"
-									disabled={digestTimes.length >= 8}
-									onclick={() => {
-										digestTimes = [...digestTimes, ''];
-									}}>เพิ่มเวลาสรุป</Button
-								>{#if fieldErrors.digests}<p
-										id="attendance-digest-error"
-										class="text-sm text-destructive"
-									>
-										{fieldErrors.digests}
 									</p>{/if}
 							</div>
 							<div class="space-y-2">
@@ -249,6 +214,63 @@
 									</p>{/if}
 							</div>
 						</div>
+						<section
+							aria-labelledby="attendance-digest-heading"
+							class="space-y-4 rounded-xl border bg-muted/20 p-4 sm:p-5"
+						>
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div class="space-y-1">
+									<h3 id="attendance-digest-heading" class="text-sm font-semibold">
+										เวลาส่งสรุปครู
+									</h3>
+									<p class="text-sm text-muted-foreground">
+										กำหนดได้สูงสุด 8 เวลา ใช้รูปแบบ 24 ชั่วโมง
+									</p>
+								</div>
+								<Button
+									type="button"
+									variant="outline"
+									disabled={digestTimes.length >= 8 || busy || settings.archived}
+									onclick={() => {
+										digestTimes = [...digestTimes, ''];
+									}}><Plus class="size-4" />เพิ่มเวลาสรุป</Button
+								>
+							</div>
+							{#if digestTimes.length}<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+									{#each digestTimes as _, i (i)}<div
+											class="min-w-0 space-y-3 rounded-lg border bg-card p-3"
+										>
+											<div class="flex items-center justify-between gap-3">
+												<Label for={`attendance-digest-${i}`}>เวลาสรุป {i + 1}</Label>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon"
+													aria-label={`ลบเวลาสรุป ${i + 1}`}
+													disabled={busy || settings.archived}
+													onclick={() => {
+														digestTimes = digestTimes.filter((_, index) => index !== i);
+													}}><Trash2 class="size-4" /></Button
+												>
+											</div>
+											<div class="space-y-2">
+												<CalendarTimeInput
+													id={`attendance-digest-${i}`}
+													bind:value={digestTimes[i]}
+													disabled={busy || settings.archived}
+												/>
+											</div>
+										</div>{/each}
+								</div>{:else}<p class="text-sm text-muted-foreground">
+									ยังไม่มีเวลาส่งสรุป เพิ่มเวลาเมื่อต้องการเปิดส่งสรุปครู
+								</p>{/if}
+							{#if fieldErrors.digests}<p
+									id="attendance-digest-error"
+									class="text-sm text-destructive"
+								>
+									{fieldErrors.digests}
+								</p>{/if}
+						</section>
 						<div class="flex items-center gap-2">
 							<Checkbox
 								id="attendance-activity-present"
