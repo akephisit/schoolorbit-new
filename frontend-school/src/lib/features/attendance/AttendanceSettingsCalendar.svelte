@@ -311,7 +311,8 @@
 		<div aria-busy={dayLoading || eventLoading}>
 			<CalendarMonthGrid
 				monthDate={month + '-01'}
-				events={[...markers, ...calendar.events]}
+				events={calendar.events}
+				annotations={markers}
 				{selectedDate}
 				hideMobileTimes
 				onselect={(value) => {
