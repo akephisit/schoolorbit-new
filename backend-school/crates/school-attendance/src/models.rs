@@ -42,7 +42,6 @@ impl AttendanceResult {
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AttendanceKind {
     Arrival,
-    Flag,
     Lesson,
     Special,
 }
@@ -50,7 +49,6 @@ impl AttendanceKind {
     pub fn code(self) -> &'static str {
         match self {
             Self::Arrival => "arrival",
-            Self::Flag => "flag",
             Self::Lesson => "lesson",
             Self::Special => "special",
         }
@@ -160,13 +158,33 @@ pub struct AttendanceSession {
     #[schema(required = true)]
     pub saved_by: Option<Uuid>,
     pub row_version: i64,
+    /// Immutable participants, independent of sparse result facts.
+    #[serde(skip)]
+    #[schema(ignore)]
+    #[sqlx(json)]
+    pub roster: Vec<AttendanceRosterStudent>,
+    #[sqlx(skip)]
+    pub roster_token: String,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AttendanceSeed {
     pub session: AttendanceSession,
     pub students: Vec<AttendanceRosterStudent>,
 }
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpecialRoundParticipants {
+    pub session_id: Uuid,
+    pub source_key: String,
+    pub title: String,
+    pub teacher_ids: Vec<Uuid>,
+    pub students: Vec<AttendanceRosterStudent>,
+    pub start_time: NaiveTime,
+    pub end_time: NaiveTime,
+    pub count_override: Option<bool>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct AttendanceRosterStudent {
     pub student_id: Uuid,
     pub student_academic_year_id: Uuid,
@@ -207,8 +225,9 @@ pub struct AttendanceWorkspace {
     pub sessions: Vec<AttendanceSession>,
     pub settings: AttendanceSettings,
 }
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in=Query)]
 pub struct OpenAttendanceSession {
     pub academic_term_id: Uuid,
     pub date: NaiveDate,
@@ -225,6 +244,8 @@ pub struct AttendanceResultInput {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAttendanceResults {
+    pub session: OpenAttendanceSession,
+    pub roster_token: String,
     pub row_version: i64,
     pub reason: String,
     pub students: Vec<AttendanceResultInput>,
@@ -232,6 +253,8 @@ pub struct SaveAttendanceResults {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceCancellation {
+    pub session: OpenAttendanceSession,
+    pub roster_token: String,
     pub row_version: i64,
     pub cancelled: bool,
     pub reason: String,
@@ -328,6 +351,8 @@ pub struct AttendanceFaceEnrollment {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceScan {
+    pub session: OpenAttendanceSession,
+    pub roster_token: String,
     pub event_id: Uuid,
     pub device_id: Uuid,
     pub session_id: Uuid,
@@ -345,7 +370,7 @@ pub struct AttendanceScanOutcome {
     pub duplicate: bool,
     pub teacher_conflict: bool,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AttendanceSummary {
     pub academic_term_id: Uuid,
@@ -360,6 +385,17 @@ pub struct AttendanceSummary {
     pub leave: i64,
     pub activity: i64,
     pub unchecked: i64,
+    pub expected: i64,
+}
+/// Computed coverage only: never stored as unchecked result facts.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceExpectedSummary {
+    pub student_id: Uuid,
+    pub category: String,
+    pub scope_key: String,
+    pub scope_label: String,
+    pub teacher_ids: Vec<Uuid>,
     pub expected: i64,
 }
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -453,9 +489,10 @@ impl AttendanceReportQuery {
         if !(1..=1_000_000).contains(&self.page)
             || !(1..=100).contains(&self.page_size)
             || self.search.chars().count() > 120
-            || self.category.as_deref().is_some_and(|category| {
-                !["school", "flag", "lesson", "special"].contains(&category)
-            })
+            || self
+                .category
+                .as_deref()
+                .is_some_and(|category| !["school", "lesson", "special"].contains(&category))
         {
             return Err(crate::rules::invalid("หน้ารายงานหรือตัวกรองไม่ถูกต้อง"));
         }
@@ -485,4 +522,29 @@ pub struct AttendanceHistoryItem {
     #[schema(required = true)]
     pub evidence_file_id: Option<Uuid>,
     pub cancelled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceResetCount {
+    pub resource: String,
+    pub count: i64,
+}
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceResetImpact {
+    pub generation: Uuid,
+    pub coverage_start: NaiveDate,
+    pub token: String,
+    pub counts: Vec<AttendanceResetCount>,
+    pub evidence_files: i64,
+    pub evidence_bytes: i64,
+    pub pending_file_deletions: i64,
+}
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResetAttendanceModule {
+    pub generation: Uuid,
+    pub token: String,
+    pub reason: String,
 }

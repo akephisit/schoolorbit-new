@@ -39,7 +39,11 @@ pub fn validate_inputs(inputs: &[AttendanceResultInput], roster: &[Uuid]) -> Res
     }
     let mut seen = HashSet::new();
     for s in inputs {
-        if !seen.insert(s.student_id) || !roster.contains(&s.student_id) || s.note.len() > 1000 {
+        if !seen.insert(s.student_id)
+            || !roster.contains(&s.student_id)
+            || s.result == AttendanceResult::Unchecked
+            || s.note.len() > 1000
+        {
             return Err(invalid("นักเรียนซ้ำ ไม่อยู่ในรอบ หรือหมายเหตุยาวเกินกำหนด"));
         }
     }
@@ -101,6 +105,20 @@ mod tests {
         let id = Uuid::new_v4();
         assert!(distinct_groups(&[vec![id], vec![id]]).is_err());
         assert!(distinct_groups(&[vec![id]]).is_ok());
+    }
+    #[test]
+    fn removed_ceremony_kind_and_placeholder_results_are_rejected() {
+        assert!(serde_json::from_str::<AttendanceKind>("\"flag\"").is_err());
+        let id = Uuid::new_v4();
+        assert!(validate_inputs(
+            &[AttendanceResultInput {
+                student_id: id,
+                result: AttendanceResult::Unchecked,
+                note: String::new(),
+            }],
+            &[id]
+        )
+        .is_err());
     }
     #[test]
     fn face_vectors_reject_nonfinite_or_wrong_model_dimensions() {

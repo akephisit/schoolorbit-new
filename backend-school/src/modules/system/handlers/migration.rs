@@ -523,6 +523,24 @@ async fn migrate_single_school(
         }
     };
 
+    // Startup can precede tenant migration during a coordinated deployment.
+    // Register attendance only after the new schema is available, without idle tenant polling.
+    if crate::modules::attendance::runtime::touch(
+        subdomain,
+        pool.clone(),
+        state.notification_channel.clone(),
+    )
+    .await
+    .is_err()
+    {
+        return MigrationResult {
+            subdomain: subdomain.into(),
+            status: "failed".into(),
+            version: Some(current_version),
+            error: Some("attendance_schedule_registration_failed".into()),
+        };
+    }
+
     match state
         .admin_client
         .update_migration_status(subdomain, current_version as i32, "migrated", None)

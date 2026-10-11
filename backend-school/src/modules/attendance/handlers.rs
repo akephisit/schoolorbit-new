@@ -91,11 +91,11 @@ pub async fn workspace(
     let result = services::workspace(pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[utoipa::path(post,path="/api/attendance/sessions/open",operation_id="attendance_open_session",tag="attendance",request_body=OpenAttendanceSession,responses((status=200,body=ApiResponse<AttendanceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+#[utoipa::path(get,path="/api/attendance/preview",operation_id="attendance_open_session",tag="attendance",params(OpenAttendanceSession),responses((status=200,body=ApiResponse<AttendanceDetail>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn open_session(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<OpenAttendanceSession>,
+    Query(payload): Query<OpenAttendanceSession>,
 ) -> Result<Json<ApiResponse<AttendanceDetail>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = &context.tenant.pool;
@@ -122,7 +122,7 @@ pub async fn save_results(
 ) -> Result<Json<ApiResponse<AttendanceDetail>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = &context.tenant.pool;
-    let result = sessions::save(pool, &context.actor, id, payload).await?;
+    let result = services::save(pool, &context.actor, id, payload).await?;
     runtime::wake_after_commit(
         &context.tenant.subdomain,
         pool.clone(),
@@ -140,7 +140,7 @@ pub async fn cancel_session(
 ) -> Result<Json<ApiResponse<AttendanceDetail>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     let pool = &context.tenant.pool;
-    let result = sessions::cancel(pool, &context.actor, id, payload).await?;
+    let result = services::cancel(pool, &context.actor, id, payload).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
 #[utoipa::path(get,path="/api/attendance/options",operation_id="attendance_get_options",tag="attendance",params(AttendanceTermQuery),responses((status=200,body=ApiResponse<AttendanceOptions>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
@@ -332,7 +332,7 @@ pub async fn purge_term(
     context
         .actor
         .require_permission(codes::ATTENDANCE_DELETE_SCHOOL)?;
-    let result = reports::purge(pool, context.actor.user_id, term, payload).await?;
+    let result = services::purge(pool, context.actor.user_id, term, payload).await?;
     runtime::refresh_after_commit(
         &context.tenant.subdomain,
         pool.clone(),
@@ -341,9 +341,50 @@ pub async fn purge_term(
     .await;
     Ok(Json(ApiResponse::ok(result)))
 }
+#[utoipa::path(get,path="/api/attendance/reset",operation_id="attendance_reset_impact",tag="attendance",responses((status=200,body=ApiResponse<AttendanceResetImpact>),(status=403,body=ApiErrorResponse)))]
+pub async fn reset_impact(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Json<ApiResponse<AttendanceResetImpact>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    school_attendance::policy::require_reset(&context.actor)?;
+    Ok(Json(ApiResponse::ok(
+        school_attendance::services::reset::impact(&context.tenant.pool).await?,
+    )))
+}
+#[utoipa::path(post,path="/api/attendance/reset",operation_id="attendance_reset_module",tag="attendance",request_body=ResetAttendanceModule,responses((status=200,body=ApiResponse<AttendanceResetImpact>),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
+pub async fn reset_module(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(payload): Json<ResetAttendanceModule>,
+) -> Result<Json<ApiResponse<AttendanceResetImpact>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    school_attendance::policy::require_reset(&context.actor)?;
+    let result = services::reset(&context.tenant.pool, context.actor.user_id, payload).await?;
+    if school_attendance::services::faces::invalidate_gallery(&context.tenant.subdomain).is_err() {
+        tracing::warn!(error_code = "attendance_reset_gallery_invalidation_failed");
+    }
+    runtime::refresh_after_commit(
+        &context.tenant.subdomain,
+        context.tenant.pool.clone(),
+        state.notification_channel.clone(),
+    )
+    .await;
+    let impact = services::complete_reset_cleanup(
+        &context.tenant.pool,
+        state.file_platform.as_ref(),
+        result,
+    )
+    .await;
+    Ok(Json(ApiResponse::ok(impact)))
+}
 pub fn routes() -> axum::Router<AppState> {
     use axum::routing::{get, post, put};
     axum::Router::new()
+        .route(
+            "/api/attendance/reset",
+            get(reset_impact).post(reset_module),
+        )
         .route(
             "/api/attendance/settings/{term}",
             get(get_settings).put(save_settings),
@@ -351,7 +392,7 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/api/attendance/days", get(list_days))
         .route("/api/attendance/days/{term}", put(save_days))
         .route("/api/attendance/workspace", get(workspace))
-        .route("/api/attendance/sessions/open", post(open_session))
+        .route("/api/attendance/preview", get(open_session))
         .route(
             "/api/attendance/sessions/{id}",
             get(get_session).put(save_results),

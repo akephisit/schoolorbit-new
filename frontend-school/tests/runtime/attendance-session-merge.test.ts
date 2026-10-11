@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	copyAttendanceDetail,
+	attendanceResultPatch,
 	mergeAttendanceDetail
 } from '../../src/lib/features/attendance/session-merge.ts';
 import type { AttendanceDetail } from '../../src/lib/api/attendance.ts';
@@ -10,7 +11,7 @@ function detail(): AttendanceDetail {
 		id: 'round',
 		academicTermId: 'term',
 		date: '2026-10-09',
-		kind: 'flag',
+		kind: 'arrival',
 		sourceKey: 'room',
 		title: 'Round',
 		teacherIds: ['teacher'],
@@ -25,7 +26,8 @@ function detail(): AttendanceDetail {
 		cancellationReason: '',
 		savedAt: null,
 		savedBy: null,
-		rowVersion: 1
+		rowVersion: 1,
+		rosterToken: 'fixture-token'
 	};
 	return {
 		session,
@@ -89,4 +91,24 @@ test('matching concurrent edits do not conflict and removed roster members canno
 	const merged = mergeAttendanceDetail(base, local, latest);
 	assert.equal(merged.conflicts.length, 0);
 	assert.equal(merged.detail.students.length, 1);
+});
+
+test('partial patches exclude unchecked and unchanged pupils; additions do not require correction reason', () => {
+	const base = detail(),
+		local = copyAttendanceDetail(base);
+	local.students[0].result = 'present';
+	assert.deepEqual(attendanceResultPatch(base, local), {
+		students: [{ studentId: 'one', result: 'present', note: '' }],
+		needsReason: false
+	});
+	const saved = copyAttendanceDetail(local),
+		later = copyAttendanceDetail(saved);
+	later.students[1].result = 'leave';
+	assert.deepEqual(attendanceResultPatch(saved, later), {
+		students: [{ studentId: 'two', result: 'leave', note: '' }],
+		needsReason: false
+	});
+	later.students[0].note = 'corrected';
+	assert.equal(attendanceResultPatch(saved, later).needsReason, true);
+	assert.deepEqual(attendanceResultPatch(saved, saved).students, []);
 });

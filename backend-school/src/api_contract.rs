@@ -173,6 +173,8 @@ use utoipa::OpenApi;
         crate::modules::attendance::handlers::save_days,
         crate::modules::attendance::handlers::workspace,
         crate::modules::attendance::handlers::open_session,
+        crate::modules::attendance::handlers::reset_impact,
+        crate::modules::attendance::handlers::reset_module,
         crate::modules::attendance::handlers::get_session,
         crate::modules::attendance::handlers::save_results,
         crate::modules::attendance::handlers::cancel_session,

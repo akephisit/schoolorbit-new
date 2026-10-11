@@ -5,20 +5,26 @@ use crate::{
 };
 use chrono::NaiveDate;
 use school_errors::AppError;
-use sqlx::{types::Json, PgPool};
+use sqlx::{types::Json, PgConnection, PgPool};
 use uuid::Uuid;
 pub async fn get(pool: &PgPool, term: Uuid) -> Result<AttendanceSettings, AppError> {
+    get_on_connection(&mut *pool.acquire().await?, term).await
+}
+pub async fn get_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+) -> Result<AttendanceSettings, AppError> {
     let archived: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM attendance_term_archives WHERE academic_term_id=$1)",
     )
     .bind(term)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     let row: Option<(Json<AttendanceConfiguration>, i64)> = sqlx::query_as(
         "SELECT configuration,row_version FROM attendance_settings WHERE academic_term_id=$1",
     )
     .bind(term)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *connection)
     .await?;
     let (configuration, row_version) = row.map(|(c, v)| (c.0, v)).unwrap_or_default();
     Ok(AttendanceSettings {
@@ -61,10 +67,18 @@ pub async fn days(
     start: NaiveDate,
     end: NaiveDate,
 ) -> Result<Vec<AttendanceDay>, AppError> {
+    days_on_connection(&mut *pool.acquire().await?, term, start, end).await
+}
+pub async fn days_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Result<Vec<AttendanceDay>, AppError> {
     if end < start || (end - start).num_days() > 370 {
         return Err(invalid("ช่วงปฏิทินต้องไม่เกินหนึ่งปี"));
     }
-    Ok(sqlx::query_as("SELECT date,counted,note FROM attendance_days WHERE academic_term_id=$1 AND date BETWEEN $2 AND $3 ORDER BY date").bind(term).bind(start).bind(end).fetch_all(pool).await?)
+    Ok(sqlx::query_as("SELECT date,counted,note FROM attendance_days WHERE academic_term_id=$1 AND date BETWEEN $2 AND $3 ORDER BY date").bind(term).bind(start).bind(end).fetch_all(&mut *connection).await?)
 }
 pub async fn save_days(
     pool: &PgPool,

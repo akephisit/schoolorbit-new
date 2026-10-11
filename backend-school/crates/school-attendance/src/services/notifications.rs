@@ -9,7 +9,6 @@ pub struct AttendanceNotice {
     pub key: String,
     pub title: String,
     pub message: String,
-    pub skip_if_key: Option<String>,
     pub daily_slot: Option<String>,
 }
 pub async fn queue_result(
@@ -33,13 +32,11 @@ pub fn result_notice(
     revision: i64,
     correction: bool,
 ) -> AttendanceNotice {
-    let daily = matches!(s.kind, AttendanceKind::Arrival | AttendanceKind::Flag);
+    let daily = s.kind == AttendanceKind::Arrival;
     let key = if correction {
         format!("correction:{}:{student}:{revision}", s.id)
     } else if s.kind == AttendanceKind::Arrival {
         format!("arrival:{}:{}:{student}", s.academic_term_id, s.date)
-    } else if daily {
-        format!("daily:{}:{}:{student}", s.academic_term_id, s.date)
     } else {
         format!("session:{}:{student}", s.id)
     };
@@ -69,8 +66,6 @@ pub fn result_notice(
         key,
         title: title.into(),
         message,
-        skip_if_key: (s.kind == AttendanceKind::Flag && !correction)
-            .then(|| format!("arrival:{}:{}:{student}", s.academic_term_id, s.date)),
         daily_slot: daily.then(|| format!("{}:{}:{student}", s.academic_term_id, s.date)),
     }
 }
@@ -88,17 +83,17 @@ pub async fn queue_batch(
     term: Uuid,
     notices: &[AttendanceNotice],
 ) -> Result<(), AppError> {
-    // Arrival and flag transactions have different session locks. Serialize their
-    // initial recipient decision by student/day, using the same sorted lock order.
+    super::lock_module(tx).await?;
+    // Serialize initial recipient decisions across arrival rounds in a stable student/day order.
     if notices.iter().any(|notice| notice.daily_slot.is_some()) {
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended(daily_slot,1711)) FROM (SELECT DISTINCT daily_slot FROM jsonb_to_recordset($1) AS n(daily_slot text) WHERE daily_slot IS NOT NULL ORDER BY daily_slot) slots")
             .bind(Json(notices)).execute(&mut **tx).await?;
     }
-    sqlx::query(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text,skip_if_key text)), recipients AS (
+    sqlx::query(r#"WITH facts AS (SELECT * FROM jsonb_to_recordset($2) n(student_id uuid,key text,title text,message text)), recipients AS (
  SELECT f.*,u.id recipient_id,u.user_type FROM facts f JOIN users u ON u.id=f.student_id AND u.status='active'
  UNION SELECT f.*,u.id,u.user_type FROM facts f JOIN student_parents p ON p.student_user_id=f.student_id JOIN users u ON u.id=p.parent_user_id AND u.status='active' AND u.user_type='parent')
  INSERT INTO attendance_notifications(academic_term_id,recipient_id,student_id,dedup_key,title,message,link)
- SELECT $1,recipient_id,student_id,key,title,message,CASE WHEN user_type='parent' THEN '/parent/attendance?academicTermId=' ELSE '/student/attendance?academicTermId=' END || $1::text || '&studentId=' || student_id::text FROM recipients WHERE skip_if_key IS NULL OR NOT EXISTS(SELECT 1 FROM attendance_notifications previous WHERE previous.recipient_id=recipients.recipient_id AND previous.dedup_key=recipients.skip_if_key) ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(Json(notices)).execute(&mut **tx).await?;
+ SELECT $1,recipient_id,student_id,key,title,message,CASE WHEN user_type='parent' THEN '/parent/attendance?academicTermId=' ELSE '/student/attendance?academicTermId=' END || $1::text || '&studentId=' || student_id::text FROM recipients ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(Json(notices)).execute(&mut **tx).await?;
     Ok(())
 }
 #[derive(sqlx::FromRow)]
@@ -116,8 +111,19 @@ pub async fn pending(pool: &PgPool) -> Result<Vec<PendingAttendanceNotification>
     Ok(sqlx::query_as(r#"WITH due AS (SELECT id FROM attendance_notifications WHERE published_at IS NULL AND next_attempt_at<=now() ORDER BY next_attempt_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)
  UPDATE attendance_notifications n SET next_attempt_at=now()+interval '2 minutes',attempts=attempts+1 FROM due WHERE n.id=due.id RETURNING n.id,n.recipient_id,n.notification_id,n.title,n.message,n.link"#).fetch_all(pool).await?)
 }
-pub async fn store(pool: &PgPool, n: &PendingAttendanceNotification) -> Result<(), AppError> {
+pub async fn store(pool: &PgPool, n: &PendingAttendanceNotification) -> Result<bool, AppError> {
     let mut tx = pool.begin().await?;
+    super::lock_module(&mut tx).await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE id=$1 FOR SHARE)",
+    )
+    .bind(n.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !exists {
+        tx.commit().await?;
+        return Ok(false);
+    }
     sqlx::query("INSERT INTO notifications(id,user_id,title,message,type,link) VALUES($1,$2,$3,$4,'info',$5) ON CONFLICT(id) DO NOTHING").bind(n.notification_id).bind(n.recipient_id).bind(&n.title).bind(&n.message).bind(&n.link).execute(&mut *tx).await?;
     sqlx::query(
         "UPDATE attendance_notifications SET stored_at=coalesce(stored_at,now()) WHERE id=$1",
@@ -126,7 +132,7 @@ pub async fn store(pool: &PgPool, n: &PendingAttendanceNotification) -> Result<(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(())
+    Ok(true)
 }
 pub async fn delivered(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
     sqlx::query("UPDATE attendance_notifications SET published_at=now() WHERE id=$1")
@@ -148,15 +154,43 @@ pub async fn queue_digest(
     date: NaiveDate,
     time: NaiveTime,
 ) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
-    sqlx::query(r#"WITH teacher_results AS (
- SELECT teacher,t.id,t.kind,t.saved_at,r.result FROM attendance_sessions t CROSS JOIN LATERAL unnest(t.teacher_ids) teacher LEFT JOIN attendance_records r ON r.session_id=t.id
- WHERE t.academic_term_id=$1 AND t.date=$2 AND NOT t.cancelled AND t.kind<>'arrival' AND t.start_time<=$3 AND coalesce(t.count_override,true)),
- summaries AS (SELECT teacher,kind,COUNT(*) FILTER(WHERE result='present') present,COUNT(*) FILTER(WHERE result='late') late,COUNT(*) FILTER(WHERE result='absent') absent,COUNT(*) FILTER(WHERE result='leave') leave,COUNT(*) FILTER(WHERE result='activity') activity,COUNT(*) FILTER(WHERE result='unchecked') unchecked,COUNT(DISTINCT id) FILTER(WHERE saved_at IS NULL) unrecorded FROM teacher_results GROUP BY teacher,kind),
- messages AS (SELECT teacher,string_agg((CASE kind WHEN 'flag' THEN 'หน้าเสาธง' WHEN 'lesson' THEN 'รายคาบ' ELSE 'รอบพิเศษ' END)||': มา '||present||' สาย '||late||' ขาด '||absent||' ลา '||leave||' กิจกรรม '||activity||' ยังไม่เช็ค '||unchecked||' ('||unrecorded||' รอบยังไม่บันทึก)',E'\n' ORDER BY kind) message FROM summaries GROUP BY teacher)
+    let epoch = super::sessions::module_generation(pool).await?;
+    let tx = pool.begin().await?;
+    queue_digest_in_transaction(tx, term, date, time, epoch, &[]).await
+}
+pub async fn queue_digest_in_transaction(
+    mut tx: Transaction<'_, Postgres>,
+    term: Uuid,
+    date: NaiveDate,
+    time: NaiveTime,
+    epoch: Uuid,
+    expected: &[AttendanceExpectedSummary],
+) -> Result<(), AppError> {
+    super::lock_term(&mut tx, term, true, true).await?;
+    if super::sessions::module_generation_in_tx(&mut tx).await? != epoch {
+        return Err(AppError::Conflict("ข้อมูลการเช็คชื่อถูกล้างแล้ว".into()));
+    }
+    sqlx::query(r#"WITH actual AS (
+ SELECT teacher,CASE s.kind WHEN 'arrival' THEN 'school' ELSE s.kind END category,COALESCE(r.result,'unchecked') result,1::bigint weight
+ FROM attendance_sessions s CROSS JOIN LATERAL unnest(s.teacher_ids) teacher
+ CROSS JOIN LATERAL jsonb_to_recordset(s.roster) p("studentId" uuid)
+ LEFT JOIN attendance_records r ON r.session_id=s.id AND r.student_id=p."studentId"
+ LEFT JOIN attendance_days d ON d.academic_term_id=s.academic_term_id AND d.date=s.date
+ LEFT JOIN attendance_settings c ON c.academic_term_id=s.academic_term_id
+ WHERE s.academic_term_id=$1 AND s.date=$2 AND NOT s.cancelled AND s.start_time<=$3
+ AND COALESCE(s.count_override,d.counted,COALESCE(c.configuration->'weekdays','[1,2,3,4,5]'::jsonb) @> to_jsonb(EXTRACT(ISODOW FROM s.date)::integer))
+ UNION ALL SELECT teacher,v.category,'unchecked',v.expected
+ FROM jsonb_to_recordset($4) v(category text,"teacherIds" uuid[],expected bigint) CROSS JOIN LATERAL unnest(v."teacherIds") teacher),
+ summaries AS (SELECT teacher,category,
+ COALESCE(sum(weight) FILTER(WHERE result='present'),0) present,COALESCE(sum(weight) FILTER(WHERE result='late'),0) late,
+ COALESCE(sum(weight) FILTER(WHERE result='absent'),0) absent,COALESCE(sum(weight) FILTER(WHERE result='leave'),0) leave,
+ COALESCE(sum(weight) FILTER(WHERE result='activity'),0) activity,COALESCE(sum(weight) FILTER(WHERE result='unchecked'),0) unchecked
+ FROM actual GROUP BY teacher,category),
+ messages AS (SELECT teacher,string_agg((CASE category WHEN 'school' THEN 'เข้าโรงเรียน' WHEN 'lesson' THEN 'รายคาบ' ELSE 'รอบพิเศษ' END)||': มา '||present||' สาย '||late||' ขาด '||absent||' ลา '||leave||' กิจกรรม '||activity||' ยังไม่เช็ค '||unchecked,E'\n' ORDER BY category) message FROM summaries GROUP BY teacher)
  INSERT INTO attendance_notifications(academic_term_id,recipient_id,dedup_key,title,message,link)
  SELECT $1,teacher,'digest:'||$1::text||':'||$2::text||':'||$3::text,'สรุปเช็คชื่อ '||$2::text,message,
- '/staff/attendance?academicTermId='||$1::text||'&date='||$2::text FROM messages JOIN users u ON u.id=teacher AND u.status='active' ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(date).bind(time).execute(&mut *tx).await?;
+ '/staff/attendance?academicTermId='||$1::text||'&date='||$2::text FROM messages JOIN users u ON u.id=teacher AND u.status='active'
+ ON CONFLICT(recipient_id,dedup_key) DO NOTHING"#).bind(term).bind(date).bind(time).bind(Json(expected)).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }

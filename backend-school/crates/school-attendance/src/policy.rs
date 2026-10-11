@@ -47,12 +47,32 @@ pub fn require_session(
         Err(AppError::Forbidden("ไม่มีสิทธิ์เช็คชื่อกลุ่มนี้".into()))
     }
 }
+pub fn require_reset(actor: &ActorContext) -> Result<(), AppError> {
+    actor.require_permission(codes::ATTENDANCE_MANAGE_SCHOOL)?;
+    actor.require_permission(codes::ATTENDANCE_DELETE_SCHOOL)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::AttendanceKind;
     use chrono::{NaiveDate, NaiveTime};
     use uuid::Uuid;
+    #[test]
+    fn reset_requires_both_school_management_and_deletion() {
+        let mut actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::ATTENDANCE_MANAGE_SCHOOL.into()],
+        };
+        assert!(require_reset(&actor).is_err());
+        actor.permissions = vec![codes::ATTENDANCE_DELETE_SCHOOL.into()];
+        assert!(require_reset(&actor).is_err());
+        actor
+            .permissions
+            .push(codes::ATTENDANCE_MANAGE_SCHOOL.into());
+        assert!(require_reset(&actor).is_ok());
+        actor.permissions = vec![codes::ATTENDANCE_UPDATE_ASSIGNED.into()];
+        assert!(require_reset(&actor).is_err());
+    }
     #[test]
     fn school_writer_can_read_configuration_without_separate_read_grant() {
         let mut actor = ActorContext {
@@ -74,7 +94,7 @@ mod tests {
             id: Uuid::new_v4(),
             academic_term_id: Uuid::new_v4(),
             date: NaiveDate::MIN,
-            kind: AttendanceKind::Flag,
+            kind: AttendanceKind::Arrival,
             source_key: String::new(),
             title: String::new(),
             teacher_ids: vec![id],
@@ -90,6 +110,8 @@ mod tests {
             saved_at: None,
             saved_by: None,
             row_version: 1,
+            roster: vec![],
+            roster_token: String::new(),
         };
         assert!(require_session(&actor, &s, true).is_ok());
         s.teacher_ids.clear();

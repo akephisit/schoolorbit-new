@@ -4429,6 +4429,64 @@
         ],
         "type": "object"
       },
+      "ApiResponse_AttendanceResetImpact": {
+        "properties": {
+          "data": {
+            "properties": {
+              "counts": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceResetCount"
+                },
+                "type": "array"
+              },
+              "coverageStart": {
+                "format": "date",
+                "type": "string"
+              },
+              "evidenceBytes": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "evidenceFiles": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "generation": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "pendingFileDeletions": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "generation",
+              "coverageStart",
+              "token",
+              "counts",
+              "evidenceFiles",
+              "evidenceBytes",
+              "pendingFileDeletions"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_AttendanceScanOutcome": {
         "properties": {
           "data": {
@@ -24804,12 +24862,20 @@
           "reason": {
             "type": "string"
           },
+          "rosterToken": {
+            "type": "string"
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/OpenAttendanceSession"
           }
         },
         "required": [
+          "session",
+          "rosterToken",
           "rowVersion",
           "cancelled",
           "reason"
@@ -25043,7 +25109,6 @@
       "AttendanceKind": {
         "enum": [
           "arrival",
-          "flag",
           "lesson",
           "special"
         ],
@@ -25302,6 +25367,65 @@
         ],
         "type": "object"
       },
+      "AttendanceResetCount": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource",
+          "count"
+        ],
+        "type": "object"
+      },
+      "AttendanceResetImpact": {
+        "properties": {
+          "counts": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceResetCount"
+            },
+            "type": "array"
+          },
+          "coverageStart": {
+            "format": "date",
+            "type": "string"
+          },
+          "evidenceBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evidenceFiles": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "generation": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "pendingFileDeletions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "generation",
+          "coverageStart",
+          "token",
+          "counts",
+          "evidenceFiles",
+          "evidenceBytes",
+          "pendingFileDeletions"
+        ],
+        "type": "object"
+      },
       "AttendanceResult": {
         "enum": [
           "unchecked",
@@ -25356,6 +25480,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "rosterToken": {
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/components/schemas/OpenAttendanceSession"
+          },
           "sessionId": {
             "format": "uuid",
             "type": "string"
@@ -25366,6 +25496,8 @@
           }
         },
         "required": [
+          "session",
+          "rosterToken",
           "eventId",
           "deviceId",
           "sessionId",
@@ -25461,6 +25593,9 @@
               "null"
             ]
           },
+          "rosterToken": {
+            "type": "string"
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
@@ -25522,7 +25657,8 @@
           "cancellationReason",
           "savedAt",
           "savedBy",
-          "rowVersion"
+          "rowVersion",
+          "rosterToken"
         ],
         "type": "object"
       },
@@ -45319,6 +45455,27 @@
         ],
         "type": "string"
       },
+      "ResetAttendanceModule": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "generation",
+          "token",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ResolvePromotionImpactInput": {
         "additionalProperties": false,
         "properties": {
@@ -46570,9 +46727,15 @@
           "reason": {
             "type": "string"
           },
+          "rosterToken": {
+            "type": "string"
+          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/OpenAttendanceSession"
           },
           "students": {
             "items": {
@@ -46582,6 +46745,8 @@
           }
         },
         "required": [
+          "session",
+          "rosterToken",
           "rowVersion",
           "reason",
           "students"
@@ -80955,6 +81120,92 @@
         ]
       }
     },
+    "/api/attendance/preview": {
+      "get": {
+        "operationId": "attendance_open_session",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AttendanceKind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sourceKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceDetail"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
     "/api/attendance/report": {
       "get": {
         "operationId": "attendance_report",
@@ -81028,6 +81279,84 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/reset": {
+      "get": {
+        "operationId": "attendance_reset_impact",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceResetImpact"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      },
+      "post": {
+        "operationId": "attendance_reset_module",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetAttendanceModule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttendanceResetImpact"
                 }
               }
             },
@@ -81268,66 +81597,6 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AttendanceCancellation"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_AttendanceDetail"
-                }
-              }
-            },
-            "description": ""
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": ""
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": ""
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "tags": [
-          "attendance"
-        ]
-      }
-    },
-    "/api/attendance/sessions/open": {
-      "post": {
-        "operationId": "attendance_open_session",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OpenAttendanceSession"
               }
             }
           },

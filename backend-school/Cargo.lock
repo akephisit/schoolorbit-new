@@ -4229,6 +4229,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "hex",
  "school-academic-core",
  "school-authorization",
  "school-crypto",
@@ -4237,6 +4238,7 @@ dependencies = [
  "school-permissions",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sqlx",
  "utoipa",
  "uuid",
