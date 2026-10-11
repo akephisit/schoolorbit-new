@@ -4,6 +4,11 @@
 	import { toast } from 'svelte-sonner';
 	import AttendanceSelect from './AttendanceSelect.svelte';
 	import AttendanceMultiSelect from './AttendanceMultiSelect.svelte';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import CalendarTimeInput from '#lib/components/calendar/CalendarTimeInput.svelte';
+	import { normalizeCalendarTime } from '#lib/utils/calendar.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -46,6 +51,8 @@
 		groups = $state<SpecialAttendanceGroup[]>([newGroup()]),
 		deviceName = $state('เครื่องหน้าโรงเรียน'),
 		operator = $state('');
+	let groupDialog = $state(false);
+	const manager = $derived($can.has(PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL));
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;
@@ -71,7 +78,7 @@
 		};
 	}
 	async function run(name: string, action: () => Promise<void>) {
-		if (disposed || busy || archived) return;
+		if (disposed || busy || archived || !manager) return;
 		busy = true;
 		pendingAction = name;
 		errors[name.startsWith('device') ? 'device' : name] = '';
@@ -140,7 +147,9 @@
 			fieldErrors.groups = groups.some((group) => !group.name.trim())
 				? 'ระบุชื่อทุกกลุ่มในรอบ'
 				: '';
-			if (!startTime || !endTime || endTime <= startTime)
+			const normalizedStart = normalizeCalendarTime(startTime),
+				normalizedEnd = normalizeCalendarTime(endTime);
+			if (!normalizedStart || !normalizedEnd || normalizedEnd <= normalizedStart)
 				fieldErrors.specialTimes = 'เวลาจบต้องหลังเวลาเริ่ม';
 			if (fieldErrors.title || fieldErrors.specialTimes || fieldErrors.groups)
 				throw new Error('ตรวจข้อมูลรอบพิเศษที่ระบุไว้');
@@ -163,8 +172,8 @@
 			const result = await createAttendanceSpecial(term, {
 				title,
 				dates,
-				startTime: startTime + ':00',
-				endTime: endTime + ':00',
+				startTime: normalizedStart + ':00',
+				endTime: normalizedEnd + ':00',
 				counted,
 				notify,
 				groups
@@ -204,115 +213,128 @@
 	}
 </script>
 
-<fieldset disabled={busy || archived} class="min-w-0 space-y-6">
-	<Card.Root>
-		<Card.Header
-			><Card.Title><h2>กลุ่มนักเรียนที่ใช้ซ้ำ</h2></Card.Title><Card.Description
-				>รวมสมาชิกไว้เป็นกลุ่มสำหรับเลือกใช้ในรอบเช็คชื่อพิเศษ</Card.Description
-			></Card.Header
-		>
-		<Card.Content class="space-y-6">
-			<form
-				onsubmit={(event) => {
-					event.preventDefault();
-					void createAudience();
-				}}
-				novalidate
-				class="space-y-4"
-			>
-				{#if errors.audience}<Alert.Root variant="destructive"
-						><Alert.Title>บันทึกกลุ่มไม่ได้</Alert.Title><Alert.Description
-							>{errors.audience}</Alert.Description
-						></Alert.Root
-					>{/if}
-				<div class="grid gap-4 md:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="attendance-audience-name"
-							>ชื่อกลุ่ม <span aria-hidden="true" class="text-destructive">*</span></Label
-						><Input
-							id="attendance-audience-name"
-							aria-label="ชื่อกลุ่ม"
-							required
-							bind:value={audienceName}
-							aria-invalid={!!fieldErrors.audienceName}
-							aria-describedby={fieldErrors.audienceName
-								? 'attendance-audience-name-error'
-								: undefined}
-						/>{#if fieldErrors.audienceName}<p
-								id="attendance-audience-name-error"
-								class="text-sm text-destructive"
-							>
-								{fieldErrors.audienceName}
-							</p>{/if}
-					</div>
-					<div class="space-y-2">
-						<Label for="attendance-audience-members">เลือกสมาชิก</Label><AttendanceMultiSelect
-							id="attendance-audience-members"
-							label="สมาชิกกลุ่ม"
-							bind:value={audienceStudents}
-							options={options.students.map((s) => ({
-								value: s.id,
-								label: `${s.homeroomName ?? '-'} · ${s.name}`
-							}))}
-							disabled={busy || archived}
-						/>{#if fieldErrors.audienceStudents}<p class="text-sm text-destructive">
-								{fieldErrors.audienceStudents}
-							</p>{/if}
-					</div>
-				</div>
-				<div class="flex flex-wrap justify-end gap-3">
-					{#if audienceId}<Button
-							type="button"
-							variant="outline"
-							onclick={() => {
-								audienceId = null;
-								audienceVersion = 0;
-								audienceName = '';
-								audienceStudents = [];
-								fieldErrors.audienceName = '';
-								fieldErrors.audienceStudents = '';
-								errors.audience = '';
-							}}>ยกเลิกแก้ไขกลุ่ม</Button
-						>{/if}
-					<LoadingButton
-						type="submit"
-						loading={pendingAction === 'audience'}
-						disabled={busy || archived}>{audienceId ? 'บันทึกกลุ่ม' : 'เพิ่มกลุ่ม'}</LoadingButton
-					>
-				</div>
-			</form>
-			{#if options.audiences.length}<ul class="divide-y rounded-lg border">
-					{#each options.audiences as group (group.id)}<li
-							class="flex flex-wrap items-center justify-between gap-3 p-3"
-						>
-							<span class="min-w-0 break-words text-sm"
-								>{group.name} · {group.studentIds.length} คน</span
-							><Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onclick={() => {
-									audienceId = group.id;
-									audienceVersion = group.rowVersion;
-									audienceName = group.name;
-									audienceStudents = [...group.studentIds];
-									fieldErrors.audienceName = '';
-									fieldErrors.audienceStudents = '';
-									errors.audience = '';
-								}}>แก้ไขกลุ่ม</Button
-							>
-						</li>{/each}
-				</ul>{:else}<p class="text-sm text-muted-foreground">
-					ยังไม่มีกลุ่มนักเรียน เพิ่มกลุ่มเพื่อเลือกสมาชิกชุดเดิมในครั้งถัดไป
-				</p>{/if}
-		</Card.Content>
-	</Card.Root>
+<fieldset disabled={busy || archived || !manager} class="min-w-0 space-y-6">
 	<Card.Root>
 		<Card.Header
 			><Card.Title><h2>เพิ่มรอบเช็คชื่อพิเศษ</h2></Card.Title><Card.Description
 				>กำหนดวัน เวลา และผู้รับผิดชอบสำหรับกิจกรรมที่แยกจากรอบปกติ</Card.Description
 			></Card.Header
 		>
+		<div class="px-6 pb-4">
+			<Dialog.Root bind:open={groupDialog}>
+				<Dialog.Trigger
+					>{#snippet child({ props })}<Button
+							{...props}
+							type="button"
+							variant="outline"
+							disabled={busy || archived || !manager}>จัดการกลุ่ม</Button
+						>{/snippet}</Dialog.Trigger
+				>
+				<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
+					<Dialog.Header
+						><Dialog.Title>กลุ่มนักเรียนที่ใช้ซ้ำ</Dialog.Title><Dialog.Description
+							>รวมสมาชิกไว้เป็นกลุ่มสำหรับเลือกใช้ในรอบเช็คชื่อพิเศษ</Dialog.Description
+						></Dialog.Header
+					>
+					<fieldset disabled={busy || archived || !manager} class="space-y-6">
+						<form
+							onsubmit={(event) => {
+								event.preventDefault();
+								void createAudience();
+							}}
+							novalidate
+							class="space-y-4"
+						>
+							{#if errors.audience}<Alert.Root variant="destructive"
+									><Alert.Title>บันทึกกลุ่มไม่ได้</Alert.Title><Alert.Description
+										>{errors.audience}</Alert.Description
+									></Alert.Root
+								>{/if}
+							<div class="grid gap-4 md:grid-cols-2">
+								<div class="space-y-2">
+									<Label for="attendance-audience-name"
+										>ชื่อกลุ่ม <span aria-hidden="true" class="text-destructive">*</span></Label
+									><Input
+										id="attendance-audience-name"
+										aria-label="ชื่อกลุ่ม"
+										required
+										bind:value={audienceName}
+										aria-invalid={!!fieldErrors.audienceName}
+										aria-describedby={fieldErrors.audienceName
+											? 'attendance-audience-name-error'
+											: undefined}
+									/>{#if fieldErrors.audienceName}<p
+											id="attendance-audience-name-error"
+											class="text-sm text-destructive"
+										>
+											{fieldErrors.audienceName}
+										</p>{/if}
+								</div>
+								<div class="space-y-2">
+									<Label for="attendance-audience-members">เลือกสมาชิก</Label><AttendanceMultiSelect
+										id="attendance-audience-members"
+										label="สมาชิกกลุ่ม"
+										bind:value={audienceStudents}
+										options={options.students.map((s) => ({
+											value: s.id,
+											label: `${s.homeroomName ?? '-'} · ${s.name}`
+										}))}
+										disabled={busy || archived}
+									/>{#if fieldErrors.audienceStudents}<p class="text-sm text-destructive">
+											{fieldErrors.audienceStudents}
+										</p>{/if}
+								</div>
+							</div>
+							<div class="flex flex-wrap justify-end gap-3">
+								{#if audienceId}<Button
+										type="button"
+										variant="outline"
+										onclick={() => {
+											audienceId = null;
+											audienceVersion = 0;
+											audienceName = '';
+											audienceStudents = [];
+											fieldErrors.audienceName = '';
+											fieldErrors.audienceStudents = '';
+											errors.audience = '';
+										}}>ยกเลิกแก้ไขกลุ่ม</Button
+									>{/if}
+								<LoadingButton
+									type="submit"
+									loading={pendingAction === 'audience'}
+									disabled={busy || archived}
+									>{audienceId ? 'บันทึกกลุ่ม' : 'เพิ่มกลุ่ม'}</LoadingButton
+								>
+							</div>
+						</form>
+						{#if options.audiences.length}<ul class="divide-y rounded-lg border">
+								{#each options.audiences as group (group.id)}<li
+										class="flex flex-wrap items-center justify-between gap-3 p-3"
+									>
+										<span class="min-w-0 break-words text-sm"
+											>{group.name} · {group.studentIds.length} คน</span
+										><Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onclick={() => {
+												audienceId = group.id;
+												audienceVersion = group.rowVersion;
+												audienceName = group.name;
+												audienceStudents = [...group.studentIds];
+												fieldErrors.audienceName = '';
+												fieldErrors.audienceStudents = '';
+												errors.audience = '';
+											}}>แก้ไขกลุ่ม</Button
+										>
+									</li>{/each}
+							</ul>{:else}<p class="text-sm text-muted-foreground">
+								ยังไม่มีกลุ่มนักเรียน เพิ่มกลุ่มเพื่อเลือกสมาชิกชุดเดิมในครั้งถัดไป
+							</p>{/if}
+					</fieldset>
+				</Dialog.Content>
+			</Dialog.Root>
+		</div>
 		<Card.Content class="space-y-6">
 			<form
 				onsubmit={(event) => {
@@ -365,28 +387,19 @@
 					<div class="space-y-2">
 						<Label for="attendance-special-start-time"
 							>เวลาเริ่ม <span aria-hidden="true" class="text-destructive">*</span></Label
-						><Input
+						><CalendarTimeInput
 							id="attendance-special-start-time"
-							aria-label="เวลาเริ่ม"
-							type="time"
-							required
 							bind:value={startTime}
-							aria-invalid={!!fieldErrors.specialTimes}
+							disabled={busy || archived || !manager}
 						/>
 					</div>
 					<div class="space-y-2">
 						<Label for="attendance-special-end-time"
 							>เวลาจบ <span aria-hidden="true" class="text-destructive">*</span></Label
-						><Input
+						><CalendarTimeInput
 							id="attendance-special-end-time"
-							aria-label="เวลาจบ"
-							type="time"
-							required
 							bind:value={endTime}
-							aria-invalid={!!fieldErrors.specialTimes}
-							aria-describedby={fieldErrors.specialTimes
-								? 'attendance-special-time-error'
-								: undefined}
+							disabled={busy || archived || !manager}
 						/>{#if fieldErrors.specialTimes}<p
 								id="attendance-special-time-error"
 								class="text-sm text-destructive"

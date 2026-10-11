@@ -1,83 +1,62 @@
 <script lang="ts">
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
-	import { SvelteDate } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
-	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
-	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
+	import CalendarTimeInput from '#lib/components/calendar/CalendarTimeInput.svelte';
+	import { normalizeCalendarTime } from '#lib/utils/calendar.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
+	import type { AttendanceRead } from './attendance-access.js';
+	import type { AttendanceDay } from '#lib/api/attendance.js';
+	import type { AttendanceCalendarEvents } from './attendance-settings-calendar.js';
+	import AttendanceSettingsCalendar from './AttendanceSettingsCalendar.svelte';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
-	import {
-		attendanceDays,
-		saveAttendanceDays,
-		saveAttendanceSettings,
-		type AttendanceSettings,
-		type AttendanceDay
-	} from '#lib/api/attendance.js';
+	import { saveAttendanceSettings, type AttendanceSettings } from '#lib/api/attendance.js';
 	let {
 		term,
 		date,
-		initial
+		initial,
+		initialDays,
+		initialCalendar
 	}: {
 		term: string;
 		date: string;
-		initial: [AttendanceSettings, AttendanceDay[]];
+		initial: AttendanceSettings;
+		initialDays: Promise<RouteLoadResult<AttendanceRead<AttendanceDay[]>>>;
+		initialCalendar: Promise<RouteLoadResult<AttendanceRead<AttendanceCalendarEvents>>>;
 	} = $props();
-	let settings = $state(untrack(() => initial[0])),
-		days = $state(untrack(() => initial[1])),
-		configuration = $state(untrack(() => $state.snapshot(initial[0].configuration))),
-		month = $state(untrack(() => date.slice(0, 7))),
-		note = $state(''),
+	let settings = $state(untrack(() => initial)),
+		configuration = $state(
+			untrack(() => ({
+				...$state.snapshot(initial.configuration),
+				lateAfter: initial.configuration.lateAfter.slice(0, 5)
+			}))
+		),
 		busy = $state(false),
 		pendingAction = $state(''),
-		calendarError = $state(''),
 		settingsError = $state(''),
-		daysError = $state(''),
 		fieldErrors = $state<Record<string, string>>({}),
-		calendarLoading = $state(false),
-		digests = $state(
-			untrack(() => initial[0].configuration.digestTimes.map((t) => t.slice(0, 5)).join(', '))
+		digestTimes = $state(
+			untrack(() => initial.configuration.digestTimes.map((t) => t.slice(0, 5)))
 		);
-	let rangeStart = $state(untrack(() => date)),
-		rangeEnd = $state(untrack(() => date));
 	const manager = $derived($can.has(PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL));
-	const cells = $derived.by(() => {
-		const [year, m] = month.split('-').map(Number);
-		if (!/^\d{4}-\d{2}$/.test(month) || m < 1 || m > 12) return [];
-		const start = new Date(Date.UTC(year, m - 1, 1));
-		const total = new Date(Date.UTC(year, m, 0)).getUTCDate();
-		return [
-			...Array((start.getUTCDay() + 6) % 7).fill(null),
-			...Array.from({ length: total }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
-		] as (string | null)[];
-	});
+	const weekdays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 	let disposed = false;
-	const calendarRequest = new LatestRequest();
 	onDestroy(() => {
 		disposed = true;
-		calendarRequest.abort();
 	});
-	const weekdays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-	function isCounted(value: string) {
-		return (
-			days.find((d) => d.date === value)?.counted ??
-			settings.configuration.weekdays.includes(
-				((new Date(value + 'T00:00:00Z').getUTCDay() + 6) % 7) + 1
-			)
-		);
-	}
 	async function run(name: string, action: () => Promise<void>) {
 		if (disposed || busy || settings.archived || !manager) return;
 		busy = true;
 		pendingAction = name;
 		if (name === 'settings') settingsError = '';
-		else daysError = '';
+
 		try {
 			await action();
 			if (disposed) return;
@@ -86,7 +65,6 @@
 			if (disposed) return;
 			const message = e instanceof Error ? e.message : 'บันทึกไม่ได้';
 			if (name === 'settings') settingsError = message;
-			else daysError = message;
 		} finally {
 			if (!disposed) {
 				busy = false;
@@ -97,18 +75,13 @@
 	async function saveConfig() {
 		await run('settings', async () => {
 			fieldErrors = {};
-			const timePattern = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
-			const digestTimes = digests
-				.split(',')
-				.map((t) => t.trim())
-				.filter(Boolean);
-			if (!timePattern.test(configuration.lateAfter))
-				fieldErrors.lateAfter = 'ระบุเวลาเข้าสายให้ถูกต้อง';
+			const normalizedLateAfter = normalizeCalendarTime(configuration.lateAfter);
+			const normalizedDigests = digestTimes.map(normalizeCalendarTime);
+			if (!normalizedLateAfter) fieldErrors.lateAfter = 'ระบุเวลาเข้าสายให้ถูกต้อง';
 			if (
 				digestTimes.length > 8 ||
-				digestTimes.some((t) => !timePattern.test(t)) ||
-				new Set(digestTimes.map((t) => (t.length === 5 ? t + ':00' : t))).size !==
-					digestTimes.length
+				normalizedDigests.some((t) => !t) ||
+				new Set(normalizedDigests).size !== digestTimes.length
 			)
 				fieldErrors.digests = 'ระบุเวลาไม่ซ้ำกัน ไม่เกิน 8 เวลา เช่น 09:00, 16:00';
 			if (
@@ -132,11 +105,8 @@
 			if (Object.keys(fieldErrors).length) throw new Error('ตรวจข้อมูลการตั้งค่าที่ระบุไว้');
 			const savedConfiguration = {
 				...$state.snapshot(configuration),
-				lateAfter:
-					configuration.lateAfter.length === 5
-						? configuration.lateAfter + ':00'
-						: configuration.lateAfter,
-				digestTimes: digestTimes.map((t) => (t.length === 5 ? t + ':00' : t))
+				lateAfter: normalizedLateAfter + ':00',
+				digestTimes: normalizedDigests.map((t) => t + ':00')
 			};
 			const saved = await saveAttendanceSettings(term, {
 				configuration: savedConfiguration,
@@ -144,73 +114,12 @@
 			});
 			if (disposed) return;
 			settings = saved;
-			configuration = $state.snapshot(settings.configuration);
+			configuration = {
+				...$state.snapshot(settings.configuration),
+				lateAfter: settings.configuration.lateAfter.slice(0, 5)
+			};
+			digestTimes = settings.configuration.digestTimes.map((t) => t.slice(0, 5));
 		});
-	}
-	async function loadMonth() {
-		if (disposed) return;
-		const t = calendarRequest.begin();
-		calendarError = '';
-		daysError = '';
-		calendarLoading = true;
-		try {
-			if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('เลือกเดือนที่ต้องการ');
-			const [year, m] = month.split('-').map(Number);
-			const end = new Date(Date.UTC(year, m, 0)).toISOString().slice(0, 10);
-			const result = await attendanceDays(term, month + '-01', end, { signal: t.signal });
-			if (calendarRequest.isCurrent(t.revision)) days = result;
-		} catch (e) {
-			if (calendarRequest.isCurrent(t.revision))
-				calendarError = e instanceof Error ? e.message : 'โหลดปฏิทินไม่ได้';
-		} finally {
-			if (calendarRequest.isCurrent(t.revision)) calendarLoading = false;
-		}
-	}
-	async function setDays(values: AttendanceDay[]) {
-		if (disposed || calendarLoading || calendarError) return;
-		if (new TextEncoder().encode(note).length > 500) {
-			daysError = 'หมายเหตุยาวเกินกำหนด กรุณาย่อข้อความ';
-			return;
-		}
-		await run('days', async () => {
-			const saved = await saveAttendanceDays(term, {
-				days: values,
-				rowVersion: settings.rowVersion
-			});
-			if (disposed) return;
-			settings = saved;
-			days = [...days.filter((d) => !values.some((v) => v.date === d.date)), ...values];
-		});
-	}
-	function dateRange(start: string, end: string) {
-		if (
-			!start ||
-			!end ||
-			!Number.isFinite(Date.parse(start + 'T00:00:00Z')) ||
-			!Number.isFinite(Date.parse(end + 'T00:00:00Z')) ||
-			start > end
-		)
-			throw new Error('เลือกช่วงวันที่ให้ถูกต้อง');
-		const values: string[] = [];
-		const current = new SvelteDate(start + 'T00:00:00Z');
-		const stop = new Date(end + 'T00:00:00Z');
-		while (current <= stop && values.length <= 366) {
-			values.push(current.toISOString().slice(0, 10));
-			current.setUTCDate(current.getUTCDate() + 1);
-		}
-		if (values.length > 366) throw new Error('เลือกครั้งละไม่เกิน 366 วัน');
-		return values;
-	}
-	async function applyRange(value: boolean) {
-		if (disposed) return;
-		try {
-			await setDays(
-				dateRange(rangeStart, rangeEnd).map((d) => ({ date: d, counted: value, note }))
-			);
-		} catch (e) {
-			if (disposed) return;
-			daysError = e instanceof Error ? e.message : 'ช่วงวันที่ไม่ถูกต้อง';
-		}
 	}
 </script>
 
@@ -269,14 +178,10 @@
 							<div class="space-y-2">
 								<Label for="attendance-late-after"
 									>เข้าสายหลังเวลา <span aria-hidden="true" class="text-destructive">*</span></Label
-								><Input
+								><CalendarTimeInput
 									id="attendance-late-after"
-									aria-label="เข้าสายหลังเวลา"
-									type="time"
-									required
 									bind:value={configuration.lateAfter}
-									aria-invalid={!!fieldErrors.lateAfter}
-									aria-describedby={fieldErrors.lateAfter ? 'attendance-late-error' : undefined}
+									disabled={busy || settings.archived}
 								/>{#if fieldErrors.lateAfter}<p
 										id="attendance-late-error"
 										class="text-sm text-destructive"
@@ -285,12 +190,35 @@
 									</p>{/if}
 							</div>
 							<div class="space-y-2">
-								<Label for="attendance-digest-times">ส่งสรุปครู (เช่น 09:00, 16:00)</Label><Input
-									id="attendance-digest-times"
-									bind:value={digests}
-									aria-invalid={!!fieldErrors.digests}
-									aria-describedby={fieldErrors.digests ? 'attendance-digest-error' : undefined}
-								/>{#if fieldErrors.digests}<p
+								<p class="text-sm font-medium">เวลาส่งสรุปครู</p>
+								{#each digestTimes as _, i (i)}
+									<div class="flex items-start gap-2">
+										<div class="min-w-0 flex-1">
+											<Label for={`attendance-digest-${i}`}>เวลาสรุป {i + 1}</Label
+											><CalendarTimeInput
+												id={`attendance-digest-${i}`}
+												bind:value={digestTimes[i]}
+												disabled={busy || settings.archived}
+											/>
+										</div>
+										<Button
+											type="button"
+											variant="ghost"
+											aria-label={`ลบเวลาสรุป ${i + 1}`}
+											onclick={() => {
+												digestTimes = digestTimes.filter((_, index) => index !== i);
+											}}>ลบ</Button
+										>
+									</div>
+								{/each}
+								<Button
+									type="button"
+									variant="outline"
+									disabled={digestTimes.length >= 8}
+									onclick={() => {
+										digestTimes = [...digestTimes, ''];
+									}}>เพิ่มเวลาสรุป</Button
+								>{#if fieldErrors.digests}<p
 										id="attendance-digest-error"
 										class="text-sm text-destructive"
 									>
@@ -397,91 +325,19 @@
 				</form>
 			</Card.Content>
 		</Card.Root>
-		<Card.Root>
-			<Card.Header
-				><Card.Title><h2>ปฏิทินวันประมวลผล</h2></Card.Title><Card.Description
-					>เลือกวันที่เพื่อสลับการนับยอด หรือกำหนดพร้อมกันเป็นช่วงวันที่</Card.Description
-				></Card.Header
-			>
-			<Card.Content class="space-y-6">
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="attendance-month">เดือน</Label><Input
-							id="attendance-month"
-							type="month"
-							bind:value={month}
-							onchange={loadMonth}
-							disabled={busy}
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="attendance-calendar-note">หมายเหตุวันหยุด / กิจกรรม</Label><Input
-							id="attendance-calendar-note"
-							bind:value={note}
-							disabled={busy || settings.archived}
-						/>
-					</div>
-				</div>
-				{#if calendarError}<PageState
-						variant="error"
-						title="โหลดปฏิทินไม่ได้"
-						description={calendarError}
-						actionLabel="ลองโหลดปฏิทินใหม่"
-						onaction={loadMonth}
-					/>{/if}
-				{#if daysError}<Alert.Root variant="destructive"
-						><Alert.Title>บันทึกวันประมวลผลไม่ได้</Alert.Title><Alert.Description
-							>{daysError}</Alert.Description
-						></Alert.Root
-					>{/if}
-				{#if calendarLoading}<p role="status" class="text-sm text-muted-foreground">
-						กำลังโหลดปฏิทิน…
-					</p>{/if}
-				<div aria-busy={calendarLoading} class="grid max-w-2xl grid-cols-7 gap-1 sm:gap-2">
-					{#each weekdays as day (day)}<span
-							class="py-2 text-center text-sm font-medium text-muted-foreground">{day}</span
-						>{/each}
-					{#each cells as value, index (index)}{#if value}<Button
-								type="button"
-								class="min-w-0 px-1 sm:px-3"
-								aria-pressed={isCounted(value)}
-								variant={isCounted(value) ? 'default' : 'outline'}
-								disabled={busy || calendarLoading || !!calendarError || settings.archived}
-								onclick={() => setDays([{ date: value, counted: !isCounted(value), note }])}
-								title={days.find((d) => d.date === value)?.note ?? ''}
-								>{Number(value.slice(-2))} {isCounted(value) ? '✓' : '—'}</Button
-							>{:else}<span></span>{/if}{/each}
-				</div>
-				<div class="flex flex-wrap items-end gap-3 border-t pt-4">
-					<div class="min-w-0 space-y-2">
-						<Label for="attendance-range-start">จาก</Label><DatePicker
-							id="attendance-range-start"
-							ariaLabel="จาก"
-							bind:value={rangeStart}
-							disabled={busy || settings.archived}
-						/>
-					</div>
-					<div class="min-w-0 space-y-2">
-						<Label for="attendance-range-end">ถึง</Label><DatePicker
-							id="attendance-range-end"
-							ariaLabel="ถึง"
-							bind:value={rangeEnd}
-							disabled={busy || settings.archived}
-						/>
-					</div>
-					<Button
-						type="button"
-						variant="outline"
-						disabled={busy || calendarLoading || !!calendarError || settings.archived}
-						onclick={() => applyRange(true)}>นับช่วงนี้</Button
-					><Button
-						type="button"
-						variant="outline"
-						disabled={busy || calendarLoading || !!calendarError || settings.archived}
-						onclick={() => applyRange(false)}>วันหยุด / ไม่นับช่วงนี้</Button
-					>
-				</div>
-			</Card.Content>
-		</Card.Root>
+		<AttendanceSettingsCalendar
+			{term}
+			{date}
+			{initialDays}
+			{initialCalendar}
+			{settings}
+			onbusy={(value) => {
+				busy = value;
+			}}
+			{busy}
+			onsettings={(saved) => {
+				settings = saved;
+			}}
+		/>
 	</div>
 {/if}

@@ -45,7 +45,7 @@ for (const invalidDate of ['bad', '2026-02-30'])
 		await mockAttendance(page);
 		await page.goto(path('/settings').replace(`date=${date}`, `date=${invalidDate}`));
 		await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
-		await expect(page.getByLabel('เดือน', { exact: true })).toHaveValue('2026-10');
+		await expect(page.getByRole('button', { name: 'เดือน', exact: true })).toHaveText('ตุลาคม');
 	});
 
 test('calendar range saves wait for an in-flight month read', async ({ page }) => {
@@ -61,7 +61,7 @@ test('calendar range saves wait for an in-flight month read', async ({ page }) =
 			await reply(route, []);
 		}
 	);
-	await page.getByLabel('เดือน', { exact: true }).fill('2026-11');
+	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'นับช่วงนี้', exact: true })).toBeDisabled();
 	await expect(
 		page.getByRole('button', { name: 'วันหยุด / ไม่นับช่วงนี้', exact: true })
@@ -399,6 +399,10 @@ async function mockAttendance(
 			'academic_context.read.school'
 		]
 	});
+	await page.route(
+		(url) => url.pathname === '/api/me/calendar/events',
+		(route) => reply(route, [])
+	);
 	await page.clock.setFixedTime(new Date('2026-10-09T01:00:00Z'));
 	await page.route('https://fonts.googleapis.com/**', (r) =>
 		r.fulfill({ contentType: 'text/css', body: '' })
@@ -855,8 +859,8 @@ test('calendar toggles a single processing date', async ({ page }) => {
 	const api = await mockAttendance(page);
 	await page.goto(path('/settings'));
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
-	await page.getByRole('button', { name: '9 ✓', exact: true }).click();
-	await expect(page.getByRole('button', { name: '9 —', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
 	expect(api.writes.find((w) => w.path.includes('/days/'))?.data).toMatchObject({
 		rowVersion: 1,
 		days: [{ date, counted: false }]
@@ -872,8 +876,8 @@ test('settings save succeeds twice and calendar uses the returned revision', asy
 	await expect(page.getByText('บันทึกแล้ว', { exact: true })).toBeVisible();
 	await page.getByLabel('เข้าสายหลังเวลา').fill('08:45');
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
-	await page.getByRole('button', { name: '9 ✓', exact: true }).click();
-	await expect(page.getByRole('button', { name: '9 —', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
 	expect(api.writes.filter((w) => w.path.includes('/settings/')).map((w) => w.data)).toMatchObject([
 		{ rowVersion: 1, configuration: { lateAfter: '08:30:00' } },
 		{ rowVersion: 2, configuration: { lateAfter: '08:45:00' } }
@@ -988,8 +992,8 @@ test('slow options do not block calendar use', async ({ page }) => {
 	const api = await mockAttendance(page, { holdOptions: true });
 	await page.goto(path('/settings'));
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
-	await page.getByRole('button', { name: '9 ✓', exact: true }).click();
-	await expect(page.getByRole('button', { name: '9 —', exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
 	api.release();
 	await expect(page.getByRole('heading', { name: 'เครื่องเว็บแคม' })).toBeVisible();
 });
@@ -1000,24 +1004,24 @@ test('unsaved weekday edits do not alter the saved processing calendar', async (
 		.getByRole('region', { name: 'เกณฑ์และปฏิทินเช็คชื่อ' })
 		.getByLabel('ส', { exact: true })
 		.check();
-	await expect(page.getByRole('button', { name: '10 —', exact: true })).toBeVisible();
+	await page.locator('[data-calendar-date="2026-10-10"]').click();
+	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
-	await expect(page.getByRole('button', { name: '10 ✓', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true })).toBeVisible();
 });
-test('empty or failed month has an actionable error and cannot write guessed days', async ({
+test('month controls prevent empty selection and failed reads cannot write guessed days', async ({
 	page
 }) => {
 	const api = await mockAttendance(page);
 	await page.goto(path('/settings'));
-	await page.getByLabel('เดือน', { exact: true }).fill('');
-	await expect(page.getByText('เลือกเดือนที่ต้องการ', { exact: true })).toBeVisible();
+	await expect(page.locator('input[type=month]')).toHaveCount(0);
 	await page.route(
 		(url) => url.pathname === '/api/attendance/days',
 		(r) => reply(r, 'ปฏิทินไม่พร้อม', 500)
 	);
-	await page.getByLabel('เดือน', { exact: true }).fill('2026-11');
+	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page.getByText('ปฏิทินไม่พร้อม', { exact: true })).toBeVisible();
-	await expect(page.getByRole('button', { name: '2 ✓', exact: true })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'นับช่วงนี้', exact: true })).toBeDisabled();
 	expect(api.writes).toHaveLength(0);
 });
 test('read-only teacher sees saved results without management links or optional reads', async ({
@@ -1102,12 +1106,14 @@ test('report changes student and keeps daily details separate', async ({ page })
 test('special activity creation uses selected reusable audience and teachers', async ({ page }) => {
 	const api = await mockAttendance(page);
 	await page.goto(path('/settings'));
+	await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
 	await page.getByLabel('ชื่อกลุ่ม', { exact: true }).fill('กลุ่มชุมนุม');
 	await page.getByRole('button', { name: 'สมาชิกกลุ่ม', exact: true }).click();
 	await page.getByRole('option', { name: 'ม.1/1 · นักเรียนคนแรก', exact: true }).click();
 	await page.keyboard.press('Escape');
 	await page.getByRole('button', { name: 'เพิ่มกลุ่ม', exact: true }).click();
 	await expect(page.getByText('กลุ่มชุมนุม · 1 คน')).toBeVisible();
+	await page.keyboard.press('Escape');
 	await page.getByLabel('ชื่อการเช็คชื่อ').fill('กิจกรรมทดลอง');
 	await page.getByRole('button', { name: 'กลุ่มที่ตั้งไว้', exact: true }).click();
 	await page.getByRole('option', { name: 'กลุ่มชุมนุม', exact: true }).click();

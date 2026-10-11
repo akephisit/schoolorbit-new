@@ -1,5 +1,6 @@
 import type { PageLoad } from './$types';
 import { attendanceSettings, attendanceOptions, attendanceDays } from '#lib/api/attendance.js';
+import { attendanceSettingsCalendar } from '#lib/features/attendance/attendance-settings-calendar.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
 import {
@@ -33,12 +34,25 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		settings: term
 			? captureRouteLoad(
 					readAttendance([PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL], () =>
-						Promise.all([
-							attendanceSettings(term, { requestFetch: fetch }),
-							attendanceDays(term, monthStart, monthEnd, { requestFetch: fetch })
-						])
+						attendanceSettings(term, { requestFetch: fetch })
 					),
 					'โหลดข้อมูลเช็คชื่อไม่ได้'
+				)
+			: null,
+		days: term
+			? captureRouteLoad(
+					readAttendance([PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL], () =>
+						attendanceDays(term, monthStart, monthEnd, { requestFetch: fetch })
+					),
+					'โหลดวันประมวลผลไม่ได้'
+				)
+			: null,
+		calendar: term
+			? captureRouteLoad(
+					readAttendance([PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL], () =>
+						attendanceSettingsCalendar(date.slice(0, 7), { requestFetch: fetch })
+					),
+					'โหลดกิจกรรมปฏิทินไม่ได้'
 				)
 			: null,
 		options: term
