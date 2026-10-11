@@ -213,7 +213,11 @@ for (const theme of ['light', 'dark'] as const) {
 				.getByRole('main')
 				.evaluate((main) => Math.ceil(main.scrollHeight + innerHeight - main.clientHeight));
 			await page.setViewportSize({ width: 375, height: mobileHeight });
-			await page.screenshot({ path: `/tmp/family-${role}-${theme}-mobile.png`, fullPage: true });
+			await page.screenshot({
+				path: `/tmp/family-${role}-${theme}-mobile.png`,
+				fullPage: true,
+				animations: 'disabled'
+			});
 			await page.setViewportSize({ width: 1280, height: 900 });
 			await familyExpect
 				.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
@@ -221,7 +225,11 @@ for (const theme of ['light', 'dark'] as const) {
 			await familyExpect(
 				page.getByRole('link', { name: 'ดูการเช็คชื่อ', exact: true })
 			).toBeVisible();
-			await page.screenshot({ path: `/tmp/family-${role}-${theme}-desktop.png`, fullPage: true });
+			await page.screenshot({
+				path: `/tmp/family-${role}-${theme}-desktop.png`,
+				fullPage: true,
+				animations: 'disabled'
+			});
 		});
 	}
 }
