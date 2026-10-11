@@ -67,15 +67,10 @@
 	let enrollmentSource = $state.raw(untrack(() => initialEnrollments));
 	let removalStudent = $state('');
 	let scanMethod = $state('automatic');
+	let cameraAspectRatio = $state('4 / 3');
 	let outlines = $state<{ box: import('./face-camera.js').FaceBox; label: string }[]>([]);
 	const tracker = new FaceTracker();
-	const poseHint = $derived(
-		samples.length === 0
-			? 'มองตรงเข้ากล้อง'
-			: samples.length === 1
-				? 'หันซ้ายของคุณเล็กน้อย'
-				: 'หันขวาของคุณเล็กน้อย'
-	);
+
 	function reloadEnrollments() {
 		enrollmentSource = captureRouteLoad(
 			readAttendance(
@@ -106,6 +101,13 @@
 		challenge = $state(''),
 		lastStudent = $state(''),
 		committing = $state(false);
+	const poseHint = $derived(
+		samples.length === 0
+			? 'มองตรงเข้ากล้อง'
+			: samples.length === 1
+				? 'หันซ้ายของคุณเล็กน้อย'
+				: 'หันขวาของคุณเล็กน้อย'
+	);
 	let timer: ReturnType<typeof setTimeout> | null = null,
 		generation = 0,
 		commitGeneration = 0;
@@ -187,14 +189,14 @@
 		pendingAction = 'enroll';
 		try {
 			if (samples.length < 3) {
-			const face = await readFace(video);
-			if (token !== generation || selected !== student || !active) return;
-			if (!face) throw new Error('ต้องเห็นใบหน้าชัดเจนเพียงคนเดียว');
-			if (!enrollmentPose(face.yaw, samples.length)) throw new Error(poseHint);
-			if (samples.length && distance(samples[0], face.values) > 0.55)
-				throw new Error('ใบหน้าเปลี่ยนไป กรุณาเริ่มเก็บใหม่');
-			samples = [...samples, face.values];
-			message = `เก็บ ${samples.length}/3 ตัวอย่างแล้ว`;
+				const face = await readFace(video, cameraController?.signal);
+				if (token !== generation || selected !== student || !active) return;
+				if (!face) throw new Error('ต้องเห็นใบหน้าชัดเจนเพียงคนเดียว');
+				if (!enrollmentPose(face.yaw, samples.length)) throw new Error(poseHint);
+				if (samples.length && distance(samples[0], face.values) > 0.55)
+					throw new Error('ใบหน้าเปลี่ยนไป กรุณาเริ่มเก็บใหม่');
+				samples = [...samples, face.values];
+				message = `เก็บ ${samples.length}/3 ตัวอย่างแล้ว`;
 			}
 			if (samples.length === 3) {
 				await enrollAttendanceFace(selected, {
@@ -230,7 +232,10 @@
 			reloadEnrollments();
 			message = 'ลบข้อมูลใบหน้าแล้ว';
 			toast.success(message);
-            if (selected === student) { samples=[]; consent=false; }
+			if (selected === student) {
+				samples = [];
+				consent = false;
+			}
 		} catch (e) {
 			if (token === generation) message = e instanceof Error ? e.message : 'ถอนการลงทะเบียนไม่ได้';
 		} finally {
@@ -377,7 +382,7 @@
 				tracker.clear();
 				outlines = [];
 			} else {
-				const capture = await readFaces(video);
+				const capture = await readFaces(video, false, cameraController?.signal);
 				if (token !== generation || !running || !gallery || !currentScanDay()) return;
 				const recognized = capture.faces.map((face) => ({
 					face,
@@ -490,7 +495,12 @@
 			<div class="relative overflow-hidden rounded-lg bg-black">
 				<video
 					bind:this={video}
-					class="aspect-[4/3] w-full rounded-lg bg-black"
+					class="block w-full rounded-lg bg-black"
+					style:aspect-ratio={cameraAspectRatio}
+					onloadedmetadata={() => {
+						if (video.videoWidth && video.videoHeight)
+							cameraAspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+					}}
 					autoplay
 					muted
 					playsinline
@@ -502,7 +512,7 @@
 						aria-hidden="true"
 					>
 						<div
-							class="flex aspect-[3/4] w-2/5 items-center justify-center rounded-[50%] border-2 border-primary bg-primary/5"
+							class="flex h-3/5 aspect-[3/4] items-center justify-center rounded-[50%] border-2 border-primary bg-primary/5"
 						>
 							{#if samples.length === 1}<ArrowRight
 									class="size-10 text-primary"
@@ -645,7 +655,9 @@
 						loading={pendingAction === 'enroll'}
 						onclick={collect}
 						disabled={!active || !student || !consent || busy || !enrollAllowed}
-						>{samples.length === 3 ? 'บันทึกตัวอย่างอีกครั้ง' : `เก็บตัวอย่าง (${samples.length}/3)`}</LoadingButton
+						>{samples.length === 3
+							? 'บันทึกตัวอย่างอีกครั้ง'
+							: `เก็บตัวอย่าง (${samples.length}/3)`}</LoadingButton
 					><Button
 						type="button"
 						variant="outline"

@@ -1,5 +1,6 @@
 import type { PageLoad } from './$types';
 import { currentAttendanceDate, attendanceReport } from '#lib/api/attendance.js';
+import { resolveScopedAcademicContextUrl } from '#lib/academic-context/scoped-year.js';
 import { listMyAcademicContextOptions } from '#lib/api/academic-context.js';
 import { type ChildDto } from '#lib/api/parents.js';
 import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
@@ -35,10 +36,8 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 						if (!user || user.user_type !== 'student')
 							throw new Error('กรุณาเข้าสู่ระบบด้วยบัญชีstudent');
 						const context = await listMyAcademicContextOptions(undefined, { requestFetch: fetch });
-						const term =
-							context.terms.find((t) => t.id === url.searchParams.get('academicTermId')) ??
-							context.terms.find((t) => t.id === context.activeAcademicTermId) ??
-							context.terms.at(-1);
+						const selection = resolveScopedAcademicContextUrl(context, url, true);
+						const term = context.terms.find((t) => t.id === selection.academicTermId);
 						const children: ChildDto[] = [];
 						const studentId = user.id;
 						return {

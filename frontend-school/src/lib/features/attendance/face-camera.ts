@@ -2,6 +2,8 @@ import type { AttendanceFace, AttendanceConfiguration } from '#lib/api/attendanc
 import type * as FaceApi from '@vladmandic/face-api';
 export const FACE_MODEL = 'face-api-1.7.15-recognition-128';
 let engine: Promise<typeof FaceApi> | null = null;
+let detectorInputSize = 416;
+let quickFrames = 0;
 export async function faceEngine() {
 	if (!engine)
 		engine = (async () => {
@@ -57,7 +59,11 @@ export type CameraFrame = {
 	faces: CameraFace[];
 	detectedCount: number;
 };
-export async function readFaces(video: HTMLVideoElement, enrollment = false): Promise<CameraFrame> {
+export async function readFaces(
+	video: HTMLVideoElement,
+	enrollment = false,
+	signal?: AbortSignal
+): Promise<CameraFrame> {
 	const api = await faceEngine();
 	const frame = document.createElement('canvas');
 	const width = video.videoWidth,
@@ -69,10 +75,27 @@ export async function readFaces(video: HTMLVideoElement, enrollment = false): Pr
 	if (!context) throw new Error('อ่านภาพจากกล้องไม่ได้');
 	context.drawImage(video, 0, 0, frame.width, frame.height);
 	const capturedAt = new Date().toISOString();
+	signal?.throwIfAborted();
+	const detectionStarted = performance.now();
 	const detections = await api.detectAllFaces(
 		frame,
-		new api.TinyFaceDetectorOptions({ inputSize: 640, scoreThreshold: 0.7 })
+		new api.TinyFaceDetectorOptions({
+			inputSize: enrollment ? 320 : detectorInputSize,
+			scoreThreshold: 0.7
+		})
 	);
+	signal?.throwIfAborted();
+	if (!enrollment) {
+		const elapsed = performance.now() - detectionStarted;
+		if (elapsed > 700) {
+			detectorInputSize = Math.max(320, detectorInputSize - 96);
+			quickFrames = 0;
+		} else if (elapsed < 150 && ++quickFrames >= 8) {
+			detectorInputSize = Math.min(512, detectorInputSize + 96);
+			quickFrames = 0;
+		} else if (elapsed >= 150) quickFrames = 0;
+	}
+
 	// Bound expensive landmark/descriptor work; enrollment always needs exactly one person.
 	const eligible = (enrollment && detections.length !== 1 ? [] : detections)
 		.filter(
@@ -84,6 +107,7 @@ export async function readFaces(video: HTMLVideoElement, enrollment = false): Pr
 	const crops = await api.extractFaces(frame, eligible);
 	const faces: CameraFace[] = [];
 	for (let i = 0; i < crops.length; i++) {
+		signal?.throwIfAborted();
 		const landmarks = await api.nets.faceLandmark68TinyNet.detectLandmarks(crops[i]);
 		if (Array.isArray(landmarks)) throw new Error('อ่านจุดใบหน้าไม่ได้');
 		const aligned = await api.extractFaces(crops[i], [
@@ -108,8 +132,8 @@ export async function readFaces(video: HTMLVideoElement, enrollment = false): Pr
 	}
 	return { frame, capturedAt, faces, detectedCount: detections.length };
 }
-export async function readFace(video: HTMLVideoElement) {
-	const capture = await readFaces(video, true);
+export async function readFace(video: HTMLVideoElement, signal?: AbortSignal) {
+	const capture = await readFaces(video, true, signal);
 	return capture.faces[0] ?? null;
 }
 export function distance(a: number[], b: number[]) {

@@ -1483,7 +1483,7 @@ test('automatic scanning confirms two people and uses their frozen frame for seq
 	await page.goto(path('/faces'));
 	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
 	await page.getByRole('button', { name: 'เครื่องสแกน', exact: true }).click();
-	await page.getByRole('option', { name: 'เครื่องทดสอบ' }).click();
+	await page.getByRole('option', { name: 'เว็บแคมหน้าโรงเรียน' }).click();
 	await page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true }).click();
 	await expect.poll(() => api.writes.filter((w) => w.path.endsWith('/scans')).length).toBe(2);
 	const scans = api.writes
