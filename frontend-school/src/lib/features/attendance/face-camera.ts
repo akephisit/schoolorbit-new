@@ -110,8 +110,11 @@ export async function readFaces(
 		signal?.throwIfAborted();
 		const landmarks = await api.nets.faceLandmark68TinyNet.detectLandmarks(crops[i]);
 		if (Array.isArray(landmarks)) throw new Error('อ่านจุดใบหน้าไม่ได้');
-		const aligned = await api.extractFaces(crops[i], [
-			landmarks.align(undefined, { useDlibAlignment: true })
+		// Preserve the enrolled model's full-frame alignment, including pixels outside
+		// the detector crop. This is the same factory used by withFaceDescriptors().
+		const shifted = api.extendWithFaceLandmarks({ detection: eligible[i] }, landmarks);
+		const aligned = await api.extractFaces(frame, [
+			shifted.landmarks.align(undefined, { useDlibAlignment: true })
 		]);
 		const descriptor = await api.computeFaceDescriptor(aligned[0]);
 		if (Array.isArray(descriptor)) throw new Error('อ่านใบหน้าไม่ได้');

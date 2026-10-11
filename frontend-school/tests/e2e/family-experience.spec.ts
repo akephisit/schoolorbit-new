@@ -6,7 +6,14 @@ import {
 	deniedChild,
 	childRoute
 } from './fixtures/parent-route-data';
-import { mockStudentSchedules, year, term } from './fixtures/student-schedules-route-data';
+import {
+	mockStudentSchedules,
+	year,
+	term,
+	nextYear,
+	academicOptions,
+	contextPath
+} from './fixtures/student-schedules-route-data';
 import { actor, id } from './fixtures/staff-home-route-data';
 import type { Student } from '../../src/lib/api/students';
 import type { TimetableBlock } from '../../src/lib/api/timetable';
@@ -404,4 +411,26 @@ test('account replacement disposes the previous child report before its delayed 
 	await familyExpect(page.getByText('ข้อมูลบัญชีเดิม', { exact: true })).toHaveCount(0);
 	await familyExpect(page.getByRole('button', { name: 'ของนักเรียน', exact: true })).toHaveCount(0);
 	expect(reports).toBe(1);
+});
+
+test('student attendance does not fall back to another year when selected year has no terms', async ({
+	page
+}) => {
+	await mockStudentSchedules(page);
+	await ownPermission(page, 'student');
+	await page.route(
+		(url) => url.pathname === contextPath,
+		(route) =>
+			reply(route, {
+				...academicOptions,
+				terms: academicOptions.terms.filter((option) => option.academicYearId !== nextYear)
+			})
+	);
+	const reports: string[] = [];
+	page.on('request', (request) => {
+		if (new URL(request.url()).pathname === '/api/attendance/report') reports.push(request.url());
+	});
+	await page.goto(`/student/attendance?academicYearId=${nextYear}`);
+	await familyExpect(page.getByText('ยังไม่มีข้อมูลเช็คชื่อ', { exact: true })).toBeVisible();
+	expect(reports).toHaveLength(0);
 });

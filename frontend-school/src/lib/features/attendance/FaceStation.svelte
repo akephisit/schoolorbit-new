@@ -18,6 +18,7 @@
 	import { readAttendance, type AttendanceRead } from './attendance-access.js';
 	import { FaceTracker, enrollmentPose } from './face-tracking.js';
 	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { get } from 'svelte/store';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -65,6 +66,15 @@
 		initialEnrollments: Promise<RouteLoadResult<AttendanceRead<AttendanceFaceEnrollment[]>>>;
 	} = $props();
 	let enrollmentSource = $state.raw(untrack(() => initialEnrollments));
+	const enrollmentRequest = new LatestRequest();
+	let previousEnrollments = untrack(() => initialEnrollments);
+	$effect.pre(() => {
+		if (initialEnrollments !== previousEnrollments) {
+			enrollmentRequest.abort();
+			previousEnrollments = initialEnrollments;
+			enrollmentSource = initialEnrollments;
+		}
+	});
 	let removalStudent = $state('');
 	let scanMethod = $state('automatic');
 	let cameraAspectRatio = $state('4 / 3');
@@ -72,10 +82,11 @@
 	const tracker = new FaceTracker();
 
 	function reloadEnrollments() {
+		const request = enrollmentRequest.begin();
 		enrollmentSource = captureRouteLoad(
 			readAttendance(
 				[PERMISSIONS.ATTENDANCE_ENROLL_ASSIGNED, PERMISSIONS.ATTENDANCE_ENROLL_SCHOOL],
-				() => attendanceFaceEnrollments(term)
+				() => attendanceFaceEnrollments(term, { signal: request.signal })
 			),
 			'โหลดรายชื่อที่ลงทะเบียนใบหน้าไม่ได้'
 		);
@@ -119,6 +130,7 @@
 	);
 	const scanAllowed = $derived($can.has(PERMISSIONS.ATTENDANCE_VERIFY_ASSIGNED));
 	onDestroy(() => {
+		enrollmentRequest.abort();
 		generation++;
 		cameraController?.abort();
 		running = false;
@@ -222,6 +234,8 @@
 	}
 	async function remove() {
 		if (!removalStudent || busy || !enrollAllowed) return;
+		// Withdrawal must dispose cached descriptors and any in-flight camera generation first.
+		if (running || gallery || pending) stop();
 		const token = generation,
 			selected = removalStudent;
 		busy = true;

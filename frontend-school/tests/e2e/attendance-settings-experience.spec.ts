@@ -165,6 +165,10 @@ test('real school events inform explicit day decisions without automatic countin
 		page.getByRole('region', { name: 'วันที่เลือก' }).getByText('วันหยุดโรงเรียน', { exact: true })
 	).toBeVisible();
 	await expect(page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true })).toBeEnabled();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
+		'aria-label',
+		/1 กิจกรรม, ✓ นับยอด/
+	);
 	expect(api.writes).toHaveLength(0);
 	expect(api.reads).toContain('/api/calendar/events');
 	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
