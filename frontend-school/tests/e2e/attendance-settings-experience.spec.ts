@@ -568,27 +568,31 @@ for (const viewport of [
 			);
 			const digestSection = page.getByRole('region', { name: 'เวลาส่งสรุปครู', exact: true });
 			await expect(digestSection).toBeVisible();
-			const separation = await page.locator('form').evaluate((form) => {
-				const late = form.querySelector<HTMLInputElement>('#attendance-late-after')!,
-					evidence = form.querySelector<HTMLInputElement>('#attendance-evidence-days')!;
-				const section = form.querySelector('#attendance-digest-heading')!.closest('section')!;
-				const time = form.querySelector('#attendance-digest-0')!,
-					hint = form.querySelector('#attendance-digest-0-hint')!;
-				const label = form.querySelector('label[for="attendance-digest-0"]')!;
-				return {
-					before: section.getBoundingClientRect().top - evidence.getBoundingClientRect().bottom,
-					inputGap: time.getBoundingClientRect().top - label.getBoundingClientRect().bottom,
-					hintGap: hint.getBoundingClientRect().top - time.getBoundingClientRect().bottom,
-					topDifference: Math.abs(
-						late.getBoundingClientRect().top - evidence.getBoundingClientRect().top
-					)
-				};
-			});
+			const separation = await page
+				.getByRole('region', { name: 'เกณฑ์และปฏิทินเช็คชื่อ', exact: true })
+				.locator('form')
+				.evaluate((form) => {
+					const late = form.querySelector<HTMLInputElement>('#attendance-late-after')!,
+						evidence = form.querySelector<HTMLInputElement>('#attendance-evidence-days')!;
+					const section = form.querySelector('#attendance-digest-heading')!.closest('section')!;
+					const time = form.querySelector('#attendance-digest-0')!,
+						hint = form.querySelector('#attendance-digest-0-hint')!;
+					const label = form.querySelector('label[for="attendance-digest-0"]')!;
+					return {
+						before: section.getBoundingClientRect().top - evidence.getBoundingClientRect().bottom,
+						inputGap: time.getBoundingClientRect().top - label.getBoundingClientRect().bottom,
+						hintGap: hint.getBoundingClientRect().top - time.getBoundingClientRect().bottom,
+						topDifference: Math.abs(
+							late.getBoundingClientRect().top - evidence.getBoundingClientRect().top
+						)
+					};
+				});
 			expect(separation.before).toBeGreaterThanOrEqual(16);
 			expect(separation.inputGap).toBeGreaterThanOrEqual(8);
 			expect(separation.hintGap).toBeGreaterThanOrEqual(7);
 			if (viewport.name === 'desktop') expect(separation.topDifference).toBeLessThanOrEqual(2);
 			await page
+				.getByRole('region', { name: 'เกณฑ์และปฏิทินเช็คชื่อ', exact: true })
 				.locator('form')
 				.screenshot({
 					animations: 'disabled',
