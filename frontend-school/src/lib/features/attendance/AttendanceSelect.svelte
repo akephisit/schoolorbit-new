@@ -32,8 +32,10 @@
 		if (!open) search = '';
 	}}
 >
-	<Select.Trigger {id} aria-label={label}>{current}</Select.Trigger>
-	<Select.Content>
+	<Select.Trigger {id} aria-label={label} class="w-full min-w-0"
+		><span class="truncate">{current}</span></Select.Trigger
+	>
+	<Select.Content class="max-w-[calc(100vw-2rem)]">
 		{#if options.length > 20}<Input
 				aria-label={`ค้นหา ${label}`}
 				placeholder="พิมพ์ค้นหา"

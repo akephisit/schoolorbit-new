@@ -1499,6 +1499,11 @@ fn session_context(s: &AttendanceSession) -> OpenAttendanceSession {
 #[tokio::test]
 async fn attendance_sparse_first_save_additions_corrections_and_stale_roster_are_atomic() {
     let f = fixture("attendance_sparse_first_save").await;
+    sqlx::query("UPDATE users SET title='เด็กชาย',first_name='ทดสอบ',last_name='ระบบ' WHERE id=$1")
+        .bind(STUDENT)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     let mut source = seed(&f, AttendanceKind::Arrival, date);
     source.session.roster = source.students.clone();
@@ -1506,6 +1511,15 @@ async fn attendance_sparse_first_save_additions_corrections_and_stale_roster_are
     let preview = sessions::detail_unchecked(&f.pool, source.session.clone())
         .await
         .unwrap();
+    assert_eq!(
+        preview
+            .students
+            .iter()
+            .find(|s| s.student_id == STUDENT)
+            .unwrap()
+            .display_name,
+        "เด็กชายทดสอบ ระบบ"
+    );
     let mut stale_source = source.clone();
     stale_source.students.pop();
     stale_source.session.roster = stale_source.students.clone();

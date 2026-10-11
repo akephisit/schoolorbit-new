@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CalendarDays, Users, Info, RefreshCw, Search, Check } from '@lucide/svelte';
+	import { CalendarDays, Users, RefreshCw, Search, Check } from '@lucide/svelte';
 	import {
 		Card,
 		CardContent,
@@ -114,6 +114,7 @@
 		const t = request.begin();
 		busy = true;
 		pendingAction = 'workspace';
+		failedSession = null;
 		conflicts = [];
 		baseline = null;
 		detail = null;
@@ -315,42 +316,30 @@
 	}
 </script>
 
-<Card
-	class="gap-0 overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card py-0"
->
-	<CardContent class="flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:justify-between sm:p-5">
-		<div class="space-y-2">
-			<p class="flex items-center gap-2 text-sm font-medium text-primary">
-				<CalendarDays class="size-4" />เช็คชื่อประจำวัน
-			</p>
-			<h2 class="text-xl font-semibold">{formatCalendarDate(selectedDate)}</h2>
-			<p class="text-sm text-muted-foreground">
-				เลือกวันที่และประเภทรอบ แล้วเปิดรายชื่อนักเรียนที่ต้องเช็คชื่อ
-			</p>
+<section class="rounded-xl border bg-card p-3 sm:p-4" aria-label="วันที่เช็คชื่อ">
+	<div class="flex flex-wrap items-end gap-3">
+		<div class="min-w-0 flex-1 space-y-2">
+			<Label for="attendance-date">วันที่เช็คชื่อ</Label>
+			<DatePicker
+				id="attendance-date"
+				bind:value={selectedDate}
+				onValueChange={(value) => {
+					if (value) onDateChange?.(value);
+					void refresh();
+				}}
+				ariaLabel="วันที่"
+				disabled={busy}
+			/>
 		</div>
-		<div class="flex flex-wrap items-end gap-3">
-			<div class="space-y-2">
-				<Label for="attendance-date">วันที่</Label><DatePicker
-					id="attendance-date"
-					bind:value={selectedDate}
-					onValueChange={(value) => {
-						if (value) onDateChange?.(value);
-						void refresh();
-					}}
-					ariaLabel="วันที่"
-					disabled={busy}
-				/>
-			</div>
-			<LoadingButton
-				type="button"
-				loading={pendingAction === 'workspace'}
-				variant="outline"
-				onclick={refresh}
-				disabled={busy}><RefreshCw class="size-4" />โหลดผลล่าสุด</LoadingButton
-			>
-		</div>
-	</CardContent>
-</Card>
+		<LoadingButton
+			type="button"
+			loading={pendingAction === 'workspace'}
+			variant="outline"
+			onclick={refresh}
+			disabled={busy}><RefreshCw class="size-4" />โหลดผลล่าสุด</LoadingButton
+		>
+	</div>
+</section>
 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 	<div class="flex flex-wrap gap-2" role="group" aria-label="ประเภทรอบเช็คชื่อ">
 		{#each Object.entries(kindLabels) as [value, label] (value)}
@@ -367,11 +356,12 @@
 					detailError = '';
 					mutationError = '';
 					reason = '';
+					failedSession = null;
 				}}>{label}</Button
 			>
 		{/each}
 	</div>
-	<span class="text-sm text-muted-foreground" role="status"
+	<span class="sr-only" role="status"
 		>{selectedDate !== workspace.date
 			? workspaceError
 				? 'ยังโหลดวันที่เลือกไม่สำเร็จ'
@@ -388,8 +378,26 @@
 		actionLabel="ลองโหลดวันเช็คชื่อใหม่"
 		onaction={refresh}
 	/>{/if}
-<div class="grid items-start gap-6 xl:grid-cols-[minmax(240px,320px)_minmax(0,1fr)]">
-	<Card aria-busy={pendingAction === 'workspace'}>
+<div class="space-y-2 xl:hidden" aria-busy={pendingAction === 'workspace'}>
+	<Label for="attendance-round">รอบ{kindLabels[kind]}</Label>
+	<AttendanceSelect
+		id="attendance-round"
+		label="รอบเช็คชื่อ"
+		value={detail?.session.id ?? failedSession?.id ?? ''}
+		placeholder={choices.length ? `เลือกรอบ · ${choices.length} รอบ` : 'ไม่มีรอบในวันนี้'}
+		options={choices.map((s) => ({
+			value: s.id,
+			label: `${s.startTime.slice(0, 5)} · ${s.title}${s.cancelled ? ' · งด' : ''}`
+		}))}
+		disabled={busy || !choices.length}
+		onValueChange={(value) => {
+			const selected = choices.find((s) => s.id === value);
+			if (selected) void select(selected);
+		}}
+	/>
+</div>
+<div class="grid items-start gap-3 xl:grid-cols-[minmax(240px,320px)_minmax(0,1fr)] xl:gap-6">
+	<Card class="hidden xl:flex" aria-busy={pendingAction === 'workspace'}>
 		<CardHeader
 			><CardTitle
 				><h2 class="flex items-center gap-2">
@@ -446,7 +454,7 @@
 				/></CardContent
 			>
 		{:else if detail}
-			<CardHeader class="border-b">
+			<CardHeader class="border-b px-3 sm:px-6">
 				<div class="flex flex-wrap items-start justify-between gap-3">
 					<div class="min-w-0 space-y-2">
 						<CardTitle><h2 class="break-words text-lg">{detail.session.title}</h2></CardTitle
@@ -465,7 +473,7 @@
 					>
 				</div>
 			</CardHeader>
-			<CardContent>
+			<CardContent class="px-3 sm:px-6">
 				<form
 					class="space-y-5"
 					aria-label="บันทึกผลเช็คชื่อ"
@@ -474,12 +482,6 @@
 						void save();
 					}}
 				>
-					{#if !detail.session.savedAt}<Alert
-							><Info /><AlertTitle>บันทึกเมื่อเช็คชื่อพร้อมแล้ว</AlertTitle><AlertDescription
-								>บันทึกเฉพาะคนที่เลือกผล คนที่ยังไม่เช็คจะคงสถานะเดิม
-								ครูสามารถกลับมาเช็คเพิ่มหรือแก้ผลภายหลังได้</AlertDescription
-							></Alert
-						>{/if}
 					<div class="flex flex-wrap items-end justify-between gap-3">
 						<div class="w-full space-y-2 sm:w-64">
 							<Label for="attendance-search"><Search class="size-4" />ค้นหาชื่อนักเรียน</Label
@@ -507,66 +509,102 @@
 									onclick={() => markAll('absent')}
 									disabled={busy}>ขาดทั้งหมด</Button
 								>
+								<LoadingButton
+									type="submit"
+									loading={pendingAction === 'save'}
+									disabled={busy || !detail.writable || conflicts.length > 0}>บันทึก</LoadingButton
+								>
 							</div>{/if}
 					</div>
-					<Table.Root class="block min-w-0 sm:table sm:min-w-[640px]">
-						<Table.Header class="hidden sm:table-header-group"
-							><Table.Row
-								><Table.Head class="w-56">เลขที่ / ชื่อ</Table.Head><Table.Head class="w-40"
-									>ผล</Table.Head
-								><Table.Head class="w-32">เข้าโรงเรียน</Table.Head><Table.Head class="min-w-48"
-									>หมายเหตุ</Table.Head
-								></Table.Row
-							></Table.Header
-						>
-						<Table.Body class="block sm:table-row-group"
-							>{#each visibleStudents as s (s.studentId)}<Table.Row
-									class="grid grid-cols-2 gap-3 py-4 sm:table-row"
-									><Table.Cell class="col-span-2 block whitespace-normal sm:table-cell"
-										><span class="text-muted-foreground">{s.classNumber ?? '-'} · </span><span
-											class="font-medium">{s.displayName}</span
-										></Table.Cell
-									><Table.Cell class="block sm:table-cell"
-										><AttendanceSelect
-											label={`ผลของ ${s.displayName}`}
-											value={s.result}
-											onValueChange={(value) => {
-												s.result = value as AttendanceResult;
-											}}
-											disabled={!detail.writable || !canWrite || busy}
-											options={Object.entries(resultLabels)
-												.filter(
-													([value]) =>
-														value !== 'unchecked' ||
-														baseline?.students.find((row) => row.studentId === s.studentId)
-															?.result === 'unchecked'
-												)
-												.map(([value, label]) => ({ value, label }))}
-										/></Table.Cell
-									><Table.Cell class="block text-muted-foreground sm:table-cell"
-										><span class="block text-xs sm:hidden">เข้าโรงเรียน</span>{s.arrivalAt
-											? new Date(s.arrivalAt).toLocaleTimeString('th-TH', {
-													timeZone: 'Asia/Bangkok'
-												})
-											: '—'}</Table.Cell
-									><Table.Cell class="col-span-2 block whitespace-normal sm:table-cell"
-										><Label for={`attendance-note-${s.studentId}`} class="mb-2 sm:hidden"
-											>หมายเหตุ</Label
-										><Input
-											id={`attendance-note-${s.studentId}`}
-											aria-label={`หมายเหตุของ ${s.displayName}`}
-											bind:value={s.note}
-											maxlength={1000}
-											disabled={!detail.writable || !canWrite || busy}
-										/></Table.Cell
+					<div
+						class="max-h-[55svh] overflow-y-auto overscroll-contain sm:max-h-none sm:overflow-visible"
+						role="region"
+						aria-label="รายชื่อนักเรียน"
+					>
+						<Table.Root class="block min-w-0 sm:table sm:min-w-[640px]">
+							<Table.Header class="hidden sm:table-header-group"
+								><Table.Row
+									><Table.Head class="w-56">เลขที่ / ชื่อ</Table.Head><Table.Head class="w-40"
+										>ผล</Table.Head
+									><Table.Head class="w-32">เข้าโรงเรียน</Table.Head><Table.Head class="min-w-48"
+										>หมายเหตุ</Table.Head
 									></Table.Row
-								>{:else}<Table.Row
-									><Table.Cell colspan={4} class="py-8 text-center text-muted-foreground"
-										>{search ? 'ไม่พบชื่อนักเรียนที่ค้นหา' : 'ไม่มีนักเรียนในรอบนี้'}</Table.Cell
-									></Table.Row
-								>{/each}</Table.Body
-						>
-					</Table.Root>
+								></Table.Header
+							>
+							<Table.Body class="block sm:table-row-group"
+								>{#each visibleStudents as s (s.studentId)}<Table.Row
+										class="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-1 py-2 sm:table-row"
+										><Table.Cell class="block min-w-0 whitespace-normal p-1 sm:table-cell sm:p-2"
+											><span class="text-muted-foreground">{s.classNumber ?? '-'} · </span><span
+												class="font-medium">{s.displayName}</span
+											>
+											{#if s.arrivalAt}<span class="block text-xs text-muted-foreground sm:hidden"
+													>เข้าโรงเรียน {new Date(s.arrivalAt).toLocaleTimeString('th-TH', {
+														timeZone: 'Asia/Bangkok',
+														hour: '2-digit',
+														minute: '2-digit'
+													})}</span
+												>{/if}
+										</Table.Cell><Table.Cell class="block p-1 sm:table-cell sm:p-2"
+											><AttendanceSelect
+												label={`ผลของ ${s.displayName}`}
+												value={s.result}
+												onValueChange={(value) => {
+													s.result = value as AttendanceResult;
+												}}
+												disabled={!detail.writable || !canWrite || busy}
+												options={Object.entries(resultLabels)
+													.filter(
+														([value]) =>
+															value !== 'unchecked' ||
+															baseline?.students.find((row) => row.studentId === s.studentId)
+																?.result === 'unchecked'
+													)
+													.map(([value, label]) => ({ value, label }))}
+											/></Table.Cell
+										><Table.Cell class="hidden text-muted-foreground sm:table-cell"
+											><span class="block text-xs sm:hidden">เข้าโรงเรียน</span>{s.arrivalAt
+												? new Date(s.arrivalAt).toLocaleTimeString('th-TH', {
+														timeZone: 'Asia/Bangkok'
+													})
+												: '—'}</Table.Cell
+										><Table.Cell class="hidden whitespace-normal sm:table-cell"
+											><Label for={`attendance-note-${s.studentId}`} class="mb-2 sm:hidden"
+												>หมายเหตุ</Label
+											><Input
+												id={`attendance-note-${s.studentId}`}
+												aria-label={`หมายเหตุของ ${s.displayName}`}
+												bind:value={s.note}
+												maxlength={1000}
+												disabled={!detail.writable || !canWrite || busy}
+											/></Table.Cell
+										>
+										<Table.Cell class="col-span-2 block p-1 sm:hidden">
+											<details>
+												<summary class="cursor-pointer truncate text-xs text-muted-foreground"
+													>{s.note ? `หมายเหตุ: ${s.note}` : 'เพิ่มหมายเหตุ'}</summary
+												>
+												<Label for={`attendance-mobile-note-${s.studentId}`} class="mt-2"
+													>หมายเหตุ</Label
+												>
+												<Input
+													id={`attendance-mobile-note-${s.studentId}`}
+													aria-label={`หมายเหตุเพิ่มเติมของ ${s.displayName}`}
+													bind:value={s.note}
+													maxlength={1000}
+													disabled={!detail.writable || !canWrite || busy}
+													class="mt-2"
+												/>
+											</details>
+										</Table.Cell>
+									</Table.Row>{:else}<Table.Row
+										><Table.Cell colspan={4} class="py-8 text-center text-muted-foreground"
+											>{search ? 'ไม่พบชื่อนักเรียนที่ค้นหา' : 'ไม่มีนักเรียนในรอบนี้'}</Table.Cell
+										></Table.Row
+									>{/each}</Table.Body
+							>
+						</Table.Root>
+					</div>
 					<div
 						class="flex flex-wrap items-center justify-between gap-3"
 						aria-label="หน้ารายชื่อนักเรียน"
@@ -655,10 +693,6 @@
 								>{detail.session.cancelled
 									? 'คืนคาบเช็คชื่อ'
 									: 'งดคาบ / กิจกรรมแทนการเรียน'}</LoadingButton
-							><LoadingButton
-								type="submit"
-								loading={pendingAction === 'save'}
-								disabled={busy || !detail.writable || conflicts.length > 0}>บันทึก</LoadingButton
 							>
 						</div>
 					{:else}<p class="text-sm text-muted-foreground">

@@ -516,7 +516,7 @@
 			<div class="relative overflow-hidden rounded-lg bg-black">
 				<video
 					bind:this={video}
-					class="block w-full rounded-lg bg-black"
+					class="block w-full -scale-x-100 rounded-lg bg-black"
 					style:aspect-ratio={cameraAspectRatio}
 					onloadedmetadata={() => {
 						if (video.videoWidth && video.videoHeight)
@@ -529,26 +529,28 @@
 				>
 				{#if mode === 'enroll'}
 					<div
-						class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3"
+						class="pointer-events-none absolute inset-0 flex items-center justify-center"
 						aria-hidden="true"
 					>
 						<div
-							class="flex h-3/5 aspect-[3/4] items-center justify-center rounded-[50%] border-2 border-primary bg-primary/5"
+							class="flex h-2/3 w-3/5 items-center justify-center rounded-[50%] border-2 border-primary bg-primary/5 sm:w-1/2"
 						>
-							{#if samples.length === 1}<ArrowRight
+							{#if samples.length === 1}<ArrowLeft
 									class="size-10 text-primary"
-								/>{:else if samples.length === 2}<ArrowLeft
+								/>{:else if samples.length === 2}<ArrowRight
 									class="size-10 text-primary"
 								/>{:else}<Focus class="size-10 text-primary" />{/if}
 						</div>
-						<span class="rounded-lg bg-background/90 px-3 py-2 text-sm font-medium">{poseHint}</span
+						<span
+							class="absolute inset-x-2 top-2 rounded-lg bg-background/90 px-3 py-2 text-center text-sm font-medium"
+							>{poseHint}</span
 						>
 					</div>
 				{:else}
 					{#each outlines as outline, index (index)}
 						<div
 							class="pointer-events-none absolute rounded-lg border-2 border-primary"
-							style:left={`${outline.box.x * 100}%`}
+							style:left={`${(1 - outline.box.x - outline.box.width) * 100}%`}
 							style:top={`${outline.box.y * 100}%`}
 							style:width={`${outline.box.width * 100}%`}
 							style:height={`${outline.box.height * 100}%`}
@@ -560,15 +562,14 @@
 						</div>
 					{/each}
 				{/if}
+				<p
+					role="status"
+					aria-live="polite"
+					class="absolute inset-x-2 bottom-2 rounded-lg bg-background/90 px-3 py-2 text-sm font-medium"
+				>
+					{message}
+				</p>
 			</div>
-			<p class="text-xs text-muted-foreground">ภาพไม่กลับด้าน · ลูกศรบอกทิศทางในภาพ</p>
-			<p
-				role="status"
-				aria-live="polite"
-				class="rounded-lg border bg-muted/30 p-4 text-sm font-medium"
-			>
-				{message}
-			</p>
 			<div class="flex flex-wrap gap-2">
 				<LoadingButton
 					type="button"
