@@ -1,4 +1,4 @@
-use super::{audit, lock_term, sessions};
+use super::{audit, lock_term};
 use crate::{models::*, rules::invalid};
 use school_errors::AppError;
 use sqlx::{types::Json, PgPool};
@@ -108,7 +108,13 @@ pub async fn create_template(
     lock_term(&mut tx, term, true, true).await?;
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO attendance_special_templates(id,academic_term_id,definition,created_by) VALUES($1,$2,$3,$4)").bind(id).bind(term).bind(Json(&p)).bind(actor).execute(&mut *tx).await?;
+    if resolved.len() != p.dates.len() {
+        return Err(invalid("รอบพิเศษไม่ตรงกับวันที่กำหนด"));
+    }
     for (date, seeds) in p.dates.iter().zip(resolved) {
+        if seeds.is_empty() || seeds.iter().any(|s| s.students.len() > 2000) {
+            return Err(invalid("แบ่งกลุ่มรอบพิเศษให้ไม่เกิน 2000 คนต่อกลุ่ม"));
+        }
         crate::rules::distinct_groups(
             &seeds
                 .iter()
@@ -116,18 +122,22 @@ pub async fn create_template(
                 .collect::<Vec<_>>(),
         )?;
         let round = Uuid::new_v4();
-        sqlx::query("INSERT INTO attendance_special_rounds(id,template_id,date) VALUES($1,$2,$3)")
-            .bind(round)
-            .bind(id)
-            .bind(date)
-            .execute(&mut *tx)
-            .await?;
-        for (i, mut seed) in seeds.into_iter().enumerate() {
-            seed.session.id = Uuid::new_v5(&round, i.to_string().as_bytes());
-            seed.session.special_round_id = Some(round);
-            seed.session.source_key = format!("{round}:{i}");
-            sessions::insert_seed(&mut tx, &seed).await?;
-        }
+        let participants: Vec<_> = seeds
+            .into_iter()
+            .enumerate()
+            .map(|(i, seed)| SpecialRoundParticipants {
+                session_id: Uuid::new_v5(&round, i.to_string().as_bytes()),
+                source_key: format!("{round}:{i}"),
+                title: seed.session.title,
+                teacher_ids: seed.session.teacher_ids,
+                students: seed.students,
+                start_time: seed.session.start_time,
+                end_time: seed.session.end_time,
+                count_override: seed.session.count_override,
+            })
+            .collect();
+        sqlx::query("INSERT INTO attendance_special_rounds(id,template_id,date,participants) VALUES($1,$2,$3,$4)")
+            .bind(round).bind(id).bind(date).bind(Json(&participants)).execute(&mut *tx).await?;
     }
     audit(&mut tx, actor, id, "create", "special attendance rounds").await?;
     tx.commit().await?;
@@ -137,6 +147,44 @@ pub async fn create_template(
         definition: p,
         row_version: 1,
     })
+}
+pub async fn seeds(
+    pool: &PgPool,
+    term: Uuid,
+    date: chrono::NaiveDate,
+) -> Result<Vec<AttendanceSeed>, AppError> {
+    let rows:Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)>=sqlx::query_as("SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id").bind(term).bind(date).fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .flat_map(|(round, Json(groups))| {
+            groups.into_iter().map(move |g| AttendanceSeed {
+                session: AttendanceSession {
+                    id: g.session_id,
+                    academic_term_id: term,
+                    date,
+                    kind: AttendanceKind::Special,
+                    source_key: g.source_key,
+                    title: g.title,
+                    teacher_ids: g.teacher_ids,
+                    homeroom_id: None,
+                    learning_group_id: None,
+                    offering_id: None,
+                    special_round_id: Some(round),
+                    start_time: g.start_time,
+                    end_time: g.end_time,
+                    count_override: g.count_override,
+                    cancelled: false,
+                    cancellation_reason: None,
+                    saved_at: None,
+                    saved_by: None,
+                    row_version: 0,
+                    roster: g.students.clone(),
+                    roster_token: String::new(),
+                },
+                students: g.students,
+            })
+        })
+        .collect())
 }
 pub async fn devices(
     pool: &PgPool,
@@ -163,7 +211,12 @@ pub async fn save_device(
     if !staff {
         return Err(invalid("ผู้ใช้เครื่องต้องเป็นครูที่ใช้งานอยู่"));
     }
-    Ok(sqlx::query_as("INSERT INTO attendance_devices(id,name,enabled,paired_by,operator_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,operator_id=excluded.operator_id RETURNING id,name,enabled,operator_id").bind(id).bind(p.name.trim()).bind(p.enabled).bind(actor).bind(p.operator_id).fetch_one(pool).await?)
+    let mut tx = pool.begin().await?;
+    super::lock_module(&mut tx).await?;
+    let device=sqlx::query_as("INSERT INTO attendance_devices(id,name,enabled,paired_by,operator_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,operator_id=excluded.operator_id RETURNING id,name,enabled,operator_id").bind(id).bind(p.name.trim()).bind(p.enabled).bind(actor).bind(p.operator_id).fetch_one(&mut *tx).await?;
+    audit(&mut tx, actor, id, "update", "attendance device").await?;
+    tx.commit().await?;
+    Ok(device)
 }
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,7 @@
 //! Date-effective enrollment projection for attendance consumers.
 use chrono::NaiveDate;
 use school_errors::AppError;
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool};
 use uuid::Uuid;
 #[derive(Debug, Clone, FromRow)]
 pub struct AttendanceCoreStudent {
@@ -17,6 +17,31 @@ pub struct AttendanceCoreRoom {
     pub id: Uuid,
     pub name: String,
     pub teacher_ids: Vec<Uuid>,
+}
+#[derive(Debug, Clone, FromRow)]
+pub struct AttendancePlacementSpan {
+    pub student_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub homeroom_id: Uuid,
+    pub class_number: Option<i32>,
+    pub start_date: NaiveDate,
+    pub end_date: Option<NaiveDate>,
+}
+/// One bounded read for historical coverage, rather than a read for every date.
+pub async fn placement_spans(
+    connection: &mut PgConnection,
+    term: Uuid,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Result<Vec<AttendancePlacementSpan>, AppError> {
+    let rows:Vec<AttendancePlacementSpan>=sqlx::query_as("SELECT y.student_id,y.id student_academic_year_id,p.homeroom_id,p.class_number,p.start_date,p.end_date FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN homeroom_placements p ON p.student_academic_year_id=y.id WHERE t.id=$1 AND p.status IN ('current','ended') AND p.start_date<=$3 AND (p.end_date IS NULL OR p.end_date>=$2) ORDER BY y.student_id,p.start_date DESC,p.id LIMIT 100001")
+        .bind(term).bind(start).bind(end).fetch_all(&mut *connection).await?;
+    if rows.len() > 100000 {
+        return Err(AppError::ValidationError(
+            "ประวัติห้องเรียนเกินขนาดที่รองรับ".into(),
+        ));
+    }
+    Ok(rows)
 }
 pub async fn students(
     pool: &PgPool,
@@ -36,7 +61,13 @@ pub async fn students(
     Ok(rows)
 }
 pub async fn rooms(pool: &PgPool, term: Uuid) -> Result<Vec<AttendanceCoreRoom>, AppError> {
-    Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.is_active ORDER BY h.name,h.id").bind(term).fetch_all(pool).await?)
+    rooms_on_connection(&mut *pool.acquire().await?, term).await
+}
+pub async fn rooms_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+) -> Result<Vec<AttendanceCoreRoom>, AppError> {
+    Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.is_active ORDER BY h.name,h.id").bind(term).fetch_all(&mut *connection).await?)
 }
 pub async fn advisor_for_student(
     pool: &PgPool,

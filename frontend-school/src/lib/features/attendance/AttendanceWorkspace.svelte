@@ -20,6 +20,7 @@
 	import {
 		copyAttendanceDetail,
 		mergeAttendanceDetail,
+		attendanceResultPatch,
 		type AttendanceConflict
 	} from './session-merge.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
@@ -32,6 +33,7 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import {
 		attendanceWorkspace,
+		attendanceSessionContext,
 		attendanceDetail,
 		openAttendanceSession,
 		saveAttendanceResults,
@@ -57,7 +59,7 @@
 	} = $props();
 	let workspace = $state(untrack(() => initial)),
 		selectedDate = $state(untrack(() => date)),
-		kind = $state<AttendanceKind>('flag'),
+		kind = $state<AttendanceKind>('arrival'),
 		detail = $state<AttendanceDetail | null>(null),
 		busy = $state(false),
 		pendingAction = $state(''),
@@ -108,7 +110,7 @@
 	}
 	async function refresh() {
 		if (busy) return;
-		const selected = selectedDate === workspace.date ? detail?.session.id : undefined;
+		const selected = selectedDate === workspace.date ? detail?.session : undefined;
 		const t = request.begin();
 		busy = true;
 		pendingAction = 'workspace';
@@ -126,7 +128,11 @@
 		try {
 			const [result, loaded] = await Promise.all([
 				attendanceWorkspace(term, selectedDate, { signal: t.signal }),
-				selected ? attendanceDetail(selected, { signal: t.signal }) : Promise.resolve(null)
+				selected
+					? selected.rowVersion === 0
+						? openAttendanceSession(attendanceSessionContext(selected), { signal: t.signal })
+						: attendanceDetail(selected.id, { signal: t.signal })
+					: Promise.resolve(null)
 			]);
 			if (request.isCurrent(t.revision)) {
 				workspace = loaded
@@ -153,7 +159,7 @@
 		}
 	}
 	async function select(s: AttendanceSession) {
-		if (busy || (s.rowVersion === 0 && !mayWrite(s))) return;
+		if (busy) return;
 		const t = request.begin();
 		busy = true;
 		pendingAction = 'detail';
@@ -167,12 +173,15 @@
 		try {
 			const loaded =
 				s.rowVersion === 0
-					? await openAttendanceSession({
-							academicTermId: term,
-							date: workspace.date,
-							kind: s.kind,
-							sourceKey: s.sourceKey
-						})
+					? await openAttendanceSession(
+							{
+								academicTermId: term,
+								date: workspace.date,
+								kind: s.kind,
+								sourceKey: s.sourceKey
+							},
+							{ signal: t.signal }
+						)
 					: await attendanceDetail(s.id, { signal: t.signal });
 			if (!request.isCurrent(t.revision)) return;
 			detail = loaded;
@@ -204,14 +213,13 @@
 	async function save() {
 		if (!detail || busy || conflicts.length || !detail.writable || !canWrite) return;
 		mutationError = '';
-		const records = detail.students
-			.filter((s) => s.result !== 'unchecked')
-			.map((s) => ({ studentId: s.studentId, result: s.result, note: s.note }));
-		if (!records.length) {
-			mutationError = 'เลือกผลอย่างน้อยหนึ่งคน หรือใช้ปุ่มขาดทั้งหมด';
+		if (!baseline) return;
+		const patch = attendanceResultPatch(baseline, detail);
+		if (!patch.students.length) {
+			mutationError = 'ยังไม่มีผลที่เปลี่ยนแปลงสำหรับบันทึก';
 			return;
 		}
-		if (detail.session.savedAt && !reason.trim()) {
+		if (patch.needsReason && !reason.trim()) {
 			mutationError = 'ระบุเหตุผลเมื่อแก้ไขผลที่บันทึกแล้ว';
 			return;
 		}
@@ -220,9 +228,11 @@
 		pendingAction = 'save';
 		try {
 			const saved = await saveAttendanceResults(detail.session.id, {
+				session: attendanceSessionContext(detail.session),
+				rosterToken: detail.session.rosterToken,
 				rowVersion: detail.session.rowVersion,
 				reason,
-				students: records
+				students: patch.students
 			});
 			if (!request.isCurrent(t.revision)) return;
 			detail = saved;
@@ -277,12 +287,16 @@
 		pendingAction = 'cancel';
 		try {
 			const saved = await cancelAttendance(detail.session.id, {
+				session: attendanceSessionContext(detail.session),
+				rosterToken: detail.session.rosterToken,
 				rowVersion: detail.session.rowVersion,
 				cancelled: !detail.session.cancelled,
 				reason
 			});
 			if (!request.isCurrent(t.revision)) return;
 			detail = saved;
+			baseline = copyAttendanceDetail(saved);
+			conflicts = [];
 			workspace = {
 				...workspace,
 				sessions: workspace.sessions.map((s) => (s.id === detail?.session.id ? detail.session : s))
@@ -398,7 +412,7 @@
 						variant="outline"
 						aria-pressed={detail?.session.id === s.id}
 						onclick={() => select(s)}
-						disabled={busy || (s.rowVersion === 0 && !mayWrite(s))}
+						disabled={busy}
 					>
 						<span class="flex w-full min-w-0 flex-col gap-1"
 							><span class="font-medium">{s.startTime.slice(0, 5)} · {s.title}</span><span
@@ -462,8 +476,8 @@
 				>
 					{#if !detail.session.savedAt}<Alert
 							><Info /><AlertTitle>บันทึกเมื่อเช็คชื่อพร้อมแล้ว</AlertTitle><AlertDescription
-								>กดบันทึกแล้วคนที่ยังไม่เช็คจะเป็นขาด ครูต้องระบุอย่างน้อยหนึ่งคนก่อนบันทึก
-								หากไม่มีใครมาให้เลือกขาดทั้งหมด</AlertDescription
+								>บันทึกเฉพาะคนที่เลือกผล คนที่ยังไม่เช็คจะคงสถานะเดิม
+								ครูสามารถกลับมาเช็คเพิ่มหรือแก้ผลภายหลังได้</AlertDescription
 							></Alert
 						>{/if}
 					<div class="flex flex-wrap items-end justify-between gap-3">
@@ -521,7 +535,12 @@
 											}}
 											disabled={!detail.writable || !canWrite || busy}
 											options={Object.entries(resultLabels)
-												.filter(([value]) => value !== 'unchecked' || !detail?.session.savedAt)
+												.filter(
+													([value]) =>
+														value !== 'unchecked' ||
+														baseline?.students.find((row) => row.studentId === s.studentId)
+															?.result === 'unchecked'
+												)
 												.map(([value, label]) => ({ value, label }))}
 										/></Table.Cell
 									><Table.Cell class="block text-muted-foreground sm:table-cell"

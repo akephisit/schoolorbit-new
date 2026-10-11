@@ -65,7 +65,6 @@
 	let lastSummaryQuery = $state({ page: untrack(() => initial.page), search: '', category: 'all' });
 	const labels: Record<string, string> = {
 		school: 'มาโรงเรียน (วัน)',
-		flag: 'หน้าเสาธง (ครั้ง)',
 		lesson: 'รายวิชา (คาบ)',
 		special: 'รอบพิเศษ (ครั้ง)'
 	};

@@ -7,14 +7,62 @@ use crate::{
 use chrono::Utc;
 use school_authorization::ActorContext;
 use school_errors::AppError;
+use sha2::{Digest, Sha256};
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
-pub const COLUMNS:&str="id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version";
-pub async fn get(pool: &PgPool, id: Uuid) -> Result<AttendanceSession, AppError> {
+pub const COLUMNS:&str="id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
+pub async fn module_generation(pool: &PgPool) -> Result<Uuid, AppError> {
+    Ok(
+        sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
+            .fetch_one(pool)
+            .await?,
+    )
+}
+pub async fn with_token(
+    pool: &PgPool,
+    s: AttendanceSession,
+) -> Result<AttendanceSession, AppError> {
+    let epoch = module_generation(pool).await?;
+    token_with_generation(s, epoch)
+}
+pub fn token_with_generation(
+    mut s: AttendanceSession,
+    epoch: Uuid,
+) -> Result<AttendanceSession, AppError> {
+    let mut roster = s.roster.clone();
+    let mut teachers = s.teacher_ids.clone();
+    teachers.sort();
+    teachers.dedup();
+    roster.sort_by_key(|r| r.student_id);
+    let bytes = serde_json::to_vec(&(
+        epoch,
+        s.id,
+        s.academic_term_id,
+        s.date,
+        s.kind,
+        &s.source_key,
+        teachers,
+        s.start_time,
+        s.end_time,
+        roster,
+    ))
+    .map_err(|_| invalid("อ่านรายชื่ออ้างอิงไม่ได้"))?;
+    s.roster_token = hex::encode(Sha256::digest(bytes));
+    Ok(s)
+}
+pub async fn get_optional(pool: &PgPool, id: Uuid) -> Result<Option<AttendanceSession>, AppError> {
     let sql = format!("SELECT {COLUMNS} FROM attendance_sessions WHERE id=$1");
-    sqlx::query_as(sqlx::AssertSqlSafe(sql))
+    let row = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(pool)
+        .await?;
+    match row {
+        Some(s) => Ok(Some(with_token(pool, s).await?)),
+        None => Ok(None),
+    }
+}
+pub async fn get(pool: &PgPool, id: Uuid) -> Result<AttendanceSession, AppError> {
+    get_optional(pool, id)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))
 }
@@ -55,24 +103,20 @@ pub async fn ensure(
         .fetch_one(pool)
         .await?;
     policy::require_session(actor, &found, true)?;
-    Ok(found)
+    with_token(pool, found).await
 }
 pub async fn insert_seed(
     tx: &mut Transaction<'_, Postgres>,
     seed: &AttendanceSeed,
 ) -> Result<(), AppError> {
     let s = &seed.session;
-    let id:Option<Uuid>=sqlx::query_scalar("INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(academic_term_id,date,kind,source_key) DO NOTHING RETURNING id").bind(s.id).bind(s.academic_term_id).bind(s.date).bind(s.kind).bind(&s.source_key).bind(&s.title).bind(&s.teacher_ids).bind(s.homeroom_id).bind(s.learning_group_id).bind(s.offering_id).bind(s.special_round_id).bind(s.start_time).bind(s.end_time).bind(s.count_override).fetch_optional(&mut **tx).await?;
-    if let Some(id) = id {
-        let student_ids: Vec<_> = seed.students.iter().map(|s| s.student_id).collect();
-        let years: Vec<_> = seed
-            .students
-            .iter()
-            .map(|s| s.student_academic_year_id)
-            .collect();
-        let numbers: Vec<_> = seed.students.iter().map(|s| s.class_number).collect();
-        sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number) SELECT $1,student,year,$2,number FROM unnest($3::uuid[],$4::uuid[],$5::integer[]) r(student,year,number)").bind(id).bind(s.special_round_id).bind(student_ids).bind(years).bind(numbers).execute(&mut **tx).await?;
+    if seed.students.len() > 2000 {
+        return Err(invalid("รายชื่อเกินขนาดที่รองรับ"));
     }
+    sqlx::query("INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,roster) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(academic_term_id,date,kind,source_key) DO NOTHING")
+        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(s.kind).bind(&s.source_key).bind(&s.title).bind(&s.teacher_ids)
+        .bind(s.homeroom_id).bind(s.learning_group_id).bind(s.offering_id).bind(s.special_round_id).bind(s.start_time).bind(s.end_time)
+        .bind(s.count_override).bind(Json(&seed.students)).execute(&mut **tx).await?;
     Ok(())
 }
 pub async fn detail(
@@ -92,12 +136,32 @@ pub async fn detail_unchecked(
     let counted = s.count_override.unwrap_or(
         settings::is_counted(pool, s.academic_term_id, s.date, &settings.configuration).await?,
     ) && !s.cancelled;
-    let students=sqlx::query_as(r#"SELECT r.student_id,r.student_academic_year_id,concat_ws(' ',u.title,u.first_name,u.last_name) display_name,r.class_number,r.result,r.origin,r.note,r.observed_at,e.evidence_file_id,
- (SELECT min(a.observed_at) FROM attendance_records a JOIN attendance_sessions s ON s.id=a.session_id WHERE a.student_id=r.student_id AND s.academic_term_id=$2 AND s.date=$3 AND s.kind='arrival') arrival_at,r.row_version
- FROM attendance_records r JOIN users u ON u.id=r.student_id LEFT JOIN attendance_scan_events e ON e.session_id=r.session_id AND e.student_id=r.student_id WHERE r.session_id=$1 ORDER BY r.class_number NULLS LAST,u.first_name COLLATE schoolorbit_thai,u.last_name COLLATE schoolorbit_thai,u.id"#).bind(s.id).bind(s.academic_term_id).bind(s.date).fetch_all(pool).await?;
+    let students=sqlx::query_as(r#"WITH participants AS (
+        SELECT * FROM jsonb_to_recordset($4) AS p("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer)
+    ), arrivals AS (
+        SELECT a.student_id,min(a.observed_at) observed_at FROM attendance_records a
+        JOIN attendance_sessions arrival ON arrival.id=a.session_id
+        WHERE arrival.academic_term_id=$2 AND arrival.date=$3 AND arrival.kind='arrival'
+          AND a.student_id IN (SELECT "studentId" FROM participants) GROUP BY a.student_id
+    ) SELECT p."studentId" student_id,p."studentAcademicYearId" student_academic_year_id,
+        concat_ws(' ',u.title,u.first_name,u.last_name) display_name,p."classNumber" class_number,
+        COALESCE(r.result,'unchecked') result,COALESCE(r.origin,'none') origin,COALESCE(r.note,'') note,
+        r.observed_at,e.evidence_file_id,a.observed_at arrival_at,COALESCE(r.row_version,0) row_version
+        FROM participants p JOIN users u ON u.id=p."studentId"
+        LEFT JOIN attendance_records r ON r.session_id=$1 AND r.student_id=p."studentId"
+        LEFT JOIN attendance_scan_events e ON e.session_id=$1 AND e.student_id=p."studentId"
+        LEFT JOIN arrivals a ON a.student_id=p."studentId"
+        ORDER BY p."classNumber" NULLS LAST,u.first_name COLLATE schoolorbit_thai,u.last_name COLLATE schoolorbit_thai,u.id"#)
+        .bind(s.id).bind(s.academic_term_id).bind(s.date).bind(Json(&s.roster)).fetch_all(pool).await?;
     let term_writable:bool=sqlx::query_scalar("SELECT t.status NOT IN ('closed','cancelled') AND y.status NOT IN ('closed','archived') FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(s.academic_term_id).fetch_one(pool).await?;
     Ok(AttendanceDetail {
-        writable: term_writable && !settings.archived && !s.cancelled,
+        writable: term_writable
+            && !settings.archived
+            && !s.cancelled
+            && s.date
+                <= Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Bangkok)
+                    .date_naive(),
         session: s,
         students,
         counted,
@@ -127,84 +191,166 @@ pub async fn save(
     id: Uuid,
     p: SaveAttendanceResults,
 ) -> Result<AttendanceDetail, AppError> {
-    let s = get(pool, id).await?;
-    policy::require_session(actor, &s, true)?;
-    if s.date
+    save_with_seed(pool, actor, id, p, None).await
+}
+pub async fn save_with_seed(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    p: SaveAttendanceResults,
+    seed: Option<AttendanceSeed>,
+) -> Result<AttendanceDetail, AppError> {
+    let epoch = module_generation(pool).await?;
+    let existing = get_optional(pool, id).await?;
+    let initial = match existing {
+        Some(s) => s,
+        None => {
+            let mut s = seed
+                .as_ref()
+                .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))?
+                .session
+                .clone();
+            s.roster = seed
+                .as_ref()
+                .ok_or_else(|| invalid("ไม่มีรายชื่ออ้างอิง"))?
+                .students
+                .clone();
+            with_token(pool, s).await?
+        }
+    };
+    policy::require_session(actor, &initial, true)?;
+    if initial.id != id
+        || initial.academic_term_id != p.session.academic_term_id
+        || initial.date != p.session.date
+        || initial.kind != p.session.kind
+        || initial.source_key != p.session.source_key
+        || initial.roster_token != p.roster_token
+    {
+        return Err(AppError::Conflict(
+            "รายชื่อหรือบริบทเปลี่ยนแล้ว กรุณาเปิดรอบใหม่".into(),
+        ));
+    }
+    if initial.date
         > Utc::now()
             .with_timezone(&chrono_tz::Asia::Bangkok)
             .date_naive()
     {
         return Err(invalid("ยังบันทึกผลของวันในอนาคตไม่ได้"));
     }
+    validate_inputs(
+        &p.students,
+        &initial
+            .roster
+            .iter()
+            .map(|r| r.student_id)
+            .collect::<Vec<_>>(),
+    )?;
+    if p.reason.len() > 1000 {
+        return Err(invalid("เหตุผลยาวเกินกำหนด"));
+    }
     let mut tx = pool.begin().await?;
-    lock_term(&mut tx, s.academic_term_id, true, false).await?;
-    let s = lock_session(&mut tx, id, p.row_version).await?;
+    lock_term(&mut tx, initial.academic_term_id, true, false).await?;
+    if module_generation_in_tx(&mut tx).await? != epoch {
+        return Err(AppError::Conflict("ข้อมูลโมดูลเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
+    }
+    if initial.row_version == 0 {
+        if p.row_version != 0 {
+            return Err(AppError::Conflict("รอบนี้ถูกเปลี่ยนแล้ว".into()));
+        }
+        let seed = seed
+            .as_ref()
+            .ok_or_else(|| invalid("ไม่มีรายชื่อสำหรับบันทึกครั้งแรก"))?;
+        insert_seed(&mut tx, seed).await?;
+        let actual: i64 = sqlx::query_scalar(
+            "SELECT row_version FROM attendance_sessions WHERE id=$1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if actual != 1 {
+            return Err(AppError::Conflict("มีการบันทึกเพิ่มแล้ว กรุณาเปิดใหม่".into()));
+        }
+    }
+    let s = lock_session(
+        &mut tx,
+        id,
+        if initial.row_version == 0 {
+            1
+        } else {
+            p.row_version
+        },
+    )
+    .await?;
     policy::require_session(actor, &s, true)?;
     if s.cancelled {
         return Err(AppError::Conflict("รอบนี้งดเช็คชื่อ".into()));
     }
-    if p.reason.len() > 1000 || (s.saved_at.is_some() && p.reason.trim().is_empty()) {
-        return Err(invalid("กรุณาระบุเหตุผลเมื่อแก้ไขผลที่บันทึกแล้ว"));
-    }
-    let roster:Vec<Uuid>=sqlx::query_scalar("SELECT student_id FROM attendance_records WHERE session_id=$1 ORDER BY student_id FOR UPDATE").bind(id).fetch_all(&mut *tx).await?;
-    validate_inputs(&p.students, &roster)?;
-    let before: Vec<(Uuid, AttendanceResult, String)> =
-        sqlx::query_as("SELECT student_id,result,note FROM attendance_records WHERE session_id=$1")
-            .bind(id)
-            .fetch_all(&mut *tx)
-            .await?;
-    #[derive(serde::Serialize)]
-    struct Input {
-        student_id: Uuid,
-        result: String,
-        note: String,
-    }
-    let inputs: Vec<_> = p
+    let before:Vec<(Uuid,AttendanceResult,String)>=sqlx::query_as("SELECT student_id,result,note FROM attendance_records WHERE session_id=$1 ORDER BY student_id FOR UPDATE").bind(id).fetch_all(&mut *tx).await?;
+    let old: std::collections::HashMap<_, _> = before.iter().map(|r| (r.0, (&r.1, &r.2))).collect();
+    let changed: Vec<_> = p
         .students
         .iter()
-        .map(|r| Input {
-            student_id: r.student_id,
-            result: r.result.code().into(),
-            note: r.note.clone(),
+        .filter(|i| {
+            old.get(&i.student_id)
+                .is_none_or(|(r, n)| **r != i.result || **n != i.note)
         })
         .collect();
-    sqlx::query(r#"WITH input AS (SELECT * FROM jsonb_to_recordset($2) AS i(student_id uuid,result text,note text)),desired AS (
- SELECT r.student_id,CASE WHEN COALESCE(i.result,r.result)='unchecked' THEN 'absent' ELSE COALESCE(i.result,r.result) END result,
- CASE WHEN COALESCE(i.result,r.result)='unchecked' THEN 'inferred' WHEN i.student_id IS NOT NULL AND (i.result<>r.result OR i.note<>r.note) THEN 'teacher' ELSE r.origin END origin,
- COALESCE(i.note,r.note) note FROM attendance_records r LEFT JOIN input i ON i.student_id=r.student_id WHERE r.session_id=$1)
- UPDATE attendance_records r SET result=d.result,origin=d.origin,note=d.note,updated_by=$3,row_version=r.row_version+1 FROM desired d WHERE r.session_id=$1 AND r.student_id=d.student_id AND (r.result,r.origin,r.note) IS DISTINCT FROM (d.result,d.origin,d.note)"#).bind(id).bind(Json(inputs)).bind(actor.user_id).execute(&mut *tx).await?;
-    let after: Vec<(Uuid, AttendanceResult, String, i64)> = sqlx::query_as(
-        "SELECT student_id,result,note,row_version FROM attendance_records WHERE session_id=$1",
-    )
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await?;
-    let old: std::collections::HashMap<_, _> = before.iter().map(|r| (r.0, (&r.1, &r.2))).collect();
-    let notices: Vec<_> = after
-        .iter()
-        .filter(|(student, result, note, _)| {
-            s.saved_at.is_none()
-                || old
-                    .get(student)
-                    .is_some_and(|(r, n)| **r != *result || **n != *note)
-        })
-        .map(|(student, result, _, revision)| {
-            notifications::result_notice(&s, *student, *result, *revision, s.saved_at.is_some())
-        })
-        .collect();
-    if notifications::should_notify(&mut tx, &s).await? {
-        notifications::queue_batch(&mut tx, s.academic_term_id, &notices).await?;
+    if changed.iter().any(|i| old.contains_key(&i.student_id)) && p.reason.trim().is_empty() {
+        return Err(invalid("ระบุเหตุผลเมื่อแก้ไขผลที่บันทึกแล้ว"));
     }
-
-    sqlx::query("UPDATE attendance_sessions SET saved_at=now(),saved_by=$2,row_version=row_version+1 WHERE id=$1").bind(id).bind(actor.user_id).execute(&mut *tx).await?;
     #[derive(serde::Serialize)]
-    struct Change<'a> {
-        students: &'a Vec<(Uuid, AttendanceResult, String)>,
-        reason: &'a str,
+    #[serde(rename_all = "camelCase")]
+    struct ExplicitResult<'a> {
+        student_id: Uuid,
+        student_academic_year_id: Uuid,
+        class_number: Option<i32>,
+        result: AttendanceResult,
+        note: &'a str,
     }
-    sqlx::query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,'update','attendance',$2,$3,$4,$5)").bind(actor.user_id).bind(id).bind(Json(Change{students:&before,reason:&p.reason})).bind(Json(&after)).bind(&p.reason).execute(&mut *tx).await?;
+    let entries: Vec<_> = changed
+        .iter()
+        .map(|i| {
+            let r = s
+                .roster
+                .iter()
+                .find(|r| r.student_id == i.student_id)
+                .ok_or_else(|| invalid("นักเรียนไม่อยู่ในรายชื่ออ้างอิง"))?;
+            Ok(ExplicitResult {
+                student_id: i.student_id,
+                student_academic_year_id: r.student_academic_year_id,
+                class_number: r.class_number,
+                result: i.result,
+                note: &i.note,
+            })
+        })
+        .collect::<Result<_, AppError>>()?;
+    sqlx::query(r#"INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,note,updated_by)
+        SELECT $1,"studentId","studentAcademicYearId",$4,"classNumber",result,'teacher',note,$3
+        FROM jsonb_to_recordset($2) AS i("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer,result text,note text)
+        ON CONFLICT(session_id,student_id) DO UPDATE SET result=excluded.result,origin='teacher',note=excluded.note,
+        updated_by=$3,row_version=attendance_records.row_version+1"#).bind(id).bind(Json(&entries)).bind(actor.user_id).bind(s.special_round_id).execute(&mut *tx).await?;
+    if !changed.is_empty() {
+        let after:Vec<(Uuid,AttendanceResult,String,i64)>=sqlx::query_as("SELECT student_id,result,note,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id").bind(id).fetch_all(&mut *tx).await?;
+        let notices: Vec<_> = after
+            .iter()
+            .filter(|r| changed.iter().any(|i| i.student_id == r.0))
+            .map(|r| notifications::result_notice(&s, r.0, r.1, r.3, old.contains_key(&r.0)))
+            .collect();
+        if notifications::should_notify(&mut tx, &s).await? {
+            notifications::queue_batch(&mut tx, s.academic_term_id, &notices).await?;
+        }
+        sqlx::query("UPDATE attendance_sessions SET saved_at=now(),saved_by=$2,row_version=row_version+1 WHERE id=$1").bind(id).bind(actor.user_id).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,'update','attendance',$2,$3,$4,$5)").bind(actor.user_id).bind(id).bind(Json(&before)).bind(Json(&after)).bind(&p.reason).execute(&mut *tx).await?;
+    }
     tx.commit().await?;
     detail(pool, actor, id).await
+}
+pub async fn module_generation_in_tx(tx: &mut Transaction<'_, Postgres>) -> Result<Uuid, AppError> {
+    Ok(
+        sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
+            .fetch_one(&mut **tx)
+            .await?,
+    )
 }
 pub async fn cancel(
     pool: &PgPool,
@@ -212,14 +358,63 @@ pub async fn cancel(
     id: Uuid,
     p: AttendanceCancellation,
 ) -> Result<AttendanceDetail, AppError> {
-    let s = get(pool, id).await?;
+    cancel_with_seed(pool, actor, id, p, None).await
+}
+pub async fn cancel_with_seed(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    p: AttendanceCancellation,
+    seed: Option<AttendanceSeed>,
+) -> Result<AttendanceDetail, AppError> {
+    let epoch = module_generation(pool).await?;
+    let s = match get_optional(pool, id).await? {
+        Some(s) => s,
+        None => {
+            let seed = seed
+                .as_ref()
+                .ok_or_else(|| AppError::NotFound("ไม่พบรอบ".into()))?;
+            let mut s = seed.session.clone();
+            s.roster = seed.students.clone();
+            with_token(pool, s).await?
+        }
+    };
     policy::require_session(actor, &s, true)?;
+    if s.roster_token != p.roster_token
+        || s.academic_term_id != p.session.academic_term_id
+        || s.date != p.session.date
+        || s.kind != p.session.kind
+        || s.source_key != p.session.source_key
+    {
+        return Err(AppError::Conflict("บริบทเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
+    }
     if p.reason.trim().is_empty() || p.reason.len() > 1000 {
         return Err(invalid("ระบุเหตุผลงดหรือคืนรอบเช็คชื่อ"));
     }
     let mut tx = pool.begin().await?;
     lock_term(&mut tx, s.academic_term_id, true, false).await?;
-    let s = lock_session(&mut tx, id, p.row_version).await?;
+    if module_generation_in_tx(&mut tx).await? != epoch {
+        return Err(AppError::Conflict("ข้อมูลโมดูลเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
+    }
+    if s.row_version == 0 {
+        if p.row_version != 0 || id != s.id {
+            return Err(AppError::Conflict("บริบทเปลี่ยนแล้ว".into()));
+        }
+        insert_seed(
+            &mut tx,
+            seed.as_ref().ok_or_else(|| invalid("ไม่มีรายชื่ออ้างอิง"))?,
+        )
+        .await?;
+    }
+    let s = lock_session(
+        &mut tx,
+        id,
+        if s.row_version == 0 { 1 } else { p.row_version },
+    )
+    .await?;
+    if token_with_generation(s.clone(), epoch)?.roster_token != p.roster_token {
+        return Err(AppError::Conflict("รายชื่อเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
+    }
     policy::require_session(actor, &s, true)?;
     sqlx::query("UPDATE attendance_sessions SET cancelled=$2,cancellation_reason=$3,row_version=row_version+1 WHERE id=$1").bind(id).bind(p.cancelled).bind(&p.reason).execute(&mut *tx).await?;
     audit(&mut tx, actor.user_id, id, "update", &p.reason).await?;

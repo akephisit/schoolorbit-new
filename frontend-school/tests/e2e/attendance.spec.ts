@@ -314,9 +314,9 @@ const session: AttendanceSession = {
 	id: sessionId,
 	academicTermId: term,
 	date,
-	kind: 'flag',
+	kind: 'arrival',
 	sourceKey: room,
-	title: 'หน้าเสาธง ม.1/1',
+	title: 'เข้าโรงเรียน ม.1/1',
 	teacherIds: [actor],
 	homeroomId: room,
 	learningGroupId: null,
@@ -329,7 +329,8 @@ const session: AttendanceSession = {
 	cancellationReason: null,
 	savedAt: null,
 	savedBy: null,
-	rowVersion: 1
+	rowVersion: 1,
+	rosterToken: 'fixture-roster'
 };
 function detail(): AttendanceDetail {
 	return {
@@ -579,6 +580,23 @@ async function mockAttendance(
 					teacherConflict: false
 				});
 			}
+			if (resource.endsWith('/preview')) {
+				const source = new URL(request.url()).searchParams.get('sourceKey');
+				if (source !== room)
+					return reply(route, {
+						...current,
+						session: {
+							...current.session,
+							id: id(240),
+							sourceKey: source,
+							title: 'รอบครูคนอื่น',
+							teacherIds: [id(242)],
+							rowVersion: 0
+						}
+					});
+				current = { ...current, session: { ...current.session, rowVersion: 0 } };
+				return reply(route, current);
+			}
 			if (resource.includes('/sessions/')) {
 				if (method === 'PUT') {
 					if (conflict) return reply(route, 'มีการสแกนเพิ่มแล้ว กรุณาโหลดรายชื่อใหม่', 409);
@@ -593,7 +611,7 @@ async function mockAttendance(
 						},
 						students: current.students.map((s) => ({
 							...s,
-							result: payload.students.find((r) => r.studentId === s.studentId)?.result ?? 'absent'
+							result: payload.students.find((r) => r.studentId === s.studentId)?.result ?? s.result
 						}))
 					};
 				}
@@ -634,7 +652,7 @@ test('explicit refresh discards input while search preserves current edits witho
 }) => {
 	const api = await mockAttendance(page);
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 	await page.getByRole('option', { name: 'มา', exact: true }).click();
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
@@ -650,7 +668,9 @@ test('explicit refresh discards input while search preserves current edits witho
 	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
 	expect(api.writes).toHaveLength(0);
 });
-test('read-only teacher cannot create an unsaved session', async ({ page }) => {
+test('read-only teacher can preview an unsaved round without creating a session', async ({
+	page
+}) => {
 	const api = await mockAttendance(page, {
 		permissions: ['attendance.read.assigned', 'academic_context.read.school']
 	});
@@ -663,12 +683,12 @@ test('read-only teacher cannot create an unsaved session', async ({ page }) => {
 		} satisfies AttendanceWorkspace)
 	);
 	await page.goto(path());
-	await expect(page.getByRole('button', { name: /08:00.*หน้าเสาธง/ })).toBeDisabled();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
+	expect(api.reads).toContain('/api/attendance/preview');
 	expect(api.writes).toHaveLength(0);
 });
-test('school reader with assigned write can only open assigned unsaved rounds', async ({
-	page
-}) => {
+test('school reader can preview others but can only edit assigned rounds', async ({ page }) => {
 	const api = await mockAttendance(page, {
 		permissions: [
 			'attendance.read.school',
@@ -695,10 +715,12 @@ test('school reader with assigned write can only open assigned unsaved rounds', 
 		} satisfies AttendanceWorkspace)
 	);
 	await page.goto(path());
-	await expect(page.getByRole('button', { name: /08:00.*รอบครูคนอื่น/ })).toBeDisabled();
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: /08:00.*รอบครูคนอื่น/ }).click();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
-	expect(api.writes.filter((write) => write.path.endsWith('/sessions/open'))).toHaveLength(1);
+	expect(api.reads.filter((read) => read.endsWith('/preview'))).toHaveLength(2);
+	expect(api.writes).toHaveLength(0);
 });
 test('changing the workspace date also updates module destinations', async ({ page }) => {
 	await mockAttendance(page);
@@ -776,7 +798,7 @@ test('cancelling a session needs a reason and a final confirmation', async ({ pa
 		return reply(route, result);
 	});
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
 	await expect(page.getByText('ระบุเหตุผลงดหรือคืนคาบ', { exact: true })).toBeVisible();
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('กิจกรรมโรงเรียน');
@@ -820,31 +842,47 @@ test('face withdrawal requires consent and confirmation for the selected student
 	).toBeDisabled();
 	expect(deletions).toBe(1);
 });
-test('teacher saves, infers unchecked and patches without rereading workspace', async ({
+test('teacher saves explicit results, retains unchecked and adds a pupil without correction reason', async ({
 	page
 }) => {
 	const api = await mockAttendance(page);
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง ม.1\/1/ }).click();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน ม.1\/1/ }).click();
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-	await expect(page.getByText('เลือกผลอย่างน้อยหนึ่งคน หรือใช้ปุ่มขาดทั้งหมด')).toBeVisible();
+	await expect(page.getByText('ยังไม่มีผลที่เปลี่ยนแปลงสำหรับบันทึก')).toBeVisible();
 	expect(api.writes).toHaveLength(0);
 	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 	await page.getByRole('option', { name: 'กิจกรรม', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText('ขาด');
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText(
+		'ยังไม่เช็ค'
+	);
 	expect(api.writes).toHaveLength(1);
 	expect(api.reads.filter((p) => p.endsWith('/workspace'))).toHaveLength(1);
+	expect(api.writes[0].data).toMatchObject({
+		session: { kind: 'arrival', sourceKey: room },
+		rosterToken: 'fixture-roster',
+		students: [{ studentId: student, result: 'activity' }]
+	});
+	await page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' }).click();
+	await page.getByRole('option', { name: 'มา', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText('มา');
+	expect(api.writes).toHaveLength(2);
+	expect(api.writes[1].data).toMatchObject({
+		reason: '',
+		students: [{ studentId: second, result: 'present' }]
+	});
 	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 	await page.getByRole('option', { name: 'สาย', exact: true }).click();
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('มาถึงหลังตรวจครั้งแรก');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-	expect(api.writes).toHaveLength(2);
+	expect(api.writes).toHaveLength(3);
 });
 test('scan conflict preserves teacher input', async ({ page }) => {
 	await mockAttendance(page, { conflict: true });
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 	await page.getByRole('option', { name: 'มา', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
@@ -1041,7 +1079,7 @@ test('read-only teacher sees saved results without management links or optional 
 		permissions: ['attendance.read.assigned', 'academic_context.read.school']
 	});
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
 	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('link', { name: 'ตั้งค่าปฏิทินและรอบพิเศษ' })).toHaveCount(0);
@@ -1150,7 +1188,7 @@ for (const viewport of [
 			await mockAttendance(page);
 			for (const suffix of ['/settings', '/faces', '/report', '']) {
 				await page.goto(path(suffix));
-				if (!suffix) await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+				if (!suffix) await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 				await expect(
 					page.getByRole('heading', {
 						name: (
@@ -1265,7 +1303,7 @@ for (const overlap of [false, true])
 			}
 		);
 		await page.goto(path());
-		await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+		await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 		await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 		await page.getByRole('option', { name: 'มา', exact: true }).click();
 		await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ข้อมูลของครู');
@@ -1276,15 +1314,19 @@ for (const overlap of [false, true])
 			await page
 				.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดของ นักเรียนคนแรก', exact: true })
 				.click();
+			await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('คงผลสแกนและเพิ่มเติมหมายเหตุ');
 		} else
 			await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText('สาย');
 		await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 		await expect.poll(() => writes.length).toBe(2);
 		expect(writes[1].rowVersion).toBe(2);
 		expect(writes[1].students.find((row) => row.studentId === student)?.note).toBe('ข้อมูลของครู');
-		expect(
-			writes[1].students.find((row) => row.studentId === (overlap ? student : second))?.result
-		).toBe('late');
+		if (overlap)
+			expect(writes[1].students.find((row) => row.studentId === student)?.result).toBe('late');
+		else expect(writes[1].students.some((row) => row.studentId === second)).toBe(false);
+		await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText(
+			overlap ? 'ยังไม่เช็ค' : 'สาย'
+		);
 	});
 test('manual workspace refresh reloads selected detail and discards unsaved input', async ({
 	page
@@ -1296,7 +1338,7 @@ test('manual workspace refresh reloads selected detail and discards unsaved inpu
 		(route) => reply(route, current)
 	);
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 	await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ยังไม่บันทึก');
 	current.session.rowVersion = 2;
 	current.students[0].result = 'late';
@@ -1381,7 +1423,7 @@ test('large roster keeps DOM bounded while mark-all saves the complete round on 
 	);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*หน้าเสาธง/ }).click();
+	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
 	await expect(page.locator('tbody tr')).toHaveCount(40);
 	await expect(page.getByLabel('หมายเหตุของ นักเรียนมือถือ 0')).toBeVisible();
 	expect(

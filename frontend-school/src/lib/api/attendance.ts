@@ -57,7 +57,6 @@ export const resultLabels: Record<AttendanceResult, string> = {
 };
 export const kindLabels: Record<AttendanceKind, string> = {
 	arrival: 'เข้าโรงเรียน',
-	flag: 'หน้าเสาธง',
 	lesson: 'รายคาบ',
 	special: 'รอบพิเศษ'
 };
@@ -184,10 +183,11 @@ export async function saveAttendanceDays(
 	);
 }
 export async function openAttendanceSession(
-	payload: OpenAttendanceSession
+	payload: OpenAttendanceSession,
+	options: ApiRequestOptions = {}
 ): Promise<AttendanceDetail> {
 	return requireApiData(
-		await apiClient.post<AttendanceDetail>(`${base}/sessions/open`, payload),
+		await apiClient.get<AttendanceDetail>(`${base}/preview`, { ...options, query: payload }),
 		'บันทึกเช็คชื่อไม่สำเร็จ'
 	);
 }
@@ -298,4 +298,13 @@ export async function attendanceFaceEnrollments(
 		}),
 		'โหลดรายชื่อที่ลงทะเบียนใบหน้าไม่ได้'
 	);
+}
+
+export function attendanceSessionContext(session: AttendanceSession): OpenAttendanceSession {
+	return {
+		academicTermId: session.academicTermId,
+		date: session.date,
+		kind: session.kind,
+		sourceKey: session.sourceKey
+	};
 }

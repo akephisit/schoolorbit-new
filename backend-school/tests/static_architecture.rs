@@ -7,6 +7,27 @@ fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+#[test]
+fn attendance_reads_and_digest_must_not_restore_placeholder_backfill() {
+    let runtime = read_source(manifest_dir().join("src/modules/attendance/runtime.rs"));
+    let adapter = read_source(manifest_dir().join("src/modules/attendance/services.rs"));
+    let handlers = read_source(manifest_dir().join("src/modules/attendance/handlers.rs"));
+    for forbidden in [
+        "snapshot_day",
+        "attendance_calendar_snapshots",
+        "insert_seed",
+        "sessions::ensure",
+    ] {
+        assert!(
+            !runtime.contains(forbidden),
+            "background runtime must not create attendance placeholders: {forbidden}"
+        );
+    }
+    assert!(!adapter.contains("sessions::ensure"));
+    assert!(handlers.contains("/api/attendance/preview"));
+    assert!(!handlers.contains("/api/attendance/sessions/open"));
+}
+
 fn repo_root() -> PathBuf {
     manifest_dir()
         .parent()

@@ -1,4 +1,4 @@
-import type { AttendanceDetail } from '#lib/api/attendance.js';
+import type { AttendanceDetail, SaveAttendanceResults } from '#lib/api/attendance.js';
 
 type Record = AttendanceDetail['students'][number];
 export type AttendanceConflict = {
@@ -46,4 +46,21 @@ export function mergeAttendanceDetail(
 		return merged;
 	});
 	return { detail: { ...latest, students }, conflicts };
+}
+
+export function attendanceResultPatch(base: AttendanceDetail, current: AttendanceDetail) {
+	const previous = new Map(base.students.map((row) => [row.studentId, row]));
+	const students: SaveAttendanceResults['students'] = current.students
+		.filter(
+			(row) =>
+				row.result !== 'unchecked' &&
+				(row.result !== previous.get(row.studentId)?.result ||
+					row.note !== previous.get(row.studentId)?.note)
+		)
+		.map((row) => ({ studentId: row.studentId, result: row.result, note: row.note }));
+	const needsReason = students.some((row) => {
+		const before = previous.get(row.studentId);
+		return before && before.result !== 'unchecked';
+	});
+	return { students, needsReason };
 }

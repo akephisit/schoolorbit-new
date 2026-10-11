@@ -1,6 +1,7 @@
 pub mod faces;
 pub mod notifications;
 pub mod reports;
+pub mod reset;
 pub mod sessions;
 pub mod settings;
 pub mod specials;
@@ -15,6 +16,7 @@ pub async fn lock_term(
     write: bool,
     exclusive: bool,
 ) -> Result<(), AppError> {
+    lock_module(tx).await?;
     let year: Uuid = sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
         .bind(term)
         .fetch_optional(&mut **tx)
@@ -64,5 +66,12 @@ pub async fn audit(
     reason: &str,
 ) -> Result<(), AppError> {
     sqlx::query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,description) VALUES($1,$2,'attendance',$3,$4)").bind(actor).bind(action).bind(entity).bind(reason).execute(&mut **tx).await?;
+    Ok(())
+}
+
+pub async fn lock_module(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(17010000)")
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }

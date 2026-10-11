@@ -378,6 +378,13 @@
 				eventId: crypto.randomUUID(),
 				deviceId: device,
 				sessionId: session.id,
+				rosterToken: session.rosterToken,
+				session: {
+					academicTermId: session.academicTermId,
+					date: session.date,
+					kind: session.kind,
+					sourceKey: session.sourceKey
+				},
 				studentId: id,
 				descriptor: { values: face.values },
 				evidenceFileId: file.id,

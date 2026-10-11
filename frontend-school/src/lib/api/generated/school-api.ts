@@ -3834,6 +3834,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/attendance/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_open_session'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/attendance/report': {
 		parameters: {
 			query?: never;
@@ -3844,6 +3860,22 @@ export interface paths {
 		get: operations['attendance_report'];
 		put?: never;
 		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/attendance/reset': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_reset_impact'];
+		put?: never;
+		post: operations['attendance_reset_module'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -3892,22 +3924,6 @@ export interface paths {
 		get?: never;
 		put: operations['attendance_cancel_session'];
 		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/attendance/sessions/open': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['attendance_open_session'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -7898,6 +7914,24 @@ export interface components {
 				summaries: components['schemas']['AttendanceSummary'][];
 				/** Format: int64 */
 				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_AttendanceResetImpact: {
+			data: {
+				counts: components['schemas']['AttendanceResetCount'][];
+				/** Format: date */
+				coverageStart: string;
+				/** Format: int64 */
+				evidenceBytes: number;
+				/** Format: int64 */
+				evidenceFiles: number;
+				/** Format: uuid */
+				generation: string;
+				/** Format: int64 */
+				pendingFileDeletions: number;
+				token: string;
 			};
 			message?: string;
 			success: boolean;
@@ -13394,8 +13428,10 @@ export interface components {
 		AttendanceCancellation: {
 			cancelled: boolean;
 			reason: string;
+			rosterToken: string;
 			/** Format: int64 */
 			rowVersion: number;
+			session: components['schemas']['OpenAttendanceSession'];
 		};
 		AttendanceConfiguration: {
 			activityCountsAsPresent: boolean;
@@ -13461,7 +13497,7 @@ export interface components {
 			title: string;
 		};
 		/** @enum {string} */
-		AttendanceKind: 'arrival' | 'flag' | 'lesson' | 'special';
+		AttendanceKind: 'arrival' | 'lesson' | 'special';
 		AttendanceKioskWorkspace: {
 			configuration: components['schemas']['AttendanceConfiguration'];
 			faces: components['schemas']['AttendanceFace'][];
@@ -13530,6 +13566,25 @@ export interface components {
 			/** Format: uuid */
 			studentId?: string | null;
 		};
+		AttendanceResetCount: {
+			/** Format: int64 */
+			count: number;
+			resource: string;
+		};
+		AttendanceResetImpact: {
+			counts: components['schemas']['AttendanceResetCount'][];
+			/** Format: date */
+			coverageStart: string;
+			/** Format: int64 */
+			evidenceBytes: number;
+			/** Format: int64 */
+			evidenceFiles: number;
+			/** Format: uuid */
+			generation: string;
+			/** Format: int64 */
+			pendingFileDeletions: number;
+			token: string;
+		};
 		/** @enum {string} */
 		AttendanceResult: 'unchecked' | 'present' | 'late' | 'absent' | 'leave' | 'activity';
 		AttendanceResultInput: {
@@ -13548,6 +13603,8 @@ export interface components {
 			eventId: string;
 			/** Format: uuid */
 			evidenceFileId: string;
+			rosterToken: string;
+			session: components['schemas']['OpenAttendanceSession'];
 			/** Format: uuid */
 			sessionId: string;
 			/** Format: uuid */
@@ -13580,6 +13637,7 @@ export interface components {
 			learningGroupId: string | null;
 			/** Format: uuid */
 			offeringId: string | null;
+			rosterToken: string;
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: date-time */
@@ -19073,6 +19131,12 @@ export interface components {
 		RequirementKind: 'required' | 'elective' | 'optional';
 		/** @enum {string} */
 		RequirementResourceKind: 'course' | 'activity';
+		ResetAttendanceModule: {
+			/** Format: uuid */
+			generation: string;
+			reason: string;
+			token: string;
+		};
 		ResolvePromotionImpactInput: {
 			reason: string;
 			replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
@@ -19421,8 +19485,10 @@ export interface components {
 		};
 		SaveAttendanceResults: {
 			reason: string;
+			rosterToken: string;
 			/** Format: int64 */
 			rowVersion: number;
+			session: components['schemas']['OpenAttendanceSession'];
 			students: components['schemas']['AttendanceResultInput'][];
 		};
 		SaveAttendanceSettings: {
@@ -40230,6 +40296,54 @@ export interface operations {
 			};
 		};
 	};
+	attendance_open_session: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				date: string;
+				kind: components['schemas']['AttendanceKind'];
+				sourceKey: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	attendance_report: {
 		parameters: {
 			query: {
@@ -40260,6 +40374,72 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_reset_impact: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceResetImpact'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_reset_module: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResetAttendanceModule'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_AttendanceResetImpact'];
 				};
 			};
 			403: {
@@ -40433,53 +40613,6 @@ export interface operations {
 		requestBody: {
 			content: {
 				'application/json': components['schemas']['AttendanceCancellation'];
-			};
-		};
-		responses: {
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_AttendanceDetail'];
-				};
-			};
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	attendance_open_session: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['OpenAttendanceSession'];
 			};
 		};
 		responses: {
