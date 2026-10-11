@@ -315,7 +315,7 @@ test('logout while child context is pending never starts dependent attendance re
 	await familyExpect.poll(() => api.count('context')).toBe(1);
 	await page.getByRole('banner').getByRole('button').last().click();
 	await page.getByRole('menuitem', { name: 'ออกจากระบบ' }).click();
-	await familyExpect(page).toHaveURL(/\/login/);
+	await familyExpect(page).toHaveURL(new URL('/', page.url()).href);
 	api.release();
 	await page.evaluate(
 		() =>
