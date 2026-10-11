@@ -308,6 +308,10 @@ test('failed queue pauses automatic writes and retry reconciles only settings an
 }) => {
 	const api = await fixture(page);
 	const writes: SaveAttendanceDays[] = [];
+	let releaseRetry!: () => void;
+	const heldRetry = new Promise<void>((resolve) => {
+		releaseRetry = resolve;
+	});
 	let conflicted = false,
 		failReload = false;
 	await page.route(
@@ -318,7 +322,8 @@ test('failed queue pauses automatic writes and retry reconciles only settings an
 				conflicted = true;
 				return reply(route, 'การตั้งค่าถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่', 409);
 			}
-			return reply(route, { ...settings, rowVersion: 7 });
+			if (writes.length === 2) await heldRetry;
+			return reply(route, { ...settings, rowVersion: writes.length + 5 });
 		}
 	);
 	await page.route(
@@ -348,8 +353,18 @@ test('failed queue pauses automatic writes and retry reconciles only settings an
 	expect(writes).toHaveLength(1);
 	failReload = false;
 	await page.getByRole('button', { name: 'โหลดล่าสุดแล้วลองใหม่', exact: true }).click();
-	await expect(first).not.toHaveAttribute('aria-busy', 'true');
+	await expect.poll(() => writes.length).toBe(2);
+	const next = page.locator('[data-calendar-date="2026-10-13"]');
+	await expect(next).toBeEnabled();
+	await next.click();
 	expect(writes).toHaveLength(2);
+	releaseRetry();
+	await expect(next).not.toHaveAttribute('aria-busy', 'true');
+	expect(writes).toHaveLength(3);
+	expect(writes[2]).toMatchObject({
+		rowVersion: 7,
+		days: [{ date: '2026-10-13', counted: false }]
+	});
 	expect(writes[1]).toMatchObject({ rowVersion: 6 });
 	expect(writes[1].days).toEqual(
 		expect.arrayContaining([
@@ -365,7 +380,7 @@ test('failed queue pauses automatic writes and retry reconciles only settings an
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
 	await expect.poll(() => api.writes.length).toBe(1);
 	expect(api.writes[0].data).toMatchObject({
-		rowVersion: 7,
+		rowVersion: 8,
 		configuration: { lateAfter: '08:30:00' }
 	});
 });

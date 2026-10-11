@@ -256,6 +256,8 @@
 				if (discard) pendingDays = [];
 				else if (latestSettings.archived)
 					throw new Error('ภาคเรียนนี้ถูกเก็บถาวรแล้ว ยกเลิกรายการค้างเพื่อดูข้อมูลล่าสุด');
+				recovering = '';
+				saveError = '';
 			}
 			while (pendingDays.length && current()) {
 				const batch = $state.snapshot(pendingDays).slice(0, 366);
