@@ -95,7 +95,7 @@
 										context.options?.terms.find(
 											(term) =>
 												term.academicYearId === year &&
-												term.id === context.options.activeAcademicTermId
+												term.id === context.options?.activeAcademicTermId
 										)?.id ??
 											context.options?.terms.find((term) => term.academicYearId === year)?.id ??
 											''
