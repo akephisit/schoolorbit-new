@@ -162,18 +162,111 @@ test('real school events inform explicit day decisions without automatic countin
 	const api = await fixture(page);
 	await page.goto(path);
 	await expect(
-		page.getByRole('region', { name: 'วันที่เลือก' }).getByText('วันหยุดโรงเรียน', { exact: true })
+		page.getByRole('button', { name: /ดูรายละเอียด วันหยุดโรงเรียน/ }).first()
 	).toBeVisible();
-	await expect(page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true })).toBeEnabled();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toBeEnabled();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
 		'aria-label',
 		/1 กิจกรรม, ✓ นับยอด/
 	);
 	expect(api.writes).toHaveLength(0);
 	expect(api.reads).toContain('/api/calendar/events');
-	await page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ไม่นับยอดวันนี้ —', exact: true })).toBeVisible();
+	await expect(page.getByRole('region', { name: 'วันที่เลือก' })).toHaveCount(0);
+	await page
+		.getByRole('button', { name: /ดูรายละเอียด วันหยุดโรงเรียน/ })
+		.first()
+		.click();
+	await expect(page.getByRole('dialog')).toContainText('ประกอบการตัดสินใจเลือกวันนับยอด');
+	expect(api.writes).toHaveLength(0);
+	await page.keyboard.press('Escape');
+	await page.locator(`[data-calendar-date="${date}"]`).click();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
+		'aria-pressed',
+		'false'
+	);
 	expect(api.writes[0].data).toMatchObject({ days: [{ date, counted: false }] });
+	await page.locator(`[data-calendar-date="${date}"]`).focus();
+	await page.keyboard.press('Space');
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	expect(api.writes[1].data).toMatchObject({ rowVersion: 2, days: [{ date, counted: true }] });
+});
+
+test('day click highlights immediately while saving and restores the saved state after rejection', async ({
+	page
+}) => {
+	const api = await fixture(page);
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let attempts = 0;
+	await page.route(
+		(url) => url.pathname.includes('/api/attendance/days/'),
+		async (route) => {
+			attempts++;
+			await held;
+			await reply(route, 'การตั้งค่าถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่', 409);
+		}
+	);
+	await page.goto(path);
+	const cell = page.locator(`[data-calendar-date="${date}"]`);
+	await expect(cell).toBeEnabled();
+	await expect(cell).toHaveAttribute('aria-pressed', 'true');
+	const dimensions = await cell.boundingBox();
+	await cell.click({ position: { x: dimensions!.width * 0.7, y: dimensions!.height * 0.8 } });
+	await expect(cell).toHaveAttribute('aria-pressed', 'false');
+	await expect(cell).toHaveAttribute('aria-busy', 'true');
+	await expect(cell).toBeDisabled();
+	await expect(page.locator('[data-calendar-date="2026-10-12"]')).toBeDisabled();
+	expect(attempts).toBe(1);
+	release();
+	await expect(
+		page.getByText('การตั้งค่าถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่', { exact: true })
+	).toBeVisible();
+	await expect(cell).toBeEnabled();
+	await expect(cell).toHaveAttribute('aria-pressed', 'true');
+	await expect(cell).not.toHaveAttribute('aria-busy', 'true');
+	expect(attempts).toBe(1);
+	expect(api.writes).toHaveLength(0);
+});
+
+test('archived calendar exposes saved counting but never writes from its day cells', async ({
+	page
+}) => {
+	const api = await fixture(page, true, true);
+	await page.goto(path);
+	const cell = page.locator(`[data-calendar-date="${date}"]`);
+	await expect(cell).toHaveAttribute('aria-pressed', 'true');
+	await expect(cell).toBeDisabled();
+	await expect(page.locator('[data-calendar-date="2026-09-30"]')).toBeDisabled();
+	await page
+		.getByRole('button', { name: /ดูรายละเอียด วันหยุดโรงเรียน/ })
+		.first()
+		.click();
+	await expect(page.getByRole('dialog')).toBeVisible();
+	expect(api.writes).toHaveLength(0);
+});
+
+test('toggling a saved date preserves its note without requiring it to be entered again', async ({
+	page
+}) => {
+	const api = await fixture(page);
+	await page.route(
+		(url) => url.pathname === '/api/attendance/days',
+		(route) => reply(route, [{ date, counted: false, note: 'วันสอบปลายภาค' }])
+	);
+	await page.goto(path);
+	const cell = page.locator(`[data-calendar-date="${date}"]`);
+	await expect(cell).toBeEnabled();
+	await expect(cell).toHaveAttribute('aria-pressed', 'false');
+	await cell.click();
+	await expect(cell).toHaveAttribute('aria-pressed', 'true');
+	expect(api.writes[0].data).toMatchObject({
+		days: [{ date, counted: true, note: 'วันสอบปลายภาค' }]
+	});
 });
 
 test('calendar failures and focused retry leave day editing usable', async ({ page }) => {
@@ -188,12 +281,12 @@ test('calendar failures and focused retry leave day editing usable', async ({ pa
 	);
 	await page.goto(path);
 	await expect(page.getByText('ปฏิทินไม่พร้อม', { exact: true })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true })).toBeEnabled();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toBeEnabled();
 	const attendanceReads = api.reads.filter((value) => value.startsWith('/api/attendance')).length;
 	fail = false;
 	await page.getByRole('button', { name: 'ลองโหลดกิจกรรมใหม่' }).click();
 	await expect(
-		page.getByRole('region', { name: 'วันที่เลือก' }).getByText('วันหยุดโรงเรียน', { exact: true })
+		page.getByRole('button', { name: /ดูรายละเอียด วันหยุดโรงเรียน/ }).first()
 	).toBeVisible();
 	expect(api.reads).not.toContain('/api/calendar/events');
 	expect(api.reads.filter((value) => value.startsWith('/api/attendance')).length).toBe(
@@ -232,7 +325,7 @@ test('group dialog is lazy and keeps local failed draft while special session re
 test('month navigation supersedes slow day and calendar reads without writes', async ({ page }) => {
 	const api = await fixture(page);
 	await page.goto(path);
-	await expect(page.getByRole('button', { name: 'นับยอดวันนี้ ✓', exact: true })).toBeEnabled();
+	await expect(page.locator(`[data-calendar-date="${date}"]`)).toBeEnabled();
 	let release!: () => void;
 	const held = new Promise<void>((resolve) => {
 		release = resolve;
@@ -272,9 +365,7 @@ for (const viewport of [
 				page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล', exact: true })
 			).toBeVisible();
 			await expect(
-				page
-					.getByRole('region', { name: 'วันที่เลือก' })
-					.getByText('วันหยุดโรงเรียน', { exact: true })
+				page.getByRole('button', { name: /ดูรายละเอียด วันหยุดโรงเรียน/ }).first()
 			).toBeVisible();
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true

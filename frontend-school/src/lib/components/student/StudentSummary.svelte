@@ -6,6 +6,7 @@
 	import { GraduationCap, User } from '@lucide/svelte';
 
 	let { student, yearName }: { student: Student; yearName?: string } = $props();
+	const yearLabel = $derived(yearName?.trim());
 </script>
 
 <Card
@@ -32,7 +33,9 @@
 				{student.title ?? ''}{student.first_name}
 				{student.last_name}
 			</h2>
-			{#if yearName}<Badge variant="secondary">ปีการศึกษา {yearName}</Badge>{/if}
+			{#if yearLabel}<Badge variant="secondary"
+					>{yearLabel.startsWith('ปีการศึกษา') ? yearLabel : `ปีการศึกษา ${yearLabel}`}</Badge
+				>{/if}
 		</div>
 	</div>
 	<dl class="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-primary/10 pt-5 sm:grid-cols-4">

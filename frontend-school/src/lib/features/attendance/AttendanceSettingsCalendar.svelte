@@ -11,11 +11,13 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { PageState, LoadingButton } from '#lib/components/app-state/index.js';
-	import CalendarMonthGrid from '#lib/components/calendar/CalendarMonthGrid.svelte';
+	import CalendarMonthGrid, {
+		type CalendarDayState
+	} from '#lib/components/calendar/CalendarMonthGrid.svelte';
+	import CalendarDayTimelineDialog from '#lib/components/calendar/CalendarDayTimelineDialog.svelte';
 	import {
 		buildCalendarMonth,
 		eventOverlapsDate,
-		formatCalendarDate,
 		formatCalendarMonth
 	} from '#lib/utils/calendar.js';
 	import {
@@ -53,6 +55,8 @@
 	} = $props();
 	let month = $state(untrack(() => date.slice(0, 7))),
 		selectedDate = $state(untrack(() => date));
+	let dayDialogOpen = $state(false),
+		pendingDays = $state<AttendanceDay[]>([]);
 	let days = $state<AttendanceDay[]>([]),
 		calendar = $state<AttendanceCalendarEvents>({ events: [], scope: 'own' });
 	let dayLoading = $state(true),
@@ -99,20 +103,28 @@
 			)
 		);
 	}
-	const markers = $derived(
-		dayLoading || dayError
-			? []
-			: buildCalendarMonth(month + '-01')
-					.filter((cell) => cell.inCurrentMonth)
-					.map((cell) => ({
-						id: `processing-${cell.date}`,
-						title: isCounted(cell.date) ? '✓ นับยอด' : '— ไม่นับยอด',
-						startDate: cell.date,
-						endDate: cell.date,
-						allDay: false,
-						categoryColor: isCounted(cell.date) ? 'var(--primary)' : 'var(--muted-foreground)'
-					}))
-	);
+	const dayStates = $derived.by(() => {
+		const states: Record<string, CalendarDayState> = {};
+		for (const cell of buildCalendarMonth(month + '-01')) {
+			const pending = pendingDays.find((day) => day.date === cell.date);
+			const counted = pending?.counted ?? isCounted(cell.date);
+			states[cell.date] = {
+				active: cell.inCurrentMonth && !dayLoading && !dayError && counted,
+				label:
+					!cell.inCurrentMonth || dayLoading || dayError
+						? ''
+						: pending
+							? 'กำลังบันทึก…'
+							: counted
+								? '✓ นับยอด'
+								: '— ไม่นับยอด',
+				disabled: !cell.inCurrentMonth || !writable,
+				pending: !!pending,
+				description: days.find((day) => day.date === cell.date)?.note || undefined
+			};
+		}
+		return states;
+	});
 	$effect.pre(() => {
 		const identityKey = $attendanceIdentity,
 			daySource = initialDays,
@@ -194,6 +206,7 @@
 			return;
 		}
 		saving = true;
+		pendingDays = values;
 		pendingAction = action;
 		onbusy(true);
 		saveError = '';
@@ -211,10 +224,21 @@
 		} finally {
 			if (!disposed) {
 				saving = false;
+				pendingDays = [];
 				pendingAction = '';
 				onbusy(false);
 			}
 		}
+	}
+	function toggleDay(value: string) {
+		if (value.slice(0, 7) !== month || !writable) return;
+		void setDays([
+			{
+				date: value,
+				counted: !isCounted(value),
+				note: note || days.find((day) => day.date === value)?.note || ''
+			}
+		]);
 	}
 	async function applyRange(counted: boolean) {
 		try {
@@ -240,7 +264,7 @@
 <Card.Root>
 	<Card.Header
 		><Card.Title><h2>ปฏิทินวันประมวลผล</h2></Card.Title><Card.Description
-			>ดูกิจกรรมประกอบการเลือกวันนับยอด กิจกรรมในปฏิทินไม่เปลี่ยนการนับยอดโดยอัตโนมัติ</Card.Description
+			>กดช่องวันเพื่อสลับการนับยอดทันที กดแถบกิจกรรมเพื่อดูรายละเอียดประกอบการตัดสินใจ</Card.Description
 		></Card.Header
 	>
 	<Card.Content class="space-y-4">
@@ -286,7 +310,7 @@
 		<p class="text-sm text-muted-foreground">
 			{calendar.scope === 'school'
 				? 'กิจกรรมจากปฏิทินโรงเรียน'
-				: 'กิจกรรมจากปฏิทินที่คุณมีสิทธิ์เห็น'} · แถบ ✓ / — แสดงการนับยอดที่บันทึกแล้ว
+				: 'กิจกรรมจากปฏิทินที่คุณมีสิทธิ์เห็น'} · ช่องสีเข้ม ✓ นับยอด · ช่องสีอ่อน — ไม่นับยอด
 		</p>
 		{#if dayError}<PageState
 				variant="error"
@@ -312,49 +336,15 @@
 			<CalendarMonthGrid
 				monthDate={month + '-01'}
 				events={calendar.events}
-				annotations={markers}
-				{selectedDate}
+				{dayStates}
 				hideMobileTimes
-				onselect={(value) => {
-					if (value.slice(0, 7) !== month) selectMonth(value.slice(0, 7));
-					selectedDate = value;
-				}}
+				onselect={toggleDay}
 				oneventselect={(_, value) => {
 					selectedDate = value;
+					dayDialogOpen = true;
 				}}
 			/>
 		</div>
-		<section aria-label="วันที่เลือก" class="space-y-3 rounded-lg border p-4">
-			<h3 class="font-medium">{formatCalendarDate(selectedDate)}</h3>
-			<LoadingButton
-				type="button"
-				loading={saving && pendingAction === 'day'}
-				variant={isCounted(selectedDate) ? 'default' : 'outline'}
-				disabled={!writable || selectedDate.slice(0, 7) !== month}
-				onclick={() => setDays([{ date: selectedDate, counted: !isCounted(selectedDate), note }])}
-				>{isCounted(selectedDate) ? 'นับยอดวันนี้ ✓' : 'ไม่นับยอดวันนี้ —'}</LoadingButton
-			>
-			{#if !dayLoading && !dayError}<p class="text-sm text-muted-foreground">
-					{days.find((day) => day.date === selectedDate)?.note ?? ''}
-				</p>{/if}
-			{#if selectedEvents.length}<ul class="space-y-3">
-					{#each selectedEvents as event (event.id)}<li class="space-y-1 rounded-md border p-3">
-							<p class="break-words font-medium">{event.title}</p>
-							<p class="text-sm text-muted-foreground">
-								{formatCalendarDate(event.startDate)} – {formatCalendarDate(event.endDate)} · {event.allDay
-									? 'ทั้งวัน'
-									: `${event.startTime?.slice(0, 5) ?? ''}–${event.endTime?.slice(0, 5) ?? ''}`}
-							</p>
-							{#if event.description}<p class="whitespace-pre-wrap break-words text-sm">
-									{event.description}
-								</p>{/if}{#if event.location}<p class="break-words text-sm">
-									{event.location}
-								</p>{/if}
-						</li>{/each}
-				</ul>{:else if !eventLoading && !eventError}<p class="text-sm text-muted-foreground">
-					ไม่มีกิจกรรมในวันที่เลือก
-				</p>{/if}
-		</section>
 		{#if saveError}<Alert.Root variant="destructive"
 				><Alert.Title>บันทึกวันประมวลผลไม่ได้</Alert.Title><Alert.Description
 					>{saveError}</Alert.Description
@@ -400,3 +390,5 @@
 		</div>
 	</Card.Content>
 </Card.Root>
+
+<CalendarDayTimelineDialog bind:open={dayDialogOpen} date={selectedDate} events={selectedEvents} />
