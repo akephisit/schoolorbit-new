@@ -209,6 +209,18 @@ pub async fn save_device(
     let result = specials::save_device(pool, context.actor.user_id, id, payload).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
+#[utoipa::path(get,path="/api/attendance/faces",operation_id="attendance_face_enrollments",tag="attendance",params(AttendanceTermQuery),responses((status=200,body=ApiResponse<Vec<AttendanceFaceEnrollment>>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse)))]
+pub async fn face_enrollments(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AttendanceTermQuery>,
+) -> Result<Json<ApiResponse<Vec<AttendanceFaceEnrollment>>>, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    let result =
+        services::face_enrollments(&context.tenant.pool, &context.actor, query.academic_term_id)
+            .await?;
+    Ok(Json(ApiResponse::ok(result)))
+}
 #[utoipa::path(put,path="/api/attendance/faces/{student}",operation_id="attendance_enroll_face",tag="attendance",params(("student"=Uuid,Path)),request_body=EnrollAttendanceFace,responses((status=200,body=ApiResponse<EmptyData>),(status=400,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=409,body=ApiErrorResponse)))]
 pub async fn enroll_face(
     State(state): State<AppState>,
@@ -352,6 +364,7 @@ pub fn routes() -> axum::Router<AppState> {
         .route("/api/attendance/audiences/{term}", post(create_audience))
         .route("/api/attendance/specials/{term}", post(create_special))
         .route("/api/attendance/devices/{id}", put(save_device))
+        .route("/api/attendance/faces", get(face_enrollments))
         .route(
             "/api/attendance/faces/{student}",
             put(enroll_face).delete(delete_face),

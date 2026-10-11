@@ -26,6 +26,7 @@
 		monthDate,
 		events = [],
 		pendingRequests = [],
+		annotations = [],
 		selectedDate = '',
 		onselect,
 		oneventselect,
@@ -35,6 +36,7 @@
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
 		pendingRequests?: CalendarDisplayEvent[];
+		annotations?: CalendarDisplayEvent[];
 		selectedDate?: string;
 		onselect?: (date: string, anchor: HTMLElement) => void;
 		oneventselect?: (event: CalendarDisplayEvent, date: string, anchor: HTMLElement) => void;
@@ -45,7 +47,7 @@
 	const fallbackColor = '#64748b';
 	const todayDate = toIsoDate(new Date());
 
-	let displayEvents = $derived([...events, ...pendingRequests]);
+	let displayEvents = $derived([...annotations, ...events, ...pendingRequests]);
 	let weeks = $derived(buildCalendarMonthWeeks(monthDate, displayEvents));
 
 	function eventsForDate(date: string) {
@@ -95,7 +97,10 @@
 						)}
 						aria-pressed={selectedDate === cell.date}
 						data-calendar-date={cell.date}
-						aria-label={`${formatCalendarDate(cell.date)}, ${dayEvents.length} กิจกรรม${dayRequests.length ? `, ${dayRequests.length} คำร้องรออนุมัติ` : ''}`}
+						aria-label={`${formatCalendarDate(cell.date)}, ${dayEvents.length} กิจกรรม${annotations
+							.filter((annotation) => eventOverlapsDate(annotation, cell.date))
+							.map((annotation) => `, ${annotation.title}`)
+							.join('')}${dayRequests.length ? `, ${dayRequests.length} คำร้องรออนุมัติ` : ''}`}
 						onclick={(event) => onselect?.(cell.date, event.currentTarget)}
 					>
 						<span

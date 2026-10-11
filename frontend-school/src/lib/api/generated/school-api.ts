@@ -3754,6 +3754,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/attendance/faces': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['attendance_face_enrollments'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/attendance/faces/{student}': {
 		parameters: {
 			query?: never;
@@ -11418,6 +11434,16 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_AttendanceFaceEnrollment: {
+			data: {
+				/** Format: date-time */
+				enrolledAt: string;
+				/** Format: uuid */
+				studentId: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_AttendanceHistoryItem: {
 			data: {
 				cancelled: boolean;
@@ -13409,6 +13435,13 @@ export interface components {
 			model: string;
 			/** Format: int64 */
 			rowVersion: number;
+			/** Format: uuid */
+			studentId: string;
+		};
+		/** @description Management metadata deliberately excludes biometric templates. */
+		AttendanceFaceEnrollment: {
+			/** Format: date-time */
+			enrolledAt: string;
 			/** Format: uuid */
 			studentId: string;
 		};
@@ -39917,6 +39950,43 @@ export interface operations {
 				};
 			};
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	attendance_face_enrollments: {
+		parameters: {
+			query: {
+				academicTermId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_AttendanceFaceEnrollment'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

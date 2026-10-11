@@ -62,6 +62,16 @@
 			"notes": "Route owns linked academic context and selected-child primary data; local skeleton/error/retry, retained refresh, identity/child/context supersession and navigation history. Timetable profile and schedule start independently after the same context. Calendar month history refreshes only events. Backend child authorization is preserved on every request."
 		},
 		{
+			"route": "parent/student/[id]/attendance",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "selected term and actor-scoped student",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Linked-child context authorizes before independent profile/report reads; exact own permission and identity guard; focused family-experience browser coverage."
+		},
+		{
 			"route": "parent/student/[id]/calendar",
 			"wave": "self-service",
 			"dataOwner": "route",

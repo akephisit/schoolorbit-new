@@ -1,5 +1,5 @@
 import type { PageLoad } from './$types';
-import { attendanceOptions } from '#lib/api/attendance.js';
+import { attendanceOptions, attendanceFaceEnrollments } from '#lib/api/attendance.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import {
 	readAttendance,
@@ -27,6 +27,15 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 	const term = url.searchParams.get('academicTermId');
 	const date = resolveAttendanceDate(url.searchParams.get('date'));
 	return {
+		initialEnrollments: term
+			? captureRouteLoad(
+					readAttendance(
+						[PERMISSIONS.ATTENDANCE_ENROLL_ASSIGNED, PERMISSIONS.ATTENDANCE_ENROLL_SCHOOL],
+						() => attendanceFaceEnrollments(term, { requestFetch: fetch })
+					),
+					'โหลดรายชื่อที่ลงทะเบียนใบหน้าไม่ได้'
+				)
+			: null,
 		title: _meta.menu.title,
 		term,
 		date,

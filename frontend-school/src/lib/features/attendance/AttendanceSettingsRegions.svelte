@@ -3,13 +3,13 @@
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		attendanceSettings,
-		attendanceDays,
 		attendanceOptions,
 		type AttendanceSettings,
 		type AttendanceDay,
 		type AttendanceOptions
 	} from '#lib/api/attendance.js';
 	import { attendanceIdentity, type AttendanceRead } from './attendance-access.js';
+	import type { AttendanceCalendarEvents } from './attendance-settings-calendar.js';
 	import AttendanceRouteRegion from './AttendanceRouteRegion.svelte';
 	import AttendanceSettingsPanel from './AttendanceSettingsPanel.svelte';
 	import AttendanceManagementPanel from './AttendanceManagementPanel.svelte';
@@ -17,14 +17,16 @@
 		term,
 		date,
 		initialSettings,
-		initialOptions
+		initialOptions,
+		initialDays,
+		initialCalendar
 	}: {
 		term: string;
 		date: string;
-		initialSettings: Promise<
-			RouteLoadResult<AttendanceRead<[AttendanceSettings, AttendanceDay[]]>>
-		>;
+		initialSettings: Promise<RouteLoadResult<AttendanceRead<AttendanceSettings>>>;
 		initialOptions: Promise<RouteLoadResult<AttendanceRead<AttendanceOptions>>>;
+		initialDays: Promise<RouteLoadResult<AttendanceRead<AttendanceDay[]>>>;
+		initialCalendar: Promise<RouteLoadResult<AttendanceRead<AttendanceCalendarEvents>>>;
 	} = $props();
 	let archived = $state(true),
 		disposed = false;
@@ -41,21 +43,13 @@
 					!result.ok ||
 					result.data.identityKey !== identityKey ||
 					!result.data.resource ||
-					result.data.resource[0].archived;
+					result.data.resource.archived;
 		});
 	});
-	async function retrySettings(
-		signal: AbortSignal
-	): Promise<[AttendanceSettings, AttendanceDay[]]> {
+	async function retrySettings(signal: AbortSignal): Promise<AttendanceSettings> {
 		const identityKey = $attendanceIdentity;
-		const end = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0))
-			.toISOString()
-			.slice(0, 10);
-		const result = await Promise.all([
-			attendanceSettings(term, { signal }),
-			attendanceDays(term, date.slice(0, 7) + '-01', end, { signal })
-		]);
-		if (!disposed && identityKey === $attendanceIdentity) archived = result[0].archived;
+		const result = await attendanceSettings(term, { signal });
+		if (!disposed && identityKey === $attendanceIdentity) archived = result.archived;
 		return result;
 	}
 </script>
@@ -68,7 +62,13 @@
 		errorTitle="โหลดการตั้งค่าไม่ได้"
 		retryLabel="ลองโหลดการตั้งค่าใหม่"
 	>
-		{#snippet children(result)}<AttendanceSettingsPanel {term} {date} initial={result} />{/snippet}
+		{#snippet children(result)}<AttendanceSettingsPanel
+				{term}
+				{date}
+				initial={result}
+				{initialDays}
+				{initialCalendar}
+			/>{/snippet}
 	</AttendanceRouteRegion>
 </section>
 <section aria-label="กลุ่ม รอบพิเศษ และเครื่องสแกน" class="min-w-0 space-y-6">

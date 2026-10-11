@@ -1548,6 +1548,12 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 	const parentApi = stripComments(
 		await readFile(path.join(repoRoot, 'frontend-school/src/lib/api/parents.ts'), 'utf8')
 	);
+	const personalTimetable = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/lib/components/student/PersonalTimetable.svelte'),
+			'utf8'
+		)
+	);
 
 	assert.deepEqual(routeViolations, []);
 	assert.match(staffDashboard, /getAppMenuRegion/);
@@ -1575,14 +1581,27 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
 	);
 	assert.match(studentTimetable, /getMyTimetable/);
-	assert.match(studentTimetable, /periodsFromTimetableBlocks/);
+	assert.match(
+		studentTimetable,
+		/import PersonalTimetable from '#lib\/components\/student\/PersonalTimetable\.svelte'/
+	);
+	assert.match(studentTimetable, /<PersonalTimetable \{blocks\}\s*\/>/);
 	assert.doesNotMatch(
 		studentTimetable,
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
 	);
 	assert.match(parentTimetable, /getChildTimetable/);
-	assert.match(parentTimetable, /periodsFromTimetableBlocks/);
+	assert.match(
+		parentTimetable,
+		/import PersonalTimetable from '#lib\/components\/student\/PersonalTimetable\.svelte'/
+	);
+	assert.match(parentTimetable, /<PersonalTimetable \{blocks\}\s*\/>/);
 	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries|listPeriods/);
+	assert.match(personalTimetable, /periodsFromTimetableBlocks\(blocks\)/);
+	assert.doesNotMatch(
+		personalTimetable,
+		/getMyTimetable|getChildTimetable|getTimetableEntries|listPeriods/
+	);
 	assert.match(
 		parentApi,
 		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/timetable/

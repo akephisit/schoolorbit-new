@@ -404,6 +404,41 @@ pub async fn require_enrollment(
         ))
     }
 }
+pub async fn face_enrollments(
+    pool: &PgPool,
+    actor: &ActorContext,
+    term: Uuid,
+) -> Result<Vec<AttendanceFaceEnrollment>, AppError> {
+    actor.require_any_permission(&[
+        codes::ATTENDANCE_ENROLL_SCHOOL,
+        codes::ATTENDANCE_ENROLL_ASSIGNED,
+    ])?;
+    let date = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    let students = core::students(pool, term, date).await?;
+    let all = actor.has_permission(codes::ATTENDANCE_ENROLL_SCHOOL);
+    let rooms = if all {
+        vec![]
+    } else {
+        core::rooms(pool, term).await?
+    };
+    let assigned: HashSet<_> = rooms
+        .iter()
+        .filter(|room| room.teacher_ids.contains(&actor.user_id))
+        .map(|room| room.id)
+        .collect();
+    let ids: Vec<_> = students
+        .into_iter()
+        .filter(|student| {
+            all || student
+                .homeroom_id
+                .is_some_and(|room| assigned.contains(&room))
+        })
+        .map(|student| student.student_id)
+        .collect();
+    school_attendance::services::faces::enrollments(pool, &ids).await
+}
 async fn own_student_read(
     pool: &PgPool,
     actor: &ActorContext,

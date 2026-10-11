@@ -17,10 +17,12 @@
 	{#if data.term}<AttendanceNavigation term={data.term} date={data.date} current="settings" />{/if}
 
 	{#if !data.term}<PageState title="เลือกภาคเรียน" description="กรุณาเลือกภาคเรียนจากแถบด้านบน" />
-	{:else if data.settings && data.options}{#key $attendanceIdentity + data.term + data.date}<AttendanceSettingsRegions
+	{:else if data.settings && data.options && data.days && data.calendar}{#key $attendanceIdentity + data.term + data.date}<AttendanceSettingsRegions
 				term={data.term}
 				date={data.date}
 				initialSettings={data.settings}
 				initialOptions={data.options}
+				initialDays={data.days}
+				initialCalendar={data.calendar}
 			/>{/key}{/if}
 </PageShell>

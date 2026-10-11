@@ -13,14 +13,16 @@
 		listMyAcademicContextOptions,
 		type AcademicContextOptionsResponse
 	} from '#lib/api/academic-context.js';
-	import { Card } from '#lib/components/ui/card/index.js';
+	import StudentSummary from '#lib/components/student/StudentSummary.svelte';
+	import StudentDestinations from '#lib/components/student/StudentDestinations.svelte';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import ScopedAcademicYearSelect from '#lib/components/academic-context/ScopedAcademicYearSelect.svelte';
 	import { resolveScopedAcademicYearUrl } from '#lib/academic-context/scoped-year.js';
-	import { User, Calendar, BookOpen, Award } from '@lucide/svelte';
+	import { User, Calendar, BookOpen, UserCheck } from '@lucide/svelte';
 	import { getOwnProfile, type Student } from '#lib/api/students.js';
 
 	let { data }: PageProps = $props();
@@ -50,7 +52,47 @@
 		selectedYearId ? `?academicYearId=${encodeURIComponent(selectedYearId)}` : ''
 	);
 	const profileHref = $derived(`${resolve('student/profile')}${academicYearQuery}`);
-	const timetableHref = $derived(`${resolve('student/timetable')}${academicYearQuery}`);
+	const termId = $derived(
+		contextOptions?.terms.find(
+			(term) =>
+				term.academicYearId === selectedYearId && term.id === contextOptions?.activeAcademicTermId
+		)?.id ??
+			contextOptions?.terms.find((term) => term.academicYearId === selectedYearId)?.id ??
+			''
+	);
+	const termQuery = $derived(
+		`${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`
+	);
+	const destinations = $derived([
+		{
+			title: 'ตารางเรียน',
+			description: 'รายวิชาและกิจกรรมในภาคเรียนที่เลือก',
+			href: `${resolve('student/timetable')}${termQuery}`,
+			icon: BookOpen
+		},
+		...($can.has(PERMISSIONS.ATTENDANCE_READ_OWN)
+			? [
+					{
+						title: 'การเช็คชื่อ',
+						description: 'ดูสรุปการเข้าเรียนและประวัติรายวันของฉัน',
+						href: `${resolve('student/attendance')}${termQuery}`,
+						icon: UserCheck
+					}
+				]
+			: []),
+		{
+			title: 'ปฏิทิน',
+			description: 'กิจกรรมและกำหนดการที่เกี่ยวข้องกับฉัน',
+			href: `${resolve('student/calendar')}${academicYearQuery}`,
+			icon: Calendar
+		},
+		{
+			title: 'ข้อมูลส่วนตัว',
+			description: 'ดูข้อมูลส่วนตัวและข้อมูลติดต่อ',
+			href: profileHref,
+			icon: User
+		}
+	]);
 	$effect.pre(() => {
 		const key = ownerKey,
 			a = data.context,
@@ -179,9 +221,11 @@
 		? `สวัสดี, ${student.first_name} ${student.last_name}`
 		: 'ภาพรวมข้อมูลนักเรียน'}
 >
-	{#if student}<Button variant="outline" disabled={loading || contextLoading} onclick={loadProfile}
-			>โหลดข้อมูลใหม่</Button
-		>{/if}
+	{#snippet actions()}<Button
+			variant="outline"
+			disabled={loading || contextLoading || !selectedYearId}
+			onclick={loadProfile}>โหลดข้อมูลใหม่</Button
+		>{/snippet}
 	{#if contextOptions && contextOptions.years.length > 0}
 		<div class="flex max-w-sm flex-col gap-2 rounded-xl border bg-card p-4">
 			<Label for="student-dashboard-year">ปีการศึกษา</Label>
@@ -223,103 +267,11 @@
 				description="กรุณาติดต่อผู้ดูแลระบบเพื่อตรวจสอบการลงทะเบียนนักเรียน"
 			/>
 		{:else if student}
-			<!-- Student Info Cards -->
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-				<!-- Student ID Card -->
-				<Card class="p-6 hover:shadow-md transition-shadow">
-					<div class="flex items-start justify-between">
-						<div class="space-y-2">
-							<p class="text-sm text-muted-foreground font-medium">รหัสนักเรียน</p>
-							<p class="text-2xl font-bold text-foreground">
-								{student.student_id || '-'}
-							</p>
-						</div>
-						<div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-							<User class="w-6 h-6 text-primary" />
-						</div>
-					</div>
-				</Card>
-
-				<!-- Class Card -->
-				<Card class="p-6 hover:shadow-md transition-shadow">
-					<div class="flex items-start justify-between">
-						<div class="space-y-2">
-							<p class="text-sm text-muted-foreground font-medium">ชั้นเรียน</p>
-							<p class="text-2xl font-bold text-foreground">
-								{#if student.grade_level && student.homeroom}
-									{student.grade_level}/{student.homeroom}
-								{:else}
-									-
-								{/if}
-							</p>
-						</div>
-						<div class="w-12 h-12 bg-blue-500/10 rounded-lg flex items-center justify-center">
-							<BookOpen class="w-6 h-6 text-blue-500" />
-						</div>
-					</div>
-				</Card>
-
-				<!-- Attendance Card -->
-				<Card class="p-6 hover:shadow-md transition-shadow">
-					<div class="flex items-start justify-between">
-						<div class="space-y-2">
-							<p class="text-sm text-muted-foreground font-medium">การเข้าเรียน</p>
-							<p class="text-2xl font-bold text-muted-foreground">—</p>
-							<p class="text-xs text-muted-foreground">ยังไม่เปิดใช้งาน</p>
-						</div>
-						<div class="w-12 h-12 bg-muted rounded-lg flex items-center justify-center">
-							<Calendar class="w-6 h-6 text-muted-foreground" />
-						</div>
-					</div>
-				</Card>
-			</div>
-
-			<!-- Quick Actions -->
-			<Card class="p-6">
-				<h2 class="text-xl font-semibold mb-4">เมนูด่วน</h2>
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-					<Button
-						variant="outline"
-						class="h-auto py-4 flex-col gap-2"
-						href={profileHref}
-						data-sveltekit-preload-data="tap"
-					>
-						<User class="w-6 h-6" />
-						<span>ข้อมูลส่วนตัว</span>
-					</Button>
-
-					<Button
-						variant="outline"
-						class="h-auto py-4 flex-col gap-2"
-						href={timetableHref}
-						data-sveltekit-preload-data="tap"
-					>
-						<BookOpen class="w-6 h-6" />
-						<span>ตารางเรียน</span>
-					</Button>
-
-					<Button variant="outline" class="h-auto py-4 flex-col gap-2" disabled>
-						<Award class="w-6 h-6" />
-						<span>คะแนน</span>
-					</Button>
-
-					<Button variant="outline" class="h-auto py-4 flex-col gap-2" disabled>
-						<Calendar class="w-6 h-6" />
-						<span>การเข้าเรียน</span>
-					</Button>
-				</div>
-				<p class="text-sm text-muted-foreground mt-4 text-center">
-					เมนูที่เป็นสีเทาจะเปิดใช้งานในอนาคต
-				</p>
-			</Card>
-
-			<!-- Announcements (placeholder) -->
-			<Card class="p-6">
-				<h2 class="text-xl font-semibold mb-4">ประกาศ</h2>
-				<div class="text-center py-8 text-muted-foreground">
-					<p>ไม่มีประกาศในขณะนี้</p>
-				</div>
-			</Card>
+			<StudentSummary
+				{student}
+				yearName={contextOptions?.years.find((year) => year.id === selectedYearId)?.name}
+			/>
+			<div class="mt-6"><StudentDestinations items={destinations} /></div>
 		{:else}
 			<PageState
 				title="ไม่พบข้อมูลนักเรียน"

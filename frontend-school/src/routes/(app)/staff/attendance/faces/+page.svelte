@@ -27,6 +27,7 @@
 						term={data.term!}
 						date={data.date}
 						initial={result}
+						initialEnrollments={data.initialEnrollments!}
 					/>{/snippet}
 			</AttendanceRouteRegion>{/key}{/if}
 </PageShell>

@@ -180,6 +180,7 @@ use utoipa::OpenApi;
         crate::modules::attendance::handlers::create_audience,
         crate::modules::attendance::handlers::create_special,
         crate::modules::attendance::handlers::save_device,
+        crate::modules::attendance::handlers::face_enrollments,
         crate::modules::attendance::handlers::enroll_face,
         crate::modules::attendance::handlers::delete_face,
         crate::modules::attendance::handlers::open_kiosk,

@@ -6,6 +6,7 @@ import {
 	makeApprovedCalendarEvent
 } from './fixtures/calendar-route-data';
 import { id } from './fixtures/staff-home-route-data';
+import { publicYears } from './fixtures/public-calendar-server';
 import type {
 	PendingCalendarRequest,
 	CalendarEventRequest,
@@ -521,6 +522,9 @@ for (const width of [1280, 375]) {
 		await page.setViewportSize({ width, height: 900 });
 		const api = await mockCalendar(page);
 		await mockOverlay(page, { records: [] });
+		await page.route('**/api/public/academic-context/options', (route) =>
+			route.fulfill({ json: { success: true, data: publicYears } })
+		);
 		await page.goto(calendarPath());
 		await toggle(page).click();
 		await expect(page.getByText(/แถบเส้นประคือคำร้อง/)).toHaveCount(0);
@@ -550,8 +554,15 @@ for (const width of [1280, 375]) {
 		await form.getByPlaceholder('ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก').fill('ไม่มีรายการ');
 		await form.getByRole('button', { name: /^กรอง(?: \d+)?$/ }).click();
 		await expect(form).toHaveCount(0);
-		await expect(page).toHaveURL(/q=/);
-		await expect(page.getByRole('button', { name: /^ดูรายละเอียด / })).toHaveCount(0);
+		const searchDialog = page.getByRole('dialog');
+		await expect(searchDialog.getByLabel('คำค้นหากิจกรรม')).toHaveValue('ไม่มีรายการ');
+		await expect(
+			searchDialog.getByText('ไม่พบกิจกรรมที่ตรงกับคำค้นหา', { exact: true })
+		).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(searchDialog).toHaveCount(0);
+		await expect(page).not.toHaveURL(/q=/);
+		await expect(page.getByRole('button', { name: /^ดูรายละเอียด / }).first()).toBeVisible();
 		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
 		expect(api.count('/api/calendar/categories')).toBe(1);
 		expect(api.count('/api/calendar/tags')).toBe(1);

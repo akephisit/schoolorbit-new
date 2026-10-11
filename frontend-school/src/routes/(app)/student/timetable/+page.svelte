@@ -14,27 +14,13 @@
 		listMyAcademicContextOptions,
 		type AcademicContextOptionsResponse
 	} from '#lib/api/academic-context.js';
-	import {
-		getMyTimetable,
-		periodsFromTimetableBlocks,
-		type TimetableBlock
-	} from '#lib/api/timetable.js';
+	import { getMyTimetable, type TimetableBlock } from '#lib/api/timetable.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { MapPin, School } from '@lucide/svelte';
-
-	const dayOptions = [
-		{ value: 'MON', label: 'จันทร์' },
-		{ value: 'TUE', label: 'อังคาร' },
-		{ value: 'WED', label: 'พุธ' },
-		{ value: 'THU', label: 'พฤหัสบดี' },
-		{ value: 'FRI', label: 'ศุกร์' },
-		{ value: 'SAT', label: 'เสาร์' },
-		{ value: 'SUN', label: 'อาทิตย์' }
-	];
+	import PersonalTimetable from '#lib/components/student/PersonalTimetable.svelte';
 
 	let { data }: PageProps = $props();
 	const identityKey = $derived.by(() => {
@@ -63,14 +49,6 @@
 	const termOptions = $derived(
 		contextOptions?.terms.filter((term) => term.academicYearId === selectedYearId) ?? []
 	);
-	const periods = $derived(periodsFromTimetableBlocks(blocks));
-	const schoolDays = $derived.by(() => {
-		const configured = new Set(blocks.map((block) => block.dayOfWeek));
-		return configured.size > 0
-			? dayOptions.filter((day) => configured.has(day.value))
-			: dayOptions.slice(0, 5);
-	});
-	const tableMinWidth = $derived(96 + periods.length * 132);
 
 	$effect.pre(() => {
 		const key = ownerKey,
@@ -216,49 +194,17 @@
 		if (termId === selectedTermId) return;
 		await updateUrl(selectedYearId, termId);
 	}
-
-	function blocksForCell(day: string, periodId: string): TimetableBlock[] {
-		return blocks.filter(
-			(block) => block.dayOfWeek === day && block.bellSchedulePeriodId === periodId
-		);
-	}
-
-	function blockTitle(block: TimetableBlock): string {
-		return block.offeringCode ?? block.title ?? 'กิจกรรม';
-	}
-
-	function blockColor(blockKind: TimetableBlock['blockKind']): string {
-		if (blockKind === 'course')
-			return 'border-blue-200 bg-blue-50 text-blue-950 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100';
-		if (blockKind === 'activity')
-			return 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100';
-		return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100';
-	}
-
-	function groupLabel(block: TimetableBlock): string {
-		return [
-			...block.groups.map((group) => group.name),
-			...block.homerooms.map((room) => room.name)
-		].join(', ');
-	}
-
-	function roomLabel(block: TimetableBlock): string {
-		return [
-			...block.groups.map((group) => group.roomCode),
-			...block.homerooms.map((room) => room.roomCode)
-		]
-			.filter(Boolean)
-			.join(', ');
-	}
 </script>
 
 <PageShell title="ตารางเรียน" description="ดูตารางเรียนย้อนหลังหรือภาคเรียนปัจจุบันของฉัน">
-	<Button variant="outline" disabled={loading || contextLoading} onclick={loadPrimary}
-		>โหลดข้อมูลใหม่</Button
-	>
+	{#snippet actions()}<Button
+			variant="outline"
+			disabled={loading || contextLoading || !selectedTermId}
+			onclick={loadPrimary}>โหลดข้อมูลใหม่</Button
+		>{/snippet}
 
-	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
-		<div class="min-w-52 space-y-2">
+	<div class="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2">
+		<div class="min-w-0 space-y-2">
 			<Label for="student-year">ปีการศึกษา</Label>
 			<Select.Root
 				type="single"
@@ -277,7 +223,7 @@
 				</Select.Content>
 			</Select.Root>
 		</div>
-		<div class="min-w-52 space-y-2">
+		<div class="min-w-0 space-y-2">
 			<Label for="student-term">ภาคเรียน</Label>
 			<Select.Root
 				type="single"
@@ -321,7 +267,7 @@
 		{/if}
 		{#if contextLoading || (loading && !loaded)}
 			<div role="status" aria-label="กำลังโหลดตารางเรียน">
-				<PageSkeleton variant="table" rows={6} columns={Math.max(periods.length + 1, 4)} />
+				<PageSkeleton variant="table" rows={6} columns={4} />
 			</div>
 		{:else if contextOptions && contextOptions.years.length === 0 && !contextError}
 			<PageState
@@ -334,50 +280,7 @@
 				description="โรงเรียนยังไม่ได้จัดตารางเรียนในภาคเรียนที่เลือก"
 			/>
 		{:else if loaded}
-			<div class="overflow-x-auto rounded-lg border">
-				<table class="w-full table-fixed border-collapse" style={`min-width: ${tableMinWidth}px`}>
-					<thead
-						><tr
-							><th class="bg-muted/70 w-24 border p-2 text-xs">วัน / คาบ</th
-							>{#each periods as period, index (period.id)}<th
-									class="bg-muted/70 border p-2 text-center text-xs"
-									><p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
-									<p class="text-muted-foreground font-normal">
-										{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
-									</p></th
-								>{/each}</tr
-						></thead
-					>
-					<tbody
-						>{#each schoolDays as day (day.value)}<tr
-								><th class="bg-muted/30 border p-2 text-xs">{day.label}</th
-								>{#each periods as period (period.id)}{@const cellBlocks = blocksForCell(
-										day.value,
-										period.id
-									)}<td class="h-24 border p-1 align-top"
-										>{#each cellBlocks as block (block.id)}<div
-												class={`mb-1 flex min-h-20 flex-col rounded-md border p-2 text-xs ${blockColor(block.blockKind)}`}
-											>
-												<p class="truncate font-semibold">{blockTitle(block)}</p>
-												{#if block.offeringName}<p class="mt-1 line-clamp-2 opacity-80">
-														{block.offeringName}
-													</p>{/if}{#if groupLabel(block)}<p
-														class="mt-auto flex items-center gap-1 truncate opacity-70"
-													>
-														<School class="size-3" />
-														{groupLabel(block)}
-													</p>{/if}{#if roomLabel(block)}<p
-														class="flex items-center gap-1 truncate opacity-70"
-													>
-														<MapPin class="size-3" />
-														{roomLabel(block)}
-													</p>{/if}
-											</div>{/each}</td
-									>{/each}</tr
-							>{/each}</tbody
-					>
-				</table>
-			</div>
+			<PersonalTimetable {blocks} />
 		{/if}
 	</div>
 </PageShell>

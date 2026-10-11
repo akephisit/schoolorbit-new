@@ -34,6 +34,7 @@ export type OpenAttendanceKiosk = Schemas['OpenAttendanceKiosk'];
 export type AttendanceSummary = Schemas['AttendanceSummary'];
 export type AttendanceStudentOption = Schemas['AttendanceStudentOption'];
 export type AttendanceFace = Schemas['AttendanceFace'];
+export type AttendanceFaceEnrollment = Schemas['AttendanceFaceEnrollment'];
 export type SpecialAttendanceGroup = Schemas['SpecialAttendanceGroup'];
 
 const base = '/api/attendance';
@@ -283,5 +284,18 @@ export async function removeAttendanceFace(studentId: string) {
 	return requireApiData(
 		await apiClient.delete<Record<string, never>>(`${base}/faces/${id(studentId)}`),
 		'ลบข้อมูลใบหน้าไม่สำเร็จ'
+	);
+}
+
+export async function attendanceFaceEnrollments(
+	academicTermId: string,
+	options: ApiRequestOptions = {}
+): Promise<AttendanceFaceEnrollment[]> {
+	return requireApiData(
+		await apiClient.get<AttendanceFaceEnrollment[]>(`${base}/faces`, {
+			...options,
+			query: { academicTermId }
+		}),
+		'โหลดรายชื่อที่ลงทะเบียนใบหน้าไม่ได้'
 	);
 }
