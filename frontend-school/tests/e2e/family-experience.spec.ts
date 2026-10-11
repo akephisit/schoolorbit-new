@@ -342,3 +342,58 @@ test('a parent without own attendance access cannot load child attendance region
 	expect(api.count('profile')).toBe(0);
 	expect(reports).toBe(0);
 });
+
+test('account replacement disposes the previous child report before its delayed response', async ({
+	page
+}) => {
+	await mockParent(page);
+	await ownPermission(page, 'parent');
+	let contexts = 0;
+	await page.route(`**/api/parent/students/${child}/academic-context/options`, (route) =>
+		++contexts === 1
+			? route.fallback()
+			: reply(route, 'บัญชีใหม่ไม่มีสิทธิ์เข้าถึงนักเรียนคนนี้', 403)
+	);
+	let release = () => {};
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let reports = 0;
+	await page.route('**/api/attendance/report?**', async (route) => {
+		reports++;
+		await held;
+		const report = attendance(child);
+		report.summaries[0].scopeKey = 'synthetic-previous-account';
+		report.summaries[0].scopeLabel = 'ข้อมูลบัญชีเดิม';
+		return reply(route, report);
+	});
+	await page.goto(attendancePath());
+	await familyExpect.poll(() => reports).toBe(1);
+	await page.evaluate(async (replacementId) => {
+		const modulePath = '/src/lib/stores/auth.ts';
+		const { authStore } = await import(modulePath);
+		authStore.setUser(
+			{
+				id: replacementId,
+				firstName: 'ผู้ปกครองใหม่',
+				lastName: 'ทดสอบ',
+				role: 'parent',
+				user_type: 'parent',
+				status: 'active'
+			},
+			['attendance.read.own']
+		);
+	}, id(999));
+	await familyExpect.poll(() => contexts).toBe(2);
+	const pending = page.waitForResponse(
+		(response) => new URL(response.url()).pathname === '/api/attendance/report'
+	);
+	release();
+	await pending;
+	await familyExpect(
+		page.getByText('บัญชีใหม่ไม่มีสิทธิ์เข้าถึงนักเรียนคนนี้', { exact: true })
+	).toBeVisible();
+	await familyExpect(page.getByText('ข้อมูลบัญชีเดิม', { exact: true })).toHaveCount(0);
+	await familyExpect(page.getByRole('button', { name: 'ของนักเรียน', exact: true })).toHaveCount(0);
+	expect(reports).toBe(1);
+});
