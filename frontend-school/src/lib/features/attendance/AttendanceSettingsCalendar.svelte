@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
+	import { beforeNavigate } from '$app/navigation';
 	import { SvelteDate } from 'svelte/reactivity';
 	import { toast } from 'svelte-sonner';
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
@@ -22,6 +23,7 @@
 	} from '#lib/utils/calendar.js';
 	import {
 		attendanceDays,
+		attendanceSettings,
 		saveAttendanceDays,
 		type AttendanceDay,
 		type AttendanceSettings
@@ -34,6 +36,12 @@
 		type AttendanceCalendarEvents
 	} from './attendance-settings-calendar.js';
 	import AttendanceSelect from './AttendanceSelect.svelte';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
+	interface PendingDay {
+		day: AttendanceDay;
+		revision: number;
+	}
 	let {
 		term,
 		date,
@@ -56,7 +64,9 @@
 	let month = $state(untrack(() => date.slice(0, 7))),
 		selectedDate = $state(untrack(() => date));
 	let dayDialogOpen = $state(false),
-		pendingDays = $state<AttendanceDay[]>([]);
+		pendingDays = $state<PendingDay[]>([]),
+		calendarBusy = $state(false);
+	let editRevision = 0;
 	let days = $state<AttendanceDay[]>([]),
 		calendar = $state<AttendanceCalendarEvents>({ events: [], scope: 'own' });
 	let dayLoading = $state(true),
@@ -65,7 +75,7 @@
 		eventError = $state(''),
 		saveError = $state(''),
 		saving = $state(false),
-		pendingAction = $state('');
+		recovering = $state<'retry' | 'discard' | ''>('');
 	let note = $state(''),
 		rangeStart = $state(untrack(() => date)),
 		rangeEnd = $state(untrack(() => date));
@@ -91,7 +101,20 @@
 		value: String(i + 1).padStart(2, '0'),
 		label: formatCalendarMonth(`2026-${String(i + 1).padStart(2, '0')}-01`).split(' ')[0]
 	}));
-	const writable = $derived(!busy && !saving && !dayLoading && !dayError && !settings.archived);
+	const manager = $derived($can.has(PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL));
+	const writable = $derived(
+		(!busy || calendarBusy) &&
+			!recovering &&
+			!dayLoading &&
+			!dayError &&
+			!settings.archived &&
+			manager
+	);
+	beforeNavigate(({ cancel, shallow }) => {
+		if (shallow || !pendingDays.length || !manager) return;
+		cancel();
+		toast.error('รอให้ปฏิทินบันทึกเสร็จ หรือลองใหม่ / ยกเลิกรายการค้างก่อนออกจากหน้านี้');
+	});
 	const selectedEvents = $derived(
 		calendar.events.filter((event) => eventOverlapsDate(event, selectedDate))
 	);
@@ -106,18 +129,16 @@
 	const dayStates = $derived.by(() => {
 		const states: Record<string, CalendarDayState> = {};
 		for (const cell of buildCalendarMonth(month + '-01')) {
-			const pending = pendingDays.find((day) => day.date === cell.date);
-			const counted = pending?.counted ?? isCounted(cell.date);
+			const pending = pendingDays.find((entry) => entry.day.date === cell.date);
+			const counted = pending?.day.counted ?? isCounted(cell.date);
 			states[cell.date] = {
 				active: cell.inCurrentMonth && !dayLoading && !dayError && counted,
 				label:
 					!cell.inCurrentMonth || dayLoading || dayError
 						? ''
-						: pending
-							? 'กำลังบันทึก…'
-							: counted
-								? '✓ นับยอด'
-								: '— ไม่นับยอด',
+						: counted
+							? '✓ นับยอด'
+							: '— ไม่นับยอด',
 				disabled: !cell.inCurrentMonth || !writable,
 				pending: !!pending,
 				description: days.find((day) => day.date === cell.date)?.note || undefined
@@ -199,35 +220,74 @@
 			.slice(0, 7);
 		selectMonth(value);
 	}
-	async function setDays(values: AttendanceDay[], action = 'day') {
+	async function drainDays(reconcile = false, discard = false) {
+		if (saving || disposed || !manager || !pendingDays.length) return;
+		const identity = $attendanceIdentity;
+		const current = () => !disposed && identity === $attendanceIdentity && manager;
+		saving = true;
+		recovering = reconcile ? (discard ? 'discard' : 'retry') : '';
+		calendarBusy = true;
+		onbusy(true);
+		if (!reconcile) saveError = '';
+		try {
+			let rowVersion = settings.rowVersion;
+			if (reconcile) {
+				const range = attendanceMonthRange(month);
+				const [latestSettings, latestDays] = await Promise.all([
+					attendanceSettings(term),
+					attendanceDays(term, range.from, range.to)
+				]);
+				if (!current()) return;
+				onsettings(latestSettings);
+				days = latestDays;
+				rowVersion = latestSettings.rowVersion;
+				if (discard) pendingDays = [];
+				else if (latestSettings.archived)
+					throw new Error('ภาคเรียนนี้ถูกเก็บถาวรแล้ว ยกเลิกรายการค้างเพื่อดูข้อมูลล่าสุด');
+			}
+			while (pendingDays.length && current()) {
+				const batch = $state.snapshot(pendingDays).slice(0, 366);
+				const values = batch.map((entry) => entry.day);
+				const saved = await saveAttendanceDays(term, { days: values, rowVersion });
+				if (!current()) return;
+				rowVersion = saved.rowVersion;
+				onsettings(saved);
+				days = [
+					...days.filter((day) => !values.some((value) => value.date === day.date)),
+					...values
+				];
+				pendingDays = pendingDays.filter(
+					(entry) => !batch.some((sent) => sent.revision === entry.revision)
+				);
+			}
+			if (current()) {
+				saveError = '';
+				toast.success(discard ? 'ยกเลิกรายการค้างและโหลดข้อมูลล่าสุดแล้ว' : 'บันทึกปฏิทินครบแล้ว');
+			}
+		} catch (error) {
+			if (current()) saveError = error instanceof Error ? error.message : 'บันทึกไม่ได้';
+		} finally {
+			if (current()) {
+				saving = false;
+				recovering = '';
+				calendarBusy = pendingDays.length > 0;
+				onbusy(calendarBusy);
+			}
+		}
+	}
+	function setDays(values: AttendanceDay[]) {
 		if (!writable || disposed) return;
-		if (new TextEncoder().encode(note).length > 500) {
+		if (values.some((value) => new TextEncoder().encode(value.note).length > 500)) {
 			saveError = 'หมายเหตุยาวเกินกำหนด กรุณาย่อข้อความ';
 			return;
 		}
-		saving = true;
-		pendingDays = values;
-		pendingAction = action;
-		onbusy(true);
-		saveError = '';
-		try {
-			const saved = await saveAttendanceDays(term, {
-				days: values,
-				rowVersion: settings.rowVersion
-			});
-			if (disposed) return;
-			onsettings(saved);
-			days = [...days.filter((day) => !values.some((value) => value.date === day.date)), ...values];
-			toast.success('บันทึกแล้ว');
-		} catch (error) {
-			if (!disposed) saveError = error instanceof Error ? error.message : 'บันทึกไม่ได้';
-		} finally {
-			if (!disposed) {
-				saving = false;
-				pendingDays = [];
-				pendingAction = '';
-				onbusy(false);
-			}
+		pendingDays = [
+			...pendingDays.filter((entry) => !values.some((value) => value.date === entry.day.date)),
+			...values.map((day) => ({ day, revision: ++editRevision }))
+		];
+		if (!calendarBusy || saving || !saveError) {
+			saveError = '';
+			void drainDays();
 		}
 	}
 	function toggleDay(value: string) {
@@ -235,12 +295,18 @@
 		void setDays([
 			{
 				date: value,
-				counted: !isCounted(value),
-				note: note || days.find((day) => day.date === value)?.note || ''
+				counted: !(
+					pendingDays.find((entry) => entry.day.date === value)?.day.counted ?? isCounted(value)
+				),
+				note:
+					note ||
+					pendingDays.find((entry) => entry.day.date === value)?.day.note ||
+					days.find((day) => day.date === value)?.note ||
+					''
 			}
 		]);
 	}
-	async function applyRange(counted: boolean) {
+	function applyRange(counted: boolean) {
 		try {
 			if (!rangeStart || !rangeEnd || rangeStart > rangeEnd)
 				throw new Error('เลือกช่วงวันที่ให้ถูกต้อง');
@@ -254,7 +320,7 @@
 				current.setUTCDate(current.getUTCDate() + 1);
 			}
 			if (values.length > 366) throw new Error('เลือกครั้งละไม่เกิน 366 วัน');
-			await setDays(values, `range-${counted}`);
+			setDays(values);
 		} catch (error) {
 			saveError = error instanceof Error ? error.message : 'ช่วงวันที่ไม่ถูกต้อง';
 		}
@@ -332,6 +398,11 @@
 		{#if eventLoading}<p role="status" class="text-sm text-muted-foreground">
 				กำลังโหลดกิจกรรม…
 			</p>{/if}
+		<p role="status" class="min-h-5 text-sm text-muted-foreground">
+			{pendingDays.length
+				? `${saving ? 'กำลังบันทึก' : 'ยังไม่บันทึก'} ${pendingDays.length} วัน · ${recovering ? 'กำลังโหลดข้อมูลล่าสุด' : 'กดเปลี่ยนวันต่อได้'}`
+				: 'บันทึกอัตโนมัติเมื่อเปลี่ยนวัน'}
+		</p>
 		<div aria-busy={dayLoading || eventLoading}>
 			<CalendarMonthGrid
 				monthDate={month + '-01'}
@@ -348,8 +419,27 @@
 		{#if saveError}<Alert.Root variant="destructive"
 				><Alert.Title>บันทึกวันประมวลผลไม่ได้</Alert.Title><Alert.Description
 					>{saveError}</Alert.Description
-				></Alert.Root
-			>{/if}
+				>
+				{#if pendingDays.length}<p class="text-sm">
+						ค่าที่เลือกยังรอบันทึก ลองใหม่จะโหลดข้อมูลล่าสุดก่อนบันทึกเฉพาะวันที่เลือก
+					</p>
+					<div class="flex flex-wrap gap-2">
+						<LoadingButton
+							type="button"
+							loading={recovering === 'retry'}
+							disabled={saving}
+							onclick={() => void drainDays(true)}>โหลดล่าสุดแล้วลองใหม่</LoadingButton
+						>
+						<LoadingButton
+							type="button"
+							variant="outline"
+							loading={recovering === 'discard'}
+							disabled={saving}
+							onclick={() => void drainDays(true, true)}>ยกเลิกรายการค้าง</LoadingButton
+						>
+					</div>
+				{/if}
+			</Alert.Root>{/if}
 		<div class="space-y-2">
 			<Label for="attendance-calendar-note">หมายเหตุวันหยุด / กิจกรรม</Label><Input
 				id="attendance-calendar-note"
@@ -374,18 +464,16 @@
 					disabled={busy || saving || settings.archived}
 				/>
 			</div>
-			<LoadingButton
+			<Button
 				type="button"
-				loading={saving && pendingAction === 'range-true'}
 				variant="outline"
-				disabled={!writable}
-				onclick={() => applyRange(true)}>นับช่วงนี้</LoadingButton
-			><LoadingButton
+				disabled={!writable || busy || saving}
+				onclick={() => applyRange(true)}>นับช่วงนี้</Button
+			><Button
 				type="button"
-				loading={saving && pendingAction === 'range-false'}
 				variant="outline"
-				disabled={!writable}
-				onclick={() => applyRange(false)}>วันหยุด / ไม่นับช่วงนี้</LoadingButton
+				disabled={!writable || busy || saving}
+				onclick={() => applyRange(false)}>วันหยุด / ไม่นับช่วงนี้</Button
 			>
 		</div>
 	</Card.Content>
