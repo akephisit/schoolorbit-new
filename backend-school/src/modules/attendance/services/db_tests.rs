@@ -1323,6 +1323,13 @@ async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_hi
 #[tokio::test]
 async fn attendance_enrollment_metadata_is_scoped_and_withdrawal_reconciles_it() {
     let f = fixture("attendance_enrollment_metadata").await;
+    sqlx::query("INSERT INTO homeroom_advisors (homeroom_id,user_id,role) SELECT p.homeroom_id,$1,'primary' FROM homeroom_placements p JOIN student_academic_years y ON y.id=p.student_academic_year_id JOIN academic_terms t ON t.academic_year_id=y.academic_year_id WHERE y.student_id=$2 AND t.id=$3 AND p.status='current'")
+        .bind(TEACHER)
+        .bind(STUDENT)
+        .bind(TERM)
+        .execute(&f.pool)
+        .await
+        .unwrap();
     faces::enroll(
         &f.pool,
         TEACHER,
