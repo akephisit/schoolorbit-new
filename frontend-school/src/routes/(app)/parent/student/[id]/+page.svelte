@@ -17,15 +17,14 @@
 	import { getChildProfile } from '#lib/api/parents.js';
 	import type { Student } from '#lib/api/students.js';
 	import ScopedAcademicYearSelect from '#lib/components/academic-context/ScopedAcademicYearSelect.svelte';
-	import { Card } from '#lib/components/ui/card/index.js';
+	import StudentSummary from '#lib/components/student/StudentSummary.svelte';
+	import StudentDestinations from '#lib/components/student/StudentDestinations.svelte';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { User, Calendar, BookOpen, Clock } from '@lucide/svelte';
-	import { formatDate } from '#lib/utils/date.js';
-	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
+	import { Calendar, BookOpen, UserCheck, ClipboardList } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 	const studentId = $derived(data.studentId);
@@ -192,6 +191,36 @@
 	const timetableHref = $derived(
 		`${resolve(`parent/student/${studentId}/timetable`)}${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`
 	);
+	const destinations = $derived([
+		{
+			title: 'ตารางเรียน',
+			description: 'รายวิชาและกิจกรรมของนักเรียนในภาคเรียนที่เลือก',
+			href: timetableHref,
+			icon: BookOpen
+		},
+		...($can.has(PERMISSIONS.ATTENDANCE_READ_OWN)
+			? [
+					{
+						title: 'การเช็คชื่อ',
+						description: 'ดูสรุปการเข้าเรียน ประวัติรายวัน และหลักฐานที่มีสิทธิ์เข้าถึง',
+						href: `${resolve(`parent/student/${studentId}/attendance`)}${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`,
+						icon: UserCheck
+					}
+				]
+			: []),
+		{
+			title: 'ปฏิทิน',
+			description: 'กิจกรรมและกำหนดการที่เกี่ยวข้องกับนักเรียนคนนี้',
+			href: `${resolve(`parent/student/${studentId}/calendar`)}${academicYearQuery}`,
+			icon: Calendar
+		},
+		{
+			title: 'ตารางสอบ',
+			description: 'กำหนดการสอบและสถานที่สอบที่โรงเรียนเผยแพร่',
+			href: `${resolve(`parent/student/${studentId}/exams`)}${academicYearQuery}${termId ? '&academicTermId=' + encodeURIComponent(termId) : ''}`,
+			icon: ClipboardList
+		}
+	]);
 </script>
 
 <PageShell
@@ -199,15 +228,15 @@
 		? `${student.title || ''}${student.first_name} ${student.last_name}`
 		: 'ข้อมูลนักเรียน'}
 	description={student
-		? `${student.grade_level || 'ไม่ระบุชั้น'} | ห้อง ${student.homeroom || '-'} | รหัสนักเรียน: ${student.student_number || '-'}`
+		? `${student.grade_level || 'ไม่ระบุชั้น'} | ห้อง ${student.homeroom || '-'} | รหัสนักเรียน: ${student.student_id || '-'}`
 		: 'ข้อมูลนักเรียนที่เชื่อมโยงกับบัญชีผู้ปกครอง'}
 	backHref={parentHref}
 >
-	<Button
-		variant="outline"
-		disabled={loading || contextLoading || !selectedYearId}
-		onclick={loadProfile}>โหลดข้อมูลใหม่</Button
-	>
+	{#snippet actions()}<Button
+			variant="outline"
+			disabled={loading || contextLoading || !selectedYearId}
+			onclick={loadProfile}>โหลดข้อมูลใหม่</Button
+		>{/snippet}
 	{#if contextOptions && contextOptions.years.length > 0}
 		<div class="flex max-w-sm flex-col gap-2 rounded-xl border bg-card p-4">
 			<Label for="parent-child-detail-year">ปีการศึกษา</Label>
@@ -253,94 +282,11 @@
 				description="กรุณาติดต่อโรงเรียนเพื่อตรวจสอบการลงทะเบียน"
 			/>
 		{:else if student}
-			<!-- Header -->
-			<div class="flex flex-col md:flex-row gap-6 items-start">
-				<div
-					class="w-32 h-32 rounded-full bg-muted flex items-center justify-center overflow-hidden border-4 border-background shadow-lg"
-				>
-					{#if student.profile_image_file_id}
-						<PrivateFileImage
-							fileId={student.profile_image_file_id}
-							resourceId={student.id}
-							alt={student.first_name}
-							class="w-full h-full object-cover"
-						/>
-					{:else}
-						<User class="w-12 h-12 text-muted-foreground/50" />
-					{/if}
-				</div>
-
-				<div class="flex-1">
-					<div class="flex flex-wrap gap-2 mb-4">
-						<Badge variant="secondary" class="text-sm px-3 py-1">
-							{student.grade_level || 'ไม่ระบุชั้น'}
-						</Badge>
-						<Badge variant="outline" class="text-sm px-3 py-1 text-muted-foreground">
-							ห้อง {student.homeroom || '-'}
-						</Badge>
-						<Badge variant="outline" class="text-sm px-3 py-1 text-muted-foreground">
-							รหัสนักเรียน: {student.student_number || '-'}
-						</Badge>
-					</div>
-
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-muted-foreground">
-						<div class="flex items-center gap-2">
-							<Calendar class="w-4 h-4" />
-							วันเกิด: {student.date_of_birth ? formatDate(student.date_of_birth) : '-'}
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Content Tabs -->
-			<!-- Placeholder for future features like Grades, Timetable, Attendance -->
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-				<Card class="p-6">
-					<div class="flex items-center gap-3 mb-4">
-						<div
-							class="p-2 rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-						>
-							<Clock class="w-5 h-5" />
-						</div>
-						<h3 class="font-semibold">การเข้าเรียน</h3>
-					</div>
-					<p class="text-muted-foreground text-sm">ยังไม่มีข้อมูลการเข้าเรียน</p>
-					<Button variant="link" class="px-0 mt-2 text-blue-600">ดูทั้งหมด</Button>
-				</Card>
-
-				<Card class="p-6">
-					<div class="flex items-center gap-3 mb-4">
-						<div
-							class="p-2 rounded-lg bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
-						>
-							<BookOpen class="w-5 h-5" />
-						</div>
-						<h3 class="font-semibold">ผลการเรียน</h3>
-					</div>
-					<p class="text-muted-foreground text-sm">ยังไม่มีข้อมูลผลการเรียน</p>
-					<Button variant="link" class="px-0 mt-2 text-green-600">ดูทั้งหมด</Button>
-				</Card>
-
-				<Card class="p-6">
-					<div class="flex items-center gap-3 mb-4">
-						<div
-							class="p-2 rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
-						>
-							<Calendar class="w-5 h-5" />
-						</div>
-						<h3 class="font-semibold">ตารางเรียน</h3>
-					</div>
-					<p class="text-muted-foreground text-sm">ดูตารางเรียนของบุตรในแต่ละภาคเรียน</p>
-					<Button
-						variant="link"
-						class="px-0 mt-2 text-purple-600"
-						href={timetableHref}
-						data-sveltekit-preload-data="tap"
-					>
-						ดูทั้งหมด
-					</Button>
-				</Card>
-			</div>
+			<StudentSummary
+				{student}
+				yearName={contextOptions?.years.find((year) => year.id === selectedYearId)?.name}
+			/>
+			<div class="mt-6"><StudentDestinations items={destinations} /></div>
 		{:else if loaded && !contextError && !error}
 			<PageState
 				title="ไม่พบข้อมูลนักเรียน"
