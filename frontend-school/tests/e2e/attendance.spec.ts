@@ -27,6 +27,13 @@ const reply = (route: Route, data: unknown, status = 200) =>
 	});
 const path = (suffix = '') =>
 	`/staff/attendance${suffix}?academicYearId=${year}&academicTermId=${term}&date=${date}`;
+async function chooseRound(page: Page, name: RegExp = /08:00.*เข้าโรงเรียน/) {
+	const selector = page.getByRole('button', { name: 'รอบเช็คชื่อ', exact: true });
+	if ((page.viewportSize()?.width ?? 1280) < 1280) {
+		await selector.click();
+		await page.getByRole('option', { name }).click();
+	} else await page.getByRole('button', { name }).click();
+}
 const configuration = {
 	enabled: true,
 	weekdays: [1, 2, 3, 4, 5],
@@ -652,7 +659,7 @@ test('explicit refresh discards input while search preserves current edits witho
 }) => {
 	const api = await mockAttendance(page);
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 	await page.getByRole('option', { name: 'มา', exact: true }).click();
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
@@ -683,7 +690,7 @@ test('read-only teacher can preview an unsaved round without creating a session'
 		} satisfies AttendanceWorkspace)
 	);
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
 	expect(api.reads).toContain('/api/attendance/preview');
 	expect(api.writes).toHaveLength(0);
@@ -717,7 +724,7 @@ test('school reader can preview others but can only edit assigned rounds', async
 	await page.goto(path());
 	await page.getByRole('button', { name: /08:00.*รอบครูคนอื่น/ }).click();
 	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
 	expect(api.reads.filter((read) => read.endsWith('/preview'))).toHaveLength(2);
 	expect(api.writes).toHaveLength(0);
@@ -798,7 +805,7 @@ test('cancelling a session needs a reason and a final confirmation', async ({ pa
 		return reply(route, result);
 	});
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await page.getByRole('button', { name: 'งดคาบ / กิจกรรมแทนการเรียน', exact: true }).click();
 	await expect(page.getByText('ระบุเหตุผลงดหรือคืนคาบ', { exact: true })).toBeVisible();
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('กิจกรรมโรงเรียน');
@@ -882,7 +889,7 @@ test('teacher saves explicit results, retains unchecked and adds a pupil without
 test('scan conflict preserves teacher input', async ({ page }) => {
 	await mockAttendance(page, { conflict: true });
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 	await page.getByRole('option', { name: 'มา', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
@@ -1079,7 +1086,7 @@ test('read-only teacher sees saved results without management links or optional 
 		permissions: ['attendance.read.assigned', 'academic_context.read.school']
 	});
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
 	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('link', { name: 'ตั้งค่าปฏิทินและรอบพิเศษ' })).toHaveCount(0);
@@ -1188,7 +1195,7 @@ for (const viewport of [
 			await mockAttendance(page);
 			for (const suffix of ['/settings', '/faces', '/report', '']) {
 				await page.goto(path(suffix));
-				if (!suffix) await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+				if (!suffix) await chooseRound(page);
 				await expect(
 					page.getByRole('heading', {
 						name: (
@@ -1303,7 +1310,7 @@ for (const overlap of [false, true])
 			}
 		);
 		await page.goto(path());
-		await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+		await chooseRound(page);
 		await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
 		await page.getByRole('option', { name: 'มา', exact: true }).click();
 		await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ข้อมูลของครู');
@@ -1338,7 +1345,7 @@ test('manual workspace refresh reloads selected detail and discards unsaved inpu
 		(route) => reply(route, current)
 	);
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ยังไม่บันทึก');
 	current.session.rowVersion = 2;
 	current.students[0].result = 'late';
@@ -1423,9 +1430,10 @@ test('large roster keeps DOM bounded while mark-all saves the complete round on 
 	);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto(path());
-	await page.getByRole('button', { name: /08:00.*เข้าโรงเรียน/ }).click();
+	await chooseRound(page);
 	await expect(page.locator('tbody tr')).toHaveCount(40);
-	await expect(page.getByLabel('หมายเหตุของ นักเรียนมือถือ 0')).toBeVisible();
+	await page.locator('tbody tr').first().getByText('เพิ่มหมายเหตุ', { exact: true }).click();
+	await expect(page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนมือถือ 0')).toBeVisible();
 	expect(
 		await page
 			.locator('[data-slot="table-container"]')
@@ -1544,10 +1552,19 @@ test('automatic scanning confirms two people and uses their frozen frame for seq
 	expect(new Set(scans.map((scan) => scan.studentId)).size).toBe(2);
 	expect(new Set(scans.map((scan) => scan.eventId)).size).toBe(2);
 	expect(scans.every((scan) => scan.capturedAt === '2026-10-09T01:00:00Z')).toBe(true);
+	const outlines = page.getByLabel('ภาพสดจากเว็บแคม').locator('..').locator('[style*="left:"]');
+	await expect(outlines).toHaveCount(2);
+
+	const imageWidth = (await page.getByLabel('ภาพสดจากเว็บแคม').boundingBox())!.width;
+	const left = await outlines
+		.first()
+		.evaluate((element) => parseFloat(getComputedStyle(element).left));
+	expect(Math.abs(left - imageWidth * 0.75)).toBeLessThan(1);
+
 	await page.getByRole('button', { name: 'หยุดและปิดกล้อง', exact: true }).click();
 });
 
-test('unmirrored enrollment guide rejects the wrong side and saves three distinct poses', async ({
+test('mirrored enrollment guide rejects the wrong side and saves three distinct poses', async ({
 	page
 }) => {
 	const api = await mockAttendance(page);
@@ -1562,9 +1579,14 @@ test('unmirrored enrollment guide rejects the wrong side and saves three distinc
 	);
 	await page.goto(path('/faces'));
 	await page.getByRole('button', { name: 'ลงทะเบียนใบหน้า', exact: true }).click();
-	await expect(
-		page.getByText('ภาพไม่กลับด้าน · ลูกศรบอกทิศทางในภาพ', { exact: true })
-	).toBeVisible();
+	await expect(page.getByLabel('ภาพสดจากเว็บแคม')).toHaveCSS('scale', '-1 1');
+	const guide = page
+		.getByLabel('ภาพสดจากเว็บแคม')
+		.locator('..')
+		.locator('[aria-hidden="true"] > div');
+	const imageWidth = (await page.getByLabel('ภาพสดจากเว็บแคม').boundingBox())!.width;
+	expect((await guide.boundingBox())!.width / imageWidth).toBeGreaterThanOrEqual(0.49);
+
 	await page.getByRole('button', { name: 'นักเรียน', exact: true }).click();
 	await page.getByRole('option', { name: /คนแรก/ }).click();
 	await page.getByLabel('ยืนยันว่าได้รับความยินยอมและตรวจว่าเป็นนักเรียนคนที่เลือก').click();
@@ -1767,3 +1789,72 @@ test('preloaded same-context navigation replaces enrollment metadata without rec
 	).toBeVisible();
 	await expect(page.getByRole('button', { name: /ถอนข้อมูลใบหน้า นักเรียนคนแรก/ })).toHaveCount(0);
 });
+
+for (const width of [390, 474])
+	for (const theme of ['light', 'dark'] as const)
+		test(`mobile round picker bounds long lists across all kinds ${width} ${theme}`, async ({
+			page
+		}) => {
+			const api = await mockAttendance(page);
+			await page.setViewportSize({ width, height: 884 });
+			await page.emulateMedia({ colorScheme: theme });
+			const rounds: AttendanceSession[] = (['arrival', 'lesson', 'special'] as const).flatMap(
+				(kind, k) =>
+					Array.from({ length: 120 }, (_, i) => ({
+						...session,
+						id: id(3000 + k * 200 + i),
+						sourceKey: id(4000 + k * 200 + i),
+						kind,
+						title: `รอบ ${i + 1} · ${kind} กิจกรรมทดสอบที่มีชื่อยาวเพื่อดูการแสดงผลบนมือถือ`,
+						rowVersion: 0
+					}))
+			);
+			await page.route('**/api/attendance/workspace?**', (route) =>
+				reply(route, {
+					academicTermId: term,
+					date,
+					counted: true,
+					sessions: rounds,
+					digestState: 'none'
+				})
+			);
+			await page.route('**/api/attendance/preview?**', (route) => {
+				const source = new URL(route.request().url()).searchParams.get('sourceKey');
+				const selected = rounds.find((row) => row.sourceKey === source)!;
+				return reply(route, { ...detail(), session: selected });
+			});
+			await page.goto(path());
+			for (const [kind, label] of [
+				['arrival', 'เข้าโรงเรียน'],
+				['lesson', 'รายคาบ'],
+				['special', 'รอบพิเศษ']
+			] as const) {
+				await page
+					.getByRole('group', { name: 'ประเภทรอบเช็คชื่อ' })
+					.getByRole('button', { name: label, exact: true })
+					.click();
+				const picker = page.getByRole('button', { name: 'รอบเช็คชื่อ', exact: true });
+				await expect(picker).toBeInViewport();
+				await picker.click();
+				await page.getByLabel('ค้นหา รอบเช็คชื่อ', { exact: true }).fill('รอบ 120 ·');
+				await page.getByRole('option', { name: new RegExp(`รอบ 120 · ${kind}`) }).click();
+				await expect(
+					page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true })
+				).toBeInViewport();
+				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+					true
+				);
+				expect((await page.locator('tbody tr').first().boundingBox())!.height).toBeLessThan(110);
+				await expect(page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนคนแรก')).toBeHidden();
+				await page.locator('tbody tr').first().getByText('เพิ่มหมายเหตุ', { exact: true }).click();
+				await page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนคนแรก').fill('ตรวจสอบแล้ว');
+				await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่ตรงกับรายชื่อ');
+				await expect(page.getByText('ไม่พบชื่อนักเรียนที่ค้นหา', { exact: true })).toBeVisible();
+				await page.getByLabel('ค้นหาชื่อนักเรียน').fill('');
+				await expect(page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนคนแรก')).toHaveValue(
+					'ตรวจสอบแล้ว'
+				);
+				await page.screenshot({ path: `/tmp/attendance-compact-${width}-${theme}-${kind}.png` });
+			}
+			expect(api.writes).toHaveLength(0);
+		});

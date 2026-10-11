@@ -220,6 +220,8 @@ test('day click stays usable while saving and retains pending selection after re
 	const cell = page.locator(`[data-calendar-date="${date}"]`);
 	await expect(cell).toBeEnabled();
 	await expect(cell).toHaveAttribute('aria-pressed', 'true');
+	await expect(cell).toHaveText('9');
+	await cell.scrollIntoViewIfNeeded();
 	const dimensions = await cell.boundingBox();
 	await cell.click({ position: { x: dimensions!.width * 0.7, y: dimensions!.height * 0.8 } });
 	await expect(cell).toHaveAttribute('aria-pressed', 'false');
@@ -227,6 +229,8 @@ test('day click stays usable while saving and retains pending selection after re
 	await expect(cell).toBeEnabled();
 	await expect(page.locator('[data-calendar-date="2026-10-12"]')).toBeEnabled();
 	expect(attempts).toBe(1);
+	const pendingDimensions = await cell.boundingBox();
+	expect(pendingDimensions).toEqual(dimensions);
 	release();
 	await expect(
 		page.getByText('การตั้งค่าถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่', { exact: true })

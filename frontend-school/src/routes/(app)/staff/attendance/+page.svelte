@@ -16,6 +16,7 @@
 	title={data.title}
 	description="เลือกวันที่และรอบเช็คชื่อ บันทึกผลและติดตามนักเรียนที่ได้รับมอบหมาย"
 	icon={UserCheck}
+	contentClass="space-y-3 sm:space-y-6"
 >
 	{#if data.term}<AttendanceNavigation
 			term={data.term}

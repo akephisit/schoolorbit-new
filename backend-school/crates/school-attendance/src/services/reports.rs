@@ -33,13 +33,13 @@ pub(crate) const SUMMARY_SQL: &str = r#"WITH eligible AS (
  COALESCE(sum(weight) FILTER(WHERE result='leave'),0)::bigint leave,
  COALESCE(sum(weight) FILTER(WHERE result='activity'),0)::bigint activity,
  COALESCE(sum(weight) FILTER(WHERE result='unchecked'),0)::bigint unchecked,sum(weight)::bigint expected,
- min(concat_ws(' ',u.title,u.first_name,u.last_name)) display_name
+ min(concat_ws(' ',concat(u.title,u.first_name),u.last_name)) display_name
  FROM facts JOIN users u ON u.id=facts.student_id GROUP BY student_id,category,scope_key ORDER BY student_id,category,scope_key"#;
 fn archived_summary_sql(teacher: bool) -> &'static str {
     if teacher {
-        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',u.title,u.first_name,u.last_name) display_name FROM attendance_term_teacher_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND s.teacher_id=$3 ORDER BY s.student_id,s.category,s.scope_key"
+        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name FROM attendance_term_teacher_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND s.teacher_id=$3 ORDER BY s.student_id,s.category,s.scope_key"
     } else {
-        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',u.title,u.first_name,u.last_name) display_name FROM attendance_term_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND $3::uuid IS NULL ORDER BY s.student_id,s.category,s.scope_key"
+        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name FROM attendance_term_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND $3::uuid IS NULL ORDER BY s.student_id,s.category,s.scope_key"
     }
 }
 pub async fn summaries(

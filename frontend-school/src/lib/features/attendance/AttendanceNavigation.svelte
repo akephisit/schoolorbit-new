@@ -26,19 +26,25 @@
 	}
 </script>
 
-<nav aria-label="เมนูเช็คชื่อ" class="flex flex-wrap gap-2">
+<nav aria-label="เมนูเช็คชื่อ" class="flex gap-2 overflow-x-auto pb-1">
 	{#if $can.hasAny(...ATTENDANCE_STAFF_PERMISSIONS)}
 		<Button
 			href={destination()}
 			variant={current === 'workspace' ? 'secondary' : 'outline'}
 			aria-current={current === 'workspace' ? 'page' : undefined}
-			><UserCheck class="size-4" />เช็คชื่อ</Button
+			aria-label="เช็คชื่อ"
+			><UserCheck class="size-4" /><span class="sm:hidden" aria-hidden="true">เช็คชื่อ</span><span
+				class="hidden sm:inline">เช็คชื่อ</span
+			></Button
 		>
 		<Button
 			href={destination('/report')}
 			variant={current === 'report' ? 'secondary' : 'outline'}
 			aria-current={current === 'report' ? 'page' : undefined}
-			><ChartColumn class="size-4" />สรุป / ล้างภาคเรียน</Button
+			aria-label="สรุป / ล้างภาคเรียน"
+			><ChartColumn class="size-4" /><span class="sm:hidden" aria-hidden="true">สรุป</span><span
+				class="hidden sm:inline">สรุป / ล้างภาคเรียน</span
+			></Button
 		>
 	{/if}
 	{#if $can.has(PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL)}
@@ -46,7 +52,10 @@
 			href={destination('/settings')}
 			variant={current === 'settings' ? 'secondary' : 'outline'}
 			aria-current={current === 'settings' ? 'page' : undefined}
-			><CalendarDays class="size-4" />ตั้งค่าปฏิทินและรอบพิเศษ</Button
+			aria-label="ตั้งค่าปฏิทินและรอบพิเศษ"
+			><CalendarDays class="size-4" /><span class="sm:hidden" aria-hidden="true">ตั้งค่า</span><span
+				class="hidden sm:inline">ตั้งค่าปฏิทินและรอบพิเศษ</span
+			></Button
 		>
 	{/if}
 	{#if $can.hasAny(...ATTENDANCE_FACE_PERMISSIONS)}
@@ -54,7 +63,10 @@
 			href={destination('/faces')}
 			variant={current === 'faces' ? 'secondary' : 'outline'}
 			aria-current={current === 'faces' ? 'page' : undefined}
-			><Camera class="size-4" />เว็บแคม / ลงทะเบียนใบหน้า</Button
+			aria-label="เว็บแคม / ลงทะเบียนใบหน้า"
+			><Camera class="size-4" /><span class="sm:hidden" aria-hidden="true">ใบหน้า</span><span
+				class="hidden sm:inline">เว็บแคม / ลงทะเบียนใบหน้า</span
+			></Button
 		>
 	{/if}
 </nav>

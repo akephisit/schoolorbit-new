@@ -393,7 +393,7 @@
 		<p class="text-sm text-muted-foreground">
 			{calendar.scope === 'school'
 				? 'กิจกรรมจากปฏิทินโรงเรียน'
-				: 'กิจกรรมจากปฏิทินที่คุณมีสิทธิ์เห็น'} · ช่องสีเข้ม ✓ นับยอด · ช่องสีอ่อน — ไม่นับยอด
+				: 'กิจกรรมจากปฏิทินที่คุณมีสิทธิ์เห็น'} · ช่องสีเข้ม: นับยอด · ช่องสีอ่อน: ไม่นับยอด
 		</p>
 		{#if dayError}<PageState
 				variant="error"
@@ -409,13 +409,9 @@
 				actionLabel="ลองโหลดกิจกรรมใหม่"
 				onaction={loadEvents}
 			/>{/if}
-		{#if dayLoading}<p role="status" class="text-sm text-muted-foreground">
-				กำลังโหลดวันประมวลผล…
-			</p>{/if}
-		{#if eventLoading}<p role="status" class="text-sm text-muted-foreground">
-				กำลังโหลดกิจกรรม…
-			</p>{/if}
-		<p role="status" class="min-h-5 text-sm text-muted-foreground">
+		{#if dayLoading}<p role="status" class="sr-only">กำลังโหลดวันประมวลผล…</p>{/if}
+		{#if eventLoading}<p role="status" class="sr-only">กำลังโหลดกิจกรรม…</p>{/if}
+		<p role="status" class="sr-only">
 			{pendingDays.length
 				? `${saving ? 'กำลังบันทึก' : 'ยังไม่บันทึก'} ${pendingDays.length} วัน · ${recovering ? 'กำลังโหลดข้อมูลล่าสุด' : 'กดเปลี่ยนวันต่อได้'}`
 				: 'บันทึกอัตโนมัติเมื่อเปลี่ยนวัน'}
@@ -425,6 +421,7 @@
 				monthDate={month + '-01'}
 				events={calendar.events}
 				{dayStates}
+				hideDayStateLabels
 				hideMobileTimes
 				onselect={toggleDay}
 				oneventselect={(_, value) => {

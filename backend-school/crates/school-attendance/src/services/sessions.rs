@@ -144,7 +144,7 @@ pub async fn detail_unchecked(
         WHERE arrival.academic_term_id=$2 AND arrival.date=$3 AND arrival.kind='arrival'
           AND a.student_id IN (SELECT "studentId" FROM participants) GROUP BY a.student_id
     ) SELECT p."studentId" student_id,p."studentAcademicYearId" student_academic_year_id,
-        concat_ws(' ',u.title,u.first_name,u.last_name) display_name,p."classNumber" class_number,
+        concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name,p."classNumber" class_number,
         COALESCE(r.result,'unchecked') result,COALESCE(r.origin,'none') origin,COALESCE(r.note,'') note,
         r.observed_at,e.evidence_file_id,a.observed_at arrival_at,COALESCE(r.row_version,0) row_version
         FROM participants p JOIN users u ON u.id=p."studentId"

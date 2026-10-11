@@ -38,7 +38,8 @@
 		onselect,
 		oneventselect,
 		fillHeight = false,
-		hideMobileTimes = false
+		hideMobileTimes = false,
+		hideDayStateLabels = false
 	}: {
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
@@ -49,6 +50,7 @@
 		oneventselect?: (event: CalendarDisplayEvent, date: string, anchor: HTMLElement) => void;
 		fillHeight?: boolean;
 		hideMobileTimes?: boolean;
+		hideDayStateLabels?: boolean;
 	} = $props();
 
 	const fallbackColor = '#64748b';
@@ -125,7 +127,7 @@
 						>
 							{cell.dayNumber}
 						</span>
-						{#if dayState}<span
+						{#if dayState && !hideDayStateLabels}<span
 								class="mt-auto break-words text-[10px] font-medium leading-snug sm:text-xs"
 								aria-hidden="true">{dayState.label}</span
 							>{/if}

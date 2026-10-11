@@ -358,7 +358,7 @@
 					disabled={busy}
 					onclick={exportCsv}><Download class="size-4" />ส่งออก CSV</LoadingButton
 				>
-				{#if pendingAction === 'export'}<p role="status" class="text-sm text-muted-foreground">
+				{#if pendingAction === 'export'}<p role="status" class="sr-only">
 						ส่งออกแล้ว {exported} รายการ
 					</p>
 					<Button type="button" variant="outline" onclick={() => exportRequest.abort()}
@@ -512,7 +512,7 @@
 							void loadHistory();
 						}}
 					/>{/if}
-				{#if pendingAction === 'history'}<p role="status" class="text-sm text-muted-foreground">
+				{#if pendingAction === 'history'}<p role="status" class="sr-only">
 						กำลังโหลดรายละเอียด…
 					</p>{/if}
 				<div class="space-y-3">
