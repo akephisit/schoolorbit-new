@@ -247,7 +247,7 @@ test('revoking scan permission closes the running webcam while enrollment remain
 	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
 		route.fulfill({
 			contentType: 'application/javascript',
-			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(stream){if(stream) document.body.dataset.attendanceStopped='yes'};export async function readFace(){return null};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw new Error('unexpected capture')};`
+			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(stream){if(stream) document.body.dataset.attendanceStopped='yes'};export async function readFace(){return null};export async function readFaces(){const face=await readFace();return {frame:document.createElement('canvas'),capturedAt:new Date().toISOString(),detectedCount:face?1:0,faces:face?[{...face,box:{x:.3,y:.2,width:.2,height:.3}}]:[]}};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw new Error('unexpected capture')};`
 		})
 	);
 	await page.goto(path('/faces'));
@@ -255,7 +255,9 @@ test('revoking scan permission closes the running webcam while enrollment remain
 	await page.getByRole('button', { name: 'เครื่องสแกน', exact: true }).click();
 	await page.getByRole('option', { name: 'เว็บแคมหน้าโรงเรียน', exact: true }).click();
 	await page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true }).click();
-	await expect(page.getByRole('status').filter({ hasText: 'มองตรงเข้ากล้องทีละคน' })).toBeVisible();
+	await expect(
+		page.getByRole('status').filter({ hasText: 'ยังไม่เห็นใบหน้าชัดเจน' })
+	).toBeVisible();
 	await page.evaluate(async () => {
 		const modulePath = '/src/lib/stores/permissions.ts';
 		const { setPermissions } = await import(modulePath);
@@ -279,7 +281,7 @@ test('webcam discards a pending capture across Bangkok midnight and reopens toda
 	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
 		route.fulfill({
 			contentType: 'application/javascript',
-			body: `let frame=0, release;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){document.body.dataset.capturePending='yes';await new Promise(resolve=>release=resolve);return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};export function releaseEvidence(){release()};`
+			body: `let frame=0, release;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export async function readFaces(){const face=await readFace();return {frame:document.createElement('canvas'),capturedAt:new Date().toISOString(),detectedCount:face?1:0,faces:face?[{...face,box:{x:.3,y:.2,width:.2,height:.3}}]:[]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){document.body.dataset.capturePending='yes';await new Promise(resolve=>release=resolve);return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};export function releaseEvidence(){release()};`
 		})
 	);
 	await page.goto(path('/faces'));
@@ -545,6 +547,7 @@ async function mockAttendance(
 					};
 				return reply(route, savedSettings);
 			}
+			if (resource === '/api/attendance/faces' && method === 'GET') return reply(route, []);
 			if (resource === '/api/attendance/days') return reply(route, []);
 			if (resource.includes('/days/')) {
 				savedSettings.rowVersion++;
@@ -885,7 +888,7 @@ test('webcam reports success only after accepted scan commits', async ({ page })
 	await page.route('**/src/lib/features/attendance/face-camera.ts*', (r) =>
 		r.fulfill({
 			contentType: 'application/javascript',
-			body: `let frame=0;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};`
+			body: `let frame=0;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export async function readFaces(){const face=await readFace();return {frame:document.createElement('canvas'),capturedAt:new Date().toISOString(),detectedCount:face?1:0,faces:face?[{...face,box:{x:.3,y:.2,width:.2,height:.3}}]:[]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};`
 		})
 	);
 	await page.goto(path('/faces'));
@@ -953,7 +956,7 @@ test('leaving during model loading never opens a webcam after the page closes', 
 	await page.route('**/src/lib/features/attendance/face-camera.ts*', (r) =>
 		r.fulfill({
 			contentType: 'application/javascript',
-			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export function faceEngine(){return new Promise(resolve=>window.addEventListener('test-engine-ready',()=>{resolve({});document.documentElement.dataset.engineResolved='yes'}, {once:true}))};export async function camera(){document.documentElement.dataset.cameraOpened='yes';return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return null};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw Error('unused')};`
+			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export function faceEngine(){return new Promise(resolve=>window.addEventListener('test-engine-ready',()=>{resolve({});document.documentElement.dataset.engineResolved='yes'}, {once:true}))};export async function camera(){document.documentElement.dataset.cameraOpened='yes';return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return null};export async function readFaces(){const face=await readFace();return {frame:document.createElement('canvas'),capturedAt:new Date().toISOString(),detectedCount:face?1:0,faces:face?[{...face,box:{x:.3,y:.2,width:.2,height:.3}}]:[]}};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw Error('unused')};`
 		})
 	);
 	await page.goto(path('/faces'));
@@ -1046,7 +1049,7 @@ test('enrollment-only teacher starts in enrollment and changing student resets c
 	await page.route('**/src/lib/features/attendance/face-camera.ts*', (r) =>
 		r.fulfill({
 			contentType: 'application/javascript',
-			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:0}};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw Error('unused')};`
+			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:0}};export async function readFaces(){const face=await readFace();return {frame:document.createElement('canvas'),capturedAt:new Date().toISOString(),detectedCount:face?1:0,faces:face?[{...face,box:{x:.3,y:.2,width:.2,height:.3}}]:[]}};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw Error('unused')};`
 		})
 	);
 	await page.goto(path('/faces'));
@@ -1070,7 +1073,7 @@ test('stopping during a pending enrollment sample discards it', async ({ page })
 	await page.route('**/src/lib/features/attendance/face-camera.ts*', (r) =>
 		r.fulfill({
 			contentType: 'application/javascript',
-			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export function readFace(){return new Promise(resolve=>window.addEventListener('test-face-ready',()=>resolve({values:Array(128).fill(.01),yaw:0}),{once:true}))};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw Error('unused')};`
+			body: `export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export function readFace(){return new Promise(resolve=>window.addEventListener('test-face-ready',()=>resolve({values:Array(128).fill(.01),yaw:0}),{once:true}))};export async function readFaces(){const face=await readFace();return {frame:document.createElement('canvas'),capturedAt:new Date().toISOString(),detectedCount:face?1:0,faces:face?[{...face,box:{x:.3,y:.2,width:.2,height:.3}}]:[]}};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw Error('unused')};`
 		})
 	);
 	await page.goto(path('/faces'));
@@ -1390,7 +1393,7 @@ test('expired uncommitted scan releases retry state and permits a fresh capture'
 	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
 		route.fulfill({
 			contentType: 'application/javascript',
-			body: `let frame=0;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};`
+			body: `let frame=0;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,0][frame++%3]}};export async function readFaces(){const face=await readFace();return {frame:document.createElement('canvas'),capturedAt:new Date().toISOString(),detectedCount:face?1:0,faces:face?[{...face,box:{x:.3,y:.2,width:.2,height:.3}}]:[]}};export function matchFace(){return '${student}'};export function distance(){return 0};export async function evidence(){return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};`
 		})
 	);
 	const attempts: AttendanceScan[] = [];
@@ -1424,4 +1427,95 @@ test('expired uncommitted scan releases retry state and permits a fresh capture'
 	).toBeEnabled();
 	expect(attempts[1]).toEqual(attempts[0]);
 	await page.getByRole('button', { name: 'หยุดและปิดกล้อง', exact: true }).click();
+});
+
+test('registered face list searches and withdraws the chosen student after confirmation', async ({
+	page
+}) => {
+	await mockAttendance(page);
+	let enrolled = true,
+		deletes = 0;
+	await page.route(
+		(url) => url.pathname === '/api/attendance/faces',
+		(r) => reply(r, enrolled ? [{ studentId: student, enrolledAt: '2026-10-01T08:00:00Z' }] : [])
+	);
+	await page.route(`**/api/attendance/faces/${student}`, (r) => {
+		deletes++;
+		enrolled = false;
+		return reply(r, {});
+	});
+	await page.goto(path('/faces'));
+	await expect(page.getByRole('heading', { name: 'รายชื่อที่ลงทะเบียนใบหน้า' })).toBeVisible();
+	await page.getByLabel('ค้นหาชื่อหรือห้องเรียน').fill('ไม่พบคนนี้');
+	await expect(page.getByText('ไม่พบรายชื่อที่ค้นหา', { exact: true })).toBeVisible();
+	await page.getByLabel('ค้นหาชื่อหรือห้องเรียน').fill('');
+	await page.getByRole('button', { name: /ถอนข้อมูลใบหน้า นักเรียน/ }).click();
+	expect(deletes).toBe(0);
+	await page.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	expect(deletes).toBe(0);
+	await page.getByRole('button', { name: /ถอนข้อมูลใบหน้า นักเรียน/ }).click();
+	await page.getByRole('button', { name: 'ยืนยันถอนข้อมูลใบหน้า', exact: true }).click();
+	await expect(page.getByText('ยังไม่มีผู้ลงทะเบียนใบหน้า', { exact: true })).toBeVisible();
+	expect(deletes).toBe(1);
+});
+
+test('automatic scanning confirms two people and uses their frozen frame for sequential evidence', async ({
+	page
+}) => {
+	const api = await mockAttendance(page);
+	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
+		route.fulfill({
+			contentType: 'text/javascript',
+			body: `
+    export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};
+    export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};export async function readFace(){return null};
+    export async function readFaces(){const frame=document.createElement('canvas');frame.dataset.frozen='yes';return {frame,capturedAt:'2026-10-09T01:00:00Z',detectedCount:2,faces:[{values:Array(128).fill(.01),yaw:0,box:{x:.1,y:.2,width:.15,height:.3}},{values:Array(128).fill(.2),yaw:0,box:{x:.6,y:.2,width:.15,height:.3}}]}};
+    export function matchFace(f,v){return v[0]<.1?'${student}':'${second}'};export function distance(){return 0};
+    export async function evidence(source,box){if(source.dataset.frozen!=='yes'||!box) throw Error('evidence must use detected frame and face crop');return new File(['fixture'],'scan.jpg',{type:'image/jpeg'})};`
+		})
+	);
+	await page.goto(path('/faces'));
+	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
+	await page.getByRole('button', { name: 'เครื่องสแกน', exact: true }).click();
+	await page.getByRole('option', { name: 'เครื่องทดสอบ' }).click();
+	await page.getByRole('button', { name: 'เริ่มเช็คชื่อวันนี้', exact: true }).click();
+	await expect.poll(() => api.writes.filter((w) => w.path.endsWith('/scans')).length).toBe(2);
+	const scans = api.writes
+		.filter((w) => w.path.endsWith('/scans'))
+		.map((w) => w.data as AttendanceScan);
+	expect(new Set(scans.map((scan) => scan.studentId)).size).toBe(2);
+	expect(new Set(scans.map((scan) => scan.eventId)).size).toBe(2);
+	expect(scans.every((scan) => scan.capturedAt === '2026-10-09T01:00:00Z')).toBe(true);
+	await page.getByRole('button', { name: 'หยุดและปิดกล้อง', exact: true }).click();
+});
+
+test('unmirrored enrollment guide rejects the wrong side and saves three distinct poses', async ({
+	page
+}) => {
+	const api = await mockAttendance(page);
+	await page.route('**/src/lib/features/attendance/face-camera.ts*', (route) =>
+		route.fulfill({
+			contentType: 'text/javascript',
+			body: `
+    let frame=0;export const FACE_MODEL='face-api-1.7.15-recognition-128';export async function faceEngine(){return {}};export async function camera(){return {getTracks:()=>[]}};export function stopCamera(){};
+    export async function readFace(){return {values:Array(128).fill(.01),yaw:[0,-.12,.12,-.12][frame++]}};
+    export async function readFaces(){return {frame:document.createElement('canvas'),faces:[],capturedAt:new Date().toISOString(),detectedCount:0}};export function matchFace(){return null};export function distance(){return 0};export async function evidence(){throw Error('unused')};`
+		})
+	);
+	await page.goto(path('/faces'));
+	await page.getByRole('button', { name: 'ลงทะเบียนใบหน้า', exact: true }).click();
+	await expect(
+		page.getByText('ภาพไม่กลับด้าน · ลูกศรบอกทิศทางในภาพ', { exact: true })
+	).toBeVisible();
+	await page.getByRole('button', { name: 'นักเรียน', exact: true }).click();
+	await page.getByRole('option', { name: /คนแรก/ }).click();
+	await page.getByLabel('ยืนยันว่าได้รับความยินยอมและตรวจว่าเป็นนักเรียนคนที่เลือก').click();
+	await page.getByRole('button', { name: 'เปิดเว็บแคม', exact: true }).click();
+	await page.getByRole('button', { name: 'เก็บตัวอย่าง (0/3)', exact: true }).click();
+	await page.getByRole('button', { name: 'เก็บตัวอย่าง (1/3)', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'เก็บตัวอย่าง (1/3)', exact: true })).toBeEnabled();
+	expect(api.writes.filter((w) => w.path.includes('/faces/'))).toHaveLength(0);
+	await page.getByRole('button', { name: 'เก็บตัวอย่าง (1/3)', exact: true }).click();
+	await page.getByRole('button', { name: 'เก็บตัวอย่าง (2/3)', exact: true }).click();
+	await expect.poll(() => api.writes.filter((w) => w.path.includes('/faces/')).length).toBe(1);
 });

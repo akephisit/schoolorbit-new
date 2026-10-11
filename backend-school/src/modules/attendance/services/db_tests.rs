@@ -1319,3 +1319,106 @@ async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_hi
         assert!(!sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=$1 AND r.code='PARENT')").bind(parent).fetch_one(&f.pool).await.unwrap());
     }
 }
+
+#[tokio::test]
+async fn attendance_enrollment_metadata_is_scoped_and_withdrawal_reconciles_it() {
+    let f = fixture("attendance_enrollment_metadata").await;
+    faces::enroll(
+        &f.pool,
+        TEACHER,
+        STUDENT,
+        EnrollAttendanceFace {
+            model: FACE_MODEL.into(),
+            descriptors: vec![
+                FaceDescriptor {
+                    values: vec![0.01; 128]
+                };
+                3
+            ],
+            consent_confirmed: true,
+        },
+    )
+    .await
+    .unwrap();
+    let scoped = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_ENROLL_ASSIGNED.into()],
+    };
+    let rows = face_enrollments(&f.pool, &scoped, TERM).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].student_id, STUDENT);
+    let wire = serde_json::to_value(&rows).unwrap();
+    assert!(wire[0].get("descriptors").is_none());
+    assert!(wire[0].get("model").is_none());
+    let outsider = ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: scoped.permissions.clone(),
+    };
+    assert!(face_enrollments(&f.pool, &outsider, TERM)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(matches!(
+        face_enrollments(&f.pool, &f.actor, TERM).await,
+        Err(AppError::Forbidden(_))
+    ));
+    let school = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_ENROLL_SCHOOL.into()],
+    };
+    assert_eq!(
+        face_enrollments(&f.pool, &school, TERM)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(STUDENT)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(face_enrollments(&f.pool, &school, TERM)
+        .await
+        .unwrap()
+        .is_empty());
+    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
+        .bind(STUDENT)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    faces::remove(&f.pool, TEACHER, STUDENT).await.unwrap();
+    assert!(face_enrollments(&f.pool, &scoped, TERM)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn attendance_navigation_migration_repairs_only_generated_default_names() {
+    let f = fixture("attendance_navigation_names").await;
+    sqlx::query("INSERT INTO menu_groups(code,name) VALUES('academic_delivery','academic_delivery') ON CONFLICT(code) DO UPDATE SET name='academic_delivery'").execute(&f.pool).await.unwrap();
+    apply_migrations_through(&f.pool, 103).await.unwrap();
+    let name: String =
+        sqlx::query_scalar("SELECT name FROM menu_groups WHERE code='academic_delivery'")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(name, "งานจัดการเรียนการสอน");
+    sqlx::query("UPDATE menu_groups SET name='งานสอนของโรงเรียน' WHERE code='academic_delivery'")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../../migrations/103_attendance_navigation_labels.sql"
+    ))
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let name: String =
+        sqlx::query_scalar("SELECT name FROM menu_groups WHERE code='academic_delivery'")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(name, "งานสอนของโรงเรียน");
+}

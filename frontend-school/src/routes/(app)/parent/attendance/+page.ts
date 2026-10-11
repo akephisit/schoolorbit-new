@@ -8,17 +8,9 @@ import {
 	readAttendance,
 	captureAttendanceRead
 } from '#lib/features/attendance/attendance-access.js';
-import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 export const _meta = {
-	menu: {
-		title: 'การเช็คชื่อ',
-		icon: 'UserCheck',
-		group: 'main',
-		workspace: 'home',
-		permission: PERMISSION_MODULES.ATTENDANCE,
-		order: 20,
-		user_type: 'parent'
-	}
+	access: { permission: PERMISSIONS.ATTENDANCE_READ_OWN, user_type: 'parent' }
 };
 export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity', 'school:attendance-own-context');

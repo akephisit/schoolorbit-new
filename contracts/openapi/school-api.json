@@ -17563,6 +17563,42 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_AttendanceFaceEnrollment": {
+        "properties": {
+          "data": {
+            "items": {
+              "description": "Management metadata deliberately excludes biometric templates.",
+              "properties": {
+                "enrolledAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "studentId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "studentId",
+                "enrolledAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_AttendanceHistoryItem": {
         "properties": {
           "data": {
@@ -24930,6 +24966,24 @@
           "model",
           "descriptors",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "AttendanceFaceEnrollment": {
+        "description": "Management metadata deliberately excludes biometric templates.",
+        "properties": {
+          "enrolledAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentId",
+          "enrolledAt"
         ],
         "type": "object"
       },
@@ -80496,6 +80550,57 @@
             "description": ""
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "attendance"
+        ]
+      }
+    },
+    "/api/attendance/faces": {
+      "get": {
+        "operationId": "attendance_face_enrollments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_AttendanceFaceEnrollment"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {

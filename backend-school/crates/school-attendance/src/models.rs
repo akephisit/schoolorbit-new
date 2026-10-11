@@ -318,6 +318,13 @@ pub struct AttendanceFace {
     pub descriptors: Vec<FaceDescriptor>,
     pub row_version: i64,
 }
+/// Management metadata deliberately excludes biometric templates.
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceFaceEnrollment {
+    pub student_id: Uuid,
+    pub enrolled_at: DateTime<Utc>,
+}
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttendanceScan {

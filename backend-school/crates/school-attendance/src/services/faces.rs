@@ -65,6 +65,19 @@ pub async fn require_device(pool: &PgPool, actor: &ActorContext, id: Uuid) -> Re
         Err(AppError::Forbidden("เครื่องถูกปิดหรือไม่ได้มอบหมายให้บัญชีนี้".into()))
     }
 }
+pub async fn enrollments(
+    pool: &PgPool,
+    authorized_students: &[Uuid],
+) -> Result<Vec<AttendanceFaceEnrollment>, AppError> {
+    Ok(sqlx::query_as(
+        "SELECT f.student_id,f.enrolled_at FROM attendance_face_enrollments f
+         JOIN users u ON u.id=f.student_id AND u.status='active' AND u.user_type='student'
+         WHERE f.student_id=ANY($1) ORDER BY f.enrolled_at DESC,f.student_id LIMIT 10000",
+    )
+    .bind(authorized_students)
+    .fetch_all(pool)
+    .await?)
+}
 pub async fn gallery(pool: &PgPool, term: Uuid) -> Result<Vec<AttendanceFace>, AppError> {
     let rows:Vec<(Uuid,String,String,i64)>=sqlx::query_as("SELECT f.student_id,f.model,f.encrypted_descriptors,f.row_version FROM attendance_face_enrollments f JOIN student_academic_years y ON y.student_id=f.student_id JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN users u ON u.id=f.student_id AND u.status='active' WHERE t.id=$1 AND y.status='active' AND f.model=$2 ORDER BY f.student_id LIMIT 10001").bind(term).bind(FACE_MODEL).fetch_all(pool).await?;
     if rows.len() > 10000 {
