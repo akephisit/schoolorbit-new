@@ -370,6 +370,60 @@ test('failed queue pauses automatic writes and retry reconciles only settings an
 	});
 });
 
+for (const enteredNote of [false, true]) {
+	test(`retry preserves the latest stored note unless explicitly entered=${enteredNote}`, async ({
+		page
+	}) => {
+		await fixture(page);
+		let conflicted = false;
+		const writes: SaveAttendanceDays[] = [];
+		await page.route(
+			(url) => url.pathname === '/api/attendance/days',
+			(route) =>
+				reply(route, [
+					{ date, counted: true, note: conflicted ? 'หมายเหตุใหม่จากอีกคน' : 'หมายเหตุเดิม' }
+				])
+		);
+		await page.route(
+			(url) => url.pathname.includes('/api/attendance/settings/'),
+			(route) => reply(route, { ...settings, rowVersion: conflicted ? 4 : 1 })
+		);
+		await page.route(
+			(url) => url.pathname.includes('/api/attendance/days/'),
+			(route) => {
+				writes.push(route.request().postDataJSON());
+				if (writes.length === 1) {
+					conflicted = true;
+					return reply(route, 'ข้อมูลเปลี่ยนแล้ว', 409);
+				}
+				return reply(route, { ...settings, rowVersion: 5 });
+			}
+		);
+		await page.goto(path);
+		if (enteredNote)
+			await page
+				.getByLabel('หมายเหตุวันหยุด / กิจกรรม', { exact: true })
+				.fill('หมายเหตุที่กรอกเอง');
+		const cell = page.locator(`[data-calendar-date="${date}"]`);
+		await expect(cell).toBeEnabled();
+		await cell.click();
+		await expect(page.getByText('ข้อมูลเปลี่ยนแล้ว', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'โหลดล่าสุดแล้วลองใหม่', exact: true }).click();
+		await expect(cell).not.toHaveAttribute('aria-busy', 'true');
+		expect(writes).toHaveLength(2);
+		expect(writes[1]).toMatchObject({
+			rowVersion: 4,
+			days: [
+				{ date, counted: false, note: enteredNote ? 'หมายเหตุที่กรอกเอง' : 'หมายเหตุใหม่จากอีกคน' }
+			]
+		});
+		await expect(cell).toHaveAttribute(
+			'title',
+			enteredNote ? 'หมายเหตุที่กรอกเอง' : 'หมายเหตุใหม่จากอีกคน'
+		);
+	});
+}
+
 test('discarding failed edits loads authoritative dates and never replays the queue', async ({
 	page
 }) => {

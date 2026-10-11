@@ -41,6 +41,7 @@
 	interface PendingDay {
 		day: AttendanceDay;
 		revision: number;
+		useStoredNote: boolean;
 	}
 	let {
 		term,
@@ -240,6 +241,17 @@
 				if (!current()) return;
 				onsettings(latestSettings);
 				days = latestDays;
+				pendingDays = pendingDays.map((entry) =>
+					entry.useStoredNote
+						? {
+								...entry,
+								day: {
+									...entry.day,
+									note: latestDays.find((day) => day.date === entry.day.date)?.note ?? ''
+								}
+							}
+						: entry
+				);
 				rowVersion = latestSettings.rowVersion;
 				if (discard) pendingDays = [];
 				else if (latestSettings.archived)
@@ -275,7 +287,7 @@
 			}
 		}
 	}
-	function setDays(values: AttendanceDay[]) {
+	function setDays(values: AttendanceDay[], useStoredNote = false) {
 		if (!writable || disposed) return;
 		if (values.some((value) => new TextEncoder().encode(value.note).length > 500)) {
 			saveError = 'หมายเหตุยาวเกินกำหนด กรุณาย่อข้อความ';
@@ -283,7 +295,7 @@
 		}
 		pendingDays = [
 			...pendingDays.filter((entry) => !values.some((value) => value.date === entry.day.date)),
-			...values.map((day) => ({ day, revision: ++editRevision }))
+			...values.map((day) => ({ day, revision: ++editRevision, useStoredNote }))
 		];
 		if (!calendarBusy || saving || !saveError) {
 			saveError = '';
@@ -292,19 +304,22 @@
 	}
 	function toggleDay(value: string) {
 		if (value.slice(0, 7) !== month || !writable) return;
-		void setDays([
-			{
-				date: value,
-				counted: !(
-					pendingDays.find((entry) => entry.day.date === value)?.day.counted ?? isCounted(value)
-				),
-				note:
-					note ||
-					pendingDays.find((entry) => entry.day.date === value)?.day.note ||
-					days.find((day) => day.date === value)?.note ||
-					''
-			}
-		]);
+		setDays(
+			[
+				{
+					date: value,
+					counted: !(
+						pendingDays.find((entry) => entry.day.date === value)?.day.counted ?? isCounted(value)
+					),
+					note:
+						note ||
+						pendingDays.find((entry) => entry.day.date === value)?.day.note ||
+						days.find((day) => day.date === value)?.note ||
+						''
+				}
+			],
+			!note
+		);
 	}
 	function applyRange(counted: boolean) {
 		try {
