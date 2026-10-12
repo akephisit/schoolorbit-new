@@ -698,6 +698,52 @@ test('read-only teacher can preview an unsaved round without creating a session'
 	expect(api.reads).toContain('/api/attendance/preview');
 	expect(api.writes).toHaveLength(0);
 });
+test('arrival selection shows the pending round immediately and retries only its failed preview', async ({
+	page
+}) => {
+	const api = await mockAttendance(page);
+	await page.setViewportSize({ width: 390, height: 884 });
+	const unsaved = { ...session, rowVersion: 0 };
+	let workspaceReads = 0;
+	await page.route('**/api/attendance/workspace?**', (route) => {
+		workspaceReads++;
+		return reply(route, {
+			date,
+			counted: true,
+			lessonChoices: [],
+			sessions: [unsaved],
+			settings
+		} satisfies AttendanceWorkspace);
+	});
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	let previews = 0;
+	await page.route('**/api/attendance/preview?**', async (route) => {
+		if (++previews === 1) {
+			await held;
+			return reply(route, 'รายชื่อยังไม่พร้อม', 503);
+		}
+		return reply(route, { ...detail(), session: unsaved });
+	});
+	await page.goto(path());
+	await chooseRound(page);
+	await expect(page.getByRole('button', { name: 'รอบเช็คชื่อ', exact: true })).toContainText(
+		'เข้าโรงเรียน ม.1/1'
+	);
+	await expect(page.locator('[aria-busy="true"]')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true })).toHaveCount(
+		0
+	);
+	release();
+	await expect(page.getByText('รายชื่อยังไม่พร้อม', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'ลองเปิดรอบใหม่', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true })
+	).toBeEnabled();
+	expect(previews).toBe(2);
+	expect(workspaceReads).toBe(1);
+	expect(api.writes).toHaveLength(0);
+});
 test('school reader can preview others but can only edit assigned rounds', async ({ page }) => {
 	const api = await mockAttendance(page, {
 		permissions: [
@@ -1890,6 +1936,8 @@ for (const width of [390, 1440])
 				groupName: `${i < 12 ? 'ม.1/1' : 'ม.2/3'} · วิชาทดสอบ ${(i % 12) + 1}`,
 				homerooms: [{ id: i < 12 ? room : otherRoom, name: i < 12 ? 'ม.1/1' : 'ม.2/3' }]
 			}));
+			lessonChoices[1].offeringName =
+				'โลก ดาราศาสตร์และอวกาศ การสำรวจและการเรียนรู้ทางวิทยาศาสตร์เพิ่มเติม';
 			const mixed = { ...rounds[0], id: id(8500), sourceKey: id(8501), title: 'กิจกรรมรวมสองห้อง' };
 			const independent = {
 				...rounds[0],
@@ -1949,6 +1997,28 @@ for (const width of [390, 1440])
 			await expect(page.getByRole('option', { name: /กิจกรรมรวมสองห้อง/ })).toBeVisible();
 			const first = page.getByRole('option', { name: /คาบที่ 1 · 08:40 · วิชาทดสอบ 1/ });
 			await expect(first).toHaveText('คาบที่ 1 · 08:40 · วิชาทดสอบ 1ม.1/1');
+			for (const option of [first, page.getByRole('option', { name: /คาบที่ 2 · 09:30 · โลก/ })]) {
+				const geometry = await option.evaluate((element) => {
+					const row = element.lastElementChild!;
+					const [main, room] = Array.from(row.children).map((child) =>
+						child.getBoundingClientRect()
+					);
+					return {
+						mainCenter: main.y + main.height / 2,
+						roomCenter: room.y + room.height / 2,
+						separated: main.right <= room.left,
+						inside: room.right <= element.getBoundingClientRect().right
+					};
+				});
+				expect(Math.abs(geometry.mainCenter - geometry.roomCenter)).toBeLessThan(1);
+				expect(geometry.separated && geometry.inside).toBe(true);
+			}
+			await expect(page.getByRole('option', { name: /คาบที่ 2 · 09:30 · โลก/ })).toHaveAttribute(
+				'title',
+				/การเรียนรู้ทางวิทยาศาสตร์เพิ่มเติม · ม\.1\/1/
+			);
+			await expect(page.locator('[data-slot="select-content"]')).toHaveCSS('opacity', '1');
+			await page.screenshot({ path: `/tmp/attendance-lesson-menu-${width}-${theme}.png` });
 			await first.click();
 			const result = page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true });
 			const colors = new Set<string>();
@@ -1961,6 +2031,9 @@ for (const width of [390, 1440])
 			}
 			expect(colors.size).toBe(6);
 			await result.click();
+			await expect(page.getByRole('option')).toHaveCount(6);
+			await expect(page.locator('[data-slot="select-content"]')).toHaveCSS('opacity', '1');
+			await page.screenshot({ path: `/tmp/attendance-result-menu-${width}-${theme}.png` });
 			await page.getByRole('option', { name: 'มา', exact: true }).click();
 			const filterReads: string[] = [];
 			page.on('request', (request) => {
