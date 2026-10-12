@@ -37,6 +37,21 @@ function fixture(t) {
   return { root, base, state, commit };
 }
 
+test('deployment tooling changes reconcile both frontend owners while retaining existing compiled artifacts', (t) => {
+  for (const file of ['scripts/deployment_tooling.mjs', '.github/actions/setup-deployment-tooling/action.yml']) {
+    const f = fixture(t);
+    mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
+    writeFileSync(path.join(f.root, file), '// changed deployment tooling');
+    const head = f.commit();
+    const plan = makePlan({ ...f, head });
+    assert.deepEqual(plan.deploy, ['frontend-admin', 'frontend-school']);
+    assert.deepEqual(plan.verify, ['documentation', 'deployment', 'frontend-admin', 'frontend-school']);
+    for (const component of components) assert.equal(inputHash(f.root, head, component), inputHash(f.root, f.base, component));
+    f.state.components['frontend-admin'] = { sha: head, inputHash: inputHash(f.root, head, 'frontend-admin') };
+    assert.deepEqual(makePlan({ ...f, head }).deploy, ['frontend-school']);
+  }
+});
+
 test('accepted per-component baselines retain queued changes across merges and retries', (t) => {
   const f = fixture(t);
   writeFileSync(path.join(f.root, 'frontend-school/input.txt'), 'first frontend edit');

@@ -19,6 +19,11 @@ export function classify(files) {
       ['frontend-admin', 'frontend-school'].forEach(part => deploy.add(part));
       continue;
     }
+    if (file === 'scripts/deployment_tooling.mjs' || file.startsWith('.github/actions/setup-deployment-tooling/')) {
+      ['deployment', 'frontend-admin', 'frontend-school'].forEach(suite => verify.add(suite));
+      ['frontend-admin', 'frontend-school'].forEach(part => deploy.add(part));
+      continue;
+    }
     if (file === '.rules' || control.test(file)) {
       suites.forEach((suite) => verify.add(suite));
       if (!testOnly(file) && /^(?:podman-compose\.yml$|nginx-configs\/|scripts\/(?:render_nginx|smoke_test|lib\/pipeline-remote)|\.github\/workflows\/(?:release|deploy-))/.test(file)) components.forEach((part) => deploy.add(part));
