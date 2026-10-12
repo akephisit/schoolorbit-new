@@ -58,6 +58,7 @@ test('nonoverlapping teacher and scan changes retain latest evidence and revisio
 	const merged = mergeAttendanceDetail(base, local, latest);
 	assert.equal(merged.conflicts.length, 0);
 	assert.equal(merged.detail.session.rowVersion, 2);
+	assert.equal(merged.detail.students[0].result, 'present');
 	assert.equal(merged.detail.students[1].result, 'late');
 	assert.equal(merged.detail.students[1].evidenceFileId, 'accepted-evidence');
 	assert.equal(base.students[0].result, 'unchecked');
@@ -75,6 +76,7 @@ test('overlapping fields require a choice while unrelated fields still merge', (
 		[['result']]
 	);
 	assert.equal(merged.detail.students[1].result, 'leave');
+	assert.equal(merged.detail.students[0].result, 'present');
 	assert.equal(merged.conflicts[0].latest.result, 'late');
 });
 test('matching concurrent edits do not conflict and removed roster members cannot be reintroduced', () => {
