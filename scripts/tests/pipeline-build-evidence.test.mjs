@@ -86,6 +86,63 @@ test("missing compiler evidence is reported unavailable instead of zero hits", (
   assert.match(result.stdout, /compiler layer: \*\*unconfirmed\*\*/);
   assert.match(result.stdout, /\| hits \| unavailable \|/);
 });
+
+for (const available of [true, false])
+  test(`workflow reads the exact builder record and stderr progress; telemetry availability=${available}`, (t) => {
+    const root = fixture(t),
+      bin = path.join(root, "bin");
+    mkdirSync(bin);
+    writeFileSync(
+      path.join(bin, "docker"),
+      `#!/bin/sh
+if [ "$*" != "buildx --builder fixture-builder history logs --progress=plain fixture-record" ]; then exit 2; fi
+${available ? "printf '#4 [builder 7/7] RUN bash scripts/build_release.sh\\n#4 DONE 1.2s\\n' >&2" : "printf 'fixture record unavailable\\n' >&2; exit 1"}
+`,
+      { mode: 0o755 },
+    );
+    const workflow = readFileSync(
+      path.join(repo, ".github/workflows/prepare.yml"),
+      "utf8",
+    );
+    const body = workflow
+      .match(
+        /name: Summarize build phases and compiler reuse[\s\S]*?        run: \|\n([\s\S]*?)(?=      - name: Bind selected image)/,
+      )[1]
+      .replace(/^          /gm, "");
+    const output = path.join(root, "summary.md");
+    const result = spawnSync("bash", ["-c", body], {
+      cwd: repo,
+      env: {
+        ...process.env,
+        PATH: bin + ":" + process.env.PATH,
+        COMPONENT: "backend-school",
+        RUNNER_TEMP: root,
+        GITHUB_STEP_SUMMARY: output,
+        BUILD_METADATA: JSON.stringify({
+          "buildx.build.ref": "fixture-builder/fixture-node/fixture-record",
+        }),
+      },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const summary = readFileSync(output, "utf8");
+    assert.match(
+      summary,
+      available
+        ? /compiler layer: \*\*executed\*\*/
+        : /compiler layer: \*\*unconfirmed\*\*/,
+    );
+    if (available) {
+      assert.match(summary, /\| compiler layer \| 1.20s \|/);
+      assert.doesNotMatch(result.stdout, /::warning/);
+    } else
+      assert.match(
+        result.stdout,
+        /::warning::BuildKit phase logs are unavailable/,
+      );
+    assert.doesNotMatch(summary, /fixture record unavailable/);
+  });
+
 for (const mode of ["off", "gha"])
   test(`compiler failure cannot be hidden by optional Admin cache statistics (${mode})`, (t) => {
     const root = fixture(t),

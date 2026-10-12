@@ -66,4 +66,6 @@ runs:
       env:
         CACHE_VALID: ${{ steps.validate.outputs.valid }}
         PACKAGE_COUNT: ${{ steps.prepare.outputs.packages }}
-      run: printf 'Deployment tooling cache=%s packages=%s\n' "$CACHE_VALID" "$PACKAGE_COUNT" >> "$GITHUB_STEP_SUMMARY"
+      run: |
+        printf 'Deployment tooling cache=%s packages=%s\n' "$CACHE_VALID" "$PACKAGE_COUNT" >> "$GITHUB_STEP_SUMMARY"
+        printf '::notice title=Deployment tooling reuse::cache_valid=%s packages=%s\n' "$CACHE_VALID" "$PACKAGE_COUNT"
