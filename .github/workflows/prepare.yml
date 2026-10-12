@@ -161,8 +161,10 @@ jobs:
           set -euo pipefail
           build_ref=$(python3 -c 'import json,os; print(json.loads(os.environ["BUILD_METADATA"]).get("buildx.build.ref", ""))')
           log="$RUNNER_TEMP/buildkit-${COMPONENT}.log"
-          if [ -n "$build_ref" ]; then
-            if ! docker buildx history logs --progress=plain "$build_ref" >"$log" 2>"$RUNNER_TEMP/buildkit-log-error"; then
+          if [[ "$build_ref" == */*/* ]]; then
+            builder=${build_ref%%/*}
+            record=${build_ref##*/}
+            if ! docker buildx --builder "$builder" history logs --progress=plain "$record" >"$log" 2>&1; then
               printf '::warning::BuildKit phase logs are unavailable; compiler artifact remains available.\n'
             fi
           fi
