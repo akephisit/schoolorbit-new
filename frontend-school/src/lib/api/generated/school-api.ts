@@ -7966,6 +7966,7 @@ export interface components {
 				counted: boolean;
 				/** Format: date */
 				date: string;
+				lessonChoices: components['schemas']['AttendanceLessonChoice'][];
 				sessions: components['schemas']['AttendanceSession'][];
 				settings: components['schemas']['AttendanceSettings'];
 			};
@@ -13504,6 +13505,19 @@ export interface components {
 			sessions: components['schemas']['AttendanceSession'][];
 			students: components['schemas']['AttendanceStudentOption'][];
 		};
+		AttendanceLessonChoice: {
+			groupName: string;
+			homerooms: components['schemas']['AttendanceLessonHomeroom'][];
+			offeringName: string;
+			periodName: string;
+			/** Format: uuid */
+			sessionId: string;
+		};
+		AttendanceLessonHomeroom: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
 		AttendanceOptions: {
 			audiences: components['schemas']['AttendanceAudienceGroup'][];
 			devices: components['schemas']['AttendanceDevice'][];
@@ -13700,6 +13714,7 @@ export interface components {
 			counted: boolean;
 			/** Format: date */
 			date: string;
+			lessonChoices: components['schemas']['AttendanceLessonChoice'][];
 			sessions: components['schemas']['AttendanceSession'][];
 			settings: components['schemas']['AttendanceSettings'];
 		};

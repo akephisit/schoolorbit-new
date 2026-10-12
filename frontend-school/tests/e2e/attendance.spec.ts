@@ -476,6 +476,7 @@ async function mockAttendance(
 				return reply(route, {
 					date,
 					counted: true,
+					lessonChoices: [],
 					sessions: [current.session],
 					settings: savedSettings
 				} satisfies AttendanceWorkspace);
@@ -563,6 +564,7 @@ async function mockAttendance(
 			}
 			if (resource.endsWith('/kiosk/open'))
 				return reply(route, {
+					lessonChoices: [],
 					sessions: [{ ...session, kind: 'arrival' }],
 					students: options.students,
 					configuration,
@@ -685,6 +687,7 @@ test('read-only teacher can preview an unsaved round without creating a session'
 		reply(route, {
 			date,
 			counted: true,
+			lessonChoices: [],
 			sessions: [{ ...session, rowVersion: 0 }],
 			settings
 		} satisfies AttendanceWorkspace)
@@ -708,6 +711,7 @@ test('school reader can preview others but can only edit assigned rounds', async
 			date,
 			counted: true,
 			settings,
+			lessonChoices: [],
 			sessions: [
 				{ ...session, rowVersion: 0 },
 				{
@@ -735,6 +739,7 @@ test('changing the workspace date also updates module destinations', async ({ pa
 		reply(route, {
 			date: new URL(route.request().url()).searchParams.get('date')!,
 			counted: true,
+			lessonChoices: [],
 			sessions: [],
 			settings
 		} satisfies AttendanceWorkspace)
@@ -1814,6 +1819,7 @@ for (const width of [390, 474])
 					academicTermId: term,
 					date,
 					counted: true,
+					lessonChoices: [],
 					sessions: rounds,
 					digestState: 'none'
 				})
@@ -1856,5 +1862,138 @@ for (const width of [390, 474])
 				);
 				await page.screenshot({ path: `/tmp/attendance-compact-${width}-${theme}-${kind}.png` });
 			}
+			expect(api.writes).toHaveLength(0);
+		});
+
+for (const width of [390, 1440])
+	for (const theme of ['light', 'dark'] as const)
+		test(`lesson room filters preserve draft and result colors ${width} ${theme}`, async ({
+			page
+		}) => {
+			const api = await mockAttendance(page);
+			await page.setViewportSize({ width, height: 884 });
+			await page.emulateMedia({ colorScheme: theme });
+			const otherRoom = id(8201);
+			const rounds: AttendanceSession[] = Array.from({ length: 24 }, (_, i) => ({
+				...session,
+				id: id(8300 + i),
+				sourceKey: id(8400 + i),
+				kind: 'lesson',
+				rowVersion: 0,
+				startTime: i % 12 ? '09:30:00' : '08:40:00',
+				title: `วิชาทดสอบ ${(i % 12) + 1} · ${i < 12 ? 'ม.1/1' : 'ม.2/3'} · วิชาทดสอบ ${(i % 12) + 1} · คาบที่ ${(i % 12) + 1}`
+			}));
+			const lessonChoices: AttendanceWorkspace['lessonChoices'] = rounds.map((round, i) => ({
+				sessionId: round.id,
+				periodName: `คาบที่ ${(i % 12) + 1}`,
+				offeringName: `วิชาทดสอบ ${(i % 12) + 1}`,
+				groupName: `${i < 12 ? 'ม.1/1' : 'ม.2/3'} · วิชาทดสอบ ${(i % 12) + 1}`,
+				homerooms: [{ id: i < 12 ? room : otherRoom, name: i < 12 ? 'ม.1/1' : 'ม.2/3' }]
+			}));
+			const mixed = { ...rounds[0], id: id(8500), sourceKey: id(8501), title: 'กิจกรรมรวมสองห้อง' };
+			const independent = {
+				...rounds[0],
+				id: id(8502),
+				sourceKey: id(8503),
+				title: 'กิจกรรมอิสระ'
+			};
+			const historical = {
+				...rounds[0],
+				id: id(8504),
+				sourceKey: id(8505),
+				title: 'รอบย้อนหลังที่ไม่อยู่ในตารางปัจจุบัน'
+			};
+			rounds.push(mixed, independent, historical);
+			lessonChoices.push(
+				{
+					sessionId: mixed.id,
+					periodName: 'คาบที่ 3',
+					offeringName: mixed.title,
+					groupName: 'กลุ่มรวม',
+					homerooms: [...lessonChoices[0].homerooms, ...lessonChoices[12].homerooms]
+				},
+				{
+					sessionId: independent.id,
+					periodName: 'คาบที่ 4',
+					offeringName: independent.title,
+					groupName: 'กลุ่มอิสระ',
+					homerooms: []
+				}
+			);
+			await page.route('**/api/attendance/workspace?**', (route) =>
+				reply(route, {
+					date,
+					counted: true,
+					sessions: rounds,
+					lessonChoices,
+					settings
+				} satisfies AttendanceWorkspace)
+			);
+			await page.route('**/api/attendance/preview?**', (route) => {
+				const source = new URL(route.request().url()).searchParams.get('sourceKey');
+				const selected = rounds.find((round) => round.sourceKey === source)!;
+				return reply(route, { ...detail(), session: selected });
+			});
+			await page.goto(path());
+			await page
+				.getByRole('group', { name: 'ประเภทรอบเช็คชื่อ' })
+				.getByRole('button', { name: 'รายคาบ', exact: true })
+				.click();
+			const roomPicker = page.getByRole('button', { name: 'กรองห้องเรียน', exact: true });
+			const roundPicker = page.getByRole('button', { name: 'รอบเช็คชื่อ', exact: true });
+			await roomPicker.click();
+			await page.getByRole('option', { name: 'ม.1/1', exact: true }).click();
+			await expect(roundPicker).toContainText('13 รอบ');
+			await roundPicker.click();
+			await expect(page.getByRole('option')).toHaveCount(13);
+			await expect(page.getByRole('option', { name: /กิจกรรมรวมสองห้อง/ })).toBeVisible();
+			const first = page.getByRole('option', { name: /คาบที่ 1 · 08:40 · วิชาทดสอบ 1/ });
+			await expect(first).toHaveText('คาบที่ 1 · 08:40 · วิชาทดสอบ 1ม.1/1');
+			await first.click();
+			const result = page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true });
+			const colors = new Set<string>();
+			for (const text of ['มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม', 'ยังไม่เช็ค']) {
+				await result.click();
+				await page.getByRole('option', { name: text, exact: true }).click();
+				await expect(result).toHaveText(text);
+				await expect(result.locator('svg').first()).toBeVisible();
+				colors.add(await result.evaluate((el) => getComputedStyle(el).backgroundColor));
+			}
+			expect(colors.size).toBe(6);
+			await result.click();
+			await page.getByRole('option', { name: 'มา', exact: true }).click();
+			const filterReads: string[] = [];
+			page.on('request', (request) => {
+				if (new URL(request.url()).pathname.startsWith('/api/attendance/'))
+					filterReads.push(request.url());
+			});
+			await roomPicker.click();
+			await page.getByRole('option', { name: 'ม.2/3', exact: true }).click();
+			await expect(roundPicker).toContainText('13 รอบ');
+			await expect(result).toHaveText('มา');
+			await expect(page.getByText('รอบนี้อยู่นอกห้องที่กรอง', { exact: true })).toBeVisible();
+			expect(filterReads).toHaveLength(0);
+			await roundPicker.click();
+			await expect(page.getByRole('option', { name: /ม\.1\/1/ })).toHaveCount(0);
+			await expect(page.getByRole('option', { name: /กิจกรรมรวมสองห้อง/ })).toBeVisible();
+			await page.keyboard.press('Escape');
+			await roomPicker.click();
+			await page.getByRole('option', { name: 'ทุกห้อง', exact: true }).click();
+			await expect(roundPicker).toContainText('คาบที่ 1 · 08:40 · วิชาทดสอบ 1');
+			await expect(result).toHaveText('มา');
+			await expect(page.getByText('รอบนี้อยู่นอกห้องที่กรอง', { exact: true })).toHaveCount(0);
+			await page.screenshot({ path: `/tmp/attendance-lesson-filter-${width}-${theme}.png` });
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+			await roomPicker.click();
+			await page.getByRole('option', { name: 'ห้องอื่น / กลุ่มอิสระ', exact: true }).click();
+			await expect(roundPicker).toContainText('2 รอบ');
+			await roundPicker.click();
+			await expect(page.getByRole('option', { name: /กิจกรรมอิสระ/ })).toBeVisible();
+			await page.getByRole('option', { name: /รอบย้อนหลังที่ไม่อยู่ในตารางปัจจุบัน/ }).click();
+			await expect(
+				page.getByRole('heading', { name: /รอบย้อนหลังที่ไม่อยู่ในตารางปัจจุบัน/ })
+			).toBeVisible();
 			expect(api.writes).toHaveLength(0);
 		});

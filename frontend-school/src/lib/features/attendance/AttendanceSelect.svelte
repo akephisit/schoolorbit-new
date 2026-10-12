@@ -12,14 +12,16 @@
 	}: {
 		id?: string;
 		value?: string;
-		options: { value: string; label: string }[];
+		options: { value: string; label: string; description?: string }[];
 		label: string;
 		placeholder?: string;
 		disabled?: boolean;
 		onValueChange?: (value: string) => void;
 	} = $props();
 	let search = $state('');
-	const filtered = $derived(options.filter((o) => o.label.includes(search)));
+	const filtered = $derived(
+		options.filter((o) => `${o.label} ${o.description ?? ''}`.includes(search))
+	);
 	const current = $derived(options.find((o) => o.value === value)?.label ?? placeholder);
 </script>
 
@@ -44,7 +46,12 @@
 			/>{/if}
 		{#each filtered.slice(0, 100) as option (option.value)}<Select.Item
 				value={option.value}
-				label={option.label}>{option.label}</Select.Item
+				label={option.label}
+				><span class="flex min-w-0 flex-col items-start whitespace-normal text-left"
+					><span>{option.label}</span>{#if option.description}<span
+							class="text-xs text-muted-foreground">{option.description}</span
+						>{/if}</span
+				></Select.Item
 			>{/each}
 		{#if filtered.length > 100}<p class="p-2 text-sm text-muted-foreground">
 				พิมพ์ค้นหาเพื่อดูรายชื่อเพิ่มเติม

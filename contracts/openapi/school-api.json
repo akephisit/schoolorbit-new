@@ -4582,6 +4582,12 @@
                 "format": "date",
                 "type": "string"
               },
+              "lessonChoices": {
+                "items": {
+                  "$ref": "#/components/schemas/AttendanceLessonChoice"
+                },
+                "type": "array"
+              },
               "sessions": {
                 "items": {
                   "$ref": "#/components/schemas/AttendanceSession"
@@ -4596,6 +4602,7 @@
               "date",
               "counted",
               "sessions",
+              "lessonChoices",
               "settings"
             ],
             "type": "object"
@@ -25146,6 +25153,53 @@
         ],
         "type": "object"
       },
+      "AttendanceLessonChoice": {
+        "properties": {
+          "groupName": {
+            "type": "string"
+          },
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceLessonHomeroom"
+            },
+            "type": "array"
+          },
+          "offeringName": {
+            "type": "string"
+          },
+          "periodName": {
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "periodName",
+          "offeringName",
+          "groupName",
+          "homerooms"
+        ],
+        "type": "object"
+      },
+      "AttendanceLessonHomeroom": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "AttendanceOptions": {
         "properties": {
           "audiences": {
@@ -25811,6 +25865,12 @@
             "format": "date",
             "type": "string"
           },
+          "lessonChoices": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceLessonChoice"
+            },
+            "type": "array"
+          },
           "sessions": {
             "items": {
               "$ref": "#/components/schemas/AttendanceSession"
@@ -25825,6 +25885,7 @@
           "date",
           "counted",
           "sessions",
+          "lessonChoices",
           "settings"
         ],
         "type": "object"

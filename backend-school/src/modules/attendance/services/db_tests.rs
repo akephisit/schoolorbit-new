@@ -841,6 +841,72 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
 }
 
 #[tokio::test]
+async fn attendance_lesson_choices_use_published_rooms_and_respect_assigned_scope() {
+    let f = fixture("attendance_lesson_choices").await;
+    let (term, start): (Uuid, NaiveDate) = sqlx::query_as("SELECT v.academic_term_id,v.effective_from FROM academic_timetable_versions v JOIN academic_terms t ON t.id=v.academic_term_id WHERE v.status='published' AND t.status='active' AND EXISTS(SELECT 1 FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active WHERE b.timetable_version_id=v.id AND b.is_active AND b.block_kind<>'structural') ORDER BY v.effective_from DESC,v.id LIMIT 1")
+        .fetch_one(&f.pool).await.unwrap();
+    let school = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_READ_SCHOOL.into()],
+    };
+    let mut found = None;
+    for offset in 0..7 {
+        let date = start + chrono::Duration::days(offset);
+        let w = workspace(
+            &f.pool,
+            &school,
+            AttendanceQuery {
+                academic_term_id: term,
+                date,
+            },
+        )
+        .await
+        .unwrap();
+        if !w.lesson_choices.is_empty() {
+            found = Some(w);
+            break;
+        }
+    }
+    let w = found.expect("published fixture must contain a teaching day");
+    let rooms = core::rooms(&f.pool, term).await.unwrap();
+    assert!(w.lesson_choices.iter().any(|c| !c.homerooms.is_empty()));
+    for choice in &w.lesson_choices {
+        assert!(w
+            .sessions
+            .iter()
+            .any(|s| s.id == choice.session_id && s.kind == AttendanceKind::Lesson));
+        assert!(!choice.period_name.is_empty());
+        assert!(!choice.offering_name.is_empty());
+        for room in &choice.homerooms {
+            assert!(rooms.iter().any(|r| r.id == room.id && r.name == room.name));
+        }
+    }
+    let unrelated = ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: vec![codes::ATTENDANCE_READ_ASSIGNED.into()],
+    };
+    let denied = workspace(
+        &f.pool,
+        &unrelated,
+        AttendanceQuery {
+            academic_term_id: term,
+            date: w.date,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(denied.sessions.is_empty());
+    assert!(denied.lesson_choices.is_empty());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_sessions")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn attendance_dated_providers_and_workspace_read_do_not_create_facts() {
     let f = fixture("attendance_dated_providers").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();

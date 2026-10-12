@@ -223,7 +223,23 @@ pub struct AttendanceWorkspace {
     pub date: NaiveDate,
     pub counted: bool,
     pub sessions: Vec<AttendanceSession>,
+    pub lesson_choices: Vec<AttendanceLessonChoice>,
     pub settings: AttendanceSettings,
+}
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceLessonChoice {
+    pub session_id: Uuid,
+    pub period_name: String,
+    pub offering_name: String,
+    pub group_name: String,
+    pub homerooms: Vec<AttendanceLessonHomeroom>,
+}
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceLessonHomeroom {
+    pub id: Uuid,
+    pub name: String,
 }
 #[derive(Debug, Clone, Deserialize, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

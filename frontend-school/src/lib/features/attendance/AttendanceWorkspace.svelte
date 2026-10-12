@@ -13,6 +13,8 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import AttendanceSelect from './AttendanceSelect.svelte';
+	import AttendanceResultSelect from './AttendanceResultSelect.svelte';
+	import { lessonRoomOptions, matchesLessonRoom, roundOption } from './round-presentation.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -73,6 +75,7 @@
 	let baseline = $state.raw<AttendanceDetail | null>(null);
 	let conflicts = $state<AttendanceConflict[]>([]);
 	let rosterPage = $state(1);
+	let lessonRoom = $state('');
 	const rosterPageSize = 40;
 	const canStartAny = $derived(
 		$can.hasAny(
@@ -94,6 +97,18 @@
 		workspaceError || (pendingAction === 'workspace' && selectedDate !== workspace.date)
 			? []
 			: workspace.sessions.filter((s) => s.kind === kind)
+	);
+	const lessonChoices = $derived(workspace.lessonChoices);
+	const rooms = $derived(lessonRoomOptions(lessonChoices, choices));
+	const activeRoom = $derived(rooms.some((room) => room.value === lessonRoom) ? lessonRoom : '');
+	const filteredChoices = $derived(
+		kind === 'lesson'
+			? choices.filter((session) => matchesLessonRoom(session, lessonChoices, activeRoom))
+			: choices
+	);
+	const selectedRound = $derived(detail?.session ?? failedSession);
+	const selectedInFilter = $derived(
+		selectedRound ? filteredChoices.some((session) => session.id === selectedRound.id) : false
 	);
 	const request = new LatestRequest();
 	onDestroy(() => request.abort());
@@ -122,6 +137,7 @@
 		workspaceError = '';
 		detailError = '';
 		if (selectedDate !== workspace.date) {
+			lessonRoom = '';
 			detail = null;
 			mutationError = '';
 			reason = '';
@@ -378,63 +394,90 @@
 		actionLabel="ลองโหลดวันเช็คชื่อใหม่"
 		onaction={refresh}
 	/>{/if}
-<div class="space-y-2 xl:hidden" aria-busy={pendingAction === 'workspace'}>
-	<Label for="attendance-round">รอบ{kindLabels[kind]}</Label>
-	<AttendanceSelect
-		id="attendance-round"
-		label="รอบเช็คชื่อ"
-		value={detail?.session.id ?? failedSession?.id ?? ''}
-		placeholder={choices.length ? `เลือกรอบ · ${choices.length} รอบ` : 'ไม่มีรอบในวันนี้'}
-		options={choices.map((s) => ({
-			value: s.id,
-			label: `${s.startTime.slice(0, 5)} · ${s.title}${s.cancelled ? ' · งด' : ''}`
-		}))}
-		disabled={busy || !choices.length}
-		onValueChange={(value) => {
-			const selected = choices.find((s) => s.id === value);
-			if (selected) void select(selected);
-		}}
-	/>
+<div
+	class={kind === 'lesson'
+		? 'grid gap-3 sm:grid-cols-[minmax(160px,240px)_minmax(0,1fr)]'
+		: 'space-y-2 xl:hidden'}
+	aria-busy={pendingAction === 'workspace'}
+>
+	{#if kind === 'lesson'}
+		<div class="space-y-2">
+			<Label for="attendance-lesson-room">ห้องเรียน</Label>
+			<AttendanceSelect
+				id="attendance-lesson-room"
+				label="กรองห้องเรียน"
+				value={activeRoom || 'all'}
+				options={[{ value: 'all', label: 'ทุกห้อง' }, ...rooms]}
+				disabled={busy}
+				onValueChange={(value) => {
+					lessonRoom = value === 'all' ? '' : value;
+				}}
+			/>
+		</div>
+	{/if}
+	<div class="min-w-0 space-y-2">
+		<Label for="attendance-round">รอบ{kindLabels[kind]}</Label>
+		<AttendanceSelect
+			id="attendance-round"
+			label="รอบเช็คชื่อ"
+			value={selectedInFilter ? (selectedRound?.id ?? '') : ''}
+			placeholder={filteredChoices.length
+				? `เลือกรอบ · ${filteredChoices.length} รอบ`
+				: choices.length
+					? 'ไม่มีคาบในห้องที่เลือก'
+					: 'ไม่มีรอบในวันนี้'}
+			options={filteredChoices.map((session) => roundOption(session, lessonChoices))}
+			disabled={busy || !filteredChoices.length}
+			onValueChange={(value) => {
+				const selected = filteredChoices.find((s) => s.id === value);
+				if (selected) void select(selected);
+			}}
+		/>
+	</div>
 </div>
-<div class="grid items-start gap-3 xl:grid-cols-[minmax(240px,320px)_minmax(0,1fr)] xl:gap-6">
-	<Card class="hidden xl:flex" aria-busy={pendingAction === 'workspace'}>
-		<CardHeader
-			><CardTitle
-				><h2 class="flex items-center gap-2">
-					<CalendarDays class="size-4 text-primary" />รอบ{kindLabels[kind]}
-				</h2></CardTitle
-			><CardDescription>เลือกรอบที่ได้รับมอบหมายเพื่อดูหรือบันทึกผล</CardDescription></CardHeader
-		>
-		<CardContent class="space-y-2">
-			{#if pendingAction === 'workspace' && selectedDate !== workspace.date}<PageSkeleton
-					variant="detail"
-					rows={3}
-				/>
-			{:else if workspaceError}<p class="text-sm text-muted-foreground">
-					โหลดวันที่เลือกอีกครั้งเพื่อดูรอบเช็คชื่อ
-				</p>
-			{:else}{#each choices as s (s.id)}
-					<Button
-						type="button"
-						class={`h-auto w-full justify-start whitespace-normal py-3 text-left ${detail?.session.id === s.id ? 'border-primary/40 bg-accent' : ''}`}
-						variant="outline"
-						aria-pressed={detail?.session.id === s.id}
-						onclick={() => select(s)}
-						disabled={busy}
-					>
-						<span class="flex w-full min-w-0 flex-col gap-1"
-							><span class="font-medium">{s.startTime.slice(0, 5)} · {s.title}</span><span
-								class="text-xs text-muted-foreground"
-								>{s.cancelled ? 'งด' : s.savedAt ? 'บันทึกแล้ว' : 'ยังไม่บันทึก'}</span
-							></span
+<div
+	class={kind === 'lesson'
+		? 'min-w-0'
+		: 'grid items-start gap-3 xl:grid-cols-[minmax(240px,320px)_minmax(0,1fr)] xl:gap-6'}
+>
+	{#if kind !== 'lesson'}<Card class="hidden xl:flex" aria-busy={pendingAction === 'workspace'}>
+			<CardHeader
+				><CardTitle
+					><h2 class="flex items-center gap-2">
+						<CalendarDays class="size-4 text-primary" />รอบ{kindLabels[kind]}
+					</h2></CardTitle
+				><CardDescription>เลือกรอบที่ได้รับมอบหมายเพื่อดูหรือบันทึกผล</CardDescription></CardHeader
+			>
+			<CardContent class="space-y-2">
+				{#if pendingAction === 'workspace' && selectedDate !== workspace.date}<PageSkeleton
+						variant="detail"
+						rows={3}
+					/>
+				{:else if workspaceError}<p class="text-sm text-muted-foreground">
+						โหลดวันที่เลือกอีกครั้งเพื่อดูรอบเช็คชื่อ
+					</p>
+				{:else}{#each choices as s (s.id)}
+						<Button
+							type="button"
+							class={`h-auto w-full justify-start whitespace-normal py-3 text-left ${detail?.session.id === s.id ? 'border-primary/40 bg-accent' : ''}`}
+							variant="outline"
+							aria-pressed={detail?.session.id === s.id}
+							onclick={() => select(s)}
+							disabled={busy}
 						>
-					</Button>
-				{:else}<PageState
-						title="ไม่มีรอบในวันนี้"
-						description="ไม่มีรอบที่ได้รับมอบหมายในวันนี้ ลองเลือกวันหรือประเภทรอบอื่น"
-					/>{/each}{/if}
-		</CardContent>
-	</Card>
+							<span class="flex w-full min-w-0 flex-col gap-1"
+								><span class="font-medium">{s.startTime.slice(0, 5)} · {s.title}</span><span
+									class="text-xs text-muted-foreground"
+									>{s.cancelled ? 'งด' : s.savedAt ? 'บันทึกแล้ว' : 'ยังไม่บันทึก'}</span
+								></span
+							>
+						</Button>
+					{:else}<PageState
+							title="ไม่มีรอบในวันนี้"
+							description="ไม่มีรอบที่ได้รับมอบหมายในวันนี้ ลองเลือกวันหรือประเภทรอบอื่น"
+						/>{/each}{/if}
+			</CardContent>
+		</Card>{/if}
 	<Card
 		class="min-w-0"
 		aria-busy={pendingAction === 'detail' || pendingAction === 'save' || pendingAction === 'cancel'}
@@ -457,13 +500,25 @@
 			<CardHeader class="border-b px-3 sm:px-6">
 				<div class="flex flex-wrap items-start justify-between gap-3">
 					<div class="min-w-0 space-y-2">
-						<CardTitle><h2 class="break-words text-lg">{detail.session.title}</h2></CardTitle
-						><CardDescription class="flex items-center gap-2"
+						<CardTitle
+							><h2 class="break-words text-lg">
+								{kind === 'lesson'
+									? roundOption(detail.session, lessonChoices).label
+									: detail.session.title}
+							</h2></CardTitle
+						>{#if kind === 'lesson' && roundOption(detail.session, lessonChoices).description}<p
+								class="text-sm text-muted-foreground"
+							>
+								{roundOption(detail.session, lessonChoices).description}
+							</p>{/if}<CardDescription class="flex items-center gap-2"
 							><Users class="size-4" />นักเรียน {detail.students.length} คน · {detail.counted
 								? 'นับในสรุป'
 								: 'ไม่นับในสรุป'}</CardDescription
 						>
 					</div>
+					{#if kind === 'lesson' && !selectedInFilter}<Badge variant="outline"
+							>รอบนี้อยู่นอกห้องที่กรอง</Badge
+						>{/if}
 					<Badge variant="secondary"
 						>{detail.session.cancelled
 							? 'งดเช็คชื่อ'
@@ -533,7 +588,7 @@
 							>
 							<Table.Body class="block sm:table-row-group"
 								>{#each visibleStudents as s (s.studentId)}<Table.Row
-										class="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-2 gap-y-1 py-2 sm:table-row"
+										class="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-2 gap-y-1 py-2 sm:table-row"
 										><Table.Cell class="block min-w-0 whitespace-normal p-1 sm:table-cell sm:p-2"
 											><span class="text-muted-foreground">{s.classNumber ?? '-'} · </span><span
 												class="font-medium">{s.displayName}</span
@@ -546,21 +601,16 @@
 													})}</span
 												>{/if}
 										</Table.Cell><Table.Cell class="block p-1 sm:table-cell sm:p-2"
-											><AttendanceSelect
+											><AttendanceResultSelect
 												label={`ผลของ ${s.displayName}`}
 												value={s.result}
 												onValueChange={(value) => {
-													s.result = value as AttendanceResult;
+													s.result = value;
 												}}
 												disabled={!detail.writable || !canWrite || busy}
-												options={Object.entries(resultLabels)
-													.filter(
-														([value]) =>
-															value !== 'unchecked' ||
-															baseline?.students.find((row) => row.studentId === s.studentId)
-																?.result === 'unchecked'
-													)
-													.map(([value, label]) => ({ value, label }))}
+												allowUnchecked={baseline?.students.find(
+													(row) => row.studentId === s.studentId
+												)?.result === 'unchecked'}
 											/></Table.Cell
 										><Table.Cell class="hidden text-muted-foreground sm:table-cell"
 											><span class="block text-xs sm:hidden">เข้าโรงเรียน</span>{s.arrivalAt

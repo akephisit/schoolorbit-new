@@ -19,11 +19,20 @@ pub async fn seeds(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceSeed>, AppError> {
+    Ok(seeds_with_choices(pool, term, date).await?.0)
+}
+async fn seeds_with_choices(
+    pool: &PgPool,
+    term: Uuid,
+    date: NaiveDate,
+) -> Result<(Vec<AttendanceSeed>, Vec<AttendanceLessonChoice>), AppError> {
     school_attendance::services::validate_date(pool, term, date).await?;
     let students = core::students(pool, term, date).await?;
     let rooms = core::rooms(pool, term).await?;
+    let room_names: HashMap<_, _> = rooms.iter().map(|r| (r.id, r.name.clone())).collect();
     let c = settings::get(pool, term).await?.configuration;
     let mut seeds = vec![];
+    let mut lesson_choices = vec![];
     for room in rooms {
         let roster = students
             .iter()
@@ -112,13 +121,32 @@ pub async fn seeds(
                 block.start_time,
                 block.end_time,
             );
+            lesson_choices.push(AttendanceLessonChoice {
+                session_id: session.id,
+                period_name: block.period_name.clone(),
+                offering_name: block
+                    .offering_name
+                    .clone()
+                    .unwrap_or_else(|| "คาบเรียน".into()),
+                group_name: group.name.clone(),
+                homerooms: group
+                    .homeroom_ids
+                    .iter()
+                    .filter_map(|id| {
+                        room_names.get(id).map(|name| AttendanceLessonHomeroom {
+                            id: *id,
+                            name: name.clone(),
+                        })
+                    })
+                    .collect(),
+            });
             seeds.push(AttendanceSeed {
                 session,
                 students: roster,
             });
         }
     }
-    Ok(seeds)
+    Ok((seeds, lesson_choices))
 }
 #[allow(clippy::too_many_arguments)]
 fn seed_session(
@@ -177,16 +205,16 @@ pub async fn workspace(
     let counted =
         settings::is_counted(pool, q.academic_term_id, q.date, &settings.configuration).await?;
     let saved = sessions::list(pool, actor, &q).await?;
-    let mut rows = if settings.archived {
-        vec![]
+    let (available_seeds, mut lesson_choices) = if settings.archived {
+        (vec![], vec![])
     } else {
-        seeds(pool, q.academic_term_id, q.date)
-            .await?
-            .into_iter()
-            .filter(|s| policy::require_session(actor, &s.session, false).is_ok())
-            .map(|s| s.session)
-            .collect::<Vec<_>>()
+        seeds_with_choices(pool, q.academic_term_id, q.date).await?
     };
+    let mut rows = available_seeds
+        .into_iter()
+        .filter(|s| policy::require_session(actor, &s.session, false).is_ok())
+        .map(|s| s.session)
+        .collect::<Vec<_>>();
     if !settings.archived {
         rows.extend(
             specials::seeds(pool, q.academic_term_id, q.date)
@@ -207,10 +235,13 @@ pub async fn workspace(
         }
     }
     rows.sort_by_key(|s| (s.start_time, s.title.clone()));
+    let visible: HashSet<_> = rows.iter().map(|s| s.id).collect();
+    lesson_choices.retain(|choice| visible.contains(&choice.session_id));
     Ok(AttendanceWorkspace {
         date: q.date,
         counted,
         sessions: rows,
+        lesson_choices,
         settings,
     })
 }
