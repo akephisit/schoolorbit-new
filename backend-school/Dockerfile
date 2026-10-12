@@ -36,6 +36,7 @@ RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
 FROM scratch AS build-timings
 COPY --from=builder /app/target/cargo-timings/cargo-timing.html /cargo-timing.html
 COPY --from=builder /app/target/cargo-timings/sccache-stats.json /sccache-stats.json
+COPY --from=builder /app/target/cargo-timings/build-metrics.json /build-metrics.json
 
 FROM public.ecr.aws/docker/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 WORKDIR /app

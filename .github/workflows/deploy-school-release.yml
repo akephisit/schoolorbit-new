@@ -15,8 +15,11 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: akephisit/schoolorbit-backend-school
 jobs:
-  resolve-scope:
+  verify-release-ci:
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
     outputs:
       scope: ${{ steps.scope.outputs.scope }}
       needs_frontend: ${{ steps.scope.outputs.needs_frontend }}
@@ -29,6 +32,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
+      - name: Confirm gated caller identity
+        env:
+          PLAN: ${{ inputs.plan }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.path' | grep -Eq '^\.github/workflows/pipeline\.yml(@refs/heads/main)?$'
+          printf '%s' "$PLAN" | jq -e --arg sha "$GITHUB_SHA" '.schemaVersion == 1 and .sha == $sha' >/dev/null
+          # The only caller is release.yml, downstream of the stable Pipeline gate.
       - name: Resolve selected School components
         id: scope
         env:
@@ -46,26 +59,9 @@ jobs:
           const scope = frontend && backend ? 'full' : frontend ? 'frontend' : 'backend';
           appendFileSync(process.env.GITHUB_OUTPUT, `scope=${scope}\nneeds_frontend=${frontend}\nneeds_backend=${backend}\nfrontend_baseline=${state?.components['frontend-school']?.sha || ''}\nbackend_baseline=${state?.components['backend-school']?.sha || ''}\n`);
           NODE
-  verify-release-ci:
-    needs: resolve-scope
-    runs-on: ubuntu-24.04
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Confirm gated caller identity
-        env:
-          PLAN: ${{ inputs.plan }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/main
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.path' | grep -Eq '^\.github/workflows/pipeline\.yml(@refs/heads/main)?$'
-          printf '%s' "$PLAN" | jq -e --arg sha "$GITHUB_SHA" '.schemaVersion == 1 and .sha == $sha' >/dev/null
-          # The only caller is release.yml, downstream of the stable Pipeline gate.
   prepared-backend:
-    needs: resolve-scope
-    if: needs.resolve-scope.outputs.needs_backend == 'true'
+    needs: verify-release-ci
+    if: needs.verify-release-ci.outputs.needs_backend == 'true'
     runs-on: ubuntu-24.04
     outputs:
       image_digest: ${{ steps.image.outputs.digest }}
@@ -85,8 +81,8 @@ jobs:
           ' "$RUNNER_TEMP/prepared/backend-school.json")
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
   discover-schools:
-    needs: resolve-scope
-    if: needs.resolve-scope.outputs.needs_frontend == 'true'
+    needs: verify-release-ci
+    if: needs.verify-release-ci.outputs.needs_frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -134,10 +130,10 @@ jobs:
           if-no-files-found: error
   stage-frontends:
     needs:
-      - resolve-scope
+      - verify-release-ci
       - discover-schools
     if: |-
-      ${{ always() && needs.resolve-scope.outputs.needs_frontend == 'true' &&
+      ${{ always() && needs.verify-release-ci.outputs.needs_frontend == 'true' &&
           needs.discover-schools.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -155,15 +151,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Restore locked School deployment tooling
+        uses: ./.github/actions/setup-deployment-tooling
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend-school/package-lock.json
-      - name: Install frontend dependencies
-        working-directory: frontend-school
-        run: npm ci
+          component: frontend-school
       - name: Create tenant Wrangler configuration
         working-directory: frontend-school
         env:
@@ -192,7 +183,7 @@ jobs:
         id: reusable-worker
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
         run: |
           set -euo pipefail
@@ -246,7 +237,7 @@ jobs:
         if: steps.reusable-worker.outputs.run_id != ''
         uses: actions/download-artifact@v7
         with:
-          name: school-worker-${{ matrix.school.subdomain }}-${{ needs.resolve-scope.outputs.release_id }}
+          name: school-worker-${{ matrix.school.subdomain }}-${{ needs.verify-release-ci.outputs.release_id }}
           path: ${{ runner.temp }}/reusable-worker
           github-token: ${{ github.token }}
           run-id: ${{ steps.reusable-worker.outputs.run_id }}
@@ -255,7 +246,7 @@ jobs:
         if: steps.reusable-worker.outputs.run_id != ''
         working-directory: frontend-school
         env:
-          RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
         run: |
           set -euo pipefail
@@ -301,7 +292,7 @@ jobs:
         if: steps.reusable-worker.outputs.run_id == ''
         working-directory: frontend-school
         env:
-          RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
         run: |
           set -euo pipefail
@@ -402,14 +393,14 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend-school
-          command: versions upload --tag "${{ needs.resolve-scope.outputs.release_id }}" --message "SchoolOrbit release ${{ needs.resolve-scope.outputs.release_id }}"
+          command: versions upload --tag "${{ needs.verify-release-ci.outputs.release_id }}" --message "SchoolOrbit release ${{ needs.verify-release-ci.outputs.release_id }}"
       - name: Record staged Worker manifest
         if: |-
           ${{ steps.validate-reusable-worker.outputs.reused != 'true' &&
               steps.recover-inactive-worker.outputs.reused != 'true' }}
         working-directory: frontend-school
         env:
-          RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
         run: |
           set -euo pipefail
@@ -430,21 +421,20 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           overwrite: true
-          name: school-worker-${{ matrix.school.subdomain }}-${{ needs.resolve-scope.outputs.release_id }}
+          name: school-worker-${{ matrix.school.subdomain }}-${{ needs.verify-release-ci.outputs.release_id }}
           path: ${{ runner.temp }}/worker-release-${{ matrix.school.subdomain }}.json
           retention-days: 14
           if-no-files-found: error
   deploy-backend:
     needs:
-      - resolve-scope
       - verify-release-ci
       - prepared-backend
       - stage-frontends
     if: |-
       ${{ always() && needs.verify-release-ci.result == 'success' &&
-          needs.resolve-scope.outputs.needs_backend == 'true' &&
+          needs.verify-release-ci.outputs.needs_backend == 'true' &&
           needs.prepared-backend.result == 'success' &&
-          (needs.resolve-scope.outputs.needs_frontend != 'true' ||
+          (needs.verify-release-ci.outputs.needs_frontend != 'true' ||
            needs.stage-frontends.result == 'success') }}
     runs-on: ubuntu-latest
     steps:
@@ -500,17 +490,16 @@ jobs:
           script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-verify-academic.sh
   promote-frontends:
     needs:
-      - resolve-scope
       - verify-release-ci
       - discover-schools
       - stage-frontends
       - deploy-backend
     if: |-
       ${{ always() && needs.verify-release-ci.result == 'success' &&
-          needs.resolve-scope.outputs.needs_frontend == 'true' &&
+          needs.verify-release-ci.outputs.needs_frontend == 'true' &&
           needs.discover-schools.result == 'success' &&
           needs.stage-frontends.result == 'success' &&
-          (needs.resolve-scope.outputs.needs_backend != 'true' ||
+          (needs.verify-release-ci.outputs.needs_backend != 'true' ||
            needs.deploy-backend.result == 'success') }}
     runs-on: ubuntu-latest
     env:
@@ -525,15 +514,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Restore locked School deployment tooling
+        uses: ./.github/actions/setup-deployment-tooling
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend-school/package-lock.json
-      - name: Install frontend dependencies
-        working-directory: frontend-school
-        run: npm ci
+          component: frontend-school
       - name: Create tenant Wrangler configuration
         working-directory: frontend-school
         env:
@@ -563,13 +547,13 @@ jobs:
       - name: Download staged Worker manifest
         uses: actions/download-artifact@v7
         with:
-          name: school-worker-${{ matrix.school.subdomain }}-${{ needs.resolve-scope.outputs.release_id }}
+          name: school-worker-${{ matrix.school.subdomain }}-${{ needs.verify-release-ci.outputs.release_id }}
           path: ${{ runner.temp }}/staged-worker
       - name: Validate staged Worker manifest
         id: staged-worker
         working-directory: frontend-school
         env:
-          RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
           SUBDOMAIN: ${{ matrix.school.subdomain }}
         run: |
           set -euo pipefail
@@ -648,7 +632,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend-school
-          command: versions deploy --version-id "${{ steps.staged-worker.outputs.version_id }}" --percentage 100 -y --message "Accepted SchoolOrbit release ${{ needs.resolve-scope.outputs.release_id }}"
+          command: versions deploy --version-id "${{ steps.staged-worker.outputs.version_id }}" --percentage 100 -y --message "Accepted SchoolOrbit release ${{ needs.verify-release-ci.outputs.release_id }}"
       - name: Apply tenant Worker routes
         working-directory: frontend-school
         run: npx wrangler triggers deploy --config wrangler-triggers.json
@@ -684,18 +668,16 @@ jobs:
         run: node scripts/verify-tenant-worker-readiness.mjs
   accept-release:
     needs:
-      - resolve-scope
       - verify-release-ci
       - prepared-backend
       - stage-frontends
       - deploy-backend
       - promote-frontends
     if: |-
-      ${{ always() && needs.resolve-scope.result == 'success' &&
-          needs.verify-release-ci.result == 'success' &&
-          (needs.resolve-scope.outputs.needs_frontend != 'true' ||
+      ${{ always() && needs.verify-release-ci.result == 'success' &&
+          (needs.verify-release-ci.outputs.needs_frontend != 'true' ||
            needs.promote-frontends.result == 'success') &&
-          (needs.resolve-scope.outputs.needs_backend != 'true' ||
+          (needs.verify-release-ci.outputs.needs_backend != 'true' ||
            needs.deploy-backend.result == 'success') }}
     runs-on: ubuntu-latest
     permissions:
@@ -703,7 +685,7 @@ jobs:
       packages: write
     steps:
       - name: Verify School release while public maintenance remains active
-        if: needs.resolve-scope.outputs.needs_backend == 'true'
+        if: needs.verify-release-ci.outputs.needs_backend == 'true'
         uses: appleboy/ssh-action@v1.2.5
         env:
           ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'sandbox' }}
@@ -712,7 +694,7 @@ jobs:
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
           RELEASE_SHA: ${{ github.sha }}
           BACKEND_IMAGE_DIGEST: ${{ needs.prepared-backend.outputs.image_digest }}
-          RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
         with:
           host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
@@ -723,7 +705,6 @@ jobs:
           script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-verify-release.sh
   release-summary:
     needs:
-      - resolve-scope
       - verify-release-ci
       - stage-frontends
       - deploy-backend
@@ -734,8 +715,8 @@ jobs:
     steps:
       - name: Report bounded release outcome
         env:
-          RELEASE_ID: ${{ needs.resolve-scope.outputs.release_id }}
-          RELEASE_SCOPE: ${{ needs.resolve-scope.outputs.scope }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
+          RELEASE_SCOPE: ${{ needs.verify-release-ci.outputs.scope }}
           CI_RESULT: ${{ needs.verify-release-ci.result }}
           BACKEND_RESULT: ${{ needs.deploy-backend.result }}
           FRONTEND_RESULT: ${{ needs.promote-frontends.result }}

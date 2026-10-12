@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { parse as parseYaml } from 'yaml';
-import { readWorkflowSource } from '../helpers/workflow-source.mjs';
+import { expandCompositeSteps, readWorkflowSource } from '../helpers/workflow-source.mjs';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
@@ -48,7 +48,7 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 	for (const file of workflowFiles) {
 		const workflow = parseYaml(await readFile(path.join(workflowDirectory, file), 'utf8'));
 		for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
-			const steps = Array.isArray(job.steps) ? job.steps : [];
+			const steps = await expandCompositeSteps(repoRoot, Array.isArray(job.steps) ? job.steps : []);
 			const nodeSetupIndexes = [];
 			const rustSetupIndexes = [];
 
@@ -867,7 +867,10 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			assert.match(dockerfile, /ACTIONS_CACHE_SERVICE_V2=true/);
 			assert.match(dockerfile, new RegExp(`SCCACHE_GHA_VERSION=schoolorbit-${binary}`));
 			assert.match(dockerfile, /SCCACHE_IGNORE_SERVER_IO_ERROR=1/);
-			assert.match(dockerfile, new RegExp(`cargo build --release --bin ${binary} --timings`));
+			assert.match(
+				dockerfile,
+				new RegExp(`cargo build --release --locked --bin ${binary} --timings`)
+			);
 		} else {
 			const release = await readRepo('backend-school/scripts/build_release.sh');
 			assert.match(dockerfile, /RUN cargo chef cook --release --recipe-path recipe.json/);

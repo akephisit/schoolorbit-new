@@ -45,6 +45,14 @@ maintenance failure cases, plus `node --test frontend-school/tests/static/school
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and
 browser verification after integration. Caches never replace a required test result.
 
+For deployment dependency selection and compiler evidence, run
+`node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
+The fixtures exercise nested/peer dependencies, stale and partial caches, workspace-link exclusion,
+bounded summaries and compiler failure propagation. Rehearse a clean install of the extracted lock
+outside the checkout and launch its locked Wrangler/browser tools before shipping cache changes.
+Compare repeated installs and restores on one toolchain/host; setup-only measurements are not total
+pipeline or production latency measurements.
+
 ## Every Change
 
 The repository-owned [development skill](../.agents/skills/schoolorbit-development/SKILL.md)

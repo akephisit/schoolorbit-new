@@ -477,7 +477,10 @@ test('release acceptance requires successful scope resolution', async () => {
 	const workflow = parseYaml(
 		await readWorkflowSource(repoRoot, '.github/workflows/deploy-school-release.yml')
 	);
-	assert.match(String(workflow.jobs['accept-release'].if), /resolve-scope\.result == 'success'/);
+	assert.match(
+		String(workflow.jobs['accept-release'].if),
+		/verify-release-ci\.result == 'success'/
+	);
 });
 
 test('deployment status requests are bounded and application mount is observable', async () => {

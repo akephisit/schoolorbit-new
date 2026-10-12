@@ -25,9 +25,13 @@ FROM base AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
+ARG SCHOOL_COMPILER_CACHE=off
 RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
     --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
-    if [ -s /run/secrets/sccache_gha_url ] && [ -s /run/secrets/sccache_gha_token ]; then \
+    set -eu; \
+    compile_started="$(date +%s%N)"; cache_enabled=false; \
+    if [ "$SCHOOL_COMPILER_CACHE" = gha ] && [ -s /run/secrets/sccache_gha_url ] && [ -s /run/secrets/sccache_gha_token ]; then \
+        cache_enabled=true; \
         ACTIONS_RESULTS_URL="$(cat /run/secrets/sccache_gha_url)" \
         ACTIONS_RUNTIME_TOKEN="$(cat /run/secrets/sccache_gha_token)" \
         SCCACHE_GHA_ENABLED=on \
@@ -35,14 +39,23 @@ RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
         SCCACHE_GHA_VERSION=schoolorbit-backend-admin \
         SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
         RUSTC_WRAPPER=/usr/local/bin/sccache \
-        cargo build --release --bin backend-admin --timings; \
+        cargo build --release --locked --bin backend-admin --timings; \
         /usr/local/bin/sccache --show-stats || true; \
     else \
-        cargo build --release --bin backend-admin --timings; \
+        cargo build --release --locked --bin backend-admin --timings; \
+    fi; \
+    compile_nanoseconds=$(($(date +%s%N) - compile_started)); \
+    mkdir -p target/cargo-timings; \
+    printf '{"schemaVersion":1,"compileNanoseconds":%s,"cacheEnabled":%s}\n' "$compile_nanoseconds" "$cache_enabled" >target/cargo-timings/build-metrics.json; \
+    printf '{}\n' >target/cargo-timings/sccache-stats.json; \
+    if [ "$cache_enabled" = true ]; then \
+        /usr/local/bin/sccache --show-stats --stats-format=json >target/cargo-timings/sccache-stats.json || printf '{}\n' >target/cargo-timings/sccache-stats.json; \
     fi
 
 FROM scratch AS build-timings
 COPY --from=builder /app/target/cargo-timings/cargo-timing.html /cargo-timing.html
+COPY --from=builder /app/target/cargo-timings/sccache-stats.json /sccache-stats.json
+COPY --from=builder /app/target/cargo-timings/build-metrics.json /build-metrics.json
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app

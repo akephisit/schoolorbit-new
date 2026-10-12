@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-node@v6
         if: startsWith(matrix.component, 'frontend-')
         with:
-          node-version: '24'
+          node-version: "24"
           cache: npm
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
       - name: Restore frontend artifact cache
@@ -60,6 +60,12 @@ jobs:
       - name: Bind frontend cache and artifact to verified inputs
         if: startsWith(matrix.component, 'frontend-')
         run: node scripts/frontend_artifact.mjs pack
+      - name: Prime the shared locked deployment tooling
+        if: startsWith(matrix.component, 'frontend-')
+        uses: ./.github/actions/setup-deployment-tooling
+        with:
+          component: ${{ matrix.component }}
+          seed: "true"
       - name: Save main-owned frontend artifact cache
         if: startsWith(matrix.component, 'frontend-') && github.ref == 'refs/heads/main' && steps.bundle-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
@@ -111,6 +117,7 @@ jobs:
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
       - name: Build selected OCI image
+        id: image-build
         if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
         uses: docker/build-push-action@v7
         with:
@@ -146,6 +153,20 @@ jobs:
           path: ${{ runner.temp }}/timings-${{ matrix.component }}
           retention-days: 14
           if-no-files-found: error
+      - name: Summarize build phases and compiler reuse
+        if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
+        env:
+          BUILD_METADATA: ${{ steps.image-build.outputs.metadata }}
+        run: |
+          set -euo pipefail
+          build_ref=$(python3 -c 'import json,os; print(json.loads(os.environ["BUILD_METADATA"]).get("buildx.build.ref", ""))')
+          log="$RUNNER_TEMP/buildkit-${COMPONENT}.log"
+          if [ -n "$build_ref" ]; then
+            if ! docker buildx history logs --progress=plain "$build_ref" >"$log" 2>"$RUNNER_TEMP/buildkit-log-error"; then
+              printf '::warning::BuildKit phase logs are unavailable; compiler artifact remains available.\n'
+            fi
+          fi
+          python3 scripts/render_backend_build_summary.py "$COMPONENT" "$RUNNER_TEMP/timings-${COMPONENT}" "$log" >> "$GITHUB_STEP_SUMMARY"
       - name: Bind selected image digest to this release
         if: startsWith(matrix.component, 'backend-')
         env:

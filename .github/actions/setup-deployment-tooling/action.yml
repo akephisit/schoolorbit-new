@@ -1,0 +1,69 @@
+name: Setup deployment tooling
+description: Reuse only the deployment dependencies selected from the owning application lockfile.
+inputs:
+  component:
+    description: Owning frontend application
+    required: true
+  seed:
+    description: Prime from dependencies already installed by artifact preparation
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v6
+      with:
+        node-version: "24"
+    - name: Select locked deployment dependencies
+      id: prepare
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: node scripts/deployment_tooling.mjs prepare "$COMPONENT" "$RUNNER_TEMP/deployment-tooling"
+    - name: Restore main-owned deployment tooling
+      id: cache
+      uses: actions/cache/restore@v5
+      with:
+        path: ${{ steps.prepare.outputs.directory }}/node_modules
+        key: ${{ steps.prepare.outputs.key }}
+    - name: Validate deployment tooling cache
+      id: validate
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: node scripts/deployment_tooling.mjs validate "$COMPONENT" "$RUNNER_TEMP/deployment-tooling"
+    - name: Prime tooling from prepared dependencies
+      id: seed
+      if: steps.validate.outputs.valid != 'true' && inputs.seed == 'true'
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: node scripts/deployment_tooling.mjs seed "$COMPONENT" "$RUNNER_TEMP/deployment-tooling"
+    - name: Install locked deployment tooling
+      if: steps.validate.outputs.valid != 'true' && steps.seed.outputs.seeded != 'true'
+      shell: bash
+      env:
+        DIRECTORY: ${{ steps.prepare.outputs.directory }}
+      run: npm ci --include=dev --no-audit --no-fund --prefix "$DIRECTORY"
+    - name: Validate installed deployment tooling
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: node scripts/deployment_tooling.mjs mark "$COMPONENT" "$RUNNER_TEMP/deployment-tooling"
+    - name: Save main-owned deployment tooling
+      if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ steps.prepare.outputs.directory }}/node_modules
+        key: ${{ steps.prepare.outputs.key }}
+    - name: Connect the verified tooling to the deployment checkout
+      if: inputs.seed != 'true'
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: node scripts/deployment_tooling.mjs link "$COMPONENT" "$RUNNER_TEMP/deployment-tooling"
+    - name: Report deployment dependency reuse
+      shell: bash
+      env:
+        CACHE_VALID: ${{ steps.validate.outputs.valid }}
+        PACKAGE_COUNT: ${{ steps.prepare.outputs.packages }}
+      run: printf 'Deployment tooling cache=%s packages=%s\n' "$CACHE_VALID" "$PACKAGE_COUNT" >> "$GITHUB_STEP_SUMMARY"
