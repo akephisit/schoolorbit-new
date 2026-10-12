@@ -571,7 +571,7 @@
 							</div>{/if}
 					</div>
 					<div
-						class="max-h-[55svh] overflow-y-auto overscroll-contain sm:max-h-none sm:overflow-visible"
+						class="max-h-[55svh] overflow-y-auto sm:max-h-none sm:overflow-visible"
 						role="region"
 						aria-label="รายชื่อนักเรียน"
 					>
