@@ -288,16 +288,19 @@ export const getCatalogActivityOverview = (options: ApiRequestOptions = {}) =>
 export const createCatalogActivity = (body: CreateCatalogActivityRequest) =>
 	academicData(
 		apiClient.post<CatalogActivity>('/api/academic/catalog/activities', body),
-		'สร้างรหัสกิจกรรมไม่สำเร็จ'
+		'เพิ่มกิจกรรมไม่สำเร็จ'
 	);
 export const updateCatalogActivity = (id: string, body: UpdateCatalogActivityRequest) =>
 	academicData(
 		apiClient.patch<CatalogActivity>(`/api/academic/catalog/activities/${id}`, body),
-		'แก้ไขรหัสกิจกรรมไม่สำเร็จ'
+		'แก้ไขกิจกรรมไม่สำเร็จ'
 	);
-export const listActivityVersions = (activityId: string) =>
+export const listActivityVersions = (activityId: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<ActivityVersion[]>(`/api/academic/catalog/activities/${activityId}/versions`),
+		apiClient.get<ActivityVersion[]>(
+			`/api/academic/catalog/activities/${activityId}/versions`,
+			options
+		),
 		'ไม่สามารถโหลดประวัติกิจกรรมได้'
 	);
 export const createActivityVersion = (activityId: string, body: CreateActivityVersionRequest) =>

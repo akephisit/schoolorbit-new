@@ -88,10 +88,12 @@ test('activity catalog uses the responsive overview information architecture', a
 	assert.match(activities, /\* as Table/);
 	assert.match(activities, /\* as Sheet/);
 	assert.match(activities, /\* as Select/);
-	assert.match(activities, /activityHistoryCache/);
-	assert.match(activities, /historyRevision/);
+	assert.match(activities, /LatestRequest/);
+	assert.match(activities, /historyRequests\.abort\(\)/);
+	assert.match(activities, /historyRequests\.isCurrent\(request\.revision\)/);
 	assert.match(activities, /overview\?\.canCreate/);
-	assert.match(activities, /สังกัดงานกิจกรรมพัฒนาผู้เรียนอัตโนมัติ/);
+	assert.match(activities, /createCatalogActivity\(\{ activityType \}\)/);
+	assert.doesNotMatch(activities, /new-activity-code|เพิ่มรหัสกิจกรรม|item\.activity\.code/);
 	assert.doesNotMatch(activities, /owningOrganizationUnitId/);
 	assert.match(activities, /canManage=\{selected\.canManage\}/);
 	assert.match(activities, /formatEffectiveRange/);

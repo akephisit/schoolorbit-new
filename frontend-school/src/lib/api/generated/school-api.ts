@@ -15040,7 +15040,6 @@ export interface components {
 		};
 		CreateCatalogActivityRequest: {
 			activityType: string;
-			code: string;
 		};
 		CreateCatalogSubjectRequest: {
 			code: string;
@@ -21608,7 +21607,6 @@ export interface components {
 		UpdateCatalogActivityRequest: {
 			activityType: string;
 			archived: boolean;
-			code: string;
 			/** Format: int64 */
 			rowVersion: number;
 		};

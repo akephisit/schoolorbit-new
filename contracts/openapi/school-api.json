@@ -30758,13 +30758,9 @@
         "properties": {
           "activityType": {
             "type": "string"
-          },
-          "code": {
-            "type": "string"
           }
         },
         "required": [
-          "code",
           "activityType"
         ],
         "type": "object"
@@ -54360,16 +54356,12 @@
           "archived": {
             "type": "boolean"
           },
-          "code": {
-            "type": "string"
-          },
           "rowVersion": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
-          "code",
           "activityType",
           "archived",
           "rowVersion"

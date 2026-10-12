@@ -3502,6 +3502,63 @@ async fn catalog_versions_round_trip_exact_values_and_published_rows_are_immutab
 }
 
 #[tokio::test]
+async fn activity_catalog_generates_unique_codes_for_concurrent_creates() {
+    let pool = prepare_current_core_fixture("academic_core_activity_generated_codes").await;
+    let request = CreateCatalogActivityRequest {
+        activity_type: "  CLUB  ".to_string(),
+    };
+    let (first, second) = tokio::join!(
+        catalog::create_activity(&pool, request.clone()),
+        catalog::create_activity(&pool, request)
+    );
+    let first = first.unwrap();
+    let second = second.unwrap();
+    assert_ne!(first.id, second.id);
+    assert_ne!(first.code, second.code);
+    assert_eq!(
+        first.code,
+        format!("ACT-{}", first.id.simple()).to_uppercase()
+    );
+    assert_eq!(first.activity_type, "club");
+    let original_identity: String =
+        sqlx::query_scalar("SELECT identity_key FROM activities WHERE id = $1")
+            .bind(first.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let changed = catalog::update_activity(
+        &pool,
+        first.id,
+        UpdateCatalogActivityRequest {
+            activity_type: "guidance".to_string(),
+            archived: true,
+            row_version: first.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(changed.code, first.code);
+    let updated_identity: String =
+        sqlx::query_scalar("SELECT identity_key FROM activities WHERE id = $1")
+            .bind(first.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(updated_identity, original_identity);
+    assert!(catalog::update_activity(
+        &pool,
+        first.id,
+        UpdateCatalogActivityRequest {
+            activity_type: "club".to_string(),
+            archived: false,
+            row_version: first.row_version
+        }
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
 async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
     let pool = prepare_current_core_fixture("academic_core_activity_catalog_runtime").await;
     let grade_level_id: Uuid =
@@ -3512,7 +3569,6 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
     let activity = catalog::create_activity(
         &pool,
         CreateCatalogActivityRequest {
-            code: "TEST-GUIDANCE".to_string(),
             activity_type: "guidance".to_string(),
         },
     )
@@ -3582,7 +3638,6 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
         &pool,
         activity.id,
         UpdateCatalogActivityRequest {
-            code: activity.code,
             activity_type: activity.activity_type,
             archived: true,
             row_version: activity.row_version,
@@ -3591,6 +3646,7 @@ async fn activity_catalog_versions_round_trip_exact_hours_and_archive_stably() {
     .await
     .unwrap();
     assert!(archived.archived_at.is_some());
+    assert_eq!(archived.code, activity.code);
 }
 
 #[tokio::test]
@@ -3604,7 +3660,6 @@ async fn activity_catalog_requires_total_hours_before_publishing_a_new_version()
     let activity = catalog::create_activity(
         &pool,
         CreateCatalogActivityRequest {
-            code: "TOTAL-HOURS-REQUIRED".to_string(),
             activity_type: "guidance".to_string(),
         },
     )
@@ -3737,7 +3792,6 @@ async fn catalog_publication_requires_positive_official_workload() {
     let zero_hours_activity = catalog::create_activity(
         &pool,
         CreateCatalogActivityRequest {
-            code: "WORKLOAD-ZERO-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
         },
     )
@@ -4009,7 +4063,6 @@ async fn catalog_overview_keeps_activity_owner_scope_and_grade_options() {
     let activity = catalog::create_activity(
         &pool,
         CreateCatalogActivityRequest {
-            code: "OVERVIEW-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
         },
     )
@@ -4256,7 +4309,6 @@ async fn curriculum_management_options_are_published_scoped_and_ordered() {
     let activity = catalog::create_activity(
         &pool,
         CreateCatalogActivityRequest {
-            code: "OPTION-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
         },
     )
@@ -4408,7 +4460,6 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
     let activity = catalog::create_activity(
         &pool,
         CreateCatalogActivityRequest {
-            code: "WORKSPACE-ACTIVITY".to_string(),
             activity_type: "guidance".to_string(),
         },
     )

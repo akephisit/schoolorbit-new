@@ -451,17 +451,11 @@ pub async fn create_activity(
     pool: &PgPool,
     request: CreateCatalogActivityRequest,
 ) -> Result<CatalogActivity, AppError> {
-    let code = normalize_code(&request.code)?;
-    if request.activity_type.trim().is_empty() {
-        return Err(AppError::ValidationError("ประเภทกิจกรรมห้ามว่าง".to_string()));
-    }
+    let activity_type = normalize_activity_type(&request.activity_type)?;
     let owner_id = resolve_activity_owner(pool).await?;
     let id = Uuid::new_v4();
-    let identity_key = format!(
-        "{}:{}",
-        request.activity_type.trim().to_lowercase(),
-        code.to_lowercase()
-    );
+    let code = activity_code(id);
+    let identity_key = format!("activity:{id}");
     let sql = format!(
         "INSERT INTO activities (id, code, identity_key, activity_type, owning_organization_unit_id) \
          VALUES ($1, $2, $3, $4, $5) RETURNING {ACTIVITY_COLUMNS}"
@@ -470,7 +464,7 @@ pub async fn create_activity(
         .bind(id)
         .bind(code)
         .bind(identity_key)
-        .bind(request.activity_type.trim().to_lowercase())
+        .bind(activity_type)
         .bind(owner_id)
         .fetch_one(pool)
         .await
@@ -483,22 +477,15 @@ pub async fn update_activity(
     request: UpdateCatalogActivityRequest,
 ) -> Result<CatalogActivity, AppError> {
     parse_row_version(request.row_version)?;
-    let code = normalize_code(&request.code)?;
-    let identity_key = format!(
-        "{}:{}",
-        request.activity_type.trim().to_lowercase(),
-        code.to_lowercase()
-    );
+    let activity_type = normalize_activity_type(&request.activity_type)?;
     let sql = format!(
-        "UPDATE activities SET code = $1, identity_key = $2, activity_type = $3, \
-         archived_at = CASE WHEN $4 THEN COALESCE(archived_at, now()) ELSE NULL END, \
+        "UPDATE activities SET activity_type = $1, \
+         archived_at = CASE WHEN $2 THEN COALESCE(archived_at, now()) ELSE NULL END, \
          row_version = row_version + 1, updated_at = now() \
-         WHERE id = $5 AND row_version = $6 RETURNING {ACTIVITY_COLUMNS}"
+         WHERE id = $3 AND row_version = $4 RETURNING {ACTIVITY_COLUMNS}"
     );
     sqlx::query_as(sqlx::AssertSqlSafe(sql))
-        .bind(code)
-        .bind(identity_key)
-        .bind(request.activity_type.trim().to_lowercase())
+        .bind(activity_type)
         .bind(request.archived)
         .bind(id)
         .bind(request.row_version)
@@ -506,6 +493,59 @@ pub async fn update_activity(
         .await
         .map_err(map_catalog_write_error)?
         .ok_or_else(|| AppError::Conflict("กิจกรรมถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()))
+}
+
+fn activity_code(id: Uuid) -> String {
+    format!("ACT-{}", id.simple()).to_uppercase()
+}
+
+fn normalize_activity_type(value: &str) -> Result<String, AppError> {
+    let value = value.trim().to_lowercase();
+    if value.is_empty() {
+        return Err(AppError::ValidationError("ประเภทกิจกรรมห้ามว่าง".to_string()));
+    }
+    Ok(value)
+}
+
+#[cfg(test)]
+mod activity_identity_tests {
+    use super::*;
+
+    #[test]
+    fn generated_code_uses_the_full_stable_identity() {
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        assert_eq!(activity_code(first), "ACT-00000000000000000000000000000001");
+        assert_ne!(activity_code(first), activity_code(second));
+    }
+
+    #[test]
+    fn activity_type_is_normalized_and_cannot_be_blank() {
+        assert_eq!(normalize_activity_type("  GUIDANCE  ").unwrap(), "guidance");
+        assert!(normalize_activity_type("  ").is_err());
+    }
+
+    #[test]
+    fn activity_write_contracts_refuse_client_codes() {
+        assert!(
+            serde_json::from_value::<CreateCatalogActivityRequest>(serde_json::json!({
+                "activityType": "club"
+            }))
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<CreateCatalogActivityRequest>(serde_json::json!({
+                "activityType": "club", "code": "MANUAL"
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<UpdateCatalogActivityRequest>(serde_json::json!({
+                "activityType": "club", "archived": false, "rowVersion": 1, "code": "MANUAL"
+            }))
+            .is_err()
+        );
+    }
 }
 
 pub async fn list_activity_versions(
