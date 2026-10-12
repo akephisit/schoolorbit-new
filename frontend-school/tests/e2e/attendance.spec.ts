@@ -2089,6 +2089,9 @@ for (const width of [390, 1440])
 				await button.click();
 				await expect(button).toHaveAttribute('aria-checked', 'true');
 				await expect(result.getByRole('radio', { checked: true })).toHaveCount(1);
+				await button.evaluate(async (element) => {
+					await Promise.all(element.getAnimations().map((animation) => animation.finished));
+				});
 				colors.add(await button.evaluate((el) => getComputedStyle(el).backgroundColor));
 			}
 			expect(colors.size).toBe(5);
@@ -2099,6 +2102,9 @@ for (const width of [390, 1440])
 				.click();
 			await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่เช็ค');
 			await chooseResult(page, 'นักเรียนคนแรก', 'มา');
+			await result.getByRole('radio', { name: 'มา', exact: true }).evaluate(async (element) => {
+				await Promise.all(element.getAnimations().map((animation) => animation.finished));
+			});
 			await page.screenshot({ path: `/tmp/attendance-direct-results-${width}-${theme}.png` });
 			const filterReads: string[] = [];
 			page.on('request', (request) => {
