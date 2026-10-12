@@ -34,9 +34,13 @@ case "$cache_mode" in
 esac
 
 echo "school_compiler_cache mode=$cache_mode enabled=$cache_enabled"
+compile_started=$(date +%s%N)
 cargo rustc --release --locked --bin backend-school --timings -- -C lto=off
+compile_nanoseconds=$(($(date +%s%N) - compile_started))
 
 mkdir -p target/cargo-timings
+printf '{"schemaVersion":1,"compileNanoseconds":%s,"cacheMode":"%s","cacheEnabled":%s}\n' \
+    "$compile_nanoseconds" "$cache_mode" "$cache_enabled" >target/cargo-timings/build-metrics.json
 printf '{}\n' >target/cargo-timings/sccache-stats.json
 if [[ -n ${RUSTC_WRAPPER:-} ]]; then
     # Metrics failure must not turn a successful compile into a failed release.

@@ -177,6 +177,22 @@ Compiler evidence artifacts include Cargo HTML timings and sccache statistics wh
 runs. Compare compilation, restore, push and deployment durations separately; an exact cache marker
 alone is not evidence of a faster release. A failed release does not advance accepted baselines.
 
+Preparation primes the main-owned `deploy-tools-v1-*` cache through
+[setup-deployment-tooling](../.github/actions/setup-deployment-tooling/action.yml).
+The [selector](../scripts/deployment_tooling.mjs) extracts Wrangler, School browser verification
+and route scanning dependencies from the existing application lock, including nested versions and
+peers. Stage/promote/Admin jobs restore that closure, validate its identity and versions, and use
+the same locked install on a miss. It contains dependency files only, with no application secrets
+or build output, and is distinct from prepared Worker bundles and browser binaries.
+
+[Compiler summaries](../scripts/render_backend_build_summary.py) show measured Cargo duration,
+the largest compiler units, Rust library cache counters and available BuildKit phase durations.
+A cached compiler layer reuses its previous evidence; the summary labels it accordingly. Manifest
+import time does not include every lazy cache-layer transfer. Full evidence remains in the compiler
+artifact, and metric/log unavailability is displayed without changing successful build acceptance.
+The School caller proof and selected scope share `verify-release-ci`; all downstream runtime and
+acceptance guards still require its success.
+
 When retiring a cache-producing workflow, inspect the repository Actions cache inventory and
 remove only exact IDs in its unused namespace after confirming no current workflow consumes it.
 The retired `rust-ci-v3-*` test snapshots have no consumer in the local-only test flow. Keeping
