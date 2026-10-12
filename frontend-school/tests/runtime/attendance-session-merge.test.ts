@@ -40,7 +40,6 @@ function detail(): AttendanceDetail {
 			displayName: studentId,
 			result: 'unchecked',
 			origin: 'unchecked',
-			note: '',
 			observedAt: null,
 			arrivalAt: null,
 			evidenceFileId: null,
@@ -52,7 +51,6 @@ test('nonoverlapping teacher and scan changes retain latest evidence and revisio
 	const base = detail(),
 		local = copyAttendanceDetail(base),
 		latest = copyAttendanceDetail(base);
-	local.students[0].note = 'teacher note';
 	local.students[0].result = 'present';
 	latest.session.rowVersion = 2;
 	latest.students[1].result = 'late';
@@ -60,26 +58,25 @@ test('nonoverlapping teacher and scan changes retain latest evidence and revisio
 	const merged = mergeAttendanceDetail(base, local, latest);
 	assert.equal(merged.conflicts.length, 0);
 	assert.equal(merged.detail.session.rowVersion, 2);
-	assert.equal(merged.detail.students[0].note, 'teacher note');
+	assert.equal(merged.detail.students[0].result, 'present');
 	assert.equal(merged.detail.students[1].result, 'late');
 	assert.equal(merged.detail.students[1].evidenceFileId, 'accepted-evidence');
-	assert.equal(base.students[0].note, '');
+	assert.equal(base.students[0].result, 'unchecked');
 });
 test('overlapping fields require a choice while unrelated fields still merge', () => {
 	const base = detail(),
 		local = copyAttendanceDetail(base),
 		latest = copyAttendanceDetail(base);
 	local.students[0].result = 'present';
-	local.students[0].note = 'local note';
 	latest.students[0].result = 'late';
-	latest.students[1].note = 'remote note';
+	latest.students[1].result = 'leave';
 	const merged = mergeAttendanceDetail(base, local, latest);
 	assert.deepEqual(
 		merged.conflicts.map((row) => row.fields),
 		[['result']]
 	);
-	assert.equal(merged.detail.students[0].note, 'local note');
-	assert.equal(merged.detail.students[1].note, 'remote note');
+	assert.equal(merged.detail.students[1].result, 'leave');
+	assert.equal(merged.detail.students[0].result, 'present');
 	assert.equal(merged.conflicts[0].latest.result, 'late');
 });
 test('matching concurrent edits do not conflict and removed roster members cannot be reintroduced', () => {
@@ -98,17 +95,17 @@ test('partial patches exclude unchecked and unchanged pupils; additions do not r
 		local = copyAttendanceDetail(base);
 	local.students[0].result = 'present';
 	assert.deepEqual(attendanceResultPatch(base, local), {
-		students: [{ studentId: 'one', result: 'present', note: '' }],
+		students: [{ studentId: 'one', result: 'present' }],
 		needsReason: false
 	});
 	const saved = copyAttendanceDetail(local),
 		later = copyAttendanceDetail(saved);
 	later.students[1].result = 'leave';
 	assert.deepEqual(attendanceResultPatch(saved, later), {
-		students: [{ studentId: 'two', result: 'leave', note: '' }],
+		students: [{ studentId: 'two', result: 'leave' }],
 		needsReason: false
 	});
-	later.students[0].note = 'corrected';
+	later.students[0].result = 'absent';
 	assert.equal(attendanceResultPatch(saved, later).needsReason, true);
 	assert.deepEqual(attendanceResultPatch(saved, saved).students, []);
 });

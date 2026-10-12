@@ -11,6 +11,13 @@ use sha2::{Digest, Sha256};
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 pub const COLUMNS:&str="id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
+#[derive(serde::Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+struct ResultSnapshot {
+    student_id: Uuid,
+    result: AttendanceResult,
+    row_version: i64,
+}
 pub async fn module_generation(pool: &PgPool) -> Result<Uuid, AppError> {
     Ok(
         sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
@@ -145,7 +152,7 @@ pub async fn detail_unchecked(
           AND a.student_id IN (SELECT "studentId" FROM participants) GROUP BY a.student_id
     ) SELECT p."studentId" student_id,p."studentAcademicYearId" student_academic_year_id,
         concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name,p."classNumber" class_number,
-        COALESCE(r.result,'unchecked') result,COALESCE(r.origin,'none') origin,COALESCE(r.note,'') note,
+        COALESCE(r.result,'unchecked') result,COALESCE(r.origin,'none') origin,
         r.observed_at,e.evidence_file_id,a.observed_at arrival_at,COALESCE(r.row_version,0) row_version
         FROM participants p JOIN users u ON u.id=p."studentId"
         LEFT JOIN attendance_records r ON r.session_id=$1 AND r.student_id=p."studentId"
@@ -285,27 +292,24 @@ pub async fn save_with_seed(
     if s.cancelled {
         return Err(AppError::Conflict("รอบนี้งดเช็คชื่อ".into()));
     }
-    let before:Vec<(Uuid,AttendanceResult,String)>=sqlx::query_as("SELECT student_id,result,note FROM attendance_records WHERE session_id=$1 ORDER BY student_id FOR UPDATE").bind(id).fetch_all(&mut *tx).await?;
-    let old: std::collections::HashMap<_, _> = before.iter().map(|r| (r.0, (&r.1, &r.2))).collect();
+    let before:Vec<ResultSnapshot>=sqlx::query_as("SELECT student_id,result,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id FOR UPDATE").bind(id).fetch_all(&mut *tx).await?;
+    let old: std::collections::HashMap<_, _> =
+        before.iter().map(|r| (r.student_id, r.result)).collect();
     let changed: Vec<_> = p
         .students
         .iter()
-        .filter(|i| {
-            old.get(&i.student_id)
-                .is_none_or(|(r, n)| **r != i.result || **n != i.note)
-        })
+        .filter(|i| old.get(&i.student_id).is_none_or(|r| *r != i.result))
         .collect();
     if changed.iter().any(|i| old.contains_key(&i.student_id)) && p.reason.trim().is_empty() {
         return Err(invalid("ระบุเหตุผลเมื่อแก้ไขผลที่บันทึกแล้ว"));
     }
     #[derive(serde::Serialize)]
     #[serde(rename_all = "camelCase")]
-    struct ExplicitResult<'a> {
+    struct ExplicitResult {
         student_id: Uuid,
         student_academic_year_id: Uuid,
         class_number: Option<i32>,
         result: AttendanceResult,
-        note: &'a str,
     }
     let entries: Vec<_> = changed
         .iter()
@@ -320,21 +324,28 @@ pub async fn save_with_seed(
                 student_academic_year_id: r.student_academic_year_id,
                 class_number: r.class_number,
                 result: i.result,
-                note: &i.note,
             })
         })
         .collect::<Result<_, AppError>>()?;
-    sqlx::query(r#"INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,note,updated_by)
-        SELECT $1,"studentId","studentAcademicYearId",$4,"classNumber",result,'teacher',note,$3
-        FROM jsonb_to_recordset($2) AS i("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer,result text,note text)
-        ON CONFLICT(session_id,student_id) DO UPDATE SET result=excluded.result,origin='teacher',note=excluded.note,
+    sqlx::query(r#"INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,special_round_id,class_number,result,origin,updated_by)
+        SELECT $1,"studentId","studentAcademicYearId",$4,"classNumber",result,'teacher',$3
+        FROM jsonb_to_recordset($2) AS i("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer,result text)
+        ON CONFLICT(session_id,student_id) DO UPDATE SET result=excluded.result,origin='teacher',
         updated_by=$3,row_version=attendance_records.row_version+1"#).bind(id).bind(Json(&entries)).bind(actor.user_id).bind(s.special_round_id).execute(&mut *tx).await?;
     if !changed.is_empty() {
-        let after:Vec<(Uuid,AttendanceResult,String,i64)>=sqlx::query_as("SELECT student_id,result,note,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id").bind(id).fetch_all(&mut *tx).await?;
+        let after:Vec<ResultSnapshot>=sqlx::query_as("SELECT student_id,result,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id").bind(id).fetch_all(&mut *tx).await?;
         let notices: Vec<_> = after
             .iter()
-            .filter(|r| changed.iter().any(|i| i.student_id == r.0))
-            .map(|r| notifications::result_notice(&s, r.0, r.1, r.3, old.contains_key(&r.0)))
+            .filter(|r| changed.iter().any(|i| i.student_id == r.student_id))
+            .map(|r| {
+                notifications::result_notice(
+                    &s,
+                    r.student_id,
+                    r.result,
+                    r.row_version,
+                    old.contains_key(&r.student_id),
+                )
+            })
             .collect();
         if notifications::should_notify(&mut tx, &s).await? {
             notifications::queue_batch(&mut tx, s.academic_term_id, &notices).await?;

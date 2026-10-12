@@ -42,9 +42,8 @@ pub fn validate_inputs(inputs: &[AttendanceResultInput], roster: &[Uuid]) -> Res
         if !seen.insert(s.student_id)
             || !roster.contains(&s.student_id)
             || s.result == AttendanceResult::Unchecked
-            || s.note.len() > 1000
         {
-            return Err(invalid("นักเรียนซ้ำ ไม่อยู่ในรอบ หรือหมายเหตุยาวเกินกำหนด"));
+            return Err(invalid("นักเรียนซ้ำ ไม่อยู่ในรอบ หรือผลเช็คชื่อไม่ถูกต้อง"));
         }
     }
     Ok(())
@@ -82,6 +81,16 @@ pub fn distinct_groups(groups: &[Vec<Uuid>]) -> Result<(), AppError> {
 mod tests {
     use super::*;
     #[test]
+    fn result_inputs_reject_removed_person_notes() {
+        let id = Uuid::new_v4();
+        let result = serde_json::json!({"studentId":id,"result":"present"});
+        let parsed: AttendanceResultInput = serde_json::from_value(result.clone()).unwrap();
+        assert!(validate_inputs(&[parsed], &[id]).is_ok());
+        let mut old = result;
+        old["note"] = serde_json::json!("removed fixture field");
+        assert!(serde_json::from_value::<AttendanceResultInput>(old).is_err());
+    }
+    #[test]
     fn excluded_dates_remain_separate_from_capture() {
         let c = AttendanceConfiguration::default();
         let sat = NaiveDate::from_ymd_opt(2026, 10, 10).unwrap();
@@ -95,7 +104,6 @@ mod tests {
         let s = AttendanceResultInput {
             student_id: id,
             result: AttendanceResult::Absent,
-            note: String::new(),
         };
         assert!(validate_inputs(std::slice::from_ref(&s), &[id]).is_ok());
         assert!(validate_inputs(&[s.clone(), s], &[id]).is_err());
@@ -114,7 +122,6 @@ mod tests {
             &[AttendanceResultInput {
                 student_id: id,
                 result: AttendanceResult::Unchecked,
-                note: String::new(),
             }],
             &[id]
         )

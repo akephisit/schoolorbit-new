@@ -5,7 +5,7 @@ export type AttendanceConflict = {
 	studentId: string;
 	local: Record;
 	latest: Record;
-	fields: ('result' | 'note')[];
+	fields: 'result'[];
 };
 export function copyAttendanceDetail(detail: AttendanceDetail): AttendanceDetail {
 	return {
@@ -32,10 +32,6 @@ export function mergeAttendanceDetail(
 			if (row.result !== before.result && row.result !== edited.result) fields.push('result');
 			merged.result = edited.result;
 		}
-		if (edited.note !== before.note) {
-			if (row.note !== before.note && row.note !== edited.note) fields.push('note');
-			merged.note = edited.note;
-		}
 		if (fields.length)
 			conflicts.push({
 				studentId: row.studentId,
@@ -52,12 +48,9 @@ export function attendanceResultPatch(base: AttendanceDetail, current: Attendanc
 	const previous = new Map(base.students.map((row) => [row.studentId, row]));
 	const students: SaveAttendanceResults['students'] = current.students
 		.filter(
-			(row) =>
-				row.result !== 'unchecked' &&
-				(row.result !== previous.get(row.studentId)?.result ||
-					row.note !== previous.get(row.studentId)?.note)
+			(row) => row.result !== 'unchecked' && row.result !== previous.get(row.studentId)?.result
 		)
-		.map((row) => ({ studentId: row.studentId, result: row.result, note: row.note }));
+		.map((row) => ({ studentId: row.studentId, result: row.result }));
 	const needsReason = students.some((row) => {
 		const before = previous.get(row.studentId);
 		return before && before.result !== 'unchecked';

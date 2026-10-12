@@ -13,7 +13,7 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import AttendanceSelect from './AttendanceSelect.svelte';
-	import AttendanceResultSelect from './AttendanceResultSelect.svelte';
+	import AttendanceResultToggle from './AttendanceResultToggle.svelte';
 	import { lessonRoomOptions, matchesLessonRoom, roundOption } from './round-presentation.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
@@ -120,7 +120,6 @@
 		const row = detail?.students.find((row) => row.studentId === conflict.studentId);
 		if (!row) return;
 		if (conflict.fields.includes('result')) row.result = conflict[source].result;
-		if (conflict.fields.includes('note')) row.note = conflict[source].note;
 		conflicts = conflicts.filter((item) => item.studentId !== conflict.studentId);
 	}
 	async function refresh() {
@@ -576,23 +575,29 @@
 						role="region"
 						aria-label="รายชื่อนักเรียน"
 					>
-						<Table.Root class="block min-w-0 sm:table sm:min-w-[640px]">
-							<Table.Header class="hidden sm:table-header-group"
-								><Table.Row
-									><Table.Head class="w-56">เลขที่ / ชื่อ</Table.Head><Table.Head class="w-40"
+						<Table.Root class="block min-w-0 sm:table sm:min-w-[720px]">
+							<Table.Header class="hidden sm:table-header-group">
+								<Table.Row
+									><Table.Head class="w-56">เลขที่ / ชื่อ</Table.Head><Table.Head class="w-96"
 										>ผล</Table.Head
-									><Table.Head class="w-32">เข้าโรงเรียน</Table.Head><Table.Head class="min-w-48"
-										>หมายเหตุ</Table.Head
-									></Table.Row
-								></Table.Header
-							>
+									><Table.Head class="w-32">เข้าโรงเรียน</Table.Head></Table.Row
+								>
+							</Table.Header>
 							<Table.Body class="block sm:table-row-group"
 								>{#each visibleStudents as s (s.studentId)}<Table.Row
-										class="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-x-2 gap-y-1 py-2 sm:table-row"
-										><Table.Cell class="block min-w-0 whitespace-normal p-1 sm:table-cell sm:p-2"
-											><span class="text-muted-foreground">{s.classNumber ?? '-'} · </span><span
-												class="font-medium">{s.displayName}</span
-											>
+										class="grid grid-cols-1 items-center gap-1 py-1 sm:table-row"
+										><Table.Cell
+											class="block min-w-0 whitespace-normal px-1 py-0 sm:table-cell sm:p-2"
+											><div class="flex items-start justify-between gap-2">
+												<span class="min-w-0"
+													><span class="text-muted-foreground">{s.classNumber ?? '-'} · </span><span
+														class="font-medium">{s.displayName}</span
+													></span
+												>
+												<span class="w-16 shrink-0 text-end text-xs text-muted-foreground"
+													>{resultLabels[s.result]}</span
+												>
+											</div>
 											{#if s.arrivalAt}<span class="block text-xs text-muted-foreground sm:hidden"
 													>เข้าโรงเรียน {new Date(s.arrivalAt).toLocaleTimeString('th-TH', {
 														timeZone: 'Asia/Bangkok',
@@ -601,7 +606,7 @@
 													})}</span
 												>{/if}
 										</Table.Cell><Table.Cell class="block p-1 sm:table-cell sm:p-2"
-											><AttendanceResultSelect
+											><AttendanceResultToggle
 												label={`ผลของ ${s.displayName}`}
 												value={s.result}
 												onValueChange={(value) => {
@@ -618,37 +623,9 @@
 														timeZone: 'Asia/Bangkok'
 													})
 												: '—'}</Table.Cell
-										><Table.Cell class="hidden whitespace-normal sm:table-cell"
-											><Label for={`attendance-note-${s.studentId}`} class="mb-2 sm:hidden"
-												>หมายเหตุ</Label
-											><Input
-												id={`attendance-note-${s.studentId}`}
-												aria-label={`หมายเหตุของ ${s.displayName}`}
-												bind:value={s.note}
-												maxlength={1000}
-												disabled={!detail.writable || !canWrite || busy}
-											/></Table.Cell
-										>
-										<Table.Cell class="col-span-2 block p-1 sm:hidden">
-											<details>
-												<summary class="cursor-pointer truncate text-xs text-muted-foreground"
-													>{s.note ? `หมายเหตุ: ${s.note}` : 'เพิ่มหมายเหตุ'}</summary
-												>
-												<Label for={`attendance-mobile-note-${s.studentId}`} class="mt-2"
-													>หมายเหตุ</Label
-												>
-												<Input
-													id={`attendance-mobile-note-${s.studentId}`}
-													aria-label={`หมายเหตุเพิ่มเติมของ ${s.displayName}`}
-													bind:value={s.note}
-													maxlength={1000}
-													disabled={!detail.writable || !canWrite || busy}
-													class="mt-2"
-												/>
-											</details>
-										</Table.Cell>
-									</Table.Row>{:else}<Table.Row
-										><Table.Cell colspan={4} class="py-8 text-center text-muted-foreground"
+										></Table.Row
+									>{:else}<Table.Row
+										><Table.Cell colspan={3} class="py-8 text-center text-muted-foreground"
 											>{search ? 'ไม่พบชื่อนักเรียนที่ค้นหา' : 'ไม่มีนักเรียนในรอบนี้'}</Table.Cell
 										></Table.Row
 									>{/each}</Table.Body
@@ -684,19 +661,9 @@
 						<Alert
 							><AlertTitle>ข้อมูลเปลี่ยนพร้อมกัน: {conflict.local.displayName}</AlertTitle
 							><AlertDescription>
-								<p>
-									ตรวจสอบ{conflict.fields.includes('result')
-										? 'ผลเช็คชื่อ'
-										: ''}{conflict.fields.includes('note') ? ' และหมายเหตุ' : ''}ก่อนบันทึก
-								</p>
-								<p>
-									ของคุณ: {resultLabels[conflict.local.result]} · {conflict.local.note ||
-										'ไม่มีหมายเหตุ'}
-								</p>
-								<p>
-									ล่าสุด: {resultLabels[conflict.latest.result]} · {conflict.latest.note ||
-										'ไม่มีหมายเหตุ'}
-								</p>
+								<p>ตรวจสอบผลเช็คชื่อก่อนบันทึก</p>
+								<p>ของคุณ: {resultLabels[conflict.local.result]}</p>
+								<p>ล่าสุด: {resultLabels[conflict.latest.result]}</p>
 								<div class="mt-3 flex flex-wrap gap-2">
 									<Button
 										type="button"

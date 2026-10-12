@@ -16,7 +16,7 @@ struct Fixture {
     students: Vec<AttendanceRosterStudent>,
 }
 async fn fixture(name: &str) -> Fixture {
-    fixture_at(name, 105).await
+    fixture_at(name, 106).await
 }
 async fn fixture_at(name: &str, version: i64) -> Fixture {
     let pool = prepare_current_core_fixture(name).await;
@@ -82,7 +82,6 @@ fn save_payload(
         students: vec![AttendanceResultInput {
             student_id: student,
             result,
-            note: String::new(),
         }],
     }
 }
@@ -93,6 +92,306 @@ async fn parents(f: &Fixture) {
         sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'parent')").bind(STUDENT).bind(id).execute(&f.pool).await.unwrap();
     }
 }
+#[tokio::test]
+async fn attendance_note_migration_preserves_results_and_audits_without_note_text() {
+    let f = fixture_at("attendance_note_preservation", 105).await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let saved_session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let before = sessions::detail(&f.pool, &f.actor, saved_session.id)
+        .await
+        .unwrap();
+    let saved = sessions::save(
+        &f.pool,
+        &f.actor,
+        saved_session.id,
+        save_payload(&before, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE attendance_records SET note='old person note' WHERE session_id=$1")
+        .bind(saved.session.id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let old_audit = Uuid::new_v4();
+    let missing_session = Uuid::new_v4();
+    sqlx::query("INSERT INTO audit_logs(id,user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,$2,'update','attendance',$3,$4,$5,'correction reason')")
+        .bind(old_audit).bind(TEACHER).bind(missing_session)
+        .bind(sqlx::types::Json(serde_json::json!([[STUDENT,"absent","old note"]])))
+        .bind(sqlx::types::Json(serde_json::json!([[STUDENT,"present","new note",12]])))
+        .execute(&f.pool).await.unwrap();
+    let unrelated = Uuid::new_v4();
+    sqlx::query("INSERT INTO audit_logs(id,user_id,action,entity_type,old_values,new_values,description) VALUES($1,$2,'update','calendar',$3,$3,'unrelated')")
+        .bind(unrelated).bind(TEACHER).bind(sqlx::types::Json(serde_json::json!({"note":"calendar note"})))
+        .execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted,note) VALUES($1,$2,true,'calendar day note')")
+        .bind(TERM).bind(date).execute(&f.pool).await.unwrap();
+    let facts: sqlx::types::Json<serde_json::Value> = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(r)-'note' ORDER BY r.student_id) FROM attendance_records r",
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    let identity: sqlx::types::Json<serde_json::Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(a)-'old_values'-'new_values' FROM audit_logs a WHERE id=$1",
+    )
+    .bind(old_audit)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    let unrelated_before: sqlx::types::Json<serde_json::Value> =
+        sqlx::query_scalar("SELECT to_jsonb(a) FROM audit_logs a WHERE id=$1")
+            .bind(unrelated)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    apply_migrations_through(&f.pool, 106).await.unwrap();
+    apply_migrations_through(&f.pool, 106).await.unwrap();
+    let after: sqlx::types::Json<serde_json::Value> = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(r) ORDER BY r.student_id) FROM attendance_records r",
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(facts.0, after.0);
+    let retained: sqlx::types::Json<serde_json::Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(a)-'old_values'-'new_values' FROM audit_logs a WHERE id=$1",
+    )
+    .bind(old_audit)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(identity.0, retained.0);
+    let (old, new): (
+        sqlx::types::Json<serde_json::Value>,
+        sqlx::types::Json<serde_json::Value>,
+    ) = sqlx::query_as("SELECT old_values,new_values FROM audit_logs WHERE id=$1")
+        .bind(old_audit)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        old.0,
+        serde_json::json!([{"studentId":STUDENT,"result":"absent"}])
+    );
+    assert_eq!(
+        new.0,
+        serde_json::json!([{"studentId":STUDENT,"result":"present","rowVersion":12}])
+    );
+    let unrelated_after: sqlx::types::Json<serde_json::Value> =
+        sqlx::query_scalar("SELECT to_jsonb(a) FROM audit_logs a WHERE id=$1")
+            .bind(unrelated)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(unrelated_before.0, unrelated_after.0);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT note FROM attendance_days WHERE academic_term_id=$1 AND date=$2"
+        )
+        .bind(TERM)
+        .bind(date)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        "calendar day note"
+    );
+    let detail = sessions::detail(&f.pool, &f.actor, saved.session.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&saved).unwrap(),
+        serde_json::to_value(&detail).unwrap()
+    );
+    assert!(sqlx::query("SELECT note FROM attendance_records")
+        .execute(&f.pool)
+        .await
+        .is_err());
+    let mut correction = save_payload(&detail, STUDENT, AttendanceResult::Late);
+    correction.reason = "verified correction".into();
+    let corrected = sessions::save(&f.pool, &f.actor, detail.session.id, correction)
+        .await
+        .unwrap();
+    assert_eq!(
+        corrected
+            .students
+            .iter()
+            .find(|r| r.student_id == STUDENT)
+            .unwrap()
+            .result,
+        AttendanceResult::Late
+    );
+    let latest:sqlx::types::Json<serde_json::Value>=sqlx::query_scalar("SELECT new_values FROM audit_logs WHERE entity_type='attendance' AND entity_id=$1 AND action='update' ORDER BY created_at DESC,id DESC LIMIT 1")
+        .bind(detail.session.id).fetch_one(&f.pool).await.unwrap();
+    assert!(latest
+        .0
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item.get("note").is_none() && item.get("rowVersion").is_some()));
+}
+
+#[tokio::test]
+async fn attendance_note_migration_refuses_ambiguous_snapshots_and_can_retry() {
+    let f = fixture_at("attendance_note_refusal", 105).await;
+    let source = seed(
+        &f,
+        AttendanceKind::Arrival,
+        NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+    );
+    let s = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let before = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        s.id,
+        save_payload(&before, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE attendance_records SET note='must survive refused cleanup' WHERE session_id=$1",
+    )
+    .bind(s.id)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let audit = Uuid::new_v4();
+    sqlx::query("INSERT INTO audit_logs(id,user_id,action,entity_type,entity_id,old_values,new_values) VALUES($1,$2,'update','attendance',$3,'[]','[]')")
+        .bind(audit).bind(TEACHER).bind(s.id).execute(&f.pool).await.unwrap();
+    let cases = [
+        serde_json::json!({"unexpected":"shape"}),
+        serde_json::json!([[STUDENT, "present"]]),
+        serde_json::json!([[STUDENT, "present", 42, 1]]),
+        serde_json::json!([["invalid-id", "present", "note", 1]]),
+        serde_json::json!([[STUDENT, "invalid-result", "note", 1]]),
+        serde_json::json!([[STUDENT, "present", "note", 0]]),
+        serde_json::json!([[STUDENT, "present", "note", 1, "extra"]]),
+        serde_json::json!([{"studentId":STUDENT,"result":"present","rowVersion":1,"note":"unknown named shape"}]),
+        serde_json::json!([{"studentId":STUDENT,"result":"present"}]),
+    ];
+    for bad in cases {
+        sqlx::query("UPDATE audit_logs SET new_values=$2 WHERE id=$1")
+            .bind(audit)
+            .bind(sqlx::types::Json(&bad))
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        let failure = apply_migrations_through(&f.pool, 106).await.unwrap_err();
+        assert!(failure
+            .to_string()
+            .contains("ATTENDANCE_NOTE_AUDIT_UNMAPPABLE"));
+        assert_eq!(
+            sqlx::query_scalar::<_, String>(
+                "SELECT note FROM attendance_records WHERE session_id=$1 AND student_id=$2"
+            )
+            .bind(s.id)
+            .bind(STUDENT)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+            "must survive refused cleanup"
+        );
+        let untouched: sqlx::types::Json<serde_json::Value> =
+            sqlx::query_scalar("SELECT new_values FROM audit_logs WHERE id=$1")
+                .bind(audit)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+        assert_eq!(untouched.0, bad);
+    }
+    sqlx::query("UPDATE audit_logs SET new_values=NULL WHERE id=$1")
+        .bind(audit)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(apply_migrations_through(&f.pool, 106)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("ATTENDANCE_NOTE_AUDIT_UNMAPPABLE"));
+    sqlx::query("UPDATE audit_logs SET new_values='[]' WHERE id=$1")
+        .bind(audit)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&f.pool, 106).await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM attendance_records WHERE result='present'"
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM audit_logs WHERE id=$1")
+            .bind(audit)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn attendance_note_migration_blocks_cleanup_when_audit_preservation_fails() {
+    let f = fixture_at("attendance_note_reconcile", 105).await;
+    let source = seed(
+        &f,
+        AttendanceKind::Arrival,
+        NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+    );
+    let s = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let before = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        s.id,
+        save_payload(&before, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE attendance_records SET note='retained until reconciliation' WHERE session_id=$1",
+    )
+    .bind(s.id)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION corrupt_note_audit_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.description='corrupted'; RETURN NEW; END $$; CREATE TRIGGER corrupt_note_audit_fixture BEFORE UPDATE ON audit_logs FOR EACH ROW EXECUTE FUNCTION corrupt_note_audit_fixture();")
+        .execute(&f.pool).await.unwrap();
+    let failure = apply_migrations_through(&f.pool, 106).await.unwrap_err();
+    assert!(failure
+        .to_string()
+        .contains("ATTENDANCE_NOTE_PRESERVATION_FAILED"));
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT note FROM attendance_records WHERE session_id=$1")
+            .bind(s.id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        "retained until reconciliation"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM audit_logs WHERE description='corrupted'"
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap(),
+        0
+    );
+    sqlx::raw_sql("DROP TRIGGER corrupt_note_audit_fixture ON audit_logs; DROP FUNCTION corrupt_note_audit_fixture();").execute(&f.pool).await.unwrap();
+    apply_migrations_through(&f.pool, 106).await.unwrap();
+    assert!(sqlx::query("SELECT note FROM attendance_records")
+        .execute(&f.pool)
+        .await
+        .is_err());
+}
+
 #[tokio::test]
 async fn attendance_calendar_can_be_first_save_and_stale_settings_cannot_overwrite_it() {
     let f = fixture("attendance_first_calendar").await;
@@ -2078,7 +2377,7 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
         token: impact.token.clone(),
         reason: "เริ่มใช้โมดูลใหม่".into(),
     };
-    sqlx::query("UPDATE attendance_records SET note='changed' WHERE session_id=$1")
+    sqlx::query("UPDATE attendance_records SET result='late' WHERE session_id=$1")
         .bind(saved.session.id)
         .execute(&f.pool)
         .await
