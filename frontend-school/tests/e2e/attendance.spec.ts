@@ -1506,6 +1506,91 @@ test('large roster keeps DOM bounded while mark-all saves the complete round on 
 	expect(saved.students).toHaveLength(85);
 	expect(saved.students.every((row) => row.result === 'present')).toBe(true);
 });
+test.describe('mobile roster scroll chaining', () => {
+	test.use({ viewport: { width: 482, height: 884 }, hasTouch: true, isMobile: true });
+	for (const colorScheme of ['light', 'dark'] as const)
+		for (const input of ['wheel', 'touch'] as const)
+			test(`${input} reaches the page at both roster boundaries in ${colorScheme}`, async ({
+				page
+			}) => {
+				await page.emulateMedia({ colorScheme });
+				const api = await mockAttendance(page);
+				const current = detail();
+				current.students = Array.from({ length: 30 }, (_, i) => ({
+					...current.students[0],
+					studentId: id(3000 + i),
+					displayName: `นักเรียนเลื่อนรายชื่อ ${i}`,
+					classNumber: i + 1
+				}));
+				await page.route(
+					(url) => url.pathname === `/api/attendance/sessions/${sessionId}`,
+					(route) => reply(route, current)
+				);
+				await page.goto(path());
+				await chooseRound(page);
+				const roster = page.getByRole('region', { name: 'รายชื่อนักเรียน', exact: true });
+				const main = page.getByRole('main');
+				await expect(roster.locator('tbody tr')).toHaveCount(30);
+				await roster.evaluate((element) => {
+					const main = element.closest('main')!;
+					main.scrollTop +=
+						element.getBoundingClientRect().top - main.getBoundingClientRect().top - 100;
+					element.scrollTop = 100;
+				});
+				const pageStart = await main.evaluate((element) => element.scrollTop);
+				const cdp = await page.context().newCDPSession(page);
+				const scroll = async (delta: number) => {
+					const box = (await roster.boundingBox())!;
+					const x = box.x + box.width / 2;
+					const y = box.y + box.height / 2;
+					if (input === 'wheel') {
+						await page.mouse.move(x, y);
+						await page.mouse.wheel(0, delta);
+					} else {
+						await cdp.send('Input.dispatchTouchEvent', {
+							type: 'touchStart',
+							touchPoints: [{ x, y }]
+						});
+						for (let step = 1; step <= 12; step++) {
+							await cdp.send('Input.dispatchTouchEvent', {
+								type: 'touchMove',
+								touchPoints: [{ x, y: y - (delta * step) / 12 }]
+							});
+							await page.evaluate(() => new Promise(requestAnimationFrame));
+						}
+						await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+					}
+				};
+				await scroll(120);
+				await expect
+					.poll(() => roster.evaluate((element) => element.scrollTop))
+					.toBeGreaterThan(100);
+				expect(await main.evaluate((element) => element.scrollTop)).toBe(pageStart);
+
+				await roster.evaluate((element) => (element.scrollTop = element.scrollHeight));
+				const rosterEnd = await roster.evaluate((element) => element.scrollTop);
+				await scroll(180);
+				await expect
+					.poll(() => main.evaluate((element) => element.scrollTop))
+					.toBeGreaterThan(pageStart);
+				expect(await roster.evaluate((element) => element.scrollTop)).toBe(rosterEnd);
+				await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ', { exact: true })).toBeInViewport();
+				await page.screenshot({
+					path: `/tmp/attendance-scroll-${input}-${colorScheme}-bottom.png`
+				});
+
+				await main.evaluate((element, value) => (element.scrollTop = value), pageStart);
+				await roster.evaluate((element) => (element.scrollTop = 0));
+				await scroll(-180);
+				await expect
+					.poll(() => main.evaluate((element) => element.scrollTop))
+					.toBeLessThan(pageStart);
+				expect(await roster.evaluate((element) => element.scrollTop)).toBe(0);
+				expect(api.writes).toHaveLength(0);
+				await cdp.detach();
+			});
+});
+
 test('expired uncommitted scan releases retry state and permits a fresh capture', async ({
 	page
 }) => {
