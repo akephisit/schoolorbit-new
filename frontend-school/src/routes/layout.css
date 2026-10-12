@@ -28,6 +28,8 @@
 	/* Destructive: Warm Red */
 	--destructive: oklch(0.55 0.22 25);
 	--destructive-foreground: oklch(0.98 0.005 240);
+	--success: oklch(0.43 0.12 155);
+	--warning: oklch(0.47 0.12 60);
 	/* Borders & Inputs */
 	--border: oklch(0.9 0.01 240);
 	--input: oklch(0.9 0.01 240);
@@ -77,6 +79,8 @@
 	/* Destructive: Softer Red for Dark Mode */
 	--destructive: oklch(0.6 0.2 25);
 	--destructive-foreground: oklch(0.98 0.005 240);
+	--success: oklch(0.78 0.16 155);
+	--warning: oklch(0.8 0.14 60);
 	/* Borders & Inputs */
 	--border: oklch(0.3 0.02 240);
 	--input: oklch(0.3 0.02 240);
@@ -118,6 +122,8 @@
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
+	--color-success: var(--success);
+	--color-warning: var(--warning);
 	--color-border: var(--border);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
