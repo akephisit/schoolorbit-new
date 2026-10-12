@@ -43,23 +43,7 @@ async fn seeds_with_choices(
                 class_number: s.class_number,
             })
             .collect::<Vec<_>>();
-        let session = seed_session(
-            term,
-            date,
-            AttendanceKind::Arrival,
-            room.id.to_string(),
-            format!("เข้าโรงเรียน {}", room.name),
-            room.teacher_ids,
-            Some(room.id),
-            None,
-            None,
-            c.late_after,
-            c.late_after,
-        );
-        seeds.push(AttendanceSeed {
-            session,
-            students: roster,
-        });
+        seeds.push(arrival_seed(term, date, room, roster, c.late_after));
     }
     let blocks =
         match school_academic_timetable::services::attendance::blocks(pool, term, date).await {
@@ -147,6 +131,30 @@ async fn seeds_with_choices(
         }
     }
     Ok((seeds, lesson_choices))
+}
+fn arrival_seed(
+    term: Uuid,
+    date: NaiveDate,
+    room: core::AttendanceCoreRoom,
+    students: Vec<AttendanceRosterStudent>,
+    late_after: NaiveTime,
+) -> AttendanceSeed {
+    AttendanceSeed {
+        session: seed_session(
+            term,
+            date,
+            AttendanceKind::Arrival,
+            room.id.to_string(),
+            format!("เข้าโรงเรียน {}", room.name),
+            room.teacher_ids,
+            Some(room.id),
+            None,
+            None,
+            late_after,
+            late_after,
+        ),
+        students,
+    }
 }
 #[allow(clippy::too_many_arguments)]
 fn seed_session(
@@ -251,6 +259,13 @@ pub async fn open(
     p: OpenAttendanceSession,
 ) -> Result<AttendanceDetail, AppError> {
     let seed = resolve_seed(pool, &p).await?;
+    preview_seed(pool, actor, seed).await
+}
+async fn preview_seed(
+    pool: &PgPool,
+    actor: &ActorContext,
+    seed: AttendanceSeed,
+) -> Result<AttendanceDetail, AppError> {
     policy::require_session(actor, &seed.session, false)?;
     let mut session = match sessions::get_optional(pool, seed.session.id).await? {
         Some(s) => s,
@@ -267,8 +282,43 @@ pub async fn resolve_seed(
     pool: &PgPool,
     p: &OpenAttendanceSession,
 ) -> Result<AttendanceSeed, AppError> {
-    let mut all = seeds(pool, p.academic_term_id, p.date).await?;
-    all.extend(specials::seeds(pool, p.academic_term_id, p.date).await?);
+    if p.kind == AttendanceKind::Arrival {
+        school_attendance::services::validate_date(pool, p.academic_term_id, p.date).await?;
+        let id = Uuid::parse_str(&p.source_key)
+            .map_err(|_| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
+        if id.to_string() != p.source_key {
+            return Err(AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()));
+        }
+        let room = core::room(pool, p.academic_term_id, id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))?;
+        let students = core::students_in_room(pool, p.academic_term_id, p.date, id)
+            .await?
+            .into_iter()
+            .map(|s| AttendanceRosterStudent {
+                student_id: s.student_id,
+                student_academic_year_id: s.student_academic_year_id,
+                class_number: s.class_number,
+            })
+            .collect();
+        let late_after = settings::get(pool, p.academic_term_id)
+            .await?
+            .configuration
+            .late_after;
+        return Ok(arrival_seed(
+            p.academic_term_id,
+            p.date,
+            room,
+            students,
+            late_after,
+        ));
+    }
+    let all = if p.kind == AttendanceKind::Special {
+        school_attendance::services::validate_date(pool, p.academic_term_id, p.date).await?;
+        specials::seeds(pool, p.academic_term_id, p.date).await?
+    } else {
+        seeds(pool, p.academic_term_id, p.date).await?
+    };
     all.into_iter()
         .find(|s| s.session.kind == p.kind && s.session.source_key == p.source_key)
         .ok_or_else(|| AppError::NotFound("ไม่มีรอบนี้ในตารางหรือรายชื่อประจำวัน".into()))

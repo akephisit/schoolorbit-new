@@ -47,9 +47,10 @@
 		{#each filtered.slice(0, 100) as option (option.value)}<Select.Item
 				value={option.value}
 				label={option.label}
-				><span class="flex min-w-0 flex-col items-start whitespace-normal text-left"
-					><span>{option.label}</span>{#if option.description}<span
-							class="text-xs text-muted-foreground">{option.description}</span
+				title={option.description ? `${option.label} · ${option.description}` : option.label}
+				><span class="flex w-full min-w-0 items-center gap-2 text-left"
+					><span class="min-w-0 flex-1 truncate">{option.label}</span>{#if option.description}<span
+							class="max-w-[40%] shrink-0 truncate text-muted-foreground">{option.description}</span
 						>{/if}</span
 				></Select.Item
 			>{/each}

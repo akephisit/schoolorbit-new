@@ -19,6 +19,56 @@ pub struct AttendanceCoreRoom {
     pub teacher_ids: Vec<Uuid>,
 }
 #[derive(Debug, Clone, FromRow)]
+pub struct AttendanceCoreRosterStudent {
+    pub student_id: Uuid,
+    pub student_academic_year_id: Uuid,
+    pub class_number: Option<i32>,
+}
+pub const ROOM_ROSTER_SQL: &str = r#"WITH dated_placements AS (
+    SELECT DISTINCT ON (p.student_academic_year_id)
+        p.student_academic_year_id,p.homeroom_id,p.class_number
+    FROM homeroom_placements p
+    JOIN academic_terms t ON t.academic_year_id=p.academic_year_id
+    WHERE t.id=$1 AND p.status IN ('current','ended')
+      AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)
+    ORDER BY p.student_academic_year_id,p.start_date DESC,p.id
+) SELECT y.student_id,y.id student_academic_year_id,p.class_number
+FROM dated_placements p
+JOIN student_academic_years y ON y.id=p.student_academic_year_id
+JOIN users u ON u.id=y.student_id AND u.user_type='student'
+WHERE p.homeroom_id=$3
+ORDER BY p.class_number NULLS LAST,y.student_id LIMIT 10001"#;
+
+/// Resolve the latest dated placement before filtering the selected room.
+pub async fn students_in_room(
+    pool: &PgPool,
+    term: Uuid,
+    date: NaiveDate,
+    homeroom: Uuid,
+) -> Result<Vec<AttendanceCoreRosterStudent>, AppError> {
+    let rows: Vec<AttendanceCoreRosterStudent> = sqlx::query_as(ROOM_ROSTER_SQL)
+        .bind(term)
+        .bind(date)
+        .bind(homeroom)
+        .fetch_all(pool)
+        .await?;
+    if rows.len() > 10000 {
+        return Err(AppError::ValidationError(
+            "นักเรียนเกินขนาดที่รองรับ กรุณาแบ่งขอบเขต".into(),
+        ));
+    }
+    Ok(rows)
+}
+
+pub async fn room(
+    pool: &PgPool,
+    term: Uuid,
+    homeroom: Uuid,
+) -> Result<Option<AttendanceCoreRoom>, AppError> {
+    Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.id=$2 AND h.is_active")
+        .bind(term).bind(homeroom).fetch_optional(pool).await?)
+}
+#[derive(Debug, Clone, FromRow)]
 pub struct AttendancePlacementSpan {
     pub student_id: Uuid,
     pub student_academic_year_id: Uuid,
@@ -43,15 +93,21 @@ pub async fn placement_spans(
     }
     Ok(rows)
 }
+pub const ALL_STUDENTS_SQL: &str = r#"SELECT y.student_id,y.id student_academic_year_id,concat_ws(' ',u.title,u.first_name,u.last_name) display_name,p.homeroom_id,h.name homeroom_name,p.class_number
+ FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN users u ON u.id=y.student_id AND u.user_type='student'
+ LEFT JOIN LATERAL(SELECT p.homeroom_id,p.class_number FROM homeroom_placements p WHERE p.student_academic_year_id=y.id AND p.status IN ('current','ended') AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2) ORDER BY p.start_date DESC,p.id LIMIT 1) p ON true
+ LEFT JOIN homerooms h ON h.id=p.homeroom_id WHERE t.id=$1 AND p.homeroom_id IS NOT NULL ORDER BY h.name,p.class_number NULLS LAST,u.first_name,u.id LIMIT 10001"#;
+
 pub async fn students(
     pool: &PgPool,
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceCoreStudent>, AppError> {
-    let rows=sqlx::query_as(r#"SELECT y.student_id,y.id student_academic_year_id,concat_ws(' ',u.title,u.first_name,u.last_name) display_name,p.homeroom_id,h.name homeroom_name,p.class_number
- FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id JOIN users u ON u.id=y.student_id AND u.user_type='student'
- LEFT JOIN LATERAL(SELECT p.homeroom_id,p.class_number FROM homeroom_placements p WHERE p.student_academic_year_id=y.id AND p.status IN ('current','ended') AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2) ORDER BY p.start_date DESC,p.id LIMIT 1) p ON true
- LEFT JOIN homerooms h ON h.id=p.homeroom_id WHERE t.id=$1 AND p.homeroom_id IS NOT NULL ORDER BY h.name,p.class_number NULLS LAST,u.first_name,u.id LIMIT 10001"#).bind(term).bind(date).fetch_all(pool).await?;
+    let rows = sqlx::query_as(ALL_STUDENTS_SQL)
+        .bind(term)
+        .bind(date)
+        .fetch_all(pool)
+        .await?;
     let rows: Vec<AttendanceCoreStudent> = rows;
     if rows.len() > 10000 {
         return Err(AppError::ValidationError(

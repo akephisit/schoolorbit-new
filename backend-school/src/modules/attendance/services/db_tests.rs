@@ -841,6 +841,316 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
 }
 
 #[tokio::test]
+async fn attendance_scoped_arrival_timing_and_query_plan() {
+    let f = fixture("attendance_arrival_timing").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let actor = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![codes::ATTENDANCE_READ_SCHOOL.into()],
+    };
+    let original = seeds(&f.pool, TERM, date)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| {
+            s.session.kind == AttendanceKind::Arrival
+                && s.students.iter().any(|r| r.student_id == STUDENT)
+        })
+        .unwrap();
+    let original_room = original.session.homeroom_id.unwrap();
+    let mut selected_room = original_room;
+    for index in 0..40 {
+        let room = Uuid::new_v4();
+        sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT $1,$2,$2,academic_year_id,grade_level_id,$2,study_program_id,40,true FROM homerooms WHERE id=$3")
+            .bind(room).bind(format!("PERF-{index}")).bind(original_room).execute(&f.pool).await.unwrap();
+        sqlx::query(r#"WITH source AS MATERIALIZED (
+            SELECT gen_random_uuid() student_id,gen_random_uuid() year_id,n number FROM generate_series(1,30) n
+        ), added_users AS (
+            INSERT INTO users(id,email,username,password_hash,first_name,last_name,user_type,status)
+            SELECT student_id,student_id::text||'@example.invalid',student_id::text,'fixture-not-a-login','นักเรียนทดสอบ','ระบบ','student','active' FROM source RETURNING id
+        ), added_years AS (
+            INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status)
+            SELECT s.year_id,s.student_id,y.academic_year_id,y.grade_level_id,y.study_program_id,'active'
+            FROM source s JOIN added_users u ON u.id=s.student_id CROSS JOIN student_academic_years y WHERE y.id=$2
+            RETURNING id,student_id,academic_year_id
+        ) INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number)
+          SELECT gen_random_uuid(),y.id,y.academic_year_id,$1,'2025-05-01','current','regular',s.number
+          FROM added_years y JOIN source s ON s.student_id=y.student_id"#)
+            .bind(room).bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
+        selected_room = room;
+    }
+    sqlx::query("ANALYZE homeroom_placements")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("ANALYZE student_academic_years")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("ANALYZE users").execute(&f.pool).await.unwrap();
+    let context = OpenAttendanceSession {
+        academic_term_id: TERM,
+        date,
+        kind: AttendanceKind::Arrival,
+        source_key: selected_room.to_string(),
+    };
+    let mut baseline_times = vec![];
+    let mut scoped_times = vec![];
+    for sample in 0..6 {
+        let started = std::time::Instant::now();
+        let mut all = seeds(&f.pool, TERM, date).await.unwrap();
+        all.extend(specials::seeds(&f.pool, TERM, date).await.unwrap());
+        let source = all
+            .into_iter()
+            .find(|s| s.session.kind == context.kind && s.session.source_key == context.source_key)
+            .unwrap();
+        let baseline = preview_seed(&f.pool, &actor, source).await.unwrap();
+        let baseline_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
+        let scoped = open(&f.pool, &actor, context.clone()).await.unwrap();
+        let scoped_ms = started.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(
+            serde_json::to_value(&baseline).unwrap(),
+            serde_json::to_value(&scoped).unwrap()
+        );
+        assert_eq!(scoped.students.len(), 30);
+        if sample > 0 {
+            baseline_times.push(baseline_ms);
+            scoped_times.push(scoped_ms);
+        }
+    }
+    baseline_times.sort_by(f64::total_cmp);
+    scoped_times.sort_by(f64::total_cmp);
+    println!("attendance_preview_timing synthetic_rooms=40 synthetic_students=1200 samples=5 baseline_median_ms={:.3} scoped_median_ms={:.3}",baseline_times[2],scoped_times[2]);
+    for (label, sql) in [
+        ("all_students", core::ALL_STUDENTS_SQL),
+        ("selected_room", core::ROOM_ROSTER_SQL),
+    ] {
+        let statement = format!("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {sql}");
+        let query = sqlx::query_scalar::<_, sqlx::types::Json<serde_json::Value>>(
+            sqlx::AssertSqlSafe(statement),
+        )
+        .bind(TERM)
+        .bind(date);
+        let plan = if label == "selected_room" {
+            query.bind(selected_room).fetch_one(&f.pool).await.unwrap()
+        } else {
+            query.fetch_one(&f.pool).await.unwrap()
+        };
+        let item = &plan.0[0];
+        println!("attendance_roster_plan scope={label} execution_ms={} rows={} shared_hit_blocks={} shared_read_blocks={}",item["Execution Time"],item["Plan"]["Actual Rows"],item["Plan"]["Shared Hit Blocks"],item["Plan"]["Shared Read Blocks"]);
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_sessions")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_records")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn attendance_scoped_arrival_preserves_roster_identity_and_read_only_scope() {
+    let f = fixture("attendance_scoped_arrival").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let source = seeds(&f.pool, TERM, date)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| {
+            s.session.kind == AttendanceKind::Arrival
+                && s.students.iter().any(|s| s.student_id == STUDENT)
+        })
+        .unwrap();
+    let actor = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![
+            codes::ATTENDANCE_READ_SCHOOL.into(),
+            codes::ATTENDANCE_UPDATE_SCHOOL.into(),
+        ],
+    };
+    let context = session_context(&source.session);
+    let baseline = preview_seed(&f.pool, &actor, source.clone()).await.unwrap();
+    let current = open(&f.pool, &actor, context.clone()).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&current).unwrap(),
+        serde_json::to_value(&baseline).unwrap()
+    );
+    let unrelated = ActorContext {
+        user_id: Uuid::new_v4(),
+        permissions: vec![codes::ATTENDANCE_READ_ASSIGNED.into()],
+    };
+    assert!(matches!(
+        open(&f.pool, &unrelated, context.clone()).await,
+        Err(AppError::Forbidden(_))
+    ));
+    let mut missing = context.clone();
+    missing.source_key = Uuid::new_v4().to_string();
+    assert!(matches!(
+        open(&f.pool, &actor, missing).await,
+        Err(AppError::NotFound(_))
+    ));
+    let mut malformed = context.clone();
+    malformed.source_key = "invalid-room".into();
+    assert!(matches!(
+        open(&f.pool, &actor, malformed).await,
+        Err(AppError::NotFound(_))
+    ));
+    let (other_term,other_date):(Uuid,NaiveDate)=sqlx::query_as("SELECT id,start_date FROM academic_terms WHERE academic_year_id<>(SELECT academic_year_id FROM academic_terms WHERE id=$1) ORDER BY start_date,id LIMIT 1")
+        .bind(TERM).fetch_one(&f.pool).await.unwrap();
+    let mut cross_year = context.clone();
+    cross_year.academic_term_id = other_term;
+    cross_year.date = other_date;
+    assert!(matches!(
+        open(&f.pool, &actor, cross_year).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_sessions")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_records")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+    // Opening arrival is independent of unrelated timetable availability.
+    sqlx::query(
+        "ALTER TABLE academic_timetable_blocks RENAME TO attendance_test_unavailable_blocks",
+    )
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let independent = open(&f.pool, &actor, context.clone()).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&independent).unwrap(),
+        serde_json::to_value(&baseline).unwrap()
+    );
+    let saved = save(
+        &f.pool,
+        &actor,
+        current.session.id,
+        save_payload(&current, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        saved
+            .students
+            .iter()
+            .filter(|r| r.result == AttendanceResult::Present)
+            .count(),
+        1
+    );
+    assert!(saved
+        .students
+        .iter()
+        .filter(|r| r.student_id != STUDENT)
+        .all(|r| r.result == AttendanceResult::Unchecked));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_records")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn attendance_scoped_arrival_uses_latest_dated_placement_and_keeps_saved_roster() {
+    let f = fixture("attendance_scoped_arrival_transfer").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let actor = ActorContext {
+        user_id: TEACHER,
+        permissions: vec![
+            codes::ATTENDANCE_READ_SCHOOL.into(),
+            codes::ATTENDANCE_UPDATE_SCHOOL.into(),
+        ],
+    };
+    let original = seeds(&f.pool, TERM, date)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|s| {
+            s.session.kind == AttendanceKind::Arrival
+                && s.students.iter().any(|s| s.student_id == STUDENT)
+        })
+        .unwrap();
+    let context = session_context(&original.session);
+    let old_room = original.session.homeroom_id.unwrap();
+    let preview = open(&f.pool, &actor, context.clone()).await.unwrap();
+    let saved = save(
+        &f.pool,
+        &actor,
+        preview.session.id,
+        save_payload(&preview, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let original_number = saved
+        .students
+        .iter()
+        .find(|r| r.student_id == STUDENT)
+        .unwrap()
+        .class_number;
+    let new_room = Uuid::new_v4();
+    sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,room_number,study_program_id,capacity,is_active) SELECT $1,'SCOPED-NEW','ห้องทดสอบย้าย',academic_year_id,grade_level_id,'SCOPED-NEW',study_program_id,40,true FROM homerooms WHERE id=$2")
+        .bind(new_room).bind(old_room).execute(&f.pool).await.unwrap();
+    let year = f.students[0].student_academic_year_id;
+    sqlx::query("UPDATE homeroom_placements SET status='ended',end_date=$2 WHERE student_academic_year_id=$1 AND status='current'")
+        .bind(year).bind(date).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type,class_number) SELECT gen_random_uuid(),id,academic_year_id,$1,$2,'current','regular',42 FROM student_academic_years WHERE id=$3")
+        .bind(new_room).bind(date).bind(year).execute(&f.pool).await.unwrap();
+    let before = core::students_in_room(&f.pool, TERM, date.pred_opt().unwrap(), old_room)
+        .await
+        .unwrap();
+    assert!(before.iter().any(|r| r.student_id == STUDENT));
+    let old = core::students_in_room(&f.pool, TERM, date, old_room)
+        .await
+        .unwrap();
+    assert!(!old.iter().any(|r| r.student_id == STUDENT));
+    let new = core::students_in_room(&f.pool, TERM, date, new_room)
+        .await
+        .unwrap();
+    assert_eq!(
+        new.iter()
+            .find(|r| r.student_id == STUDENT)
+            .unwrap()
+            .class_number,
+        Some(42)
+    );
+    let all = core::students(&f.pool, TERM, date).await.unwrap();
+    assert_eq!(
+        all.iter()
+            .find(|r| r.student_id == STUDENT)
+            .unwrap()
+            .homeroom_id,
+        Some(new_room)
+    );
+    let preserved = open(&f.pool, &actor, context).await.unwrap();
+    let retained = preserved
+        .students
+        .iter()
+        .find(|r| r.student_id == STUDENT)
+        .unwrap();
+    assert_eq!(retained.result, AttendanceResult::Present);
+    assert_eq!(retained.class_number, original_number);
+    assert_eq!(preserved.session.roster_token, saved.session.roster_token);
+}
+
+#[tokio::test]
 async fn attendance_lesson_choices_use_published_rooms_and_respect_assigned_scope() {
     let f = fixture("attendance_lesson_choices").await;
     let (term, start): (Uuid, NaiveDate) = sqlx::query_as("SELECT v.academic_term_id,v.effective_from FROM academic_timetable_versions v JOIN academic_terms t ON t.id=v.academic_term_id WHERE v.status='published' AND t.status='active' AND EXISTS(SELECT 1 FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active WHERE b.timetable_version_id=v.id AND b.is_active AND b.block_kind<>'structural') ORDER BY v.effective_from DESC,v.id LIMIT 1")
