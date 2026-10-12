@@ -2405,6 +2405,22 @@ mod tests {
     }
 
     #[test]
+    fn attendance_person_notes_are_removed_from_wire_contracts() {
+        let document = school_api_value().expect("document should serialize");
+        let schemas = &document["components"]["schemas"];
+        for name in [
+            "AttendanceRecord",
+            "AttendanceResultInput",
+            "AttendanceHistoryItem",
+        ] {
+            assert!(schemas[name]["properties"]["result"].is_object());
+            assert!(schemas[name]["properties"]["note"].is_null());
+        }
+        assert!(schemas["AttendanceDay"]["properties"]["note"].is_object());
+        assert!(schemas["SaveAttendanceResults"]["properties"]["reason"].is_object());
+    }
+
+    #[test]
     fn documents_shared_empty_and_uuid_identifier_envelopes() {
         let document = school_api_value().expect("document should serialize");
         let schemas = &document["components"]["schemas"];

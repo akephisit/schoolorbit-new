@@ -11487,7 +11487,6 @@ export interface components {
 				/** Format: uuid */
 				evidenceFileId: string | null;
 				kind: components['schemas']['AttendanceKind'];
-				note: string;
 				/** Format: date-time */
 				observedAt: string | null;
 				result: components['schemas']['AttendanceResult'];
@@ -13489,7 +13488,6 @@ export interface components {
 			/** Format: uuid */
 			evidenceFileId: string | null;
 			kind: components['schemas']['AttendanceKind'];
-			note: string;
 			/** Format: date-time */
 			observedAt: string | null;
 			result: components['schemas']['AttendanceResult'];
@@ -13545,7 +13543,6 @@ export interface components {
 			displayName: string;
 			/** Format: uuid */
 			evidenceFileId: string | null;
-			note: string;
 			/** Format: date-time */
 			observedAt: string | null;
 			origin: string;
@@ -13602,7 +13599,6 @@ export interface components {
 		/** @enum {string} */
 		AttendanceResult: 'unchecked' | 'present' | 'late' | 'absent' | 'leave' | 'activity';
 		AttendanceResultInput: {
-			note: string;
 			result: components['schemas']['AttendanceResult'];
 			/** Format: uuid */
 			studentId: string;

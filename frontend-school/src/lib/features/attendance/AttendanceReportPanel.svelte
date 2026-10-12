@@ -528,9 +528,7 @@
 											: h.result === 'absent'
 												? 'destructive'
 												: 'secondary'}>{h.cancelled ? 'งดเช็คชื่อ' : resultLabels[h.result]}</Badge
-									>{#if h.note}<p class="break-words text-sm text-muted-foreground">
-											{h.note}
-										</p>{/if}
+									>
 								</div>
 							</div>
 							{#if h.evidenceFileId}<LoadingButton

@@ -34,6 +34,23 @@ async function chooseRound(page: Page, name: RegExp = /08:00.*เข้าโร
 		await page.getByRole('option', { name }).click();
 	} else await page.getByRole('button', { name }).click();
 }
+function resultControl(page: Page, name: string) {
+	return page.getByRole('group', { name: `ผลของ ${name}`, exact: true });
+}
+async function chooseResult(page: Page, name: string, result: string) {
+	await resultControl(page, name).getByRole('radio', { name: result, exact: true }).click();
+}
+async function expectResult(page: Page, name: string, result: string) {
+	const control = resultControl(page, name);
+	await expect(control).toBeVisible();
+	if (result === 'ยังไม่เช็ค')
+		await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
+	else
+		await expect(control.getByRole('radio', { name: result, exact: true })).toHaveAttribute(
+			'aria-checked',
+			'true'
+		);
+}
 const configuration = {
 	enabled: true,
 	weekdays: [1, 2, 3, 4, 5],
@@ -351,7 +368,6 @@ function detail(): AttendanceDetail {
 			classNumber: i + 1,
 			result: 'unchecked',
 			origin: 'none',
-			note: '',
 			observedAt: null,
 			evidenceFileId: null,
 			arrivalAt: null,
@@ -536,12 +552,11 @@ async function mockAttendance(
 						sessionId,
 						date,
 						kind: 'arrival',
-						title: 'เข้าโรงเรียน',
-						result: 'present',
-						note:
+						title:
 							new URL(request.url()).searchParams.get('studentId') === student
-								? 'หลักฐานคนแรก'
-								: 'รายละเอียดคนที่สอง',
+								? 'เข้าโรงเรียน · หลักฐานคนแรก'
+								: 'เข้าโรงเรียน · รายละเอียดคนที่สอง',
+						result: 'present',
 						cancelled: false,
 						observedAt: date + 'T01:00:00Z',
 						evidenceFileId: null
@@ -662,19 +677,17 @@ test('explicit refresh discards input while search preserves current edits witho
 	const api = await mockAttendance(page);
 	await page.goto(path());
 	await chooseRound(page);
-	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
-	await page.getByRole('option', { name: 'มา', exact: true }).click();
+	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
 	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('ยังไม่เช็ค');
+	await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่เช็ค');
 	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('');
-	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
-	await page.getByRole('option', { name: 'มา', exact: true }).click();
+	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่มีชื่อนี้');
 	await page.getByLabel('ค้นหาชื่อนักเรียน').press('Enter');
 	await expect(page.getByText('ไม่พบชื่อนักเรียนที่ค้นหา', { exact: true })).toBeVisible();
 	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('');
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
+	await expectResult(page, 'นักเรียนคนแรก', 'มา');
 	expect(api.writes).toHaveLength(0);
 });
 test('read-only teacher can preview an unsaved round without creating a session', async ({
@@ -694,7 +707,9 @@ test('read-only teacher can preview an unsaved round without creating a session'
 	);
 	await page.goto(path());
 	await chooseRound(page);
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
+	await expect(
+		resultControl(page, 'นักเรียนคนแรก').getByRole('radio', { name: 'มา', exact: true })
+	).toBeDisabled();
 	expect(api.reads).toContain('/api/attendance/preview');
 	expect(api.writes).toHaveLength(0);
 });
@@ -731,14 +746,12 @@ test('arrival selection shows the pending round immediately and retries only its
 		'เข้าโรงเรียน ม.1/1'
 	);
 	await expect(page.locator('[aria-busy="true"]')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true })).toHaveCount(
-		0
-	);
+	await expect(resultControl(page, 'นักเรียนคนแรก')).toHaveCount(0);
 	release();
 	await expect(page.getByText('รายชื่อยังไม่พร้อม', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'ลองเปิดรอบใหม่', exact: true }).click();
 	await expect(
-		page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true })
+		resultControl(page, 'นักเรียนคนแรก').getByRole('radio', { name: 'มา', exact: true })
 	).toBeEnabled();
 	expect(previews).toBe(2);
 	expect(workspaceReads).toBe(1);
@@ -773,7 +786,9 @@ test('school reader can preview others but can only edit assigned rounds', async
 	);
 	await page.goto(path());
 	await page.getByRole('button', { name: /08:00.*รอบครูคนอื่น/ }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
+	await expect(
+		resultControl(page, 'นักเรียนคนแรก').getByRole('radio', { name: 'มา', exact: true })
+	).toBeDisabled();
 	await chooseRound(page);
 	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toBeEnabled();
 	expect(api.reads.filter((read) => read.endsWith('/preview'))).toHaveLength(2);
@@ -909,12 +924,9 @@ test('teacher saves explicit results, retains unchecked and adds a pupil without
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 	await expect(page.getByText('ยังไม่มีผลที่เปลี่ยนแปลงสำหรับบันทึก')).toBeVisible();
 	expect(api.writes).toHaveLength(0);
-	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
-	await page.getByRole('option', { name: 'กิจกรรม', exact: true }).click();
+	await chooseResult(page, 'นักเรียนคนแรก', 'กิจกรรม');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText(
-		'ยังไม่เช็ค'
-	);
+	await expectResult(page, 'นักเรียนคนที่สอง', 'ยังไม่เช็ค');
 	expect(api.writes).toHaveLength(1);
 	expect(api.reads.filter((p) => p.endsWith('/workspace'))).toHaveLength(1);
 	expect(api.writes[0].data).toMatchObject({
@@ -922,17 +934,15 @@ test('teacher saves explicit results, retains unchecked and adds a pupil without
 		rosterToken: 'fixture-roster',
 		students: [{ studentId: student, result: 'activity' }]
 	});
-	await page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' }).click();
-	await page.getByRole('option', { name: 'มา', exact: true }).click();
+	await chooseResult(page, 'นักเรียนคนที่สอง', 'มา');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText('มา');
+	await expectResult(page, 'นักเรียนคนที่สอง', 'มา');
 	expect(api.writes).toHaveLength(2);
 	expect(api.writes[1].data).toMatchObject({
 		reason: '',
 		students: [{ studentId: second, result: 'present' }]
 	});
-	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
-	await page.getByRole('option', { name: 'สาย', exact: true }).click();
+	await chooseResult(page, 'นักเรียนคนแรก', 'สาย');
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('มาถึงหลังตรวจครั้งแรก');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 	expect(api.writes).toHaveLength(3);
@@ -941,11 +951,10 @@ test('scan conflict preserves teacher input', async ({ page }) => {
 	await mockAttendance(page, { conflict: true });
 	await page.goto(path());
 	await chooseRound(page);
-	await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
-	await page.getByRole('option', { name: 'มา', exact: true }).click();
+	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 	await expect(page.getByText('มีการสแกนเพิ่มแล้ว กรุณาโหลดรายชื่อใหม่')).toBeVisible();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('มา');
+	await expectResult(page, 'นักเรียนคนแรก', 'มา');
 });
 test('calendar toggles a single processing date', async ({ page }) => {
 	const api = await mockAttendance(page);
@@ -953,7 +962,7 @@ test('calendar toggles a single processing date', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
-		'aria-pressed',
+		'aria-checked',
 		'false'
 	);
 	expect(api.writes.find((w) => w.path.includes('/days/'))?.data).toMatchObject({
@@ -973,7 +982,7 @@ test('settings save succeeds twice and calendar uses the returned revision', asy
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
-		'aria-pressed',
+		'aria-checked',
 		'false'
 	);
 	expect(api.writes.filter((w) => w.path.includes('/settings/')).map((w) => w.data)).toMatchObject([
@@ -1092,7 +1101,7 @@ test('slow options do not block calendar use', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
-		'aria-pressed',
+		'aria-checked',
 		'false'
 	);
 	api.release();
@@ -1106,12 +1115,12 @@ test('unsaved weekday edits do not alter the saved processing calendar', async (
 		.getByLabel('ส', { exact: true })
 		.check();
 	await expect(page.locator('[data-calendar-date="2026-10-10"]')).toHaveAttribute(
-		'aria-pressed',
+		'aria-checked',
 		'false'
 	);
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
 	await expect(page.locator('[data-calendar-date="2026-10-10"]')).toHaveAttribute(
-		'aria-pressed',
+		'aria-checked',
 		'true'
 	);
 });
@@ -1138,7 +1147,9 @@ test('read-only teacher sees saved results without management links or optional 
 	});
 	await page.goto(path());
 	await chooseRound(page);
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toBeDisabled();
+	await expect(
+		resultControl(page, 'นักเรียนคนแรก').getByRole('radio', { name: 'มา', exact: true })
+	).toBeDisabled();
 	await expect(page.getByRole('button', { name: 'บันทึก', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('link', { name: 'ตั้งค่าปฏิทินและรอบพิเศษ' })).toHaveCount(0);
 	await expect(page.getByRole('link', { name: 'เว็บแคม / ลงทะเบียนใบหน้า' })).toHaveCount(0);
@@ -1362,9 +1373,7 @@ for (const overlap of [false, true])
 		);
 		await page.goto(path());
 		await chooseRound(page);
-		await page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' }).click();
-		await page.getByRole('option', { name: 'มา', exact: true }).click();
-		await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ข้อมูลของครู');
+		await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 		await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 		await expect(page.getByText('มีการสแกนเพิ่มแล้ว กรุณาโหลดรายชื่อใหม่')).toBeVisible();
 		if (overlap) {
@@ -1372,19 +1381,18 @@ for (const overlap of [false, true])
 			await page
 				.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดของ นักเรียนคนแรก', exact: true })
 				.click();
-			await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('คงผลสแกนและเพิ่มเติมหมายเหตุ');
-		} else
-			await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText('สาย');
+			await expectResult(page, 'นักเรียนคนแรก', 'สาย');
+			await chooseResult(page, 'นักเรียนคนแรก', 'มา');
+			await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ยืนยันผลกับครูผู้รับผิดชอบ');
+		} else await expectResult(page, 'นักเรียนคนที่สอง', 'สาย');
 		await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 		await expect.poll(() => writes.length).toBe(2);
 		expect(writes[1].rowVersion).toBe(2);
-		expect(writes[1].students.find((row) => row.studentId === student)?.note).toBe('ข้อมูลของครู');
+		expect(writes[1].students.every((row) => !Object.hasOwn(row, 'note'))).toBe(true);
 		if (overlap)
-			expect(writes[1].students.find((row) => row.studentId === student)?.result).toBe('late');
+			expect(writes[1].students.find((row) => row.studentId === student)?.result).toBe('present');
 		else expect(writes[1].students.some((row) => row.studentId === second)).toBe(false);
-		await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนที่สอง' })).toHaveText(
-			overlap ? 'ยังไม่เช็ค' : 'สาย'
-		);
+		await expectResult(page, 'นักเรียนคนที่สอง', overlap ? 'ยังไม่เช็ค' : 'สาย');
 	});
 test('manual workspace refresh reloads selected detail and discards unsaved input', async ({
 	page
@@ -1397,12 +1405,12 @@ test('manual workspace refresh reloads selected detail and discards unsaved inpu
 	);
 	await page.goto(path());
 	await chooseRound(page);
-	await page.getByLabel('หมายเหตุของ นักเรียนคนแรก').fill('ยังไม่บันทึก');
+	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	current.session.rowVersion = 2;
 	current.students[0].result = 'late';
 	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก' })).toHaveText('สาย');
-	await expect(page.getByLabel('หมายเหตุของ นักเรียนคนแรก')).toHaveValue('');
+	await expectResult(page, 'นักเรียนคนแรก', 'สาย');
+	await expect(page.getByLabel(/หมายเหตุของ/)).toHaveCount(0);
 });
 test('reports page at the server and export all filtered rows from any visible page', async ({
 	page
@@ -1483,8 +1491,7 @@ test('large roster keeps DOM bounded while mark-all saves the complete round on 
 	await page.goto(path());
 	await chooseRound(page);
 	await expect(page.locator('tbody tr')).toHaveCount(40);
-	await page.locator('tbody tr').first().getByText('เพิ่มหมายเหตุ', { exact: true }).click();
-	await expect(page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนมือถือ 0')).toBeVisible();
+	await expect(page.getByText('เพิ่มหมายเหตุ', { exact: true })).toHaveCount(0);
 	expect(
 		await page
 			.locator('[data-slot="table-container"]')
@@ -1492,7 +1499,7 @@ test('large roster keeps DOM bounded while mark-all saves the complete round on 
 	).toBe(true);
 	await page.getByRole('button', { name: 'มาทั้งหมด', exact: true }).click();
 	await page.getByRole('button', { name: 'ถัดไป', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'ผลของ นักเรียนมือถือ 40' })).toHaveText('มา');
+	await expectResult(page, 'นักเรียนมือถือ 40', 'มา');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
 	const saved = api.writes.find((write) => write.path === `/api/attendance/sessions/${sessionId}`)
 		?.data as SaveAttendanceResults;
@@ -1890,25 +1897,80 @@ for (const width of [390, 474])
 				await picker.click();
 				await page.getByLabel('ค้นหา รอบเช็คชื่อ', { exact: true }).fill('รอบ 120 ·');
 				await page.getByRole('option', { name: new RegExp(`รอบ 120 · ${kind}`) }).click();
-				await expect(
-					page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true })
-				).toBeInViewport();
+				await expect(resultControl(page, 'นักเรียนคนแรก')).toBeInViewport();
 				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 					true
 				);
 				expect((await page.locator('tbody tr').first().boundingBox())!.height).toBeLessThan(110);
-				await expect(page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนคนแรก')).toBeHidden();
-				await page.locator('tbody tr').first().getByText('เพิ่มหมายเหตุ', { exact: true }).click();
-				await page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนคนแรก').fill('ตรวจสอบแล้ว');
+				await expect(page.getByText('เพิ่มหมายเหตุ', { exact: true })).toHaveCount(0);
+				await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 				await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่ตรงกับรายชื่อ');
 				await expect(page.getByText('ไม่พบชื่อนักเรียนที่ค้นหา', { exact: true })).toBeVisible();
 				await page.getByLabel('ค้นหาชื่อนักเรียน').fill('');
-				await expect(page.getByLabel('หมายเหตุเพิ่มเติมของ นักเรียนคนแรก')).toHaveValue(
-					'ตรวจสอบแล้ว'
-				);
+				await expectResult(page, 'นักเรียนคนแรก', 'มา');
 				await page.screenshot({ path: `/tmp/attendance-compact-${width}-${theme}-${kind}.png` });
 			}
 			expect(api.writes).toHaveLength(0);
+		});
+
+for (const width of [320, 488, 1440])
+	for (const theme of ['light', 'dark'] as const)
+		test(`direct result controls need one tap and retain keyboard selection ${width} ${theme}`, async ({
+			page
+		}) => {
+			const api = await mockAttendance(page);
+			await page.setViewportSize({ width, height: 884 });
+			await page.emulateMedia({ colorScheme: theme });
+			await page.goto(path());
+			await chooseRound(page);
+			const control = resultControl(page, 'นักเรียนคนแรก');
+			await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
+			const present = control.getByRole('radio', { name: 'มา', exact: true });
+			const late = control.getByRole('radio', { name: 'สาย', exact: true });
+			for (const button of [
+				present,
+				late,
+				control.getByRole('radio', { name: 'กิจกรรม', exact: true })
+			]) {
+				const bounds = (await button.boundingBox())!;
+				expect(bounds.height).toBeGreaterThanOrEqual(44);
+				expect(bounds.width).toBeGreaterThanOrEqual(44);
+			}
+			await present.click();
+			await expect(present).toHaveAttribute('aria-checked', 'true');
+			await present.click();
+			await expect(present).toHaveAttribute('aria-checked', 'true');
+			await present.focus();
+			await page.keyboard.press('ArrowRight');
+			await expect(late).toBeFocused();
+			await page.keyboard.press('Space');
+			await expect(late).toHaveAttribute('aria-checked', 'true');
+			await page.keyboard.press('Enter');
+			await expect(late).toHaveAttribute('aria-checked', 'true');
+			await control
+				.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
+				.click();
+			await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
+			expect(api.writes).toHaveLength(0);
+			await chooseResult(page, 'นักเรียนคนแรก', 'มา');
+			await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+			await expect(
+				control.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
+			).toHaveCount(0);
+			expect(api.writes[0].data).toMatchObject({
+				students: [{ studentId: student, result: 'present' }]
+			});
+			expect(
+				(api.writes[0].data as SaveAttendanceResults).students.every(
+					(row) => !Object.hasOwn(row, 'note')
+				)
+			).toBe(true);
+			await expect(page.getByText('เพิ่มหมายเหตุ', { exact: true })).toHaveCount(0);
+			await expect(page.getByLabel(/หมายเหตุ(?:เพิ่มเติม)?ของ/)).toHaveCount(0);
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+			await page.screenshot({ path: `/tmp/attendance-direct-tap-${width}-${theme}.png` });
 		});
 
 for (const width of [390, 1440])
@@ -2020,21 +2082,24 @@ for (const width of [390, 1440])
 			await expect(page.locator('[data-slot="select-content"]')).toHaveCSS('opacity', '1');
 			await page.screenshot({ path: `/tmp/attendance-lesson-menu-${width}-${theme}.png` });
 			await first.click();
-			const result = page.getByRole('button', { name: 'ผลของ นักเรียนคนแรก', exact: true });
+			const result = resultControl(page, 'นักเรียนคนแรก');
 			const colors = new Set<string>();
-			for (const text of ['มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม', 'ยังไม่เช็ค']) {
-				await result.click();
-				await page.getByRole('option', { name: text, exact: true }).click();
-				await expect(result).toHaveText(text);
-				await expect(result.locator('svg').first()).toBeVisible();
-				colors.add(await result.evaluate((el) => getComputedStyle(el).backgroundColor));
+			for (const text of ['มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม']) {
+				const button = result.getByRole('radio', { name: text, exact: true });
+				await button.click();
+				await expect(button).toHaveAttribute('aria-checked', 'true');
+				await expect(result.getByRole('radio', { checked: true })).toHaveCount(1);
+				colors.add(await button.evaluate((el) => getComputedStyle(el).backgroundColor));
 			}
-			expect(colors.size).toBe(6);
-			await result.click();
-			await expect(page.getByRole('option')).toHaveCount(6);
-			await expect(page.locator('[data-slot="select-content"]')).toHaveCSS('opacity', '1');
-			await page.screenshot({ path: `/tmp/attendance-result-menu-${width}-${theme}.png` });
-			await page.getByRole('option', { name: 'มา', exact: true }).click();
+			expect(colors.size).toBe(5);
+			await result.getByRole('radio', { name: 'กิจกรรม', exact: true }).click();
+			await expectResult(page, 'นักเรียนคนแรก', 'กิจกรรม');
+			await result
+				.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
+				.click();
+			await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่เช็ค');
+			await chooseResult(page, 'นักเรียนคนแรก', 'มา');
+			await page.screenshot({ path: `/tmp/attendance-direct-results-${width}-${theme}.png` });
 			const filterReads: string[] = [];
 			page.on('request', (request) => {
 				if (new URL(request.url()).pathname.startsWith('/api/attendance/'))
@@ -2043,7 +2108,7 @@ for (const width of [390, 1440])
 			await roomPicker.click();
 			await page.getByRole('option', { name: 'ม.2/3', exact: true }).click();
 			await expect(roundPicker).toContainText('13 รอบ');
-			await expect(result).toHaveText('มา');
+			await expectResult(page, 'นักเรียนคนแรก', 'มา');
 			await expect(page.getByText('รอบนี้อยู่นอกห้องที่กรอง', { exact: true })).toBeVisible();
 			expect(filterReads).toHaveLength(0);
 			await roundPicker.click();
@@ -2053,7 +2118,7 @@ for (const width of [390, 1440])
 			await roomPicker.click();
 			await page.getByRole('option', { name: 'ทุกห้อง', exact: true }).click();
 			await expect(roundPicker).toContainText('คาบที่ 1 · 08:40 · วิชาทดสอบ 1');
-			await expect(result).toHaveText('มา');
+			await expectResult(page, 'นักเรียนคนแรก', 'มา');
 			await expect(page.getByText('รอบนี้อยู่นอกห้องที่กรอง', { exact: true })).toHaveCount(0);
 			await page.screenshot({ path: `/tmp/attendance-lesson-filter-${width}-${theme}.png` });
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

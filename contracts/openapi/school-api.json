@@ -17686,9 +17686,6 @@
                 "kind": {
                   "$ref": "#/components/schemas/AttendanceKind"
                 },
-                "note": {
-                  "type": "string"
-                },
                 "observedAt": {
                   "format": "date-time",
                   "type": [
@@ -17713,7 +17710,6 @@
                 "kind",
                 "title",
                 "result",
-                "note",
                 "observedAt",
                 "evidenceFileId",
                 "cancelled"
@@ -25079,9 +25075,6 @@
           "kind": {
             "$ref": "#/components/schemas/AttendanceKind"
           },
-          "note": {
-            "type": "string"
-          },
           "observedAt": {
             "format": "date-time",
             "type": [
@@ -25106,7 +25099,6 @@
           "kind",
           "title",
           "result",
-          "note",
           "observedAt",
           "evidenceFileId",
           "cancelled"
@@ -25303,9 +25295,6 @@
               "null"
             ]
           },
-          "note": {
-            "type": "string"
-          },
           "observedAt": {
             "format": "date-time",
             "type": [
@@ -25339,7 +25328,6 @@
           "classNumber",
           "result",
           "origin",
-          "note",
           "observedAt",
           "evidenceFileId",
           "arrivalAt",
@@ -25494,9 +25482,6 @@
       "AttendanceResultInput": {
         "additionalProperties": false,
         "properties": {
-          "note": {
-            "type": "string"
-          },
           "result": {
             "$ref": "#/components/schemas/AttendanceResult"
           },
@@ -25507,8 +25492,7 @@
         },
         "required": [
           "studentId",
-          "result",
-          "note"
+          "result"
         ],
         "type": "object"
       },

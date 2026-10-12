@@ -68,7 +68,6 @@ fn history_row(
             kind,
             title: title.into(),
             result: AttendanceResult::Unchecked,
-            note: String::new(),
             observed_at: None,
             evidence_file_id: None,
             cancelled: false,

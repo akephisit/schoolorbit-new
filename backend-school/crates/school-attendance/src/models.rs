@@ -200,7 +200,6 @@ pub struct AttendanceRecord {
     pub class_number: Option<i32>,
     pub result: AttendanceResult,
     pub origin: String,
-    pub note: String,
     #[schema(required = true)]
     pub observed_at: Option<DateTime<Utc>>,
     #[schema(required = true)]
@@ -255,7 +254,6 @@ pub struct OpenAttendanceSession {
 pub struct AttendanceResultInput {
     pub student_id: Uuid,
     pub result: AttendanceResult,
-    pub note: String,
 }
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -532,7 +530,6 @@ pub struct AttendanceHistoryItem {
     pub kind: AttendanceKind,
     pub title: String,
     pub result: AttendanceResult,
-    pub note: String,
     #[schema(required = true)]
     pub observed_at: Option<DateTime<Utc>>,
     #[schema(required = true)]
