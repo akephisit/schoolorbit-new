@@ -441,14 +441,12 @@ pub struct CatalogActivity {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateCatalogActivityRequest {
-    pub code: String,
     pub activity_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCatalogActivityRequest {
-    pub code: String,
     pub activity_type: String,
     pub archived: bool,
     pub row_version: i64,

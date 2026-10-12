@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { CatalogActivityOverview } from '../../src/lib/api/academic-core.js';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
@@ -118,7 +119,7 @@ test('subject-group creation patches its card without rereading the collection',
 			return true;
 		}
 	);
-	await page.goto('/staff/academic/catalog/subject-groups');
+	await page.goto('/staff/academic/catalog/subject-groups', { waitUntil: 'domcontentloaded' });
 	await expect(page.getByTestId('catalog-subject-groups-ready')).toBeVisible();
 	await page.getByLabel('รหัส', { exact: true }).fill(group.code);
 	await page.getByLabel('ชื่อภาษาไทย').fill(group.nameTh);
@@ -149,7 +150,7 @@ for (const entry of [
 		code: 'CLUB101'
 	}
 ] as const) {
-	test(`${entry.kind} creation refreshes only its overview and opens lazy history`, async ({
+	test(`${entry.kind} creation reconciles its overview and opens lazy history`, async ({
 		page
 	}) => {
 		const id = '40000000-0000-4000-8000-000000000001';
@@ -194,6 +195,8 @@ for (const entry of [
 			async (route, url) => {
 				if (url.pathname === entry.createPath && route.request().method() === 'POST') {
 					writes += 1;
+					if (entry.kind === 'activity')
+						expect(route.request().postDataJSON()).toEqual({ activityType: 'guidance' });
 					created = true;
 					await fulfill(route, record);
 					return true;
@@ -206,14 +209,34 @@ for (const entry of [
 				return false;
 			}
 		);
-		await page.goto(entry.path);
+		await page.goto(entry.path, { waitUntil: 'domcontentloaded' });
 		await expect(
 			page.getByTestId(`catalog-${entry.kind === 'subject' ? 'subjects' : 'activities'}-ready`)
 		).toBeVisible();
 		expect(historyReads).toBe(0);
-		await page.getByLabel(entry.codeLabel).fill(entry.code);
+		if (entry.kind === 'subject') await page.getByLabel(entry.codeLabel).fill(entry.code);
+		else {
+			await page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true }).click();
+			await expect(page.getByLabel('เพิ่มรหัสกิจกรรม')).toHaveCount(0);
+		}
 		try {
-			await page.getByRole('button', { name: entry.buttonLabel }).click();
+			await page
+				.getByRole('button', {
+					name: entry.kind === 'activity' ? 'เพิ่มและกำหนดรายละเอียด' : entry.buttonLabel
+				})
+				.click();
+			if (entry.kind === 'activity') {
+				await expect(
+					page.getByRole('dialog', { name: 'เพิ่มกิจกรรม', exact: true })
+				).not.toBeVisible();
+				await expect(page.getByRole('dialog')).toBeVisible();
+				await expect.poll(() => historyReads).toBe(1);
+				expect(requests.primary).toBe(1);
+				expect(writes).toBe(1);
+				expect(requests.otherCatalogReads).toBe(0);
+				await expect(page.getByRole('dialog')).not.toContainText(entry.code);
+				return;
+			}
 			await expect.poll(() => requests.primary).toBe(2);
 			await expect(
 				page.getByTestId(`catalog-${entry.kind === 'subject' ? 'subjects' : 'activities'}-ready`)
@@ -235,7 +258,7 @@ for (const entry of [
 }
 
 for (const route of routes) {
-	test(`${route.path} retries only its failed primary region`, async ({ page }) => {
+	test(`${route.path} retries only its failed primary region`, async ({ page }, testInfo) => {
 		const requests = await mockCatalog(
 			page,
 			route.apiPath,
@@ -244,32 +267,293 @@ for (const route of routes) {
 			undefined,
 			true
 		);
-		await page.goto(route.path);
+		await page.goto(route.path, { waitUntil: 'domcontentloaded' });
 		await expect(page.getByRole('button', { name: 'ลองอีกครั้ง' })).toBeVisible();
+		if (route.path === activityPath)
+			await page.screenshot({
+				path: testInfo.outputPath('activities-error.png'),
+				animations: 'disabled'
+			});
 		expect(requests.primary).toBe(1);
 		await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 		await expect(page.getByTestId(route.readyTestId)).toBeVisible();
+		if (route.path === activityPath)
+			await page.screenshot({
+				path: testInfo.outputPath('activities-empty.png'),
+				animations: 'disabled'
+			});
 		expect(requests.primary).toBe(2);
 		expect(requests.history).toBe(0);
 		expect(requests.otherCatalogReads).toBe(0);
 	});
 
-	test(`${route.path} renders its primary region without eager history reads`, async ({ page }) => {
+	test(`${route.path} renders its primary region without eager history reads`, async ({
+		page
+	}, testInfo) => {
 		const gate = deferred();
 		const requests = await mockCatalog(page, route.apiPath, route.response, gate.promise);
 		try {
-			await page.goto(route.path);
+			await page.goto(route.path, { waitUntil: 'domcontentloaded' });
 			await expect.poll(() => requests.primary).toBe(1);
 			await expect(page.locator('main [data-slot="skeleton"]')).not.toHaveCount(0);
 			expect(requests.history).toBe(0);
 			expect(requests.otherCatalogReads).toBe(0);
 			await expect(page.getByTestId(route.readyTestId)).toHaveCount(0);
+			if (route.path === activityPath)
+				await page.screenshot({
+					path: testInfo.outputPath('activities-loading.png'),
+					animations: 'disabled'
+				});
 		} finally {
 			gate.release();
 		}
 		await expect(page.getByTestId(route.readyTestId)).toBeVisible();
+		if (route.path === activityPath)
+			await page.screenshot({
+				path: testInfo.outputPath('activities-empty.png'),
+				animations: 'disabled'
+			});
 		expect(requests.primary).toBe(1);
 		expect(requests.history).toBe(0);
 		expect(requests.otherCatalogReads).toBe(0);
 	});
 }
+
+const activityPath = '/staff/academic/catalog/activities';
+const activityOverviewPath = '/api/academic/catalog/activities/overview';
+const activityId = '40000000-0000-4000-8000-000000000002';
+const activityCode = 'HIDDEN-INTERNAL-ACTIVITY-CODE';
+const namedActivityOverview = {
+	items: [
+		{
+			activity: {
+				id: activityId,
+				code: activityCode,
+				activityType: 'club',
+				archivedAt: null,
+				rowVersion: 1,
+				owningOrganizationUnitId: '30000000-0000-4000-8000-000000000002',
+				createdAt: '2026-05-01T00:00:00Z',
+				updatedAt: '2026-05-01T00:00:00Z'
+			},
+			displayVersion: {
+				id: '50000000-0000-4000-8000-000000000002',
+				activityId,
+				versionNo: 1,
+				name: 'ชุมนุมวิทยาศาสตร์และสิ่งแวดล้อมสำหรับนักเรียน',
+				description: 'กิจกรรมทดลองและเรียนรู้ร่วมกัน',
+				hoursPerWeek: '1.50',
+				hoursPerTerm: '30.00',
+				schedulingMode: 'synchronized',
+				effectiveFrom: '2026-05-01',
+				effectiveUntil: null,
+				gradeLevelIds: [],
+				status: 'published',
+				rowVersion: 1,
+				migrated: false,
+				termCode: null,
+				publishedAt: '2026-05-01T00:00:00Z',
+				createdAt: '2026-05-01T00:00:00Z',
+				updatedAt: '2026-05-01T00:00:00Z'
+			},
+			displayState: 'current',
+			draftCount: 0,
+			gradeLevels: [],
+			canManage: true
+		}
+	],
+	gradeLevelOptions: [],
+	canCreate: true
+} satisfies CatalogActivityOverview;
+
+for (const width of [375, 1440]) {
+	test(`activity names, compact filters and code-free dialogs at ${width}px`, async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width, height: 1000 });
+		let historyReads = 0;
+		await mockCatalog(
+			page,
+			activityOverviewPath,
+			namedActivityOverview,
+			Promise.resolve(),
+			async (route, url) => {
+				if (url.pathname.endsWith(`/${activityId}/versions`)) {
+					historyReads++;
+					await fulfill(route, [namedActivityOverview.items[0].displayVersion]);
+					return true;
+				}
+				return false;
+			}
+		);
+		await page.goto(activityPath, { waitUntil: 'domcontentloaded' });
+		const ready = page.getByTestId('catalog-activities-ready');
+		await expect(ready).toContainText(namedActivityOverview.items[0].displayVersion.name);
+		await expect(page.locator('body')).not.toContainText(activityCode);
+		expect(historyReads).toBe(0);
+		await expect(page.getByLabel('กรองรูปแบบการจัด', { exact: true })).toHaveCount(0);
+		for (const theme of ['light', 'dark']) {
+			if (theme === 'dark') await page.getByRole('button', { name: 'Toggle Dark Mode' }).click();
+			expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+				width
+			);
+			await page.screenshot({
+				path: testInfo.outputPath(`activities-${width}-${theme}.png`),
+				fullPage: true,
+				animations: 'disabled'
+			});
+		}
+		await page.getByRole('button', { name: 'ตัวกรองเพิ่มเติม' }).click();
+		await expect(page.getByLabel('กรองรูปแบบการจัด', { exact: true })).toBeVisible();
+		await page.getByLabel('ค้นหากิจกรรม', { exact: true }).fill('ไม่มีรายการที่ตรงกัน');
+		await expect(page.getByText('ไม่พบกิจกรรมที่ตรงกับตัวกรอง')).toBeVisible();
+		await page.getByRole('button', { name: 'ล้างตัวกรอง', exact: true }).first().click();
+		await expect(ready).toContainText(namedActivityOverview.items[0].displayVersion.name);
+		const open =
+			width < 768
+				? ready.getByRole('button', { name: /ชุมนุมวิทยาศาสตร์/ })
+				: page.getByRole('button', { name: /เปิดรายละเอียด ชุมนุมวิทยาศาสตร์/ });
+		const bounds = await open.boundingBox();
+		expect(bounds!.width).toBeGreaterThanOrEqual(44);
+		expect(bounds!.height).toBeGreaterThanOrEqual(44);
+		await open.focus();
+		await open.press('Enter');
+		await expect(page.getByRole('dialog')).toContainText('ประวัติรุ่นกิจกรรม');
+		await expect(page.getByRole('dialog')).not.toContainText(activityCode);
+		await page.screenshot({
+			path: testInfo.outputPath(`activity-details-${width}.png`),
+			fullPage: true,
+			animations: 'disabled'
+		});
+		await page.getByRole('dialog').getByLabel('ชื่อภาษาไทย').fill('กิจกรรมทดสอบวันที่');
+		await page.getByRole('button', { name: 'บันทึกร่างรุ่นใหม่' }).click();
+		await expect(page.getByRole('dialog')).toContainText('กรุณาเลือกวันที่เริ่มใช้');
+		await page.screenshot({
+			path: testInfo.outputPath(`activity-validation-${width}.png`),
+			animations: 'disabled'
+		});
+		await page.getByRole('dialog').press('Escape');
+		await page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true }).click();
+		await expect(page.getByRole('dialog')).toContainText('ประเภทกิจกรรม');
+		await expect(page.getByLabel('เพิ่มรหัสกิจกรรม')).toHaveCount(0);
+		await page.screenshot({
+			path: testInfo.outputPath(`activity-create-${width}.png`),
+			fullPage: true,
+			animations: 'disabled'
+		});
+	});
+}
+
+test('activity create failure retains the selection and blocks duplicate pending writes', async ({
+	page
+}, testInfo) => {
+	const gate = deferred();
+	let writes = 0;
+	await mockCatalog(
+		page,
+		activityOverviewPath,
+		{ items: [], gradeLevelOptions: [], canCreate: true },
+		Promise.resolve(),
+		async (route, url) => {
+			if (
+				url.pathname === '/api/academic/catalog/activities' &&
+				route.request().method() === 'POST'
+			) {
+				writes++;
+				expect(route.request().postDataJSON()).toEqual({ activityType: 'club' });
+				await gate.promise;
+				await route.fulfill({
+					status: 503,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: false, error: 'บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง' })
+				});
+				return true;
+			}
+			return false;
+		}
+	);
+	await page.goto(activityPath, { waitUntil: 'domcontentloaded' });
+	await page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true }).click();
+	await page
+		.getByRole('dialog')
+		.getByLabel(/^ประเภทกิจกรรม/)
+		.click();
+	await page.getByRole('option', { name: 'ชุมนุม', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มและกำหนดรายละเอียด' }).click();
+	try {
+		await expect(page.getByRole('button', { name: 'กำลังเพิ่มกิจกรรม...' })).toBeDisabled();
+		await expect(page.getByRole('button', { name: 'ยกเลิก' })).toBeDisabled();
+		expect(writes).toBe(1);
+		await page.screenshot({
+			path: testInfo.outputPath('activity-pending.png'),
+			animations: 'disabled'
+		});
+	} finally {
+		gate.release();
+	}
+	await expect(page.getByRole('alert')).toContainText('บันทึกไม่สำเร็จ');
+	await page.screenshot({
+		path: testInfo.outputPath('activity-save-error.png'),
+		animations: 'disabled'
+	});
+	await expect(page.getByRole('dialog').getByLabel(/^ประเภทกิจกรรม/)).toContainText('ชุมนุม');
+	await expect(page.getByRole('button', { name: 'เพิ่มและกำหนดรายละเอียด' })).toBeEnabled();
+});
+
+test('activity readers can inspect history without create or version actions', async ({ page }) => {
+	await mockCatalog(
+		page,
+		activityOverviewPath,
+		{
+			...namedActivityOverview,
+			canCreate: false,
+			items: namedActivityOverview.items.map((item) => ({ ...item, canManage: false }))
+		},
+		Promise.resolve(),
+		async (route, url) => {
+			if (url.pathname.endsWith(`/${activityId}/versions`)) {
+				await fulfill(route, [namedActivityOverview.items[0].displayVersion]);
+				return true;
+			}
+			return false;
+		}
+	);
+	await page.goto(activityPath, { waitUntil: 'domcontentloaded' });
+	await expect(page.getByTestId('catalog-activities-ready')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เพิ่มกิจกรรม', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: /เปิดรายละเอียด ชุมนุมวิทยาศาสตร์/ }).click();
+	await expect(page.getByRole('dialog')).toContainText('ประวัติรุ่นกิจกรรม');
+	await expect(page.getByRole('button', { name: 'สร้างรุ่นใหม่', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('dialog').getByLabel('ชื่อภาษาไทย')).toHaveCount(0);
+});
+
+test('activity history failure retries lazily without reloading the overview', async ({ page }) => {
+	let historyReads = 0;
+	const requests = await mockCatalog(
+		page,
+		activityOverviewPath,
+		namedActivityOverview,
+		Promise.resolve(),
+		async (route, url) => {
+			if (url.pathname.endsWith(`/${activityId}/versions`)) {
+				historyReads++;
+				if (historyReads === 1)
+					await route.fulfill({
+						status: 503,
+						contentType: 'application/json',
+						body: JSON.stringify({ success: false, error: 'ประวัติไม่พร้อมชั่วคราว' })
+					});
+				else await fulfill(route, [namedActivityOverview.items[0].displayVersion]);
+				return true;
+			}
+			return false;
+		}
+	);
+	await page.goto(activityPath, { waitUntil: 'domcontentloaded' });
+	await page.getByRole('button', { name: /เปิดรายละเอียด ชุมนุมวิทยาศาสตร์/ }).click();
+	await expect(page.getByRole('dialog')).toContainText('โหลดประวัติไม่สำเร็จ');
+	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
+	await expect(page.getByRole('dialog')).toContainText('ประวัติรุ่นกิจกรรม');
+	expect(historyReads).toBe(2);
+	expect(requests.primary).toBe(1);
+});

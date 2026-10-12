@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
-	import { untrack } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { onDestroy, untrack } from 'svelte';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		createActivityVersion,
 		createCatalogActivity,
@@ -26,11 +26,18 @@
 	} from '#lib/academic-core/catalog-presentation.js';
 	import CatalogVersionHistory from '#lib/components/academic-core/CatalogVersionHistory.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
-	import { PageSkeleton, PageState, RegionUpdatingState } from '#lib/components/app-state/index.js';
+	import {
+		LoadingButton,
+		PageSkeleton,
+		PageState,
+		RegionUpdatingState
+	} from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
@@ -53,7 +60,12 @@
 
 	const allValue = 'all';
 	const collator = new Intl.Collator('th-TH', { numeric: true, sensitivity: 'base' });
-	const activityHistoryCache = new SvelteMap<string, ActivityVersion[]>();
+	const historyRequests = new LatestRequest();
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+		historyRequests.abort();
+	});
 
 	let { data }: PageProps = $props();
 	let overview = $state.raw<CatalogActivityOverview | null>(null);
@@ -66,15 +78,25 @@
 	let errorMessage = $state('');
 	let mutationError = $state('');
 	let creating = $state(false);
-	let code = $state('');
+	let createOpen = $state(false);
+	let filtersOpen = $state(false);
 	let activityType = $state(ACTIVITY_TYPE_OPTIONS[0].value);
 	let search = $state('');
 	let typeFilter = $state(allValue);
 	let schedulingFilter = $state(allValue);
 	let gradeFilter = $state(allValue);
 	let stateFilter = $state<CatalogDisplayState | typeof allValue>(allValue);
-	let historyRevision = 0;
-	let pendingOpenActivityId = '';
+	let hasFilters = $derived(
+		search.trim() !== '' ||
+			[typeFilter, schedulingFilter, gradeFilter, stateFilter].some((value) => value !== allValue)
+	);
+	let advancedFilterCount = $derived(
+		[schedulingFilter, gradeFilter, stateFilter].filter((value) => value !== allValue).length
+	);
+
+	$effect(() => {
+		if (!sheetOpen) historyRequests.abort();
+	});
 
 	let activityItems = $derived(overview?.items ?? []);
 	let gradeLevelOptions = $derived(overview?.gradeLevelOptions ?? []);
@@ -93,7 +115,12 @@
 			.filter((item) => {
 				const version = item.displayVersion;
 				return (
-					matchesCatalogSearch(search, item.activity.code, version?.name, version?.description) &&
+					matchesCatalogSearch(
+						search,
+						version?.name,
+						version?.description,
+						optionLabel(activityTypeOptions, item.activity.activityType)
+					) &&
 					(typeFilter === allValue || item.activity.activityType === typeFilter) &&
 					(schedulingFilter === allValue || version?.schedulingMode === schedulingFilter) &&
 					(gradeFilter === allValue ||
@@ -101,11 +128,11 @@
 					(stateFilter === allValue || item.displayState === stateFilter)
 				);
 			})
-			.sort((left, right) => {
-				const codeOrder = collator.compare(left.activity.code, right.activity.code);
-				if (codeOrder !== 0) return codeOrder;
-				return collator.compare(left.displayVersion?.name ?? '', right.displayVersion?.name ?? '');
-			})
+			.sort(
+				(left, right) =>
+					collator.compare(activityName(left), activityName(right)) ||
+					left.activity.id.localeCompare(right.activity.id)
+			)
 	);
 
 	function loadOverview() {
@@ -130,13 +157,6 @@
 						if (selectedId) {
 							selected = latest.items.find((item) => item.activity.id === selectedId) ?? null;
 						}
-						if (pendingOpenActivityId) {
-							const item = latest.items.find((row) => row.activity.id === pendingOpenActivityId);
-							if (item) {
-								pendingOpenActivityId = '';
-								void openActivity(item);
-							}
-						}
 					} else errorMessage = result.error;
 					loading = false;
 				});
@@ -147,70 +167,64 @@
 		};
 	});
 
+	function activityName(item: CatalogActivityOverviewItem) {
+		return (
+			item.displayVersion?.name ??
+			`${optionLabel(activityTypeOptions, item.activity.activityType)} · ยังไม่ได้ตั้งชื่อ`
+		);
+	}
+
+	function clearFilters() {
+		search = '';
+		typeFilter = schedulingFilter = gradeFilter = stateFilter = allValue;
+	}
+
 	async function openActivity(item: CatalogActivityOverviewItem) {
-		const currentHistoryRevision = ++historyRevision;
+		const request = historyRequests.begin();
 		selected = item;
 		sheetOpen = true;
 		historyError = '';
-		const cached = activityHistoryCache.get(item.activity.id);
-		if (cached) {
-			versions = cached;
-			historyLoading = false;
-			return;
-		}
-
 		versions = [];
 		historyLoading = true;
 		try {
-			const loaded = await listActivityVersions(item.activity.id);
-			activityHistoryCache.set(item.activity.id, loaded);
-			if (currentHistoryRevision !== historyRevision) return;
-			versions = loaded;
+			const loaded = await listActivityVersions(item.activity.id, { signal: request.signal });
+			if (historyRequests.isCurrent(request.revision)) versions = loaded;
 		} catch (error) {
-			if (currentHistoryRevision === historyRevision) {
+			if (historyRequests.isCurrent(request.revision) && !isAbortError(error)) {
 				historyError = error instanceof Error ? error.message : 'โหลดประวัติกิจกรรมไม่สำเร็จ';
 			}
 		} finally {
-			if (currentHistoryRevision === historyRevision) historyLoading = false;
+			if (historyRequests.isCurrent(request.revision)) historyLoading = false;
 		}
 	}
 
 	async function reloadSelectedHistory() {
 		if (!selected) return;
-		const currentHistoryRevision = ++historyRevision;
-		const activityId = selected.activity.id;
-		activityHistoryCache.delete(activityId);
-		historyLoading = true;
-		historyError = '';
-		try {
-			const loaded = await listActivityVersions(activityId);
-			activityHistoryCache.set(activityId, loaded);
-			if (currentHistoryRevision !== historyRevision) return;
-			versions = loaded;
-			await loadOverview();
-		} catch (error) {
-			if (currentHistoryRevision === historyRevision) {
-				historyError = error instanceof Error ? error.message : 'โหลดประวัติกิจกรรมไม่สำเร็จ';
-			}
-		} finally {
-			if (currentHistoryRevision === historyRevision) historyLoading = false;
-		}
+		await openActivity(selected);
+		await loadOverview();
 	}
 
 	async function addActivity(event: SubmitEvent) {
 		event.preventDefault();
+		if (creating || !canCreate || !overview) return;
 		creating = true;
 		mutationError = '';
 		try {
-			const created = await createCatalogActivity({
-				code,
-				activityType
-			});
-			code = '';
-			pendingOpenActivityId = created.id;
-			await loadOverview();
+			const created = await createCatalogActivity({ activityType });
+			if (disposed) return;
+			const item: CatalogActivityOverviewItem = {
+				activity: created,
+				displayVersion: null,
+				displayState: 'unpublished',
+				draftCount: 0,
+				gradeLevels: [],
+				canManage: true
+			};
+			overview = { ...overview, items: [...overview.items, item] };
+			createOpen = false;
+			void openActivity(item);
 		} catch (error) {
-			mutationError = error instanceof Error ? error.message : 'เพิ่มรหัสกิจกรรมไม่สำเร็จ';
+			mutationError = error instanceof Error ? error.message : 'เพิ่มกิจกรรมไม่สำเร็จ';
 		} finally {
 			creating = false;
 		}
@@ -218,7 +232,8 @@
 
 	async function addVersion(draft: VersionDraft) {
 		if (!selected) return;
-		await createActivityVersion(selected.activity.id, {
+		const activityId = selected.activity.id;
+		await createActivityVersion(activityId, {
 			name: draft.name,
 			hoursPerWeek: draft.exactValue,
 			hoursPerTerm: draft.totalValue,
@@ -229,12 +244,17 @@
 			schedulingMode: draft.classification,
 			termCode: null
 		});
-		await reloadSelectedHistory();
+		if (disposed) return;
+		if (sheetOpen && selected?.activity.id === activityId) await reloadSelectedHistory();
+		else await loadOverview();
 	}
 
 	async function publish(id: string, rowVersion: number) {
+		const activityId = selected?.activity.id;
 		await publishActivityVersion(id, { rowVersion });
-		await reloadSelectedHistory();
+		if (disposed) return;
+		if (sheetOpen && selected?.activity.id === activityId) await reloadSelectedHistory();
+		else await loadOverview();
 	}
 
 	function gradeLevelsFor(version: ActivityVersion) {
@@ -244,13 +264,21 @@
 
 <PageShell
 	title="ทะเบียนกิจกรรม"
-	description="ดูกิจกรรมพัฒนาผู้เรียน ประเภท รูปแบบการจัด ระดับชั้น และรุ่นที่ใช้อยู่ได้ในหน้าเดียว"
+	description="ข้อมูลกลางกิจกรรมพัฒนาผู้เรียน สำหรับนำไปใช้ในหลักสูตรและเปิดกิจกรรมแต่ละภาคเรียน"
 >
 	{#snippet actions()}
 		{#if canOpenDelivery}
 			<Button href="/staff/academic/delivery?kind=activity" variant="outline">
 				เปิดกิจกรรมในภาคเรียน <ArrowUpRight class="size-4" />
 			</Button>
+		{/if}
+		{#if canCreate}
+			<Button
+				onclick={() => {
+					mutationError = '';
+					createOpen = true;
+				}}><Plus class="size-4" />เพิ่มกิจกรรม</Button
+			>
 		{/if}
 	{/snippet}
 
@@ -266,18 +294,15 @@
 		/>
 	{:else}
 		<div
-			class="relative space-y-5"
+			class="relative space-y-4"
 			aria-label="ทะเบียนกิจกรรม"
 			aria-busy={loading}
 			data-testid="catalog-activities-ready"
 		>
 			{#if loading}<RegionUpdatingState label="กำลังอัปเดตทะเบียนกิจกรรม" />{/if}
-			<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
-				<div class="space-y-4 border-b bg-muted/25 p-4">
-					<div class="flex items-center gap-2 text-sm font-medium">
-						<SlidersHorizontal class="size-4 text-primary" /> ค้นหาและกรองกิจกรรม
-					</div>
-					<div class="grid gap-3 lg:grid-cols-[minmax(240px,1fr)_repeat(4,minmax(150px,auto))]">
+			<section aria-label="ค้นหาและกรองกิจกรรม" class="rounded-xl border bg-card p-3 sm:p-4">
+				<div class="space-y-3">
+					<div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,240px)_auto]">
 						<div class="relative">
 							<Search
 								class="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -287,7 +312,7 @@
 								id="activity-search"
 								class="ps-9"
 								bind:value={search}
-								placeholder="ค้นหารหัส ชื่อ หรือรายละเอียด"
+								placeholder="ค้นหาชื่อหรือรายละเอียดกิจกรรม"
 							/>
 						</div>
 						<Select.Root type="single" bind:value={typeFilter}>
@@ -303,6 +328,23 @@
 								{/each}
 							</Select.Content>
 						</Select.Root>
+						<Button
+							variant="outline"
+							aria-expanded={filtersOpen}
+							aria-controls="activity-advanced-filters"
+							onclick={() => (filtersOpen = !filtersOpen)}
+						>
+							<SlidersHorizontal
+								class="size-4"
+							/>ตัวกรองเพิ่มเติม{#if advancedFilterCount > 0}<Badge variant="secondary"
+									>{advancedFilterCount}</Badge
+								>{/if}
+						</Button>
+					</div>
+				</div>
+
+				{#if filtersOpen}
+					<div id="activity-advanced-filters" class="grid gap-3 border-t pt-3 sm:grid-cols-3">
 						<Select.Root type="single" bind:value={schedulingFilter}>
 							<Select.Trigger aria-label="กรองรูปแบบการจัด" class="w-full">
 								{schedulingFilter === allValue
@@ -342,71 +384,47 @@
 							</Select.Content>
 						</Select.Root>
 					</div>
-				</div>
-
-				{#if canCreate}
-					<form
-						class="grid gap-3 border-b p-4 sm:grid-cols-[minmax(160px,260px)_minmax(240px,380px)_auto] sm:items-end"
-						onsubmit={addActivity}
-					>
-						<div>
-							<Label for="new-activity-code">เพิ่มรหัสกิจกรรม</Label>
-							<Input
-								id="new-activity-code"
-								class="mt-1.5 font-mono uppercase"
-								bind:value={code}
-								placeholder="เช่น GUIDE-M1"
-								required
-							/>
-						</div>
-						<div>
-							<Label for="new-activity-type">ประเภทกิจกรรม</Label>
-							<Select.Root type="single" bind:value={activityType}>
-								<Select.Trigger id="new-activity-type" class="mt-1.5 w-full">
-									{optionLabel(ACTIVITY_TYPE_OPTIONS, activityType)}
-								</Select.Trigger>
-								<Select.Content>
-									{#each ACTIVITY_TYPE_OPTIONS as option (option.value)}
-										<Select.Item value={option.value}>{option.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-						<Button type="submit" disabled={creating}>
-							<Plus class="size-4" />
-							{creating ? 'กำลังเพิ่ม...' : 'เพิ่มกิจกรรม'}
-						</Button>
-						{#if mutationError}
-							<p role="alert" class="text-sm text-destructive sm:col-span-3">
-								{mutationError}
-							</p>
-						{/if}
-					</form>
 				{/if}
+			</section>
+
+			<Card.Root class="gap-0 overflow-hidden py-0">
+				<div class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+					<div class="flex items-center gap-2">
+						<Sparkles class="size-4 text-primary" />
+						<h2 class="font-semibold">รายการกิจกรรม</h2>
+						<Badge variant="secondary">{filteredActivities.length}</Badge>
+					</div>
+					{#if hasFilters}<Button variant="ghost" size="sm" onclick={clearFilters}
+							>ล้างตัวกรอง</Button
+						>{/if}
+				</div>
 
 				{#if activityItems.length === 0}
 					<PageState
 						class="m-4 border-0 shadow-none"
 						title="ยังไม่มีกิจกรรมในทะเบียน"
-						description="เพิ่มรหัสกิจกรรม แล้วสร้างรายละเอียดรุ่นแรกเมื่อพร้อม"
+						description={canCreate
+							? 'เลือกเพิ่มกิจกรรม แล้วกำหนดชื่อ ชั่วโมง และระดับชั้นในรายละเอียด'
+							: 'กิจกรรมที่โรงเรียนเพิ่มจะแสดงที่นี่'}
 					/>
 				{:else if filteredActivities.length === 0}
 					<PageState
 						class="m-4 border-0 shadow-none"
 						title="ไม่พบกิจกรรมที่ตรงกับตัวกรอง"
-						description="ลองเปลี่ยนคำค้นหา ประเภท รูปแบบการจัด ระดับชั้น หรือสถานะ"
+						description="ลองเปลี่ยนคำค้นหาหรือล้างตัวกรองเพื่อดูรายการทั้งหมด"
+						actionLabel="ล้างตัวกรอง"
+						onaction={clearFilters}
 					/>
 				{:else}
 					<div class="hidden md:block">
 						<Table.Root>
 							<Table.Header>
 								<Table.Row>
-									<Table.Head class="w-[140px] ps-5">รหัส</Table.Head>
-									<Table.Head>ชื่อกิจกรรม</Table.Head>
+									<Table.Head class="ps-5">ชื่อกิจกรรม</Table.Head>
 									<Table.Head>ประเภทกิจกรรม</Table.Head>
 									<Table.Head>รูปแบบการจัด</Table.Head>
 									<Table.Head>ระดับชั้น</Table.Head>
-									<Table.Head class="text-end">ชั่วโมง</Table.Head>
+									<Table.Head class="text-end">ชม./สัปดาห์</Table.Head>
 									<Table.Head>สถานะ</Table.Head>
 									<Table.Head class="w-12"><span class="sr-only">เปิดรายละเอียด</span></Table.Head>
 								</Table.Row>
@@ -414,13 +432,12 @@
 							<Table.Body>
 								{#each filteredActivities as item (item.activity.id)}
 									<Table.Row>
-										<Table.Cell class="border-s-4 border-s-primary ps-5 font-mono font-semibold"
-											>{item.activity.code}</Table.Cell
-										>
-										<Table.Cell class="max-w-[260px] whitespace-normal">
-											<p class="font-medium">
-												{item.displayVersion?.name ?? 'ยังไม่มีรายละเอียดรุ่น'}
-											</p>
+										<Table.Cell class="max-w-[280px] whitespace-normal ps-5">
+											<Button
+												variant="link"
+												class="h-auto justify-start whitespace-normal p-0 text-start"
+												onclick={() => openActivity(item)}>{activityName(item)}</Button
+											>
 											{#if item.displayVersion?.description}<p
 													class="line-clamp-1 text-xs text-muted-foreground"
 												>
@@ -466,7 +483,8 @@
 											<Button
 												variant="ghost"
 												size="icon"
-												aria-label={`เปิด ${item.activity.code}`}
+												class="min-h-[44px] min-w-[44px]"
+												aria-label={`เปิดรายละเอียด ${activityName(item)}`}
 												onclick={() => openActivity(item)}><ArrowUpRight class="size-4" /></Button
 											>
 										</Table.Cell>
@@ -478,17 +496,16 @@
 
 					<div class="grid gap-3 p-4 md:hidden">
 						{#each filteredActivities as item (item.activity.id)}
-							<button
-								type="button"
-								class="rounded-xl border border-s-4 border-s-primary bg-background p-4 text-start shadow-xs transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							<Button
+								variant="ghost"
+								class="h-auto w-full flex-col items-stretch gap-0 whitespace-normal rounded-xl border bg-card p-4 text-start"
 								onclick={() => openActivity(item)}
 							>
 								<div class="flex items-start justify-between gap-3">
 									<div class="min-w-0">
-										<p class="font-mono text-sm font-semibold text-primary">{item.activity.code}</p>
-										<h2 class="mt-1 font-medium">
-											{item.displayVersion?.name ?? 'ยังไม่มีรายละเอียดรุ่น'}
-										</h2>
+										<h3 class="font-semibold">
+											{activityName(item)}
+										</h3>
 									</div>
 									<ArrowUpRight class="size-4 shrink-0 text-muted-foreground" />
 								</div>
@@ -530,15 +547,14 @@
 										>{/if}
 									{#if item.activity.archivedAt}<Badge variant="secondary">เก็บถาวร</Badge>{/if}
 								</div>
-							</button>
+							</Button>
 						{/each}
 					</div>
 				{/if}
-			</section>
+			</Card.Root>
 
 			<p class="text-xs text-muted-foreground">
-				แสดง {filteredActivities.length} จาก {activityItems.length} กิจกรรม · ทะเบียนนี้เป็นข้อมูลกลาง
-				ไม่ผูกกับภาคเรียนบนแถบด้านบน · สังกัดงานกิจกรรมพัฒนาผู้เรียนอัตโนมัติ
+				แสดง {filteredActivities.length} จาก {activityItems.length} กิจกรรม
 			</p>
 			{#if errorMessage}<div
 					role="alert"
@@ -556,9 +572,7 @@
 		<Sheet.Header class="pe-8 text-start">
 			<Sheet.Title class="flex items-center gap-2">
 				<Sparkles class="size-5 text-primary" />
-				<span class="font-mono">{selected?.activity.code ?? 'กิจกรรม'}</span>
-				{#if selected?.displayVersion}<span class="font-sans">· {selected.displayVersion.name}</span
-					>{/if}
+				<span>{selected ? activityName(selected) : 'รายละเอียดกิจกรรม'}</span>
 			</Sheet.Title>
 			<Sheet.Description>
 				{#if selected?.displayVersion}{formatEffectiveRange(
@@ -570,30 +584,82 @@
 		{#if historyLoading}
 			<PageSkeleton variant="cards" rows={3} />
 		{:else if historyError}
-			<PageState variant="error" title="โหลดประวัติไม่สำเร็จ" description={historyError} />
-		{:else if selected}
-			<CatalogVersionHistory
-				kind="activity"
-				code={selected.activity.code}
-				items={versions.map((item) => ({
-					id: item.id,
-					versionNo: item.versionNo,
-					name: item.name,
-					secondaryName: item.description,
-					exactValue: item.hoursPerWeek,
-					totalValue: item.hoursPerTerm,
-					effectiveFrom: item.effectiveFrom,
-					effectiveUntil: item.effectiveUntil,
-					classification: item.schedulingMode,
-					gradeLevels: gradeLevelsFor(item),
-					status: item.status,
-					rowVersion: item.rowVersion
-				}))}
-				{gradeLevelOptions}
-				canManage={selected.canManage}
-				onCreate={addVersion}
-				onPublish={publish}
+			<PageState
+				variant="error"
+				title="โหลดประวัติไม่สำเร็จ"
+				description={historyError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => selected && openActivity(selected)}
 			/>
+		{:else if selected}
+			{#key selected.activity.id}
+				<CatalogVersionHistory
+					kind="activity"
+					code={selected.activity.code}
+					items={versions.map((item) => ({
+						id: item.id,
+						versionNo: item.versionNo,
+						name: item.name,
+						secondaryName: item.description,
+						exactValue: item.hoursPerWeek,
+						totalValue: item.hoursPerTerm,
+						effectiveFrom: item.effectiveFrom,
+						effectiveUntil: item.effectiveUntil,
+						classification: item.schedulingMode,
+						gradeLevels: gradeLevelsFor(item),
+						status: item.status,
+						rowVersion: item.rowVersion
+					}))}
+					{gradeLevelOptions}
+					canManage={selected.canManage}
+					onCreate={addVersion}
+					onPublish={publish}
+				/>
+			{/key}
 		{/if}
 	</Sheet.Content>
 </Sheet.Root>
+
+<Dialog.Root bind:open={createOpen}>
+	<Dialog.Content
+		class="sm:max-w-md"
+		onInteractOutside={(event) => {
+			if (creating) event.preventDefault();
+		}}
+		onEscapeKeydown={(event) => {
+			if (creating) event.preventDefault();
+		}}
+		showCloseButton={!creating}
+	>
+		<Dialog.Header>
+			<Dialog.Title>เพิ่มกิจกรรม</Dialog.Title>
+			<Dialog.Description
+				>เลือกประเภทกิจกรรม จากนั้นกำหนดชื่อ ชั่วโมง และระดับชั้นในรายละเอียดกิจกรรม</Dialog.Description
+			>
+		</Dialog.Header>
+		<form class="space-y-4" onsubmit={addActivity}>
+			<div class="space-y-1.5">
+				<Label for="new-activity-type">ประเภทกิจกรรม <span class="text-destructive">*</span></Label>
+				<Select.Root type="single" bind:value={activityType} disabled={creating}>
+					<Select.Trigger id="new-activity-type" class="w-full"
+						>{optionLabel(ACTIVITY_TYPE_OPTIONS, activityType)}</Select.Trigger
+					>
+					<Select.Content
+						>{#each ACTIVITY_TYPE_OPTIONS as option (option.value)}<Select.Item value={option.value}
+								>{option.label}</Select.Item
+							>{/each}</Select.Content
+					>
+				</Select.Root>
+			</div>
+			{#if mutationError}<p role="alert" class="text-sm text-destructive">{mutationError}</p>{/if}
+			<Dialog.Footer>
+				<Button variant="outline" disabled={creating} onclick={() => (createOpen = false)}
+					>ยกเลิก</Button
+				>
+				<LoadingButton type="submit" loading={creating} loadingLabel="กำลังเพิ่มกิจกรรม..."
+					>เพิ่มและกำหนดรายละเอียด</LoadingButton
+				>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>

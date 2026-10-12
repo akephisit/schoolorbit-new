@@ -123,7 +123,7 @@
 		<header class="flex items-center gap-2 border-b px-5 py-4">
 			<History class="size-5 text-primary" />
 			<div>
-				<h2 class="font-semibold">ประวัติรุ่น · {code}</h2>
+				<h2 class="font-semibold">ประวัติรุ่น{kind === 'subject' ? ` · ${code}` : 'กิจกรรม'}</h2>
 				<p class="text-xs text-muted-foreground">รุ่นที่เผยแพร่แล้วจะไม่ถูกแก้ทับ</p>
 			</div>
 		</header>
