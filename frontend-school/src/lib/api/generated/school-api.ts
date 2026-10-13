@@ -8435,7 +8435,7 @@ export interface components {
 				comparisonStart: string;
 				current: components['schemas']['BehaviorCurrentTotals'];
 				deductionCycle: components['schemas']['BehaviorCycle'];
-				history: components['schemas']['BehaviorScoreTotals'];
+				history: components['schemas']['BehaviorCurrentTotals'];
 				historyTotals: components['schemas']['BehaviorDailyTotal'][];
 				lifetime: components['schemas']['BehaviorScoreTotals'];
 				meritCycle: components['schemas']['BehaviorCycle'];
@@ -14527,7 +14527,7 @@ export interface components {
 			comparisonStart: string;
 			current: components['schemas']['BehaviorCurrentTotals'];
 			deductionCycle: components['schemas']['BehaviorCycle'];
-			history: components['schemas']['BehaviorScoreTotals'];
+			history: components['schemas']['BehaviorCurrentTotals'];
 			historyTotals: components['schemas']['BehaviorDailyTotal'][];
 			lifetime: components['schemas']['BehaviorScoreTotals'];
 			meritCycle: components['schemas']['BehaviorCycle'];

@@ -5254,7 +5254,7 @@
                 "$ref": "#/components/schemas/BehaviorCycle"
               },
               "history": {
-                "$ref": "#/components/schemas/BehaviorScoreTotals"
+                "$ref": "#/components/schemas/BehaviorCurrentTotals"
               },
               "historyTotals": {
                 "items": {
@@ -27699,7 +27699,7 @@
             "$ref": "#/components/schemas/BehaviorCycle"
           },
           "history": {
-            "$ref": "#/components/schemas/BehaviorScoreTotals"
+            "$ref": "#/components/schemas/BehaviorCurrentTotals"
           },
           "historyTotals": {
             "items": {
