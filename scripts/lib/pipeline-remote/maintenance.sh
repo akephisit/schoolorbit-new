@@ -54,10 +54,14 @@ if [[ $mode == enter ]]; then
         # The previous tracked owner used a domain-suffixed Admin filename.
         [[ ! -f $legacy ]] || rm -f "$legacy"
         install -m 0600 "$journal/${part}-maintenance.conf" "$target"
-        if ! podman container exists "schoolorbit-backend-${part}"; then
-            # A fresh origin must serve 503 before either backend exists. Nginx
-            # resolves literal upstream names at configuration load; omit only
-            # private upstream locations until that backend is created.
+        backend_running=false
+        if podman container exists "schoolorbit-backend-${part}"; then
+            backend_running=$(podman inspect --format '{{.State.Running}}' "schoolorbit-backend-${part}")
+        fi
+        if [[ $backend_running != true ]]; then
+            # Fresh origins and database cutovers must serve 503 with absent or
+            # stopped backends. Nginx resolves literal upstream names at reload;
+            # omit private upstream locations until a backend is running.
             sed -i -e '/error_page 418/d' -e '/if (.*release_probe = 1)/d' \
                 -e '/    location @release_probe {/,/^    }/d' \
                 -e '/    location \^~ \/internal\/ {/,/^    }/d' "$target"

@@ -5,10 +5,15 @@ set -euo pipefail
 : "${EXPECTED_DATABASES:?Verified source database count is required}"
 [[ $RELEASE_SHA =~ ^[0-9a-f]{40}$ ]] || exit 64
 [[ $EXPECTED_DATABASES =~ ^[1-9][0-9]{0,3}$ ]] || exit 64
-cd /opt/stack
+stack=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}
+cd "$stack"
 bash deployment/scripts/lib/pipeline-remote/maintenance.sh enter
-podman stop schoolorbit-backend-school schoolorbit-backend-admin >/dev/null
-checkpoint="/opt/stack/deployment/releases/$RELEASE_SHA/database-cutover-ready.json"
+for part in school admin; do
+    if podman container exists "schoolorbit-backend-$part"; then
+        podman stop "schoolorbit-backend-$part" >/dev/null
+    fi
+done
+checkpoint="$stack/deployment/releases/$RELEASE_SHA/database-cutover-ready.json"
 echo 'Maintenance active; source application writers stopped. Waiting for private data/recovery gates.'
 for attempt in {1..270}; do
     if [[ -f $checkpoint && ! -L $checkpoint && $(stat -c %a "$checkpoint") == 600 ]]; then

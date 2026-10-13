@@ -55,6 +55,14 @@ the tenant schema does not match the release.
    while the operator performs transfer/restore checks. It activates maintenance and stops every source
    application writer/background job. Retain the accepted images, environment,
    key material and source inventory privately. No source writes during final transfer.
+   Maintenance retries omit private upstream routes for absent or stopped backends;
+   the cutover job stops only containers that still exist. Retire stopped source
+   containers before release so their Neon environment cannot be started by accident;
+   retain their immutable images and private environment for the recovery window.
+   Keep the installer dotenv encoding (single-quoted values with escaped quote and
+   backslash characters). Native Podman migration jobs decode it through the shared
+   runtime helper and pass only the migration credential by environment name;
+   do not pass the Compose dotenv file directly to Podman's `--env-file`.
 3. Create empty target databases with assigned owners and matching encoding/locale.
    `backend-admin --provision-database` accepts a bounded JSON stdin object with
    `tenant_id`, `db_name`, `migration_password` and `runtime_password`; it invokes

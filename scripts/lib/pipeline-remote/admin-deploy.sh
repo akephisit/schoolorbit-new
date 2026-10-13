@@ -138,9 +138,16 @@ test -r /opt/stack/postgresql/ca.crt || {
     echo 'PostgreSQL CA is missing'
     exit 78
 }
-podman run --rm --network schoolorbit-web --env-file /opt/stack/.env \
+# Podman env files keep Compose quote characters. Decode the installer format
+# and pass only the migration credential by environment name, never as an argument.
+# shellcheck source=scripts/lib/pipeline-remote/runtime-env.sh
+. "$deployment_root/scripts/lib/pipeline-remote/runtime-env.sh"
+ADMIN_MIGRATION_DATABASE_URL=$(schoolorbit_runtime_env_value ADMIN_MIGRATION_DATABASE_URL /opt/stack/.env)
+export ADMIN_MIGRATION_DATABASE_URL
+podman run --rm --network schoolorbit-web --env ADMIN_MIGRATION_DATABASE_URL \
     --volume /opt/stack/postgresql/ca.crt:/run/secrets/postgresql-ca.crt:ro \
     "$backend_image_reference" /app/backend-admin --migrate-admin
+unset ADMIN_MIGRATION_DATABASE_URL
 compose_up_quiet --no-deps backend-admin
 unset BACKEND_ADMIN_IMAGE
 reconnect_backend_network schoolorbit-backend-admin backend-admin

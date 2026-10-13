@@ -112,7 +112,9 @@ test('backend deployment validates and installs the tracked school API proxy con
 	assert.match(workflow, /\/internal\/migration-status/);
 	assert.match(workflow, /\.pending == 0 and \.failed == 0 and \.outdated == 0/);
 	assert.match(workflow, /runtime_env_value\(\)/);
-	assert.match(workflow, /Runtime environment value has invalid escaping/);
+	assert.match(workflow, /schoolorbit_runtime_env_value "\$key" "\$runtime_env"/);
+	const runtimeDecoder = await readRepoFile('scripts/lib/pipeline-remote/runtime-env.sh');
+	assert.match(runtimeDecoder, /Runtime environment value has invalid escaping/);
 	assert.doesNotMatch(workflow, /\|\s*\n\s+R2_PUBLIC_BUCKET_NAME/);
 	assert.doesNotMatch(workflow, /sed -n 's\/\^R2_[A-Z_]+=\/\/p'/);
 	assert.match(workflow, /direct_ready_ok=false/);
