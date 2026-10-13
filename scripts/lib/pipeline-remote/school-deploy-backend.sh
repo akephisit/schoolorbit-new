@@ -362,8 +362,10 @@ if [ "$proxy_previous_target" != "$proxy_target" ]; then
     rm -f "$proxy_previous_target"
 fi
 echo "Activate School API maintenance for release ${RELEASE_SHA}"
-cp "$maintenance_proxy_source" "$proxy_target"
-if ! recreate_nginx ||
+# The central owner omits private upstreams while the source backend is absent
+# or stopped, including the database cutover's first container start.
+if ! bash "$deployment_root/scripts/lib/pipeline-remote/maintenance.sh" enter ||
+    ! recreate_nginx ||
     ! validate_nginx_config_with_retry ||
     ! podman exec schoolorbit-nginx nginx -s reload; then
     restore_pre_maintenance_proxy
@@ -408,6 +410,10 @@ if ! timeout 180 bash -c '
     exit 1
 fi
 schoolorbit_timer_report backend_readiness "$backend_readiness_started"
+
+# Resolve the new backend address only after it is running and ready. Public
+# requests stay in maintenance while authenticated release probes become usable.
+bash "$deployment_root/scripts/lib/pipeline-remote/maintenance.sh" enter
 
 migration_response="$(mktemp /opt/stack/.backend-school-migration.XXXXXX)"
 chmod 600 "$migration_response"

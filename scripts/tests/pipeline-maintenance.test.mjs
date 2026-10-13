@@ -18,8 +18,11 @@ function fixture(t,{fresh=false,stopped=false,publicFailure=false,smokeFailure=f
  writeFileSync(path.join(stack,'bin/podman'),`#!/bin/bash
 printf '%s\\n' "$*" >> "$SCHOOLORBIT_STACK_ROOT/commands"
 if [[ $1 == container && $2 == exists ]]; then exit ${fresh?1:0}; fi
-if [[ $1 == inspect ]]; then printf '%s\\n' ${stopped?'false':'true'}; exit 0; fi
-if [[ $* == *'nginx -t'* && ${stopped?'true':'false'} == true ]]; then
+if [[ $1 == inspect ]]; then
+ if [[ -f $SCHOOLORBIT_STACK_ROOT/backend-ready ]]; then printf 'true\\n'; else printf '%s\\n' ${stopped?'false':'true'}; fi
+ exit 0
+fi
+if [[ $* == *'nginx -t'* && ${stopped?'true':'false'} == true && ! -f $SCHOOLORBIT_STACK_ROOT/backend-ready ]]; then
  if grep -q proxy_pass "$SCHOOLORBIT_STACK_ROOT/nginx/conf.d/"*.conf; then exit 8; fi
 fi
 if [[ $* == *'nginx -s reload'* && -f $SCHOOLORBIT_STACK_ROOT/fail-reload ]]; then rm "$SCHOOLORBIT_STACK_ROOT/fail-reload"; exit 8; fi
@@ -72,6 +75,21 @@ test('database cutover can re-enter maintenance when both source containers exis
   assert.match(source,/return 503/);assert.doesNotMatch(source,/proxy_pass|return 418/);
  }
  assert.doesNotMatch(readFileSync(path.join(f.stack,'commands'),'utf8'),/compose /);
+ writeFileSync(path.join(f.stack,'backend-ready'),'');
+ assert.equal(f.run('enter').status,0);
+ for(const part of ['school','admin']) {
+  const source=readFileSync(path.join(f.stack,'nginx/conf.d',part+'-api.conf'),'utf8');
+  assert.match(source,/return 503/);assert.match(source,/location @release_probe/);assert.match(source,/proxy_pass/);
+ }
+});
+test('School boot delegates maintenance before replacement and refreshes private upstreams after readiness',()=>{
+ const source=readFileSync(path.join(repo,'scripts/lib/pipeline-remote/school-deploy-backend.sh'),'utf8');
+ const command='bash "$deployment_root/scripts/lib/pipeline-remote/maintenance.sh" enter';
+ const first=source.indexOf(command),second=source.indexOf(command,first+command.length);
+ assert.ok(first>=0);assert.ok(first<source.indexOf('podman rm --force schoolorbit-backend-school'));
+ assert.ok(second>source.indexOf('schoolorbit_timer_report backend_readiness'));
+ assert.ok(second<source.indexOf('tenant_migration_started='));
+ assert.doesNotMatch(source,/cp "\$maintenance_proxy_source" "\$proxy_target"/);
 });
 test('private verification preserves maintenance and acceptance opens both proxies last',t=>{
  const f=fixture(t);assert.equal(f.run('enter').status,0);const first=readFileSync(path.join(f.root,'releases','a'.repeat(40),'probe-token'),'utf8');

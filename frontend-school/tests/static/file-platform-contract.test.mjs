@@ -104,7 +104,10 @@ test('backend deployment validates and installs the tracked school API proxy con
 	assert.match(workflow, /\[ "\$proxy_match_count" -gt 1 \]/);
 	assert.match(workflow, /proxy_target=\/opt\/stack\/nginx\/conf\.d\/school-api\.conf/);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -t/);
-	assert.match(workflow, /cp "\$maintenance_proxy_source" "\$proxy_target"/);
+	assert.match(
+		workflow,
+		/bash "\$deployment_root\/scripts\/lib\/pipeline-remote\/maintenance\.sh" enter/
+	);
 	assert.match(workflow, /podman exec schoolorbit-nginx nginx -s reload/);
 	assert.match(workflow, /--resolve "\$\{school_host\}:443:127\.0\.0\.1"/);
 	assert.match(workflow, /\.controlPlane == "connected"/);
