@@ -127,6 +127,17 @@ enable_server_user_podman_socket() {
         XDG_RUNTIME_DIR="$runtime_directory" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
         systemctl --user is-active --quiet podman.socket
+    # Enabling boot recovery must not start or stop existing application containers.
+    runuser -u "$server_user" -- env \
+        HOME="$server_home" \
+        XDG_RUNTIME_DIR="$runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+        systemctl --user enable podman-restart.service
+    runuser -u "$server_user" -- env \
+        HOME="$server_home" \
+        XDG_RUNTIME_DIR="$runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime_directory/bus" \
+        systemctl --user is-enabled --quiet podman-restart.service
 }
 
 schoolorbit_bootstrap_main() {

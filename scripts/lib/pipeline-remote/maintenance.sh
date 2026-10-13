@@ -78,6 +78,15 @@ if [[ $mode == enter ]]; then
     podman exec schoolorbit-nginx nginx -t
     podman exec schoolorbit-nginx nginx -s reload
     public_status maintenance
+    # Reconcile existing hosts under the release lock after both proxies serve 503.
+    # The vendor boot service starts Compose containers with restart-policy=always.
+    boot_runtime_directory="/run/user/$(id -u)"
+    XDG_RUNTIME_DIR="$boot_runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$boot_runtime_directory/bus" \
+        systemctl --user enable podman-restart.service >/dev/null
+    XDG_RUNTIME_DIR="$boot_runtime_directory" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$boot_runtime_directory/bus" \
+        systemctl --user is-enabled --quiet podman-restart.service
     echo 'Public School and Admin APIs are in maintenance.'
 elif [[ $mode == accept || $mode == verify ]]; then
     test "$(cat "$root/pending-release")" = "$RELEASE_SHA"

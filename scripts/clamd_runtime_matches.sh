@@ -63,7 +63,7 @@ fi
 if ! restart_policy=$(podman inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container" 2>/dev/null); then
     drift container_inspect
 fi
-[[ $restart_policy == unless-stopped ]] || drift restart
+[[ $restart_policy == always ]] || drift restart
 
 if ! security_opt=$(podman inspect --format '{{json .HostConfig.SecurityOpt}}' "$container" 2>/dev/null); then
     drift container_inspect

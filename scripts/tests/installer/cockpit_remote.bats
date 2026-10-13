@@ -150,7 +150,7 @@ touch "$ADMIN_GROUP_STATE"
     [ "$(grep -c '^usermod --append --groups sudo schoolorbit$' "$FAKE_COMMAND_LOG")" -eq 1 ]
 }
 
-@test "bootstrap enables the server user's Podman API socket idempotently without touching containers" {
+@test "bootstrap enables the server user's Podman API socket and boot recovery without touching containers" {
     local podman_socket_state="$TEST_ROOT/user-podman-socket-active"
     export PODMAN_SOCKET_STATE=$podman_socket_state
 
@@ -171,6 +171,8 @@ printf "runuser %s\n" "$*" >>"$FAKE_COMMAND_LOG"
 case "$*" in
     *"systemctl --user enable --now podman.socket") touch "$PODMAN_SOCKET_STATE" ;;
     *"systemctl --user is-active --quiet podman.socket") [ -f "$PODMAN_SOCKET_STATE" ] ;;
+    *"systemctl --user enable podman-restart.service") touch "$PODMAN_SOCKET_STATE.boot" ;;
+    *"systemctl --user is-enabled --quiet podman-restart.service") [ -f "$PODMAN_SOCKET_STATE.boot" ] ;;
     *) exit 1 ;;
 esac
 '
@@ -182,8 +184,11 @@ esac
 
     [ "$status" -eq 0 ]
     [ -f "$podman_socket_state" ]
+    [ -f "$podman_socket_state.boot" ]
     [ "$(grep -c '^systemctl start user@1000.service$' "$FAKE_COMMAND_LOG")" -eq 2 ]
     [ "$(grep -c 'systemctl --user enable --now podman.socket' "$FAKE_COMMAND_LOG")" -eq 2 ]
+    [ "$(grep -c 'systemctl --user enable podman-restart.service' "$FAKE_COMMAND_LOG")" -eq 2 ]
+    ! grep -Eq 'systemctl --user (start|restart|enable --now) podman-restart.service' "$FAKE_COMMAND_LOG"
     ! grep -Eq 'podman (stop|rm|create|run)' "$FAKE_COMMAND_LOG"
 }
 

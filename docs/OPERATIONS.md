@@ -251,6 +251,15 @@ through the proxy while users remain blocked; tokens bypass only maintenance, no
 Backend-authenticated Admin `/internal/` remains available for control-plane calls. A fresh origin
 starts the maintenance proxy before its first backend exists, without unresolved upstream names.
 
+Rootless boot recovery uses `restart: always` in the canonical Compose definition and
+`podman-restart.service` enabled in the linger-enabled `schoolorbit` user manager.
+The installer enables the unit without starting application containers; every release
+reconciles it only after both public APIs serve maintenance responses. Boot restarts
+existing containers with their existing proxy mode and does not accept a pending
+release or open maintenance. Check the user unit with
+`systemctl --user is-enabled podman-restart.service`; use the normal Pipeline for
+failed or pending release recovery.
+
 The School backend build pulls its Rust and Debian bases from the Docker Official Images mirror
 on Amazon ECR Public, pinned by index digest. These digests match the Docker Hub originals and
 avoid anonymous Docker Hub pull limits. Disposable PostgreSQL and Nginx verification images use
