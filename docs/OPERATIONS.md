@@ -271,6 +271,16 @@ The planner distinguishes verification, build and deployment paths. Frontend-onl
 compile a backend; body-only backend edits do not rebuild a frontend. Generated contract changes
 include their School backend/frontend consumers. Test-only and documentation changes do not
 normally deploy. Manual `scope` can add one component or `full`, and cannot omit queued changes.
+The plan reports why each component is selected: unaccepted runtime paths, changed artifact inputs,
+an unavailable accepted baseline, or explicit scope. Component-specific deployment files reconcile
+their owners; shared runtime/maintenance/release controls still select all affected components.
+Preflight recomputes scope under the production lock. If an earlier release accepted queued work
+while this run was preparing, remove those redundant components before entering maintenance.
+Explicit manual scope is retained. Changed hashes or newly required unprepared components fail
+preflight; an empty reconciled scope performs no deployment and does not enter maintenance.
+Admin frontend and School execute concurrently after the selected Admin backend is ready. School
+still stages tenant Workers before backend replacement and promotes them only after backend readiness;
+global acceptance waits for both branches and leaves maintenance enabled on either failure.
 The accepted schema-2 `pipeline-state` artifact records each component SHA and input hash, immutable
 OCI digest or frontend bundle digest/run, and exact Worker versions. The reader checks repository,
 main ref, workflow, accepted attempt and successful acceptance job. A cache hit alone never proves
@@ -344,7 +354,13 @@ Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and us
 `SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
 does not select v2; a build that reports write errors has not populated a usable cache.
 Component hashes exclude application READMEs and top-level integration tests already excluded
-from image contexts. Public frontend configuration and the preparation recipe participate in keys.
+from image contexts. Public frontend configuration and the artifact-producing
+[backend](../.github/actions/build-backend-image/action.yml) or
+[frontend](../.github/actions/build-frontend-bundle/action.yml) recipe participate in keys.
+Cache lookup, reporting and orchestration in `prepare.yml` do not participate. Change actual build
+commands at these recipe owners; their source and application Dockerfiles/scripts invalidate the
+relevant artifact family. Migrating the hash format requires one fresh artifact preparation per
+component before exact-input reuse is available in the new namespace.
 Prepared OCI images are tagged by input hash and release SHA; runtime replacement uses their exact
 digest. Prepared frontend bundles are checked by content digest and consumed without rebuilding.
 Compiler evidence artifacts include Cargo HTML timings and sccache statistics when a build actually
@@ -358,12 +374,21 @@ and route scanning dependencies from the existing application lock, including ne
 peers. Stage/promote/Admin jobs restore that closure, validate its identity and versions, and use
 the same locked install on a miss. It contains dependency files only, with no application secrets
 or build output, and is distinct from prepared Worker bundles and browser binaries.
+Admin browser acceptance also restores the School tooling subset instead of installing the full
+School application. Preparation and all deployment consumers use Ubuntu 24.04 so dependency and
+browser caches have compatible runner environments.
 
 [Compiler summaries](../scripts/render_backend_build_summary.py) show measured Cargo duration,
 the largest compiler units, Rust library cache counters and available BuildKit phase durations.
 A cached compiler layer reuses its previous evidence; the summary labels it accordingly. Manifest
 import time does not include every lazy cache-layer transfer. Full evidence remains in the compiler
 artifact, and metric/log unavailability is displayed without changing successful build acceptance.
+School's final-crate linker wrapper forwards the same `cc` arguments and records successful link
+duration inside the builder. Link time is included in the executable Cargo unit and must not be
+added to it. An absent invocation is unavailable, not zero. API-readable annotations expose current
+layer reuse/execution, recorded executable/link time and BuildKit export phases even when signed
+artifact downloads are inaccessible. Optimization, codegen units and runtime behavior are unchanged;
+use this evidence before choosing a compiler profile or runner size.
 The School caller proof and selected scope share `verify-release-ci`; all downstream runtime and
 acceptance guards still require its success.
 
@@ -386,8 +411,8 @@ School release builds use GitHub compiler caching. The release workflow passes
 `SCHOOL_COMPILER_CACHE=gha` to both the image and timing export so exporting
 metrics reuses the completed build. Credentials enter only through BuildKit secrets and never the
 runtime image. A missing credential or cache I/O failure falls back to compilation. Standalone builds
-default to `off` without runner credentials. To disable production compiler caching, change both
-workflow build arguments to `SCHOOL_COMPILER_CACHE=off`; update the cache summary alongside them. Local Docker
+default to `off` without runner credentials. To disable production compiler caching, change the backend
+build recipe and timing export arguments to `SCHOOL_COMPILER_CACHE=off`; update the cache summary alongside them. Local Docker
 experiments may explicitly select `local`, which is not the cross-runner GitHub cache.
 
 After the workspace split, a source-changing GitHub comparison measured 24 eligible library hits

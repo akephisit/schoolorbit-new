@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       admin_digest: ${{ steps.manifest.outputs.digest }}
+      plan: ${{ steps.reconcile.outputs.plan }}
+      deploy: ${{ steps.reconcile.outputs.deploy }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -28,6 +30,7 @@ jobs:
         with:
           node-version: "24"
       - name: Recheck trusted gate, current main and accepted state under the production lock
+        id: reconcile
         env:
           GH_TOKEN: ${{ github.token }}
           PLAN: ${{ inputs.plan }}
@@ -40,16 +43,16 @@ jobs:
           BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
         run: node scripts/release_preflight.mjs
       - name: Download prepared Admin backend manifest
-        if: contains(fromJson(inputs.plan).deploy, 'backend-admin')
+        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
         uses: actions/download-artifact@v7
         with:
           name: prepared-backend-admin
           path: ${{ runner.temp }}/prepared
       - name: Validate Admin backend digest
-        if: contains(fromJson(inputs.plan).deploy, 'backend-admin')
+        if: contains(fromJson(steps.reconcile.outputs.plan).deploy, 'backend-admin')
         id: manifest
         env:
-          INPUT_HASH: ${{ fromJson(inputs.plan).hashes['backend-admin'] }}
+          INPUT_HASH: ${{ fromJson(steps.reconcile.outputs.plan).hashes['backend-admin'] }}
         run: |
           set -euo pipefail
           digest=$(jq -er --arg sha "$GITHUB_SHA" --arg hash "$INPUT_HASH" '
@@ -58,6 +61,7 @@ jobs:
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
   maintenance:
     needs: preflight
+    if: needs.preflight.result == 'success' && needs.preflight.outputs.deploy != '[]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -86,7 +90,7 @@ jobs:
     needs:
       - preflight
       - maintenance
-    if: contains(fromJson(inputs.plan).deploy, 'backend-admin')
+    if: needs.preflight.result == 'success' && contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-admin')
     uses: ./.github/workflows/deploy-backend-admin.yml
     with:
       image_digest: ${{ needs.preflight.outputs.admin_digest }}
@@ -94,22 +98,23 @@ jobs:
     secrets: inherit
   admin-frontend:
     needs:
+      - preflight
       - maintenance
       - admin-backend
-    if: always() && needs.maintenance.result == 'success' && (needs.admin-backend.result == 'success' || needs.admin-backend.result == 'skipped') && contains(fromJson(inputs.plan).deploy, 'frontend-admin')
+    if: always() && needs.preflight.result == 'success' && needs.maintenance.result == 'success' && (needs.admin-backend.result == 'success' || needs.admin-backend.result == 'skipped') && contains(fromJson(needs.preflight.outputs.plan).deploy, 'frontend-admin')
     uses: ./.github/workflows/deploy-frontend-admin.yml
     with:
-      input_hash: ${{ fromJson(inputs.plan).hashes['frontend-admin'] }}
+      input_hash: ${{ fromJson(needs.preflight.outputs.plan).hashes['frontend-admin'] }}
     secrets: inherit
   school:
     needs:
+      - preflight
       - maintenance
       - admin-backend
-      - admin-frontend
-    if: always() && needs.maintenance.result == 'success' && (needs.admin-backend.result == 'success' || needs.admin-backend.result == 'skipped') && (needs.admin-frontend.result == 'success' || needs.admin-frontend.result == 'skipped') && (contains(fromJson(inputs.plan).deploy, 'backend-school') || contains(fromJson(inputs.plan).deploy, 'frontend-school'))
+    if: always() && needs.preflight.result == 'success' && needs.maintenance.result == 'success' && (needs.admin-backend.result == 'success' || needs.admin-backend.result == 'skipped') && (contains(fromJson(needs.preflight.outputs.plan).deploy, 'backend-school') || contains(fromJson(needs.preflight.outputs.plan).deploy, 'frontend-school'))
     uses: ./.github/workflows/deploy-school-release.yml
     with:
-      plan: ${{ inputs.plan }}
+      plan: ${{ needs.preflight.outputs.plan }}
       target_origin_ip: ${{ inputs.target_origin_ip }}
     secrets: inherit
   accept:
@@ -133,7 +138,7 @@ jobs:
           path: ${{ runner.temp }}/accepted-inputs
           merge-multiple: true
       - name: Download immutable Worker receipts
-        if: contains(fromJson(inputs.plan).deploy, 'frontend-admin') || contains(fromJson(inputs.plan).deploy, 'frontend-school')
+        if: contains(fromJson(needs.preflight.outputs.plan).deploy, 'frontend-admin') || contains(fromJson(needs.preflight.outputs.plan).deploy, 'frontend-school')
         uses: actions/download-artifact@v7
         with:
           pattern: "*worker*"
@@ -141,13 +146,13 @@ jobs:
           merge-multiple: true
       - name: Assemble accepted manifest without opening maintenance
         env:
-          PLAN: ${{ inputs.plan }}
+          PLAN: ${{ needs.preflight.outputs.plan }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/accept_pipeline_state.mjs
       - name: Select verified runtime image aliases
         id: images
         env:
-          PLAN: ${{ inputs.plan }}
+          PLAN: ${{ needs.preflight.outputs.plan }}
         run: |
           node --input-type=module <<'NODE'
           import {readFileSync,appendFileSync} from 'node:fs';
@@ -180,7 +185,7 @@ jobs:
       - uses: docker/setup-buildx-action@v4
       - name: Publish selected accepted image aliases
         env:
-          PLAN: ${{ inputs.plan }}
+          PLAN: ${{ needs.preflight.outputs.plan }}
         run: |-
           set -euo pipefail
           while IFS= read -r component; do

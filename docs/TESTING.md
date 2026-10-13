@@ -54,6 +54,13 @@ Production acceptance also checks aliases and socket source addresses after star
 
 For deployment dependency selection and compiler evidence, run
 `node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
+Scope fixtures in `scripts/tests/pipeline-policy.test.mjs` cover recipe/report separation,
+component deployment ownership and queued baseline reconciliation. The School release source guards
+exercise parallel branch failure joins, backend prerequisite refusal, pinned runner compatibility and
+Admin's browser tooling subset. Compiler evidence fixtures verify argument/failure propagation,
+executable versus linker duration and API-readable BuildKit phases.
+`scripts/tests/pipeline-github.test.mjs` rehearses trusted accepted-state advancement between planning
+and preflight, preservation of manual scope, and refusal of changed or unprepared inputs.
 The fixtures exercise nested/peer dependencies, stale and partial caches, workspace-link exclusion,
 bounded summaries and compiler failure propagation. Rehearse a clean install of the extracted lock
 outside the checkout and launch its locked Wrangler/browser tools before shipping cache changes.

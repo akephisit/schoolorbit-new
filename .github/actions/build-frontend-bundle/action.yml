@@ -1,0 +1,33 @@
+name: Build frontend bundle
+description: Own the locked frontend compilation and Worker bundling recipe.
+inputs:
+  component:
+    description: Selected frontend application
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate frontend selection
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: |
+        case "$COMPONENT" in frontend-admin|frontend-school) ;; *) exit 64 ;; esac
+    - name: Install locked frontend dependencies
+      shell: bash
+      working-directory: ${{ inputs.component }}
+      run: npm ci
+    - name: Select the generic School Worker build configuration
+      if: inputs.component == 'frontend-school'
+      shell: bash
+      working-directory: frontend-school
+      run: node scripts/create-build-config.mjs
+    - name: Build frontend once for equivalent public configuration
+      shell: bash
+      working-directory: ${{ inputs.component }}
+      run: npm run build
+    - name: Bundle the complete Worker before crossing the artifact boundary
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: node scripts/prepare_frontend_worker.mjs

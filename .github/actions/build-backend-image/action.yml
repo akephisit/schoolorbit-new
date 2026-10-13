@@ -1,0 +1,41 @@
+name: Build backend image
+description: Own the artifact-producing backend recipe separately from reporting and release orchestration.
+inputs:
+  component:
+    description: Selected backend application
+    required: true
+  reference:
+    description: Immutable input-hash image reference
+    required: true
+  input_hash:
+    description: Verified artifact inputs
+    required: true
+outputs:
+  metadata:
+    description: BuildKit record and image metadata
+    value: ${{ steps.build.outputs.metadata }}
+runs:
+  using: composite
+  steps:
+    - name: Validate backend selection
+      shell: bash
+      env:
+        COMPONENT: ${{ inputs.component }}
+      run: |
+        case "$COMPONENT" in backend-admin|backend-school) ;; *) exit 64 ;; esac
+    - name: Build selected OCI image
+      id: build
+      uses: docker/build-push-action@v7
+      with:
+        context: ./${{ inputs.component }}
+        target: runtime
+        platforms: linux/amd64
+        push: true
+        tags: ${{ inputs.reference }}
+        labels: org.schoolorbit.input-hash=${{ inputs.input_hash }}
+        cache-from: type=gha,scope=${{ inputs.component }}
+        cache-to: type=gha,scope=${{ inputs.component }},mode=max
+        build-args: SCHOOL_COMPILER_CACHE=gha
+        secret-envs: |
+          sccache_gha_url=ACTIONS_RESULTS_URL
+          sccache_gha_token=ACTIONS_RUNTIME_TOKEN

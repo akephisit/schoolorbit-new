@@ -411,6 +411,131 @@ test('frontend promotion is gated by backend acceptance and ready waits for ever
 	assert.match(maintenance, /restore_maintenance/);
 });
 
+test('independent Workers run in parallel after Admin backend, but any failure blocks global acceptance', async () => {
+	const parent = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
+	);
+	assert.deepEqual(parent.jobs.school.needs, ['preflight', 'maintenance', 'admin-backend']);
+	assert.deepEqual(parent.jobs['admin-frontend'].needs, [
+		'preflight',
+		'maintenance',
+		'admin-backend'
+	]);
+	const evaluate = (job, needs, deploy) => {
+		needs.preflight.outputs = { plan: JSON.stringify({ deploy }) };
+		return Function(
+			'needs',
+			'inputs',
+			'always',
+			'contains',
+			'fromJson',
+			`return (${parent.jobs[job].if.replace(/needs\.([a-z-]+)/g, 'needs["$1"]')})`
+		)(
+			needs,
+			{ plan: JSON.stringify({ deploy }) },
+			() => true,
+			(list, item) => list.includes(item),
+			JSON.parse
+		);
+	};
+	for (const admin of ['success', 'skipped', 'failure', 'cancelled']) {
+		const needs = Object.fromEntries(
+			['preflight', 'maintenance', 'admin-backend', 'admin-frontend', 'school'].map((id) => [
+				id,
+				{ result: 'success' }
+			])
+		);
+		needs['admin-backend'].result = admin;
+		assert.equal(
+			evaluate('school', needs, ['backend-school']),
+			['success', 'skipped'].includes(admin)
+		);
+		assert.equal(
+			evaluate('admin-frontend', needs, ['frontend-admin']),
+			['success', 'skipped'].includes(admin)
+		);
+	}
+	for (const failed of ['maintenance', 'admin-backend', 'admin-frontend', 'school']) {
+		const needs = Object.fromEntries(
+			['preflight', 'maintenance', 'admin-backend', 'admin-frontend', 'school'].map((id) => [
+				id,
+				{ result: 'success' }
+			])
+		);
+		needs[failed].result = 'failure';
+		assert.equal(evaluate('accept', needs, ['frontend-admin', 'backend-school']), false, failed);
+	}
+});
+
+test('release preparation and consumers share a pinned runner and Admin browser uses the locked subset', async () => {
+	for (const file of [
+		'prepare.yml',
+		'release.yml',
+		'deploy-backend-admin.yml',
+		'deploy-frontend-admin.yml',
+		'deploy-school-release.yml',
+		'deploy-school-tenant.yml'
+	]) {
+		const workflow = parseYaml(
+			await readFile(path.join(repoRoot, '.github/workflows', file), 'utf8')
+		);
+		for (const job of Object.values(workflow.jobs))
+			if (job['runs-on']) assert.equal(job['runs-on'], 'ubuntu-24.04', file);
+	}
+	const admin = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-frontend-admin.yml'), 'utf8')
+	);
+	const steps = admin.jobs.deploy.steps;
+	const tooling = steps.findIndex(
+		(step) =>
+			step.uses === './.github/actions/setup-deployment-tooling' &&
+			step.with.component === 'frontend-school'
+	);
+	assert.ok(
+		tooling >= 0 &&
+			tooling < steps.findIndex((step) => step.uses === './.github/actions/setup-chromium')
+	);
+	assert.ok(
+		!steps.some((step) => step.run === 'npm ci'),
+		'acceptance must consume the locked deployment subset'
+	);
+});
+
+test('an empty reconciled scope skips maintenance and every production branch', async () => {
+	const parent = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
+	);
+	const needs = Object.fromEntries(
+		['preflight', 'maintenance', 'admin-backend', 'admin-frontend', 'school'].map((id) => [
+			id,
+			{ result: 'skipped' }
+		])
+	);
+	needs.preflight = {
+		result: 'success',
+		outputs: { deploy: '[]', plan: JSON.stringify({ deploy: [] }) }
+	};
+	for (const job of ['maintenance', 'admin-backend', 'admin-frontend', 'school', 'accept']) {
+		const expression = parent.jobs[job].if.replace(/needs\.([a-z-]+)/g, 'needs["$1"]');
+		const enabled = Function(
+			'needs',
+			'always',
+			'contains',
+			'fromJson',
+			`return (${expression})`
+		)(
+			needs,
+			() => true,
+			(list, item) => list.includes(item),
+			JSON.parse
+		);
+		assert.equal(enabled, false, job);
+	}
+	assert.equal(parent.jobs.school.with.plan, '${{ needs.preflight.outputs.plan }}');
+	for (const step of parent.jobs.accept.steps.filter((step) => step.env?.PLAN))
+		assert.equal(step.env.PLAN, '${{ needs.preflight.outputs.plan }}');
+});
+
 test('frontend promotion waits for complete tenant assets and application mount readiness', async () => {
 	const workflow = parseYaml(
 		await readWorkflowSource(repoRoot, '.github/workflows/deploy-school-release.yml')

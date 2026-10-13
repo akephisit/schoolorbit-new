@@ -34,11 +34,13 @@ case "$cache_mode" in
 esac
 
 echo "school_compiler_cache mode=$cache_mode enabled=$cache_enabled"
+mkdir -p target/cargo-timings
+export SCHOOLORBIT_LINK_METRICS="$PWD/target/cargo-timings/link-nanoseconds.txt"
+: >"$SCHOOLORBIT_LINK_METRICS"
 compile_started=$(date +%s%N)
-cargo rustc --release --locked --bin backend-school --timings -- -C lto=off
+cargo rustc --release --locked --bin backend-school --timings -- -C lto=off -C "linker=$PWD/scripts/release_linker.sh"
 compile_nanoseconds=$(($(date +%s%N) - compile_started))
 
-mkdir -p target/cargo-timings
 printf '{"schemaVersion":1,"compileNanoseconds":%s,"cacheMode":"%s","cacheEnabled":%s}\n' \
     "$compile_nanoseconds" "$cache_mode" "$cache_enabled" >target/cargo-timings/build-metrics.json
 printf '{}\n' >target/cargo-timings/sccache-stats.json

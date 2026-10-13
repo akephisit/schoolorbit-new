@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { classify, changes, git, makePlan, suites } from './lib/pipeline-policy.mjs';
+import { classify, changes, components, git, makePlan, suites } from './lib/pipeline-policy.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -40,6 +40,11 @@ try {
     else process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
     if (process.env.GITHUB_OUTPUT) {
       appendFileSync(process.env.GITHUB_OUTPUT, `plan=${JSON.stringify(plan)}\nverify=${JSON.stringify(plan.verify)}\nbuild=${JSON.stringify(plan.build)}\ndeploy=${JSON.stringify(plan.deploy)}\n`);
+    }
+    if (plan.reasons && process.env.GITHUB_STEP_SUMMARY) {
+      const rows = components.map(part => `| ${part} | ${plan.deploy.includes(part) ? 'deploy' : 'reuse accepted'} | ${plan.reasons[part].join(', ') || 'accepted inputs unchanged'} |`);
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, ['### Component selection', '', '| Component | Decision | Reason |', '| --- | --- | --- |', ...rows, '', 'Reasons compare each owner with its last accepted release, including queued changes.', ''].join('\n'));
+      for (const part of components) console.error(`::notice title=Component selection::${part} selected=${plan.deploy.includes(part)} reasons=${plan.reasons[part].join(',') || 'accepted-inputs-unchanged'}`);
     }
   } else if (command === 'verify') {
     let selected = option('--scope', 'auto');
