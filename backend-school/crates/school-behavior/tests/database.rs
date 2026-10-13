@@ -172,6 +172,7 @@ async fn payload(
         request_id: Uuid::new_v4(),
         academic_term_id: f.term,
         item_id: item.id,
+        item_row_version: item.row_version,
         item_version_id: item.version_id.unwrap(),
         occurred_at: Utc::now(),
         detail: Some("รายละเอียดที่ต้องลบจริง".into()),

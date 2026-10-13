@@ -129,6 +129,7 @@ pub struct BehaviorStudent {
     pub student_code: Option<String>,
     pub grade_level_id: Uuid,
     pub grade_level: String,
+    #[schema(required = true)]
     pub homeroom_id: Option<Uuid>,
     pub homeroom: String,
     #[schema(required = true)]
@@ -160,6 +161,7 @@ pub struct CreateBehaviorBatch {
     pub request_id: Uuid,
     pub academic_term_id: Uuid,
     pub item_id: Uuid,
+    pub item_row_version: i64,
     pub item_version_id: Uuid,
     pub occurred_at: DateTime<Utc>,
     pub detail: Option<String>,
@@ -217,6 +219,7 @@ pub struct BehaviorReportEntry {
     pub student_name: String,
     #[schema(required = true)]
     pub student_code: Option<String>,
+    #[schema(required = true)]
     pub homeroom_id: Option<Uuid>,
     pub homeroom: String,
     pub grade_level_id: Uuid,
@@ -299,6 +302,7 @@ pub struct BehaviorDailyTotal {
     pub date: NaiveDate,
     pub academic_term_id: Uuid,
     pub grade_level_id: Uuid,
+    #[schema(required = true)]
     pub homeroom_id: Option<Uuid>,
     pub side: BehaviorSide,
     pub source: BehaviorSource,

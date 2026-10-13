@@ -152,10 +152,10 @@ pub async fn create_batch(
         tx.commit().await?;
         return Ok(previous);
     }
-    let row:Option<(String,BehaviorSide,Uuid,i32)>=sqlx::query_as("SELECT i.name,i.side,v.id,v.points FROM behavior_items i JOIN LATERAL(SELECT id,points FROM behavior_item_versions WHERE item_id=i.id AND effective_from<=$2 ORDER BY effective_from DESC,id DESC LIMIT 1)v ON true WHERE i.id=$1 AND i.enabled").bind(p.item_id).bind(date).fetch_optional(&mut *tx).await?;
-    let (name, side, version, points) =
+    let row:Option<(String,BehaviorSide,Uuid,i32,i64)>=sqlx::query_as("SELECT i.name,i.side,v.id,v.points,i.row_version FROM behavior_items i JOIN LATERAL(SELECT id,points FROM behavior_item_versions WHERE item_id=i.id AND effective_from<=$2 ORDER BY effective_from DESC,id DESC LIMIT 1)v ON true WHERE i.id=$1 AND i.enabled").bind(p.item_id).bind(date).fetch_optional(&mut *tx).await?;
+    let (name, side, version, points, item_row_version) =
         row.ok_or_else(|| AppError::Conflict("รายการนี้ไม่มีเกณฑ์ที่ใช้งานได้ในวันเกิดเหตุ".into()))?;
-    if version != p.item_version_id {
+    if version != p.item_version_id || item_row_version != p.item_row_version {
         return Err(AppError::Conflict("คะแนนเปลี่ยนแล้ว กรุณาตรวจเกณฑ์อีกครั้ง".into()));
     }
     let cycle = require_open_date(
