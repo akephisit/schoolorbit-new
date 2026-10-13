@@ -170,8 +170,8 @@ Complete discovery with representative government, private, and international sc
 - [ ] **SCH-003: A useful student and guardian portal.**
   - Present authoritative timetable, attendance, results, behavior, announcements, documents, acknowledgement, and communication using scoped access.
 
-- [ ] **SCH-004: Student welfare, behavior, safeguarding, and health.**
-  - Model incidents, rewards, interventions, confidential cases, health information, support plans, home visits, ownership, escalation, and retention.
+- [ ] **SCH-004: Student welfare, safeguarding, and health.**
+  - Add interventions, confidential support cases, health information, support plans, home visits, ownership, escalation, and retention on top of the behavior-score history. Counselling and help follow-up remain deferred.
 
 - [ ] **SCH-005: Fees and school finance.**
   - Discover invoices, receipts, scholarships, discounts, refunds, reconciliation, approval, audit, and accounting export requirements before implementation.
