@@ -171,7 +171,9 @@ pub async fn student_summary(
         .starts_at
         .max(deduction_cycle.starts_at)
         .with_timezone(&chrono_tz::Asia::Bangkok);
-    let comparison_exact = equal_window || later.time() == chrono::NaiveTime::MIN;
+    let comparison_exact = equal_window
+        || later.time() == chrono::NaiveTime::MIN
+        || comparison_start > later.date_naive();
     let comparable_current = BehaviorCurrentTotals {
         merit: comparable.merit,
         deduction: comparable.deduction,
