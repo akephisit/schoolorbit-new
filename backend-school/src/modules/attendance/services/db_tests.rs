@@ -3717,3 +3717,90 @@ async fn attendance_settings_preserve_unchanged_past_activation_and_reject_past_
     assert_eq!(next.auto_finalize_from, today);
     assert_eq!(next.row_version, 2);
 }
+
+#[tokio::test]
+async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cleanup() {
+    use chrono::TimeZone;
+    use school_academic_lifecycle::ports::ExternalLifecyclePort;
+    use school_behavior::models::{BehaviorCleanupScope, BehaviorSide, BehaviorSource};
+    let f = fixture_at("attendance_lifecycle_delivery_gate", 109).await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1,auto_finalize_from=$1 WHERE singleton").bind(date).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration)VALUES($1,$2)")
+        .bind(TERM)
+        .bind(sqlx::types::Json(AttendanceConfiguration::default()))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let provider =
+        crate::modules::academic::lifecycle_provider_adapter::ApplicationLifecycleProviders;
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(matches!(
+        provider
+            .require_attendance_delivery_complete(&mut tx, TERM, date)
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+    tx.rollback().await.unwrap();
+    let generation = school_attendance::services::sessions::module_generation(&f.pool)
+        .await
+        .unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let mut tx = f.pool.begin().await.unwrap();
+    school_attendance::services::finalization::finalize_date_in_transaction(
+        &mut tx,
+        TERM,
+        date,
+        generation,
+        &[source],
+        Utc.with_ymd_and_hms(2025, 10, 9, 17, 0, 0).unwrap(),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(matches!(
+        provider
+            .require_attendance_delivery_complete(&mut tx, TERM, date)
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+    tx.rollback().await.unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    provider
+        .require_attendance_delivery_complete(&mut tx, TERM, date)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    let scope = BehaviorCleanupScope {
+        academic_year_id: None,
+        academic_term_id: Some(TERM),
+        start: Some(date),
+        end: Some(date),
+        sides: vec![BehaviorSide::Merit, BehaviorSide::Deduction],
+        sources: vec![BehaviorSource::Manual],
+    };
+    sqlx::query("INSERT INTO behavior_cleanup_jobs(scope,mode,reset,reason,students,entries_expected,merit,deduction)VALUES($1,'details_only',false,'synthetic pending cleanup',0,0,0,0)").bind(sqlx::types::Json(scope)).execute(&f.pool).await.unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(matches!(
+        provider
+            .require_attendance_delivery_complete(&mut tx, TERM, date)
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+    tx.rollback().await.unwrap();
+    assert!(
+        !school_behavior::services::cleanup::run_cleanup_jobs(&f.pool, 1)
+            .await
+            .unwrap()
+    );
+    let mut tx = f.pool.begin().await.unwrap();
+    provider
+        .require_attendance_delivery_complete(&mut tx, TERM, date)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+}
