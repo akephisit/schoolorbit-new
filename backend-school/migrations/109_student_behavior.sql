@@ -108,11 +108,12 @@ CREATE TABLE behavior_entries (
     cancelled_by UUID REFERENCES users(id) ON DELETE RESTRICT,
     cancelled_at TIMESTAMPTZ,
     cancellation_reason VARCHAR(1000),
-    CHECK((batch_id IS NOT NULL AND source_key IS NULL) OR(batch_id IS NULL AND source_key IS NOT NULL)),
+    CHECK((batch_id IS NOT NULL AND source_key IS NULL) OR(batch_id IS NULL AND source_key IS NOT NULL AND source_generation IS NOT NULL AND source_revision>0 AND source_status IS NOT NULL AND raw_points>=points)),
     UNIQUE(batch_id,total_id),
     CHECK((cancelled_at IS NULL AND cancelled_by IS NULL AND cancellation_reason IS NULL)
         OR(cancelled_at IS NOT NULL AND (cancelled_by IS NOT NULL OR (source_key IS NOT NULL AND source_generation IS NOT NULL)) AND length(btrim(cancellation_reason))>0))
 );
+CREATE INDEX behavior_entries_source_idx ON behavior_entries(source_generation,source_key) WHERE source_generation IS NOT NULL;
 CREATE INDEX behavior_entries_creator_idx ON behavior_entries(created_by,created_at DESC,id DESC);
 CREATE TABLE behavior_receipts (
     actor_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -125,6 +126,8 @@ CREATE TABLE behavior_receipts (
 );
 CREATE TABLE behavior_suppressions (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
+    academic_term_id UUID REFERENCES academic_terms(id) ON DELETE RESTRICT,
+    academic_year_id UUID REFERENCES academic_years(id) ON DELETE RESTRICT,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL CHECK(end_date>=start_date),
     side TEXT NOT NULL CHECK(side IN('merit','deduction')),
@@ -182,7 +185,7 @@ INSERT INTO permissions(code,name,module,action,scope,description) VALUES
 ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,is_active=true;
 INSERT INTO role_permissions(role_id,permission_id)
 SELECT r.id,p.id FROM roles r CROSS JOIN permissions p
-WHERE r.name IN('admin','super_admin') AND(p.module='behavior' OR p.module='behavior_cleanup')
+WHERE r.code IN('ADMIN','SUPER_ADMIN') AND(p.module='behavior' OR p.module='behavior_cleanup')
 ON CONFLICT DO NOTHING;
 INSERT INTO organization_permission_grants(organization_unit_id,permission_id,position_code)
 SELECT u.id,p.id,NULL FROM organization_units u CROSS JOIN permissions p

@@ -39,10 +39,11 @@ pub async fn require_open_date(
     side: BehaviorSide,
     date: NaiveDate,
     source: BehaviorSource,
+    term: Uuid,
 ) -> Result<BehaviorCycle, AppError> {
     let cycle = current_cycle(connection, side).await?;
     if date < cycle.starts_on
-        || (date != today() && suppressed(connection, date, side, source).await?)
+        || (date != today() && suppressed(connection, date, side, source, term).await?)
     {
         return Err(AppError::Conflict(
             "วันที่นี้ปิดรอบหรือล้างรายละเอียดแล้ว ใช้การปรับยอดประวัติแทน".into(),
@@ -55,8 +56,9 @@ pub async fn suppressed(
     date: NaiveDate,
     side: BehaviorSide,
     source: BehaviorSource,
+    term: Uuid,
 ) -> Result<bool, AppError> {
-    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND side=$2 AND source=$3)").bind(date).bind(side).bind(source).fetch_one(connection).await?)
+    Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND side=$2 AND source=$3 AND(academic_term_id IS NULL OR academic_term_id=$4)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$4)))").bind(date).bind(side).bind(source).bind(term).fetch_one(connection).await?)
 }
 pub async fn receipt<P: Serialize, T: DeserializeOwned>(
     connection: &mut PgConnection,
@@ -84,20 +86,6 @@ pub async fn save_receipt<P: Serialize, T: Serialize>(
 ) -> Result<(), AppError> {
     sqlx::query("INSERT INTO behavior_receipts(actor_id,request_id,operation,digest,outcome)VALUES($1,$2,$3,$4,$5)").bind(actor).bind(request).bind(operation).bind(digest(payload)?).bind(sqlx::types::Json(outcome)).execute(connection).await?;
     Ok(())
-}
-pub async fn total_add(
-    connection: &mut PgConnection,
-    student: Uuid,
-    date: NaiveDate,
-    term: Uuid,
-    grade: Uuid,
-    room: Option<Uuid>,
-    side: BehaviorSide,
-    source: BehaviorSource,
-    cycle: Uuid,
-    points: i64,
-) -> Result<Uuid, AppError> {
-    Ok(sqlx::query_scalar("INSERT INTO behavior_daily_totals(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id,points)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)ON CONFLICT(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id)DO UPDATE SET points=behavior_daily_totals.points+EXCLUDED.points,row_version=behavior_daily_totals.row_version+1 RETURNING id").bind(student).bind(date).bind(term).bind(grade).bind(room).bind(side).bind(source).bind(cycle).bind(points).fetch_one(connection).await?)
 }
 pub async fn begin_manual(
     pool: &PgPool,

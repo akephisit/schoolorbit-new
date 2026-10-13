@@ -33,6 +33,8 @@ struct Existing {
     raw_points: i32,
     rule_version_id: Option<Uuid>,
     cycle_id: Uuid,
+    grade_level_id: Uuid,
+    homeroom_id: Option<Uuid>,
     active: bool,
 }
 #[derive(Debug, Clone, Serialize)]
@@ -83,7 +85,7 @@ fn apply_caps(effects: &mut [Effect], policy: &DayPolicy) {
             b.source_key.as_str(),
         ))
     });
-    let mut used: BTreeMap<(Uuid, BehaviorSide), i32> = BTreeMap::new();
+    let mut used: BTreeMap<(Uuid, BehaviorSide), i64> = BTreeMap::new();
     for e in effects {
         let cap = match e.side {
             BehaviorSide::Merit => policy.daily_merit_cap,
@@ -91,9 +93,9 @@ fn apply_caps(effects: &mut [Effect], policy: &DayPolicy) {
         };
         let amount = used.entry((e.student_id, e.side)).or_default();
         if let Some(cap) = cap {
-            e.points = e.points.min((cap - *amount).max(0));
+            e.points = e.points.min((i64::from(cap) - *amount).max(0) as i32);
         }
-        *amount += e.points;
+        *amount += i64::from(e.points);
     }
 }
 /// Replace canonical state for one date, preserving unchanged effects and their
@@ -148,12 +150,12 @@ pub async fn replace_attendance_day(
     });
     let merit = current_cycle(connection, BehaviorSide::Merit).await?;
     let deduction = current_cycle(connection, BehaviorSide::Deduction).await?;
-    let existing:Vec<Existing>=sqlx::query_as("SELECT e.id,t.student_id,e.source_key,e.source_status,t.side,t.source,e.points,e.raw_points,e.rule_version_id,t.cycle_id,e.cancelled_at IS NULL active FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE e.source_generation=$1 AND t.academic_term_id=$2 AND t.date=$3 ORDER BY e.created_at DESC,e.id DESC LIMIT 100001").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all(&mut *connection).await?;
+    let existing:Vec<Existing>=sqlx::query_as("SELECT e.id,t.student_id,e.source_key,e.source_status,t.side,t.source,e.points,e.raw_points,e.rule_version_id,t.cycle_id,t.grade_level_id,t.homeroom_id,e.cancelled_at IS NULL active FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE e.source_generation=$1 AND t.academic_term_id=$2 AND t.date=$3 ORDER BY e.created_at DESC,e.id DESC LIMIT 100001").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all(&mut *connection).await?;
     if existing.len() > 100000 {
         return Err(invalid("ประวัติแก้เช็กชื่อต่อวันเกินขนาดที่รองรับ"));
     }
     let rules:Vec<BehaviorAttendanceRule>=sqlx::query_as("SELECT id,kind,status,grade_level_id,effective_from,action,points FROM behavior_attendance_rules WHERE effective_from<=$1 ORDER BY effective_from DESC,id").bind(day.date).fetch_all(&mut *connection).await?;
-    let blocked:Vec<(BehaviorSide,BehaviorSource)>=sqlx::query_as("SELECT DISTINCT side,source FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date").bind(day.date).fetch_all(&mut *connection).await?;
+    let blocked:Vec<(BehaviorSide,BehaviorSource)>=sqlx::query_as("SELECT DISTINCT side,source FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND(academic_term_id IS NULL OR academic_term_id=$2)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$2))").bind(day.date).bind(day.academic_term_id).fetch_all(&mut *connection).await?;
     let blocked: BTreeSet<_> = blocked.into_iter().collect();
     let daily_absent: BTreeSet<_> = day
         .facts
@@ -161,15 +163,45 @@ pub async fn replace_attendance_day(
         .filter(|f| f.kind == BehaviorSource::Arrival && f.counted && f.status == "absent")
         .map(|f| f.student_id)
         .collect();
+    let mut prior = BTreeMap::new();
+    let mut active = BTreeMap::new();
+    for old in &existing {
+        prior
+            .entry((
+                old.student_id,
+                old.source,
+                old.source_key.as_str(),
+                old.source_status.as_str(),
+            ))
+            .or_insert(old);
+        if old.active {
+            active.insert(
+                (
+                    old.student_id,
+                    old.source,
+                    old.source_key.as_str(),
+                    old.source_status.as_str(),
+                    old.side,
+                    old.points,
+                    old.cycle_id,
+                    old.grade_level_id,
+                    old.homeroom_id,
+                ),
+                old.id,
+            );
+        }
+    }
     let mut effects = Vec::new();
     let mut protected = BTreeSet::new();
     for fact in &day.facts {
-        let previous = existing.iter().find(|e| {
-            e.student_id == fact.student_id
-                && e.source == fact.kind
-                && e.source_key == fact.source_key
-                && e.source_status == fact.status
-        });
+        let previous = prior
+            .get(&(
+                fact.student_id,
+                fact.kind,
+                fact.source_key.as_str(),
+                fact.status.as_str(),
+            ))
+            .copied();
         let (rule_action, raw_points, rule_version) = if let Some(old) = previous {
             (
                 match old.side {
@@ -227,8 +259,24 @@ pub async fn replace_attendance_day(
         });
     }
     apply_caps(&mut effects, &policy);
+    let desired: BTreeSet<_> = effects
+        .iter()
+        .filter(|e| e.points > 0)
+        .map(|e| {
+            (
+                e.student_id,
+                e.source,
+                e.source_key.as_str(),
+                e.status.as_str(),
+                e.side,
+                e.points,
+                e.cycle_id,
+                e.grade_level_id,
+                e.homeroom_id,
+            )
+        })
+        .collect();
     let mut reverse = Vec::new();
-    let mut additions = Vec::new();
     for old in existing.iter().filter(|e| e.active) {
         let cycle = if old.side == BehaviorSide::Merit {
             &merit
@@ -242,35 +290,38 @@ pub async fn replace_attendance_day(
         {
             continue;
         }
-        let unchanged = effects.iter().any(|e| {
-            e.points > 0
-                && e.student_id == old.student_id
-                && e.source == old.source
-                && e.source_key == old.source_key
-                && e.status == old.source_status
-                && e.side == old.side
-                && e.points == old.points
-        });
-        if !unchanged {
+        if !desired.contains(&(
+            old.student_id,
+            old.source,
+            old.source_key.as_str(),
+            old.source_status.as_str(),
+            old.side,
+            old.points,
+            old.cycle_id,
+            old.grade_level_id,
+            old.homeroom_id,
+        )) {
             reverse.push(old.id);
         }
     }
-    for effect in effects.into_iter().filter(|e| e.points > 0) {
-        let unchanged = existing.iter().any(|old| {
-            old.active
-                && !reverse.contains(&old.id)
-                && effect.student_id == old.student_id
-                && effect.source == old.source
-                && effect.source_key == old.source_key
-                && effect.status == old.source_status
-                && effect.side == old.side
-                && effect.points == old.points
-                && effect.cycle_id == old.cycle_id
-        });
-        if !unchanged {
-            additions.push(effect);
-        }
-    }
+    let additions: Vec<_> = effects
+        .iter()
+        .filter(|e| {
+            e.points > 0
+                && !active.contains_key(&(
+                    e.student_id,
+                    e.source,
+                    e.source_key.as_str(),
+                    e.status.as_str(),
+                    e.side,
+                    e.points,
+                    e.cycle_id,
+                    e.grade_level_id,
+                    e.homeroom_id,
+                ))
+        })
+        .cloned()
+        .collect();
     if !reverse.is_empty() {
         sqlx::query("UPDATE behavior_daily_totals t SET points=t.points-e.points,row_version=t.row_version+1 FROM(SELECT total_id,sum(points)points FROM behavior_entries WHERE id=ANY($1)AND cancelled_at IS NULL GROUP BY total_id)e WHERE e.total_id=t.id").bind(&reverse).execute(&mut *connection).await?;
         sqlx::query("UPDATE behavior_entries SET cancelled_at=now(),cancellation_reason='ผลเช็กชื่อหรือการนับคะแนนเปลี่ยน' WHERE id=ANY($1)AND cancelled_at IS NULL").bind(&reverse).execute(&mut *connection).await?;

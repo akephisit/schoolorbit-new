@@ -158,7 +158,14 @@ pub async fn create_batch(
     if version != p.item_version_id {
         return Err(AppError::Conflict("คะแนนเปลี่ยนแล้ว กรุณาตรวจเกณฑ์อีกครั้ง".into()));
     }
-    let cycle = require_open_date(&mut tx, side, date, BehaviorSource::Manual).await?;
+    let cycle = require_open_date(
+        &mut tx,
+        side,
+        date,
+        BehaviorSource::Manual,
+        p.academic_term_id,
+    )
+    .await?;
     if p.occurred_at < cycle.starts_at
         || p.occurred_at > chrono::Utc::now() + chrono::Duration::minutes(5)
     {

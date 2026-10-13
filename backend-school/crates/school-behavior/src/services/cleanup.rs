@@ -192,18 +192,36 @@ pub(super) async fn apply(
     let ids: Vec<_> = snapshot.rows.iter().map(|r| r.id).collect();
     // Store suppression before removing source-bearing entries, in this same
     // serialized transaction. Preserve no event text in the purge audit.
-    for side in &scope.sides {
-        for source in &scope.sources {
-            let mut days: Vec<NaiveDate> = snapshot
+    let (context_start, context_end): (NaiveDate, NaiveDate) = if let Some(term) =
+        scope.academic_term_id
+    {
+        sqlx::query_as("SELECT t.start_date,COALESCE(t.closed_on,t.planned_end_date,y.end_date)FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1").bind(term).fetch_one(&mut *connection).await?
+    } else if let Some(year) = scope.academic_year_id {
+        sqlx::query_as("SELECT start_date,end_date FROM academic_years WHERE id=$1")
+            .bind(year)
+            .fetch_one(&mut *connection)
+            .await?
+    } else {
+        let activation: NaiveDate =
+            sqlx::query_scalar("SELECT activation_date FROM behavior_state WHERE singleton")
+                .fetch_one(&mut *connection)
+                .await?;
+        (
+            snapshot
                 .rows
                 .iter()
-                .filter(|r| r.side == *side && r.source == *source)
                 .map(|r| r.date)
-                .collect();
-            days.sort_unstable();
-            days.dedup();
-            for date in days {
-                sqlx::query("INSERT INTO behavior_suppressions(start_date,end_date,side,source)VALUES($1,$1,$2,$3)").bind(date).bind(side).bind(source).execute(&mut *connection).await?;
+                .min()
+                .unwrap_or(activation),
+            today(),
+        )
+    };
+    let start = scope.start.unwrap_or(context_start).max(context_start);
+    let end = scope.end.unwrap_or(context_end).min(context_end);
+    if start <= end {
+        for side in &scope.sides {
+            for source in &scope.sources {
+                sqlx::query("INSERT INTO behavior_suppressions(start_date,end_date,side,source,academic_term_id,academic_year_id)VALUES($1,$2,$3,$4,$5,$6)").bind(start).bind(end).bind(side).bind(source).bind(scope.academic_term_id).bind(scope.academic_year_id).execute(&mut *connection).await?;
             }
         }
     }

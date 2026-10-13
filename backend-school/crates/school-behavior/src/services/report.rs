@@ -14,7 +14,7 @@ fn report_filter(
     prefix: &str,
 ) -> QueryBuilder<'static, Postgres> {
     let mut b = QueryBuilder::new(prefix.to_owned());
-    b.push(" FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id JOIN behavior_cycles c ON c.id=t.cycle_id JOIN users u ON u.id=t.student_id LEFT JOIN student_info si ON si.user_id=u.id LEFT JOIN homerooms h ON h.id=t.homeroom_id LEFT JOIN behavior_batches batch ON batch.id=e.batch_id LEFT JOIN users creator ON creator.id=e.created_by WHERE t.date BETWEEN ");
+    b.push(" FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id JOIN behavior_cycles c ON c.id=t.cycle_id JOIN academic_terms term ON term.id=t.academic_term_id JOIN academic_years year ON year.id=term.academic_year_id JOIN users u ON u.id=t.student_id LEFT JOIN student_info si ON si.user_id=u.id LEFT JOIN homerooms h ON h.id=t.homeroom_id LEFT JOIN behavior_batches batch ON batch.id=e.batch_id LEFT JOIN users creator ON creator.id=e.created_by WHERE t.date BETWEEN ");
     b.push_bind(q.start).push(" AND ").push_bind(q.end);
     if !access.school {
         b.push(" AND((").push_bind(access.own).push(" AND(e.created_by=").push_bind(access.actor_id)
@@ -76,8 +76,11 @@ pub async fn report(
         return Err(invalid("คำค้นยาวเกินไป"));
     }
     let (offset, limit) = pagination(q.offset, q.limit)?;
-    let mut connection = pool.acquire().await?;
-    let mut query=report_filter(access,&q,"SELECT e.id,t.student_id,concat_ws(' ',u.title,u.first_name,u.last_name)student_name,si.student_id student_code,t.homeroom_id,COALESCE(h.name,'ยังไม่จัดห้อง')homeroom,t.grade_level_id,t.date,t.academic_term_id,t.side,t.source,e.points,e.item_name,batch.detail,batch.occurred_at,e.batch_id,e.source_key,e.source_session_id,e.created_by,concat_ws(' ',creator.first_name,creator.last_name)creator_name,e.created_at,e.cancelled_at,e.cancellation_reason,false can_cancel");
+    let mut connection = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        .execute(&mut *connection)
+        .await?;
+    let mut query=report_filter(access,&q,"SELECT e.id,t.student_id,concat_ws(' ',u.title,u.first_name,u.last_name)student_name,si.student_id student_code,t.homeroom_id,COALESCE(h.name,'ยังไม่จัดห้อง')homeroom,t.grade_level_id,t.date,t.academic_term_id,t.side,t.source,e.points,e.item_name,batch.detail,batch.occurred_at,e.batch_id,e.source_key,e.source_session_id,e.created_by,concat_ws(' ',creator.first_name,creator.last_name)creator_name,e.created_at,e.cancelled_at,e.cancellation_reason,(c.state='current' AND term.status NOT IN('closed','cancelled') AND year.status NOT IN('closed','archived'))can_cancel");
     query
         .push(" ORDER BY t.date DESC,e.created_at DESC,e.id DESC LIMIT ")
         .push_bind(limit)
@@ -86,7 +89,8 @@ pub async fn report(
     let mut items: Vec<BehaviorReportEntry> =
         query.build_query_as().fetch_all(&mut *connection).await?;
     for item in &mut items {
-        item.can_cancel = item.source == BehaviorSource::Manual
+        item.can_cancel = item.can_cancel
+            && item.source == BehaviorSource::Manual
             && item.cancelled_at.is_none()
             && access.can_cancel(item.created_by);
     }
@@ -95,6 +99,7 @@ pub async fn report(
         .build_query_scalar()
         .fetch_one(&mut *connection)
         .await?;
+    connection.commit().await?;
     Ok(BehaviorReportPage { items, total })
 }
 pub async fn student_summary(
@@ -103,7 +108,10 @@ pub async fn student_summary(
     student: Uuid,
     q: BehaviorSummaryQuery,
 ) -> Result<BehaviorStudentSummary, AppError> {
-    let mut connection = pool.acquire().await?;
+    let mut connection = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        .execute(&mut *connection)
+        .await?;
     require_student_read(&mut connection, access, student).await?;
     let merit_cycle = current_cycle(&mut connection, BehaviorSide::Merit).await?;
     let deduction_cycle = current_cycle(&mut connection, BehaviorSide::Deduction).await?;
@@ -169,6 +177,7 @@ pub async fn student_summary(
         deduction: comparable.deduction,
         net: comparison_exact.then_some(comparable.merit - comparable.deduction),
     };
+    connection.commit().await?;
     Ok(BehaviorStudentSummary {
         student_id: student,
         current,
