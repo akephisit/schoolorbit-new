@@ -81,6 +81,26 @@ fn select_rule(
         .or_else(|| rules.get(&(fact.kind, fact.status.clone(), None)))
         .copied()
 }
+fn attendance_title(kind: BehaviorSource, status: &str) -> String {
+    let kind = match kind {
+        BehaviorSource::Arrival => "มาโรงเรียน",
+        BehaviorSource::Lesson => "รายคาบ",
+        BehaviorSource::Special => "รอบพิเศษ",
+        BehaviorSource::Manual => "พฤติกรรม",
+    };
+    let status = match status {
+        "present" => "มา",
+        "absent" => "ขาด",
+        "late" => "สาย",
+        "skipped" => "หนีเรียน",
+        "sick_leave" => "ลาป่วย",
+        "personal_leave" => "ลากิจ",
+        "activity" => "กิจกรรม",
+        _ => "ยังไม่ได้เช็ค",
+    };
+    format!("เช็กชื่อ{kind}: {status}")
+}
+
 fn apply_caps(effects: &mut [Effect], policy: &DayPolicy) {
     effects.sort_by(|a, b| {
         (a.student_id, a.side, a.source, a.source_key.as_str()).cmp(&(
@@ -298,7 +318,7 @@ pub async fn replace_attendance_day(
             raw_points,
             rule_version_id: rule_version,
             cycle_id: cycle.id,
-            item_name: format!("เช็กชื่อ {}: {}", fact.kind.code(), fact.status),
+            item_name: attendance_title(fact.kind, &fact.status),
         });
     }
     apply_caps(&mut effects, &policy);
@@ -400,6 +420,17 @@ pub async fn replace_attendance_day(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn attendance_log_titles_use_school_vocabulary() {
+        assert_eq!(
+            attendance_title(BehaviorSource::Lesson, "skipped"),
+            "เช็กชื่อรายคาบ: หนีเรียน"
+        );
+        assert_eq!(
+            attendance_title(BehaviorSource::Arrival, "personal_leave"),
+            "เช็กชื่อมาโรงเรียน: ลากิจ"
+        );
+    }
     #[test]
     fn caps_follow_stable_source_order() {
         let student = Uuid::new_v4();

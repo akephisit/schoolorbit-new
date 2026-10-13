@@ -3583,3 +3583,111 @@ async fn attendance_score_queue_rejects_non_reset_stale_generation_without_readi
     );
     tx.rollback().await.unwrap();
 }
+
+#[tokio::test]
+async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_generation_once() {
+    let f = fixture_at("attendance_behavior_adapter", 109).await;
+    let date = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$1)")
+        .bind(date + chrono::Duration::days(2))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
+        .bind(TERM)
+        .bind(date - chrono::Duration::days(1))
+        .bind(date + chrono::Duration::days(1))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE behavior_settings SET enabled=true")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    for (status, action, points) in [("present", "merit", 3), ("skipped", "deduction", 2)] {
+        sqlx::query("INSERT INTO behavior_attendance_rules(kind,status,effective_from,action,points,created_by)VALUES('arrival',$1,$2,$3,$4,$5)").bind(status).bind(date).bind(action).bind(points).bind(TEACHER).execute(&f.pool).await.unwrap();
+    }
+    let mut source = seed(&f, AttendanceKind::Arrival, date);
+    source.session.count_override = Some(true);
+    let session = sessions::ensure(&f.pool, &f.actor, source.clone())
+        .await
+        .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    let saved = sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(totals, (3, 0));
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&saved, STUDENT, AttendanceResult::Skipped),
+    )
+    .await
+    .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(totals, (0, 2));
+    let impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    let tx = f.pool.begin().await.unwrap();
+    school_attendance::services::reset::reset_in_transaction(
+        &f.pool,
+        tx,
+        TEACHER,
+        ResetAttendanceModule {
+            generation: impact.generation,
+            token: impact.token,
+            reason: "synthetic generation reset".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(totals, (3, 0));
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE t.student_id=$1 AND e.cancelled_at IS NULL").bind(STUDENT).fetch_one(&f.pool).await.unwrap(),1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_score_changes")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
