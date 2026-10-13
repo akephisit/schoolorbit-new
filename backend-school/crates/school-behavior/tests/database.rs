@@ -801,3 +801,90 @@ async fn unchanged_no_score_snapshot_stays_zero_when_a_rule_is_added() {
     tx.commit().await.unwrap();
     assert_eq!(summary(&f, f.a).await.current.deduction, 2);
 }
+
+#[tokio::test]
+async fn empty_future_round_does_not_freeze_policy_before_its_first_fact() {
+    let f = fixture("behavior_empty_future_policy").await;
+    let future = today() + Duration::days(1);
+    let settings = catalog::settings(&f.pool).await.unwrap();
+    catalog::save_settings(
+        &f.pool,
+        SaveBehaviorSettings {
+            settings: BehaviorSettings {
+                enabled: false,
+                count_special: false,
+                ..settings
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let mut day = BehaviorAttendanceDay {
+        generation: Uuid::new_v4(),
+        academic_term_id: f.term,
+        date: future,
+        revision: 1,
+        facts: vec![],
+    };
+    let mut tx = f.pool.begin().await.unwrap();
+    integration::replace_attendance_day(&mut tx, day.clone())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let policies: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM behavior_source_days WHERE date=$1")
+            .bind(future)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(policies, 0);
+    let settings = catalog::settings(&f.pool).await.unwrap();
+    catalog::save_settings(
+        &f.pool,
+        SaveBehaviorSettings {
+            settings: BehaviorSettings {
+                enabled: true,
+                count_special: true,
+                ..settings
+            },
+        },
+    )
+    .await
+    .unwrap();
+    catalog::save_rule(
+        &f.pool,
+        f.admin.actor_id,
+        SaveBehaviorAttendanceRule {
+            kind: BehaviorSource::Special,
+            status: "skipped".into(),
+            grade_level_id: None,
+            effective_from: future,
+            action: BehaviorScoreAction::Deduction,
+            points: 6,
+        },
+    )
+    .await
+    .unwrap();
+    day.revision = 2;
+    day.facts.push(BehaviorAttendanceFact {
+        source_key: "future-special".into(),
+        source_session_id: None,
+        kind: BehaviorSource::Special,
+        student_id: f.a,
+        status: "skipped".into(),
+        counted: true,
+        grade_level_id: f.grade,
+        homeroom_id: Some(f.room_a),
+        overrides: None,
+    });
+    let mut tx = f.pool.begin().await.unwrap();
+    integration::replace_attendance_day(&mut tx, day)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let points:i64=sqlx::query_scalar("SELECT COALESCE(sum(points),0)::bigint FROM behavior_daily_totals WHERE student_id=$1 AND date=$2 AND side='deduction'").bind(f.a).bind(future).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(
+        points, 6,
+        "first real special/skipped fact must use the enabled policy"
+    );
+}

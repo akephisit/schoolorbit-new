@@ -30,8 +30,6 @@ struct Existing {
     side: BehaviorSide,
     source: BehaviorSource,
     points: i32,
-    raw_points: i32,
-    rule_version_id: Option<Uuid>,
     cycle_id: Uuid,
     grade_level_id: Uuid,
     homeroom_id: Option<Uuid>,
@@ -116,7 +114,7 @@ pub async fn replace_attendance_day(
     connection: &mut PgConnection,
     day: BehaviorAttendanceDay,
 ) -> Result<BehaviorDeliveryOutcome, AppError> {
-    if day.revision <= 0 || day.facts.len() > 100000 {
+    if day.revision <= 0 || day.facts.len() > 200000 {
         return Err(invalid("ขนาดหรือเวอร์ชันผลเช็กชื่อไม่ถูกต้อง"));
     }
     let mut identities = BTreeSet::new();
@@ -153,6 +151,11 @@ pub async fn replace_attendance_day(
             });
         }
     }
+    // Round creation may publish an empty future-day snapshot. It has no
+    // scoring decision to freeze; the first actual fact uses then-current policy.
+    if day.facts.is_empty() && old_day.is_none() {
+        return Ok(BehaviorDeliveryOutcome::Applied);
+    }
     let settings = settings_on_connection(connection).await?;
     let policy = old_day.map(|(_, p)| p.0).unwrap_or(DayPolicy {
         count_absent_lessons: settings.count_absent_lessons,
@@ -162,8 +165,8 @@ pub async fn replace_attendance_day(
     });
     let merit = current_cycle(connection, BehaviorSide::Merit).await?;
     let deduction = current_cycle(connection, BehaviorSide::Deduction).await?;
-    let existing:Vec<Existing>=sqlx::query_as("SELECT e.id,t.student_id,e.source_key,e.source_status,t.side,t.source,e.points,e.raw_points,e.rule_version_id,t.cycle_id,t.grade_level_id,t.homeroom_id,e.cancelled_at IS NULL active FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE e.source_generation=$1 AND t.academic_term_id=$2 AND t.date=$3 ORDER BY e.created_at DESC,e.id DESC LIMIT 100001").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all(&mut *connection).await?;
-    if existing.len() > 100000 {
+    let existing:Vec<Existing>=sqlx::query_as("SELECT e.id,t.student_id,e.source_key,e.source_status,t.side,t.source,e.points,t.cycle_id,t.grade_level_id,t.homeroom_id,e.cancelled_at IS NULL active FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE e.source_generation=$1 AND t.academic_term_id=$2 AND t.date=$3 AND e.cancelled_at IS NULL ORDER BY e.created_at DESC,e.id DESC LIMIT 200001").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all(&mut *connection).await?;
+    if existing.len() > 200000 {
         return Err(invalid("ประวัติแก้เช็กชื่อต่อวันเกินขนาดที่รองรับ"));
     }
     let rules:Vec<BehaviorAttendanceRule>=sqlx::query_as("SELECT id,kind,status,grade_level_id,effective_from,action,points FROM behavior_attendance_rules WHERE effective_from<=$1 ORDER BY effective_from DESC,id").bind(day.date).fetch_all(&mut *connection).await?;
@@ -237,15 +240,6 @@ pub async fn replace_attendance_day(
         let (rule_action, raw_points, rule_version) =
             if let Some(old) = decision.filter(|d| d.status == fact.status) {
                 (old.action, old.raw_points, old.rule_version_id)
-            } else if let Some(old) = previous {
-                (
-                    match old.side {
-                        BehaviorSide::Merit => BehaviorScoreAction::Merit,
-                        BehaviorSide::Deduction => BehaviorScoreAction::Deduction,
-                    },
-                    old.raw_points,
-                    old.rule_version_id,
-                )
             } else if settings.enabled {
                 select_rule(&rules, fact, day.date).unwrap_or((BehaviorScoreAction::None, 0, None))
             } else {
