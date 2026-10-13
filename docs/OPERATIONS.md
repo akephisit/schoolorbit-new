@@ -40,7 +40,9 @@ alone runs `school_migrations::run_tenant_migrations` and reconciles runtime gra
 Owner pools close before runtime/scheduler use. Each deployment then checks the
 complete SQLx history and current version through a separate, short-lived DML pool
 with one connection; it closes before request/scheduler registration. This verification
-must not borrow a busy cached request pool. Normal requests fail closed when
+must not borrow a busy cached request pool. Deployment retires and closes cached
+pre-migration pools before creating verified pools and registering runtime work.
+Normal requests fail closed when
 the tenant schema does not match the release.
 
 ### Recovery after the completed transfer
