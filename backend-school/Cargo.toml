@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/school-attendance",
+    "crates/school-behavior",
     "crates/school-academic-http",
     "crates/school-certificates-http",
     "crates/school-auth-http",
@@ -128,6 +129,8 @@ school-academic-http = { path = "crates/school-academic-http" }
 
 school-attendance = { path = "crates/school-attendance" }
 
+school-behavior = { path = "crates/school-behavior" }
+
 [package]
 name = "backend-school"
 version.workspace = true
@@ -188,6 +191,7 @@ school-students = { workspace = true }
 school-staff = { workspace = true }
 school-calendar = { workspace = true }
 school-attendance = { workspace = true }
+school-behavior = { workspace = true }
 school-crypto = { workspace = true }
 school-tenancy = { workspace = true }
 school-file-platform = { workspace = true }

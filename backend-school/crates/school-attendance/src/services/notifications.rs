@@ -183,10 +183,11 @@ pub async fn queue_digest_in_transaction(
  FROM jsonb_to_recordset($4) v(category text,"teacherIds" uuid[],expected bigint) CROSS JOIN LATERAL unnest(v."teacherIds") teacher),
  summaries AS (SELECT teacher,category,
  COALESCE(sum(weight) FILTER(WHERE result='present'),0) present,COALESCE(sum(weight) FILTER(WHERE result='late'),0) late,
- COALESCE(sum(weight) FILTER(WHERE result='absent'),0) absent,COALESCE(sum(weight) FILTER(WHERE result='leave'),0) leave,
+ COALESCE(sum(weight) FILTER(WHERE result='absent'),0) absent,COALESCE(sum(weight) FILTER(WHERE result='skipped'),0) skipped,
+ COALESCE(sum(weight) FILTER(WHERE result='sick_leave'),0) sick_leave,COALESCE(sum(weight) FILTER(WHERE result='personal_leave'),0) personal_leave,
  COALESCE(sum(weight) FILTER(WHERE result='activity'),0) activity,COALESCE(sum(weight) FILTER(WHERE result='unchecked'),0) unchecked
  FROM actual GROUP BY teacher,category),
- messages AS (SELECT teacher,string_agg((CASE category WHEN 'school' THEN 'เข้าโรงเรียน' WHEN 'lesson' THEN 'รายคาบ' ELSE 'รอบพิเศษ' END)||': มา '||present||' สาย '||late||' ขาด '||absent||' ลา '||leave||' กิจกรรม '||activity||' ยังไม่เช็ค '||unchecked,E'\n' ORDER BY category) message FROM summaries GROUP BY teacher)
+ messages AS (SELECT teacher,string_agg((CASE category WHEN 'school' THEN 'เข้าโรงเรียน' WHEN 'lesson' THEN 'รายคาบ' ELSE 'รอบพิเศษ' END)||': มา '||present||' สาย '||late||' ขาด '||absent||' หนีเรียน '||skipped||' ลาป่วย '||sick_leave||' ลากิจ '||personal_leave||' กิจกรรม '||activity||' ยังไม่เช็ค '||unchecked,E'\n' ORDER BY category) message FROM summaries GROUP BY teacher)
  INSERT INTO attendance_notifications(academic_term_id,recipient_id,dedup_key,title,message,link)
  SELECT $1,teacher,'digest:'||$1::text||':'||$2::text||':'||$3::text,'สรุปเช็คชื่อ '||$2::text,message,
  '/staff/attendance?academicTermId='||$1::text||'&date='||$2::text FROM messages JOIN users u ON u.id=teacher AND u.status='active'

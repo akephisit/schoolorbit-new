@@ -19,6 +19,7 @@ const reply = (route: Route, data: unknown, status = 200) =>
 	});
 const settings: AttendanceSettings = {
 	academicTermId: term,
+	autoFinalizeFrom: '2026-10-09',
 	archived: false,
 	rowVersion: 1,
 	configuration: {

@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '../../src/lib/permissions/registry.js';
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { mockStaffHome, id, year, actor } from './fixtures/staff-home-route-data';
@@ -43,7 +44,7 @@ async function chooseResult(page: Page, name: string, result: string) {
 async function expectResult(page: Page, name: string, result: string) {
 	const control = resultControl(page, name);
 	await expect(control).toBeVisible();
-	if (result === 'ยังไม่เช็ค')
+	if (result === 'ยังไม่ได้เช็ค')
 		await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
 	else
 		await expect(control.getByRole('radio', { name: result, exact: true })).toHaveAttribute(
@@ -331,6 +332,7 @@ test('webcam discards a pending capture across Bangkok midnight and reopens toda
 const settings: AttendanceSettings = {
 	academicTermId: term,
 	configuration,
+	autoFinalizeFrom: '2026-10-09',
 	rowVersion: 1,
 	archived: false
 };
@@ -369,8 +371,10 @@ function detail(): AttendanceDetail {
 			result: 'unchecked',
 			origin: 'none',
 			observedAt: null,
+			processedAt: null,
 			evidenceFileId: null,
 			arrivalAt: null,
+			arrivalResult: null,
 			rowVersion: 1
 		}))
 	};
@@ -540,7 +544,9 @@ async function mockAttendance(
 						present: 1,
 						late: 0,
 						absent: 0,
-						leave: 0,
+						skipped: 0,
+						sickLeave: 0,
+						personalLeave: 0,
 						activity: 0,
 						unchecked: 1,
 						expected: 2
@@ -583,6 +589,7 @@ async function mockAttendance(
 					sessions: [{ ...session, kind: 'arrival' }],
 					students: options.students,
 					configuration,
+					autoFinalizeFrom: '2026-10-09',
 					faces: [
 						{
 							studentId: student,
@@ -680,7 +687,7 @@ test('explicit refresh discards input while search preserves current edits witho
 	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
 	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
-	await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่เช็ค');
+	await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่ได้เช็ค');
 	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('');
 	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่มีชื่อนี้');
@@ -926,7 +933,7 @@ test('teacher saves explicit results, retains unchecked and adds a pupil without
 	expect(api.writes).toHaveLength(0);
 	await chooseResult(page, 'นักเรียนคนแรก', 'กิจกรรม');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-	await expectResult(page, 'นักเรียนคนที่สอง', 'ยังไม่เช็ค');
+	await expectResult(page, 'นักเรียนคนที่สอง', 'ยังไม่ได้เช็ค');
 	expect(api.writes).toHaveLength(1);
 	expect(api.reads.filter((p) => p.endsWith('/workspace'))).toHaveLength(1);
 	expect(api.writes[0].data).toMatchObject({
@@ -962,7 +969,7 @@ test('calendar toggles a single processing date', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
-		'aria-checked',
+		'aria-pressed',
 		'false'
 	);
 	expect(api.writes.find((w) => w.path.includes('/days/'))?.data).toMatchObject({
@@ -982,7 +989,7 @@ test('settings save succeeds twice and calendar uses the returned revision', asy
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
-		'aria-checked',
+		'aria-pressed',
 		'false'
 	);
 	expect(api.writes.filter((w) => w.path.includes('/settings/')).map((w) => w.data)).toMatchObject([
@@ -1101,7 +1108,7 @@ test('slow options do not block calendar use', async ({ page }) => {
 	await expect(page.getByRole('heading', { name: 'ปฏิทินวันประมวลผล' })).toBeVisible();
 	await page.locator(`[data-calendar-date="${date}"]`).click();
 	await expect(page.locator(`[data-calendar-date="${date}"]`)).toHaveAttribute(
-		'aria-checked',
+		'aria-pressed',
 		'false'
 	);
 	api.release();
@@ -1115,12 +1122,12 @@ test('unsaved weekday edits do not alter the saved processing calendar', async (
 		.getByLabel('ส', { exact: true })
 		.check();
 	await expect(page.locator('[data-calendar-date="2026-10-10"]')).toHaveAttribute(
-		'aria-checked',
+		'aria-pressed',
 		'false'
 	);
 	await page.getByRole('button', { name: 'บันทึกตั้งค่า', exact: true }).click();
 	await expect(page.locator('[data-calendar-date="2026-10-10"]')).toHaveAttribute(
-		'aria-checked',
+		'aria-pressed',
 		'true'
 	);
 });
@@ -1392,7 +1399,7 @@ for (const overlap of [false, true])
 		if (overlap)
 			expect(writes[1].students.find((row) => row.studentId === student)?.result).toBe('present');
 		else expect(writes[1].students.some((row) => row.studentId === second)).toBe(false);
-		await expectResult(page, 'นักเรียนคนที่สอง', overlap ? 'ยังไม่เช็ค' : 'สาย');
+		await expectResult(page, 'นักเรียนคนที่สอง', overlap ? 'ยังไม่ได้เช็ค' : 'สาย');
 	});
 test('manual workspace refresh reloads selected detail and discards unsaved input', async ({
 	page
@@ -1426,7 +1433,9 @@ test('reports page at the server and export all filtered rows from any visible p
 		present: 10,
 		late: 1,
 		absent: 1,
-		leave: 0,
+		skipped: 0,
+		sickLeave: 0,
+		personalLeave: 0,
 		activity: 0,
 		unchecked: 0,
 		expected: 12
@@ -1510,7 +1519,7 @@ test.describe('mobile roster scroll chaining', () => {
 	test.use({ viewport: { width: 482, height: 884 }, hasTouch: true, isMobile: true });
 	for (const colorScheme of ['light', 'dark'] as const)
 		for (const input of ['wheel', 'touch'] as const)
-			test(`${input} reaches the page at both roster boundaries in ${colorScheme}`, async ({
+			test(`two consecutive ${input} gestures reach the page at both roster boundaries in ${colorScheme}`, async ({
 				page
 			}) => {
 				await page.emulateMedia({ colorScheme });
@@ -1535,17 +1544,30 @@ test.describe('mobile roster scroll chaining', () => {
 					const main = element.closest('main')!;
 					main.scrollTop +=
 						element.getBoundingClientRect().top - main.getBoundingClientRect().top - 100;
+					main.scrollTop = Math.min(main.scrollTop, main.scrollHeight - main.clientHeight - 200);
 					element.scrollTop = 100;
 				});
 				const pageStart = await main.evaluate((element) => element.scrollTop);
+				expect(pageStart).toBeGreaterThan(180);
+				expect(
+					await main.evaluate(
+						(element) => element.scrollHeight - element.clientHeight - element.scrollTop
+					)
+				).toBeGreaterThanOrEqual(180);
 				const cdp = await page.context().newCDPSession(page);
 				const scroll = async (delta: number) => {
 					const box = (await roster.boundingBox())!;
 					const x = box.x + box.width / 2;
 					const y = box.y + box.height / 2;
 					if (input === 'wheel') {
-						await page.mouse.move(x, y);
-						await page.mouse.wheel(0, delta);
+						await cdp.send('Input.synthesizeScrollGesture', {
+							x,
+							y,
+							yDistance: -delta,
+							speed: 600,
+							gestureSourceType: 'mouse',
+							preventFling: true
+						});
 					} else {
 						await cdp.send('Input.dispatchTouchEvent', {
 							type: 'touchStart',
@@ -1561,6 +1583,7 @@ test.describe('mobile roster scroll chaining', () => {
 						await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 					}
 				};
+
 				await scroll(120);
 				await expect
 					.poll(() => roster.evaluate((element) => element.scrollTop))
@@ -1569,6 +1592,22 @@ test.describe('mobile roster scroll chaining', () => {
 
 				await roster.evaluate((element) => (element.scrollTop = element.scrollHeight));
 				const rosterEnd = await roster.evaluate((element) => element.scrollTop);
+				expect(rosterEnd).toBe(
+					await roster.evaluate((element) => element.scrollHeight - element.clientHeight)
+				);
+				const assertRosterHit = async () =>
+					expect(
+						await roster.evaluate((element) => {
+							const box = element.getBoundingClientRect();
+							return element.contains(
+								document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+							);
+						})
+					).toBe(true);
+				await assertRosterHit();
+				// Chromium can retain its scroll transaction after a programmatic jump with fractional rows.
+				// Two fixed completed gestures model continued scrolling and still catch a trapped outer page.
+				await scroll(180);
 				await scroll(180);
 				await expect
 					.poll(() => main.evaluate((element) => element.scrollTop))
@@ -1581,6 +1620,9 @@ test.describe('mobile roster scroll chaining', () => {
 
 				await main.evaluate((element, value) => (element.scrollTop = value), pageStart);
 				await roster.evaluate((element) => (element.scrollTop = 0));
+				expect(await roster.evaluate((element) => element.scrollTop)).toBe(0);
+				await assertRosterHit();
+				await scroll(-180);
 				await scroll(-180);
 				await expect
 					.poll(() => main.evaluate((element) => element.scrollTop))
@@ -1986,7 +2028,7 @@ for (const width of [390, 474])
 				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 					true
 				);
-				expect((await page.locator('tbody tr').first().boundingBox())!.height).toBeLessThan(110);
+				expect((await page.locator('tbody tr').first().boundingBox())!.height).toBeLessThan(160);
 				await expect(page.getByText('เพิ่มหมายเหตุ', { exact: true })).toHaveCount(0);
 				await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 				await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่ตรงกับรายชื่อ');
@@ -2010,6 +2052,7 @@ for (const width of [320, 488, 1440])
 			await chooseRound(page);
 			const control = resultControl(page, 'นักเรียนคนแรก');
 			await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
+			await expect(control.getByRole('radio')).toHaveCount(7);
 			const present = control.getByRole('radio', { name: 'มา', exact: true });
 			const late = control.getByRole('radio', { name: 'สาย', exact: true });
 			for (const button of [
@@ -2169,7 +2212,7 @@ for (const width of [390, 1440])
 			await first.click();
 			const result = resultControl(page, 'นักเรียนคนแรก');
 			const colors = new Set<string>();
-			for (const text of ['มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม']) {
+			for (const text of ['มา', 'สาย', 'ขาด', 'ลากิจ', 'กิจกรรม']) {
 				const button = result.getByRole('radio', { name: text, exact: true });
 				await button.click();
 				await expect(button).toHaveAttribute('aria-checked', 'true');
@@ -2185,7 +2228,7 @@ for (const width of [390, 1440])
 			await result
 				.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
 				.click();
-			await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่เช็ค');
+			await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่ได้เช็ค');
 			await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 			await result.getByRole('radio', { name: 'มา', exact: true }).evaluate(async (element) => {
 				await Promise.all(element.getAnimations().map((animation) => animation.finished));
@@ -2226,3 +2269,109 @@ for (const width of [390, 1440])
 			).toBeVisible();
 			expect(api.writes).toHaveLength(0);
 		});
+
+test('all rounds offer seven writable statuses and lesson/special show school arrival separately', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await mockAttendance(page);
+	const rounds: AttendanceSession[] = (['arrival', 'lesson', 'special'] as const).map(
+		(kind, index) => ({
+			...session,
+			id: id(9000 + index),
+			kind,
+			title: `รอบ ${kind}`,
+			sourceKey: id(9010 + index)
+		})
+	);
+	await page.route('**/api/attendance/workspace?**', (route) =>
+		reply(route, {
+			date,
+			counted: true,
+			lessonChoices: [],
+			sessions: rounds,
+			settings
+		} satisfies AttendanceWorkspace)
+	);
+	await page.route('**/api/attendance/sessions/*', (route) => {
+		const selected = rounds.find((s) => route.request().url().split('/').at(-1) === s.id);
+		return reply(route, {
+			...detail(),
+			session: selected ?? session,
+			students: detail().students.map((row) => ({ ...row, arrivalResult: 'sick_leave' }))
+		} satisfies AttendanceDetail);
+	});
+	await page.goto(path());
+	for (const [kind, label] of [
+		['arrival', 'เข้าโรงเรียน'],
+		['lesson', 'รายคาบ'],
+		['special', 'รอบพิเศษ']
+	] as const) {
+		await page
+			.getByRole('group', { name: 'ประเภทรอบเช็คชื่อ' })
+			.getByRole('button', { name: label, exact: true })
+			.click();
+		await chooseRound(page, new RegExp(`รอบ ${kind}`));
+		const control = resultControl(page, 'นักเรียนคนแรก');
+		await expect(control.getByRole('radio')).toHaveCount(7);
+		for (const label of ['มา', 'สาย', 'ขาด', 'หนีเรียน', 'ลาป่วย', 'ลากิจ', 'กิจกรรม'])
+			await expect(control.getByRole('radio', { name: label, exact: true })).toBeVisible();
+		if (kind !== 'arrival')
+			await expect(
+				page
+					.locator('tbody tr')
+					.filter({ hasText: 'นักเรียนคนแรก' })
+					.locator('[data-slot="badge"]:visible')
+			).toHaveText('ลาป่วย');
+		await chooseResult(page, 'นักเรียนคนแรก', 'หนีเรียน');
+		await expectResult(page, 'นักเรียนคนแรก', 'หนีเรียน');
+	}
+});
+
+test('special scoring requires Behavior management and sends exactly seven independent rules', async ({
+	page
+}) => {
+	const api = await mockAttendance(page, {
+		permissions: [
+			PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL,
+			PERMISSIONS.BEHAVIOR_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_CONTEXT_READ_SCHOOL
+		]
+	});
+	await page.goto(path('/settings'));
+	await page.getByRole('checkbox', { name: 'กำหนดคะแนนเฉพาะรอบนี้', exact: true }).check();
+	await page.getByRole('button', { name: 'คะแนนเมื่อหนีเรียน', exact: true }).click();
+	await page.getByRole('option', { name: 'หักคะแนน', exact: true }).click();
+	await page.getByLabel('จำนวนคะแนนเมื่อหนีเรียน', { exact: true }).fill('5');
+	await page.getByLabel('ชื่อการเช็คชื่อ').fill('รอบคะแนนเฉพาะ');
+	await page.getByRole('button', { name: 'สร้างรอบพิเศษ', exact: true }).click();
+	await expect(page.getByText('รอบคะแนนเฉพาะ · 1 วัน / 1 กลุ่ม')).toBeVisible();
+	expect(api.writes.find((w) => w.path.includes('/specials/'))?.data).toMatchObject({
+		scoring: [
+			'present',
+			'late',
+			'absent',
+			'skipped',
+			'sick_leave',
+			'personal_leave',
+			'activity'
+		].map((result) => ({
+			result,
+			action: result === 'skipped' ? 'deduction' : 'none',
+			points: result === 'skipped' ? 5 : 0
+		}))
+	});
+});
+
+test('Attendance manager without Behavior management uses inherited special scoring', async ({
+	page
+}) => {
+	await mockAttendance(page, {
+		permissions: [PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL, PERMISSIONS.ACADEMIC_CONTEXT_READ_SCHOOL]
+	});
+	await page.goto(path('/settings'));
+	await expect(
+		page.getByRole('checkbox', { name: 'กำหนดคะแนนเฉพาะรอบนี้', exact: true })
+	).toHaveCount(0);
+	await expect(page.getByLabel('ชื่อการเช็คชื่อ')).toBeVisible();
+});

@@ -1944,6 +1944,38 @@
         ],
         "type": "object"
       },
+      "AdjustBehaviorHistory": {
+        "additionalProperties": false,
+        "properties": {
+          "delta": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "totalId",
+          "rowVersion",
+          "delta",
+          "reason"
+        ],
+        "type": "object"
+      },
       "AdvisorHomeroomItem": {
         "description": "ห้องประจำชั้นที่ครูเป็นที่ปรึกษา",
         "properties": {
@@ -4542,6 +4574,10 @@
               "archived": {
                 "type": "boolean"
               },
+              "autoFinalizeFrom": {
+                "format": "date",
+                "type": "string"
+              },
               "configuration": {
                 "$ref": "#/components/schemas/AttendanceConfiguration"
               },
@@ -4554,7 +4590,8 @@
               "academicTermId",
               "configuration",
               "rowVersion",
-              "archived"
+              "archived",
+              "autoFinalizeFrom"
             ],
             "type": "object"
           },
@@ -4604,6 +4641,650 @@
               "sessions",
               "lessonChoices",
               "settings"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorAttendanceRule": {
+        "properties": {
+          "data": {
+            "properties": {
+              "action": {
+                "$ref": "#/components/schemas/BehaviorScoreAction"
+              },
+              "effectiveFrom": {
+                "format": "date",
+                "type": "string"
+              },
+              "gradeLevelId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/BehaviorSource"
+              },
+              "points": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "status",
+              "gradeLevelId",
+              "effectiveFrom",
+              "action",
+              "points"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorBatchReceipt": {
+        "properties": {
+          "data": {
+            "properties": {
+              "affectedStudents": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "detailsAvailable": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "pointsPerStudent": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "replayed": {
+                "type": "boolean"
+              },
+              "side": {
+                "$ref": "#/components/schemas/BehaviorSide"
+              }
+            },
+            "required": [
+              "id",
+              "affectedStudents",
+              "side",
+              "pointsPerStudent",
+              "replayed",
+              "detailsAvailable"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorCancellation": {
+        "properties": {
+          "data": {
+            "properties": {
+              "alreadyCancelled": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "cancelled": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "cancelled",
+              "alreadyCancelled"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorCleanupOutcome": {
+        "properties": {
+          "data": {
+            "properties": {
+              "deduction": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "entriesDeleted": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "merit": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              },
+              "students": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "students",
+              "entriesDeleted",
+              "merit",
+              "deduction"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorCleanupPreview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "current": {
+                "$ref": "#/components/schemas/BehaviorScoreTotals"
+              },
+              "deduction": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "entries": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "history": {
+                "$ref": "#/components/schemas/BehaviorScoreTotals"
+              },
+              "lifetime": {
+                "$ref": "#/components/schemas/BehaviorScoreTotals"
+              },
+              "merit": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "students": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "token": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "token",
+              "revision",
+              "students",
+              "entries",
+              "merit",
+              "deduction",
+              "current",
+              "history",
+              "lifetime"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorHistoryAdjustment": {
+        "properties": {
+          "data": {
+            "properties": {
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "points": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "totalId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "totalId",
+              "points",
+              "rowVersion"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorItem": {
+        "properties": {
+          "data": {
+            "properties": {
+              "effectiveFrom": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "points": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "side": {
+                "$ref": "#/components/schemas/BehaviorSide"
+              },
+              "versionId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "side",
+              "enabled",
+              "rowVersion",
+              "versionId",
+              "effectiveFrom",
+              "points"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorOverview": {
+        "properties": {
+          "data": {
+            "properties": {
+              "activationDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "cycles": {
+                "items": {
+                  "$ref": "#/components/schemas/BehaviorCycle"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "cycles",
+              "activationDate"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorReportPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/BehaviorReportEntry"
+                },
+                "type": "array"
+              },
+              "total": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "total"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorSelectorOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "gradeLevels": {
+                "items": {
+                  "$ref": "#/components/schemas/BehaviorSelectorOption"
+                },
+                "type": "array"
+              },
+              "homerooms": {
+                "items": {
+                  "$ref": "#/components/schemas/BehaviorSelectorOption"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "gradeLevels",
+              "homerooms"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorSettings": {
+        "properties": {
+          "data": {
+            "properties": {
+              "countAbsentLessons": {
+                "type": "boolean"
+              },
+              "countSpecial": {
+                "type": "boolean"
+              },
+              "dailyDeductionCap": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "dailyMeritCap": {
+                "format": "int32",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "deductionReset": {
+                "$ref": "#/components/schemas/BehaviorResetSchedule"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "meritReset": {
+                "$ref": "#/components/schemas/BehaviorResetSchedule"
+              },
+              "rowVersion": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "enabled",
+              "countAbsentLessons",
+              "countSpecial",
+              "dailyMeritCap",
+              "dailyDeductionCap",
+              "meritReset",
+              "deductionReset",
+              "rowVersion"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorStudentPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/BehaviorStudent"
+                },
+                "type": "array"
+              },
+              "options": {
+                "$ref": "#/components/schemas/BehaviorSelectorOptions"
+              },
+              "rosterToken": {
+                "type": "string"
+              },
+              "total": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "total",
+              "rosterToken",
+              "options"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BehaviorStudentSummary": {
+        "properties": {
+          "data": {
+            "properties": {
+              "comparableCurrent": {
+                "$ref": "#/components/schemas/BehaviorCurrentTotals"
+              },
+              "comparisonEnd": {
+                "format": "date",
+                "type": "string"
+              },
+              "comparisonExact": {
+                "type": "boolean"
+              },
+              "comparisonStart": {
+                "format": "date",
+                "type": "string"
+              },
+              "current": {
+                "$ref": "#/components/schemas/BehaviorCurrentTotals"
+              },
+              "deductionCycle": {
+                "$ref": "#/components/schemas/BehaviorCycle"
+              },
+              "history": {
+                "$ref": "#/components/schemas/BehaviorCurrentTotals"
+              },
+              "historyTotals": {
+                "items": {
+                  "$ref": "#/components/schemas/BehaviorDailyTotal"
+                },
+                "type": "array"
+              },
+              "lifetime": {
+                "$ref": "#/components/schemas/BehaviorScoreTotals"
+              },
+              "meritCycle": {
+                "$ref": "#/components/schemas/BehaviorCycle"
+              },
+              "studentId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "studentId",
+              "current",
+              "history",
+              "lifetime",
+              "comparableCurrent",
+              "comparisonExact",
+              "comparisonStart",
+              "comparisonEnd",
+              "meritCycle",
+              "deductionCycle",
+              "historyTotals"
             ],
             "type": "object"
           },
@@ -17731,6 +18412,205 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_BehaviorAttendanceRule": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "action": {
+                  "$ref": "#/components/schemas/BehaviorScoreAction"
+                },
+                "effectiveFrom": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "gradeLevelId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/BehaviorSource"
+                },
+                "points": {
+                  "format": "int32",
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "status",
+                "gradeLevelId",
+                "effectiveFrom",
+                "action",
+                "points"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_BehaviorCycle": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "endsAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "endsOn": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "side": {
+                  "$ref": "#/components/schemas/BehaviorSide"
+                },
+                "startsAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "startsOn": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "side",
+                "startsOn",
+                "startsAt",
+                "endsAt",
+                "endsOn",
+                "state",
+                "label"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_BehaviorItem": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "effectiveFrom": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "points": {
+                  "format": "int32",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "rowVersion": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "side": {
+                  "$ref": "#/components/schemas/BehaviorSide"
+                },
+                "versionId": {
+                  "format": "uuid",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "side",
+                "enabled",
+                "rowVersion",
+                "versionId",
+                "effectiveFrom",
+                "points"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_BellSchedule": {
         "properties": {
           "data": {
@@ -25278,6 +26158,16 @@
               "null"
             ]
           },
+          "arrivalResult": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttendanceResult"
+              }
+            ]
+          },
           "classNumber": {
             "format": "int32",
             "type": [
@@ -25305,6 +26195,13 @@
           "origin": {
             "type": "string"
           },
+          "processedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "result": {
             "$ref": "#/components/schemas/AttendanceResult"
           },
@@ -25331,6 +26228,8 @@
           "observedAt",
           "evidenceFileId",
           "arrivalAt",
+          "arrivalResult",
+          "processedAt",
           "rowVersion"
         ],
         "type": "object"
@@ -25474,7 +26373,9 @@
           "present",
           "late",
           "absent",
-          "leave",
+          "skipped",
+          "sick_leave",
+          "personal_leave",
           "activity"
         ],
         "type": "string"
@@ -25572,6 +26473,27 @@
           "result",
           "duplicate",
           "teacherConflict"
+        ],
+        "type": "object"
+      },
+      "AttendanceScoreRule": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ScoreAction"
+          },
+          "points": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "result": {
+            "$ref": "#/components/schemas/AttendanceResult"
+          }
+        },
+        "required": [
+          "result",
+          "action",
+          "points"
         ],
         "type": "object"
       },
@@ -25709,6 +26631,10 @@
           "archived": {
             "type": "boolean"
           },
+          "autoFinalizeFrom": {
+            "format": "date",
+            "type": "string"
+          },
           "configuration": {
             "$ref": "#/components/schemas/AttendanceConfiguration"
           },
@@ -25721,7 +26647,8 @@
           "academicTermId",
           "configuration",
           "rowVersion",
-          "archived"
+          "archived",
+          "autoFinalizeFrom"
         ],
         "type": "object"
       },
@@ -25784,7 +26711,7 @@
             "format": "int64",
             "type": "integer"
           },
-          "leave": {
+          "personalLeave": {
             "format": "int64",
             "type": "integer"
           },
@@ -25797,6 +26724,14 @@
           },
           "scopeLabel": {
             "type": "string"
+          },
+          "sickLeave": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "format": "int64",
+            "type": "integer"
           },
           "studentId": {
             "format": "uuid",
@@ -25817,7 +26752,9 @@
           "present",
           "late",
           "absent",
-          "leave",
+          "skipped",
+          "sickLeave",
+          "personalLeave",
           "activity",
           "unchecked",
           "expected"
@@ -25871,6 +26808,928 @@
           "sessions",
           "lessonChoices",
           "settings"
+        ],
+        "type": "object"
+      },
+      "BehaviorAttendanceRule": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/BehaviorScoreAction"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BehaviorSource"
+          },
+          "points": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "gradeLevelId",
+          "effectiveFrom",
+          "action",
+          "points"
+        ],
+        "type": "object"
+      },
+      "BehaviorBatchReceipt": {
+        "properties": {
+          "affectedStudents": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "detailsAvailable": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "pointsPerStudent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "side": {
+            "$ref": "#/components/schemas/BehaviorSide"
+          }
+        },
+        "required": [
+          "id",
+          "affectedStudents",
+          "side",
+          "pointsPerStudent",
+          "replayed",
+          "detailsAvailable"
+        ],
+        "type": "object"
+      },
+      "BehaviorCancellation": {
+        "properties": {
+          "alreadyCancelled": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cancelled": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cancelled",
+          "alreadyCancelled"
+        ],
+        "type": "object"
+      },
+      "BehaviorCleanupMode": {
+        "enum": [
+          "details_only",
+          "archive",
+          "delete_effects"
+        ],
+        "type": "string"
+      },
+      "BehaviorCleanupOutcome": {
+        "properties": {
+          "deduction": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entriesDeleted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "merit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "students": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "students",
+          "entriesDeleted",
+          "merit",
+          "deduction"
+        ],
+        "type": "object"
+      },
+      "BehaviorCleanupPreview": {
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/BehaviorScoreTotals"
+          },
+          "deduction": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entries": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "history": {
+            "$ref": "#/components/schemas/BehaviorScoreTotals"
+          },
+          "lifetime": {
+            "$ref": "#/components/schemas/BehaviorScoreTotals"
+          },
+          "merit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "students": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "token": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "revision",
+          "students",
+          "entries",
+          "merit",
+          "deduction",
+          "current",
+          "history",
+          "lifetime"
+        ],
+        "type": "object"
+      },
+      "BehaviorCleanupScope": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sides": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorSide"
+            },
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorSource"
+            },
+            "type": "array"
+          },
+          "start": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "sides",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "BehaviorCurrentTotals": {
+        "properties": {
+          "deduction": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "merit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "net": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "merit",
+          "deduction",
+          "net"
+        ],
+        "type": "object"
+      },
+      "BehaviorCycle": {
+        "properties": {
+          "endsAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endsOn": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "side": {
+            "$ref": "#/components/schemas/BehaviorSide"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "startsOn": {
+            "format": "date",
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "side",
+          "startsOn",
+          "startsAt",
+          "endsAt",
+          "endsOn",
+          "state",
+          "label"
+        ],
+        "type": "object"
+      },
+      "BehaviorDailyTotal": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "points": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "side": {
+            "$ref": "#/components/schemas/BehaviorSide"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BehaviorSource"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "studentId",
+          "date",
+          "academicTermId",
+          "gradeLevelId",
+          "homeroomId",
+          "side",
+          "source",
+          "cycleId",
+          "points",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "BehaviorHistoryAdjustment": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "points": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "totalId",
+          "points",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "BehaviorItem": {
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "points": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "side": {
+            "$ref": "#/components/schemas/BehaviorSide"
+          },
+          "versionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "side",
+          "enabled",
+          "rowVersion",
+          "versionId",
+          "effectiveFrom",
+          "points"
+        ],
+        "type": "object"
+      },
+      "BehaviorOverview": {
+        "properties": {
+          "activationDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "cycles": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorCycle"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cycles",
+          "activationDate"
+        ],
+        "type": "object"
+      },
+      "BehaviorReportEntry": {
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "batchId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canCancel": {
+            "type": "boolean"
+          },
+          "cancellationReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cancelledAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "creatorName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homeroom": {
+            "type": "string"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemName": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "points": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "side": {
+            "$ref": "#/components/schemas/BehaviorSide"
+          },
+          "source": {
+            "$ref": "#/components/schemas/BehaviorSource"
+          },
+          "sourceKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceSessionId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "studentId",
+          "studentName",
+          "studentCode",
+          "homeroomId",
+          "homeroom",
+          "gradeLevelId",
+          "date",
+          "academicTermId",
+          "side",
+          "source",
+          "points",
+          "itemName",
+          "detail",
+          "occurredAt",
+          "batchId",
+          "sourceKey",
+          "sourceSessionId",
+          "createdBy",
+          "creatorName",
+          "createdAt",
+          "cancelledAt",
+          "cancellationReason",
+          "canCancel"
+        ],
+        "type": "object"
+      },
+      "BehaviorReportPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorReportEntry"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "BehaviorResetSchedule": {
+        "enum": [
+          "manual",
+          "monthly",
+          "term",
+          "year"
+        ],
+        "type": "string"
+      },
+      "BehaviorScoreAction": {
+        "enum": [
+          "none",
+          "merit",
+          "deduction"
+        ],
+        "type": "string"
+      },
+      "BehaviorScoreTotals": {
+        "properties": {
+          "deduction": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "merit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "net": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "merit",
+          "deduction",
+          "net"
+        ],
+        "type": "object"
+      },
+      "BehaviorSelectorOption": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object"
+      },
+      "BehaviorSelectorOptions": {
+        "properties": {
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorSelectorOption"
+            },
+            "type": "array"
+          },
+          "homerooms": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorSelectorOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "gradeLevels",
+          "homerooms"
+        ],
+        "type": "object"
+      },
+      "BehaviorSettings": {
+        "properties": {
+          "countAbsentLessons": {
+            "type": "boolean"
+          },
+          "countSpecial": {
+            "type": "boolean"
+          },
+          "dailyDeductionCap": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dailyMeritCap": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "deductionReset": {
+            "$ref": "#/components/schemas/BehaviorResetSchedule"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "meritReset": {
+            "$ref": "#/components/schemas/BehaviorResetSchedule"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "countAbsentLessons",
+          "countSpecial",
+          "dailyMeritCap",
+          "dailyDeductionCap",
+          "meritReset",
+          "deductionReset",
+          "rowVersion"
+        ],
+        "type": "object"
+      },
+      "BehaviorSide": {
+        "enum": [
+          "merit",
+          "deduction"
+        ],
+        "type": "string"
+      },
+      "BehaviorSource": {
+        "enum": [
+          "manual",
+          "arrival",
+          "lesson",
+          "special"
+        ],
+        "type": "string"
+      },
+      "BehaviorStudent": {
+        "properties": {
+          "classNumber": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gradeLevel": {
+            "type": "string"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homeroom": {
+            "type": "string"
+          },
+          "homeroomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "studentAcademicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "studentAcademicYearId",
+          "name",
+          "studentCode",
+          "gradeLevelId",
+          "gradeLevel",
+          "homeroomId",
+          "homeroom",
+          "classNumber"
+        ],
+        "type": "object"
+      },
+      "BehaviorStudentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorStudent"
+            },
+            "type": "array"
+          },
+          "options": {
+            "$ref": "#/components/schemas/BehaviorSelectorOptions"
+          },
+          "rosterToken": {
+            "type": "string"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "rosterToken",
+          "options"
+        ],
+        "type": "object"
+      },
+      "BehaviorStudentSummary": {
+        "properties": {
+          "comparableCurrent": {
+            "$ref": "#/components/schemas/BehaviorCurrentTotals"
+          },
+          "comparisonEnd": {
+            "format": "date",
+            "type": "string"
+          },
+          "comparisonExact": {
+            "type": "boolean"
+          },
+          "comparisonStart": {
+            "format": "date",
+            "type": "string"
+          },
+          "current": {
+            "$ref": "#/components/schemas/BehaviorCurrentTotals"
+          },
+          "deductionCycle": {
+            "$ref": "#/components/schemas/BehaviorCycle"
+          },
+          "history": {
+            "$ref": "#/components/schemas/BehaviorCurrentTotals"
+          },
+          "historyTotals": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorDailyTotal"
+            },
+            "type": "array"
+          },
+          "lifetime": {
+            "$ref": "#/components/schemas/BehaviorScoreTotals"
+          },
+          "meritCycle": {
+            "$ref": "#/components/schemas/BehaviorCycle"
+          },
+          "studentId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentId",
+          "current",
+          "history",
+          "lifetime",
+          "comparableCurrent",
+          "comparisonExact",
+          "comparisonStart",
+          "comparisonEnd",
+          "meritCycle",
+          "deductionCycle",
+          "historyTotals"
         ],
         "type": "object"
       },
@@ -26856,6 +28715,31 @@
           "private"
         ],
         "type": "string"
+      },
+      "CancelBehaviorEntries": {
+        "additionalProperties": false,
+        "properties": {
+          "entryIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "entryIds",
+          "reason"
+        ],
+        "type": "object"
       },
       "CancelObservationRequest": {
         "properties": {
@@ -30649,6 +32533,62 @@
           "schedulingMode",
           "effectiveFrom",
           "gradeLevelIds"
+        ],
+        "type": "object"
+      },
+      "CreateBehaviorBatch": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "itemId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "itemRowVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "itemVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rosterToken": {
+            "type": "string"
+          },
+          "studentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "requestId",
+          "academicTermId",
+          "itemId",
+          "itemRowVersion",
+          "itemVersionId",
+          "occurredAt",
+          "studentIds",
+          "rosterToken"
         ],
         "type": "object"
       },
@@ -36966,6 +38906,41 @@
         ],
         "type": "string"
       },
+      "ExecuteBehaviorCleanup": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/BehaviorCleanupMode"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/BehaviorCleanupScope"
+          },
+          "token": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "token",
+          "revision",
+          "scope",
+          "mode",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ExecutePromotionRunInput": {
         "additionalProperties": false,
         "properties": {
@@ -42448,6 +44423,42 @@
         ],
         "type": "object"
       },
+      "PreviewBehaviorCleanup": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/BehaviorCleanupMode"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/BehaviorCleanupScope"
+          }
+        },
+        "required": [
+          "scope",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "PreviewBehaviorReset": {
+        "additionalProperties": false,
+        "properties": {
+          "sides": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorSide"
+            },
+            "type": "array"
+          },
+          "through": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sides",
+          "through"
+        ],
+        "type": "object"
+      },
       "PreviewCurriculumOfferingsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -45517,6 +47528,45 @@
         ],
         "type": "object"
       },
+      "ResetBehaviorScores": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sides": {
+            "items": {
+              "$ref": "#/components/schemas/BehaviorSide"
+            },
+            "type": "array"
+          },
+          "through": {
+            "format": "date",
+            "type": "string"
+          },
+          "token": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "token",
+          "revision",
+          "sides",
+          "through",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ResolvePromotionImpactInput": {
         "additionalProperties": false,
         "properties": {
@@ -46797,6 +48847,13 @@
       "SaveAttendanceSettings": {
         "additionalProperties": false,
         "properties": {
+          "autoFinalizeFrom": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "configuration": {
             "$ref": "#/components/schemas/AttendanceConfiguration"
           },
@@ -46807,7 +48864,106 @@
         },
         "required": [
           "configuration",
-          "rowVersion"
+          "rowVersion",
+          "autoFinalizeFrom"
+        ],
+        "type": "object"
+      },
+      "SaveBehaviorAttendanceRule": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/BehaviorScoreAction"
+          },
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BehaviorSource"
+          },
+          "points": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "status",
+          "effectiveFrom",
+          "action",
+          "points"
+        ],
+        "type": "object"
+      },
+      "SaveBehaviorItem": {
+        "additionalProperties": false,
+        "properties": {
+          "effectiveFrom": {
+            "format": "date",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "points": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "rowVersion": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "side": {
+            "$ref": "#/components/schemas/BehaviorSide"
+          }
+        },
+        "required": [
+          "requestId",
+          "name",
+          "side",
+          "enabled",
+          "effectiveFrom",
+          "points"
+        ],
+        "type": "object"
+      },
+      "SaveBehaviorSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/BehaviorSettings"
+          }
+        },
+        "required": [
+          "settings"
         ],
         "type": "object"
       },
@@ -46983,6 +49139,14 @@
           "logoFileId"
         ],
         "type": "object"
+      },
+      "ScoreAction": {
+        "enum": [
+          "none",
+          "merit",
+          "deduction"
+        ],
+        "type": "string"
       },
       "ScoreBatchInput": {
         "properties": {
@@ -47388,6 +49552,15 @@
           "notify": {
             "type": "boolean"
           },
+          "scoring": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceScoreRule"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "startTime": {
             "type": "string"
           },
@@ -47402,7 +49575,8 @@
           "endTime",
           "counted",
           "notify",
-          "groups"
+          "groups",
+          "scoring"
         ],
         "type": "object"
       },
@@ -82549,6 +84723,1408 @@
         ]
       }
     },
+    "/api/behavior/batches": {
+      "post": {
+        "operationId": "behavior_create_batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBehaviorBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorBatchReceipt"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/cleanup": {
+      "post": {
+        "operationId": "behavior_execute_cleanup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteBehaviorCleanup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorCleanupOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/cleanup/{id}": {
+      "get": {
+        "operationId": "behavior_cleanup_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorCleanupOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/cleanup/preview": {
+      "post": {
+        "operationId": "behavior_preview_cleanup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewBehaviorCleanup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorCleanupPreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/cycles": {
+      "get": {
+        "operationId": "behavior_cycles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_BehaviorCycle"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/entries": {
+      "get": {
+        "operationId": "behavior_report",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "studentId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "homeroomId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gradeLevelId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "side",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/BehaviorSide"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/BehaviorSource"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "batchId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "createdBy",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mine",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cancelled",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorReportPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/entries/cancel": {
+      "post": {
+        "operationId": "behavior_cancel_entries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelBehaviorEntries"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorCancellation"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/history/adjustments": {
+      "post": {
+        "operationId": "behavior_adjust_history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustBehaviorHistory"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorHistoryAdjustment"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/items": {
+      "get": {
+        "operationId": "behavior_list_items",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "includeDisabled",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_BehaviorItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      },
+      "post": {
+        "operationId": "behavior_save_item",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveBehaviorItem"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorItem"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/options": {
+      "get": {
+        "operationId": "behavior_selector_options",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gradeLevelId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "homeroomId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorSelectorOptions"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/overview": {
+      "get": {
+        "operationId": "behavior_overview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorOverview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/reset": {
+      "post": {
+        "operationId": "behavior_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetBehaviorScores"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorCleanupOutcome"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/reset/preview": {
+      "post": {
+        "operationId": "behavior_preview_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewBehaviorReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorCleanupPreview"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/rules": {
+      "get": {
+        "operationId": "behavior_list_rules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_BehaviorAttendanceRule"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      },
+      "post": {
+        "operationId": "behavior_save_rule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveBehaviorAttendanceRule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorAttendanceRule"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/settings": {
+      "get": {
+        "operationId": "behavior_get_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorSettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      },
+      "put": {
+        "operationId": "behavior_save_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveBehaviorSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorSettings"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/students": {
+      "get": {
+        "operationId": "behavior_students",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gradeLevelId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "homeroomId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorStudentPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
+    "/api/behavior/students/{id}/summary": {
+      "get": {
+        "operationId": "behavior_student_summary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BehaviorStudentSummary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "behavior"
+        ]
+      }
+    },
     "/api/calendar/categories": {
       "get": {
         "operationId": "listCalendarCategories",
@@ -96066,6 +99642,10 @@
     {
       "description": "Date-based calendars and activity requests",
       "name": "calendar"
+    },
+    {
+      "description": "Student behavior scores, cycles and authorized cleanup",
+      "name": "behavior"
     },
     {
       "description": "Teaching supervision workflows and reports",

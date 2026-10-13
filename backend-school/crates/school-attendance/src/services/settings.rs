@@ -27,6 +27,11 @@ pub async fn get_on_connection(
     .fetch_optional(&mut *connection)
     .await?;
     let (configuration, row_version) = row.map(|(c, v)| (c.0, v)).unwrap_or_default();
+    let auto_finalize_from = sqlx::query_scalar(
+        "SELECT auto_finalize_from FROM attendance_module_state WHERE singleton",
+    )
+    .fetch_one(&mut *connection)
+    .await?;
     Ok(AttendanceSettings {
         academic_term_id: term,
         configuration: if row_version == 0 {
@@ -36,6 +41,7 @@ pub async fn get_on_connection(
         },
         row_version,
         archived,
+        auto_finalize_from,
     })
 }
 pub async fn save(
@@ -56,8 +62,31 @@ pub async fn save(
     if old.unwrap_or(0) != p.row_version {
         return Err(AppError::Conflict("การตั้งค่าเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
     }
+    if let Some(date) = p.auto_finalize_from {
+        let current: NaiveDate = sqlx::query_scalar(
+            "SELECT auto_finalize_from FROM attendance_module_state WHERE singleton FOR UPDATE",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if date != current
+            && (date < current
+                || date
+                    < chrono::Utc::now()
+                        .with_timezone(&chrono_tz::Asia::Bangkok)
+                        .date_naive())
+        {
+            return Err(invalid("วันเริ่มปิดยอดอัตโนมัติต้องไม่ย้อนก่อนวันเดิมหรือวันนี้"));
+        }
+        sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1 WHERE singleton")
+            .bind(date)
+            .execute(&mut *tx)
+            .await?;
+    }
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3) ON CONFLICT(academic_term_id) DO UPDATE SET configuration=excluded.configuration,row_version=attendance_settings.row_version+1,updated_by=excluded.updated_by,updated_at=now()").bind(term).bind(Json(p.configuration)).bind(actor).execute(&mut *tx).await?;
     audit(&mut tx, actor, term, "update", "attendance settings").await?;
+    super::score_changes::enqueue_term_days(&mut tx, term).await?;
+    sqlx::query("DELETE FROM attendance_finalized_dates WHERE generation=(SELECT generation FROM attendance_module_state WHERE singleton) AND academic_term_id=$1 AND date>=(SELECT auto_finalize_from FROM attendance_module_state WHERE singleton)")
+        .bind(term).execute(&mut *tx).await?;
     tx.commit().await?;
     get(pool, term).await
 }
@@ -110,7 +139,7 @@ pub async fn save_days(
     if version.unwrap_or(0) != p.row_version {
         return Err(AppError::Conflict("การตั้งค่าเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
     }
-    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted,note) SELECT $1,date,counted,note FROM jsonb_to_recordset($2) AS d(date date,counted boolean,note text) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=excluded.counted,note=excluded.note").bind(term).bind(Json(p.days)).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted,note) SELECT $1,date,counted,note FROM jsonb_to_recordset($2) AS d(date date,counted boolean,note text) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=excluded.counted,note=excluded.note").bind(term).bind(Json(&p.days)).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3) ON CONFLICT(academic_term_id) DO UPDATE SET row_version=attendance_settings.row_version+1,updated_by=excluded.updated_by,updated_at=now()")
         .bind(term)
         .bind(Json(AttendanceConfiguration::default()))
@@ -125,6 +154,10 @@ pub async fn save_days(
         "attendance processing dates",
     )
     .await?;
+    let dates = p.days.iter().map(|d| d.date).collect::<Vec<_>>();
+    super::score_changes::enqueue_dates(&mut tx, term, &dates).await?;
+    sqlx::query("DELETE FROM attendance_finalized_dates WHERE generation=(SELECT generation FROM attendance_module_state WHERE singleton) AND academic_term_id=$1 AND date=ANY($2)")
+        .bind(term).bind(&dates).execute(&mut *tx).await?;
     tx.commit().await?;
     get(pool, term).await
 }

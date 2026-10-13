@@ -52,7 +52,7 @@ pub async fn apply_migrations_through(pool: &PgPool, version: i64) -> TestSuppor
         create_schemas: active.create_schemas,
     };
 
-    migrator.run(pool).await?;
+    school_test_db::run_fixture_migrator(pool, &migrator).await?;
     Ok(())
 }
 

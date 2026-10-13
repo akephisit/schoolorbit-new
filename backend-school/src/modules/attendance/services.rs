@@ -13,6 +13,7 @@ use school_permissions::registry::codes;
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+pub(super) mod finalization;
 pub(super) mod projection;
 pub async fn seeds(
     pool: &PgPool,
@@ -637,7 +638,10 @@ pub async fn prepare_kiosk(
         .filter(|s| s.session.kind == AttendanceKind::Arrival)
         .collect::<Vec<_>>();
     let epoch = sessions::module_generation(pool).await?;
-    let sql=format!("SELECT {} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind='arrival' ORDER BY id",sessions::COLUMNS);
+    let sql = format!(
+        "SELECT {} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind='arrival' ORDER BY id",
+        sessions::COLUMNS
+    );
     let saved: Vec<AttendanceSession> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(p.academic_term_id)
         .bind(p.date)

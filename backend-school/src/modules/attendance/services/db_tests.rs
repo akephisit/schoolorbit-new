@@ -7,16 +7,16 @@ use school_attendance::{
     rules::FACE_MODEL,
     services::{faces, notifications, reports},
 };
-const TEACHER: Uuid = Uuid::from_u128(0x50000000000000000000000000000002);
-const STUDENT: Uuid = Uuid::from_u128(0x50000000000000000000000000000001);
-const TERM: Uuid = Uuid::from_u128(0x11000000000000000000000000000251);
-struct Fixture {
-    pool: PgPool,
+pub(super) const TEACHER: Uuid = Uuid::from_u128(0x50000000000000000000000000000002);
+pub(super) const STUDENT: Uuid = Uuid::from_u128(0x50000000000000000000000000000001);
+pub(super) const TERM: Uuid = Uuid::from_u128(0x11000000000000000000000000000251);
+pub(super) struct Fixture {
+    pub(super) pool: PgPool,
     actor: ActorContext,
-    students: Vec<AttendanceRosterStudent>,
+    pub(super) students: Vec<AttendanceRosterStudent>,
 }
-async fn fixture(name: &str) -> Fixture {
-    fixture_at(name, 106).await
+pub(super) async fn fixture(name: &str) -> Fixture {
+    fixture_at(name, 108).await
 }
 async fn fixture_at(name: &str, version: i64) -> Fixture {
     let pool = prepare_current_core_fixture(name).await;
@@ -85,6 +85,35 @@ fn save_payload(
         }],
     }
 }
+async fn legacy_present(f: &Fixture, session: &AttendanceSession) {
+    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,result,origin,updated_by) VALUES($1,$2,$3,'present','teacher',$4)")
+        .bind(session.id).bind(STUDENT).bind(f.students[0].student_academic_year_id).bind(TEACHER).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE attendance_sessions SET saved_at=now(),saved_by=$2,row_version=row_version+1 WHERE id=$1")
+        .bind(session.id).bind(TEACHER).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,'update','attendance',$2,'[]',$3,'historical fixture')")
+        .bind(TEACHER).bind(session.id).bind(sqlx::types::Json(serde_json::json!([[STUDENT,"present","",1]]))).execute(&f.pool).await.unwrap();
+}
+async fn drain_score_changes(pool: &PgPool) {
+    loop {
+        let mut tx = pool.begin().await.unwrap();
+        let changes =
+            school_attendance::services::score_changes::pending_on_connection(&mut tx, 100)
+                .await
+                .unwrap();
+        if changes.is_empty() {
+            tx.commit().await.unwrap();
+            break;
+        }
+        for change in changes {
+            assert!(
+                school_attendance::services::score_changes::acknowledge(&mut tx, &change)
+                    .await
+                    .unwrap()
+            );
+        }
+        tx.commit().await.unwrap();
+    }
+}
 async fn parents(f: &Fixture) {
     for number in 0..2 {
         let id = Uuid::new_v4();
@@ -98,19 +127,9 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     let source = seed(&f, AttendanceKind::Arrival, date);
     let saved_session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
-    let before = sessions::detail(&f.pool, &f.actor, saved_session.id)
-        .await
-        .unwrap();
-    let saved = sessions::save(
-        &f.pool,
-        &f.actor,
-        saved_session.id,
-        save_payload(&before, STUDENT, AttendanceResult::Present),
-    )
-    .await
-    .unwrap();
+    legacy_present(&f, &saved_session).await;
     sqlx::query("UPDATE attendance_records SET note='old person note' WHERE session_id=$1")
-        .bind(saved.session.id)
+        .bind(saved_session.id)
         .execute(&f.pool)
         .await
         .unwrap();
@@ -197,13 +216,11 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
         .unwrap(),
         "calendar day note"
     );
-    let detail = sessions::detail(&f.pool, &f.actor, saved.session.id)
+    apply_migrations_through(&f.pool, 108).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, saved_session.id)
         .await
         .unwrap();
-    assert_eq!(
-        serde_json::to_value(&saved).unwrap(),
-        serde_json::to_value(&detail).unwrap()
-    );
+    assert_eq!(detail.session.id, saved_session.id);
     assert!(sqlx::query("SELECT note FROM attendance_records")
         .execute(&f.pool)
         .await
@@ -241,15 +258,7 @@ async fn attendance_note_migration_refuses_ambiguous_snapshots_and_can_retry() {
         NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
     );
     let s = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
-    let before = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
-    sessions::save(
-        &f.pool,
-        &f.actor,
-        s.id,
-        save_payload(&before, STUDENT, AttendanceResult::Present),
-    )
-    .await
-    .unwrap();
+    legacy_present(&f, &s).await;
     sqlx::query(
         "UPDATE attendance_records SET note='must survive refused cleanup' WHERE session_id=$1",
     )
@@ -345,15 +354,7 @@ async fn attendance_note_migration_blocks_cleanup_when_audit_preservation_fails(
         NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
     );
     let s = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
-    let before = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
-    sessions::save(
-        &f.pool,
-        &f.actor,
-        s.id,
-        save_payload(&before, STUDENT, AttendanceResult::Present),
-    )
-    .await
-    .unwrap();
+    legacy_present(&f, &s).await;
     sqlx::query(
         "UPDATE attendance_records SET note='retained until reconciliation' WHERE session_id=$1",
     )
@@ -428,6 +429,7 @@ async fn attendance_calendar_can_be_first_save_and_stale_settings_cannot_overwri
         TEACHER,
         TERM,
         SaveAttendanceSettings {
+            auto_finalize_from: None,
             row_version: 0,
             configuration: before.configuration,
         }
@@ -562,6 +564,7 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
         TEACHER,
         TERM,
         SaveAttendanceSettings {
+            auto_finalize_from: None,
             configuration: AttendanceConfiguration::default(),
             row_version: 0,
         },
@@ -688,6 +691,7 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
     )
     .await
     .is_err());
+    drain_score_changes(&f.pool).await;
     reports::purge(
         &f.pool,
         TEACHER,
@@ -741,6 +745,7 @@ async fn attendance_special_round_refuses_overlapping_students_and_distinct_roun
     let f = fixture("attendance_special_groups").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     let definition = SpecialAttendanceDefinition {
+        scoring: None,
         title: "ชุมนุม".into(),
         dates: vec![date],
         start_time: NaiveTime::MIN,
@@ -818,6 +823,7 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         TEACHER,
         TERM,
         SaveAttendanceSettings {
+            auto_finalize_from: None,
             configuration,
             row_version: 0,
         },
@@ -1048,6 +1054,7 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         TEACHER,
         TERM,
         SaveAttendanceSettings {
+            auto_finalize_from: None,
             configuration: config.configuration,
             row_version: config.row_version,
         },
@@ -1107,6 +1114,7 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         .execute(&f.pool)
         .await
         .unwrap();
+    drain_score_changes(&f.pool).await;
     reports::purge(
         &f.pool,
         TEACHER,
@@ -1220,7 +1228,10 @@ async fn attendance_scoped_arrival_timing_and_query_plan() {
     }
     baseline_times.sort_by(f64::total_cmp);
     scoped_times.sort_by(f64::total_cmp);
-    println!("attendance_preview_timing synthetic_rooms=40 synthetic_students=1200 samples=5 baseline_median_ms={:.3} scoped_median_ms={:.3}",baseline_times[2],scoped_times[2]);
+    println!(
+        "attendance_preview_timing synthetic_rooms=40 synthetic_students=1200 samples=5 baseline_median_ms={:.3} scoped_median_ms={:.3}",
+        baseline_times[2], scoped_times[2]
+    );
     for (label, sql) in [
         ("all_students", core::ALL_STUDENTS_SQL),
         ("selected_room", core::ROOM_ROSTER_SQL),
@@ -1237,7 +1248,13 @@ async fn attendance_scoped_arrival_timing_and_query_plan() {
             query.fetch_one(&f.pool).await.unwrap()
         };
         let item = &plan.0[0];
-        println!("attendance_roster_plan scope={label} execution_ms={} rows={} shared_hit_blocks={} shared_read_blocks={}",item["Execution Time"],item["Plan"]["Actual Rows"],item["Plan"]["Shared Hit Blocks"],item["Plan"]["Shared Read Blocks"]);
+        println!(
+            "attendance_roster_plan scope={label} execution_ms={} rows={} shared_hit_blocks={} shared_read_blocks={}",
+            item["Execution Time"],
+            item["Plan"]["Actual Rows"],
+            item["Plan"]["Shared Hit Blocks"],
+            item["Plan"]["Shared Read Blocks"]
+        );
     }
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_sessions")
@@ -1589,7 +1606,7 @@ async fn attendance_concurrent_saves_keep_one_revision_and_do_not_grant_own_acce
         .unwrap();
     let detail = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
     let a = save_payload(&detail, STUDENT, AttendanceResult::Present);
-    let b = save_payload(&detail, STUDENT, AttendanceResult::Leave);
+    let b = save_payload(&detail, STUDENT, AttendanceResult::SickLeave);
     let (a, b) = tokio::join!(
         sessions::save(&f.pool, &f.actor, s.id, a),
         sessions::save(&f.pool, &f.actor, s.id, b)
@@ -2029,7 +2046,7 @@ async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_hi
     sqlx::query("INSERT INTO roles(id,code,name,user_type) VALUES($1,'CUSTOM_PARENT','Custom parent','parent')").bind(custom).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO user_roles(user_id,role_id,started_at,ended_at) VALUES($1,$2,CURRENT_DATE-2,CURRENT_DATE-1)").bind(parents[1]).bind(custom).execute(&f.pool).await.unwrap();
     apply_migrations_through(&f.pool, 102).await.unwrap();
-    apply_migrations_through(&f.pool, 105).await.unwrap();
+    apply_migrations_through(&f.pool, 108).await.unwrap();
     let cache = school_authorization::PermissionCache::new();
     let actor = school_authorization::load_actor_context(parents[0], "fixture", &f.pool, &cache)
         .await
@@ -2261,7 +2278,7 @@ async fn attendance_sparse_first_save_additions_corrections_and_stale_roster_are
     .unwrap();
     assert_eq!(unchanged.session.row_version, first.session.row_version);
     let second = f.students[1].student_id;
-    let mut addition = save_payload(&first, second, AttendanceResult::Leave);
+    let mut addition = save_payload(&first, second, AttendanceResult::SickLeave);
     addition.reason.clear();
     let added = sessions::save(&f.pool, &f.actor, first.session.id, addition)
         .await
@@ -2509,7 +2526,7 @@ async fn attendance_migration_preserves_explicit_legacy_ceremony_facts_and_retri
     apply_migrations_through(&pool, 103).await.unwrap();
     let session = Uuid::new_v4();
     sqlx::query("INSERT INTO attendance_sessions(id,academic_term_id,date,kind,source_key,title,teacher_ids,start_time,end_time,saved_by) VALUES($1,$2,'2025-10-09','flag','legacy','ceremony',$3,'08:00','08:15',$4)").bind(session).bind(TERM).bind(vec![TEACHER]).bind(TEACHER).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,class_number,result,origin,note,row_version) SELECT $1,$2,id,11,'leave','teacher','preserved',7 FROM student_academic_years WHERE student_id=$2 AND academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$3)").bind(session).bind(STUDENT).bind(TERM).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,class_number,result,origin,note,row_version) SELECT $1,$2,id,11,'present','teacher','preserved',7 FROM student_academic_years WHERE student_id=$2 AND academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$3)").bind(session).bind(STUDENT).bind(TERM).execute(&pool).await.unwrap();
     apply_migrations_through(&pool, 105).await.unwrap();
     apply_migrations_through(&pool, 105).await.unwrap();
     let migrated = sessions::get(&pool, session).await.unwrap();
@@ -2525,14 +2542,15 @@ async fn attendance_migration_preserves_explicit_legacy_ceremony_facts_and_retri
     .unwrap();
     assert_eq!(
         fact,
-        ("leave".into(), "teacher".into(), "preserved".into(), 7)
+        ("present".into(), "teacher".into(), "preserved".into(), 7)
     );
+    apply_migrations_through(&pool, 108).await.unwrap();
     let report = reports::summaries(&pool, TERM, Some(STUDENT), None)
         .await
         .unwrap();
     assert_eq!(report.summaries.len(), 1);
     assert_eq!(report.summaries[0].category, "special");
-    assert_eq!(report.summaries[0].leave, 1);
+    assert_eq!(report.summaries[0].present, 1);
 }
 
 #[tokio::test]
@@ -2920,6 +2938,7 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
         .await
         .unwrap();
     let impact = reports::impact(&f.pool, TERM).await.unwrap();
+    drain_score_changes(&f.pool).await;
     purge(
         &f.pool,
         TEACHER,
@@ -3146,4 +3165,643 @@ async fn attendance_migration_refuses_ambiguous_archived_ceremony_scopes() {
         .unwrap(),
         2
     );
+}
+
+#[tokio::test]
+async fn attendance_midnight_finalizer_preserves_checked_results_and_skips_excluded_rounds() {
+    use chrono::TimeZone;
+    use school_attendance::services::finalization as closing;
+    let f = fixture("attendance_midnight_finalization").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1,coverage_start=$1")
+        .bind(date)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let arrival = seed(&f, AttendanceKind::Arrival, date);
+    let arrival_session = sessions::ensure(&f.pool, &f.actor, arrival.clone())
+        .await
+        .unwrap();
+    let arrival_detail = sessions::detail(&f.pool, &f.actor, arrival_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        arrival_session.id,
+        save_payload(&arrival_detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let lesson = seed(&f, AttendanceKind::Lesson, date);
+    let mut excluded = seed(&f, AttendanceKind::Lesson, date);
+    excluded.session.id = Uuid::now_v7();
+    excluded.session.source_key = "excluded".into();
+    excluded.session.count_override = Some(false);
+    let mut cancelled = seed(&f, AttendanceKind::Lesson, date);
+    cancelled.session.id = Uuid::now_v7();
+    cancelled.session.source_key = "cancelled".into();
+    let saved = sessions::ensure(&f.pool, &f.actor, cancelled.clone())
+        .await
+        .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, saved.id).await.unwrap();
+    sessions::cancel(
+        &f.pool,
+        &f.actor,
+        saved.id,
+        AttendanceCancellation {
+            session: session_context(&detail.session),
+            roster_token: detail.session.roster_token.clone(),
+            row_version: detail.session.row_version,
+            cancelled: true,
+            reason: "round cancelled".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let seeds = vec![arrival, lesson, excluded, cancelled];
+    let generation = sessions::module_generation(&f.pool).await.unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(closing::finalize_date_in_transaction(
+        &mut tx,
+        TERM,
+        date,
+        generation,
+        &seeds,
+        Utc.with_ymd_and_hms(2025, 10, 9, 16, 59, 59).unwrap()
+    )
+    .await
+    .is_err());
+    tx.rollback().await.unwrap();
+    let now = Utc.with_ymd_and_hms(2025, 10, 9, 17, 0, 0).unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    let result =
+        closing::finalize_date_in_transaction(&mut tx, TERM, date, generation, &seeds, now)
+            .await
+            .unwrap();
+    assert_eq!(result.inserted_results, 3);
+    tx.commit().await.unwrap();
+    let facts: Vec<(String, String, Option<chrono::DateTime<Utc>>)> =
+        sqlx::query_as("SELECT result,origin,processed_at FROM attendance_records ORDER BY result")
+            .fetch_all(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(facts.len(), 4);
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|r| r.0 == "present" && r.1 == "teacher" && r.2.is_none())
+            .count(),
+        1
+    );
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|r| r.0 == "absent" && r.1 == "automatic" && r.2 == Some(now))
+            .count(),
+        3
+    );
+    let queued = school_attendance::services::score_changes::pending_on_connection(
+        &mut *f.pool.acquire().await.unwrap(),
+        100,
+    )
+    .await
+    .unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(
+        closing::finalize_date_in_transaction(
+            &mut tx,
+            TERM,
+            date,
+            generation,
+            &seeds,
+            now + chrono::Duration::days(2)
+        )
+        .await
+        .unwrap()
+        .already_completed
+    );
+    tx.commit().await.unwrap();
+    let after = school_attendance::services::score_changes::pending_on_connection(
+        &mut *f.pool.acquire().await.unwrap(),
+        100,
+    )
+    .await
+    .unwrap();
+    assert_eq!(queued[0].row_version, after[0].row_version);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_records")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        4
+    );
+}
+
+#[tokio::test]
+async fn attendance_score_queue_revisions_survive_acknowledgement_and_corrections() {
+    use school_attendance::services::score_changes as changes;
+    let f = fixture("attendance_score_queue_revisions").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let saved = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, saved.id).await.unwrap();
+    let detail = sessions::save(
+        &f.pool,
+        &f.actor,
+        saved.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let first = changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+        .await
+        .unwrap()
+        .remove(0);
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(changes::acknowledge(&mut tx, &first).await.unwrap());
+    tx.commit().await.unwrap();
+    let detail = sessions::save(
+        &f.pool,
+        &f.actor,
+        saved.id,
+        save_payload(&detail, STUDENT, AttendanceResult::SickLeave),
+    )
+    .await
+    .unwrap();
+    let second = changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+        .await
+        .unwrap()
+        .remove(0);
+    assert!(second.row_version > first.row_version);
+    let facts = changes::day_facts_on_connection(&mut *f.pool.acquire().await.unwrap(), TERM, date)
+        .await
+        .unwrap();
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].result, AttendanceResult::SickLeave);
+    assert_eq!(facts[0].source_key, "arrival");
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        saved.id,
+        save_payload(&detail, STUDENT, AttendanceResult::PersonalLeave),
+    )
+    .await
+    .unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(!changes::acknowledge(&mut tx, &second).await.unwrap());
+    tx.commit().await.unwrap();
+    let third = changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+        .await
+        .unwrap()
+        .remove(0);
+    assert!(third.row_version > second.row_version);
+    let facts = changes::day_facts_on_connection(&mut *f.pool.acquire().await.unwrap(), TERM, date)
+        .await
+        .unwrap();
+    assert_eq!(facts[0].result, AttendanceResult::PersonalLeave);
+}
+
+#[tokio::test]
+async fn attendance_status_migration_refuses_unclassified_leave_without_modifying_facts() {
+    let f = fixture_at("attendance_status_migration_guard", 107).await;
+    let source = seed(
+        &f,
+        AttendanceKind::Arrival,
+        NaiveDate::from_ymd_opt(2025, 10, 9).unwrap(),
+    );
+    let saved = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    sqlx::query("INSERT INTO attendance_records(session_id,student_id,student_academic_year_id,result,origin) VALUES($1,$2,$3,'leave','teacher')")
+        .bind(saved.id).bind(STUDENT).bind(f.students[0].student_academic_year_id).execute(&f.pool).await.unwrap();
+    let failure = apply_migrations_through(&f.pool, 108)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(failure.contains("ATTENDANCE_UNCLASSIFIED_LEAVE"));
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT result FROM attendance_records")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        "leave"
+    );
+    sqlx::query("DELETE FROM attendance_records")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attendance_term_summaries(academic_term_id,student_id,category,scope_key,scope_label,present,late,absent,leave,activity,unchecked,expected) VALUES($1,$2,'school','','school',0,0,0,1,0,0,1)")
+        .bind(TERM).bind(STUDENT).execute(&f.pool).await.unwrap();
+    assert!(apply_migrations_through(&f.pool, 108)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("ATTENDANCE_UNCLASSIFIED_LEAVE"));
+    sqlx::query("DELETE FROM attendance_term_summaries")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&f.pool, 108).await.unwrap();
+    assert!(!sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='attendance_term_summaries' AND column_name='leave')")
+        .fetch_one(&f.pool).await.unwrap());
+}
+
+#[tokio::test]
+async fn attendance_prefetched_score_change_reloads_reset_before_new_generation_facts() {
+    use school_attendance::services::score_changes as changes;
+    let f = fixture("attendance_prefetched_reset_change").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let old_session = sessions::ensure(&f.pool, &f.actor, source.clone())
+        .await
+        .unwrap();
+    let old_detail = sessions::detail(&f.pool, &f.actor, old_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        old_session.id,
+        save_payload(&old_detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let prefetched = changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+        .await
+        .unwrap()
+        .remove(0);
+    assert!(!prefetched.reset);
+    let impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    super::reset(
+        &f.pool,
+        TEACHER,
+        ResetAttendanceModule {
+            generation: impact.generation,
+            token: impact.token,
+            reason: "reset between queue prefetch and locking".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let new_session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    assert_eq!(old_session.id, new_session.id);
+    let new_detail = sessions::detail(&f.pool, &f.actor, new_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        new_session.id,
+        save_payload(&new_detail, STUDENT, AttendanceResult::Late),
+    )
+    .await
+    .unwrap();
+    let generation = sessions::module_generation(&f.pool).await.unwrap();
+    assert_ne!(generation, prefetched.generation);
+    let mut tx = f.pool.begin().await.unwrap();
+    school_attendance::services::lock_term(&mut tx, TERM, false, false)
+        .await
+        .unwrap();
+    let current = changes::current_on_connection(&mut tx, &prefetched)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(current.reset);
+    assert_eq!(current.generation, prefetched.generation);
+    assert!(current.row_version > prefetched.row_version);
+    // A fresh source snapshot belongs only to the new generation. The old queue
+    // record's reset flag instructs the adapter to deliver an empty old day.
+    let new_facts = changes::day_facts_on_connection(&mut tx, TERM, date)
+        .await
+        .unwrap();
+    assert_eq!(new_facts.len(), 1);
+    assert_eq!(new_facts[0].result, AttendanceResult::Late);
+    let queued = changes::pending_on_connection(&mut tx, 100).await.unwrap();
+    assert_eq!(queued.len(), 2);
+    let next = queued.iter().find(|c| c.generation == generation).unwrap();
+    assert!(!next.reset);
+    assert!(next.row_version > current.row_version);
+    assert!(changes::acknowledge(&mut tx, &current).await.unwrap());
+    assert!(changes::current_on_connection(&mut tx, &prefetched)
+        .await
+        .unwrap()
+        .is_none());
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn attendance_score_queue_rejects_non_reset_stale_generation_without_reading_new_facts() {
+    use school_attendance::services::score_changes as changes;
+    let f = fixture("attendance_stale_generation_queue").await;
+    let mut tx = f.pool.begin().await.unwrap();
+    school_attendance::services::lock_term(&mut tx, TERM, false, false)
+        .await
+        .unwrap();
+    let generation = Uuid::new_v4();
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    changes::enqueue_with_generation(&mut tx, generation, TERM, date, false)
+        .await
+        .unwrap();
+    let prefetched = changes::pending_on_connection(&mut tx, 100)
+        .await
+        .unwrap()
+        .remove(0);
+    assert!(matches!(
+        changes::current_on_connection(&mut tx, &prefetched).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert_eq!(
+        changes::pending_on_connection(&mut tx, 100)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    tx.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_generation_once() {
+    let f = fixture_at("attendance_behavior_adapter", 109).await;
+    let date = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    sqlx::query("UPDATE academic_years SET end_date=GREATEST(end_date,$1)")
+        .bind(date + chrono::Duration::days(2))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET start_date=$2,planned_end_date=$3 WHERE id=$1")
+        .bind(TERM)
+        .bind(date - chrono::Duration::days(1))
+        .bind(date + chrono::Duration::days(1))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE behavior_settings SET enabled=true")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    for (status, action, points) in [("present", "merit", 3), ("skipped", "deduction", 2)] {
+        sqlx::query("INSERT INTO behavior_attendance_rules(kind,status,effective_from,action,points,created_by)VALUES('arrival',$1,$2,$3,$4,$5)").bind(status).bind(date).bind(action).bind(points).bind(TEACHER).execute(&f.pool).await.unwrap();
+    }
+    let mut source = seed(&f, AttendanceKind::Arrival, date);
+    source.session.count_override = Some(true);
+    let session = sessions::ensure(&f.pool, &f.actor, source.clone())
+        .await
+        .unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    let saved = sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(totals, (3, 0));
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&saved, STUDENT, AttendanceResult::Skipped),
+    )
+    .await
+    .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(totals, (0, 2));
+    let impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    let tx = f.pool.begin().await.unwrap();
+    school_attendance::services::reset::reset_in_transaction(
+        &f.pool,
+        tx,
+        TEACHER,
+        ResetAttendanceModule {
+            generation: impact.generation,
+            token: impact.token,
+            reason: "synthetic generation reset".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    let detail = sessions::detail(&f.pool, &f.actor, session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        session.id,
+        save_payload(&detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let totals: (i64,i64)=sqlx::query_as("SELECT COALESCE(sum(points)FILTER(WHERE side='merit'),0)::bigint,COALESCE(sum(points)FILTER(WHERE side='deduction'),0)::bigint FROM behavior_daily_totals WHERE student_id=$1").bind(STUDENT).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(totals, (3, 0));
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE t.student_id=$1 AND e.cancelled_at IS NULL").bind(STUDENT).fetch_one(&f.pool).await.unwrap(),1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_score_changes")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn attendance_settings_preserve_unchanged_past_activation_and_reject_past_changes() {
+    let f = fixture("attendance_settings_activation_noop").await;
+    let today = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    let yesterday = today.pred_opt().unwrap();
+    sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1 WHERE singleton")
+        .bind(yesterday)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let before = settings::get(&f.pool, TERM).await.unwrap();
+    let mut configuration = before.configuration;
+    configuration.weekdays = vec![1, 3, 5];
+    let saved = settings::save(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            configuration: configuration.clone(),
+            row_version: before.row_version,
+            auto_finalize_from: Some(yesterday),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.auto_finalize_from, yesterday);
+    assert_eq!(saved.configuration.weekdays, vec![1, 3, 5]);
+    assert_eq!(saved.row_version, 1);
+    let two_days_ago = yesterday.pred_opt().unwrap();
+    assert!(matches!(
+        settings::save(
+            &f.pool,
+            TEACHER,
+            TERM,
+            SaveAttendanceSettings {
+                configuration: configuration.clone(),
+                row_version: saved.row_version,
+                auto_finalize_from: Some(two_days_ago),
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert_eq!(
+        settings::get(&f.pool, TERM)
+            .await
+            .unwrap()
+            .auto_finalize_from,
+        yesterday
+    );
+    // Even a forward move must not enable historical backfill: the unchanged
+    // value is the only accepted activation date before today's boundary.
+    sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1 WHERE singleton")
+        .bind(two_days_ago)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        settings::save(
+            &f.pool,
+            TEACHER,
+            TERM,
+            SaveAttendanceSettings {
+                configuration: configuration.clone(),
+                row_version: saved.row_version,
+                auto_finalize_from: Some(yesterday),
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    let next = settings::save(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            configuration,
+            row_version: saved.row_version,
+            auto_finalize_from: Some(today),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(next.auto_finalize_from, today);
+    assert_eq!(next.row_version, 2);
+}
+
+#[tokio::test]
+async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cleanup() {
+    use chrono::TimeZone;
+    use school_academic_lifecycle::ports::ExternalLifecyclePort;
+    use school_behavior::models::{BehaviorCleanupScope, BehaviorSide, BehaviorSource};
+    let f = fixture_at("attendance_lifecycle_delivery_gate", 109).await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    sqlx::query("UPDATE attendance_module_state SET coverage_start=$1,auto_finalize_from=$1 WHERE singleton").bind(date).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by)VALUES($1,$2,$3)")
+        .bind(TERM)
+        .bind(sqlx::types::Json(AttendanceConfiguration::default()))
+        .bind(TEACHER)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let provider =
+        crate::modules::academic::lifecycle_provider_adapter::ApplicationLifecycleProviders;
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(matches!(
+        provider
+            .require_attendance_delivery_complete(&mut tx, TERM, date)
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+    tx.rollback().await.unwrap();
+    let generation = school_attendance::services::sessions::module_generation(&f.pool)
+        .await
+        .unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let mut tx = f.pool.begin().await.unwrap();
+    school_attendance::services::finalization::finalize_date_in_transaction(
+        &mut tx,
+        TERM,
+        date,
+        generation,
+        &[source],
+        Utc.with_ymd_and_hms(2025, 10, 9, 17, 0, 0).unwrap(),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(matches!(
+        provider
+            .require_attendance_delivery_complete(&mut tx, TERM, date)
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+    tx.rollback().await.unwrap();
+    crate::behavior_provider_adapter::run(&f.pool)
+        .await
+        .unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    provider
+        .require_attendance_delivery_complete(&mut tx, TERM, date)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    let scope = BehaviorCleanupScope {
+        academic_year_id: None,
+        academic_term_id: Some(TERM),
+        start: Some(date),
+        end: Some(date),
+        sides: vec![BehaviorSide::Merit, BehaviorSide::Deduction],
+        sources: vec![BehaviorSource::Manual],
+    };
+    sqlx::query("INSERT INTO behavior_cleanup_jobs(scope,mode,reset,reason,students,entries_expected,merit,deduction)VALUES($1,'details_only',false,'synthetic pending cleanup',0,0,0,0)").bind(sqlx::types::Json(scope)).execute(&f.pool).await.unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    assert!(matches!(
+        provider
+            .require_attendance_delivery_complete(&mut tx, TERM, date)
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+    tx.rollback().await.unwrap();
+    assert!(
+        !school_behavior::services::cleanup::run_cleanup_jobs(&f.pool, 1)
+            .await
+            .unwrap()
+    );
+    let mut tx = f.pool.begin().await.unwrap();
+    provider
+        .require_attendance_delivery_complete(&mut tx, TERM, date)
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
 }

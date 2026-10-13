@@ -126,6 +126,18 @@ mod tests {
             &[id]
         )
         .is_err());
+        assert!(serde_json::from_str::<AttendanceResult>("\"leave\"").is_err());
+        for code in ["skipped", "sick_leave", "personal_leave"] {
+            let result: AttendanceResult = serde_json::from_str(&format!("\"{code}\"")).unwrap();
+            assert!(validate_inputs(
+                &[AttendanceResultInput {
+                    student_id: id,
+                    result
+                }],
+                &[id]
+            )
+            .is_ok());
+        }
     }
     #[test]
     fn face_vectors_reject_nonfinite_or_wrong_model_dimensions() {

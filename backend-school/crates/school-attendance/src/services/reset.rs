@@ -20,6 +20,7 @@ const TABLES: &[&str] = &[
     "attendance_settings",
     "attendance_face_enrollments",
     "attendance_devices",
+    "attendance_finalized_dates",
 ];
 pub struct AttendanceResetOutcome {
     pub impact: AttendanceResetImpact,
@@ -34,7 +35,9 @@ async fn snapshot(tx: &mut Transaction<'_, Postgres>) -> Result<AttendanceResetI
     let mut counts = Vec::new();
     let mut checksums = Vec::new();
     for table in TABLES {
-        let sql=format!("SELECT count(*)::bigint,COALESCE(md5(string_agg(md5(to_jsonb(t)::text),'' ORDER BY md5(to_jsonb(t)::text))),'') FROM {table} t");
+        let sql = format!(
+            "SELECT count(*)::bigint,COALESCE(md5(string_agg(md5(to_jsonb(t)::text),'' ORDER BY md5(to_jsonb(t)::text))),'') FROM {table} t"
+        );
         let (count, checksum): (i64, String) = sqlx::query_as(sqlx::AssertSqlSafe(sql))
             .fetch_one(&mut **tx)
             .await?;
@@ -88,6 +91,10 @@ pub async fn reset_in_transaction(
     if before.generation != p.generation || before.token != p.token {
         return Err(AppError::Conflict("ข้อมูลเปลี่ยนแล้ว กรุณาตรวจผลกระทบใหม่".into()));
     }
+    // Keep old-generation reset intents until the consumer reconciles its prior
+    // effects. Finalized dates also cover source details already retained as archives.
+    sqlx::query("INSERT INTO attendance_score_changes(generation,academic_term_id,date,reset) SELECT $1,academic_term_id,date,true FROM (SELECT academic_term_id,date FROM attendance_sessions UNION SELECT academic_term_id,date FROM attendance_finalized_dates WHERE generation=$1 UNION SELECT academic_term_id,date FROM attendance_score_changes WHERE generation=$1) days ON CONFLICT(generation,academic_term_id,date) DO UPDATE SET row_version=nextval('attendance_score_revision_seq'),queued_at=now(),reset=true")
+        .bind(before.generation).execute(&mut *tx).await?;
     let ids:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM files WHERE purpose_code='attendance_evidence' AND lifecycle_status<>'deleted' ORDER BY id FOR UPDATE").fetch_all(&mut *tx).await?;
     let files = SqlFileRepository::new(pool.clone());
     let mut prepared_deletes = Vec::new();
@@ -106,7 +113,7 @@ pub async fn reset_in_transaction(
             .await?;
     }
     let generation = Uuid::new_v4();
-    sqlx::query("UPDATE attendance_module_state SET generation=$1,coverage_start=(now() AT TIME ZONE 'Asia/Bangkok')::date WHERE singleton").bind(generation).execute(&mut *tx).await?;
+    sqlx::query("UPDATE attendance_module_state SET generation=$1,coverage_start=(now() AT TIME ZONE 'Asia/Bangkok')::date,auto_finalize_from=(now() AT TIME ZONE 'Asia/Bangkok')::date WHERE singleton").bind(generation).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,'delete','attendance',$2,$3,$4,$5)").bind(actor).bind(generation).bind(sqlx::types::Json(&before)).bind(sqlx::types::Json(serde_json::json!({"generation":generation}))).bind(p.reason.trim()).execute(&mut *tx).await?;
     let after = snapshot(&mut tx).await?;
     tx.commit().await?;

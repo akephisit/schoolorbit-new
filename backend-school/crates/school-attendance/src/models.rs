@@ -4,7 +4,7 @@ use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, ToSchema, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum AttendanceResult {
@@ -12,7 +12,9 @@ pub enum AttendanceResult {
     Present,
     Late,
     Absent,
-    Leave,
+    Skipped,
+    SickLeave,
+    PersonalLeave,
     Activity,
 }
 impl AttendanceResult {
@@ -22,7 +24,9 @@ impl AttendanceResult {
             Self::Present => "present",
             Self::Late => "late",
             Self::Absent => "absent",
-            Self::Leave => "leave",
+            Self::Skipped => "skipped",
+            Self::SickLeave => "sick_leave",
+            Self::PersonalLeave => "personal_leave",
             Self::Activity => "activity",
         }
     }
@@ -32,7 +36,9 @@ impl AttendanceResult {
             Self::Present => "มา",
             Self::Late => "สาย",
             Self::Absent => "ขาด",
-            Self::Leave => "ลา",
+            Self::Skipped => "หนีเรียน",
+            Self::SickLeave => "ลาป่วย",
+            Self::PersonalLeave => "ลากิจ",
             Self::Activity => "กิจกรรม",
         }
     }
@@ -87,12 +93,15 @@ pub struct AttendanceSettings {
     pub configuration: AttendanceConfiguration,
     pub row_version: i64,
     pub archived: bool,
+    pub auto_finalize_from: NaiveDate,
 }
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveAttendanceSettings {
     pub configuration: AttendanceConfiguration,
     pub row_version: i64,
+    #[schema(required = true)]
+    pub auto_finalize_from: Option<NaiveDate>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -206,6 +215,10 @@ pub struct AttendanceRecord {
     pub evidence_file_id: Option<Uuid>,
     #[schema(required = true)]
     pub arrival_at: Option<DateTime<Utc>>,
+    #[schema(required = true)]
+    pub arrival_result: Option<AttendanceResult>,
+    #[schema(required = true)]
+    pub processed_at: Option<DateTime<Utc>>,
     pub row_version: i64,
 }
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -311,6 +324,22 @@ pub struct SpecialAttendanceDefinition {
     pub counted: bool,
     pub notify: bool,
     pub groups: Vec<SpecialAttendanceGroup>,
+    #[schema(required = true)]
+    pub scoring: Option<Vec<AttendanceScoreRule>>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScoreAction {
+    None,
+    Merit,
+    Deduction,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AttendanceScoreRule {
+    pub result: AttendanceResult,
+    pub action: ScoreAction,
+    pub points: i32,
 }
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -396,7 +425,9 @@ pub struct AttendanceSummary {
     pub present: i64,
     pub late: i64,
     pub absent: i64,
-    pub leave: i64,
+    pub skipped: i64,
+    pub sick_leave: i64,
+    pub personal_leave: i64,
     pub activity: i64,
     pub unchecked: i64,
     pub expected: i64,

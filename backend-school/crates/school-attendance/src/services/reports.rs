@@ -30,16 +30,18 @@ pub(crate) const SUMMARY_SQL: &str = r#"WITH eligible AS (
  COALESCE(sum(weight) FILTER(WHERE result='present'),0)::bigint present,
  COALESCE(sum(weight) FILTER(WHERE result='late'),0)::bigint late,
  COALESCE(sum(weight) FILTER(WHERE result='absent'),0)::bigint absent,
- COALESCE(sum(weight) FILTER(WHERE result='leave'),0)::bigint leave,
+ COALESCE(sum(weight) FILTER(WHERE result='skipped'),0)::bigint skipped,
+ COALESCE(sum(weight) FILTER(WHERE result='sick_leave'),0)::bigint sick_leave,
+ COALESCE(sum(weight) FILTER(WHERE result='personal_leave'),0)::bigint personal_leave,
  COALESCE(sum(weight) FILTER(WHERE result='activity'),0)::bigint activity,
  COALESCE(sum(weight) FILTER(WHERE result='unchecked'),0)::bigint unchecked,sum(weight)::bigint expected,
  min(concat_ws(' ',concat(u.title,u.first_name),u.last_name)) display_name
  FROM facts JOIN users u ON u.id=facts.student_id GROUP BY student_id,category,scope_key ORDER BY student_id,category,scope_key"#;
 fn archived_summary_sql(teacher: bool) -> &'static str {
     if teacher {
-        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name FROM attendance_term_teacher_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND s.teacher_id=$3 ORDER BY s.student_id,s.category,s.scope_key"
+        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.skipped,s.sick_leave,s.personal_leave,s.activity,s.unchecked,s.expected,concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name FROM attendance_term_teacher_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND s.teacher_id=$3 ORDER BY s.student_id,s.category,s.scope_key"
     } else {
-        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.leave,s.activity,s.unchecked,s.expected,concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name FROM attendance_term_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND $3::uuid IS NULL ORDER BY s.student_id,s.category,s.scope_key"
+        "SELECT s.academic_term_id,s.student_id,s.category,s.scope_key,s.scope_label,s.present,s.late,s.absent,s.skipped,s.sick_leave,s.personal_leave,s.activity,s.unchecked,s.expected,concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name FROM attendance_term_summaries s JOIN users u ON u.id=s.student_id WHERE jsonb_typeof($4::jsonb)='array' AND s.academic_term_id=$1 AND ($2::uuid IS NULL OR s.student_id=$2) AND $3::uuid IS NULL ORDER BY s.student_id,s.category,s.scope_key"
     }
 }
 pub async fn summaries(
@@ -133,7 +135,7 @@ pub async fn page_with_expected_on_connection(
         r#"WITH summary AS ({source}), filtered AS (
         SELECT * FROM summary WHERE ($5='' OR strpos(lower(display_name),lower($5))>0 OR strpos(lower(scope_label),lower($5))>0)
             AND ($6::text IS NULL OR category=$6)
-    ), page AS (SELECT academic_term_id AS "academicTermId", student_id AS "studentId", category AS "category", scope_key AS "scopeKey", scope_label AS "scopeLabel", display_name AS "displayName", present AS "present", late AS "late", absent AS "absent", leave AS "leave", activity AS "activity", unchecked AS "unchecked", expected AS "expected" FROM filtered ORDER BY student_id,category,scope_key LIMIT $7 OFFSET $8)
+    ), page AS (SELECT academic_term_id AS "academicTermId", student_id AS "studentId", category AS "category", scope_key AS "scopeKey", scope_label AS "scopeLabel", display_name AS "displayName", present AS "present", late AS "late", absent AS "absent", skipped AS "skipped", sick_leave AS "sickLeave", personal_leave AS "personalLeave", activity AS "activity", unchecked AS "unchecked", expected AS "expected" FROM filtered ORDER BY student_id,category,scope_key LIMIT $7 OFFSET $8)
     SELECT COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p."studentId",p.category,p."scopeKey") FROM page p),'[]'::jsonb), (SELECT count(*) FROM filtered)"#
     );
     let (Json(summaries), total): (Json<Vec<AttendanceSummary>>, i64) =
@@ -219,6 +221,7 @@ pub async fn purge_in_transaction(
     if !closed {
         return Err(AppError::Conflict("ล้างได้เฉพาะภาคเรียนที่ปิดแล้ว".into()));
     }
+    super::score_changes::require_drained(&mut tx, term).await?;
     let pending:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attendance_notifications WHERE academic_term_id=$1 AND stored_at IS NULL AND published_at IS NULL)").bind(term).fetch_one(&mut *tx).await?;
     if pending {
         return Err(AppError::Conflict("รอระบบเก็บแจ้งเตือนให้ครบก่อนล้าง".into()));
@@ -300,15 +303,20 @@ async fn freeze(
     teacher: Option<Uuid>,
     rows: &[AttendanceSummary],
 ) -> Result<(), AppError> {
-    let source=" SELECT $1,student_id,category,scope_key,scope_label,present,late,absent,leave,activity,unchecked,expected FROM jsonb_to_recordset($2) AS r(\"studentId\" uuid,category text,\"scopeKey\" text,\"scopeLabel\" text,present bigint,late bigint,absent bigint,leave bigint,activity bigint,unchecked bigint,expected bigint)";
+    let source = " SELECT $1,student_id,category,scope_key,scope_label,present,late,absent,skipped,\"sickLeave\",\"personalLeave\",activity,unchecked,expected FROM jsonb_to_recordset($2) AS r(\"studentId\" uuid,category text,\"scopeKey\" text,\"scopeLabel\" text,present bigint,late bigint,absent bigint,skipped bigint,\"sickLeave\" bigint,\"personalLeave\" bigint,activity bigint,unchecked bigint,expected bigint)";
     let source = source.replace(
         "student_id,category,scope_key,scope_label",
         "\"studentId\",category,\"scopeKey\",\"scopeLabel\"",
     );
     let sql = if teacher.is_some() {
-        format!("INSERT INTO attendance_term_teacher_summaries(academic_term_id,student_id,category,scope_key,scope_label,present,late,absent,leave,activity,unchecked,expected,teacher_id){}",source.replace("expected FROM","expected,$3 FROM"))
+        format!(
+            "INSERT INTO attendance_term_teacher_summaries(academic_term_id,student_id,category,scope_key,scope_label,present,late,absent,skipped,sick_leave,personal_leave,activity,unchecked,expected,teacher_id){}",
+            source.replace("expected FROM", "expected,$3 FROM")
+        )
     } else {
-        format!("INSERT INTO attendance_term_summaries(academic_term_id,student_id,category,scope_key,scope_label,present,late,absent,leave,activity,unchecked,expected){source}")
+        format!(
+            "INSERT INTO attendance_term_summaries(academic_term_id,student_id,category,scope_key,scope_label,present,late,absent,skipped,sick_leave,personal_leave,activity,unchecked,expected){source}"
+        )
     };
     let query = sqlx::query(sqlx::AssertSqlSafe(sql))
         .bind(term)

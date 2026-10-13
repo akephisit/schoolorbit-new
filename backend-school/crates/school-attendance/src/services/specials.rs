@@ -71,6 +71,9 @@ pub async fn templates(
         .collect())
 }
 pub fn validate_definition(p: &SpecialAttendanceDefinition) -> Result<(), AppError> {
+    if let Some(scoring) = &p.scoring {
+        validate_scoring(scoring)?;
+    }
     if p.title.trim().is_empty()
         || p.title.len() > 200
         || p.dates.is_empty()
@@ -93,6 +96,26 @@ pub fn validate_definition(p: &SpecialAttendanceDefinition) -> Result<(), AppErr
         })
     {
         return Err(invalid("ชื่อ วัน เวลา หรือกลุ่มของรอบพิเศษไม่ถูกต้อง"));
+    }
+    Ok(())
+}
+pub fn validate_scoring(scoring: &[AttendanceScoreRule]) -> Result<(), AppError> {
+    let mut results = std::collections::HashSet::new();
+    if scoring.len() != 7
+        || scoring.iter().any(|rule| {
+            rule.result == AttendanceResult::Unchecked
+                || !results.insert(rule.result)
+                || match rule.action {
+                    ScoreAction::None => rule.points != 0,
+                    ScoreAction::Merit | ScoreAction::Deduction => {
+                        !(1..=10_000).contains(&rule.points)
+                    }
+                }
+        })
+    {
+        return Err(invalid(
+            "กำหนดคะแนนรอบพิเศษให้ครบทั้ง 7 สถานะโดยไม่ซ้ำ ไม่คิดคะแนนใช้ 0 และคะแนนต้องอยู่ระหว่าง 1 ถึง 10000",
+        ));
     }
     Ok(())
 }
@@ -140,6 +163,11 @@ pub async fn create_template(
             .bind(round).bind(id).bind(date).bind(Json(&participants)).execute(&mut *tx).await?;
     }
     audit(&mut tx, actor, id, "create", "special attendance rounds").await?;
+    for date in &p.dates {
+        super::score_changes::enqueue_day(&mut tx, term, *date).await?;
+        sqlx::query("DELETE FROM attendance_finalized_dates WHERE generation=(SELECT generation FROM attendance_module_state WHERE singleton) AND academic_term_id=$1 AND date=$2")
+            .bind(term).bind(date).execute(&mut *tx).await?;
+    }
     tx.commit().await?;
     Ok(SpecialAttendanceTemplate {
         id,
@@ -232,9 +260,43 @@ mod tests {
             counted: true,
             notify: true,
             groups: vec![],
+            scoring: None,
         };
         assert!(validate_definition(&p).is_err());
         p.dates = vec![NaiveDate::MIN, NaiveDate::MIN];
         assert!(validate_definition(&p).is_err());
+    }
+    #[test]
+    fn special_scoring_requires_complete_distinct_writable_results_and_valid_amounts() {
+        let mut rules = [
+            AttendanceResult::Present,
+            AttendanceResult::Absent,
+            AttendanceResult::Late,
+            AttendanceResult::Skipped,
+            AttendanceResult::SickLeave,
+            AttendanceResult::PersonalLeave,
+            AttendanceResult::Activity,
+        ]
+        .into_iter()
+        .map(|result| AttendanceScoreRule {
+            result,
+            action: ScoreAction::None,
+            points: 0,
+        })
+        .collect::<Vec<_>>();
+        assert!(validate_scoring(&rules).is_ok());
+        rules[0].action = ScoreAction::Merit;
+        assert!(validate_scoring(&rules).is_err());
+        rules[0].points = 5;
+        assert!(validate_scoring(&rules).is_ok());
+        rules[1].result = rules[0].result;
+        assert!(validate_scoring(&rules).is_err());
+        rules[1].result = AttendanceResult::Unchecked;
+        assert!(validate_scoring(&rules).is_err());
+        rules[1].result = AttendanceResult::Absent;
+        rules[0].points = 10_001;
+        assert!(validate_scoring(&rules).is_err());
+        rules.pop();
+        assert!(validate_scoring(&rules).is_err());
     }
 }

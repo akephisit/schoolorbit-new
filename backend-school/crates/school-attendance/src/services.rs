@@ -1,7 +1,9 @@
 pub mod faces;
+pub mod finalization;
 pub mod notifications;
 pub mod reports;
 pub mod reset;
+pub mod score_changes;
 pub mod sessions;
 pub mod settings;
 pub mod specials;
@@ -71,6 +73,14 @@ pub async fn audit(
 
 pub async fn lock_module(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
     sqlx::query("SELECT pg_advisory_xact_lock_shared(17010000)")
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Serialize cross-domain reset decisions with every Attendance mutation.
+pub async fn lock_module_exclusive(tx: &mut Transaction<'_, Postgres>) -> Result<(), AppError> {
+    sqlx::query("SELECT pg_advisory_xact_lock(17010000)")
         .execute(&mut **tx)
         .await?;
     Ok(())

@@ -103,10 +103,17 @@ pub async fn students(
     term: Uuid,
     date: NaiveDate,
 ) -> Result<Vec<AttendanceCoreStudent>, AppError> {
+    students_on_connection(&mut *pool.acquire().await?, term, date).await
+}
+pub async fn students_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+) -> Result<Vec<AttendanceCoreStudent>, AppError> {
     let rows = sqlx::query_as(ALL_STUDENTS_SQL)
         .bind(term)
         .bind(date)
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await?;
     let rows: Vec<AttendanceCoreStudent> = rows;
     if rows.len() > 10000 {
@@ -124,6 +131,16 @@ pub async fn rooms_on_connection(
     term: Uuid,
 ) -> Result<Vec<AttendanceCoreRoom>, AppError> {
     Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND h.is_active ORDER BY h.name,h.id").bind(term).fetch_all(&mut *connection).await?)
+}
+/// Historical attendance retains rooms with participants on the requested date,
+/// even when the current UI has subsequently deactivated that room.
+pub async fn rooms_for_date_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+) -> Result<Vec<AttendanceCoreRoom>, AppError> {
+    Ok(sqlx::query_as("SELECT h.id,h.name,ARRAY(SELECT a.user_id FROM homeroom_advisors a WHERE a.homeroom_id=h.id ORDER BY a.user_id) teacher_ids FROM homerooms h JOIN academic_terms t ON t.academic_year_id=h.academic_year_id WHERE t.id=$1 AND EXISTS(SELECT 1 FROM homeroom_placements p WHERE p.homeroom_id=h.id AND p.status IN ('current','ended') AND p.start_date<=$2 AND (p.end_date IS NULL OR p.end_date>=$2)) ORDER BY h.name,h.id")
+        .bind(term).bind(date).fetch_all(&mut *connection).await?)
 }
 pub async fn advisor_for_student(
     pool: &PgPool,

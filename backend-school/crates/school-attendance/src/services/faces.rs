@@ -457,6 +457,7 @@ async fn accept_scan(
             current != AttendanceResult::Unchecked && current != result,
         )
         .await?;
+        super::score_changes::enqueue_day(&mut tx, s.academic_term_id, s.date).await?;
     }
     audit(
         &mut tx,

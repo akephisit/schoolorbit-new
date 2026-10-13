@@ -3,6 +3,7 @@ pub mod achievement;
 pub mod admission;
 pub mod attendance;
 pub mod auth;
+pub mod behavior;
 pub mod calendar;
 pub mod certificates;
 pub mod consent;

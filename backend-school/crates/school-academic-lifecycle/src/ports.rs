@@ -12,6 +12,13 @@ use uuid::Uuid;
 
 #[async_trait]
 pub trait ExternalLifecyclePort: Send + Sync {
+    async fn require_attendance_delivery_complete(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        academic_term_id: Uuid,
+        closed_on: NaiveDate,
+    ) -> Result<(), AppError>;
+
     async fn pending_exam_work(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

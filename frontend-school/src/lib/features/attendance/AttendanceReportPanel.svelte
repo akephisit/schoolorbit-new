@@ -71,7 +71,8 @@
 	const summaries = $derived(report.summaries);
 	const canPurge = $derived($can.has(PERMISSIONS.ATTENDANCE_DELETE_SCHOOL) && !studentId);
 	function percent(s: AttendanceSummary) {
-		const known = s.present + s.late + s.absent + s.leave + s.activity;
+		const known =
+			s.present + s.late + s.absent + s.skipped + s.sickLeave + s.personalLeave + s.activity;
 		if (!known) return '—';
 		return (
 			(
@@ -234,7 +235,9 @@
 				'มา',
 				'สาย',
 				'ขาด',
-				'ลา',
+				'หนีเรียน',
+				'ลาป่วย',
+				'ลากิจ',
 				'กิจกรรม',
 				'ยังไม่เช็ค',
 				'ทั้งหมด'
@@ -282,7 +285,9 @@
 					s.present,
 					s.late,
 					s.absent,
-					s.leave,
+					s.skipped,
+					s.sickLeave,
+					s.personalLeave,
 					s.activity,
 					s.unchecked,
 					s.expected
@@ -389,7 +394,7 @@
 			<Table.Root class="block min-w-0 sm:table sm:min-w-[800px]"
 				><Table.Header class="hidden sm:table-header-group"
 					><Table.Row
-						>{#each ['นักเรียน', 'ประเภท / รอบ', 'มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม', 'ยังไม่เช็ค', 'ทั้งหมด', 'ร้อยละ'] as label (label)}<Table.Head
+						>{#each ['นักเรียน', 'ประเภท / รอบ', 'มา', 'สาย', 'ขาด', 'หนีเรียน', 'ลาป่วย', 'ลากิจ', 'กิจกรรม', 'ยังไม่เช็ค', 'ทั้งหมด', 'ร้อยละ'] as label (label)}<Table.Head
 								>{label}</Table.Head
 							>{/each}</Table.Row
 					></Table.Header
@@ -421,8 +426,14 @@
 								><span class="block text-xs text-muted-foreground sm:hidden">ขาด</span
 								>{s.absent}</Table.Cell
 							><Table.Cell class="block sm:table-cell"
-								><span class="block text-xs text-muted-foreground sm:hidden">ลา</span
-								>{s.leave}</Table.Cell
+								><span class="block text-xs text-muted-foreground sm:hidden">หนีเรียน</span
+								>{s.skipped}</Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">ลาป่วย</span
+								>{s.sickLeave}</Table.Cell
+							><Table.Cell class="block sm:table-cell"
+								><span class="block text-xs text-muted-foreground sm:hidden">ลากิจ</span
+								>{s.personalLeave}</Table.Cell
 							><Table.Cell class="block sm:table-cell"
 								><span class="block text-xs text-muted-foreground sm:hidden">กิจกรรม</span
 								>{s.activity}</Table.Cell
