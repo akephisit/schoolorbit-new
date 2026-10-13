@@ -156,24 +156,40 @@ pub async fn student_summary(
             history_totals.push(row);
         }
     }
-    let history = totals(history.merit, history.deduction);
+    // Independently archived sides are aggregate buckets, not matched windows.
+    let history = BehaviorCurrentTotals {
+        merit: history.merit,
+        deduction: history.deduction,
+        net: None,
+    };
     let lifetime = totals(
         current.merit + history.merit,
         current.deduction + history.deduction,
     );
     let equal_window = merit_cycle.starts_at == deduction_cycle.starts_at;
+    let later_start = merit_cycle.starts_at.max(deduction_cycle.starts_at);
+    let archived_comparison_cycles: Vec<_> = history_totals
+        .iter()
+        .filter(|row| row.date >= comparison_start)
+        .map(|row| row.cycle_id)
+        .collect();
+    // Partial archive can move only one side out of an otherwise equal current
+    // cycle. Completed reset windows ending exactly at its start do not overlap.
+    let archived_overlap: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM behavior_cycles WHERE id=ANY($1) AND COALESCE(ends_at,'infinity'::timestamptz)>$2)")
+        .bind(archived_comparison_cycles).bind(later_start).fetch_one(&mut *connection).await?;
     let current = BehaviorCurrentTotals {
         merit: current.merit,
         deduction: current.deduction,
-        net: equal_window.then_some(current.merit - current.deduction),
+        net: (equal_window && !archived_overlap).then_some(current.merit - current.deduction),
     };
     let later = merit_cycle
         .starts_at
         .max(deduction_cycle.starts_at)
         .with_timezone(&chrono_tz::Asia::Bangkok);
-    let comparison_exact = equal_window
-        || later.time() == chrono::NaiveTime::MIN
-        || comparison_start > later.date_naive();
+    let comparison_exact = !archived_overlap
+        && (equal_window
+            || later.time() == chrono::NaiveTime::MIN
+            || comparison_start > later.date_naive());
     let comparable_current = BehaviorCurrentTotals {
         merit: comparable.merit,
         deduction: comparable.deduction,

@@ -285,7 +285,7 @@ pub struct BehaviorCurrentTotals {
 pub struct BehaviorStudentSummary {
     pub student_id: Uuid,
     pub current: BehaviorCurrentTotals,
-    pub history: BehaviorScoreTotals,
+    pub history: BehaviorCurrentTotals,
     pub lifetime: BehaviorScoreTotals,
     pub comparable_current: BehaviorCurrentTotals,
     pub comparison_exact: bool,

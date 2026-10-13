@@ -316,6 +316,57 @@ async fn manual_group_scope_union_locked_points_and_creator_cancellation() {
     );
 }
 #[tokio::test]
+async fn partial_side_archive_never_claims_matching_current_or_history_windows() {
+    let f = fixture("behavior_partial_archive_windows").await;
+    for (side, points) in [(BehaviorSide::Merit, 20), (BehaviorSide::Deduction, 5)] {
+        let item = item(&f, side, points).await;
+        let p = payload(&f, f.admin, &item, vec![f.a]).await;
+        manual::create_batch(&f.pool, f.admin, p).await.unwrap();
+    }
+    assert_eq!(summary(&f, f.a).await.current.net, Some(15));
+    let scope = BehaviorCleanupScope {
+        start: Some(today()),
+        end: Some(today()),
+        academic_year_id: None,
+        academic_term_id: Some(f.term),
+        sides: vec![BehaviorSide::Merit],
+        sources: vec![BehaviorSource::Manual],
+    };
+    let preview = cleanup::preview(
+        &f.pool,
+        f.admin.actor_id,
+        PreviewBehaviorCleanup {
+            scope: scope.clone(),
+            mode: BehaviorCleanupMode::Archive,
+        },
+    )
+    .await
+    .unwrap();
+    cleanup::execute(
+        &f.pool,
+        f.admin.actor_id,
+        ExecuteBehaviorCleanup {
+            request_id: Uuid::new_v4(),
+            token: preview.token,
+            revision: preview.revision,
+            scope,
+            mode: BehaviorCleanupMode::Archive,
+            reason: "archive merit only".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let s = summary(&f, f.a).await;
+    assert_eq!((s.current.merit, s.current.deduction), (0, 5));
+    assert_eq!((s.history.merit, s.history.deduction), (20, 0));
+    assert_eq!(s.current.net, None);
+    assert_eq!(s.history.net, None);
+    assert_eq!(s.comparable_current.net, None);
+    assert!(!s.comparison_exact);
+    assert_eq!(s.lifetime.net, 15);
+}
+
+#[tokio::test]
 async fn reset_twenty_zero_then_five_same_day_and_actual_detail_deletion() {
     let f = fixture("behavior_reset_same_day").await;
     let deduction = item(&f, BehaviorSide::Deduction, 20).await;
