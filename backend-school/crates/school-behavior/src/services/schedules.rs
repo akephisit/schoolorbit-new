@@ -44,6 +44,7 @@ pub(super) async fn rotate(
     through: NaiveDate,
     reason: &str,
 ) -> Result<(), AppError> {
+    validate_reason(reason)?;
     let next_day = through.succ_opt().ok_or_else(|| invalid("วันสิ้นสุดเกินช่วง"))?;
     let (at, starts) = if through == today() {
         (Utc::now(), through)
@@ -61,7 +62,7 @@ pub(super) async fn rotate(
         .bind(old.id)
         .bind(through)
         .bind(at)
-        .bind(reason)
+        .bind("ประวัติรอบคะแนน")
         .execute(&mut *connection)
         .await?;
         let new:Uuid=sqlx::query_scalar("INSERT INTO behavior_cycles(side,starts_on,starts_at,state,label)VALUES($1,$2,$3,'current','รอบปัจจุบัน')RETURNING id").bind(side).bind(starts).bind(at).fetch_one(&mut *connection).await?;

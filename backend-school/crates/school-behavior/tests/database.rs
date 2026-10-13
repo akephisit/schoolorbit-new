@@ -636,6 +636,112 @@ async fn attendance_replay_correction_cap_suppression_and_null_room() {
 }
 
 #[tokio::test]
+async fn queued_reset_with_long_reason_finishes_and_preserves_full_audit() {
+    let f = fixture("behavior_reset_long_reason").await;
+    let merit = item(&f, BehaviorSide::Merit, 7).await;
+    let p = payload(&f, f.admin, &merit, vec![f.a]).await;
+    manual::create_batch(&f.pool, f.admin, p).await.unwrap();
+    sqlx::query("INSERT INTO behavior_batches(academic_term_id,item_version_id,occurred_at,date,detail,created_by)SELECT $1,$2,now(),$3,'รายละเอียดที่ต้องลบจริง',$4 FROM generate_series(1,20000)").bind(f.term).bind(merit.version_id.unwrap()).bind(today()).bind(f.admin.actor_id).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO behavior_entries(total_id,batch_id,item_name,points,created_by)SELECT t.id,b.id,'Behavior merit',7,$1 FROM behavior_batches b JOIN behavior_daily_totals t ON t.student_id=$2 AND t.side='merit' WHERE NOT EXISTS(SELECT 1 FROM behavior_entries e WHERE e.batch_id=b.id)").bind(f.admin.actor_id).bind(f.a).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE behavior_daily_totals t SET points=(SELECT sum(e.points) FROM behavior_entries e WHERE e.total_id=t.id),row_version=row_version+1 WHERE student_id=$1 AND side='merit'").bind(f.a).execute(&f.pool).await.unwrap();
+    let before = summary(&f, f.a).await;
+    assert_eq!(before.current.merit, 140007);
+    let old_cycle: Uuid =
+        sqlx::query_scalar("SELECT id FROM behavior_cycles WHERE side='merit' AND state='current'")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    let reason = "รีเซ็ตตามนโยบายโรงเรียนและเก็บเหตุผลสำหรับตรวจสอบย้อนหลัง ".repeat(10);
+    assert!((201..=1000).contains(&reason.trim().chars().count()));
+    let preview = schedules::preview_reset(
+        &f.pool,
+        f.admin.actor_id,
+        PreviewBehaviorReset {
+            sides: vec![BehaviorSide::Merit],
+            through: today(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview.entries, 20001);
+    let result = schedules::reset(
+        &f.pool,
+        f.admin.actor_id,
+        ResetBehaviorScores {
+            request_id: Uuid::new_v4(),
+            token: preview.token,
+            revision: preview.revision,
+            sides: vec![BehaviorSide::Merit],
+            through: today(),
+            reason: reason.clone(),
+        },
+        BehaviorResetReadiness {
+            finalized_through: today(),
+            delivered_through: today(),
+            term_ends: vec![],
+            year_ends: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, "pending");
+    assert!(cleanup::run_cleanup_jobs(&f.pool, 1).await.unwrap());
+    let partial = cleanup::job(&f.pool, result.id).await.unwrap();
+    assert_eq!(
+        (partial.status.as_str(), partial.entries_deleted),
+        ("pending", 5000)
+    );
+    assert_eq!(summary(&f, f.a).await.current.merit, before.current.merit);
+    assert!(!cleanup::run_cleanup_jobs(&f.pool, 32).await.unwrap());
+    let finished = cleanup::job(&f.pool, result.id).await.unwrap();
+    assert_eq!(
+        (finished.status.as_str(), finished.entries_deleted),
+        ("completed", 20001)
+    );
+    let after = summary(&f, f.a).await;
+    assert_eq!(
+        (
+            after.current.merit,
+            after.history.merit,
+            after.lifetime.merit
+        ),
+        (0, before.current.merit, before.lifetime.merit)
+    );
+    let (state, label, ends_on): (String, String, Option<chrono::NaiveDate>) =
+        sqlx::query_as("SELECT state,label,ends_on FROM behavior_cycles WHERE id=$1")
+            .bind(old_cycle)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (state.as_str(), label.as_str(), ends_on),
+        ("history", "ประวัติรอบคะแนน", Some(today()))
+    );
+    let (new_cycle, starts_on): (Uuid, chrono::NaiveDate) = sqlx::query_as(
+        "SELECT id,starts_on FROM behavior_cycles WHERE side='merit' AND state='current'",
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_ne!(new_cycle, old_cycle);
+    assert_eq!(starts_on, today());
+    let (job_reason, audit_reason, audit_mode): (String, String, String) = sqlx::query_as("SELECT j.reason,a.reason,a.mode FROM behavior_cleanup_jobs j JOIN behavior_cleanup_audits a ON a.id=j.id WHERE j.id=$1")
+        .bind(result.id)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(job_reason, reason.trim());
+    assert_eq!(audit_reason, reason.trim());
+    assert_eq!(audit_mode, "reset");
+    let details: i64 = sqlx::query_scalar("SELECT count(*) FROM behavior_batches")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(details, 0);
+    assert!(!cleanup::run_cleanup_jobs(&f.pool, 1).await.unwrap());
+}
+
+#[tokio::test]
 async fn durable_cleanup_chunks_keep_totals_until_completed_and_resume_after_restart() {
     let f = fixture("behavior_durable_cleanup").await;
     let merit = item(&f, BehaviorSide::Merit, 7).await;
