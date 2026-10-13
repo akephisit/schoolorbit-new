@@ -83,10 +83,10 @@ test -f "$proxy_template" || {
 . "$network_helper_source"
 # shellcheck source=scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
 . "$timing_helper_source"
-reconnect_backend_network() {
+validate_backend_network() {
     container=$1
     service_alias=$2
-    schoolorbit_ensure_container_network_aliases \
+    schoolorbit_validate_container_network_aliases \
         schoolorbit-web "$container" "$service_alias" "$container" schoolorbit-nginx
 }
 
@@ -150,7 +150,7 @@ podman run --rm --network schoolorbit-web --env ADMIN_MIGRATION_DATABASE_URL \
 unset ADMIN_MIGRATION_DATABASE_URL
 compose_up_quiet --no-deps backend-admin
 unset BACKEND_ADMIN_IMAGE
-reconnect_backend_network schoolorbit-backend-admin backend-admin
+validate_backend_network schoolorbit-backend-admin backend-admin
 
 # The child shell expands its own positional arguments.
 # shellcheck disable=SC2016

@@ -45,6 +45,13 @@ maintenance failure cases, plus `node --test frontend-school/tests/static/school
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and
 browser verification after integration. Caches never replace a required test result.
 
+For backend network changes, run `bats scripts/tests/installer/network_remote.bats`
+and `node --test scripts/tests/pipeline-network.test.mjs` with the local Docker engine.
+The first covers missing/stale aliases, DNS delay and unavailable probes without any
+network mutations. The Docker fixture verifies that successful validation and refused
+configuration drift preserve the same open TCP connection and container address.
+Production acceptance also checks aliases and socket source addresses after startup.
+
 For deployment dependency selection and compiler evidence, run
 `node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
 The fixtures exercise nested/peer dependencies, stale and partial caches, workspace-link exclusion,

@@ -237,10 +237,10 @@ compose_up_quiet() {
         podman-compose -f "$runtime_compose" up -d "$@" >/dev/null 2>&1
     fi
 }
-reconnect_backend_network() {
+validate_backend_network() {
     container=$1
     service_alias=$2
-    schoolorbit_ensure_container_network_aliases \
+    schoolorbit_validate_container_network_aliases \
         schoolorbit-web "$container" "$service_alias" "$container" schoolorbit-nginx
 }
 recreate_nginx() {
@@ -335,7 +335,7 @@ podman pull "$backend_school_image_reference"
 schoolorbit_timer_report image_pull "$image_pull_started"
 
 # Keep the shared admin upstream resolvable before Nginx is recreated.
-reconnect_backend_network schoolorbit-backend-admin backend-admin
+validate_backend_network schoolorbit-backend-admin backend-admin
 
 proxy_backup=""
 proxy_existed=0
@@ -384,7 +384,7 @@ compose_up_quiet --no-deps backend-school
 unset_school_compose_env
 unset session_hmac_key
 unset runtime_base_domain trusted_proxy_cidrs school_allowed_dev_origins
-reconnect_backend_network schoolorbit-backend-school backend-school
+validate_backend_network schoolorbit-backend-school backend-school
 
 # /ready checks control plane, both R2 buckets, and clamd.
 # The child shell expands its own positional arguments.

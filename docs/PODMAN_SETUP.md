@@ -2,6 +2,11 @@
 
 คู่มือนี้ใช้สำหรับเตรียม production server ใหม่บน Debian/Ubuntu ด้วย Podman แบบ rootless โดยให้ repository เป็นเจ้าของ Compose และ Nginx configuration ที่ใช้งานจริง หากเป็นการดูแลระบบที่ติดตั้งแล้ว ให้ใช้ [Operations](./OPERATIONS.md) แทน
 
+Backend service and container hostname aliases belong to the production Compose
+network declarations and must exist before the application starts. Release checks
+validate DNS without detaching a running service. Correct alias configuration through
+the canonical release; do not repair it with live network disconnect/connect commands.
+
 ## ขอบเขตและโครงสร้างระบบ
 
 ระบบ production ประกอบด้วย:
