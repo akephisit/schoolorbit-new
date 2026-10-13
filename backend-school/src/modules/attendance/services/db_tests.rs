@@ -3691,3 +3691,92 @@ async fn attendance_behavior_adapter_reconciles_corrections_and_recreated_genera
         0
     );
 }
+
+#[tokio::test]
+async fn attendance_settings_preserve_unchanged_past_activation_and_reject_past_changes() {
+    let f = fixture("attendance_settings_activation_noop").await;
+    let today = Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
+    let yesterday = today.pred_opt().unwrap();
+    sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1 WHERE singleton")
+        .bind(yesterday)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let before = settings::get(&f.pool, TERM).await.unwrap();
+    let mut configuration = before.configuration;
+    configuration.weekdays = vec![1, 3, 5];
+    let saved = settings::save(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            configuration: configuration.clone(),
+            row_version: before.row_version,
+            auto_finalize_from: Some(yesterday),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.auto_finalize_from, yesterday);
+    assert_eq!(saved.configuration.weekdays, vec![1, 3, 5]);
+    assert_eq!(saved.row_version, 1);
+    let two_days_ago = yesterday.pred_opt().unwrap();
+    assert!(matches!(
+        settings::save(
+            &f.pool,
+            TEACHER,
+            TERM,
+            SaveAttendanceSettings {
+                configuration: configuration.clone(),
+                row_version: saved.row_version,
+                auto_finalize_from: Some(two_days_ago),
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert_eq!(
+        settings::get(&f.pool, TERM)
+            .await
+            .unwrap()
+            .auto_finalize_from,
+        yesterday
+    );
+    // Even a forward move must not enable historical backfill: the unchanged
+    // value is the only accepted activation date before today's boundary.
+    sqlx::query("UPDATE attendance_module_state SET auto_finalize_from=$1 WHERE singleton")
+        .bind(two_days_ago)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        settings::save(
+            &f.pool,
+            TEACHER,
+            TERM,
+            SaveAttendanceSettings {
+                configuration: configuration.clone(),
+                row_version: saved.row_version,
+                auto_finalize_from: Some(yesterday),
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    let next = settings::save(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            configuration,
+            row_version: saved.row_version,
+            auto_finalize_from: Some(today),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(next.auto_finalize_from, today);
+    assert_eq!(next.row_version, 2);
+}

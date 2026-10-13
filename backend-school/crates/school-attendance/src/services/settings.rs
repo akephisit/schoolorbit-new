@@ -68,11 +68,12 @@ pub async fn save(
         )
         .fetch_one(&mut *tx)
         .await?;
-        if date < current
-            || date
-                < chrono::Utc::now()
-                    .with_timezone(&chrono_tz::Asia::Bangkok)
-                    .date_naive()
+        if date != current
+            && (date < current
+                || date
+                    < chrono::Utc::now()
+                        .with_timezone(&chrono_tz::Asia::Bangkok)
+                        .date_naive())
         {
             return Err(invalid("วันเริ่มปิดยอดอัตโนมัติต้องไม่ย้อนก่อนวันเดิมหรือวันนี้"));
         }
