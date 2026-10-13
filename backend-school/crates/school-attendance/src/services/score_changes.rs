@@ -118,6 +118,33 @@ pub async fn pending_on_connection(
         .bind(limit).fetch_all(&mut *connection).await?)
 }
 
+/// Reload a prefetched key after the caller acquires Attendance's module/term
+/// locks. Reset can change both the revision and the meaning of a queued day;
+/// the prefetched payload is never authority for selecting current source facts.
+pub async fn current_on_connection(
+    connection: &mut PgConnection,
+    prefetched: &AttendanceScoreChange,
+) -> Result<Option<AttendanceScoreChange>, AppError> {
+    let current: Option<AttendanceScoreChange> = sqlx::query_as("SELECT generation,academic_term_id,date,row_version,queued_at,reset FROM attendance_score_changes WHERE generation=$1 AND academic_term_id=$2 AND date=$3")
+        .bind(prefetched.generation).bind(prefetched.academic_term_id).bind(prefetched.date)
+        .fetch_optional(&mut *connection).await?;
+    let Some(current) = current else {
+        return Ok(None);
+    };
+    if !current.reset {
+        let generation: Uuid =
+            sqlx::query_scalar("SELECT generation FROM attendance_module_state WHERE singleton")
+                .fetch_one(&mut *connection)
+                .await?;
+        if current.generation != generation {
+            return Err(AppError::Conflict(
+                "งานคะแนนอ้างอิงเช็กชื่อรุ่นเก่าโดยไม่มีคำสั่งรีเซ็ต จึงยังไม่อ่านผลรุ่นใหม่".into(),
+            ));
+        }
+    }
+    Ok(Some(current))
+}
+
 pub async fn acknowledge(
     tx: &mut Transaction<'_, Postgres>,
     change: &AttendanceScoreChange,

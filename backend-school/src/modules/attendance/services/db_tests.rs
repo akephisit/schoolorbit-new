@@ -3467,3 +3467,121 @@ async fn attendance_finalization_catches_up_on_one_connection_with_historical_in
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn attendance_prefetched_score_change_reloads_reset_before_new_generation_facts() {
+    use school_attendance::services::score_changes as changes;
+    let f = fixture("attendance_prefetched_reset_change").await;
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    let source = seed(&f, AttendanceKind::Arrival, date);
+    let old_session = sessions::ensure(&f.pool, &f.actor, source.clone())
+        .await
+        .unwrap();
+    let old_detail = sessions::detail(&f.pool, &f.actor, old_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        old_session.id,
+        save_payload(&old_detail, STUDENT, AttendanceResult::Present),
+    )
+    .await
+    .unwrap();
+    let prefetched = changes::pending_on_connection(&mut *f.pool.acquire().await.unwrap(), 100)
+        .await
+        .unwrap()
+        .remove(0);
+    assert!(!prefetched.reset);
+    let impact = school_attendance::services::reset::impact(&f.pool)
+        .await
+        .unwrap();
+    super::reset(
+        &f.pool,
+        TEACHER,
+        ResetAttendanceModule {
+            generation: impact.generation,
+            token: impact.token,
+            reason: "reset between queue prefetch and locking".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let new_session = sessions::ensure(&f.pool, &f.actor, source).await.unwrap();
+    assert_eq!(old_session.id, new_session.id);
+    let new_detail = sessions::detail(&f.pool, &f.actor, new_session.id)
+        .await
+        .unwrap();
+    sessions::save(
+        &f.pool,
+        &f.actor,
+        new_session.id,
+        save_payload(&new_detail, STUDENT, AttendanceResult::Late),
+    )
+    .await
+    .unwrap();
+    let generation = sessions::module_generation(&f.pool).await.unwrap();
+    assert_ne!(generation, prefetched.generation);
+    let mut tx = f.pool.begin().await.unwrap();
+    school_attendance::services::lock_term(&mut tx, TERM, false, false)
+        .await
+        .unwrap();
+    let current = changes::current_on_connection(&mut tx, &prefetched)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(current.reset);
+    assert_eq!(current.generation, prefetched.generation);
+    assert!(current.row_version > prefetched.row_version);
+    // A fresh source snapshot belongs only to the new generation. The old queue
+    // record's reset flag instructs the adapter to deliver an empty old day.
+    let new_facts = changes::day_facts_on_connection(&mut tx, TERM, date)
+        .await
+        .unwrap();
+    assert_eq!(new_facts.len(), 1);
+    assert_eq!(new_facts[0].result, AttendanceResult::Late);
+    let queued = changes::pending_on_connection(&mut tx, 100).await.unwrap();
+    assert_eq!(queued.len(), 2);
+    let next = queued.iter().find(|c| c.generation == generation).unwrap();
+    assert!(!next.reset);
+    assert!(next.row_version > current.row_version);
+    assert!(changes::acknowledge(&mut tx, &current).await.unwrap());
+    assert!(
+        changes::current_on_connection(&mut tx, &prefetched)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn attendance_score_queue_rejects_non_reset_stale_generation_without_reading_new_facts() {
+    use school_attendance::services::score_changes as changes;
+    let f = fixture("attendance_stale_generation_queue").await;
+    let mut tx = f.pool.begin().await.unwrap();
+    school_attendance::services::lock_term(&mut tx, TERM, false, false)
+        .await
+        .unwrap();
+    let generation = Uuid::new_v4();
+    let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
+    changes::enqueue_with_generation(&mut tx, generation, TERM, date, false)
+        .await
+        .unwrap();
+    let prefetched = changes::pending_on_connection(&mut tx, 100)
+        .await
+        .unwrap()
+        .remove(0);
+    assert!(matches!(
+        changes::current_on_connection(&mut tx, &prefetched).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert_eq!(
+        changes::pending_on_connection(&mut tx, 100)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    tx.rollback().await.unwrap();
+}
