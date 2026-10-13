@@ -37,11 +37,14 @@ The Admin image runs `/app/backend-admin --migrate-admin` as a one-shot job with
 `ADMIN_MIGRATION_DATABASE_URL` before starting the ordinary service. Runtime startup
 validates SQLx history without applying migrations. Tenant provisioning/deployment
 alone runs `school_migrations::run_tenant_migrations` and reconciles runtime grants.
-Owner pools close before runtime/scheduler use. Each deployment then checks the
-complete SQLx history and current version through a separate, short-lived DML pool
-with one connection; it closes before request/scheduler registration. This verification
-must not borrow a busy cached request pool. Deployment retires and closes cached
-pre-migration pools before creating verified pools and registering runtime work.
+Owner pools drain before runtime/scheduler use. Each deployment checks the complete
+SQLx history through one directly owned runtime connection; its verified timeline
+also supplies the version without another query or pool hand-off. Connection setup,
+verification and closure share a 30-second deadline. This verification never borrows
+a cached request pool. Deployment retires pre-migration pools before creating verified
+pools and registering runtime work. Retirement prevents further acquisitions and
+releases the tenant creation gate before waiting up to 30 seconds for borrowers.
+Failure keeps maintenance active; it never means a transaction was rolled back.
 Normal requests fail closed when
 the tenant schema does not match the release.
 
@@ -94,6 +97,29 @@ Backend route-template response-header timings and `sqlx::pool::acquire` wait ti
 separate application/pool latency from database time. SSH into each VPS for its own
 CPU, available RAM, disk and network; the database dashboard cannot measure the
 backend host's CPU/RAM. No public metrics endpoint or additional monitoring stack.
+
+When investigating pool stalls, correlate `tenant_pool_creation`,
+`runtime_schema_verification`, `migration_owner_drain`, `tenant_pool_retirement`
+and `attendance_schedule_registration` events with PostgreSQL aggregate activity.
+Creation logs distinguish waiting for the tenant gate from connection/schema work,
+with explicit schema-start/schema-verified events. Drainage failures include pool
+size and idle count, never connection strings or SQL parameters. A zero idle count
+alone does not prove a database lock; inspect `pg_stat_activity` wait classes and
+ungranted `pg_locks` on the database host and transport/process health on the backend.
+
+Tenant initialization has a 30-second overall deadline, including its per-tenant
+creation gate; failed/cancelled creation is not cached and later requests may try
+again. The first connection verifies schema inside SQLx's connection initialization
+hook, before pool admission. Cancellation drops that owned socket directly instead
+of leaving a background pool-return task. Subsequent connections in the verified
+pool skip the history scan; ordinary cache hits perform no schema query. Closed cached handles are rejected. A drain timeout reports outstanding
+borrowers instead of blocking deployment indefinitely. It does not forcibly terminate
+transactions or guarantee that a broken network connection has disappeared. Restore
+connectivity or resolve the diagnosed borrower, then retry the canonical Pipeline
+under maintenance. Do not use a VPS reboot as the first diagnostic step. If process
+replacement is necessary, use the normal release/recovery flow and preserve safe
+stage/count evidence first. Business writes are never automatically replayed after
+ambiguous transport failures.
 
 Install `scripts/postgres_status.py` as
 `/usr/local/libexec/schoolorbit-postgres-status.py` with the tracked monitor unit/timer.

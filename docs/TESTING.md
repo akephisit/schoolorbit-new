@@ -103,6 +103,17 @@ implementation paths; root cross-domain/database fixtures retain their original
 application-level ownership. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
 
+For tenant pool lifecycle changes, run the `school-tenancy` pool-manager tests through
+`scripts/test_backend_school.sh --package school-tenancy pool_manager::tests`.
+They cover a silent TCP peer, blocked schema reads, cancelled initialization,
+client socket closure while the database is still blocked, concurrent tenant isolation,
+closed cached handles and outstanding borrowers during
+drainage, including recovery without restarting the manager. The fixtures own their
+loopback proxy and disposable PostgreSQL database; never fault-inject production.
+Run the system migration handler tests for independent runtime verification and
+refusal of incomplete/corrupt history. These reproduce failure mechanisms, not a
+historical outage's initiating network or server fault.
+
 Foundation ownership can be checked independently:
 
 ```bash

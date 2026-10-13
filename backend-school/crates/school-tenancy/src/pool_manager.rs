@@ -7,7 +7,10 @@ use sqlx::{
 use std::collections::HashMap;
 use std::future::Future;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 
@@ -33,6 +36,7 @@ pub struct PoolManager {
     creation_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
     max_connections_per_school: u32,
     pool_ttl: Duration,
+    lifecycle_timeout: Duration,
 }
 
 impl PoolManager {
@@ -42,6 +46,7 @@ impl PoolManager {
             creation_locks: Arc::new(DashMap::new()),
             max_connections_per_school: 5,
             pool_ttl: Duration::from_secs(1800), // 30 minutes TTL
+            lifecycle_timeout: Duration::from_secs(30),
         }
     }
 
@@ -59,7 +64,7 @@ impl PoolManager {
     async fn cached_pool_at(&self, key: &str, now: Instant) -> Option<PgPool> {
         let mut pools = self.pools.write().await;
         match pools.get_mut(key) {
-            Some(entry) if entry.is_fresh_at(now, self.pool_ttl) => {
+            Some(entry) if !entry.pool.is_closed() && entry.is_fresh_at(now, self.pool_ttl) => {
                 entry.touch(now);
                 Some(entry.pool.clone())
             }
@@ -86,30 +91,54 @@ impl PoolManager {
             return Ok(pool);
         }
 
-        let creation_lock = self
-            .creation_locks
-            .entry(subdomain.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone();
-        let _guard = creation_lock.lock().await;
+        let started = Instant::now();
+        let mut stage = "creation_gate";
+        let result = tokio::time::timeout(self.lifecycle_timeout, async {
+            let creation_lock = self
+                .creation_locks
+                .entry(subdomain.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone();
+            let _guard = creation_lock.lock().await;
 
-        if let Some(pool) = self.cached_pool_at(database_url, Instant::now()).await {
-            tracing::debug!(
-                subdomain,
-                "Using tenant pool created by a concurrent request"
+            if let Some(pool) = self.cached_pool_at(database_url, Instant::now()).await {
+                return Ok(pool);
+            }
+
+            stage = "connect_and_verify";
+            let pool = create_pool().await?;
+            self.pools.write().await.insert(
+                database_url.to_string(),
+                PoolEntry {
+                    pool: pool.clone(),
+                    last_used: Instant::now(),
+                },
             );
-            return Ok(pool);
+            Ok(pool)
+        })
+        .await;
+        match result {
+            Ok(result) => {
+                tracing::info!(
+                    subdomain,
+                    operation = "tenant_pool_creation",
+                    stage,
+                    duration_ms = started.elapsed().as_secs_f64() * 1000.0,
+                    succeeded = result.is_ok()
+                );
+                result
+            }
+            Err(_) => {
+                tracing::warn!(
+                    subdomain,
+                    operation = "tenant_pool_creation",
+                    stage,
+                    error_code = "tenant_pool_creation_timeout",
+                    duration_ms = started.elapsed().as_secs_f64() * 1000.0
+                );
+                Err("Tenant database initialization timed out".into())
+            }
         }
-
-        let pool = create_pool().await?;
-        self.pools.write().await.insert(
-            database_url.to_string(),
-            PoolEntry {
-                pool: pool.clone(),
-                last_used: Instant::now(),
-            },
-        );
-        Ok(pool)
     }
 
     /// Get or create a connection pool for a specific school
@@ -136,7 +165,27 @@ impl PoolManager {
                     .statement_cache_capacity(100)
                     .disable_statement_logging();
 
+                // Verify the first connection while SQLx still owns it as a raw
+                // connection. Cancelling initialization then drops its socket directly,
+                // instead of spawning an unbounded PoolConnection return/ping task.
+                // Later connections in this already-verified pool need no repeated scan.
+                let verified = Arc::new(AtomicBool::new(false));
+                let tenant = subdomain.to_owned();
                 let pool = PgPoolOptions::new()
+                    .after_connect(move |connection, _| {
+                        let verified = Arc::clone(&verified);
+                        let tenant = tenant.clone();
+                        Box::pin(async move {
+                            if !verified.load(Ordering::Acquire) {
+                                tracing::info!(subdomain = tenant, operation = "tenant_pool_creation", stage = "schema_history_started");
+                                let version = school_migrations::verify_tenant_schema(connection)
+                                    .await.map_err(sqlx::Error::Protocol)?;
+                                verified.store(true, Ordering::Release);
+                                tracing::info!(subdomain = tenant, operation = "tenant_pool_creation", stage = "schema_history_verified", version);
+                            }
+                            Ok(())
+                        })
+                    })
                     .min_connections(0)
                     .acquire_time_level(log::LevelFilter::Info)
                     .acquire_slow_threshold(Duration::from_millis(250))
@@ -149,7 +198,6 @@ impl PoolManager {
                     .map_err(|error| {
                         tracing::warn!(database_code = ?error.as_database_error().and_then(|e| e.code()), "Tenant connection failed"); format!("Failed to connect to database for {subdomain}")
                     })?;
-                school_migrations::verify_tenant_schema(&pool).await?;
                 Ok(pool)
             })
             .await?;
@@ -183,22 +231,80 @@ impl PoolManager {
     }
 
     /// Deployment retires pre-migration connections before registering runtime work.
-    pub async fn retire_pool(&self, database_url: &str, subdomain: &str) {
-        let creation_lock = self
-            .creation_locks
-            .entry(subdomain.to_string())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone();
-        let _guard = creation_lock.lock().await;
-        let retired = self.pools.write().await.remove(database_url);
+    pub async fn retire_pool(&self, database_url: &str, subdomain: &str) -> Result<(), String> {
+        let retired = tokio::time::timeout(self.lifecycle_timeout, async {
+            let creation_lock = self
+                .creation_locks
+                .entry(subdomain.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone();
+            let _guard = creation_lock.lock().await;
+            let retired = self.pools.write().await.remove(database_url);
+            // close() marks the pool closed synchronously, before releasing the gate.
+            if let Some(entry) = &retired {
+                drop(entry.pool.close());
+            }
+            retired
+        })
+        .await
+        .map_err(|_| {
+            tracing::warn!(
+                subdomain,
+                operation = "tenant_pool_retirement",
+                stage = "creation_gate",
+                error_code = "tenant_pool_retirement_timeout"
+            );
+            "Tenant pool retirement timed out".to_string()
+        })?;
         if let Some(entry) = retired {
-            entry.pool.close().await;
+            close_pool_with_timeout(
+                &entry.pool,
+                "tenant_pool_retirement",
+                self.lifecycle_timeout,
+            )
+            .await?;
         }
+        Ok(())
     }
 
     /// Get current pool count (for monitoring)
     pub async fn pool_count(&self) -> usize {
         self.pools.read().await.len()
+    }
+}
+
+/// Stop accepting acquisitions immediately and bound graceful drainage. This does not
+/// cancel a borrower's transaction or retry its writes. Deployment fails closed on timeout.
+pub async fn close_pool(pool: &PgPool, operation: &'static str) -> Result<(), String> {
+    close_pool_with_timeout(pool, operation, Duration::from_secs(30)).await
+}
+
+async fn close_pool_with_timeout(
+    pool: &PgPool,
+    operation: &'static str,
+    timeout: Duration,
+) -> Result<(), String> {
+    let started = Instant::now();
+    match tokio::time::timeout(timeout, pool.close()).await {
+        Ok(()) => {
+            tracing::info!(
+                operation,
+                duration_ms = started.elapsed().as_secs_f64() * 1000.0,
+                "Database pool drained"
+            );
+            Ok(())
+        }
+        Err(_) => {
+            tracing::warn!(
+                operation,
+                error_code = "database_pool_drain_timeout",
+                pool_connections = pool.size(),
+                pool_idle_connections = pool.num_idle(),
+                duration_ms = started.elapsed().as_secs_f64() * 1000.0,
+                "Database pool stopped accepting connections but has outstanding borrowers"
+            );
+            Err("Database pool drainage timed out".into())
+        }
     }
 }
 
@@ -223,8 +329,14 @@ mod tests {
             .append_pair("options", &format!("-csearch_path={schema},public"));
         let manager = super::PoolManager::new();
         let old = manager.get_pool(url.as_str(), "tenant").await.unwrap();
+        assert_eq!(old.size(), 1);
+        assert_eq!(
+            old.num_idle(),
+            1,
+            "verified connection must be ready for the first request"
+        );
         let held_clone = old.clone();
-        manager.retire_pool(url.as_str(), "tenant").await;
+        manager.retire_pool(url.as_str(), "tenant").await.unwrap();
         assert_eq!(manager.pool_count().await, 0);
         assert!(old.is_closed());
         assert!(held_clone.is_closed());
@@ -238,7 +350,220 @@ mod tests {
             1
         );
         assert_eq!(manager.pool_count().await, 1);
-        manager.retire_pool(url.as_str(), "tenant").await;
+        manager.retire_pool(url.as_str(), "tenant").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stalled_schema_query_times_out_and_recovers_after_database_unblocks() {
+        let fixture = school_test_db::create_named_test_pool("blocked_schema").await;
+        school_test_db::run_test_migrations(&fixture).await;
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        let mut lock = fixture.begin().await.unwrap();
+        sqlx::query("LOCK TABLE _sqlx_migrations IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .unwrap();
+        let mut manager = super::PoolManager::new();
+        manager.lifecycle_timeout = Duration::from_millis(100);
+        let failed = tokio::time::timeout(
+            Duration::from_secs(1),
+            manager.get_pool(url.as_str(), "blocked"),
+        )
+        .await
+        .expect("schema verification must not hold the tenant gate indefinitely");
+        assert!(failed.is_err());
+        assert_eq!(manager.pool_count().await, 0);
+        lock.rollback().await.unwrap();
+        manager.lifecycle_timeout = Duration::from_secs(5);
+        let recovered = manager.get_pool(url.as_str(), "blocked").await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT 1")
+                .fetch_one(&recovered)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_schema_read_closes_socket_before_database_unblocks() {
+        use tokio::io::AsyncWriteExt;
+        let fixture = school_test_db::create_named_test_pool("schema_socket_cancellation").await;
+        school_test_db::run_test_migrations(&fixture).await;
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        let upstream = format!("{}:{}", url.host_str().unwrap(), url.port().unwrap_or(5432));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        url.set_host(Some("127.0.0.1")).unwrap();
+        url.set_port(Some(listener.local_addr().unwrap().port()))
+            .unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+        let proxy = tokio::spawn(async move {
+            let (client, _) = listener.accept().await.unwrap();
+            let server = tokio::net::TcpStream::connect(upstream).await.unwrap();
+            let (mut client_read, mut client_write) = client.into_split();
+            let (mut server_read, mut server_write) = server.into_split();
+            let forward = async {
+                tokio::io::copy(&mut client_read, &mut server_write)
+                    .await
+                    .unwrap();
+                // Observe client EOF even while PostgreSQL is still blocked on its lock.
+                let _ = closed_tx.send(());
+                server_write.shutdown().await.unwrap();
+            };
+            let reverse = async {
+                // A reset here is expected when a cancelled client closes its socket.
+                let _ = tokio::io::copy(&mut server_read, &mut client_write).await;
+            };
+            tokio::join!(forward, reverse);
+        });
+        let mut lock = fixture.begin().await.unwrap();
+        sqlx::query("LOCK TABLE _sqlx_migrations IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .unwrap();
+        let mut manager = super::PoolManager::new();
+        manager.lifecycle_timeout = Duration::from_millis(150);
+        assert!(manager
+            .get_pool(url.as_str(), "cancel_socket")
+            .await
+            .is_err());
+        let closed_before_unlock =
+            tokio::time::timeout(Duration::from_millis(300), closed_rx).await;
+        lock.rollback().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), proxy)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            closed_before_unlock.is_ok(),
+            "cancelled initialization leaked a socket into a background pool-return task"
+        );
+    }
+
+    #[tokio::test]
+    async fn silent_tcp_peer_times_out_then_recovers_without_restarting_manager() {
+        let fixture = school_test_db::create_named_test_pool("pool_transport_recovery").await;
+        school_test_db::run_test_migrations(&fixture).await;
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        let upstream = format!("{}:{}", url.host_str().unwrap(), url.port().unwrap_or(5432));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        url.set_host(Some("127.0.0.1")).unwrap();
+        url.set_port(Some(listener.local_addr().unwrap().port()))
+            .unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+        let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel();
+        let proxy = tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let (mut silent, _) = listener.accept().await.unwrap();
+            accepted_tx.send(()).unwrap();
+            // Accept the TCP connection but never answer PostgreSQL startup.
+            // Cancellation must close this socket, not leave an initialization task behind.
+            let mut discarded = Vec::new();
+            silent.read_to_end(&mut discarded).await.unwrap();
+            let mut bridges = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    accepted = listener.accept() => {
+                        let (mut client, _) = accepted.unwrap();
+                        let upstream = upstream.clone();
+                        bridges.spawn(async move {
+                            let mut server = tokio::net::TcpStream::connect(upstream).await.unwrap();
+                            tokio::io::copy_bidirectional(&mut client, &mut server).await.unwrap();
+                        });
+                    }
+                }
+            }
+            while let Some(result) = bridges.join_next().await {
+                result.unwrap();
+            }
+        });
+        let mut manager = super::PoolManager::new();
+        manager.lifecycle_timeout = Duration::from_millis(100);
+        let (failed, accepted) =
+            tokio::join!(manager.get_pool(url.as_str(), "transport"), accepted_rx);
+        accepted.unwrap();
+        assert!(failed.is_err());
+        assert_eq!(manager.pool_count().await, 0);
+        manager.lifecycle_timeout = Duration::from_secs(5);
+        let recovered = manager.get_pool(url.as_str(), "transport").await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT 1")
+                .fetch_one(&recovered)
+                .await
+                .unwrap(),
+            1
+        );
+        manager
+            .retire_pool(url.as_str(), "transport")
+            .await
+            .unwrap();
+        stop_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), proxy)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn retirement_does_not_wait_indefinitely_for_a_checked_out_connection() {
+        let fixture = school_test_db::create_named_test_pool("blocked_retirement").await;
+        let held = fixture.acquire().await.unwrap();
+        let mut manager = super::PoolManager::new();
+        manager.lifecycle_timeout = Duration::from_millis(40);
+        manager
+            .insert_test_pool("postgres://retirement", fixture.clone())
+            .await;
+        let manager = Arc::new(manager);
+        let retire_manager = Arc::clone(&manager);
+        let retiring = tokio::spawn(async move {
+            retire_manager
+                .retire_pool("postgres://retirement", "tenant")
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !fixture.is_closed() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // A new request must not wait behind the old borrower's drainage.
+        let fresh = tokio::time::timeout(
+            Duration::from_millis(500),
+            manager.get_or_create_pool_with("postgres://retirement", "tenant", || async {
+                Ok(lazy_pool("after_retirement"))
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(!fresh.is_closed());
+        let result = tokio::time::timeout(Duration::from_millis(500), retiring)
+            .await
+            .expect("retirement must report failure instead of blocking deployment")
+            .unwrap();
+        assert!(result.is_err());
+        assert_eq!(manager.pool_count().await, 1);
+        drop(held);
     }
 
     #[tokio::test]
@@ -275,6 +600,76 @@ mod tests {
                 .username("postgres")
                 .database(database),
         )
+    }
+
+    #[tokio::test]
+    async fn stalled_creation_releases_the_tenant_gate_and_allows_retry() {
+        let mut manager = PoolManager::new();
+        manager.lifecycle_timeout = Duration::from_millis(40);
+        let stalled = tokio::time::timeout(
+            Duration::from_millis(500),
+            manager.get_or_create_pool_with("postgres://stalled", "stalled", || async {
+                std::future::pending::<Result<sqlx::PgPool, String>>().await
+            }),
+        )
+        .await
+        .expect("pool creation must have its own deadline");
+        assert!(stalled.is_err());
+        assert_eq!(manager.pool_count().await, 0);
+        let recovered = manager
+            .get_or_create_pool_with("postgres://stalled", "stalled", || async {
+                Ok(lazy_pool("recovered"))
+            })
+            .await;
+        assert!(recovered.is_ok());
+    }
+
+    #[tokio::test]
+    async fn cancelled_creator_releases_gate_for_waiting_request() {
+        let manager = Arc::new(PoolManager::new());
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let creator_manager = Arc::clone(&manager);
+        let creator = tokio::spawn(async move {
+            creator_manager
+                .get_or_create_pool_with("postgres://cancel", "cancel", || async {
+                    entered_tx.send(()).unwrap();
+                    std::future::pending::<Result<sqlx::PgPool, String>>().await
+                })
+                .await
+        });
+        entered_rx.await.unwrap();
+        creator.abort();
+        assert!(creator.await.unwrap_err().is_cancelled());
+        let retry = tokio::time::timeout(
+            Duration::from_secs(1),
+            manager.get_or_create_pool_with("postgres://cancel", "cancel", || async {
+                Ok(lazy_pool("retry_after_cancellation"))
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(!retry.is_closed());
+    }
+
+    #[tokio::test]
+    async fn closed_cached_pool_is_replaced() {
+        let manager = PoolManager::new();
+        let old = lazy_pool("closed");
+        manager
+            .insert_test_pool("postgres://closed", old.clone())
+            .await;
+        old.close().await;
+        let pool = manager
+            .get_or_create_pool_with("postgres://closed", "closed", || async {
+                Ok(lazy_pool("replacement"))
+            })
+            .await
+            .unwrap();
+        assert!(
+            !pool.is_closed(),
+            "closed handles must never be returned from the cache"
+        );
     }
 
     #[tokio::test]

@@ -359,7 +359,12 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
 - Runtime roles are DML-only and never run migrations, permission reconciliation or DDL.
   Admin migrations run as explicit owner jobs; tenant provisioning/deployment uses the
   canonical tenant runner and grants the matching runtime role after successful migration.
-  Verify immutable SQLx history before accepting a new runtime pool.
+  Verify immutable SQLx history before accepting a new runtime pool. Bound pool
+  initialization (including tenant gate/schema reads) and graceful drainage; never
+  hold the tenant creation gate while waiting for borrowers to drain. Reject closed
+  cached handles, fail deployment closed on timeout, and never replay ambiguous writes.
+  Verify initial schema on an owned connection before admitting it to the pool, so
+  cancelling initialization closes its socket without an orphaned pool-return task.
 - Public Admin DTOs exclude credentials and provider IDs. Tenant passwords are random and
   stored with AES-256-GCM under the separate `DATABASE_CREDENTIALS_KEY`, authenticated to
   the tenant UUID, purpose and envelope version. Internal migration credentials are fetched
