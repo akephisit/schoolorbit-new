@@ -138,7 +138,7 @@ pub async fn save_days(
     if version.unwrap_or(0) != p.row_version {
         return Err(AppError::Conflict("การตั้งค่าเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
     }
-    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted,note) SELECT $1,date,counted,note FROM jsonb_to_recordset($2) AS d(date date,counted boolean,note text) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=excluded.counted,note=excluded.note").bind(term).bind(Json(p.days)).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO attendance_days(academic_term_id,date,counted,note) SELECT $1,date,counted,note FROM jsonb_to_recordset($2) AS d(date date,counted boolean,note text) ON CONFLICT(academic_term_id,date) DO UPDATE SET counted=excluded.counted,note=excluded.note").bind(term).bind(Json(&p.days)).execute(&mut *tx).await?;
     sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3) ON CONFLICT(academic_term_id) DO UPDATE SET row_version=attendance_settings.row_version+1,updated_by=excluded.updated_by,updated_at=now()")
         .bind(term)
         .bind(Json(AttendanceConfiguration::default()))

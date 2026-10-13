@@ -60,7 +60,7 @@ pub async fn suppressed(
 ) -> Result<bool, AppError> {
     Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND side=$2 AND source=$3 AND(academic_term_id IS NULL OR academic_term_id=$4)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$4)))").bind(date).bind(side).bind(source).bind(term).fetch_one(connection).await?)
 }
-pub async fn receipt<P: Serialize, T: DeserializeOwned>(
+pub async fn receipt<P: Serialize, T: DeserializeOwned + Send + Unpin + 'static>(
     connection: &mut PgConnection,
     actor: Uuid,
     request: Uuid,

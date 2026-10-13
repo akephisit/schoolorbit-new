@@ -12,7 +12,7 @@ fn report_filter(
     access: BehaviorAccess,
     q: &BehaviorReportQuery,
     prefix: &str,
-) -> QueryBuilder<'static, Postgres> {
+) -> QueryBuilder<Postgres> {
     let mut b = QueryBuilder::new(prefix.to_owned());
     b.push(" FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id JOIN behavior_cycles c ON c.id=t.cycle_id JOIN academic_terms term ON term.id=t.academic_term_id JOIN academic_years year ON year.id=term.academic_year_id JOIN users u ON u.id=t.student_id LEFT JOIN student_info si ON si.user_id=u.id LEFT JOIN homerooms h ON h.id=t.homeroom_id LEFT JOIN behavior_batches batch ON batch.id=e.batch_id LEFT JOIN users creator ON creator.id=e.created_by WHERE t.date BETWEEN ");
     b.push_bind(q.start).push(" AND ").push_bind(q.end);

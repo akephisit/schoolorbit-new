@@ -5,7 +5,7 @@ use crate::{
 use axum::{
     extract::{Extension, Path, Query, State},
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use school_auth::session_service::AuthenticatedSession;

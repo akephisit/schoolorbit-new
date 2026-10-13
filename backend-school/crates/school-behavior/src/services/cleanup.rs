@@ -22,7 +22,7 @@ pub(super) struct Snapshot {
     pub students: i64,
     pub entries: i64,
 }
-fn selected(scope: &BehaviorCleanupScope, current_only: bool) -> QueryBuilder<'static, Postgres> {
+fn selected(scope: &BehaviorCleanupScope, current_only: bool) -> QueryBuilder<Postgres> {
     let mut b=QueryBuilder::new("SELECT t.id,t.student_id,t.date,t.academic_term_id,t.grade_level_id,t.homeroom_id,t.side,t.source,t.cycle_id,t.points,t.row_version FROM behavior_daily_totals t JOIN behavior_cycles c ON c.id=t.cycle_id JOIN academic_terms term ON term.id=t.academic_term_id WHERE true");
     if let Some(d) = scope.start {
         b.push(" AND t.date>=").push_bind(d);

@@ -14,9 +14,19 @@ use school_behavior::{
 use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
 
-fn behavior_fact(fact: score_changes::AttendanceScoreFact) -> BehaviorAttendanceFact {
-    BehaviorAttendanceFact {
+fn behavior_fact(
+    fact: score_changes::AttendanceScoreFact,
+) -> Result<BehaviorAttendanceFact, AppError> {
+    let source_session_id = if fact.kind == AttendanceKind::Arrival {
+        None
+    } else {
+        Some(uuid::Uuid::parse_str(&fact.source_key).map_err(|_| {
+            AppError::InternalServerError("รหัสรอบเช็กชื่อสำหรับคะแนนไม่ถูกต้อง".into())
+        })?)
+    };
+    Ok(BehaviorAttendanceFact {
         source_key: fact.source_key,
+        source_session_id,
         kind: match fact.kind {
             AttendanceKind::Arrival => BehaviorSource::Arrival,
             AttendanceKind::Lesson => BehaviorSource::Lesson,
@@ -41,7 +51,7 @@ fn behavior_fact(fact: score_changes::AttendanceScoreFact) -> BehaviorAttendance
                 })
                 .collect()
         }),
-    }
+    })
 }
 
 pub(crate) async fn run(pool: &PgPool) -> Result<(), AppError> {
@@ -71,7 +81,7 @@ pub(crate) async fn run(pool: &PgPool) -> Result<(), AppError> {
             .await?
             .into_iter()
             .map(behavior_fact)
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?
         };
         integration::replace_attendance_day(
             &mut transaction,
@@ -157,7 +167,7 @@ mod tests {
         let converted = behavior_fact(score_changes::AttendanceScoreFact {
             student_id,
             student_academic_year_id: Uuid::new_v4(),
-            source_key: "round".into(),
+            source_key: Uuid::new_v4().to_string(),
             kind: AttendanceKind::Special,
             result: AttendanceResult::Skipped,
             counted: true,
@@ -168,7 +178,8 @@ mod tests {
                 action: ScoreAction::Deduction,
                 points: 5,
             }]),
-        });
+        })
+        .unwrap();
         assert_eq!(converted.student_id, student_id);
         assert_eq!(converted.kind, BehaviorSource::Special);
         assert_eq!(converted.status, "skipped");
