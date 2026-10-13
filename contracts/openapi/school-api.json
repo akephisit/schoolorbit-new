@@ -48930,6 +48930,10 @@
             "format": "int32",
             "type": "integer"
           },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "rowVersion": {
             "format": "int64",
             "type": [
@@ -48942,6 +48946,7 @@
           }
         },
         "required": [
+          "requestId",
           "name",
           "side",
           "enabled",

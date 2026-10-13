@@ -20403,6 +20403,8 @@ export interface components {
 			name: string;
 			/** Format: int32 */
 			points: number;
+			/** Format: uuid */
+			requestId: string;
 			/** Format: int64 */
 			rowVersion?: number | null;
 			side: components['schemas']['BehaviorSide'];
