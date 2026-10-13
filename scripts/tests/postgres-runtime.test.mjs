@@ -11,10 +11,18 @@ const sources = directory => readdirSync(path.join(root, directory), { withFileT
     : [`${directory}/${entry.name}`]);
 
 test('application runtime has one PostgreSQL provider and no Neon fallback', () => {
-  for (const directory of ['backend-admin/src', 'frontend-admin/src', 'backend-school/crates/school-tenancy/src']) {
+  for (const directory of ['backend-admin/src', 'backend-school/src', 'backend-school/crates', 'frontend-admin/src', 'frontend-school/src']) {
     for (const file of sources(directory)) {
-      assert.doesNotMatch(read(file), /NEON_(?:API_KEY|PROJECT_ID|BRANCH_ID)|NeonClient|api\.neon\.tech|neon\.tech\//, file);
+      assert.doesNotMatch(read(file), /NEON_[A-Z_]+|NeonClient|neon\.tech|@neondatabase\//, file);
     }
+  }
+  for (const directory of ['.github/workflows', 'scripts/lib']) {
+    for (const file of sources(directory)) {
+      assert.doesNotMatch(read(file), /NEON_[A-Z_]+|NeonClient|neon\.tech|postgres_data_transfer|postgres_cutover_gate/, file);
+    }
+  }
+  for (const file of ['backend-admin/Cargo.toml', 'backend-admin/Cargo.lock', 'backend-school/Cargo.toml', 'backend-school/Cargo.lock', 'frontend-admin/package.json', 'frontend-admin/package-lock.json', 'frontend-school/package.json', 'frontend-school/package-lock.json']) {
+    assert.doesNotMatch(read(file), /@neondatabase\/|neon\.tech/, file);
   }
   for (const file of ['.env.example', 'backend-admin/.env.example', 'backend-school/.env.example', 'podman-compose.yml', 'compose.local.yml']) {
     assert.doesNotMatch(read(file), /NEON_|neon\.tech|SCHOOL_ROLLBACK_JWT_SECRET/, file);

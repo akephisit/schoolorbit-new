@@ -55,9 +55,11 @@ retained PostgreSQL release artifacts and encrypted pgBackRest backups with WAL;
 never reconnect an application to stale Neon data. Future database moves require a
 new reviewed rehearsal and cutover plan rather than reusing retired transfer tools.
 
-Keep protected source recovery access without application writes until at least
-2026-10-20. Deleting the source project is a separate operation. Source access is
-outside runtime configuration and has no backend or frontend fallback consumer.
+The owner explicitly ended source retention on 2026-10-13 after actual-data PITR
+acceptance and a fresh PostgreSQL backup/check. The retired source, compatibility-test
+and older SchoolOrbit Neon projects and source-only recovery credentials were deleted.
+Recovery now depends on PostgreSQL backups/WAL and the current private key store;
+there is no source-provider fallback.
 Delete redundant transfer dumps, rehearsal copies, temporary SQL/configuration and
 logs after verifying the actual-data PITR result and preserving current recovery
 secrets. Retain the CA signing key, pgBackRest repository cipher password,
