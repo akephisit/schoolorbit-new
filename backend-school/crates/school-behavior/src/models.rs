@@ -37,6 +37,7 @@ pub struct BehaviorItem {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveBehaviorItem {
+    pub request_id: Uuid,
     pub id: Option<Uuid>,
     pub row_version: Option<i64>,
     pub name: String,

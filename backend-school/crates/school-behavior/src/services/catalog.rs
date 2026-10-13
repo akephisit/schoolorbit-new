@@ -1,4 +1,4 @@
-use super::shared::{bump, lock, today};
+use super::shared::{bump, lock, raw_lock, receipt, save_receipt, today};
 use crate::{
     access::BehaviorAccess,
     models::*,
@@ -17,13 +17,21 @@ pub async fn list_items(
 pub async fn save_item(
     pool: &PgPool,
     actor: Uuid,
-    p: SaveBehaviorItem,
+    mut p: SaveBehaviorItem,
 ) -> Result<BehaviorItem, AppError> {
     if p.name.trim().is_empty() || p.name.chars().count() > 200 || !(1..=100000).contains(&p.points)
     {
         return Err(invalid("ชื่อรายการหรือคะแนนไม่ถูกต้อง"));
     }
+    p.name = p.name.trim().to_string();
     let mut tx = pool.begin().await?;
+    raw_lock(&mut tx).await?;
+    if let Some(previous) =
+        receipt::<_, BehaviorItem>(&mut tx, actor, p.request_id, "item", &p).await?
+    {
+        tx.commit().await?;
+        return Ok(previous);
+    }
     lock(&mut tx).await?;
     let id = if let Some(id) = p.id {
         let old: Option<(BehaviorSide, i64)> =
@@ -80,6 +88,7 @@ pub async fn save_item(
     }
     bump(&mut tx).await?;
     let item=sqlx::query_as("SELECT i.id,i.name,i.side,i.enabled,i.row_version,v.id version_id,v.effective_from,v.points FROM behavior_items i JOIN behavior_item_versions v ON v.item_id=i.id WHERE i.id=$1 AND v.effective_from=$2").bind(id).bind(p.effective_from).fetch_one(&mut *tx).await?;
+    save_receipt(&mut tx, actor, p.request_id, "item", &p, &item).await?;
     tx.commit().await?;
     Ok(item)
 }

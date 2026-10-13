@@ -149,6 +149,7 @@ async fn item(f: &Fixture, side: BehaviorSide, points: i32) -> BehaviorItem {
         &f.pool,
         f.admin.actor_id,
         SaveBehaviorItem {
+            request_id: Uuid::new_v4(),
             id: None,
             row_version: None,
             name: format!("Behavior {}", side.code()),
@@ -887,4 +888,127 @@ async fn empty_future_round_does_not_freeze_policy_before_its_first_fact() {
         points, 6,
         "first real special/skipped fact must use the enabled policy"
     );
+}
+
+#[tokio::test]
+async fn item_create_and_update_are_replay_safe_after_ambiguous_transport() {
+    let f = fixture("behavior_item_replay").await;
+    let mut request = SaveBehaviorItem {
+        request_id: Uuid::new_v4(),
+        id: None,
+        row_version: None,
+        name: "Replay-safe item".into(),
+        side: BehaviorSide::Merit,
+        enabled: true,
+        effective_from: today(),
+        points: 3,
+    };
+    let first = catalog::save_item(&f.pool, f.admin.actor_id, request.clone())
+        .await
+        .unwrap();
+    let second = catalog::save_item(&f.pool, f.admin.actor_id, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(first.id, second.id);
+    assert_eq!(first.version_id, second.version_id);
+    assert_eq!(second.row_version, 1);
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM behavior_items WHERE name='Replay-safe item'")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+    request.name = "Different payload".into();
+    assert!(matches!(
+        catalog::save_item(&f.pool, f.admin.actor_id, request.clone()).await,
+        Err(AppError::Conflict(_))
+    ));
+    request.request_id = Uuid::new_v4();
+    request.id = Some(first.id);
+    request.row_version = Some(first.row_version);
+    let updated = catalog::save_item(&f.pool, f.admin.actor_id, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(updated.row_version, 2);
+    let replay = catalog::save_item(&f.pool, f.admin.actor_id, request)
+        .await
+        .unwrap();
+    assert_eq!(replay.row_version, 2);
+    assert_eq!(replay.id, first.id);
+}
+#[tokio::test]
+async fn grade_rule_precedes_newer_global_and_future_rule_and_special_override() {
+    let f = fixture("behavior_rule_precedence").await;
+    let settings = catalog::settings(&f.pool).await.unwrap();
+    catalog::save_settings(
+        &f.pool,
+        SaveBehaviorSettings {
+            settings: BehaviorSettings {
+                enabled: true,
+                ..settings
+            },
+        },
+    )
+    .await
+    .unwrap();
+    for (offset, grade, points) in [
+        (-2, None, 3),
+        (0, None, 9),
+        (1, None, 40),
+        (-5, Some(f.grade), 5),
+    ] {
+        catalog::save_rule(
+            &f.pool,
+            f.admin.actor_id,
+            SaveBehaviorAttendanceRule {
+                kind: BehaviorSource::Arrival,
+                status: "present".into(),
+                grade_level_id: grade,
+                effective_from: today() + Duration::days(offset),
+                action: BehaviorScoreAction::Merit,
+                points,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let basic = |key: &str, student| BehaviorAttendanceFact {
+        source_key: key.into(),
+        source_session_id: None,
+        kind: BehaviorSource::Arrival,
+        student_id: student,
+        status: "present".into(),
+        counted: true,
+        grade_level_id: f.grade,
+        homeroom_id: None,
+        overrides: None,
+    };
+    let a = basic("arrival", f.a);
+    let mut b = basic("special-override", f.b);
+    b.kind = BehaviorSource::Special;
+    b.overrides = Some(vec![BehaviorScoreOverride {
+        status: "present".into(),
+        action: BehaviorScoreAction::Merit,
+        points: 2,
+    }]);
+    let mut c = basic("special-none", f.unassigned);
+    c.kind = BehaviorSource::Special;
+    c.overrides = Some(vec![]);
+    let mut tx = f.pool.begin().await.unwrap();
+    integration::replace_attendance_day(
+        &mut tx,
+        BehaviorAttendanceDay {
+            generation: Uuid::new_v4(),
+            academic_term_id: f.term,
+            date: today(),
+            revision: 1,
+            facts: vec![a, b, c],
+        },
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(summary(&f, f.a).await.current.merit, 5);
+    assert_eq!(summary(&f, f.b).await.current.merit, 2);
+    assert_eq!(summary(&f, f.unassigned).await.current.merit, 0);
 }

@@ -64,10 +64,11 @@ struct SourceDecision {
     rule_version_id: Option<Uuid>,
     suppressed: bool,
 }
+type RuleLookup =
+    BTreeMap<(BehaviorSource, String, Option<Uuid>), (BehaviorScoreAction, i32, Option<Uuid>)>;
 fn select_rule(
-    rules: &[BehaviorAttendanceRule],
+    rules: &RuleLookup,
     fact: &BehaviorAttendanceFact,
-    date: NaiveDate,
 ) -> Option<(BehaviorScoreAction, i32, Option<Uuid>)> {
     if let Some(overrides) = &fact.overrides {
         if let Some(rule) = overrides.iter().find(|r| r.status == fact.status) {
@@ -76,15 +77,9 @@ fn select_rule(
         return Some((BehaviorScoreAction::None, 0, None));
     }
     rules
-        .iter()
-        .filter(|r| {
-            r.kind == fact.kind
-                && r.status == fact.status
-                && r.effective_from <= date
-                && (r.grade_level_id.is_none() || r.grade_level_id == Some(fact.grade_level_id))
-        })
-        .max_by_key(|r| (r.grade_level_id.is_some(), r.effective_from, r.id))
-        .map(|r| (r.action, r.points, Some(r.id)))
+        .get(&(fact.kind, fact.status.clone(), Some(fact.grade_level_id)))
+        .or_else(|| rules.get(&(fact.kind, fact.status.clone(), None)))
+        .copied()
 }
 fn apply_caps(effects: &mut [Effect], policy: &DayPolicy) {
     effects.sort_by(|a, b| {
@@ -169,7 +164,16 @@ pub async fn replace_attendance_day(
     if existing.len() > 200000 {
         return Err(invalid("ประวัติแก้เช็กชื่อต่อวันเกินขนาดที่รองรับ"));
     }
-    let rules:Vec<BehaviorAttendanceRule>=sqlx::query_as("SELECT id,kind,status,grade_level_id,effective_from,action,points FROM behavior_attendance_rules WHERE effective_from<=$1 ORDER BY effective_from DESC,id").bind(day.date).fetch_all(&mut *connection).await?;
+    let rules:Vec<BehaviorAttendanceRule>=sqlx::query_as("SELECT DISTINCT ON(kind,status,grade_level_id)id,kind,status,grade_level_id,effective_from,action,points FROM behavior_attendance_rules WHERE effective_from<=$1 ORDER BY kind,status,grade_level_id,effective_from DESC,id DESC").bind(day.date).fetch_all(&mut *connection).await?;
+    let rules: RuleLookup = rules
+        .into_iter()
+        .map(|r| {
+            (
+                (r.kind, r.status, r.grade_level_id),
+                (r.action, r.points, Some(r.id)),
+            )
+        })
+        .collect();
     let blocked:Vec<(BehaviorSide,BehaviorSource)>=sqlx::query_as("SELECT DISTINCT side,source FROM behavior_suppressions WHERE $1 BETWEEN start_date AND end_date AND(academic_term_id IS NULL OR academic_term_id=$2)AND(academic_year_id IS NULL OR academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=$2))").bind(day.date).bind(day.academic_term_id).fetch_all(&mut *connection).await?;
     let blocked: BTreeSet<_> = blocked.into_iter().collect();
     let daily_absent: BTreeSet<_> = day
@@ -241,7 +245,7 @@ pub async fn replace_attendance_day(
             if let Some(old) = decision.filter(|d| d.status == fact.status) {
                 (old.action, old.raw_points, old.rule_version_id)
             } else if settings.enabled {
-                select_rule(&rules, fact, day.date).unwrap_or((BehaviorScoreAction::None, 0, None))
+                select_rule(&rules, fact).unwrap_or((BehaviorScoreAction::None, 0, None))
             } else {
                 (BehaviorScoreAction::None, 0, None)
             };
