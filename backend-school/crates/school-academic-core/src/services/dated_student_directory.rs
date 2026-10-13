@@ -19,6 +19,21 @@ pub struct DatedStudentDirectoryEntry {
     pub parent_ids: Vec<Uuid>,
 }
 
+#[derive(Debug, Clone, FromRow)]
+pub struct ConfiguredGradeOption {
+    pub id: Uuid,
+    pub label: String,
+}
+
+/// Configuration consumers need the year's offered grades even before enrollment.
+pub async fn configured_grades_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+) -> Result<Vec<ConfiguredGradeOption>, AppError> {
+    Ok(sqlx::query_as("SELECT g.id,CASE g.level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' ELSE 'ม.' END||g.year::text label FROM academic_terms t JOIN academic_year_grade_levels y ON y.academic_year_id=t.academic_year_id JOIN grade_levels g ON g.id=y.grade_level_id WHERE t.id=$1 ORDER BY g.level_type,g.year,g.id")
+        .bind(term).fetch_all(connection).await?)
+}
+
 /// Dated placement owner uses the latest applicable span before room filtering,
 /// so a moved student's earlier room never wins merely because it was requested.
 pub async fn students_on_connection(

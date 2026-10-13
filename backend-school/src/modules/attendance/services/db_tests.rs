@@ -7,7 +7,7 @@ use school_attendance::{
     rules::FACE_MODEL,
     services::{faces, notifications, reports},
 };
-const TEACHER: Uuid = Uuid::from_u128(0x50000000000000000000000000000002);
+pub(super) const TEACHER: Uuid = Uuid::from_u128(0x50000000000000000000000000000002);
 pub(super) const STUDENT: Uuid = Uuid::from_u128(0x50000000000000000000000000000001);
 pub(super) const TERM: Uuid = Uuid::from_u128(0x11000000000000000000000000000251);
 pub(super) struct Fixture {
@@ -3726,9 +3726,10 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
     let f = fixture_at("attendance_lifecycle_delivery_gate", 109).await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     sqlx::query("UPDATE attendance_module_state SET coverage_start=$1,auto_finalize_from=$1 WHERE singleton").bind(date).execute(&f.pool).await.unwrap();
-    sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration)VALUES($1,$2)")
+    sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by)VALUES($1,$2,$3)")
         .bind(TERM)
         .bind(sqlx::types::Json(AttendanceConfiguration::default()))
+        .bind(TEACHER)
         .execute(&f.pool)
         .await
         .unwrap();

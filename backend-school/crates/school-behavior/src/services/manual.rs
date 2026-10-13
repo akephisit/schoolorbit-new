@@ -96,7 +96,13 @@ pub async fn selector_options(
         .into_iter()
         .filter(|r| r.visible(access))
         .collect();
-    Ok(options_from_rows(&rows))
+    let mut options = options_from_rows(&rows);
+    if manage {
+        options.grade_levels = school_academic_core::services::dated_student_directory::configured_grades_on_connection(
+            &mut *pool.acquire().await?, q.academic_term_id,
+        ).await?.into_iter().map(|grade| BehaviorSelectorOption { id: grade.id, label: grade.label }).collect();
+    }
+    Ok(options)
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

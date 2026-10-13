@@ -167,6 +167,16 @@ pub async fn run_test_migrations(pool: &PgPool) {
         .expect("Failed to run migrations");
 }
 
+/// Serialize bounded fixture migrations with full-schema migrations. PostgreSQL
+/// catalog expressions can lock relations in other test schemas during DDL.
+pub async fn run_fixture_migrator(
+    pool: &PgPool,
+    migrator: &sqlx::migrate::Migrator,
+) -> Result<(), sqlx::migrate::MigrateError> {
+    let _guard = MIGRATION_LOCK.lock().await;
+    migrator.run(pool).await
+}
+
 /// Create a test user
 pub async fn create_test_user(
     pool: &PgPool,

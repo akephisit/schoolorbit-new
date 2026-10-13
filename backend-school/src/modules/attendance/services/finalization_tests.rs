@@ -1,4 +1,4 @@
-use super::super::db_tests::{fixture, STUDENT, TERM};
+use super::super::db_tests::{fixture, STUDENT, TEACHER, TERM};
 use chrono::{NaiveDate, Utc};
 use school_attendance::models::AttendanceConfiguration;
 
@@ -12,9 +12,10 @@ async fn attendance_finalization_catches_up_on_one_connection_with_historical_in
         .execute(&f.pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration) VALUES($1,$2)")
+    sqlx::query("INSERT INTO attendance_settings(academic_term_id,configuration,updated_by) VALUES($1,$2,$3)")
         .bind(TERM)
         .bind(sqlx::types::Json(AttendanceConfiguration::default()))
+        .bind(TEACHER)
         .execute(&f.pool)
         .await
         .unwrap();

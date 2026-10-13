@@ -114,6 +114,25 @@ fn today() -> chrono::NaiveDate {
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive()
 }
+
+#[tokio::test]
+async fn configured_grade_rules_do_not_require_enrolled_students() {
+    let f = fixture("behavior_empty_grade_configuration").await;
+    let grade: Uuid = sqlx::query_scalar("INSERT INTO grade_levels(level_type,year,is_active) VALUES('secondary',2,true) ON CONFLICT(level_type,year) DO UPDATE SET is_active=true RETURNING id")
+        .fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_year_grade_levels(academic_year_id,grade_level_id) SELECT academic_year_id,$2 FROM academic_terms WHERE id=$1")
+        .bind(f.term).bind(grade).execute(&f.pool).await.unwrap();
+    let settings = manual::selector_options(&f.pool, f.admin, query(&f), true)
+        .await
+        .unwrap();
+    assert!(settings.grade_levels.iter().any(|g| g.id == grade));
+    let picker = manual::selector_options(&f.pool, f.teacher, query(&f), false)
+        .await
+        .unwrap();
+    assert_eq!(picker.grade_levels.len(), 1);
+    assert_eq!(picker.grade_levels[0].id, f.grade);
+    assert!(!picker.grade_levels.iter().any(|g| g.id == grade));
+}
 fn query(f: &Fixture) -> BehaviorStudentsQuery {
     BehaviorStudentsQuery {
         academic_term_id: f.term,
