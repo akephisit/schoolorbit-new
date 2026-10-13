@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::models::{CreateSchool, School, SchoolConfig, UpdateSchool};
+use crate::models::{CreateSchool, School, SchoolConfig, SchoolResponse, UpdateSchool};
 use sqlx::{types::Json, PgPool};
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -21,9 +21,13 @@ fn build_provisioning_failure_message(primary_error: &str, cleanup_errors: &[Str
 }
 
 fn validate_school_subdomain(subdomain: &str) -> Result<(), AppError> {
-    if subdomain
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    if !subdomain.is_empty()
+        && subdomain.len() <= 50
+        && !subdomain.starts_with('-')
+        && !subdomain.ends_with('-')
+        && subdomain
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
     {
         return Ok(());
     }
@@ -34,16 +38,11 @@ fn validate_school_subdomain(subdomain: &str) -> Result<(), AppError> {
 }
 
 fn build_school_database_name(subdomain: &str) -> String {
-    format!("schoolorbit_{}", subdomain)
+    format!("schoolorbit_{}", subdomain.replace('-', "_"))
 }
 
-fn build_active_school_config(
-    db_id: i64,
-    dns_record_id: &str,
-    deployment_url: &str,
-) -> SchoolConfig {
+fn build_active_school_config(dns_record_id: &str, deployment_url: &str) -> SchoolConfig {
     SchoolConfig {
-        db_id: Some(db_id),
         dns_record_id: Some(dns_record_id.to_string()),
         deployment_url: Some(deployment_url.to_string()),
     }
@@ -151,7 +150,7 @@ impl ProvisioningRunOptions {
 
     async fn complete_school(&self, school: &School) -> Result<(), AppError> {
         if self.complete_on_success {
-            let payload = serde_json::to_value(school)
+            let payload = serde_json::to_value(SchoolResponse::from(school))
                 .map_err(|e| AppError::InternalServerError(e.to_string()))?;
             self.reporter.complete(payload).await;
         }
@@ -203,30 +202,25 @@ impl SchoolService {
 
     async fn rollback_failed_provisioning(
         &self,
-        school_id: Option<Uuid>,
-        neon_client: &crate::clients::neon_client::NeonClient,
+        school_id: Uuid,
+        postgres_client: &crate::clients::postgres_client::PostgresClient,
         db_name: &str,
         reason: String,
     ) -> AppError {
         let mut cleanup_errors = Vec::new();
 
-        if let Some(school_id) = school_id {
-            if let Err(e) = self
-                .mark_school_failed(school_id, "provision_failed", &reason)
-                .await
-            {
-                cleanup_errors.push(format!(
-                    "failed to mark school {} as provision_failed: {}",
-                    school_id, e
-                ));
-            }
+        if let Err(error) = self
+            .mark_school_failed(school_id, "provision_failed", &reason)
+            .await
+        {
+            cleanup_errors.push(format!("Failed to retain provisioning failure: {error}"));
         }
 
-        let database_deleted = match neon_client.delete_database_by_name(db_name).await {
+        let database_deleted = match postgres_client.delete_database(school_id, db_name).await {
             Ok(_) => true,
             Err(e) => {
                 cleanup_errors.push(format!(
-                    "failed to delete Neon database '{}': {}",
+                    "failed to delete PostgreSQL database '{}': {}",
                     db_name, e
                 ));
                 false
@@ -234,13 +228,10 @@ impl SchoolService {
         };
 
         if database_deleted {
-            if let Some(school_id) = school_id {
-                if let Err(e) = self.delete_school_record(school_id).await {
-                    cleanup_errors.push(format!(
-                        "failed to delete school record {}: {}",
-                        school_id, e
-                    ));
-                }
+            if let Err(error) = self.delete_school_record(school_id).await {
+                cleanup_errors.push(format!(
+                    "Failed to remove owned provisioning record: {error}"
+                ));
             }
         }
 
@@ -327,108 +318,50 @@ impl SchoolService {
         }
         options.success("✅ Validation passed").await;
 
-        // Generate database name
+        let school_id = Uuid::now_v7();
         let db_name = build_school_database_name(&data.subdomain);
+        let postgres_client = crate::clients::postgres_client::PostgresClient::new()
+            .map_err(AppError::ExternalServiceError)?;
+        let cipher = crate::database_credentials::DatabaseCredentials::from_env()
+            .map_err(AppError::InternalServerError)?;
+        let migration_password = crate::database_credentials::random_password()
+            .map_err(AppError::InternalServerError)?;
+        let runtime_password = crate::database_credentials::random_password()
+            .map_err(AppError::InternalServerError)?;
+        let migration_encrypted = cipher
+            .encrypt(school_id, "migration", &migration_password)
+            .map_err(AppError::InternalServerError)?;
+        let runtime_encrypted = cipher
+            .encrypt(school_id, "runtime", &runtime_password)
+            .map_err(AppError::InternalServerError)?;
+        let db_connection_string = postgres_client
+            .connection_string(school_id, &db_name, "migration", &migration_password)
+            .map_err(AppError::InternalServerError)?;
 
-        // Step 1: Create database in Neon
+        // Persist identity and credentials before nontransactional resource creation.
+        sqlx::query("INSERT INTO schools (id, name, subdomain, db_name, db_runtime_password, db_migration_password, status, config) VALUES ($1,$2,$3,$4,$5,$6,'provisioning','{}')")
+            .bind(school_id).bind(&data.name).bind(&data.subdomain).bind(&db_name)
+            .bind(runtime_encrypted).bind(migration_encrypted).execute(&self.pool)
+            .await.map_err(|_| AppError::DatabaseError("Could not persist provisioning identity".into()))?;
         options
-            .progress(2, TOTAL_STEPS, "Creating database in Neon...")
+            .progress(
+                2,
+                TOTAL_STEPS,
+                "Creating PostgreSQL database and isolated roles...",
+            )
             .await;
-        use crate::clients::neon_client::NeonClient;
-        let neon_client = NeonClient::new()
-            .map_err(|e| AppError::ExternalServiceError(format!("Neon client error: {}", e)))?;
-
-        let db_id = neon_client
-            .create_database(&db_name, "neondb_owner")
-            .await
-            .map_err(|e| {
-                AppError::ExternalServiceError(format!("Failed to create database: {}", e))
-            })?;
-
-        options
-            .success(&format!("✅ Database created with ID: {}", db_id))
-            .await;
-
-        // Get Neon database password from environment
-        // This is the password for neondb_owner role in your Neon project
-        let db_password = match std::env::var("NEON_DB_PASSWORD") {
-            Ok(value) => value,
-            Err(_) => {
-                let reason = "NEON_DB_PASSWORD not set. Get this from Neon console.".to_string();
-                return Err(self
-                    .rollback_failed_provisioning(None, &neon_client, &db_name, reason)
-                    .await);
-            }
-        };
-
-        let db_connection_string =
-            neon_client.get_connection_string(&db_name, "neondb_owner", &db_password);
-
-        // Wait for Neon to finish creating the database and for Postgres to accept connections.
-        options.info("⏳ Waiting for database to be ready...").await;
-        if let Err(e) = neon_client.wait_for_database_ready(&db_name).await {
-            return Err(self
-                .rollback_failed_provisioning(
-                    None,
-                    &neon_client,
-                    &db_name,
-                    format!("Database not ready: {}", e),
-                )
-                .await);
-        }
-
-        options
-            .info("⏳ Waiting for database connection to be ready...")
-            .await;
-        if let Err(e) = neon_client
-            .wait_for_database_connectable(&db_connection_string)
+        if let Err(reason) = postgres_client
+            .create_database(school_id, &db_name, &migration_password, &runtime_password)
             .await
         {
+            // An ambiguous create failure is retained for reconciliation, never destructive compensation.
             return Err(self
-                .rollback_failed_provisioning(
-                    None,
-                    &neon_client,
-                    &db_name,
-                    format!("Database connection not ready: {}", e),
-                )
+                .mark_school_status_error(school_id, "provision_failed", reason)
                 .await);
         }
-        options.success("✅ Database is ready").await;
-
-        // Create school record
+        options.success("Database and isolated roles created").await;
         options
-            .progress(3, TOTAL_STEPS, "Creating school record...")
-            .await;
-        let school = match sqlx::query_as::<_, School>(
-            r#"
-            INSERT INTO schools (name, subdomain, db_name, db_connection_string, status, config)
-            VALUES ($1, $2, $3, $4, 'provisioning', '{}')
-            RETURNING *
-            "#,
-        )
-        .bind(&data.name)
-        .bind(&data.subdomain)
-        .bind(&db_name)
-        .bind(&db_connection_string)
-        .fetch_one(&self.pool)
-        .await
-        {
-            Ok(school) => school,
-            Err(e) => {
-                return Err(self
-                    .rollback_failed_provisioning(
-                        None,
-                        &neon_client,
-                        &db_name,
-                        format!("Failed to create school record: {}", e),
-                    )
-                    .await);
-            }
-        };
-
-        let school_id = school.id;
-        options
-            .success("✅ School record created (provisioning)")
+            .progress(3, TOTAL_STEPS, "School provisioning identity persisted")
             .await;
 
         // Step 2: Provision tenant via backend-school
@@ -445,8 +378,8 @@ impl SchoolService {
             Err(e) => {
                 return Err(self
                     .rollback_failed_provisioning(
-                        Some(school_id),
-                        &neon_client,
+                        school_id,
+                        &postgres_client,
                         &db_name,
                         format!("Backend-school client error: {}", e),
                     )
@@ -467,12 +400,7 @@ impl SchoolService {
                 options
                     .success("✅ Tenant database provisioned successfully")
                     .await;
-                options
-                    .success(&format!(
-                        "✅ Admin user created (Username: {:?})",
-                        data.admin_username
-                    ))
-                    .await;
+                options.success("✅ Admin user created").await;
             }
             Err(e) => {
                 options
@@ -480,8 +408,8 @@ impl SchoolService {
                     .await;
                 return Err(self
                     .rollback_failed_provisioning(
-                        Some(school_id),
-                        &neon_client,
+                        school_id,
+                        &postgres_client,
                         &db_name,
                         format!("Tenant provisioning failed: {}", e),
                     )
@@ -579,7 +507,7 @@ impl SchoolService {
         };
 
         // Update school record with deployment info
-        let config = build_active_school_config(db_id, &dns_record_id, &subdomain_url);
+        let config = build_active_school_config(&dns_record_id, &subdomain_url);
 
         let updated_school = sqlx::query_as::<_, School>(
             r#"
@@ -705,7 +633,6 @@ impl SchoolService {
 
         info!(school = %school.name, subdomain = %school.subdomain, "loaded school for deletion");
 
-        let db_id = school.config.db_id;
         let dns_record_id = school.config.dns_record_id.as_deref();
 
         // Step 1: Delete Cloudflare Worker
@@ -743,26 +670,13 @@ impl SchoolService {
             info!("no DNS record to delete");
         }
 
-        // Step 3: Delete Neon database
-        info!("deleting Neon database");
-
-        // Construct database name from subdomain (same as creation)
-        let db_name = format!("schoolorbit_{}", school.subdomain);
-
-        info!(db_name, db_id = ?db_id, "deleting tenant database");
-
-        use crate::clients::neon_client::NeonClient;
-
-        if let Ok(neon_client) = NeonClient::new() {
-            match neon_client.delete_database_by_name(&db_name).await {
-                Ok(_) => info!(db_name, "database deleted"),
-                Err(e) => {
-                    warn!(error = %e, "failed to delete database; manual cleanup may be needed");
-                }
-            }
-        } else {
-            warn!("Neon client not available");
-        }
+        // Never discard the control-plane record when database cleanup fails.
+        let postgres_client = crate::clients::postgres_client::PostgresClient::new()
+            .map_err(AppError::ExternalServiceError)?;
+        postgres_client
+            .delete_database(id, &school.db_name)
+            .await
+            .map_err(AppError::ExternalServiceError)?;
 
         // Step 4: Delete school record from database
         info!("deleting school record");
@@ -933,78 +847,14 @@ impl SchoolService {
         logger: crate::utils::sse::SseLogger,
     ) -> Result<(), AppError> {
         logger
-            .info(&format!("🗑️  Starting deletion for ID: {}", id))
+            .progress(
+                0,
+                1,
+                "Deleting school resources with ownership verification...",
+            )
             .await;
-        logger.progress(0, 4, "Getting school info...").await;
-
-        let school = self.get_school(id).await?;
-
-        logger.info(&format!("School: {}", school.name)).await;
-        logger
-            .info(&format!("Subdomain: {}", school.subdomain))
-            .await;
-
-        // Step 1: Delete Cloudflare Worker
-        logger.progress(1, 4, "Deleting Cloudflare Worker...").await;
-
-        use crate::clients::cloudflare_client::CloudflareClient;
-        if let Ok(cf_client) = CloudflareClient::new() {
-            let worker_name = format!("schoolorbit-school-{}", school.subdomain);
-            match cf_client.delete_worker(&worker_name).await {
-                Ok(_) => {
-                    logger
-                        .success(&format!("✅ Worker deleted: {}", worker_name))
-                        .await
-                }
-                Err(e) => {
-                    logger
-                        .warning(&format!("⚠️  Worker deletion failed: {}", e))
-                        .await
-                }
-            }
-        }
-
-        // Step 2: Skip DNS (managed by Wrangler)
-        logger.progress(2, 4, "Skipping DNS cleanup...").await;
-        logger.info("⏭️  DNS managed by Wrangler").await;
-
-        // Step 3: Delete Neon database
-        logger.progress(3, 4, "Deleting Neon database...").await;
-
-        let db_name = format!("schoolorbit_{}", school.subdomain);
-        logger.info(&format!("Database name: {}", db_name)).await;
-
-        use crate::clients::neon_client::NeonClient;
-        if let Ok(neon_client) = NeonClient::new() {
-            match neon_client.delete_database_by_name(&db_name).await {
-                Ok(_) => {
-                    logger
-                        .success(&format!("✅ Database deleted: {}", db_name))
-                        .await
-                }
-                Err(e) => {
-                    logger
-                        .warning(&format!("⚠️  Database deletion failed: {}", e))
-                        .await
-                }
-            }
-        }
-
-        // Step 4: Delete school record
-        logger.progress(4, 4, "Deleting school record...").await;
-
-        let result = sqlx::query("DELETE FROM schools WHERE id = $1")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("School not found".to_string()));
-        }
-
-        logger.success("✅ School record deleted").await;
-        logger.success("🎉 Deletion completed!").await;
+        self.delete_school(id).await?;
+        logger.progress(1, 1, "School resources deleted").await;
         logger.complete(serde_json::json!({"deleted": true})).await;
 
         Ok(())
@@ -1028,7 +878,7 @@ mod tests {
     #[test]
     fn provisioning_failure_message_includes_cleanup_errors() {
         let cleanup_errors = vec![
-            "failed to delete Neon database 'schoolorbit_test': locked".to_string(),
+            "failed to delete PostgreSQL database 'schoolorbit_test': locked".to_string(),
             "failed to delete school record: connection closed".to_string(),
         ];
 
@@ -1037,7 +887,7 @@ mod tests {
 
         assert!(message.contains("Tenant provisioning failed"));
         assert!(message.contains("Rollback cleanup also failed"));
-        assert!(message.contains("failed to delete Neon database 'schoolorbit_test': locked"));
+        assert!(message.contains("failed to delete PostgreSQL database 'schoolorbit_test': locked"));
         assert!(message.contains("failed to delete school record: connection closed"));
     }
 
@@ -1048,9 +898,8 @@ mod tests {
 
     #[test]
     fn active_school_config_records_database_and_deployment_url() {
-        let config = build_active_school_config(42, "", "https://sandbox.schoolorbit.app");
+        let config = build_active_school_config("", "https://sandbox.schoolorbit.app");
 
-        assert_eq!(config.db_id, Some(42));
         assert_eq!(config.dns_record_id.as_deref(), Some(""));
         assert_eq!(
             config.deployment_url.as_deref(),

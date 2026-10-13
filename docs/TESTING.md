@@ -604,7 +604,7 @@ BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh \
   -- --exact --nocapture --test-threads=1
 ```
 
-The runner uses the local Docker engine and rejects remote `DOCKER_HOST`, `CONTAINER_HOST` or `CONTAINER_CONNECTION`, so it cannot accidentally select a remote runtime. Cargo and its compilation cache stay on the computer, while PostgreSQL uses a fresh anonymous disk-backed volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Docker storage has sufficient free disk space. The runner removes its uniquely named PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent Neon URL is not the routine test recipe.
+The runner uses the local Docker engine and rejects remote `DOCKER_HOST`, `CONTAINER_HOST` or `CONTAINER_CONNECTION`, so it cannot accidentally select a remote runtime. Cargo and its compilation cache stay on the computer, while PostgreSQL uses a fresh anonymous disk-backed volume so the complete migration-backed suite is not capped by a 5 GiB data tmpfs. Ensure the local Docker storage has sufficient free disk space. The runner removes its uniquely named PostgreSQL container and associated anonymous volume after success, failure, `INT`, `TERM`, or `HUP`; it never reuses a named volume or prunes unrelated resources. An uncatchable termination such as `SIGKILL` or a host crash can leave these test resources behind and requires exact-target cleanup. It replaces any inherited `TEST_DATABASE_URL` only for the Cargo child and never uses `DATABASE_URL`. Direct Cargo against a persistent database URL is not the routine test recipe.
 
 Tests continue to isolate their schema/data within the disposable database. The local runner removes the whole database container and its anonymous data volume after the command, including on test failure.
 
@@ -641,7 +641,7 @@ The staff suite covers exact degree aliases, unmapped/ambiguous inputs, locked-s
 
 For provider rehearsal, create a disposable copy and supply its direct non-pooled URL privately as `MIGRATION_SCHEMA_DATABASE_URL`. Set `MIGRATION_SCHEMA_NAME=public` and `MIGRATION_SCHEMA_ALLOW_PUBLIC=1` only for that disposable copy, then run `cargo run --manifest-path backend-school/Cargo.toml --bin migrate_tenant_schema`. This existing CLI calls the centralized runner; never apply individual SQL files manually. Read actual SQLx version and bounded preservation/current-pointer integrity checks afterward; for migration 085 require imported dates/orders/actors to remain unknown and unchanged existing staff fields. Retain the historical `staff_personnel_simplification_audit` checks where relevant. Do not emit credentials, names, source values or national IDs.
 
-The 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The local `node scripts/test_neon_compatibility.mjs` owner runs auth/file/schema compatibility checks in their current crate owners and rejects successful Cargo commands with zero passing tests. Run `node --test scripts/tests/neon-compatibility.test.mjs` to verify discovery and failure propagation. The local owner runs the staff migration fixtures and schema/status selections against a fresh disposable direct-endpoint child and deletes its owned branch in finalization, with two-hour expiry as a fallback. Run `node --test scripts/tests/migration-completion-gate.test.mjs` to exercise the actual all-tenant release filter through its Docker jq image, including healthy reports without retired personnel fields, all-tenant coverage, future migration versions, other domain audit failures, and the complete thirty-check delivery/timetable reconciliation. Missing, partial, failed or stale delivery cutover evidence must refuse promotion.
+The 82→83→84 tests preserve Thai text, nulls, shared labels, complete position UUIDs/timestamps and unrelated staff fields; stale, duplicate or missing preservation evidence blocks cleanup atomically. Run `./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1` for this boundary. The owned `./scripts/test_school_database_suite.sh` runs the staff, auth, file and schema/status selections against fresh Docker databases and removes only its owned resources. Run `node --test scripts/tests/postgres-compatibility.test.mjs` to verify discovery and failure propagation. Run `node --test scripts/tests/migration-completion-gate.test.mjs` to exercise the actual all-tenant release filter through its Docker jq image, including healthy reports without retired personnel fields, all-tenant coverage, future migration versions, other domain audit failures, and the complete thirty-check delivery/timetable reconciliation. Missing, partial, failed or stale delivery cutover evidence must refuse promotion.
 
 Against a production build running in local preview:
 
@@ -723,7 +723,7 @@ tenant connection inventory, keep output outside the repository, apply 041-044, 
 multi-year/multi-term reads, and record only duration, aggregate counts/checksums, finding codes, and
 pass/fail. When a separately reviewed Phase B branch contains migration 045, rehearse that review
 copy on the same disposable clone after a current success marker and verify its cleanup manifest.
-Never commit clone data or its output. The local Neon compatibility command remains a
+Never commit clone data or its output. The owned PostgreSQL compatibility suite remains a
 separate credentialed external gate and is unrun when its test-only environment is unavailable.
 
 For browser coverage, discovery does not equal execution. Discovery must work without tenant
@@ -736,7 +736,7 @@ npx playwright test --list tests/e2e/academic-context.spec.ts \
 ```
 
 Execution requires an isolated deployed target plus the dedicated accounts and permissions expected
-by those specs. Report Playwright execution, protected-clone rehearsal, manual Neon compatibility,
+by those specs. Report Playwright execution, protected-clone rehearsal, PostgreSQL compatibility,
 and deployment smoke as `unrun` with the exact missing account, credential, target, or authorization;
 do not report discovery as a passing browser workflow and do not silently omit an external gate.
 
@@ -758,36 +758,33 @@ bounded check codes, counts, versions, and pass/fail state; it must never contai
 scores, outcomes, credentials, or source rows. A legitimate school edit to grading or evaluation
 configuration is not a deployment invariant and must not keep the tenant in maintenance.
 
-The local Neon compatibility command runs the same focused checks on a fresh disposable
-child branch through its direct non-pooled endpoint. Schema-isolated migration cases use four test
+The owned PostgreSQL compatibility suite runs the same focused checks on a fresh disposable
+Docker database through its direct endpoint. Schema-isolated migration cases use four test
 threads so network round trips do not serialize the entire gate, while each individual test pool
-still has one connection. The local owner then deletes the branch. Use test-only environment variables
+still has one connection. The local owner then deletes the database and its container. Use test-only environment variables
 from a private local environment file; output must not expose the connection URI.
 An authenticated academic smoke samples at most two canonical terms and reads the Gradebook subject
 workspace, learner-evaluation subject workspace, and result-readiness summary for each selected term.
 Response bodies remain in the smoke script's private temporary directory and are removed on exit.
 
-### Manual Neon migration compatibility
+### PostgreSQL migration compatibility
 
-These values are required only for the optional local Neon compatibility run. Ordinary local
-PostgreSQL/Docker suites, builds and GitHub delivery do not require `NEON_TEST_*`; do not add
-them to GitHub solely for this command.
+`./scripts/test_school_database_suite.sh` owns one disposable Docker PostgreSQL 18.6
+server and a fresh database for each selection. It includes the former provider-specific
+staff, auth, file, academic projection and gradebook regressions. No Neon API key, branch
+or source database is required. Selection discovery remains guarded by
+`node --test scripts/tests/postgres-compatibility.test.mjs`; a successful command that
+selects zero tests is a failure.
 
-Run `node scripts/test_neon_compatibility.mjs` locally after `node --test scripts/tests/neon-compatibility.test.mjs` discovers the selected tests. Install `psql` and use a private ignored environment file or secret manager to provide these names; never commit their values:
+Admin PostgreSQL provisioning/credential tests run through
+`./scripts/test_backend_admin.sh`. They exercise a non-superuser provisioner, isolated
+runtime roles, retry and refusal to delete another tenant's resources. The canonical
+pipeline runs these owned fixtures; do not point them at either VPS.
 
-```text
-NEON_TEST_API_KEY
-NEON_TEST_PROJECT_ID
-NEON_TEST_PARENT_BRANCH_ID
-NEON_TEST_DATABASE
-NEON_TEST_ROLE
-```
-
-The project and parent branch must be dedicated to testing and contain no production data. Each local run creates a unique ordinary copy-on-write child branch from that parent, retrieves a direct non-pooled connection URI, and provisions `uuid-ossp` plus `pg_trgm` explicitly in the child's `public` schema before migration/schema tests. The tests then create isolated schemas and run the active migrations themselves, so the parent needs only the configured empty database and an owner role allowed to create those Neon-supported extensions. The create request deliberately omits `suspend_timeout_seconds` because the test account owns that setting and rejects attempts to modify it. Branch ownership is retained in memory before connection retrieval so later failures still clean up; the two-hour expiration is a fallback if finalization cannot run. API failures expose only bounded, sanitized code/message fields. The gate never requests a pooled URI because transaction pooling can expose the wrong schema-local `_sqlx_migrations` state.
-
-The local command defaults to `NEON_COMPATIBILITY_SCOPE=full`, which retains all staff, auth, file, and academic compatibility selections. Set `NEON_COMPATIBILITY_SCOPE=course-zero-periods` for migration 090 and the zero-course opening/publication lifecycle, including rejection of negative targets, preserved curriculum/teachers/history, zero waiting demand, refused new placement and explicit removal of existing lessons. Set `NEON_COMPATIBILITY_SCOPE=timetable-subject-groups` for the focused timetable report metadata regression; it exercises the real course and current staff affiliation queries after migration 060 and retains nonempty-test enforcement, disposable branch creation, expiry, and cleanup.
-
-The backend static architecture suite validates that active migrations remain a contiguous timeline beginning at `001_baseline.sql`. Runtime rollout and all-tenant migration verification are documented in [Operations](./OPERATIONS.md).
+Active migrations remain contiguous from the existing immutable baseline. Preserve
+SQLx checksums; do not rewrite or squash an applied migration to upgrade PostgreSQL.
+Runtime rollout, data reconciliation and actual-data restore gates are in
+[Operations](./OPERATIONS.md).
 
 ## Encryption and PII
 
@@ -921,7 +918,7 @@ node --test tests/static/realtime-idle.test.mjs tests/static/notification-idle-r
 
 Cache tests cover shared query work, tenant isolation, expiry/maintenance deadlines, uncached
 previous tokens, invalidation during reads, and cache hits with an unavailable database. A passing
-query-count test is not a Neon cost measurement. Browser execution and deployed-proxy smoke remain
+query-count test is not a database cost measurement. Browser execution and deployed-proxy smoke remain
 separate required rollout checks.
 
 From `frontend-school`:

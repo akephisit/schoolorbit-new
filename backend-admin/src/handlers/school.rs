@@ -1,4 +1,4 @@
-use crate::models::{CreateSchool, School, UpdateSchool};
+use crate::models::{CreateSchool, SchoolResponse, UpdateSchool};
 use crate::services::SchoolService;
 use crate::types::ApiResponse;
 use crate::AppState;
@@ -29,7 +29,7 @@ fn default_limit() -> i64 {
 
 #[derive(Debug, Serialize)]
 pub struct SchoolListResponse {
-    pub schools: Vec<School>,
+    pub schools: Vec<SchoolResponse>,
     pub total: i64,
     pub page: i64,
     pub limit: i64,
@@ -45,7 +45,7 @@ pub async fn create_school(
 
     match service.create_school(data).await {
         Ok(school) => {
-            let response = ApiResponse::success(school);
+            let response = ApiResponse::success(SchoolResponse::from(&school));
             (StatusCode::CREATED, Json(response)).into_response()
         }
         Err(e) => (
@@ -67,7 +67,7 @@ pub async fn list_schools(
         Ok((schools, total)) => {
             let total_pages = (total as f64 / params.limit as f64).ceil() as i64;
             let response = ApiResponse::success(SchoolListResponse {
-                schools,
+                schools: schools.iter().map(SchoolResponse::from).collect(),
                 total,
                 page: params.page,
                 limit: params.limit,
@@ -89,7 +89,7 @@ pub async fn get_school(State(state): State<AppState>, Path(id): Path<Uuid>) -> 
 
     match service.get_school(id).await {
         Ok(school) => {
-            let response = ApiResponse::success(school);
+            let response = ApiResponse::success(SchoolResponse::from(&school));
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(_) => (
@@ -110,7 +110,7 @@ pub async fn update_school(
 
     match service.update_school(id, data).await {
         Ok(school) => {
-            let response = ApiResponse::success(school);
+            let response = ApiResponse::success(SchoolResponse::from(&school));
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => (

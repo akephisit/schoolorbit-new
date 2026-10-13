@@ -310,7 +310,7 @@ pub async fn create(
     let term =
         require_writable_term(&mut transaction, term_id, delivery_version_id.is_some()).await?;
     validate_targets(&mut transaction, &term, request.targets()).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     match request {
         CreateLearningOfferingRequest::Course(request) => {
             insert_course(&mut transaction, id, &term, request).await?;
@@ -1421,7 +1421,7 @@ async fn insert_targets(
                    target_kind, homeroom_id, grade_level_id, study_program_id
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(offering_id)
         .bind(term.id)
         .bind(term.academic_year_id)

@@ -313,6 +313,64 @@ async fn main() {
     )
     .expect("Failed to create cleaner job");
 
+    let cleanup_state = state.clone();
+    let auth_cleanup_running = Arc::new(tokio::sync::Mutex::new(()));
+    let auth_cleanup_job = scheduling::new_school_cron_job(
+        scheduling::FILE_PLATFORM_RECONCILIATION_CRON,
+        move |_id, _scheduler| {
+            let state = cleanup_state.clone();
+            let running = auth_cleanup_running.clone();
+            Box::pin(async move {
+                let Ok(_guard) = running.try_lock() else {
+                    return;
+                };
+                state.permission_cache.cleanup_expired();
+                let cleanup = async {
+                    let Ok(schools) = state.admin_client.list_active_schools().await else {
+                        return;
+                    };
+                    for school in schools {
+                        let Some(url) = school.db_connection_string else {
+                            continue;
+                        };
+                        if let Ok(pool) = state
+                            .pool_manager
+                            .get_pool_without_migrations(&url, &school.subdomain)
+                            .await
+                        {
+                            if school_auth::session_repository::cleanup_auth_state(
+                                &pool,
+                                chrono::Utc::now(),
+                            )
+                            .await
+                            .is_err()
+                            {
+                                tracing::warn!(
+                                    operation = "auth_retention_cleanup",
+                                    "Tenant cleanup failed"
+                                );
+                            }
+                        }
+                    }
+                };
+                if tokio::time::timeout(std::time::Duration::from_secs(120), cleanup)
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!(
+                        operation = "auth_retention_cleanup",
+                        "Cleanup time budget exhausted"
+                    );
+                }
+            })
+        },
+    )
+    .expect("Auth cleanup schedule is invalid");
+    sched
+        .add(auth_cleanup_job)
+        .await
+        .expect("Auth cleanup registration failed");
+
     let admin_client_for_calendar_job = Arc::clone(&state.admin_client);
     let pool_manager_for_calendar_job = Arc::clone(&state.pool_manager);
     let notification_channel_for_calendar_job = state.notification_channel.clone();

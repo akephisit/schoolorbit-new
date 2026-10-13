@@ -101,15 +101,15 @@ teardown() {
     [ "${SO_SECRETS[SESSION_HMAC_KEY]}" = 'session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz' ]
     [ "${SO_SECRETS[SCHOOL_ROLLBACK_JWT_SECRET]}" = 'school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M' ]
     [ "${SO_SECRETS[SMOKE_PASSWORD]}" = 'Smoke-Pass-7vK9nM3q' ]
-    [ "${SO_CONFIG[runtime:NEON_PROJECT_ID]}" = 'silent-moon-24680' ]
-    [ "${SO_CONFIG[runtime:NEON_BRANCH_ID]}" = 'br-primary-abc123' ]
+    [ "${SO_CONFIG[runtime:POSTGRES_CA_FILE]}" = '/opt/stack/postgresql/ca.crt' ]
+    [ "${SO_CONFIG[runtime:PG_TENANT_DATABASE_URL]}" = 'postgresql://db.invalid/postgres?sslmode=verify-full' ]
     [ "${SO_CONFIG[runtime:R2_PUBLIC_BUCKET_NAME]}" = 'schoolorbit-public-assets' ]
 }
 
-@test "Neon branch configuration requires an ID instead of a branch name" {
-    _validate_runtime_value NEON_BRANCH_ID br-primary-abc123
+@test "PostgreSQL tenant connection requires verified TLS" {
+    _validate_runtime_value PG_TENANT_DATABASE_URL 'postgresql://db.invalid/postgres?sslmode=verify-full'
 
-    run _validate_runtime_value NEON_BRANCH_ID main
+    run _validate_runtime_value PG_TENANT_DATABASE_URL 'postgresql://db.invalid/postgres?sslmode=require'
 
     [ "$status" -eq 64 ]
 }
@@ -172,7 +172,7 @@ teardown() {
 
     load_inputs </dev/null
 
-    [ "${SO_CONFIG[runtime:NEON_PROJECT_ID]}" = silent-moon-24680 ]
+    [ "${SO_CONFIG[runtime:POSTGRES_CA_FILE]}" = /opt/stack/postgresql/ca.crt ]
     [ "${SO_SECRETS[INTERNAL_API_SECRET]}" = internal-api-7vK9nM3qR8wX2zLp ]
 }
 
@@ -317,7 +317,7 @@ teardown() {
     SO_CONFIG[bootstrap_user]=root
     SO_CONFIG[server_user]=schoolorbit
     SO_CONFIG[ssh_port]=22
-    SO_CONFIG[runtime:NEON_PROJECT_ID]=silent-moon-24680
+    SO_CONFIG[runtime:POSTGRES_CA_FILE]=/opt/stack/postgresql/ca.crt
     state_init run-123
 
     state_load run-123

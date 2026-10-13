@@ -541,7 +541,7 @@ pub(super) fn build_template_section_bulk_rows(
     let mut item_rows = Vec::new();
 
     for section in sections {
-        let section_id = Uuid::new_v4();
+        let section_id = Uuid::now_v7();
         section_rows.push(TemplateSectionBulkRow {
             id: section_id,
             title: section.title.clone(),

@@ -71,7 +71,7 @@ pub struct ListSchoolsQuery {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct SchoolInfo {
     pub id: String,
     pub subdomain: String,
@@ -84,7 +84,7 @@ pub struct SchoolInfo {
     pub migration_error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct ListSchoolsResponse {
     pub schools: Vec<SchoolInfo>,
     pub total: i64,
@@ -103,7 +103,9 @@ struct SchoolRow {
     subdomain: String,
     name: String,
     status: String,
-    db_connection_string: Option<String>,
+    db_name: String,
+    db_runtime_password: Option<Vec<u8>>,
+    db_migration_password: Option<Vec<u8>>,
     migration_version: Option<i32>,
     migration_status: Option<String>,
     last_migrated_at: Option<chrono::NaiveDateTime>,
@@ -120,7 +122,7 @@ pub async fn list_schools_internal(
     verify_internal_secret(&headers)?;
 
     let schools = sqlx::query_as::<_, SchoolRow>(
-        "SELECT id, subdomain, name, status, db_connection_string,
+        "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
                 migration_version, migration_status, last_migrated_at, migration_error
          FROM schools
          ORDER BY created_at DESC",
@@ -138,18 +140,21 @@ pub async fn list_schools_internal(
                 true
             }
         })
-        .map(|s| SchoolInfo {
-            id: s.id.to_string(),
-            subdomain: s.subdomain,
-            name: s.name,
-            status: s.status,
-            db_connection_string: s.db_connection_string,
-            migration_version: s.migration_version,
-            migration_status: s.migration_status,
-            last_migrated_at: s.last_migrated_at.map(|dt| dt.to_string()),
-            migration_error: s.migration_error,
+        .map(|s| {
+            let connection = connection_for(&s, "runtime")?;
+            Ok(SchoolInfo {
+                id: s.id.to_string(),
+                subdomain: s.subdomain,
+                name: s.name,
+                status: s.status,
+                db_connection_string: Some(connection),
+                migration_version: s.migration_version,
+                migration_status: s.migration_status,
+                last_migrated_at: s.last_migrated_at.map(|dt| dt.to_string()),
+                migration_error: s.migration_error,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, (StatusCode, String)>>()?;
 
     let total = filtered.len() as i64;
 
@@ -169,7 +174,7 @@ pub async fn get_school_by_subdomain_internal(
     verify_internal_secret(&headers)?;
 
     let school = sqlx::query_as::<_, SchoolRow>(
-        "SELECT id, subdomain, name, status, db_connection_string,
+        "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
                 migration_version, migration_status, last_migrated_at, migration_error
          FROM schools
          WHERE subdomain = $1 AND status IN ('active', 'provisioning')",
@@ -183,12 +188,13 @@ pub async fn get_school_by_subdomain_internal(
         format!("School '{}' not found or inactive", subdomain),
     ))?;
 
+    let connection = connection_for(&school, "runtime")?;
     Ok(Json(SchoolInfo {
         id: school.id.to_string(),
         subdomain: school.subdomain,
         name: school.name,
         status: school.status,
-        db_connection_string: school.db_connection_string,
+        db_connection_string: Some(connection),
         migration_version: school.migration_version,
         migration_status: school.migration_status,
         last_migrated_at: school.last_migrated_at.map(|dt| dt.to_string()),
@@ -285,4 +291,69 @@ mod tests {
 
         assert!(verify_internal_secret(&headers("shared-secret", Some("backend-school"))).is_ok());
     }
+}
+
+fn connection_for(school: &SchoolRow, purpose: &str) -> Result<String, (StatusCode, String)> {
+    let encrypted = match purpose {
+        "runtime" => school.db_runtime_password.as_deref(),
+        "migration" => school.db_migration_password.as_deref(),
+        _ => None,
+    }
+    .ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Tenant credentials are not reconciled".into(),
+    ))?;
+    let result = (|| {
+        let cipher = crate::database_credentials::DatabaseCredentials::from_env()?;
+        let password = cipher.decrypt(school.id, purpose, encrypted)?;
+        crate::clients::postgres_client::PostgresClient::new()?.connection_string(
+            school.id,
+            &school.db_name,
+            purpose,
+            &password,
+        )
+    })();
+    result.map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant credentials unavailable".into(),
+        )
+    })
+}
+
+#[derive(Serialize)]
+pub struct MigrationConnection {
+    pub db_migration_connection_string: String,
+}
+
+pub async fn get_migration_connection_internal(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(subdomain): Path<String>,
+) -> Result<Json<MigrationConnection>, (StatusCode, String)> {
+    verify_internal_secret(&headers)?;
+    if internal_caller(&headers) != Some("backend-school") {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Migration caller is not authorized".into(),
+        ));
+    }
+    let school = sqlx::query_as::<_, SchoolRow>(
+        "SELECT id, subdomain, name, status, db_name, db_runtime_password, db_migration_password,
+          migration_version, migration_status, last_migrated_at, migration_error
+         FROM schools WHERE subdomain = $1 AND status IN ('active', 'provisioning')",
+    )
+    .bind(subdomain)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Tenant lookup unavailable".into(),
+        )
+    })?
+    .ok_or((StatusCode::NOT_FOUND, "Tenant unavailable".into()))?;
+    Ok(Json(MigrationConnection {
+        db_migration_connection_string: connection_for(&school, "migration")?,
+    }))
 }

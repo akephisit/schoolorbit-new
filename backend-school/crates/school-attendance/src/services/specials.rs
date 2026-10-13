@@ -106,7 +106,7 @@ pub async fn create_template(
     validate_definition(&p)?;
     let mut tx = pool.begin().await?;
     lock_term(&mut tx, term, true, true).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     sqlx::query("INSERT INTO attendance_special_templates(id,academic_term_id,definition,created_by) VALUES($1,$2,$3,$4)").bind(id).bind(term).bind(Json(&p)).bind(actor).execute(&mut *tx).await?;
     if resolved.len() != p.dates.len() {
         return Err(invalid("รอบพิเศษไม่ตรงกับวันที่กำหนด"));
@@ -121,7 +121,7 @@ pub async fn create_template(
                 .map(|s| s.students.iter().map(|s| s.student_id).collect())
                 .collect::<Vec<_>>(),
         )?;
-        let round = Uuid::new_v4();
+        let round = Uuid::now_v7();
         let participants: Vec<_> = seeds
             .into_iter()
             .enumerate()

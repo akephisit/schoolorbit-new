@@ -76,7 +76,25 @@ fn all_migrations_without_db_lock() -> Migrator {
     }
 }
 
+static TENANT_MIGRATION_GATE: Mutex<()> = Mutex::const_new(());
+
 pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let owner: String = sqlx::query_scalar("SELECT current_user::text")
+        .fetch_one(pool)
+        .await
+        .map_err(|_| "Migration identity unavailable".to_string())?;
+    if owner.starts_with("so_") && owner.ends_with("_runtime") {
+        return Err("Runtime identities cannot migrate".into());
+    }
+    let runtime = runtime_role_for_owner(&owner)?;
+    // The deployment/provision endpoints share one process. Serialize real tenant
+    // owner jobs without serializing unrelated disposable test schemas.
+    let _guard = if runtime.is_some() {
+        Some(TENANT_MIGRATION_GATE.lock().await)
+    } else {
+        None
+    };
     all_migrations_without_db_lock()
         .run(pool)
         .await
@@ -86,6 +104,69 @@ pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
         .await
         .map_err(|error| format!("Permission sync failed after migrations: {}", error))?;
 
+    if let Some(runtime) = runtime {
+        grant_runtime_privileges(pool, &runtime).await?;
+    }
+
+    tracing::info!(
+        operation = "tenant_migration",
+        duration_ms = started.elapsed().as_secs_f64() * 1000.0
+    );
+
+    Ok(())
+}
+
+/// Runtime readiness validates the immutable timeline; it never creates migration tables.
+pub async fn verify_tenant_schema(pool: &PgPool) -> Result<(), String> {
+    let applied: Vec<(i64, bool, Vec<u8>)> =
+        sqlx::query_as("SELECT version, success, checksum FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(pool)
+            .await
+            .map_err(|_| "Tenant migration history unavailable".to_string())?;
+    let migrator = all_migrations_without_db_lock();
+    if applied.len() != migrator.iter().count()
+        || !applied
+            .iter()
+            .zip(migrator.iter())
+            .all(|((version, success, checksum), expected)| {
+                *success
+                    && *version == expected.version
+                    && checksum.as_slice() == expected.checksum.as_ref()
+            })
+    {
+        return Err("Tenant schema is not ready for this release".into());
+    }
+    Ok(())
+}
+
+/// Only the tenant owner may grant the corresponding runtime role. Disposable
+/// test databases have no production role pair and keep their fixture ownership.
+fn runtime_role_for_owner(owner: &str) -> Result<Option<String>, String> {
+    let Some(identity) = owner
+        .strip_prefix("so_")
+        .and_then(|s| s.strip_suffix("_owner"))
+    else {
+        return Ok(None);
+    };
+    if identity.len() != 32 || !identity.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err("Invalid migration identity".into());
+    }
+    Ok(Some(format!("so_{identity}_runtime")))
+}
+
+async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), String> {
+    let statement = format!(
+        "REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO \"{runtime}\";
+         GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{runtime}\";
+         GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO \"{runtime}\";
+         REVOKE INSERT, UPDATE, DELETE ON _sqlx_migrations FROM \"{runtime}\";
+         ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{runtime}\";
+         ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO \"{runtime}\""
+    );
+    sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+        .execute(pool)
+        .await
+        .map_err(|_| "Runtime privilege reconciliation failed".to_string())?;
     Ok(())
 }
 

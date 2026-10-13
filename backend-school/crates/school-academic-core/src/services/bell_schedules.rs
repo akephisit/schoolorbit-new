@@ -68,7 +68,7 @@ pub async fn create(
     } else {
         format!("SCHEDULE-{}", schedule_count + 1)
     };
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let sql = format!(
         "INSERT INTO bell_schedules (id, academic_year_id, code, name, is_default, status, \
          owning_organization_unit_id) VALUES ($1, $2, $3, $4, $5, 'draft', $6) \
@@ -211,7 +211,7 @@ pub async fn replace_periods(
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(schedule_id)
         .bind(period.name)
         .bind(period.start_time)

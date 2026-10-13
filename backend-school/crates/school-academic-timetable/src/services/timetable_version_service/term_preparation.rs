@@ -148,7 +148,7 @@ pub async fn apply(
     .bind(context.target_year_id)
     .fetch_one(&mut **tx)
     .await?;
-    let version_id = Uuid::new_v4();
+    let version_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO academic_timetable_versions(
                id,academic_term_id,academic_year_id,effective_from,status,
@@ -220,7 +220,7 @@ pub async fn apply(
             .learning_offering_id
             .map(|id| mapped(mappings, TermPreparationMappingKind::LearningOffering, id))
             .transpose()?;
-        let target_block_id = Uuid::new_v4();
+        let target_block_id = Uuid::now_v7();
         let target_series_id = block.series_id.map(|source_series_id| {
             *series_map
                 .entry(source_series_id)
@@ -279,7 +279,7 @@ pub async fn apply(
         }) {
             return Err(AppError::Conflict("ห้องเรียนเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
-        let target_block_group_id = Uuid::new_v4();
+        let target_block_group_id = Uuid::now_v7();
         sqlx::query(r#"INSERT INTO academic_timetable_block_groups(id,block_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,room_id,row_version,is_active,created_by,updated_by,homeroom_ids)
                        VALUES($1,$2,$3,$4,$5,$6,$7,1,true,$8,$8,$9)"#)
             .bind(target_block_group_id).bind(target_block_id).bind(target_group_id).bind(target_offering_id)

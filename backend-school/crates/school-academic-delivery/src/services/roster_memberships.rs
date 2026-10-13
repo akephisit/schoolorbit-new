@@ -154,7 +154,7 @@ pub async fn add_membership(
         ));
     }
 
-    let membership_id = Uuid::new_v4();
+    let membership_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO learning_group_students (
                id, learning_group_id, academic_term_id, academic_year_id,

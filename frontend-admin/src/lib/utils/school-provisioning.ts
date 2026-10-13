@@ -7,8 +7,8 @@ export interface SchoolCreationFailure<TSchool extends SchoolCardIdentity> {
 	message: string;
 }
 
-const NEON_CONFIGURATION_MESSAGE =
-	'ไม่สามารถสร้างฐานข้อมูลโรงเรียนได้ กรุณาตรวจสอบการตั้งค่า Neon แล้วลองอีกครั้ง';
+const DATABASE_CONFIGURATION_MESSAGE =
+	'ไม่สามารถสร้างฐานข้อมูลโรงเรียนได้ กรุณาตรวจสอบการตั้งค่าฐานข้อมูล แล้วลองอีกครั้ง';
 const CONNECTION_MESSAGE = 'การเชื่อมต่อระหว่างสร้างโรงเรียนขัดข้อง กรุณาลองอีกครั้ง';
 const GENERIC_MESSAGE = 'ไม่สามารถสร้างโรงเรียนได้ กรุณาลองอีกครั้ง';
 
@@ -17,8 +17,8 @@ function schoolCreationErrorMessage(error: string): string {
 		return 'Subdomain นี้มีในระบบแล้ว กรุณาใช้ชื่ออื่น';
 	}
 
-	if (/neon|branch not found|failed to create database/i.test(error)) {
-		return NEON_CONFIGURATION_MESSAGE;
+	if (/PostgreSQL|database ownership|failed to create database/i.test(error)) {
+		return DATABASE_CONFIGURATION_MESSAGE;
 	}
 
 	if (/connection lost|failed to start sse|no response body/i.test(error)) {

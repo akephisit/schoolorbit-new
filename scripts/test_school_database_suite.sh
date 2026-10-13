@@ -14,7 +14,7 @@ docker run -d --name "$SCHOOLORBIT_TEST_CONTAINER" \
     --label "schoolorbit.test-owner=$SCHOOLORBIT_TEST_OWNER" \
     -p '127.0.0.1::5432' --shm-size 1g \
     -e POSTGRES_USER=schoolorbit_test -e POSTGRES_PASSWORD=schoolorbit_test \
-    public.ecr.aws/docker/library/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
+    public.ecr.aws/docker/library/postgres:18.6-alpine@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66 \
     postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=200 >/dev/null
 for attempt in {1..120}; do
     if docker exec "$SCHOOLORBIT_TEST_CONTAINER" pg_isready -h 127.0.0.1 -U schoolorbit_test -q; then break; fi
@@ -44,3 +44,12 @@ BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_
 
 # Attendance facts, guardian fan-out, special-group uniqueness and verified archival.
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh modules::attendance -- --test-threads=4
+
+# Compatibility regressions now run on the same owned PostgreSQL 18.6 server.
+./scripts/test_backend_school.sh --package school-staff personnel_simplification -- --test-threads=1
+./scripts/test_backend_school.sh --package school-file-platform schema_tests -- --test-threads=4
+./scripts/test_backend_school.sh modules::academic::core::schema_tests::migration_060 -- --test-threads=4
+./scripts/test_backend_school.sh modules::system::handlers::migration::tests::gradebook_results_status -- --test-threads=4
+./scripts/test_backend_school.sh --integration delivery_versions zero_course_periods_preserve_delivery_and_require_removing_existing_lessons -- --exact
+./scripts/test_backend_school.sh --package school-authorization --lib -- --test-threads=4
+./scripts/test_backend_school.sh --package school-tenancy --lib -- --test-threads=4

@@ -14,16 +14,16 @@ test('failed school creation removes only its temporary card', () => {
 	assert.deepEqual(result.schools, [{ id: 'existing-school', name: 'Existing' }]);
 });
 
-test('Neon provider details become a safe actionable message', () => {
+test('PostgreSQL provider details become a safe actionable message', () => {
 	const rawError =
-		'External Service Error: Failed to create database: Neon API error (404 Not Found): ' +
+		'External Service Error: Failed to create database: PostgreSQL provisioning operation failed: ' +
 		'{"request_id":"provider-request-secret-detail","message":"branch not found"}';
 
 	const result = schoolCreationFailure([], 'temporary-school', rawError);
 
 	assert.equal(
 		result.message,
-		'ไม่สามารถสร้างฐานข้อมูลโรงเรียนได้ กรุณาตรวจสอบการตั้งค่า Neon แล้วลองอีกครั้ง'
+		'ไม่สามารถสร้างฐานข้อมูลโรงเรียนได้ กรุณาตรวจสอบการตั้งค่าฐานข้อมูล แล้วลองอีกครั้ง'
 	);
 	assert.doesNotMatch(result.message, /provider-request-secret-detail|branch not found/i);
 });

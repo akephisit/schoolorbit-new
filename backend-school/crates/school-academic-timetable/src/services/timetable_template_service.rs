@@ -118,7 +118,7 @@ pub async fn create_template(
            VALUES ($1, $2, $3, $4)
            RETURNING id, name, description, created_by, created_at, updated_at"#,
     )
-    .bind(Uuid::new_v4())
+    .bind(Uuid::now_v7())
     .bind(name)
     .bind(request.description.as_deref())
     .bind(actor_user_id)
@@ -185,7 +185,7 @@ pub async fn from_current(
             "ไม่พบรุ่นตารางสอนในภาคเรียนที่ระบุ".to_string(),
         ));
     }
-    let template_id = Uuid::new_v4();
+    let template_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO timetable_templates (id, name, description, created_by)
            VALUES ($1, $2, $3, $4)"#,
@@ -274,7 +274,7 @@ pub async fn apply_template(
     request: ApplyTemplateRequest,
 ) -> Result<TemplateApplyResult, AppError> {
     let template = get_template(pool, template_id).await?;
-    let series_id = Uuid::new_v4();
+    let series_id = Uuid::now_v7();
     let mut transaction = pool.begin().await?;
     require_version_term_write(&mut transaction, request.timetable_version_id).await?;
     let (academic_year_id, bell_schedule_id, delivery_version_id): (
@@ -366,7 +366,7 @@ pub async fn apply_template(
             }
             None => entry.instructor_ids,
         };
-        let block_id = Uuid::new_v4();
+        let block_id = Uuid::now_v7();
         if let Some(group_id) = learning_group_id {
             if instructor_ids.is_empty() {
                 return Err(AppError::ValidationError(format!(
@@ -418,7 +418,7 @@ pub async fn apply_template(
             .execute(&mut *transaction)
             .await
             .map_err(map_write_error)?;
-            let block_group_id = Uuid::new_v4();
+            let block_group_id = Uuid::now_v7();
             sqlx::query(
                 r#"INSERT INTO academic_timetable_block_groups (
                        id, block_id, learning_group_id, learning_offering_id,

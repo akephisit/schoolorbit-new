@@ -10,8 +10,7 @@ function fixture(t) {
  for(const directory of ['scripts/lib','scripts/tests','backend-school/target/debug','backend-admin','bin'])mkdirSync(path.join(root,directory),{recursive:true});
  for(const source of ['scripts/pipeline.mjs','scripts/lib/pipeline-policy.mjs'])cpSync(path.join(repo,source),path.join(root,source));
  writeFileSync(path.join(root,'scripts/generate-api-contracts.mjs'),'// fixture exporter check\n');
- writeFileSync(path.join(root,'scripts/tests/neon-compatibility.test.mjs'),"import test from 'node:test';test('fixture',()=>{});\n");
- writeFileSync(path.join(root,'scripts/tests/neon-create-test-branch.test.mjs'),"import test from 'node:test';test('fixture',()=>{});\n");
+ writeFileSync(path.join(root,'scripts/tests/postgres-compatibility.test.mjs'),"import test from 'node:test';test('fixture',()=>{});\n");
  writeFileSync(path.join(root,'scripts/test_school_database_suite.sh'),'#!/bin/sh\ntouch fixture-executed\n');
  cpSync(path.join(repo,'scripts/test_backend_admin.sh'),path.join(root,'scripts/test_backend_admin.sh'));
  mkdirSync(path.join(root,'backend-admin/migrations'));

@@ -342,7 +342,7 @@ test('canonical docs own the academic cutover boundaries and unfinished lifecycl
 	}
 	assert.match(testing, /modules::system::handlers::migration::tests/);
 	assert.match(testing, /discovery does not equal execution/i);
-	assert.match(testing, /manual Neon/i);
+	assert.match(testing, /PostgreSQL compatibility/i);
 	assert.match(testing, /Gradebook and results cutover rehearsal/);
 	assert.match(testing, /migration_060/);
 	assert.match(testing, /gradebook_results_status/);

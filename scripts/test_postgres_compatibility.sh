@@ -6,11 +6,11 @@ trap 'rm -f "$compatibility_log"' EXIT
 run_nonempty_tests() {
     "$@" 2>&1 | tee "$compatibility_log"
     if ! grep -Eq 'test result: ok\. [1-9][0-9]* passed;' "$compatibility_log"; then
-        echo 'ERROR: Neon compatibility command selected no passing tests' >&2
+        echo 'ERROR: PostgreSQL compatibility command selected no passing tests' >&2
         return 1
     fi
 }
-case "${NEON_COMPATIBILITY_SCOPE:-full}" in
+case "${POSTGRES_COMPATIBILITY_SCOPE:-full}" in
     full)
         run_nonempty_tests cargo test -p school-staff personnel_simplification -- --test-threads=1
         run_nonempty_tests cargo test -p school-auth session_schema_tests -- --nocapture
@@ -25,7 +25,7 @@ case "${NEON_COMPATIBILITY_SCOPE:-full}" in
         run_nonempty_tests cargo test --test delivery_versions zero_course_periods_preserve_delivery_and_require_removing_existing_lessons -- --exact --nocapture
         ;;
     *)
-        echo 'ERROR: unknown Neon compatibility selection' >&2
+        echo 'ERROR: unknown PostgreSQL compatibility selection' >&2
         exit 64
         ;;
 esac

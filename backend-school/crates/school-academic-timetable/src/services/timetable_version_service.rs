@@ -243,7 +243,7 @@ pub async fn create_initial_draft(
             request.academic_term_id,
         )
         .await?;
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         sqlx::query("INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,delivery_version_id,bell_schedule_id,created_by) VALUES($1,$2,$3,NULL,'draft',$4,$5,$6)")
             .bind(id).bind(request.academic_term_id).bind(year).bind(delivery).bind(bell).bind(actor).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO academic_audit_events(event_code,entity_type,entity_id,academic_year_id,academic_term_id,actor_user_id,payload) VALUES('academic_timetable_version.draft_created','academic_timetable_version',$1,$2,$3,$4,$5)")
@@ -366,7 +366,7 @@ pub async fn clone_draft_in_transaction(
         return Ok(id);
     }
 
-    let new_version_id = Uuid::new_v4();
+    let new_version_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO academic_timetable_versions (
                id, academic_term_id, academic_year_id, effective_from, status,

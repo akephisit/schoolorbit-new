@@ -8,6 +8,7 @@ default = []
 test-support = []
 
 [dependencies]
+log = { workspace = true }
 dashmap = { workspace = true }
 reqwest = { workspace = true }
 school-migrations = { workspace = true }

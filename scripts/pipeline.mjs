@@ -68,7 +68,7 @@ try {
         run('node', ['scripts/generate-api-contracts.mjs', '--check']);
         const executable = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--format-version', '1', '--no-deps'], { cwd, encoding: 'utf8' })).target_directory + '/debug/backend-school';
         JSON.parse(execFileSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
-        run('node', ['--test', 'scripts/tests/neon-compatibility.test.mjs', 'scripts/tests/neon-create-test-branch.test.mjs']);
+        run('node', ['--test', 'scripts/tests/postgres-compatibility.test.mjs']);
         run('bash', ['scripts/test_school_database_suite.sh']);
       }
       if (suite === 'backend-admin') {

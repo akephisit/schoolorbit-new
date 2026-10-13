@@ -45,7 +45,7 @@ The main groups are:
 
 - `DATABASE_URL`, `JWT_SECRET`, and `INTERNAL_API_SECRET`;
 - `BACKEND_SCHOOL_URL` for internal coordination;
-- Neon credentials for tenant database provisioning;
+- PostgreSQL provisioning URL, TLS template and authenticated credential-storage key;
 - Cloudflare and GitHub credentials for DNS/deployment operations;
 - `RUST_LOG` for structured log filtering.
 

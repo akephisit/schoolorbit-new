@@ -10,7 +10,7 @@ const INTERNAL_SECRET_HEADER: &str = "X-Internal-Secret";
 #[serde(rename_all = "camelCase")]
 pub struct ProvisionRequest {
     pub school_id: String,
-    pub db_connection_string: String,
+    pub db_migration_connection_string: String,
     pub subdomain: String,
     pub admin_username: Option<String>,
     pub admin_password: String,
@@ -67,7 +67,7 @@ impl BackendSchoolClient {
     pub async fn provision_tenant(
         &self,
         school_id: &str,
-        db_connection_string: &str,
+        db_migration_connection_string: &str,
         subdomain: &str,
         admin_username: Option<&str>,
         admin_password: &str,
@@ -79,7 +79,7 @@ impl BackendSchoolClient {
 
         let request_body = ProvisionRequest {
             school_id: school_id.to_string(),
-            db_connection_string: db_connection_string.to_string(),
+            db_migration_connection_string: db_migration_connection_string.to_string(),
             subdomain: subdomain.to_string(),
             admin_username: admin_username.map(|s| s.to_string()),
             admin_password: admin_password.to_string(),
@@ -224,9 +224,10 @@ mod tests {
                         Some("c01ff666-f591-4a5e-ae6b-28f1a69054f0")
                     );
                     assert!(
-                        body.get("dbConnectionString").is_some_and(|value| {
-                            value.as_str() == Some("postgresql://fixture.invalid/school")
-                        }),
+                        body.get("dbMigrationConnectionString")
+                            .is_some_and(|value| {
+                                value.as_str() == Some("postgresql://fixture.invalid/school")
+                            }),
                         "database connection string must use the camelCase field"
                     );
                     assert_eq!(

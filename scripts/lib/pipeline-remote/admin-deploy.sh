@@ -134,6 +134,13 @@ backend_readiness_started="$(schoolorbit_timer_now)"
 export BACKEND_ADMIN_IMAGE="$backend_image_reference"
 podman stop schoolorbit-backend-admin || true
 podman rm schoolorbit-backend-admin || true
+test -r /opt/stack/postgresql/ca.crt || {
+    echo 'PostgreSQL CA is missing'
+    exit 78
+}
+podman run --rm --network schoolorbit-web --env-file /opt/stack/.env \
+    --volume /opt/stack/postgresql/ca.crt:/run/secrets/postgresql-ca.crt:ro \
+    "$backend_image_reference" /app/backend-admin --migrate-admin
 compose_up_quiet --no-deps backend-admin
 unset BACKEND_ADMIN_IMAGE
 reconnect_backend_network schoolorbit-backend-admin backend-admin

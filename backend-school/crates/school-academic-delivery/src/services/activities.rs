@@ -247,7 +247,7 @@ pub async fn enroll(
         }
     }
 
-    let membership_id = Uuid::new_v4();
+    let membership_id = Uuid::now_v7();
     let joined_at = registration_date(&term);
     sqlx::query(
         r#"INSERT INTO learning_group_students (

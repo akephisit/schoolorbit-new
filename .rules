@@ -269,14 +269,16 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
 
 ### API Response Contract
 
-All JSON endpoints use one envelope:
+Application JSON endpoints use one envelope:
 
 ```text
 success: true, data: T, message?: string
 success: false, error: string, message?: string, data?: T
 ```
 
-Use `ApiResponse` and `ApiErrorResponse`; do not return raw feature DTOs or ad-hoc top-level JSON. Non-JSON downloads, binary/image responses, WebSocket upgrades, and low-level health probes are exceptions. Empty mutations use `ApiResponse::empty()` or `ApiResponse::empty_with_message(...)`; success text belongs in `message`, not `data`.
+Private `/internal/` control-plane endpoints retain named, typed operational wire DTOs consumed by the deployment and tenancy owners. Their authenticated protocol is separate from public application responses; new credential endpoints must remain private and purpose-specific.
+
+Use `ApiResponse` and `ApiErrorResponse` for application responses; do not return raw feature DTOs or ad-hoc top-level JSON. Non-JSON downloads, binary/image responses, WebSocket upgrades, and low-level health probes are exceptions. Empty mutations use `ApiResponse::empty()` or `ApiResponse::empty_with_message(...)`; success text belongs in `message`, not `data`.
 
 ## 4. Permissions and Resource Authorization
 
@@ -344,9 +346,39 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
 - Database-backed tests use `TEST_DATABASE_URL` and isolated test state. Routine backend-school
   database tests run through `scripts/test_backend_school.sh`, which supplies PostgreSQL in a
   uniquely named Docker container and removes that exact container and its anonymous
-  volumes after the command, including handled failure and signal paths. Neon migration/schema
-  compatibility runs only through the explicit disposable-branch gate and uses its direct
-  endpoint, never a `-pooler` transaction endpoint.
+  volumes after the command, including handled failure and signal paths. PostgreSQL migration/schema compatibility uses the same owned Docker server and fresh
+  databases; no provider branch or production connection is a test fixture.
+
+### PostgreSQL VPS ownership and resource policy
+
+- PostgreSQL 18 is the database baseline; local fixtures pin the approved 18.6 image digest.
+- Database-per-school provisioning belongs to Admin. Persist a stable tenant identity and
+  authenticated encrypted credentials before creating resources; check role markers and
+  database ownership before retry, adoption, compensation or deletion. An ambiguous create
+  retains the failed control-plane record for reconciliation.
+- Runtime roles are DML-only and never run migrations, permission reconciliation or DDL.
+  Admin migrations run as explicit owner jobs; tenant provisioning/deployment uses the
+  canonical tenant runner and grants the matching runtime role after successful migration.
+  Verify immutable SQLx history before accepting a new runtime pool.
+- Public Admin DTOs exclude credentials and provider IDs. Tenant passwords are random and
+  stored with AES-256-GCM under the separate `DATABASE_CREDENTIALS_KEY`, authenticated to
+  the tenant UUID, purpose and envelope version. Internal migration credentials are fetched
+  only by the privileged migration path; never cache owner pools in runtime managers.
+- Production connections require verify-full TLS and the approved CA. Only the backend
+  host reaches TCP 5432; human database management uses SSH and separate operator roles.
+- New persisted business IDs use UUIDv7; preserve existing identities, deterministic UUIDv5,
+  externally provided IDs, security tokens and fixtures. Default changes use forward migrations.
+- Bound connection pools, cache entries/revision maps, background batches and log retention.
+  Revision pruning must reject stale async fills. Session/file retention uses existing domain
+  owners; never delete business history merely to free disk. Autovacuum reuses dead row space
+  and is not business retention, RAM cleanup or a guarantee that files shrink.
+- Monitor aggregate query/I/O statistics, route-template timings and pool wait, never credentials,
+  SQL parameters or PII. Disable utility/parameter statement logging and driver SQL text.
+- Backup uses encrypted off-host pgBackRest chains with archived WAL. A successful restore
+  of actual migrated data is a cutover gate. Keep source/config/key recovery material private.
+- Provider cutover preserves `_sqlx_migrations` checksums and all data under maintenance.
+  Fresh executable reconciliation gates credential retirement and consumer switching. No
+  automatic source fallback is allowed after target writes; recover/roll forward on PostgreSQL.
 
 ## 7. Frontend: SvelteKit 3 / Svelte 5
 
@@ -609,7 +641,7 @@ These six reviewed references guide the matching page responsibility. Inspect th
 - Cached Playwright browser files must match the installed Playwright version, runner OS, and architecture. Always verify a real browser launch and install missing host dependencies before running the existing frontend acceptance or E2E gates, including on cache hits.
 - Before DNS cutover, deployment workflows must verify the selected target origin with the intended hostname and pinned Origin CA trust. Do not verify a still-public hostname that may reach the old origin.
 - Containers bind application ports to `0.0.0.0`.
-- `/health` is dependency-free process liveness and owns recurring container and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes do not keep Neon active.
+- `/health` is dependency-free process liveness and owns recurring container and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes remain dependency-free.
 - Keep local Docker and production Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
 - Required backend-school runtime values include `SESSION_HMAC_KEY`, `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`, `BASE_DOMAIN`, and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` is an explicit local-development allowlist.
 - `SCHOOL_ROLLBACK_JWT_SECRET` exists only for a time-bounded backend-school rollback. The normal school runtime must not use it; `JWT_SECRET` is owned by backend-admin.

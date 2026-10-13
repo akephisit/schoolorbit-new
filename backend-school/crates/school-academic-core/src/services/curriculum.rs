@@ -74,7 +74,7 @@ pub async fn create(
 ) -> Result<CurriculumEdition, AppError> {
     validate_name(&request.name)?;
     validate_revision_year(request.revision_year)?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO curriculum_editions(id,name,revision_year,description) VALUES($1,$2,$3,$4)",
     )
@@ -187,7 +187,7 @@ pub async fn create_level(
 ) -> Result<CurriculumLevel, AppError> {
     validate_name(&request.name_th)?;
     validate_grade_levels(pool, &request.grade_level_ids).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let mut tx = pool.begin().await?;
     require_draft_edition(&mut tx, edition_id, request.draft_id).await?;
     sqlx::query("INSERT INTO curriculum_levels(id,edition_id,code,name_th,description,grade_level_ids,is_active) VALUES($1,$2,$3,$4,$5,$6,true)")
@@ -307,7 +307,7 @@ pub async fn create_program(
     request: CreateStudyProgramRequest,
 ) -> Result<StudyProgram, AppError> {
     validate_name(&request.name_th)?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let mut tx = pool.begin().await?;
     require_draft_level(&mut tx, level_id, request.draft_id).await?;
     if request.is_default {
@@ -549,7 +549,7 @@ pub async fn copy_program(
         AND EXISTS(SELECT 1 FROM (SELECT term_slot_id FROM published_curriculum_course_requirements WHERE study_program_id=$3 UNION SELECT term_slot_id FROM published_curriculum_activity_requirements WHERE study_program_id=$3) used WHERE used.term_slot_id=s.id)
         AND NOT EXISTS(SELECT 1 FROM curriculum_term_slots t WHERE t.curriculum_level_id=$1 AND t.term_type=s.term_type AND t.type_occurrence=s.type_occurrence)"#)
         .bind(level_id).bind(source.curriculum_level_id).bind(source.id).execute(&mut *tx).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     sqlx::query("INSERT INTO study_programs(id,curriculum_level_id,code,name_th,name_en,is_default,status) SELECT $1,$2,$3,$4,$5,NOT EXISTS(SELECT 1 FROM study_programs WHERE curriculum_level_id=$2 AND is_default),'draft'")
         .bind(id).bind(level_id).bind(internal_code("PLAN",id)).bind(name).bind(&source.name_en).execute(&mut *tx).await?;
     sqlx::query(r#"INSERT INTO curriculum_course_requirements(id,curriculum_level_id,study_program_id,subject_version_id,grade_level_id,term_slot_id,requirement_kind,display_order)

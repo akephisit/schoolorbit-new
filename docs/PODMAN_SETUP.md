@@ -9,7 +9,7 @@
 - `schoolorbit-backend-admin` ที่พอร์ต `8080` สำหรับ control plane และ admin database;
 - `schoolorbit-backend-school` ที่พอร์ต `8081` สำหรับ tenant API และ tenant databases;
 - `schoolorbit-nginx` ที่รับ HTTP/HTTPS แล้ว proxy ไปยัง backend ผ่าน Podman network;
-- PostgreSQL/Neon ภายนอก server สำหรับ admin และ tenant databases;
+- PostgreSQL 18 ภายนอก server สำหรับ admin และ tenant databases;
 - Cloudflare R2-compatible storage สำหรับไฟล์;
 - frontend ที่ deploy แยกจาก backend ตาม tenant/subdomain.
 
@@ -188,7 +188,7 @@ chmod 600 .env
 - school session boundary: `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS` และ `SCHOOL_ALLOWED_DEV_ORIGINS`;
 - encryption: `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`;
 - internal services: `BACKEND_ADMIN_URL`, `BACKEND_SCHOOL_URL` และ timeout/retry variables;
-- admin database/Neon: `DATABASE_URL`, `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_BRANCH_ID`, `NEON_HOST`, `NEON_DB_PASSWORD`;
+- admin runtime/provisioning: `DATABASE_URL`, `ADMIN_MIGRATION_DATABASE_URL`, `PG_PROVISIONING_DATABASE_URL`, `PG_TENANT_DATABASE_URL`, `DATABASE_CREDENTIALS_KEY`, `POSTGRES_CA_FILE`;
 - deployment: `API_URL`, Cloudflare variables และ GitHub variables;
 - File Platform: `R2_PUBLIC_BUCKET_NAME`, `R2_PRIVATE_BUCKET_NAME`, `R2_PUBLIC_URL`, credentials, `CLAMD_*`, `FILE_PRIVATE_GRANT_TTL_SECONDS` และ `FILE_RECONCILE_*`;
 - notifications: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
@@ -196,7 +196,7 @@ chmod 600 .env
 ข้อกำหนดสำคัญ:
 
 - `INTERNAL_API_SECRET` ต้องตรงกันระหว่าง backend ทั้งสอง;
-- `NEON_BRANCH_ID` ต้องเป็น branch identifier จาก Neon ที่ขึ้นต้นด้วย `br-` ไม่ใช่ชื่อ branch เช่น `main`;
+- production database URLs ต้องใช้ `sslmode=verify-full` และ mount CA แบบ read-only ให้ทั้งสอง backend;
 - `SESSION_HMAC_KEY` ต้องสุ่มเฉพาะระบบนี้อย่างน้อย 32 ตัวอักษรและคงเดิมระหว่างทุก backend-school replica; การเปลี่ยนค่าจะทำให้ school session ปัจจุบันทั้งหมดใช้ต่อไม่ได้;
 - `SESSION_HMAC_KEY`, `SCHOOL_ROLLBACK_JWT_SECRET` และ backend-admin `JWT_SECRET` ต้องเป็นคนละค่า โดย Compose จะ map rollback key เข้า `JWT_SECRET` ของ process backend-school เพื่อรองรับการย้อนกลับเท่านั้น;
 - `BASE_DOMAIN` ต้องตรงกับ tenant domain จริง, `TRUSTED_PROXY_CIDRS` ต้องอนุญาตเฉพาะ proxy network ที่เชื่อถือได้ และ production ต้องตั้ง `SCHOOL_ALLOWED_DEV_ORIGINS=` เป็นค่าว่าง; local Compose จึงค่อย allowlist `http://localhost:5173,http://127.0.0.1:5173`;
@@ -361,7 +361,7 @@ podman image inspect \
 ## 10. แก้ปัญหาเบื้องต้น
 
 - `podman-compose --dry-run up -d` ล้มเหลว: ตรวจตัวแปรที่ขาดใน `.env` โดยไม่พิมพ์ค่า secret.
-- backend-admin ไม่ ready: ตรวจ `DATABASE_URL`, Neon connectivity และ log 100 บรรทัดท้าย.
+- backend-admin ไม่ ready: ตรวจ `DATABASE_URL`, PostgreSQL TLS connectivity และ log 100 บรรทัดท้าย.
 - backend-school ไม่ ready: ตรวจ backend-admin readiness, `BACKEND_ADMIN_URL`, internal secret, `SESSION_HMAC_KEY`, `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS` และ container network โดยไม่พิมพ์ค่า secret.
 - Nginx ได้ `502`: ตรวจว่า Nginx อยู่ network เดียวกับ backend และ `proxy_pass` ใช้ container name.
 - TLS ล้มเหลว: ตรวจ DNS, certificate path, สิทธิ์อ่าน volume และ `podman exec schoolorbit-nginx nginx -t`.

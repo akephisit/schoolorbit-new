@@ -103,7 +103,6 @@
 				createdAt: new Date().toISOString(),
 				updatedAt: new Date().toISOString(),
 				dbName: `schoolorbit_${validated.subdomain}`,
-				dbConnectionString: '',
 				logs: [],
 				isDeploying: true
 			};

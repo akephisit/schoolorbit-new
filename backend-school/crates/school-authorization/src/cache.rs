@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use uuid::Uuid;
 
+const CAPACITY: usize = 8192;
 const TTL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Clone)]
@@ -22,12 +23,14 @@ pub struct TenantUserKey {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PermissionCacheRevision {
+    epoch: u64,
     tenant: u64,
     user: u64,
 }
 
 #[derive(Default)]
 struct RevisionState {
+    epoch: u64,
     tenants: HashMap<String, u64>,
     users: HashMap<TenantUserKey, u64>,
 }
@@ -36,17 +39,28 @@ impl RevisionState {
     fn snapshot(&self, tenant: &str, user_id: Uuid) -> PermissionCacheRevision {
         let key = PermissionCache::key(tenant, user_id);
         PermissionCacheRevision {
+            epoch: self.epoch,
             tenant: self.tenants.get(tenant).copied().unwrap_or_default(),
             user: self.users.get(&key).copied().unwrap_or_default(),
         }
     }
 
+    fn prune_if_full(&mut self) {
+        if self.users.len() + self.tenants.len() >= CAPACITY {
+            self.epoch = self.epoch.wrapping_add(1);
+            self.users.clear();
+            self.tenants.clear();
+        }
+    }
+
     fn advance_user(&mut self, key: TenantUserKey) {
+        self.prune_if_full();
         let revision = self.users.entry(key).or_default();
         *revision = revision.wrapping_add(1);
     }
 
     fn advance_tenant(&mut self, tenant: &str) {
+        self.prune_if_full();
         let revision = self.tenants.entry(tenant.to_string()).or_default();
         *revision = revision.wrapping_add(1);
     }
@@ -122,6 +136,20 @@ impl PermissionCache {
         if revisions.snapshot(tenant, user_id) != revision {
             return false;
         }
+        if self.inner.len() >= CAPACITY {
+            self.inner
+                .retain(|_, entry| entry.cached_at.elapsed() <= TTL);
+            if self.inner.len() >= CAPACITY {
+                if let Some(oldest) = self
+                    .inner
+                    .iter()
+                    .min_by_key(|entry| entry.cached_at)
+                    .map(|entry| entry.key().clone())
+                {
+                    self.inner.remove(&oldest);
+                }
+            }
+        }
         self.inner.insert(
             Self::key(tenant, user_id),
             CacheEntry {
@@ -131,6 +159,14 @@ impl PermissionCache {
             },
         );
         true
+    }
+
+    pub fn cleanup_expired(&self) {
+        let revisions = self.revision_state();
+        self.inner.retain(|key, entry| {
+            entry.cached_at.elapsed() <= TTL
+                && entry.revision == revisions.snapshot(&key.tenant, key.user_id)
+        });
     }
 
     pub fn invalidate_user(&self, tenant: &str, user_id: Uuid) {
@@ -200,6 +236,27 @@ mod tests {
             tenant_revision,
             vec!["stale.read".into()]
         ));
+    }
+
+    #[test]
+    fn revision_pruning_rejects_stale_in_flight_fill() {
+        let cache = PermissionCache::new();
+        let user = Uuid::new_v4();
+        let old = cache.snapshot_revision("tenant", user);
+        for _ in 0..=CAPACITY {
+            cache.invalidate_user("tenant", Uuid::new_v4());
+        }
+        assert!(!cache.fill_if_current("tenant", user, old, vec!["stale".into()]));
+        assert!(cache.revision_state().users.len() <= CAPACITY);
+    }
+
+    #[test]
+    fn cache_capacity_is_bounded() {
+        let cache = PermissionCache::new();
+        for _ in 0..=CAPACITY {
+            fill(&cache, "tenant", Uuid::new_v4(), vec![]);
+        }
+        assert!(cache.inner.len() <= CAPACITY);
     }
 
     #[test]

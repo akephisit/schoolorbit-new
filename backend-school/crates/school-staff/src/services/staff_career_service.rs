@@ -297,7 +297,7 @@ pub async fn create_current_career(
             return Err(conflict());
         }
         validate_position(tx, &entry, None).await?;
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         insert_entry(tx, staff_id, id, actor_id, &entry).await?;
         project_current(tx, staff_id, id, &entry.fact).await?;
         save_audit(
@@ -347,7 +347,7 @@ pub async fn patch_current_career(
         }
         validate_position(tx, &entry, before.as_ref()).await?;
         validate_chronology(tx, staff_id, &entry, true, None).await?;
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         insert_entry(tx, staff_id, id, actor_id, &entry).await?;
         project_current(tx, staff_id, id, &entry.fact).await?;
         save_audit(

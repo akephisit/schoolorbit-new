@@ -245,7 +245,7 @@ test('the resolved production topology has one owner and private backend ports',
 
 test('local and production clamd allow 3 GiB for concurrent signature reloads', async () => {
 	for (const [file, extraArguments] of [
-		['compose.local.yml', []],
+		['compose.local.yml', ['--env-file', 'scripts/tests/installer/fixtures/runtime.env']],
 		['podman-compose.yml', ['--env-file', 'scripts/tests/installer/fixtures/runtime.env']]
 	]) {
 		const topology = await loadComposeConfig(file, extraArguments);
@@ -419,7 +419,7 @@ test('backend-school migration failure reports only bounded deployment diagnosti
 
 test('Release 2 deployment remains in maintenance until the Gradebook/results cutover passes', async () => {
 	const deployment = await readRepo('.github/workflows/deploy-school-release.yml');
-	const compatibility = await readRepo('scripts/test_neon_compatibility.sh');
+	const compatibility = await readRepo('scripts/test_postgres_compatibility.sh');
 	const migrationHandler = await readRepo(
 		'backend-school/src/modules/system/handlers/migration.rs'
 	);

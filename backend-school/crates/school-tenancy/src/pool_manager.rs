@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use school_migrations::MigrationTracker;
+use sqlx::ConnectOptions;
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
     PgPool,
@@ -31,7 +31,6 @@ impl PoolEntry {
 pub struct PoolManager {
     pools: Arc<RwLock<HashMap<String, PoolEntry>>>,
     creation_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
-    migration_tracker: MigrationTracker,
     max_connections_per_school: u32,
     pool_ttl: Duration,
 }
@@ -41,7 +40,6 @@ impl PoolManager {
         Self {
             pools: Arc::new(RwLock::new(HashMap::new())),
             creation_locks: Arc::new(DashMap::new()),
-            migration_tracker: MigrationTracker::new(),
             max_connections_per_school: 5,
             pool_ttl: Duration::from_secs(1800), // 30 minutes TTL
         }
@@ -115,7 +113,7 @@ impl PoolManager {
     }
 
     /// Get or create a connection pool for a specific school
-    /// Also runs migrations lazily on first connection
+    /// Runtime requests never run migrations or permission synchronization.
     pub async fn get_pool(&self, database_url: &str, subdomain: &str) -> Result<PgPool, String> {
         Ok(self
             .get_pool_with_permission_change(database_url, subdomain)
@@ -123,8 +121,8 @@ impl PoolManager {
             .0)
     }
 
-    /// Get a tenant pool and report whether migrations or permission sync changed
-    /// the effective permission contract during this call.
+    /// Compatibility for middleware event signaling: runtime pools never migrate.
+    /// Permission changes are reconciled and broadcast by the deployment owner.
     pub async fn get_pool_with_permission_change(
         &self,
         database_url: &str,
@@ -134,16 +132,7 @@ impl PoolManager {
             .get_pool_without_migrations(database_url, subdomain)
             .await?;
 
-        // Run migrations (lazy - only once per school per session)
-        let migrated = self
-            .migration_tracker
-            .run_migrations_once(subdomain, &pool)
-            .await?;
-
-        // The centralized migration runner also reconciles permissions, including
-        // when no SQL migration is pending. Its success signal still invalidates
-        // permission caches; no second reconciliation is needed here.
-        Ok((pool, migrated))
+        Ok((pool, false))
     }
 
     /// Get or create a tenant pool without running migrations or permission synchronization.
@@ -158,12 +147,15 @@ impl PoolManager {
                 tracing::info!(subdomain, "Creating tenant database pool");
                 let connect_options = PgConnectOptions::from_str(database_url)
                     .map_err(|error| {
-                        format!("Invalid database configuration for {subdomain}: {error}")
+                        let _ = error; format!("Invalid database configuration for {subdomain}")
                     })?
-                    .statement_cache_capacity(0);
+                    .statement_cache_capacity(100)
+                    .disable_statement_logging();
 
-                PgPoolOptions::new()
+                let pool = PgPoolOptions::new()
                     .min_connections(0)
+                    .acquire_time_level(log::LevelFilter::Info)
+                    .acquire_slow_threshold(Duration::from_millis(250))
                     .max_connections(self.max_connections_per_school)
                     .acquire_timeout(Duration::from_secs(20))
                     .idle_timeout(Duration::from_secs(300))
@@ -171,8 +163,10 @@ impl PoolManager {
                     .connect_with(connect_options)
                     .await
                     .map_err(|error| {
-                        format!("Failed to connect to database for {subdomain}: {error}")
-                    })
+                        tracing::warn!(database_code = ?error.as_database_error().and_then(|e| e.code()), "Tenant connection failed"); format!("Failed to connect to database for {subdomain}")
+                    })?;
+                school_migrations::verify_tenant_schema(&pool).await?;
+                Ok(pool)
             })
             .await?;
 
@@ -189,11 +183,6 @@ impl PoolManager {
             .await
     }
 
-    /// Get migration tracker for manual operations
-    pub fn migration_tracker(&self) -> &MigrationTracker {
-        &self.migration_tracker
-    }
-
     /// Cleanup expired pools (call periodically)
     pub async fn cleanup_expired(&self) {
         let now = Instant::now();
@@ -205,6 +194,8 @@ impl PoolManager {
             }
             !expired
         });
+        self.creation_locks
+            .retain(|_, lock| Arc::strong_count(lock) > 1);
     }
 
     /// Get current pool count (for monitoring)
@@ -222,66 +213,24 @@ impl Default for PoolManager {
 #[cfg(test)]
 mod tests {
     #[tokio::test]
-    async fn permission_batch_runs_once_for_concurrent_pool_access_and_retries_failure() {
-        let pool = school_test_db::create_named_test_pool("pool_permission_batch").await;
+    async fn runtime_pool_access_does_not_reconcile_permissions() {
+        let pool = school_test_db::create_named_test_pool("pool_no_runtime_ddl").await;
         school_test_db::run_test_migrations(&pool).await;
-        sqlx::raw_sql(
-            r#"CREATE TABLE sync_insert_count (id integer);
-            CREATE FUNCTION count_pool_sync() RETURNS trigger LANGUAGE plpgsql AS $$
-            BEGIN INSERT INTO sync_insert_count VALUES (1); RETURN NULL; END $$;
-            CREATE TRIGGER count_pool_sync AFTER INSERT ON permissions
-                FOR EACH STATEMENT EXECUTE FUNCTION count_pool_sync();
-            CREATE FUNCTION reject_pool_sync() RETURNS trigger LANGUAGE plpgsql AS $$
-            BEGIN RAISE EXCEPTION 'injected sync failure'; END $$;
-            CREATE TRIGGER reject_pool_sync BEFORE INSERT ON permissions
-                FOR EACH STATEMENT EXECUTE FUNCTION reject_pool_sync();"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        let manager = std::sync::Arc::new(super::PoolManager::new());
-        let key = "test-only-cached-pool";
-        manager.insert_test_pool(key, pool.clone()).await;
-        assert!(manager
-            .get_pool_with_permission_change(key, "batch")
-            .await
-            .is_err());
-        assert_eq!(manager.migration_tracker.migration_count().await, 0);
-        sqlx::query("DROP TRIGGER reject_pool_sync ON permissions")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let mut tasks = Vec::new();
+        sqlx::raw_sql(r#"CREATE FUNCTION reject_runtime_sync() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'runtime must not reconcile permissions'; END $$;
+            CREATE TRIGGER reject_runtime_sync BEFORE INSERT ON permissions FOR EACH STATEMENT EXECUTE FUNCTION reject_runtime_sync();"#)
+            .execute(&pool).await.unwrap();
+        let manager = super::PoolManager::new();
+        manager.insert_test_pool("test-only-runtime", pool).await;
         for _ in 0..4 {
-            let manager = manager.clone();
-            tasks.push(tokio::spawn(async move {
-                manager
-                    .get_pool_with_permission_change(key, "batch")
+            assert!(
+                !manager
+                    .get_pool_with_permission_change("test-only-runtime", "tenant")
                     .await
                     .unwrap()
                     .1
-            }));
+            );
         }
-        let mut notifications = 0;
-        for task in tasks {
-            notifications += usize::from(task.await.unwrap());
-        }
-        assert_eq!(notifications, 1);
-        assert!(
-            !manager
-                .get_pool_with_permission_change(key, "batch")
-                .await
-                .unwrap()
-                .1
-        );
-        let statements: i64 = sqlx::query_scalar("SELECT count(*) FROM sync_insert_count")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            statements, 1,
-            "one successful sync, not a second permission pass"
-        );
     }
 
     use super::{PoolEntry, PoolManager};

@@ -85,12 +85,12 @@ pub async fn execute_decision(
                     ));
                 }
             }
-            let id = Uuid::new_v4();
+            let id = Uuid::now_v7();
             sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES($1,$2,$3,$4,$5,'planned')")
                 .bind(id).bind(current.student_id).bind(target_year).bind(grade).bind(program).execute(&mut **tx).await?;
             result.target_student_year_id = Some(id);
             if let Some(room) = decision.target_homeroom_id {
-                let placement = Uuid::new_v4();
+                let placement = Uuid::now_v7();
                 sqlx::query("INSERT INTO homeroom_placements(id,student_academic_year_id,academic_year_id,homeroom_id,start_date,status,enrollment_type) SELECT $1,$2,$3,$4,start_date,'planned','promotion' FROM academic_years WHERE id=$3")
                     .bind(placement).bind(id).bind(target_year).bind(room).execute(&mut **tx).await?;
                 result.target_placement_id = Some(placement);

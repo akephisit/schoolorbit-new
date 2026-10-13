@@ -1296,7 +1296,7 @@ pub async fn apply(
         };
         outcomes.push(outcome);
     }
-    let run_id = Uuid::new_v4();
+    let run_id = Uuid::now_v7();
     let created_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
         r#"INSERT INTO academic_term_preparation_runs(
                id,request_id,source_academic_term_id,source_academic_year_id,

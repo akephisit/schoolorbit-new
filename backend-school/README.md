@@ -134,7 +134,7 @@ Run focused module/service tests for changed behavior. From the repository root,
 ./scripts/test_backend_school.sh
 ```
 
-See [Testing](../docs/TESTING.md) for focused filters and the explicit Neon compatibility gate.
+See [Testing](../docs/TESTING.md) for focused filters and the owned PostgreSQL compatibility suite.
 
 ## Environment
 
