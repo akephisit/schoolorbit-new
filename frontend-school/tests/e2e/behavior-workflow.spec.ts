@@ -8,8 +8,10 @@ import {
 	secondStudent,
 	otherStudent,
 	meritItem,
-	entries
+	entries,
+	summary
 } from './fixtures/behavior-route-data';
+import type { BehaviorDailyTotal } from '../../src/lib/api/behavior';
 
 test('reader loads history without settings or action-only selector reads', async ({ page }) => {
 	const api = await mockBehavior(page, { permissions: [PERMISSIONS.BEHAVIOR_READ_SCHOOL] });
@@ -54,10 +56,82 @@ test('split cycle summary avoids showing mismatched current net', async ({ page 
 	const api = await mockBehavior(page, { splitCycles: true });
 	await page.goto(behaviorPath() + `&studentId=${behaviorStudent}`);
 	await expect(page.getByText('ต่างช่วงเวลา', { exact: true })).toBeVisible();
+	await expect(page.locator('[aria-label="ประวัติรวมทุกภาคเรียน"]')).not.toContainText('สุทธิ');
 	expect(
 		api.summaryQueries.every((query) => !new URLSearchParams(query).has('academicTermId'))
 	).toBe(true);
 	await expect(page.getByText('สุทธิในช่วงเดียวกัน', { exact: false })).toContainText('12');
+});
+
+test('summary refresh waits for a historical adjustment before applying canonical totals', async ({
+	page
+}) => {
+	await mockBehavior(page, {
+		permissions: [
+			PERMISSIONS.BEHAVIOR_READ_SCHOOL,
+			PERMISSIONS.BEHAVIOR_CORRECT_SCHOOL,
+			PERMISSIONS.BEHAVIOR_DELETE_OWN
+		]
+	});
+	const daily: BehaviorDailyTotal = {
+		id: entries[0].id,
+		studentId: behaviorStudent,
+		academicTermId: behaviorTerm,
+		cycleId: summary.meritCycle.id,
+		gradeLevelId: behaviorStudent,
+		homeroomId: null,
+		date: '2026-09-30',
+		side: 'merit',
+		source: 'manual',
+		points: 10,
+		rowVersion: 1
+	};
+	let summaryReads = 0;
+	await page.route('**/api/behavior/students/*/summary*', (route) => {
+		const updated = ++summaryReads > 1;
+		return route.fulfill({
+			json: {
+				success: true,
+				data: {
+					...summary,
+					history: { merit: updated ? 15 : 10, deduction: 20, net: null },
+					lifetime: { merit: updated ? 35 : 30, deduction: 28, net: updated ? 7 : 2 },
+					historyTotals: [{ ...daily, points: updated ? 15 : 10, rowVersion: updated ? 2 : 1 }]
+				}
+			}
+		});
+	});
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	let adjusting = false;
+	await page.route('**/api/behavior/history/adjustments', async (route) => {
+		adjusting = true;
+		await held;
+		await route.fulfill({
+			json: { success: true, data: { id: daily.id, totalId: daily.id, points: 15, rowVersion: 2 } }
+		});
+	});
+	await page.goto(behaviorPath() + `&studentId=${behaviorStudent}`);
+	const score = page.locator('[aria-label="สรุปคะแนน"]');
+	await score.getByText('ประวัติยอดรายวัน (1)', { exact: true }).click();
+	await score.getByRole('button', { name: 'ปรับยอด', exact: true }).click();
+	await score.getByLabel('จำนวนที่ปรับ (+ เพิ่ม / − ลด)', { exact: true }).fill('5');
+	await score.getByLabel('เหตุผล *', { exact: true }).fill('แก้ยอดย้อนหลัง');
+	await score.getByRole('button', { name: 'บันทึกการปรับยอด', exact: true }).click();
+	await expect.poll(() => adjusting).toBe(true);
+	const log = page.locator('[aria-label="ประวัติรายการคะแนน"]');
+	await log
+		.getByRole('checkbox', { name: 'เลือกยกเลิก นักเรียน หนึ่ง ช่วยงานโรงเรียน', exact: true })
+		.check();
+	await log.getByRole('button', { name: 'ยกเลิกที่เลือก 1 รายการ', exact: true }).click();
+	await log.getByLabel('เหตุผล *', { exact: true }).fill('ยกเลิกรายการผิด');
+	await log.getByRole('button', { name: 'ยืนยันยกเลิก', exact: true }).click();
+	await expect(log.getByText('ยกเลิกแล้ว', { exact: true })).toBeVisible();
+	expect(summaryReads).toBe(1);
+	release();
+	await expect.poll(() => summaryReads).toBe(2);
+	await expect(page.locator('[aria-label="ประวัติรวมทุกภาคเรียน"] dd').first()).toHaveText('15');
+	await expect(page.locator('[aria-label="สะสมทั้งหมด"] dd').first()).toHaveText('35');
 });
 
 test('teacher can cancel own manual entry while Attendance links open exact source', async ({

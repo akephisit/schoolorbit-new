@@ -79,7 +79,7 @@ const cycle = (side: 'merit' | 'deduction') => ({
 export const summary: BehaviorStudentSummary = {
 	studentId: behaviorStudent,
 	current: { merit: 20, deduction: 8, net: 12 },
-	history: { merit: 10, deduction: 20, net: -10 },
+	history: { merit: 10, deduction: 20, net: null },
 	lifetime: { merit: 30, deduction: 28, net: 2 },
 	comparableCurrent: { merit: 20, deduction: 8, net: 12 },
 	comparisonExact: true,

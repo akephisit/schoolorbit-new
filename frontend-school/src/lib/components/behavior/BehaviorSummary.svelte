@@ -34,11 +34,18 @@
 	const request = new LatestRequest();
 	let previousRevision = untrack(() => refreshRevision);
 	let refreshing = $state(false);
+	let refreshDeferred = false;
 	onDestroy(() => {
 		disposed = true;
 		request.abort();
 	});
 	async function refresh() {
+		if (disposed) return;
+		if (pending || frozen) {
+			refreshDeferred = true;
+			return;
+		}
+		refreshDeferred = false;
 		const ticket = request.begin();
 		refreshing = true;
 		error = '';
@@ -61,7 +68,8 @@
 
 	async function adjust(e: SubmitEvent) {
 		e.preventDefault();
-		if (!editing || pending) return;
+		if (!editing || pending || refreshing) return;
+		request.abort();
 		pending = true;
 		error = '';
 		try {
@@ -83,7 +91,10 @@
 			summary.history = {
 				...summary.history,
 				[row.side]: summary.history[row.side] + difference,
-				net: summary.history.net + (row.side === 'merit' ? difference : -difference)
+				net:
+					summary.history.net === null
+						? summary.history.net
+						: summary.history.net + (row.side === 'merit' ? difference : -difference)
 			};
 			summary.lifetime = {
 				...summary.lifetime,
@@ -105,7 +116,10 @@
 				frozen = null;
 			}
 		} finally {
-			if (!disposed) pending = false;
+			if (!disposed) {
+				pending = false;
+				if (refreshDeferred && !frozen) void refresh();
+			}
 		}
 	}
 </script>
@@ -120,15 +134,16 @@
 		/>{/if}
 	<p class="text-sm text-muted-foreground">ประวัติและคะแนนสะสมรวมทุกปีการศึกษา</p>
 	<div class="grid gap-4 md:grid-cols-3">
-		{#each [{ label: 'รอบปัจจุบัน', totals: summary.current }, { label: 'ประวัติรวมทุกภาคเรียน', totals: summary.history }, { label: 'สะสมทั้งหมด', totals: summary.lifetime }] as group (group.label)}<Card.Root
+		{#each [{ label: 'รอบปัจจุบัน', totals: summary.current, showNet: true }, { label: 'ประวัติรวมทุกภาคเรียน', totals: summary.history, showNet: false }, { label: 'สะสมทั้งหมด', totals: summary.lifetime, showNet: true }] as group (group.label)}<Card.Root
+				aria-label={group.label}
 				><Card.Header><Card.Title>{group.label}</Card.Title></Card.Header><Card.Content
 					><dl class="grid grid-cols-2 gap-2">
 						<dt>ความดี</dt>
 						<dd class="text-end font-semibold text-success">{group.totals.merit}</dd>
 						<dt>ถูกหัก</dt>
 						<dd class="text-end font-semibold text-destructive">{group.totals.deduction}</dd>
-						<dt>สุทธิ</dt>
-						<dd class="text-end font-semibold">{group.totals.net ?? 'ต่างช่วงเวลา'}</dd>
+						{#if group.showNet}<dt>สุทธิ</dt>
+							<dd class="text-end font-semibold">{group.totals.net ?? 'ต่างช่วงเวลา'}</dd>{/if}
 					</dl></Card.Content
 				></Card.Root
 			>{/each}
@@ -140,7 +155,7 @@
 		สุทธิในช่วงเดียวกัน {summary.comparisonStart}–{summary.comparisonEnd}:
 		<strong>{summary.comparableCurrent.net ?? 'เปรียบเทียบไม่ได้'}</strong
 		>{#if !summary.comparisonExact}<span class="block text-sm text-muted-foreground"
-				>มีการรีเซ็ตระหว่างวัน จึงยังไม่มีผลสุทธิที่เปรียบเทียบตรงช่วงได้</span
+				>รอบคะแนนหรือข้อมูลที่เก็บเป็นประวัติมีช่วงไม่ตรงกัน จึงยังเปรียบเทียบผลสุทธิในช่วงนี้ไม่ได้</span
 			>{/if}
 	</p>
 	<details>
@@ -157,7 +172,7 @@
 							class="min-h-[44px] min-w-[44px]"
 							type="button"
 							variant="outline"
-							disabled={pending || !!requestId}
+							disabled={pending || !!requestId || refreshing}
 							onclick={() => {
 								editing = row;
 								delta = 0;
@@ -197,8 +212,11 @@
 					variant="outline"
 					disabled={pending || !!requestId}
 					onclick={() => (editing = null)}>ยกเลิก</Button
-				><LoadingButton class="min-h-[44px] min-w-[44px]" type="submit" loading={pending}
-					>บันทึกการปรับยอด</LoadingButton
+				><LoadingButton
+					class="min-h-[44px] min-w-[44px]"
+					type="submit"
+					loading={pending}
+					disabled={refreshing}>บันทึกการปรับยอด</LoadingButton
 				>
 			</div>
 		</form>{/if}
