@@ -403,6 +403,15 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-permissions",
             ],
         ),
+        (
+            "school-behavior",
+            &[
+                "school-academic-core",
+                "school-authorization",
+                "school-errors",
+                "school-permissions",
+            ],
+        ),
         ("school-staff", &["school-crypto", "school-errors"]),
         (
             "school-students",
@@ -1128,6 +1137,7 @@ fn eligible_satellite_domains_have_singular_workspace_owners() {
         "school-supervision",
         "school-staff",
         "school-calendar",
+        "school-behavior",
         "school-question-bank",
         "school-workflow",
         "school-students",

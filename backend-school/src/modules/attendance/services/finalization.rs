@@ -162,3 +162,7 @@ pub async fn catch_up(pool: &PgPool, now: DateTime<Utc>, limit: i64) -> Result<u
     }
     Ok(count)
 }
+
+#[cfg(test)]
+#[path = "finalization_tests.rs"]
+mod tests;
