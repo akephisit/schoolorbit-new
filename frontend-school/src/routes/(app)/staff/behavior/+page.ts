@@ -8,6 +8,7 @@ import {
 	type BehaviorReportQuery
 } from '#lib/api/behavior.js';
 import { bangkokDateTime } from '#lib/features/behavior/presentation.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 export const _meta = {
 	academicContext: 'term_required' as const,
 	menu: {
@@ -15,7 +16,11 @@ export const _meta = {
 		icon: 'HeartHandshake',
 		group: 'main',
 		workspace: 'home',
-		permission: behaviorReadPermissions,
+		permission: [
+			PERMISSIONS.BEHAVIOR_READ_OWN,
+			PERMISSIONS.BEHAVIOR_READ_ASSIGNED,
+			PERMISSIONS.BEHAVIOR_READ_SCHOOL
+		],
 		order: 45,
 		user_type: 'staff'
 	}
