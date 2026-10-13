@@ -5,13 +5,6 @@ schoolorbit_container_network_state() {
     podman inspect --format '{{json .NetworkSettings.Networks}}' "$container"
 }
 
-schoolorbit_network_is_attached() {
-    local network_state=${1:?Network state is required}
-    local network=${2:?Network name is required}
-    printf '%s\n' "$network_state" |
-        jq -e --arg network "$network" '.[$network] != null' >/dev/null
-}
-
 schoolorbit_network_has_aliases() {
     local network_state=${1:?Network state is required}
     local network=${2:?Network name is required}
@@ -31,23 +24,25 @@ schoolorbit_network_has_aliases() {
 
 schoolorbit_network_alias_resolves() {
     local probe_container=${1:?DNS probe container is required}
-    local service_alias=${2:?Service alias is required}
-    podman exec "$probe_container" getent hosts "$service_alias" >/dev/null 2>&1
+    local alias=${2:?DNS alias is required}
+    local expected_ip=${3:?Expected address is required}
+    local answer
+    if ! answer=$(timeout 5 podman exec "$probe_container" getent hosts "$alias" 2>/dev/null); then
+        return 1
+    fi
+    printf '%s\n' "$answer" | awk -v expected="$expected_ip" '$1 == expected { found=1 } END { exit !found }'
 }
 
-schoolorbit_network_probe_is_available() {
-    local probe_container=${1:?DNS probe container is required}
-    podman exec "$probe_container" true >/dev/null 2>&1
-}
-
-schoolorbit_ensure_container_network_aliases() {
+# Runtime connections may already exist when this gate runs. Never detach, connect,
+# restart or recreate a running service here. Compose owns aliases before startup.
+schoolorbit_validate_container_network_aliases() {
     local network=${1:?Network name is required}
     local container=${2:?Container name is required}
     local service_alias=${3:?Service alias is required}
     local container_alias=${4:?Container alias is required}
     local probe_container=${5:?DNS probe container is required}
-    local network_state="" was_attached=false
-    local -i attempt=1
+    local network_state expected_ip
+    local -i attempt
 
     podman container exists "$container" || {
         printf 'Required container is unavailable: %s\n' "$container" >&2
@@ -57,65 +52,22 @@ schoolorbit_ensure_container_network_aliases() {
         printf 'Unable to inspect network state for %s\n' "$container" >&2
         return 1
     fi
-    if schoolorbit_network_has_aliases \
-        "$network_state" "$network" "$service_alias" "$container_alias" &&
-        schoolorbit_network_probe_is_available "$probe_container" &&
-        schoolorbit_network_alias_resolves "$probe_container" "$service_alias"; then
-        return 0
+    if ! schoolorbit_network_has_aliases "$network_state" "$network" "$service_alias" "$container_alias" ||
+        ! expected_ip=$(printf '%s\n' "$network_state" | jq -er --arg network "$network" '.[$network].IPAddress // empty'); then
+        printf 'Network attachment/aliases are incomplete for %s; recreate it through the release with declarative aliases\n' "$container" >&2
+        return 1
     fi
 
-    if schoolorbit_network_is_attached "$network_state" "$network"; then
-        was_attached=true
-        if ! podman network disconnect -f "$network" "$container" >/dev/null 2>&1; then
-            printf 'Unable to detach stale network aliases for %s\n' "$container" >&2
-            return 1
-        fi
-    fi
-
-    while ((attempt <= 5)); do
-        podman network connect \
-            --alias "$service_alias" \
-            --alias "$container_alias" \
-            "$network" "$container" >/dev/null 2>&1 || true
-        if network_state=$(schoolorbit_container_network_state "$container"); then
-            if schoolorbit_network_has_aliases \
-                "$network_state" "$network" "$service_alias" "$container_alias"; then
-                if ! schoolorbit_network_probe_is_available "$probe_container" ||
-                    schoolorbit_network_alias_resolves "$probe_container" "$service_alias"; then
-                    return 0
-                fi
-            fi
-            if schoolorbit_network_is_attached "$network_state" "$network"; then
-                podman network disconnect -f "$network" "$container" >/dev/null 2>&1 || break
-            fi
+    for ((attempt = 1; attempt <= 5; attempt++)); do
+        if timeout 5 podman exec "$probe_container" true >/dev/null 2>&1 &&
+            schoolorbit_network_alias_resolves "$probe_container" "$service_alias" "$expected_ip" &&
+            schoolorbit_network_alias_resolves "$probe_container" "$container_alias" "$expected_ip"; then
+            return 0
         fi
         if ((attempt < 5)); then
             sleep 2
         fi
-        ((attempt += 1))
     done
-
-    if [[ $was_attached == true ]]; then
-        if network_state=$(schoolorbit_container_network_state "$container") &&
-            ! schoolorbit_network_is_attached "$network_state" "$network"; then
-            attempt=1
-            while ((attempt <= 5)); do
-                if podman network connect "$network" "$container" >/dev/null 2>&1; then
-                    break
-                fi
-                if ((attempt < 5)); then
-                    sleep 2
-                fi
-                ((attempt += 1))
-            done
-        fi
-        if ! network_state=$(schoolorbit_container_network_state "$container") ||
-            ! schoolorbit_network_is_attached "$network_state" "$network"; then
-            printf 'Unable to restore network membership for %s\n' "$container" >&2
-            return 1
-        fi
-    fi
-
-    printf 'Unable to apply required network aliases for %s\n' "$container" >&2
+    printf 'Network DNS does not resolve both aliases to the current address for %s; maintenance remains active\n' "$container" >&2
     return 1
 }

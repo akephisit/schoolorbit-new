@@ -7,67 +7,44 @@ setup() {
     setup_installer_test
     export NETWORK_SCRIPT="$BATS_TEST_DIRNAME/../../lib/schoolorbit-installer/remote/ensure_container_network.sh"
     export PODMAN_NETWORK_STATE="$TEST_ROOT/podman-network-state"
-    export PODMAN_ALIAS_CONNECT_COUNT="$TEST_ROOT/podman-alias-connect-count"
-    export PODMAN_ALIAS_CONNECT_FAILURES=0
+    export PODMAN_DNS_COUNT="$TEST_ROOT/podman-dns-count"
+    export PODMAN_DNS_FAILURES=0
     export PODMAN_PROBE_AVAILABLE=true
-    printf '%s\n' detached >"$PODMAN_NETWORK_STATE"
-    printf '%s\n' 0 >"$PODMAN_ALIAS_CONNECT_COUNT"
-
+    export PODMAN_CONTAINER_EXISTS=true
+    export PODMAN_INSPECT_FAIL=false
+    printf '%s\n' attached-good >"$PODMAN_NETWORK_STATE"
+    printf '%s\n' 0 >"$PODMAN_DNS_COUNT"
     # shellcheck disable=SC2016
     make_fake_command podman '
 set -eu
 printf "podman" >>"$FAKE_COMMAND_LOG"
 printf " %s" "$@" >>"$FAKE_COMMAND_LOG"
 printf "\n" >>"$FAKE_COMMAND_LOG"
-
 case "$1" in
-    container)
-        [ "$2" = exists ]
-        exit 0
-        ;;
+    container) [ "$PODMAN_CONTAINER_EXISTS" = true ] ;;
     inspect)
+        [ "$PODMAN_INSPECT_FAIL" = false ] || exit 1
         case "$(cat "$PODMAN_NETWORK_STATE")" in
             detached) printf "%s\n" "{}" ;;
             attached-good | attached-stale)
-                printf "%s\n" "{\"schoolorbit-web\":{\"Aliases\":[\"backend-admin\",\"schoolorbit-backend-admin\"]}}"
-                ;;
+                printf "%s\n" "{\"schoolorbit-web\":{\"IPAddress\":\"10.89.0.42\",\"Aliases\":[\"backend-admin\",\"schoolorbit-backend-admin\"]}}" ;;
             attached-no-alias)
-                printf "%s\n" "{\"schoolorbit-web\":{\"Aliases\":[\"schoolorbit-backend-admin\"]}}"
-                ;;
-            attached-plain)
-                printf "%s\n" "{\"schoolorbit-web\":{\"Aliases\":[]}}"
-                ;;
-        esac
-        ;;
+                printf "%s\n" "{\"schoolorbit-web\":{\"IPAddress\":\"10.89.0.42\",\"Aliases\":[\"backend-admin\"]}}" ;;
+        esac ;;
     exec)
-        if [ "$3" = true ]; then
-            [ "$PODMAN_PROBE_AVAILABLE" = true ]
-            exit
-        fi
-        [ "$PODMAN_PROBE_AVAILABLE" = true ]
-        [ "$(cat "$PODMAN_NETWORK_STATE")" = attached-good ]
-        ;;
-    network)
-        case "$2" in
-            disconnect)
-                printf "%s\n" detached >"$PODMAN_NETWORK_STATE"
-                ;;
-            connect)
-                case " $* " in
-                    *" --alias "*)
-                        count=$(cat "$PODMAN_ALIAS_CONNECT_COUNT")
-                        count=$((count + 1))
-                        printf "%s\n" "$count" >"$PODMAN_ALIAS_CONNECT_COUNT"
-                        if [ "$count" -le "$PODMAN_ALIAS_CONNECT_FAILURES" ]; then
-                            exit 1
-                        fi
-                        printf "%s\n" attached-good >"$PODMAN_NETWORK_STATE"
-                        ;;
-                    *) printf "%s\n" attached-plain >"$PODMAN_NETWORK_STATE" ;;
-                esac
-                ;;
-        esac
-        ;;
+        [ "$PODMAN_PROBE_AVAILABLE" = true ] || exit 1
+        if [ "$3" = true ]; then exit 0; fi
+        count=$(cat "$PODMAN_DNS_COUNT")
+        count=$((count + 1))
+        printf "%s\n" "$count" >"$PODMAN_DNS_COUNT"
+        [ "$count" -gt "$PODMAN_DNS_FAILURES" ] || exit 1
+        if [ "$(cat "$PODMAN_NETWORK_STATE")" = attached-stale ]; then
+            printf "10.89.0.7 %s\n" "$5"
+        else
+            printf "10.89.0.42 %s\n" "$5"
+        fi ;;
+    network) exit 0 ;;
+    *) exit 99 ;;
 esac
 '
     make_fake_command sleep ':'
@@ -77,76 +54,75 @@ teardown() {
     teardown_installer_test
 }
 
-run_network_repair() {
+run_network_validation() {
     # shellcheck disable=SC2016
-    run env \
-        PATH="$FAKE_BIN:$ORIGINAL_PATH" \
-        FAKE_COMMAND_LOG="$FAKE_COMMAND_LOG" \
-        PODMAN_NETWORK_STATE="$PODMAN_NETWORK_STATE" \
-        PODMAN_ALIAS_CONNECT_COUNT="$PODMAN_ALIAS_CONNECT_COUNT" \
-        PODMAN_ALIAS_CONNECT_FAILURES="$PODMAN_ALIAS_CONNECT_FAILURES" \
-        PODMAN_PROBE_AVAILABLE="$PODMAN_PROBE_AVAILABLE" \
-        bash -c '
-          source "$1"
-          schoolorbit_ensure_container_network_aliases \
+    run env PATH="$FAKE_BIN:$ORIGINAL_PATH" bash -c '
+        source "$1"
+        schoolorbit_validate_container_network_aliases \
             schoolorbit-web schoolorbit-backend-admin backend-admin \
             schoolorbit-backend-admin schoolorbit-nginx
-        ' _ "$NETWORK_SCRIPT"
+    ' _ "$NETWORK_SCRIPT"
 }
 
-@test "network alias repair leaves an already-correct attachment unchanged" {
-    printf '%s\n' attached-good >"$PODMAN_NETWORK_STATE"
+assert_network_untouched() {
+    ! grep -Eq 'podman (network|start|stop|restart|rm)' "$FAKE_COMMAND_LOG"
+}
 
-    run_network_repair
-
+@test "network validation preserves an already-correct attachment and checks both aliases" {
+    run_network_validation
     [ "$status" -eq 0 ]
-    run ! grep -Fq 'podman network disconnect' "$FAKE_COMMAND_LOG"
-    run ! grep -Fq 'podman network connect' "$FAKE_COMMAND_LOG"
+    grep -Fq 'getent hosts backend-admin' "$FAKE_COMMAND_LOG"
+    grep -Fq 'getent hosts schoolorbit-backend-admin' "$FAKE_COMMAND_LOG"
+    assert_network_untouched
 }
 
-@test "network alias repair re-registers aliases when the DNS probe container is unavailable" {
-    printf '%s\n' attached-good >"$PODMAN_NETWORK_STATE"
-    PODMAN_PROBE_AVAILABLE=false
-
-    run_network_repair
-
-    [ "$status" -eq 0 ]
-    [ "$(<"$PODMAN_ALIAS_CONNECT_COUNT")" -eq 1 ]
-    [ "$(<"$PODMAN_NETWORK_STATE")" = attached-good ]
-    [ "$(grep -c 'podman network disconnect' "$FAKE_COMMAND_LOG")" -eq 1 ]
-}
-
-@test "network alias repair reconnects metadata aliases when container DNS is stale" {
-    printf '%s\n' attached-stale >"$PODMAN_NETWORK_STATE"
-
-    run_network_repair
-
-    [ "$status" -eq 0 ]
-    [ "$(<"$PODMAN_ALIAS_CONNECT_COUNT")" -eq 1 ]
-    [ "$(<"$PODMAN_NETWORK_STATE")" = attached-good ]
-    [ "$(grep -c 'podman network disconnect' "$FAKE_COMMAND_LOG")" -eq 1 ]
-}
-
-@test "network alias repair retries a detached container with bounded alias connects" {
-    PODMAN_ALIAS_CONNECT_FAILURES=2
-
-    run_network_repair
-
-    [ "$status" -eq 0 ]
-    [ "$(<"$PODMAN_ALIAS_CONNECT_COUNT")" -eq 3 ]
-    [ "$(<"$PODMAN_NETWORK_STATE")" = attached-good ]
-    run ! grep -Fq 'podman network disconnect' "$FAKE_COMMAND_LOG"
-}
-
-@test "network alias repair restores prior membership before reporting alias failure" {
+@test "network validation refuses missing aliases without interrupting live connections" {
     printf '%s\n' attached-no-alias >"$PODMAN_NETWORK_STATE"
-    PODMAN_ALIAS_CONNECT_FAILURES=5
-
-    run_network_repair
-
+    run_network_validation
     [ "$status" -ne 0 ]
-    [ "$(<"$PODMAN_ALIAS_CONNECT_COUNT")" -eq 5 ]
-    [ "$(<"$PODMAN_NETWORK_STATE")" = attached-plain ]
-    [ "$(grep -c 'podman network disconnect' "$FAKE_COMMAND_LOG")" -eq 1 ]
-    grep -Fq 'podman network connect schoolorbit-web schoolorbit-backend-admin' "$FAKE_COMMAND_LOG"
+    assert_network_untouched
+}
+
+@test "network validation refuses a detached container without connecting it after startup" {
+    printf '%s\n' detached >"$PODMAN_NETWORK_STATE"
+    run_network_validation
+    [ "$status" -ne 0 ]
+    assert_network_untouched
+}
+
+@test "network validation waits for DNS propagation without changing attachment" {
+    PODMAN_DNS_FAILURES=2
+    run_network_validation
+    [ "$status" -eq 0 ]
+    [ "$(<"$PODMAN_DNS_COUNT")" -eq 4 ]
+    assert_network_untouched
+}
+
+@test "network validation rejects DNS pointing at the old IP" {
+    printf '%s\n' attached-stale >"$PODMAN_NETWORK_STATE"
+    run_network_validation
+    [ "$status" -ne 0 ]
+    [ "$(<"$PODMAN_DNS_COUNT")" -eq 5 ]
+    assert_network_untouched
+}
+
+@test "network validation fails closed when its probe is unavailable" {
+    PODMAN_PROBE_AVAILABLE=false
+    run_network_validation
+    [ "$status" -ne 0 ]
+    assert_network_untouched
+}
+
+@test "network validation fails closed when inspect fails" {
+    PODMAN_INSPECT_FAIL=true
+    run_network_validation
+    [ "$status" -ne 0 ]
+    assert_network_untouched
+}
+
+@test "network validation refuses a missing container" {
+    PODMAN_CONTAINER_EXISTS=false
+    run_network_validation
+    [ "$status" -ne 0 ]
+    assert_network_untouched
 }

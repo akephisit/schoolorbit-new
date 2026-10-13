@@ -292,7 +292,7 @@ test('scanner creation passes PID limit to older Compose without affecting other
 	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
 	const helper = workflow.slice(
 		workflow.indexOf('            compose_up_quiet() {'),
-		workflow.indexOf('            reconnect_backend_network() {')
+		workflow.indexOf('            validate_backend_network() {')
 	);
 	const compose = await readRepo('podman-compose.yml');
 	const limit = compose.slice(compose.indexOf('  clamd:')).match(/pids_limit: (\d+)/)[1];
@@ -579,26 +579,40 @@ run_academic_context_smoke
 	}
 });
 
-test('backend-school deployment repairs the admin network alias before maintenance activation', async () => {
+test('backend-school deployment validates the admin network alias before maintenance activation', async () => {
 	const workflow = await readRepo('.github/workflows/deploy-school-release.yml');
-	const adminNetworkRepair = workflow.indexOf(
-		'            reconnect_backend_network schoolorbit-backend-admin backend-admin'
+	const adminNetworkValidation = workflow.indexOf(
+		'            validate_backend_network schoolorbit-backend-admin backend-admin'
 	);
 	const maintenanceActivation = workflow.indexOf(
 		'            cp "$maintenance_proxy_source" "$proxy_target"'
 	);
 
 	assert.ok(
-		adminNetworkRepair >= 0,
-		'the admin container alias must be repaired before Nginx reloads'
+		adminNetworkValidation >= 0,
+		'the admin container alias must be validated before Nginx reloads'
 	);
 	assert.ok(
-		maintenanceActivation > adminNetworkRepair,
-		'the admin network alias must be repaired before the maintenance proxy is activated'
+		maintenanceActivation > adminNetworkValidation,
+		'the admin network alias must be validated before the maintenance proxy is activated'
 	);
 });
 
-test('backend workflows use the recoverable shared network alias helper', async () => {
+test('backend aliases exist before startup and validation cannot rewire live connections', async () => {
+	const compose = parseYaml(await readRepo('podman-compose.yml'));
+	for (const service of ['backend-admin', 'backend-school']) {
+		const aliases = compose.services[service].networks['schoolorbit-net'].aliases;
+		assert.ok(aliases.includes(service));
+		assert.ok(aliases.includes(`schoolorbit-${service}`));
+	}
+	const helper = await readRepo(
+		'scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh'
+	);
+	assert.doesNotMatch(helper, /podman\s+network\s+(?:connect|disconnect)/);
+	assert.doesNotMatch(helper, /podman\s+(?:restart|stop|start|rm)\b/);
+});
+
+test('backend workflows use the read-only shared network alias gate', async () => {
 	for (const workflowPath of [
 		'.github/workflows/deploy-backend-admin.yml',
 		'.github/workflows/deploy-school-release.yml'
@@ -608,11 +622,14 @@ test('backend workflows use the recoverable shared network alias helper', async 
 			'scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh'
 		);
 		const sourcedHelper = workflow.indexOf('. "$network_helper_source"');
-		const firstRepair = workflow.indexOf('reconnect_backend_network ');
+		const firstValidation = workflow.indexOf('validate_backend_network ');
 
 		assert.ok(uploadedHelper >= 0, `${workflowPath} must upload the shared network helper`);
 		assert.ok(sourcedHelper > uploadedHelper, `${workflowPath} must source the uploaded helper`);
-		assert.ok(firstRepair > sourcedHelper, `${workflowPath} must load the helper before using it`);
+		assert.ok(
+			firstValidation > sourcedHelper,
+			`${workflowPath} must load the helper before using it`
+		);
 		assert.doesNotMatch(
 			workflow,
 			/podman network disconnect -f schoolorbit-web "\$container"[^\n]*\|\| true/
@@ -766,7 +783,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /rm -f "\$proxy_previous_target"/);
 		assert.match(workflow, /compose_up_quiet\(\)/);
 		assert.match(workflow, /podman-compose -f "\$runtime_compose" up -d "\$@" >\/dev\/null 2>&1/);
-		assert.match(workflow, /reconnect_backend_network\(\)/);
+		assert.match(workflow, /validate_backend_network\(\)/);
 		assert.match(workflow, /validate_nginx_config_with_retry\(\)/);
 		assert.ok(
 			(workflow.match(/validate_nginx_config_with_retry/g) ?? []).length >= 3,
@@ -774,7 +791,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		);
 		assert.match(
 			workflow,
-			/schoolorbit_ensure_container_network_aliases \\\n\s+schoolorbit-web "\$container" "\$service_alias" "\$container" schoolorbit-nginx/
+			/schoolorbit_validate_container_network_aliases \\\n\s+schoolorbit-web "\$container" "\$service_alias" "\$container" schoolorbit-nginx/
 		);
 		assert.match(workflow, /podman rm schoolorbit-nginx >\/dev\/null 2>&1 \|\| true/);
 		assert.match(workflow, /timeout 180 bash/);

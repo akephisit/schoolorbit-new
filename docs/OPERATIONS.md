@@ -98,6 +98,18 @@ separate application/pool latency from database time. SSH into each VPS for its 
 CPU, available RAM, disk and network; the database dashboard cannot measure the
 backend host's CPU/RAM. No public metrics endpoint or additional monitoring stack.
 
+Backend DNS aliases are declared in `podman-compose.yml` before process startup.
+The release network gate checks attachment metadata and resolves both the service
+and container hostname from Nginx to the current container address. DNS retries are
+bounded and read-only. Missing aliases or stale DNS keeps maintenance active; repair
+configuration and recreate the affected backend through the canonical release.
+Never disconnect/reconnect a running backend's network to update aliases. This can
+change its source address after PostgreSQL connections have opened, leaving local
+TCP sockets apparently established on an address the container no longer owns.
+When diagnosing that condition, compare the process network namespace's interface
+addresses and socket source addresses with Podman network events and database activity.
+A controlled backend replacement clears those sockets; a VPS reboot is unnecessary.
+
 When investigating pool stalls, correlate `tenant_pool_creation`,
 `runtime_schema_verification`, `migration_owner_drain`, `tenant_pool_retirement`
 and `attendance_schedule_registration` events with PostgreSQL aggregate activity.
