@@ -267,6 +267,17 @@ pub async fn student_summary(
     .await?;
     Ok(Json(ApiResponse::ok(result)))
 }
+#[utoipa::path(get,path="/api/behavior/cleanup/{id}",operation_id="behavior_cleanup_job",tag="behavior",params(("id"=Uuid,Path)),responses((status=200,body=ApiResponse<BehaviorCleanupOutcome>),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+pub async fn cleanup_job(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    policy::require_cleanup(&context.actor)?;
+    let result = cleanup::job(&context.tenant.pool, id).await?;
+    Ok(Json(ApiResponse::ok(result)))
+}
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/behavior/overview", get(overview))
@@ -284,6 +295,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/behavior/cycles", get(cycles))
         .route("/api/behavior/cleanup/preview", post(preview_cleanup))
         .route("/api/behavior/cleanup", post(execute_cleanup))
+        .route("/api/behavior/cleanup/{id}", get(cleanup_job))
         .route("/api/behavior/history/adjustments", post(adjust_history))
         .route("/api/behavior/reset/preview", post(preview_reset))
         .route("/api/behavior/reset", post(reset))

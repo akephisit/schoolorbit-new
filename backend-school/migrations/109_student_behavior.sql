@@ -195,3 +195,22 @@ INSERT INTO role_permissions(role_id,permission_id)
 SELECT r.id,p.id FROM roles r CROSS JOIN permissions p
 WHERE r.user_type IN('student','parent') AND p.code='behavior.read.own'
 ON CONFLICT DO NOTHING;
+
+CREATE INDEX behavior_entries_total_idx ON behavior_entries(total_id);
+CREATE TABLE behavior_cleanup_jobs (
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
+    actor_id UUID REFERENCES users(id) ON DELETE RESTRICT,
+    scope JSONB NOT NULL,
+    mode TEXT NOT NULL CHECK(mode IN('details_only','archive','delete_effects')),
+    reset BOOLEAN NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN('pending','completed')),
+    reason VARCHAR(1000) NOT NULL,
+    students BIGINT NOT NULL,
+    entries_expected BIGINT NOT NULL,
+    entries_deleted BIGINT NOT NULL DEFAULT 0,
+    merit BIGINT NOT NULL,
+    deduction BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX behavior_one_pending_cleanup ON behavior_cleanup_jobs(status) WHERE status='pending';

@@ -632,3 +632,83 @@ async fn attendance_replay_correction_cap_suppression_and_null_room() {
     tx.commit().await.unwrap();
     assert_eq!(summary(&f, f.unassigned).await.current.deduction, 0);
 }
+
+#[tokio::test]
+async fn durable_cleanup_chunks_keep_totals_until_completed_and_resume_after_restart() {
+    let f = fixture("behavior_durable_cleanup").await;
+    let merit = item(&f, BehaviorSide::Merit, 7).await;
+    let p = payload(&f, f.admin, &merit, vec![f.a]).await;
+    manual::create_batch(&f.pool, f.admin, p).await.unwrap();
+    sqlx::query("INSERT INTO behavior_batches(academic_term_id,item_version_id,occurred_at,date,detail,created_by)SELECT $1,$2,now(),$3,'รายละเอียดที่ต้องลบจริง',$4 FROM generate_series(1,20000)").bind(f.term).bind(merit.version_id.unwrap()).bind(today()).bind(f.admin.actor_id).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO behavior_entries(total_id,batch_id,item_name,points,created_by)SELECT t.id,b.id,'Behavior merit',7,$1 FROM behavior_batches b JOIN behavior_daily_totals t ON t.student_id=$2 AND t.side='merit' WHERE NOT EXISTS(SELECT 1 FROM behavior_entries e WHERE e.batch_id=b.id)").bind(f.admin.actor_id).bind(f.a).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE behavior_daily_totals SET points=140007,row_version=row_version+1 WHERE student_id=$1 AND side='merit'").bind(f.a).execute(&f.pool).await.unwrap();
+    let scope = BehaviorCleanupScope {
+        start: Some(today()),
+        end: Some(today()),
+        academic_year_id: None,
+        academic_term_id: None,
+        sides: vec![BehaviorSide::Merit],
+        sources: vec![BehaviorSource::Manual],
+    };
+    let preview = cleanup::preview(
+        &f.pool,
+        f.admin.actor_id,
+        PreviewBehaviorCleanup {
+            scope: scope.clone(),
+            mode: BehaviorCleanupMode::Archive,
+        },
+    )
+    .await
+    .unwrap();
+    let request = ExecuteBehaviorCleanup {
+        request_id: Uuid::new_v4(),
+        token: preview.token,
+        revision: preview.revision,
+        scope,
+        mode: BehaviorCleanupMode::Archive,
+        reason: "large monthly retention".into(),
+    };
+    let result = cleanup::execute(&f.pool, f.admin.actor_id, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(result.status, "pending");
+    assert_eq!(summary(&f, f.a).await.current.merit, 140007);
+    assert_eq!(
+        cleanup::execute(&f.pool, f.admin.actor_id, request)
+            .await
+            .unwrap()
+            .id,
+        result.id,
+        "queued creation retries return same job"
+    );
+    assert!(cleanup::run_cleanup_jobs(&f.pool, 1).await.unwrap());
+    let progress = cleanup::job(&f.pool, result.id).await.unwrap();
+    assert_eq!(progress.entries_deleted, 5000);
+    assert_eq!(progress.status, "pending");
+    assert_eq!(summary(&f, f.a).await.current.merit, 140007);
+    let request = payload(&f, f.admin, &merit, vec![f.a]).await;
+    assert!(
+        manual::create_batch(&f.pool, f.admin, request)
+            .await
+            .is_err(),
+        "job owns mutation scope until completion"
+    );
+    assert!(!cleanup::run_cleanup_jobs(&f.pool, 32).await.unwrap());
+    let finished = cleanup::job(&f.pool, result.id).await.unwrap();
+    assert_eq!(finished.status, "completed");
+    assert_eq!(finished.entries_deleted, 20001);
+    let s = summary(&f, f.a).await;
+    assert_eq!(
+        (s.current.merit, s.history.merit, s.lifetime.merit),
+        (0, 140007, 140007)
+    );
+    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM behavior_batches")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 0);
+    assert!(
+        !cleanup::run_cleanup_jobs(&f.pool, 1).await.unwrap(),
+        "restart does not repeat archive"
+    );
+}

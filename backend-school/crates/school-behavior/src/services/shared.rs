@@ -10,6 +10,20 @@ use uuid::Uuid;
 
 /// Caller takes any Attendance and academic lifecycle locks first.
 pub async fn lock(connection: &mut PgConnection) -> Result<(), AppError> {
+    raw_lock(connection).await?;
+    let busy: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM behavior_cleanup_jobs WHERE status='pending')",
+    )
+    .fetch_one(connection)
+    .await?;
+    if busy {
+        return Err(AppError::Conflict(
+            "กำลังล้างรายละเอียดคะแนน กรุณารอให้เสร็จก่อนบันทึกหรือแก้ไข".into(),
+        ));
+    }
+    Ok(())
+}
+pub(super) async fn raw_lock(connection: &mut PgConnection) -> Result<(), AppError> {
     sqlx::query("SELECT pg_advisory_xact_lock(17020000)")
         .execute(connection)
         .await?;

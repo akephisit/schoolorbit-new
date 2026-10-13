@@ -38,7 +38,7 @@ pub async fn preview_reset(
     tx.commit().await?;
     Ok(result)
 }
-async fn rotate(
+pub(super) async fn rotate(
     connection: &mut PgConnection,
     sides: &[BehaviorSide],
     through: NaiveDate,
@@ -115,10 +115,11 @@ pub async fn reset_on_connection(
             "รอปิดยอดเช็กชื่อและส่งคะแนนครบก่อนรีเซ็ต".into(),
         ));
     }
-    lock(connection).await?;
+    super::shared::raw_lock(connection).await?;
     if let Some(result) = receipt(connection, actor, p.request_id, "reset", &p).await? {
         return Ok(result);
     }
+    lock(connection).await?;
     let request = PreviewBehaviorCleanup {
         scope: scope.clone(),
         mode: BehaviorCleanupMode::Archive,
@@ -134,7 +135,9 @@ pub async fn reset_on_connection(
         true,
     )
     .await?;
-    rotate(connection, &p.sides, p.through, &p.reason).await?;
+    if result.status == "completed" {
+        rotate(connection, &p.sides, p.through, &p.reason).await?;
+    }
     save_receipt(connection, actor, p.request_id, "reset", &p, &result).await?;
     sqlx::query("DELETE FROM behavior_cleanup_previews WHERE token=$1")
         .bind(p.token)
@@ -186,7 +189,7 @@ pub async fn run_due_resets_on_connection(
         };
         let scope = reset_scope(vec![side], through)?;
         let snapshot = snapshot(connection, &scope, true).await?;
-        apply(
+        let result = apply(
             connection,
             None,
             &scope,
@@ -196,6 +199,9 @@ pub async fn run_due_resets_on_connection(
             true,
         )
         .await?;
+        if result.status == "pending" {
+            break;
+        }
         rotate(connection, &[side], through, "ประวัติจากรอบอัตโนมัติ").await?;
         completed += 1;
     }

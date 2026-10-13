@@ -349,6 +349,7 @@ pub struct ExecuteBehaviorCleanup {
 #[serde(rename_all = "camelCase")]
 pub struct BehaviorCleanupOutcome {
     pub id: Uuid,
+    pub status: String,
     pub students: i64,
     pub entries_deleted: i64,
     pub merit: i64,
