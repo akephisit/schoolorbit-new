@@ -101,6 +101,10 @@
 				pending = '';
 				confirm = false;
 				preview = null;
+				requestId = '';
+				previewScope = null;
+				previewKey = '';
+				reason = '';
 			}
 		} catch (e) {
 			if (!disposed) {
@@ -141,6 +145,10 @@
 				pending = '';
 				confirm = false;
 				preview = null;
+				requestId = '';
+				previewScope = null;
+				previewKey = '';
+				reason = '';
 			}
 		} catch (e) {
 			if (!disposed) {

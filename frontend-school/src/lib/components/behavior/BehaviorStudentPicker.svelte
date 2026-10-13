@@ -47,6 +47,7 @@
 		if (date !== previousDate) {
 			previousDate = date;
 			request.abort();
+			pending = false;
 			error = 'วันที่เปลี่ยน กรุณาโหลดรายชื่อใหม่และตรวจนักเรียนที่เลือก';
 			page = { ...page, items: [] };
 		}

@@ -73,7 +73,7 @@ const cycle = (side: 'merit' | 'deduction') => ({
 	startsAt: '2026-09-30T17:00:00Z',
 	endsOn: null,
 	endsAt: null,
-	state: 'open',
+	state: 'current',
 	label: 'ตุลาคม'
 });
 export const summary: BehaviorStudentSummary = {

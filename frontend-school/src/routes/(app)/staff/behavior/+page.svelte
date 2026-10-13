@@ -48,7 +48,7 @@
 			>{#snippet children(overview)}<section class="rounded-md border bg-primary/5 p-4">
 					<h2 class="font-semibold">รอบคะแนน</h2>
 					<p class="text-sm text-muted-foreground">เริ่มใช้ระบบ {overview.activationDate}</p>
-					{#each overview.cycles.filter((c) => c.state === 'open') as cycle (cycle.id)}<p>
+					{#each overview.cycles.filter((c) => c.state === 'current') as cycle (cycle.id)}<p>
 							{sideLabels[cycle.side]} · {cycle.label} · เริ่ม {cycle.startsOn}
 						</p>{/each}
 				</section>{/snippet}</BehaviorRegion
@@ -75,6 +75,7 @@
 						initial={entries}
 						query={data.query}
 						onStudent={student}
+						onChanged={() => summaryRevision++}
 					/>{/snippet}</BehaviorRegion
 			>{/key}{:else}<PageState title="เลือกภาคเรียน" description="เลือกภาคเรียนจากแถบด้านบน" />{/if}
 </PageShell>

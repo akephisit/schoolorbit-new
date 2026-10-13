@@ -29,6 +29,8 @@
 			return 'data-[state=on]:bg-success/15 data-[state=on]:text-success data-[state=on]:border-success/50';
 		if (result === 'absent' || result === 'skipped')
 			return 'data-[state=on]:bg-destructive/15 data-[state=on]:text-destructive data-[state=on]:border-destructive/50';
+		if (result === 'activity')
+			return 'data-[state=on]:bg-chart-4/15 data-[state=on]:text-foreground data-[state=on]:border-chart-4/50';
 		if (result === 'late')
 			return 'data-[state=on]:bg-warning/15 data-[state=on]:text-warning data-[state=on]:border-warning/50';
 		return 'data-[state=on]:bg-primary/15 data-[state=on]:text-primary data-[state=on]:border-primary/50';

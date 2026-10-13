@@ -67,18 +67,24 @@
 	});
 	async function reload() {
 		const token = request.begin();
+		const requestedDate = date;
+		const requestedTerm = term;
 		refreshing = true;
 		error = '';
 		try {
 			const [nextItems, nextRoster] = await Promise.all([
-				behaviorItems({ date }, { signal: token.signal }),
-				behaviorStudents({ academicTermId: term, date, limit: 50 }, { signal: token.signal })
+				behaviorItems({ date: requestedDate }, { signal: token.signal }),
+				behaviorStudents(
+					{ academicTermId: requestedTerm, date: requestedDate, limit: 50 },
+					{ signal: token.signal }
+				)
 			]);
-			if (!request.isCurrent(token.revision)) return;
+			if (!request.isCurrent(token.revision) || date !== requestedDate || term !== requestedTerm)
+				return;
 			items = nextItems;
 			roster = nextRoster;
 			rosterToken = nextRoster.rosterToken;
-			loadedDate = date;
+			loadedDate = requestedDate;
 			frozen = null;
 		} catch (e) {
 			if (request.isCurrent(token.revision))

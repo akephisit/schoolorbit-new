@@ -8,7 +8,8 @@
 		adjustBehaviorHistory,
 		behaviorSummary,
 		type BehaviorStudentSummary,
-		type BehaviorDailyTotal
+		type BehaviorDailyTotal,
+		type AdjustBehaviorHistory
 	} from '#lib/api/behavior.js';
 	import { sideLabels, sourceLabels } from '#lib/features/behavior/presentation.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -29,6 +30,7 @@
 	let pending = $state(false);
 	let error = $state('');
 	let requestId = $state('');
+	let frozen = $state.raw<{ row: BehaviorDailyTotal; payload: AdjustBehaviorHistory } | null>(null);
 	let disposed = false;
 	const request = new LatestRequest();
 	let previousRevision = untrack(() => refreshRevision);
@@ -69,24 +71,29 @@
 		error = '';
 		try {
 			requestId ||= crypto.randomUUID();
-			const result = await adjustBehaviorHistory({
-				requestId,
-				totalId: editing.id,
-				rowVersion: editing.rowVersion,
-				delta,
-				reason
-			});
+			frozen ??= {
+				row: { ...editing },
+				payload: {
+					requestId,
+					totalId: editing.id,
+					rowVersion: editing.rowVersion,
+					delta,
+					reason
+				}
+			};
+			const row = frozen.row;
+			const result = await adjustBehaviorHistory(frozen.payload);
 			if (disposed) return;
-			const difference = result.points - editing.points;
+			const difference = result.points - row.points;
 			summary.history = {
 				...summary.history,
-				[editing.side]: summary.history[editing.side] + difference,
-				net: summary.history.net + (editing.side === 'merit' ? difference : -difference)
+				[row.side]: summary.history[row.side] + difference,
+				net: summary.history.net + (row.side === 'merit' ? difference : -difference)
 			};
 			summary.lifetime = {
 				...summary.lifetime,
-				[editing.side]: summary.lifetime[editing.side] + difference,
-				net: summary.lifetime.net + (editing.side === 'merit' ? difference : -difference)
+				[row.side]: summary.lifetime[row.side] + difference,
+				net: summary.lifetime.net + (row.side === 'merit' ? difference : -difference)
 			};
 			summary.historyTotals = summary.historyTotals.map((row) =>
 				row.id === result.totalId
@@ -95,9 +102,13 @@
 			);
 			editing = null;
 			requestId = '';
+			frozen = null;
 		} catch (e) {
 			if (!disposed) error = e instanceof Error ? e.message : 'ปรับยอดไม่ได้';
-			if (e instanceof ApiClientError && e.status < 500) requestId = '';
+			if (e instanceof ApiClientError && e.status < 500) {
+				requestId = '';
+				frozen = null;
+			}
 		} finally {
 			if (!disposed) pending = false;
 		}
@@ -149,6 +160,7 @@
 					>{#if $can.has(PERMISSIONS.BEHAVIOR_CORRECT_SCHOOL)}<Button
 							type="button"
 							variant="outline"
+							disabled={pending || !!requestId}
 							onclick={() => {
 								editing = row;
 								delta = 0;
@@ -163,25 +175,30 @@
 			class="space-y-3 rounded-md border p-4"
 			onsubmit={adjust}
 		>
-			<h3 class="font-semibold">ปรับยอด {editing.date} · {sideLabels[editing.side]}</h3>
+			<h3 class="font-semibold">ปรับยอด {editing.date} · {sideLabels[row.side]}</h3>
 			{#if error}<PageState
 					variant="error"
 					title="ปรับยอดไม่สำเร็จ"
 					description={error}
 				/>{/if}<Label for="behavior-adjust-delta">จำนวนที่ปรับ (+ เพิ่ม / − ลด)</Label><Input
 				id="behavior-adjust-delta"
+				disabled={pending || !!requestId}
 				type="number"
 				bind:value={delta}
 				required
 			/><Label for="behavior-adjust-reason">เหตุผล *</Label><Textarea
 				id="behavior-adjust-reason"
+				disabled={pending || !!requestId}
 				bind:value={reason}
 				required
 				maxlength={1000}
 			/>
 			<div class="flex justify-end gap-2">
-				<Button type="button" variant="outline" disabled={pending} onclick={() => (editing = null)}
-					>ยกเลิก</Button
+				<Button
+					type="button"
+					variant="outline"
+					disabled={pending || !!requestId}
+					onclick={() => (editing = null)}>ยกเลิก</Button
 				><LoadingButton type="submit" loading={pending}>บันทึกการปรับยอด</LoadingButton>
 			</div>
 		</form>{/if}
