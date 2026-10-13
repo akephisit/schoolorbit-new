@@ -10,6 +10,7 @@
 		cancelBehaviorEntries,
 		type BehaviorReportPage,
 		type BehaviorReportQuery,
+		type CancelBehaviorEntries,
 		type BehaviorReportEntry
 	} from '#lib/api/behavior.js';
 	import {
@@ -55,6 +56,7 @@
 	let pending = $state('');
 	let error = $state('');
 	let requestId = $state('');
+	let frozen = $state.raw<CancelBehaviorEntries | null>(null);
 	const request = new LatestRequest();
 	let disposed = false;
 	onDestroy(() => {
@@ -65,6 +67,7 @@
 		$can.hasAny(PERMISSIONS.BEHAVIOR_DELETE_OWN, PERMISSIONS.BEHAVIOR_DELETE_SCHOOL)
 	);
 	async function load(filters: BehaviorReportQuery) {
+		if (disposed || frozen || (pending && pending !== 'read')) return;
 		const token = request.begin();
 		pending = 'read';
 		error = '';
@@ -84,6 +87,7 @@
 	}
 	function filter(e: SubmitEvent) {
 		e.preventDefault();
+		if (pending || frozen) return;
 		void load({
 			...query,
 			start,
@@ -99,45 +103,52 @@
 		});
 	}
 	async function selectBatch(row: BehaviorReportEntry) {
-		if (!row.batchId) return;
+		if (!row.batchId || pending || frozen || disposed) return;
+		const ticket = request.begin();
 		pending = 'batch';
 		error = '';
 		try {
-			const result = await behaviorEntries({
-				...query,
-				start: row.date,
-				end: row.date,
-				batchId: row.batchId,
-				offset: 0,
-				limit: 10000
-			});
+			const result = await behaviorEntries(
+				{
+					...query,
+					start: row.date,
+					end: row.date,
+					batchId: row.batchId,
+					offset: 0,
+					limit: 10000
+				},
+				{ signal: ticket.signal }
+			);
 			if (result.items.length !== result.total)
 				throw new Error('กลุ่มมีรายการเกินขนาดที่เลือกได้ กรุณายกเลิกเป็นชุดย่อย');
-			if (disposed) return;
+			if (disposed || !request.isCurrent(ticket.revision)) return;
 			selected = result.items.filter((r) => r.canCancel).map((r) => r.id);
 			confirming = true;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'โหลดกลุ่มไม่ได้';
+			if (request.isCurrent(ticket.revision) && !disposed)
+				error = e instanceof Error ? e.message : 'โหลดกลุ่มไม่ได้';
 		} finally {
-			pending = '';
+			if (request.isCurrent(ticket.revision) && !disposed) pending = '';
 		}
 	}
 	async function cancel(e: SubmitEvent) {
 		e.preventDefault();
-		if (pending || !selected.length) return;
+		if (pending || (!selected.length && !frozen)) return;
 		pending = 'cancel';
 		error = '';
 		try {
 			requestId ||= crypto.randomUUID();
-			await cancelBehaviorEntries({ requestId, entryIds: selected, reason });
+			frozen ??= { requestId, entryIds: [...selected], reason };
+			const payload = frozen;
+			await cancelBehaviorEntries(payload);
 			if (disposed) return;
-			const ids = new Set(selected);
+			const ids = new Set(payload.entryIds);
 			page.items = page.items.map((row) =>
 				ids.has(row.id)
 					? {
 							...row,
 							cancelledAt: new Date().toISOString(),
-							cancellationReason: reason,
+							cancellationReason: payload.reason,
 							canCancel: false
 						}
 					: row
@@ -146,10 +157,14 @@
 			confirming = false;
 			reason = '';
 			requestId = '';
+			frozen = null;
 			onChanged?.();
 		} catch (e) {
 			if (!disposed) error = e instanceof Error ? e.message : 'ยกเลิกไม่ได้';
-			if (e instanceof ApiClientError && e.status < 500) requestId = '';
+			if (e instanceof ApiClientError && e.status < 500) {
+				requestId = '';
+				frozen = null;
+			}
 		} finally {
 			if (!disposed) pending = '';
 		}
@@ -228,7 +243,9 @@
 		</div>
 		<label class="flex min-h-11 items-center gap-2"
 			><Checkbox bind:checked={mine} />รายการที่ฉันบันทึก</label
-		><LoadingButton type="submit" loading={pending === 'read'}>ค้นหา</LoadingButton>
+		><LoadingButton type="submit" loading={pending === 'read'} disabled={!!pending || !!frozen}
+			>ค้นหา</LoadingButton
+		>
 	</form>
 	{#if error}<PageState
 			variant="error"
@@ -240,7 +257,7 @@
 	{#if canCancel && selected.length}<Button
 			type="button"
 			variant="destructive"
-			disabled={!!pending}
+			disabled={!!pending || !!frozen}
 			onclick={() => {
 				confirming = true;
 				requestId = '';
@@ -297,7 +314,7 @@
 						>{/if}{#if row.canCancel && canCancel && row.batchId}<Button
 							type="button"
 							variant="outline"
-							disabled={!!pending}
+							disabled={!!pending || !!frozen}
 							onclick={() => void selectBatch(row)}>เลือกยกเลิกทั้งกลุ่ม</Button
 						>{/if}
 				</div>
@@ -336,7 +353,7 @@
 				<Button
 					type="button"
 					variant="outline"
-					disabled={!!pending}
+					disabled={!!pending || !!frozen}
 					onclick={() => (confirming = false)}>กลับ</Button
 				><LoadingButton type="submit" variant="destructive" loading={pending === 'cancel'}
 					>ยืนยันยกเลิก</LoadingButton

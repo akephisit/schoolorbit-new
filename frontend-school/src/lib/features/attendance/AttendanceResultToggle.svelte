@@ -42,8 +42,7 @@
 		type="single"
 		aria-label={`เลือก${label}`}
 		{disabled}
-		value={value === 'unchecked' ? '' : value}
-		onValueChange={choose}
+		bind:value={() => (value === 'unchecked' ? '' : value), choose}
 		class="grid min-w-0 flex-1 grid-cols-4 gap-1 xl:grid-cols-7"
 		>{#each writableAttendanceResults as result (result)}<ToggleGroup.Item
 				value={result}

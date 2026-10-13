@@ -14,7 +14,7 @@
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import {
 		bangkokDateTime,
-		occurredAt,
+		resolveBehaviorOccurredAt,
 		sideLabels,
 		sides
 	} from '#lib/features/behavior/presentation.js';
@@ -41,7 +41,9 @@
 	let roster = $state(untrack(() => initialRoster));
 	let date = $state(untrack(() => initialDate));
 	let loadedDate = $state(untrack(() => initialDate));
-	let time = $state(bangkokDateTime().time);
+	let defaultInstant = $state(untrack(() => new Date().toISOString()));
+	let defaultClock = $state(untrack(() => bangkokDateTime(new Date(defaultInstant))));
+	let time = $state(untrack(() => defaultClock.time));
 	let side = $state(sides[0]);
 	let itemId = $state('');
 	let detail = $state('');
@@ -114,7 +116,7 @@
 					itemId: item.id,
 					itemVersionId: item.versionId,
 					itemRowVersion: item.rowVersion,
-					occurredAt: occurredAt(date, time),
+					occurredAt: resolveBehaviorOccurredAt(date, time, defaultInstant),
 					detail: detail.trim() || null,
 					studentIds: selected.map((s) => s.id),
 					rosterToken
@@ -180,6 +182,16 @@
 				/>{#if fieldErrors.item}<p class="text-sm text-destructive">{fieldErrors.item}</p>{/if}
 			</div>
 		</div>
+		<Button
+			type="button"
+			variant="outline"
+			onclick={() => {
+				defaultInstant = new Date().toISOString();
+				defaultClock = bangkokDateTime(new Date(defaultInstant));
+				date = defaultClock.date;
+				time = defaultClock.time;
+			}}>ใช้วันเวลาปัจจุบัน</Button
+		>
 		<p class="text-sm text-muted-foreground">
 			คะแนนตามเกณฑ์: {item?.points ?? '—'} คะแนน · ครูแก้จำนวนคะแนนในหน้าบันทึกไม่ได้
 		</p>
@@ -197,6 +209,7 @@
 				<Label for="behavior-time">เวลาเกิดเหตุ *</Label><Input
 					id="behavior-time"
 					type="time"
+					step="1"
 					bind:value={time}
 					required
 				/>

@@ -98,6 +98,7 @@ test('cleanup requires a matching preview and follows durable job to completion'
 for (const theme of ['light', 'dark'])
 	test(`group form stays usable on mobile in ${theme}`, async ({ page }) => {
 		await page.setViewportSize({ width: 375, height: 812 });
+		await page.emulateMedia({ colorScheme: theme === 'dark' ? 'dark' : 'light' });
 		await mockBehavior(page);
 		await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
 		await page.goto(behaviorPath('/new'));
@@ -105,4 +106,83 @@ for (const theme of ['light', 'dark'])
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
+		await expect
+			.poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
+			.toBe(theme === 'dark');
+		await page.screenshot({ path: `/tmp/schoolorbit-behavior-${theme}.png`, fullPage: true });
 	});
+
+test('pending cancellation freezes filter and selection until original result arrives', async ({
+	page
+}) => {
+	const api = await mockBehavior(page);
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route('**/api/behavior/entries/cancel', async (route) => {
+		await held;
+		await route.fallback();
+	});
+	await page.goto(behaviorPath());
+	await page
+		.getByRole('checkbox', { name: 'เลือกยกเลิก นักเรียน หนึ่ง ช่วยงานโรงเรียน', exact: true })
+		.check();
+	await page.getByRole('button', { name: 'ยกเลิกที่เลือก 1 รายการ', exact: true }).click();
+	await page.getByLabel('เหตุผล *', { exact: true }).fill('แก้ไขรายการผิด');
+	await page.getByRole('button', { name: 'ยืนยันยกเลิก', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'ค้นหา', exact: true })).toBeDisabled();
+	await expect(
+		page.getByRole('checkbox', { name: 'เลือกยกเลิก นักเรียน หนึ่ง ช่วยงานโรงเรียน', exact: true })
+	).toBeDisabled();
+	release();
+	await expect(page.getByText('ยกเลิกแล้ว', { exact: true })).toBeVisible();
+	expect(api.cancellations[0].entryIds).toEqual([entries[0].id]);
+});
+
+test('a date change during roster reload never labels the older response as current', async ({
+	page
+}) => {
+	const api = await mockBehavior(page);
+	await page.goto(behaviorPath('/new'));
+	await page.getByRole('button', { name: 'รายการพฤติกรรม', exact: true }).click();
+	await page.getByRole('option', { name: 'ช่วยงานโรงเรียน · 5 คะแนน', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'เลือก นักเรียน หนึ่ง', exact: true }).check();
+	const today = new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Asia/Bangkok',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).format(new Date());
+	const first = today.slice(0, 8) + (today.endsWith('10') ? '11' : '10'),
+		second = today.slice(0, 8) + '12';
+	const label = (date: string) =>
+		new Intl.DateTimeFormat('th-TH', {
+			timeZone: 'Asia/Bangkok',
+			weekday: 'long',
+			day: 'numeric',
+			month: 'long',
+			year: 'numeric'
+		}).format(new Date(date + 'T12:00:00+07:00'));
+	await page.getByRole('button', { name: 'เลือกวันที่', exact: true }).click();
+	await page.getByRole('button', { name: label(first), exact: true }).click();
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	let started = false;
+	await page.route('**/api/behavior/items?**', async (route) => {
+		started = true;
+		await held;
+		await route.fallback();
+	});
+	await page.getByRole('button', { name: 'โหลดเกณฑ์และรายชื่อใหม่', exact: true }).click();
+	await expect.poll(() => started).toBe(true);
+	await page.getByRole('button', { name: 'เลือกวันที่', exact: true }).click();
+	await page.getByRole('button', { name: label(second), exact: true }).click();
+	release();
+	await expect(
+		page.getByRole('button', { name: 'โหลดเกณฑ์และรายชื่อใหม่', exact: true })
+	).toBeEnabled();
+	await page.getByRole('button', { name: 'บันทึกพฤติกรรม', exact: true }).click();
+	await expect(
+		page.getByText('โหลดเกณฑ์และรายชื่อสำหรับวันที่ใหม่ก่อนบันทึก', { exact: true })
+	).toBeVisible();
+	expect(api.batches).toHaveLength(0);
+});

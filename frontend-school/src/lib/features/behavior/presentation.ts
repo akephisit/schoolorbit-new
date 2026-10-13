@@ -44,16 +44,17 @@ export function bangkokDateTime(date = new Date()): { date: string; time: string
 		day: '2-digit',
 		hour: '2-digit',
 		minute: '2-digit',
+		second: '2-digit',
 		hourCycle: 'h23'
 	}).formatToParts(date);
 	const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
 	return {
 		date: `${part('year')}-${part('month')}-${part('day')}`,
-		time: `${part('hour')}:${part('minute')}`
+		time: `${part('hour')}:${part('minute')}:${part('second')}`
 	};
 }
 export function occurredAt(date: string, time: string): string {
-	return new Date(`${date}T${time}:00+07:00`).toISOString();
+	return new Date(`${date}T${time.length === 5 ? time + ':00' : time}+07:00`).toISOString();
 }
 export function formatBehaviorTime(value: string): string {
 	return new Intl.DateTimeFormat('th-TH', {
@@ -61,4 +62,13 @@ export function formatBehaviorTime(value: string): string {
 		dateStyle: 'medium',
 		timeStyle: 'short'
 	}).format(new Date(value));
+}
+
+export function resolveBehaviorOccurredAt(
+	date: string,
+	time: string,
+	defaultInstant: string
+): string {
+	const clock = bangkokDateTime(new Date(defaultInstant));
+	return date === clock.date && time === clock.time ? defaultInstant : occurredAt(date, time);
 }

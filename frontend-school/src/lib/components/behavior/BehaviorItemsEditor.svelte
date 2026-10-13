@@ -108,7 +108,7 @@
 				<Label for="behavior-item-points">คะแนน *</Label><Input
 					id="behavior-item-points"
 					type="number"
-					min="0"
+					min="1"
 					bind:value={draft.points}
 					required
 				/>

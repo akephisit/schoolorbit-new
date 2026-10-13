@@ -175,7 +175,7 @@
 			class="space-y-3 rounded-md border p-4"
 			onsubmit={adjust}
 		>
-			<h3 class="font-semibold">ปรับยอด {editing.date} · {sideLabels[row.side]}</h3>
+			<h3 class="font-semibold">ปรับยอด {editing.date} · {sideLabels[editing.side]}</h3>
 			{#if error}<PageState
 					variant="error"
 					title="ปรับยอดไม่สำเร็จ"
