@@ -227,7 +227,7 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
-    let approved_graph: [(&str, &[&str]); 31] = [
+    let approved_graph: [(&str, &[&str]); 32] = [
         (
             "school-auth-http",
             &[
