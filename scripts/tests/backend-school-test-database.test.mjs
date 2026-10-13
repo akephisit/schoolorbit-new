@@ -458,22 +458,15 @@ test('TERM preserves signal status and removes the owned container', async (t) =
     await assert.rejects(read(f.containerState));
 });
 
-test('Neon compatibility has one local direct disposable owner with prerequisite extensions', async () => {
-    const owner = await read(path.join(repoRoot, 'scripts/test_neon_compatibility.mjs'));
-    const tests = await read(path.join(repoRoot, 'scripts/test_neon_compatibility.sh'));
-    const operations = await read(path.join(repoRoot, '.github/workflows/operations.yml'));
-    assert.doesNotMatch(operations, /inputs.operation == 'neon'/);
-    assert.match(owner, /createNeonTestBranch/);
-    assert.match(owner, /NEON_BRANCH_EXPIRES_AT/);
-    assert.match(owner, /TEST_DATABASE_URL: outputs.db_url/);
-    assert.match(owner, /CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;/);
-    assert.match(owner, /CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;/);
-    assert.match(owner, /finally/);
-    assert.match(owner, /method: 'DELETE'/);
-    assert.match(owner, /\[200, 204\]/);
-    assert.match(tests, /migration_060 --bin backend-school -- --nocapture --test-threads=4/);
-    assert.match(tests, /gradebook_results_status --bin backend-school -- --nocapture --test-threads=4/);
-    assert.match(tests, /migration_060_subject_group_projections_support_timetable_load --bin backend-school -- --exact --nocapture/);
-    assert.match(tests, /NEON_COMPATIBILITY_SCOPE:-full/);
-    assert.doesNotMatch(owner, /db_url_pooled|SERVER_|SSH_|deploy/i);
+test('PostgreSQL compatibility preserves schema regressions on the owned Docker server', async () => {
+    const suite = await read(path.join(repoRoot, 'scripts/test_school_database_suite.sh'));
+    const tests = await read(path.join(repoRoot, 'scripts/test_postgres_compatibility.sh'));
+    assert.match(suite, /postgres:18\.6-alpine@sha256:/);
+    assert.match(suite, /SCHOOLORBIT_TEST_OWNER/);
+    assert.match(suite, /personnel_simplification/);
+    assert.match(suite, /school-file-platform schema_tests/);
+    assert.match(suite, /migration_060/);
+    assert.match(suite, /gradebook_results_status/);
+    assert.match(tests, /POSTGRES_COMPATIBILITY_SCOPE:-full/);
+    assert.doesNotMatch(suite, /NEON_|neon\.tech/);
 });

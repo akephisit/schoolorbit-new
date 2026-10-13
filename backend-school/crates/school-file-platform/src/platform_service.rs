@@ -143,8 +143,8 @@ impl FilePlatform {
             }
         }
 
-        let file_id = Uuid::new_v4();
-        let version_id = Uuid::new_v4();
+        let file_id = Uuid::now_v7();
+        let version_id = Uuid::now_v7();
         let original_key = original_object_key(
             command.tenant_id,
             command.purpose,
@@ -166,8 +166,8 @@ impl FilePlatform {
         let upload = NewUpload {
             file_id,
             version_id,
-            reconcile_operation_id: Uuid::new_v4(),
-            scan_operation_id: Uuid::new_v4(),
+            reconcile_operation_id: Uuid::now_v7(),
+            scan_operation_id: Uuid::now_v7(),
             owner_user_id: command.owner_user_id,
             created_by: command.actor_user_id,
             purpose: command.purpose,
@@ -467,11 +467,11 @@ fn prepare_derivatives(
     let mut derivatives = Vec::with_capacity(definition.derivatives.len());
     for recipe in definition.derivatives {
         let bytes = encode_derivative_image(&image, *recipe)?;
-        let derivative_id = Uuid::new_v4();
+        let derivative_id = Uuid::now_v7();
         derivatives.push(PreparedDerivative {
             metadata: NewDerivative {
                 id: derivative_id,
-                operation_id: Uuid::new_v4(),
+                operation_id: Uuid::now_v7(),
                 recipe: *recipe,
                 object: StoredObject::new(
                     derivative_object_key(tenant_id, purpose, file_id, 1, *recipe)?,

@@ -149,6 +149,22 @@ impl From<AcademicTermRow> for AcademicTerm {
     }
 }
 
+#[derive(FromRow)]
+struct AcademicYearUpdateRow {
+    #[sqlx(flatten)]
+    row: AcademicYearRow,
+    before: serde_json::Value,
+    after: serde_json::Value,
+}
+
+#[derive(FromRow)]
+struct AcademicTermUpdateRow {
+    #[sqlx(flatten)]
+    row: AcademicTermRow,
+    before: serde_json::Value,
+    after: serde_json::Value,
+}
+
 const YEAR_COLUMNS: &str = r#"
     id, year, name, start_date, end_date, school_days, status, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
@@ -191,7 +207,7 @@ pub async fn create_year(
         request.end_date,
         &request.school_days,
     )?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let mut transaction = pool.begin().await?;
     lifecycle_guard::lock_transition_shared(&mut transaction).await?;
     let sql = format!(
@@ -240,12 +256,17 @@ pub async fn update_year(
     let mut transaction = pool.begin().await?;
     lifecycle_guard::require_year_write_exclusive(&mut transaction, id).await?;
     ensure_terms_fit_year(&mut transaction, id, request.start_date, request.end_date).await?;
+    let returning = YEAR_COLUMNS
+        .split(',')
+        .map(|column| format!("NEW.{}", column.trim()))
+        .collect::<Vec<_>>()
+        .join(", ");
     let sql = format!(
         "UPDATE academic_years SET year = $1, name = $2, start_date = $3, end_date = $4, \
          school_days = $5, row_version = row_version + 1, updated_at = now() \
-         WHERE id = $6 AND row_version = $7 AND status = 'planning' RETURNING {YEAR_COLUMNS}"
+         WHERE id = $6 AND row_version = $7 AND status = 'planning' RETURNING {returning}, jsonb_build_object('year', OLD.year, 'name', OLD.name, 'startDate', OLD.start_date, 'endDate', OLD.end_date, 'schoolDays', OLD.school_days, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('year', NEW.year, 'name', NEW.name, 'startDate', NEW.start_date, 'endDate', NEW.end_date, 'schoolDays', NEW.school_days, 'rowVersion', NEW.row_version) AS after"
     );
-    let row = sqlx::query_as::<_, AcademicYearRow>(sqlx::AssertSqlSafe(sql))
+    let row = sqlx::query_as::<_, AcademicYearUpdateRow>(sqlx::AssertSqlSafe(sql))
         .bind(request.year)
         .bind(name)
         .bind(request.start_date)
@@ -272,11 +293,11 @@ pub async fn update_year(
         Some(id),
         None,
         actor_user_id,
-        json!({"rowVersion": row.row_version}),
+        json!({"rowVersion": row.row.row_version, "before": row.before, "after": row.after}),
     )
     .await?;
     transaction.commit().await?;
-    Ok(row.into())
+    Ok(row.row.into())
 }
 
 pub async fn list_terms(
@@ -347,7 +368,7 @@ pub async fn create_term(
         sequence,
     )
     .await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let sql = format!(
         "INSERT INTO academic_terms (id, academic_year_id, sequence_no, code, name, term_type, \
          start_date, planned_end_date, included_in_year_result, blocks_year_closure, bell_schedule_id, status) \
@@ -456,13 +477,18 @@ pub async fn update_term(
     let identity =
         derive_term_identity(request.term_type, sequence, request.custom_name.as_deref())?;
     validate_term_fields(&identity.name, request.start_date, request.planned_end_date)?;
+    let returning = TERM_COLUMNS
+        .split(',')
+        .map(|column| format!("NEW.{}", column.trim()))
+        .collect::<Vec<_>>()
+        .join(", ");
     let sql = format!(
         "UPDATE academic_terms SET name = $1, term_type = $2, start_date = $3, planned_end_date = $4, \
          included_in_year_result = $5, blocks_year_closure = $6, bell_schedule_id = $7, \
          row_version = row_version + 1, updated_at = now() \
-         WHERE id = $8 AND row_version = $9 AND status = 'planning' RETURNING {TERM_COLUMNS}"
+         WHERE id = $8 AND row_version = $9 AND status = 'planning' RETURNING {returning}, jsonb_build_object('name', OLD.name, 'termType', OLD.term_type, 'startDate', OLD.start_date, 'plannedEndDate', OLD.planned_end_date, 'includedInYearResult', OLD.included_in_year_result, 'blocksYearClosure', OLD.blocks_year_closure, 'bellScheduleId', OLD.bell_schedule_id, 'rowVersion', OLD.row_version) AS before, jsonb_build_object('name', NEW.name, 'termType', NEW.term_type, 'startDate', NEW.start_date, 'plannedEndDate', NEW.planned_end_date, 'includedInYearResult', NEW.included_in_year_result, 'blocksYearClosure', NEW.blocks_year_closure, 'bellScheduleId', NEW.bell_schedule_id, 'rowVersion', NEW.row_version) AS after"
     );
-    let row = sqlx::query_as::<_, AcademicTermRow>(sqlx::AssertSqlSafe(sql))
+    let row = sqlx::query_as::<_, AcademicTermUpdateRow>(sqlx::AssertSqlSafe(sql))
         .bind(identity.name)
         .bind(request.term_type)
         .bind(request.start_date)
@@ -491,11 +517,11 @@ pub async fn update_term(
         Some(academic_year_id),
         Some(id),
         actor_user_id,
-        json!({"rowVersion": row.row_version}),
+        json!({"rowVersion": row.row.row_version, "before": row.before, "after": row.after}),
     )
     .await?;
     transaction.commit().await?;
-    Ok(row.into())
+    Ok(row.row.into())
 }
 
 pub async fn delete_term(pool: &PgPool, actor_user_id: Uuid, id: Uuid) -> Result<(), AppError> {

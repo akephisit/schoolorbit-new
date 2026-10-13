@@ -1,0 +1,11 @@
+/var/log/pgbackrest/*.log {
+    daily
+    maxsize 4M
+    rotate 14
+    maxage 14
+    missingok
+    notifempty
+    compress
+    copytruncate
+    su postgres postgres
+}

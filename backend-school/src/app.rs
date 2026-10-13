@@ -19,6 +19,7 @@ pub fn build_app(state: AppState) -> Router {
     public_routes()
         .merge(protected_routes().route_layer(from_fn_with_state(runtime, session_middleware)))
         .layer(DefaultBodyLimit::max(APPLICATION_BODY_LIMIT))
+        .layer(axum::middleware::from_fn(request_timing))
         .with_state(state)
 }
 
@@ -796,4 +797,23 @@ mod tests {
             );
         }
     }
+}
+
+async fn request_timing(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let route = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|path| path.as_str().to_owned())
+        .unwrap_or_else(|| "unmatched".into());
+    let method = request.method().clone();
+    let started = std::time::Instant::now();
+    let response = next.run(request).await;
+    if !matches!(route.as_str(), "/health" | "/ready") {
+        tracing::info!(operation = "http_response_headers", route, method = %method,
+            status = response.status().as_u16(), duration_ms = started.elapsed().as_secs_f64() * 1000.0);
+    }
+    response
 }

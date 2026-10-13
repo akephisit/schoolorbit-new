@@ -399,7 +399,7 @@ pub async fn mutate_roster(
     }
     if let Some(target) = destination {
         let target = target.homeroom;
-        let placements: Vec<_> = ids.iter().map(|_| Uuid::new_v4()).collect();
+        let placements: Vec<_> = ids.iter().map(|_| Uuid::now_v7()).collect();
         let numbers: Vec<_> = (0..ids.len()).map(|n| next + n as i32).collect();
         let statuses: Vec<_> = r
             .selections

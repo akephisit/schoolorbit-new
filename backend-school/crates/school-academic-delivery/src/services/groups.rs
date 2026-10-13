@@ -169,7 +169,7 @@ pub(super) async fn apply_curriculum_generated_group(
                    homeroom_id, coverage_source
                ) VALUES ($1, $2, $3, $4, $5, 'curriculum_prepare')"#,
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(group_id)
         .bind(academic_term_id)
         .bind(academic_year_id)
@@ -262,7 +262,7 @@ pub(super) async fn create_target_homeroom_groups(
         ));
     }
     let room_ids: Vec<Uuid> = rooms.iter().map(|room| room.0).collect();
-    let group_ids: Vec<Uuid> = rooms.iter().map(|_| Uuid::new_v4()).collect();
+    let group_ids: Vec<Uuid> = rooms.iter().map(|_| Uuid::now_v7()).collect();
     let names: Vec<String> = rooms.into_iter().map(|room| room.1).collect();
     sqlx::query("INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) \
         SELECT group_id,$1,$2,$3,'ROOM-' || group_id::text,name,'draft','draft' \
@@ -283,7 +283,7 @@ pub async fn create(
     request: CreateLearningGroupRequest,
 ) -> Result<LearningGroup, AppError> {
     validate_group_fields(&request.name, request.capacity)?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let internal_code = internal_group_code(&request.name)?;
     let mut transaction = pool.begin().await?;
     require_writable_offering_term(&mut transaction, offering_id).await?;
@@ -426,7 +426,7 @@ pub async fn replace_teachers(
                    teacher_id, role, starts_on, created_by, updated_by
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)"#,
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(id)
         .bind(group.academic_term_id)
         .bind(group.academic_year_id)
@@ -477,7 +477,7 @@ pub async fn replace_homerooms(
                    homeroom_id, coverage_source
                ) VALUES ($1, $2, $3, $4, $5, 'manual')"#,
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(id)
         .bind(group.academic_term_id)
         .bind(group.academic_year_id)
@@ -615,7 +615,7 @@ pub async fn apply_roster(
                        roster_source, joined_at
                    ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8)"#,
                 )
-                .bind(Uuid::new_v4())
+                .bind(Uuid::now_v7())
                 .bind(group_id)
                 .bind(group.academic_term_id)
                 .bind(group.academic_year_id)

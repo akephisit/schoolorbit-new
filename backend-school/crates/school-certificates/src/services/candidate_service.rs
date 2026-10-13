@@ -1064,7 +1064,7 @@ fn prepare_import_candidate(
     let student_id = normalize_optional(row.student_id.as_deref());
     let staff_username = normalize_optional(row.staff_username.as_deref());
     let mut candidate = PreparedCandidate {
-        id: Uuid::new_v4(),
+        id: Uuid::now_v7(),
         campaign_id,
         batch_id: None,
         template_id: None,

@@ -1247,8 +1247,8 @@ pub async fn create_change_set_in_transaction(
                 .unwrap_or(term.start_date),
         )
         .min(term.academic_year_end_date);
-    let revision_id = Uuid::new_v4();
-    let target_id = Uuid::new_v4();
+    let revision_id = Uuid::now_v7();
+    let target_id = Uuid::now_v7();
     sqlx::query(r#"INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,reference_date,snapshot,created_by)
         VALUES($1,$2,$3,$4,$5,'{"offerings":[]}'::jsonb,$6)"#)
         .bind(target_id).bind(term.id).bind(term.academic_year_id).bind(base_id).bind(reference_date).bind(actor_user_id)
@@ -1509,7 +1509,7 @@ pub async fn upsert_change_item(
             }
             offerings::validate_targets(&mut transaction, &term, &offering.targets).await?;
             let subject_version_id = offering.subject_version_id;
-            let offering_id = Uuid::new_v4();
+            let offering_id = Uuid::now_v7();
             offerings::insert_course(&mut transaction, offering_id, &term, offering).await?;
             set_added_offering_start(&mut transaction, offering_id, row.effective_from).await?;
             let weekly_period_target: i32 =
@@ -1542,7 +1542,7 @@ pub async fn upsert_change_item(
                 ));
             }
             offerings::validate_targets(&mut transaction, &term, &offering.targets).await?;
-            let offering_id = Uuid::new_v4();
+            let offering_id = Uuid::now_v7();
             offerings::insert_activity(&mut transaction, offering_id, &term, offering).await?;
             set_added_offering_start(&mut transaction, offering_id, row.effective_from).await?;
             create_default_draft_groups(&mut transaction, offering_id, &term).await?;
@@ -2089,7 +2089,7 @@ async fn create_default_draft_groups(
     .await?;
     let mut group_ids = Vec::with_capacity(homerooms.len());
     for (index, (homeroom_id, homeroom_name)) in homerooms.into_iter().enumerate() {
-        let group_id = Uuid::new_v4();
+        let group_id = Uuid::now_v7();
         let suffix = i32::try_from(index + 1)
             .map_err(|_| AppError::ValidationError("จำนวนกลุ่มเรียนมากเกินไป".to_string()))?;
         sqlx::query(
@@ -2112,7 +2112,7 @@ async fn create_default_draft_groups(
                    homeroom_id, coverage_source
                ) VALUES ($1, $2, $3, $4, $5, 'operational_change')"#,
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(group_id)
         .bind(term.id)
         .bind(term.academic_year_id)
@@ -2133,7 +2133,7 @@ async fn insert_change_item(
     weekly_period_target: Option<i32>,
     actor_user_id: Uuid,
 ) -> Result<Uuid, AppError> {
-    let item_id = Uuid::new_v4();
+    let item_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO academic_term_change_items (
                id, change_set_id, academic_term_id, academic_year_id, action_kind,
@@ -2165,7 +2165,7 @@ async fn insert_teacher_change_item(
     teacher_role: Option<LearningTeacherRole>,
     actor_user_id: Uuid,
 ) -> Result<Uuid, AppError> {
-    let item_id = Uuid::new_v4();
+    let item_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO academic_term_change_items (
                id, change_set_id, academic_term_id, academic_year_id, action_kind,

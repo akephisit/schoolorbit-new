@@ -15,8 +15,9 @@ declare -ga SO_REQUIRED_SECRETS=(
     ENCRYPTION_KEY
     BLIND_INDEX_KEY
     DEPLOY_KEY
-    NEON_API_KEY
-    NEON_DB_PASSWORD
+    PG_PROVISIONING_DATABASE_URL
+    ADMIN_MIGRATION_DATABASE_URL
+    DATABASE_CREDENTIALS_KEY
     R2_ACCESS_KEY_ID
     R2_SECRET_ACCESS_KEY
     VAPID_PRIVATE_KEY
@@ -30,9 +31,8 @@ declare -ga SO_REQUIRED_COCKPIT_SECRETS=(
     SCHOOLORBIT_SERVER_PASSWORD
 )
 declare -ga SO_REQUIRED_RUNTIME_VALUES=(
-    NEON_PROJECT_ID
-    NEON_BRANCH_ID
-    NEON_HOST
+    PG_TENANT_DATABASE_URL
+    POSTGRES_CA_FILE
     R2_ACCOUNT_ID
     R2_PUBLIC_BUCKET_NAME
     R2_PRIVATE_BUCKET_NAME
@@ -243,15 +243,16 @@ _validate_secret() {
     fi
 
     case "$name" in
-        DATABASE_URL)
+        DATABASE_URL | ADMIN_MIGRATION_DATABASE_URL | PG_PROVISIONING_DATABASE_URL)
             minimum=24
             [[ $value =~ ^postgres(ql)?:// ]] || die 64 'DATABASE_URL must be a PostgreSQL URL' || return
             ;;
         ENCRYPTION_KEY | BLIND_INDEX_KEY | SESSION_HMAC_KEY | SCHOOL_ROLLBACK_JWT_SECRET)
             minimum=32
             ;;
-        NEON_DB_PASSWORD)
-            minimum=12
+        DATABASE_CREDENTIALS_KEY)
+            minimum=64
+            [[ $value =~ ^[a-fA-F0-9]{64}$ ]] || die 64 'Invalid database credentials key' || return
             ;;
         SCHOOLORBIT_SERVER_PASSWORD)
             minimum=10
@@ -279,14 +280,11 @@ _validate_runtime_value() {
     fi
 
     case "$name" in
-        NEON_PROJECT_ID)
-            [[ $value =~ ^[A-Za-z0-9][A-Za-z0-9_-]{2,127}$ ]] || die 64 'Invalid Neon project ID'
+        PG_TENANT_DATABASE_URL)
+            [[ $value =~ ^postgres(ql)?:// && $value == *sslmode=verify-full* ]] || die 64 'Tenant database URL must verify TLS'
             ;;
-        NEON_BRANCH_ID)
-            [[ $value =~ ^br-[a-z0-9-]{1,57}$ ]] || die 64 'Invalid Neon branch ID'
-            ;;
-        NEON_HOST)
-            _valid_domain "${value,,}" || die 64 'Invalid Neon host'
+        POSTGRES_CA_FILE)
+            [[ $value =~ ^/[A-Za-z0-9_./-]+$ && $value != *..* ]] || die 64 'Invalid PostgreSQL CA path'
             ;;
         R2_ACCOUNT_ID)
             [[ $value =~ ^[A-Za-z0-9]{16,64}$ ]] || die 64 'Invalid R2 account ID'

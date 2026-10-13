@@ -302,29 +302,18 @@ pub async fn migrate_all_schools(
     let mut results = Vec::with_capacity(schools.len());
     for school in schools {
         let subdomain = school.subdomain.clone();
-        let db_url = match school.db_connection_string {
-            Some(ref url) if !url.is_empty() => url.clone(),
-            _ => {
-                state
-                    .admin_client
-                    .update_migration_status(
-                        &subdomain,
-                        0,
-                        "failed",
-                        Some("No database connection string"),
-                    )
-                    .await
-                    .map_err(|_| {
-                        AppError::InternalServerError(
-                            "Failed to record unavailable tenant database".into(),
-                        )
-                    })?;
-
+        let db_url = match state
+            .admin_client
+            .get_migration_database_url(&subdomain)
+            .await
+        {
+            Ok(url) => url,
+            Err(_) => {
                 results.push(MigrationResult {
                     subdomain,
-                    status: "failed".to_string(),
+                    status: "failed".into(),
                     version: None,
-                    error: Some("No database connection string".to_string()),
+                    error: Some("Migration connection unavailable".into()),
                 });
                 continue;
             }
@@ -479,29 +468,46 @@ async fn migrate_single_school(
 ) -> MigrationResult {
     tracing::info!("🔄 Migrating school: {}", subdomain);
 
-    let pool = match state
-        .pool_manager
-        .get_pool_with_permission_change(db_url, subdomain)
-        .await
-    {
-        Ok((pool, permissions_changed)) => {
-            if permissions_changed {
-                state.invalidate_permission_tenant(subdomain);
-                state.notify_all_permissions_changed(subdomain);
-            }
+    let migration = async {
+        use sqlx::ConnectOptions;
+        let options = db_url
+            .parse::<sqlx::postgres::PgConnectOptions>()
+            .map_err(|_| "Invalid migration connection".to_string())?
+            .disable_statement_logging();
+        let owner_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .map_err(|_| "Migration connection failed".to_string())?;
+        let result = school_migrations::run_tenant_migrations(&owner_pool).await;
+        owner_pool.close().await;
+        result?;
+        let runtime = state
+            .admin_client
+            .get_school_database_info(subdomain)
+            .await?;
+        state
+            .pool_manager
+            .get_pool_without_migrations(&runtime.database_url, subdomain)
+            .await
+    }
+    .await;
+    let pool = match migration {
+        Ok(pool) => {
+            state.invalidate_permission_tenant(subdomain);
+            state.notify_all_permissions_changed(subdomain);
             pool
         }
-        Err(e) => {
-            tracing::error!("❌ Failed to get pool for {}: {}", subdomain, e);
+        Err(error) => {
             let _ = state
                 .admin_client
-                .update_migration_status(subdomain, 0, "failed", Some(&e))
+                .update_migration_status(subdomain, 0, "failed", Some(&error))
                 .await;
             return MigrationResult {
-                subdomain: subdomain.to_string(),
-                status: "failed".to_string(),
+                subdomain: subdomain.into(),
+                status: "failed".into(),
                 version: None,
-                error: Some(e),
+                error: Some(error),
             };
         }
     };

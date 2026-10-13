@@ -126,7 +126,7 @@ pub async fn create_subject(
 ) -> Result<CatalogSubject, AppError> {
     let code = normalize_code(&request.code)?;
     let owner_id = resolve_subject_group_owner(pool, request.subject_group_id).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let sql = format!(
         "INSERT INTO subjects (id, code, identity_key, subject_group_id, owning_organization_unit_id) \
          VALUES ($1, $2, $3, $4, $5) RETURNING {SUBJECT_COLUMNS}"
@@ -217,7 +217,7 @@ pub async fn create_subject_version(
     .fetch_one(&mut *transaction)
     .await?;
     let start_year_id = resolve_start_year(&mut transaction, request.effective_from).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     sqlx::query(
         r#"
         INSERT INTO subject_versions (
@@ -453,7 +453,7 @@ pub async fn create_activity(
 ) -> Result<CatalogActivity, AppError> {
     let activity_type = normalize_activity_type(&request.activity_type)?;
     let owner_id = resolve_activity_owner(pool).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let code = activity_code(id);
     let identity_key = format!("activity:{id}");
     let sql = format!(

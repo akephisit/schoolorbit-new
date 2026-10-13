@@ -89,7 +89,7 @@ pub async fn apply(
                 "ช่วงเวลารอบนิเทศต้องอยู่ในภาคเรียนเป้าหมาย".into(),
             ));
         }
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         sqlx::query(
             r#"INSERT INTO supervision_cycles(
                    id,title,description,template_id,booking_opens_at,booking_closes_at,

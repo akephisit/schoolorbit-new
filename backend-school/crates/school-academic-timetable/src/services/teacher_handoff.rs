@@ -247,7 +247,7 @@ pub async fn apply(
                        id, block_group_id, instructor_id, role, display_order
                    ) VALUES ($1, $2, $3, $4, $5)"#,
             )
-            .bind(Uuid::new_v4())
+            .bind(Uuid::now_v7())
             .bind(entry.entry_id)
             .bind(instructor.instructor_id)
             .bind(&instructor.role)

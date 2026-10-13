@@ -1,6 +1,7 @@
 pub mod app;
 pub mod auth;
 pub mod clients;
+pub mod database_credentials;
 pub mod db;
 pub mod error;
 pub mod handlers;

@@ -122,7 +122,7 @@ pub async fn apply_term_preparation(
                     .ok_or_else(|| AppError::Conflict(format!("ไม่พบการจับคู่ teacher {id}")))
             })
             .transpose()?;
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO course_assessment_plans(
                  id,academic_term_id,subject_version_id,learning_offering_id,academic_year_id,
@@ -517,7 +517,7 @@ pub async fn save_plan(
                     "ยังไม่มีโครงสร้างคะแนนสำหรับรายวิชาที่เปิดสอนนี้".to_string(),
                 ));
             }
-            let plan_id = Uuid::new_v4();
+            let plan_id = Uuid::now_v7();
             sqlx::query(
                 r#"INSERT INTO course_assessment_plans (
                        id, academic_term_id, subject_version_id, learning_offering_id,

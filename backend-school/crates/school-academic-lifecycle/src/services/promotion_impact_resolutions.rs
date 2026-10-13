@@ -93,7 +93,7 @@ pub async fn resolve_promotion_impact(
             .await?
         }
     };
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let resolution: PromotionImpactResolution = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "INSERT INTO academic_promotion_impact_resolutions(
              id,request_id,run_id,item_id,correction_id,impact_id,resolution_kind,

@@ -1059,7 +1059,7 @@ pub async fn complete_enrollment(
         RETURNING id
         "#,
     )
-    .bind(Uuid::new_v4())
+    .bind(Uuid::now_v7())
     .bind(new_user_id)
     .bind(placement_context.academic_year_id)
     .bind(placement_context.grade_level_id)
@@ -1083,7 +1083,7 @@ pub async fn complete_enrollment(
                    jsonb_build_object('source', 'admission'))
            RETURNING id"#,
     )
-    .bind(Uuid::new_v4())
+    .bind(Uuid::now_v7())
     .bind(student_academic_year_id)
     .bind(placement_context.academic_year_id)
     .bind(placement_context.homeroom_id)
@@ -1499,7 +1499,7 @@ FOR UPDATE
     .await
     .map_err(document_relationship_error)?;
 
-    let doc_id = Uuid::new_v4();
+    let doc_id = Uuid::now_v7();
     sqlx::query(
         r#"
         INSERT INTO admission_application_documents (id, application_id, file_id, doc_type)

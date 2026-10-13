@@ -147,7 +147,7 @@ pub async fn create_homeroom(
         &request.room_number,
         request.custom_name.as_deref(),
     )?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     sqlx::query(
         r#"
         INSERT INTO homerooms (
@@ -310,7 +310,7 @@ pub async fn replace_advisors(
         sqlx::query(
             "INSERT INTO homeroom_advisors (id, homeroom_id, user_id, role) VALUES ($1, $2, $3, $4)",
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(homeroom_id)
         .bind(advisor.user_id)
         .bind(advisor.role)
@@ -452,7 +452,7 @@ pub async fn create_student_year(
     if !student_exists {
         return Err(AppError::ValidationError("ไม่พบนักเรียน".to_string()));
     }
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     sqlx::query(
         r#"
         INSERT INTO student_academic_years (
@@ -640,7 +640,7 @@ pub async fn create_placement(
     )
     .await?;
     validate_placement_date(&mut transaction, academic_year_id, request.start_date).await?;
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     sqlx::query(
         r#"
         INSERT INTO homeroom_placements (
@@ -755,7 +755,7 @@ pub async fn transfer_placement(
     .bind(old.id)
     .execute(&mut *transaction)
     .await?;
-    let new_id = Uuid::new_v4();
+    let new_id = Uuid::now_v7();
     sqlx::query(
         r#"
         INSERT INTO homeroom_placements (

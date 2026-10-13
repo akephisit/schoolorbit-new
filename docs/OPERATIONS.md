@@ -1,5 +1,148 @@
 # Operations
 
+## PostgreSQL VPS cutover and recovery
+
+The database-only Debian 13 host runs PostgreSQL 18.6 and pgBackRest 2.59.3 as
+native systemd services. Backend services remain on the existing rootless Podman
+host. Production allows database ingress only from the backend address; operators
+use SSH. All backend connections use SCRAM and `sslmode=verify-full` with the
+private deployment CA. The CA signing key stays on the operator laptop.
+
+Preserve the existing immutable migration timeline. The currently inspected source
+databases use UTF8 and the built-in `C.UTF-8` locale provider, version 1. Create
+targets from `template0` with that same built-in provider/locale/version; checking only the
+locale name is insufficient. The libc `datcollate` label is not the effective collation
+when the provider is built-in. Rehearsal also compares synthetic Thai/Latin ordering
+and case conversion. Reconciliation normalizes only PostgreSQL's equivalent varchar
+literal-array-to-text coercion and logical column positions after dropped attributes;
+it also flattens only associative AND/OR groups while preserving operand order and
+precedence. Other constraint atoms remain exact. Restore preserves the source names
+of NOT NULL constraints by matching their columns, including after historical renames. Existing identities, password hashes, national-ID ciphertext,
+blind indexes, R2 references and all encryption/authentication keys remain stable.
+
+### Identities, provisioning and owner jobs
+
+- Admin runtime: `schoolorbit_admin_runtime`, DML-only on the Admin database.
+- Admin migration: `schoolorbit_admin_owner`, used only by explicit migration jobs.
+- Provisioner: `schoolorbit_provisioner`, non-superuser with CREATEDB/CREATEROLE.
+- Tenant owner/runtime: `so_<tenant-uuid-without-dashes>_owner` and `_runtime`,
+  distinct random passwords, no SUPERUSER/CREATEDB/CREATEROLE/BYPASSRLS.
+- Operators: separate observer (`pg_monitor`) and human administration accounts,
+  restricted to SSH-forwarded loopback access.
+
+Admin persists its tenant UUID and both encrypted passwords before resource
+creation. AES-256-GCM authenticates tenant/purpose/version under the independent
+64-hex-character `DATABASE_CREDENTIALS_KEY`. Preserve this key in the recovery
+secret store: physical database backups cannot decrypt credentials without it.
+Check role markers and database owner before adoption or cleanup; ambiguous creates
+retain a failed school record. Public API/SSE payloads contain no credentials.
+
+The Admin image runs `/app/backend-admin --migrate-admin` as a one-shot job with
+`ADMIN_MIGRATION_DATABASE_URL` before starting the ordinary service. Runtime startup
+validates SQLx history without applying migrations. Tenant provisioning/deployment
+alone runs `school_migrations::run_tenant_migrations` and reconciles runtime grants.
+Owner pools close before runtime/scheduler use. Normal requests fail closed when
+the tenant schema does not match the release.
+
+### Transfer order and reconciliation gates
+
+1. Build/test the candidate and rehearse protected copies. Do not run application
+   schedulers, notifications or R2 deletion jobs against a rehearsal copy.
+2. Pause `RUNTIME_DEPLOY_ENABLED` and `FRONTEND_DEPLOY_ENABLED` during the coordinated
+   database move. Dispatch Operations `database-cutover` on current main with options
+   containing the verified database count (currently `{"databases":3}`). The operation
+   validates the latest-attempt Pipeline gate and holds `schoolorbit-production`
+   while the operator performs transfer/restore checks. It activates maintenance and stops every source
+   application writer/background job. Retain the accepted images, environment,
+   key material and source inventory privately. No source writes during final transfer.
+3. Create empty target databases with assigned owners and matching encoding/locale.
+   `backend-admin --provision-database` accepts a bounded JSON stdin object with
+   `tenant_id`, `db_name`, `migration_password` and `runtime_password`; it invokes
+   the same checked provisioning owner, never a second implementation.
+4. Run `python3 -B scripts/postgres_data_transfer.py snapshot --config PRIVATE.json`,
+   then `restore`, then `reconcile` for Admin and every tenant. Config mode must be
+   0600 and contains `source_url`, `target_url`, `archive`; `client_image: true`
+   selects the pinned PostgreSQL 18.6 Docker client on laptops with older tools.
+   URLs never enter command arguments. Restore refuses a nonempty target and uses
+   no source ACL/owner. Private archives/manifests are outside the checkout.
+5. Reconcile table counts, ordered SHA-256 row hashes, columns/defaults, constraints,
+   locale provider/version and SQLx history before applying target migrations. Any
+   source drift or mismatch blocks switching. Evidence output contains aggregates.
+6. On the target Admin database, run `--migrate-admin-expand` through the same owner
+   job, adding credential/reconciliation storage through migration 007. For each
+   unchanged restored tenant, run transfer `bind-credentials` with the private
+   config additionally containing `tenant_id`, `runtime_password`, `migration_password`,
+   `credentials_key` and `admin_target_url`. It reruns preservation checks and encrypts
+   credentials; it does not print passwords, connection URLs or source rows.
+7. Run the full Admin migration job. Migration 008 refuses retiring legacy DSNs
+   unless every existing school has paired encrypted credentials and fresh passing
+   reconciliation with equal source/target digests. Then run canonical tenant
+   migrations and runtime grants, preserving every prior SQLx checksum.
+8. After the actual-data restore and runtime TLS checks pass, write the private
+   mode-0600 `database-cutover-ready.json` under the candidate release directory,
+   containing schemaVersion 1, exact sha, verified databases count and true
+   dataReconciled/runtimeTlsVerified/backupRestorePassed flags. This is operational
+   recovery evidence, not a local-test receipt. The cutover operation validates it
+   and rechecks current main before releasing the lock; maintenance remains active.
+   Dispatch the canonical Pipeline as a manual full release, then restore the prior
+   automatic-release variables after acceptance. Switch backend configuration and deploy the exact accepted images under maintenance,
+   validate every tenant and existing cutover audits, then authenticated proxy/browser
+   login, timetable, files and realtime flows. Create a backup of the migrated data
+   and prove PITR restoration in an isolated cluster before reopening.
+
+Before target application writes, recover with the retained source-compatible
+release/configuration. After target writes, recover/roll forward on PostgreSQL;
+never fall back automatically to stale source data. Remove Neon runtime secrets
+when switching, but retain protected source recovery access without application
+writes for at least seven days. Deleting the source project is a separate operation.
+
+### Workload and retention
+
+Start with the tracked `scripts/lib/postgres-vps/workload.conf` budget for 2 vCPU /
+4 GiB: 64 connections, 512 MiB shared buffers, 4 MiB work memory, 128 MiB maintenance
+memory. Pools allow five connections per tenant, zero minimum and five-minute idle
+expiry; migration is sequential. Per-operation work memory can multiply across
+sort/hash operations, connections and parallel workers; these are initial budgets,
+not a guarantee of fixed RAM consumption. Keep autovacuum and worker AIO enabled.
+
+pgAdmin Desktop connects to `127.0.0.1:5432`, database `postgres`, with observer or
+human administration credentials, verify-full TLS and the laptop CA file. Configure
+its SSH tunnel to the database host using the existing SSH key. Human superuser
+credentials must never become application credentials.
+
+Use pgAdmin activity/dashboard and observer queries against `pg_stat_activity`,
+`pg_stat_database`, `pg_stat_user_tables` and `pg_stat_io`. Query aggregates use
+`pg_stat_statements(false)` so routine reports exclude statement text. Look at calls,
+total/mean execution time, rows, shared-block reads/hits and temporary-block writes.
+Backend route-template response-header timings and `sqlx::pool::acquire` wait times
+separate application/pool latency from database time. SSH into each VPS for its own
+CPU, available RAM, disk and network; the database dashboard cannot measure the
+backend host's CPU/RAM. No public metrics endpoint or additional monitoring stack.
+
+Install `scripts/postgres_status.py` as
+`/usr/local/libexec/schoolorbit-postgres-status.py` with the tracked monitor unit/timer.
+It checks every five minutes and emits bounded JSON warning codes to the journal:
+available RAM below 512 MiB, disk below 15% free, connections over 80%, backup older
+than 36 hours, outstanding WAL archive failure or certificate renewal within 30 days.
+`sudo -u postgres /usr/local/libexec/schoolorbit-postgres-status.py` is read-only;
+the systemd job passes `--cleanup` for closed logs. No external notification channel
+is configured. Review `journalctl -u schoolorbit-postgres-monitor.service` over SSH.
+
+Keep pgBackRest backup at 02:00 Asia/Bangkok, full weekly and differential otherwise,
+with four full chains and their required WAL in the private R2 repository. Retention
+is chain-based, not an exact fixed number of days. Do not put an independent R2
+object-age deletion rule on that repository. Preserve repository cipher password
+and R2 access in the private recovery store; verify `pgbackrest check`, backup status
+and periodic isolated restore with aggregate evidence.
+
+The monitor removes closed PostgreSQL logs older than 14 days or above a 256 MiB
+budget while preserving current log files. Tracked logrotate and cleanup cap closed
+pgBackRest logs at 64 MiB/14 days; journald uses 256 MiB/14 days. Active files can
+temporarily exceed a budget until rotation. Session cleanup runs hourly in bounded
+batches with the existing 30-day expired/revoked-session and one-day throttle
+retention. File cleanup keeps its durable queue, lease/retry and domain retention.
+Neither autovacuum nor cleanup deletes academic/business/audit history to free space.
+
 This guide describes production-facing procedures and invariants. Development conventions live in [`.rules`](../.rules), and executable verification commands live in [Testing](./TESTING.md).
 
 ## Runtime Topology
@@ -59,7 +202,13 @@ Core backend-school secrets:
 - `BLIND_INDEX_KEY`
 - `DEPLOY_KEY`
 
-Backend-school also requires `BASE_DOMAIN` and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` must be empty in production. `SCHOOL_ROLLBACK_JWT_SECRET` is a separate rollback-only secret and must differ from both `SESSION_HMAC_KEY` and the backend-admin `JWT_SECRET`. Backend-admin retains ownership of `JWT_SECRET`, its admin `DATABASE_URL`, and the provider credentials required by the operations it performs. Tenant provisioning uses the configured Neon values; `NEON_BRANCH_ID` is the branch identifier beginning with `br-`, not the display name such as `main`. The backend resolves an existing legacy branch-name value for compatibility, while new installer input requires the identifier. Deployment/DNS operations use the configured GitHub and Cloudflare values.
+Backend-school also requires `BASE_DOMAIN` and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` must be empty in production. `SCHOOL_ROLLBACK_JWT_SECRET` is a separate rollback-only secret and must differ from both `SESSION_HMAC_KEY` and the backend-admin `JWT_SECRET`. Backend-admin retains ownership of `JWT_SECRET`, its admin `DATABASE_URL`, and the provider credentials required by the operations it performs. Tenant provisioning uses `PG_PROVISIONING_DATABASE_URL` (CREATEDB/CREATEROLE,
+non-superuser), `PG_TENANT_DATABASE_URL` (TLS connection template without tenant
+passwords), and `DATABASE_CREDENTIALS_KEY` (32 random bytes as 64 hex characters).
+`ADMIN_MIGRATION_DATABASE_URL` belongs only to explicit migration jobs; the normal
+Admin `DATABASE_URL` is DML-only. Mount `POSTGRES_CA_FILE` read-only at
+`/run/secrets/postgresql-ca.crt` in both backends and require `sslmode=verify-full`.
+Deployment/DNS operations use the configured GitHub and Cloudflare values.
 
 Internal service calls identify the caller with `X-Internal-Caller`. A caller-specific `INTERNAL_API_SECRET_<CALLER>` may override the shared `INTERNAL_API_SECRET`; the shared value is the controlled fallback during rotation. Keep both sides synchronized while rotating and remove the old value only after all callers are confirmed.
 
@@ -72,7 +221,7 @@ Both backends expose:
 - `/health` for process liveness without dependency checks;
 - `/ready` for dependency readiness and deployment gating.
 
-Recurring Compose healthchecks use `/health` so process monitoring does not wake Neon or probe external dependencies. Backend deployment workflows and smoke tests use `/ready`; backend-school readiness verifies its backend-admin control-plane connection without waking every tenant database. External uptime monitors must use `/health`, because polling `/ready` would keep the admin Neon compute active. A dependency failure must fail the deployment readiness gate, while a live process remains diagnosable through `/health`.
+Recurring Compose healthchecks use `/health` so process monitoring stays independent of external dependencies. Backend deployment workflows and smoke tests use `/ready`; backend-school readiness verifies its backend-admin control-plane connection without waking every tenant database. External uptime monitors must use `/health`, because polling `/ready` would continuously probe the control-plane database. A dependency failure must fail the deployment readiness gate, while a live process remains diagnosable through `/health`.
 
 ## Deployment Workflows
 
@@ -406,7 +555,7 @@ once its validation window ends, authentication fails closed instead of extendin
 Browser tabs hidden for 60 seconds pause notifications SSE and timetable WebSocket. On returning,
 the client refreshes authentication and reconciles authoritative state across the disconnected gap.
 Web Push subscriptions remain independent of the SSE connection. The application change reduces
-session queries; actual Neon compute savings also depend on other traffic and background jobs.
+session queries; actual database resource savings also depend on other traffic and background jobs.
 
 For the one-time JWT-to-session cutover:
 
@@ -745,8 +894,8 @@ For the Release 2 deployment:
 
 1. Create and retain a protected snapshot before dispatching the release.
 2. Use one reviewed commit for the migration, backend, contracts, frontend, and deployment gate.
-   Run the local Neon compatibility command first; it must use a fresh disposable child
-   branch and its direct non-pooled endpoint to run the migration-060 schema and status-audit tests.
+   Run the owned PostgreSQL compatibility suite first; it must use a fresh disposable
+   database and its direct non-pooled endpoint to run the migration-060 schema and status-audit tests.
 3. Deploy through the centralized runner and apply every pending migration through the repository's
    latest version. Do not apply migration 060 or later files manually.
 4. Require `/internal/migration-status` to report repository-version equality for every tenant and

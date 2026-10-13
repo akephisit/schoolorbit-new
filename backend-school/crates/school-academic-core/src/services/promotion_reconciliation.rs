@@ -192,7 +192,7 @@ async fn upsert_target_student_year(
         .await?;
         Ok(id)
     } else {
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO student_academic_years(
                  id,student_id,academic_year_id,grade_level_id,study_program_id,status

@@ -180,7 +180,6 @@ export interface School {
 	name: string;
 	subdomain: string;
 	dbName: string;
-	dbConnectionString: string | null;
 	status: string;
 	config: SchoolConfig;
 	createdAt: string;

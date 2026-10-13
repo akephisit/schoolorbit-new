@@ -127,7 +127,7 @@ pub async fn apply(
     let mut round_map = HashMap::new();
     let mut target_ids = Vec::new();
     for round in rounds {
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         sqlx::query(
             r#"INSERT INTO academic_exam_rounds(
                    id,academic_year_id,academic_term_id,name,description,exam_kind,status,
@@ -156,7 +156,7 @@ pub async fn apply(
         if target_date < context.target_start_date || target_date > context.target_end_date {
             return Err(AppError::Conflict("วันสอบเป้าหมายอยู่นอกภาคเรียน".into()));
         }
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         let target_round = round_map[&day.exam_round_id];
         sqlx::query(
             r#"INSERT INTO academic_exam_days(
@@ -254,7 +254,7 @@ pub async fn apply(
                WHERE plan.learning_offering_id=$1 AND plan.academic_term_id=$3 AND homeroom.id=$4"#,
         ).bind(offering).bind(&phase_code).bind(context.target_term_id).bind(homeroom)
         .fetch_optional(&mut **tx).await?.ok_or_else(|| AppError::Conflict("โครงสร้างคะแนนเป้าหมายของรายการสอบยังไม่พร้อม".into()))?;
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         sqlx::query(r#"INSERT INTO academic_exam_schedule_items(
                           id,exam_round_id,academic_term_id,academic_year_id,assessment_phase_id,
                           course_assessment_plan_id,learning_offering_id,learning_group_id,homeroom_id,

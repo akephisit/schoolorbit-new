@@ -1242,7 +1242,7 @@ fn school_tenancy_is_the_single_tenant_runtime_owner() {
     assert!(request_adapter.contains("HeaderMap"));
     assert!(request_adapter.contains("TenantOriginPolicy"));
     assert!(!request_adapter.contains("struct TenantContext"));
-    assert!(pool_manager.contains("statement_cache_capacity(0)"));
+    assert!(pool_manager.contains("statement_cache_capacity(100)"));
     assert!(pool_manager.contains("max_connections_per_school: 5"));
     assert!(pool_manager.contains("pool_ttl: Duration::from_secs(1800)"));
 }

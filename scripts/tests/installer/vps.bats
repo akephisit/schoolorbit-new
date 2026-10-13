@@ -15,9 +15,11 @@ setup() {
     SO_CONFIG[bootstrap_user]=root
     SO_CONFIG[server_user]=schoolorbit
     SO_CONFIG[ssh_port]=22
-    SO_CONFIG[runtime:NEON_PROJECT_ID]=silent-moon-24680
-    SO_CONFIG[runtime:NEON_BRANCH_ID]=br-primary-abc123
-    SO_CONFIG[runtime:NEON_HOST]=ep-silent-moon-24680.ap-southeast-1.aws.neon.tech
+    SO_CONFIG[runtime:PG_TENANT_DATABASE_URL]='postgresql://db.invalid/postgres?sslmode=verify-full'
+    SO_CONFIG[runtime:POSTGRES_CA_FILE]=/opt/stack/postgresql/ca.crt
+    SO_SECRETS[PG_PROVISIONING_DATABASE_URL]='postgresql://schoolorbit_provisioner:Fixture-Only-Password@db.invalid/postgres?sslmode=verify-full'
+    SO_SECRETS[ADMIN_MIGRATION_DATABASE_URL]='postgresql://schoolorbit_admin_owner:Fixture-Only-Password@db.invalid/schoolorbit_admin?sslmode=verify-full'
+    SO_SECRETS[DATABASE_CREDENTIALS_KEY]=12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab
     SO_CONFIG[runtime:R2_ACCOUNT_ID]=9a8b7c6d5e4f32100123456789abcdef
     SO_CONFIG[runtime:R2_PUBLIC_BUCKET_NAME]=schoolorbit-public-assets
     SO_CONFIG[runtime:R2_PRIVATE_BUCKET_NAME]=schoolorbit-private-files
@@ -38,8 +40,6 @@ setup() {
     SO_SECRETS[ENCRYPTION_KEY]=encryption-runtime-secret-value-32chars
     SO_SECRETS[BLIND_INDEX_KEY]=blind-index-runtime-secret-value-32chars
     SO_SECRETS[DEPLOY_KEY]=deploy-runtime-secret-value
-    SO_SECRETS[NEON_API_KEY]=neon-api-runtime-value
-    SO_SECRETS[NEON_DB_PASSWORD]=neon-db-runtime-value
     SO_SECRETS[R2_ACCESS_KEY_ID]=r2-access-runtime-value
     SO_SECRETS[R2_SECRET_ACCESS_KEY]=r2-secret-runtime-value
     SO_SECRETS[VAPID_PRIVATE_KEY]=vapid-private-runtime-value
@@ -168,7 +168,6 @@ teardown() {
     grep -Fxq "BACKEND_ADMIN_URL='http://schoolorbit-backend-admin:8080'" "$TEST_ROOT/runtime.env"
     grep -Fxq "BACKEND_SCHOOL_URL='http://schoolorbit-backend-school:8081'" "$TEST_ROOT/runtime.env"
     grep -Fxq "API_URL='https://school-api.schoolorbit.app'" "$TEST_ROOT/runtime.env"
-    grep -Fxq "NEON_BRANCH_ID='br-primary-abc123'" "$TEST_ROOT/runtime.env"
     grep -Fxq "SESSION_HMAC_KEY='session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz'" "$TEST_ROOT/runtime.env"
     grep -Fxq "SCHOOL_ROLLBACK_JWT_SECRET='school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M'" "$TEST_ROOT/runtime.env"
     grep -Fxq "BASE_DOMAIN='schoolorbit.app'" "$TEST_ROOT/runtime.env"

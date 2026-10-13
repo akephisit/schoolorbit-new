@@ -212,7 +212,7 @@ pub async fn create_ordinary_block(
     }
     let assignments = source_assignments(group, &instructor_ids)?;
 
-    let block_id = Uuid::new_v4();
+    let block_id = Uuid::now_v7();
     let block_kind =
         if offering.kind == school_academic_delivery::models::LearningOfferingKind::Course {
             "COURSE"
@@ -236,7 +236,7 @@ pub async fn create_ordinary_block(
         actor_id,
     )
     .await?;
-    let block_group_id = Uuid::new_v4();
+    let block_group_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO academic_timetable_block_groups (
                id, block_id, learning_group_id, learning_offering_id,
@@ -328,7 +328,7 @@ pub async fn create_synchronized_block(
     }
     ensure_homerooms(&mut transaction, version.academic_year_id, &homeroom_ids).await?;
     ensure_teachers(&mut transaction, &teacher_ids).await?;
-    let block_id = Uuid::new_v4();
+    let block_id = Uuid::now_v7();
     insert_block(
         &mut transaction,
         block_id,
@@ -435,7 +435,7 @@ pub async fn create_structural_blocks(
     }
     ensure_homerooms(&mut transaction, version.academic_year_id, &homeroom_ids).await?;
     ensure_teachers(&mut transaction, &teacher_ids).await?;
-    let series_id = Uuid::new_v4();
+    let series_id = Uuid::now_v7();
     let mut block_ids = Vec::with_capacity(request.slots.len());
     for slot in request.slots {
         let day = normalize_day(&slot.day_of_week)?;
@@ -445,7 +445,7 @@ pub async fn create_structural_blocks(
             slot.bell_schedule_period_id,
         )
         .await?;
-        let block_id = Uuid::new_v4();
+        let block_id = Uuid::now_v7();
         insert_block(
             &mut transaction,
             block_id,

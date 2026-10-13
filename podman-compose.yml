@@ -1,5 +1,5 @@
 # Production compose สำหรับ Podman
-# ใช้ pre-built images จาก ghcr.io — ไม่มี local postgres (ใช้ Neon)
+# ใช้ pre-built images จาก ghcr.io — ฐานข้อมูลอยู่บน PostgreSQL VPS แยก
 # รัน: podman-compose up -d
 # env vars อ่านจาก .env ไฟล์ในโฟลเดอร์นี้
 
@@ -11,7 +11,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      # Admin database (Neon)
+      # Admin runtime database (PostgreSQL VPS)
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
@@ -19,12 +19,10 @@ services:
       # Backend-School communication
       BACKEND_SCHOOL_URL: ${BACKEND_SCHOOL_URL:-http://schoolorbit-backend-school:8081}
 
-      # Neon (tenant database provisioning)
-      NEON_API_KEY: ${NEON_API_KEY}
-      NEON_PROJECT_ID: ${NEON_PROJECT_ID}
-      NEON_BRANCH_ID: ${NEON_BRANCH_ID}
-      NEON_HOST: ${NEON_HOST}
-      NEON_DB_PASSWORD: ${NEON_DB_PASSWORD}
+      # Provisioning and authenticated tenant credential storage
+      PG_PROVISIONING_DATABASE_URL: ${PG_PROVISIONING_DATABASE_URL}
+      PG_TENANT_DATABASE_URL: ${PG_TENANT_DATABASE_URL}
+      DATABASE_CREDENTIALS_KEY: ${DATABASE_CREDENTIALS_KEY}
 
       # Cloudflare (Workers deployment & DNS)
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
@@ -38,6 +36,8 @@ services:
       GITHUB_REPO: ${GITHUB_REPO:-akephisit/schoolorbit-new}
 
       RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ${POSTGRES_CA_FILE:-/opt/stack/postgresql/ca.crt}:/run/secrets/postgresql-ca.crt:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -111,6 +111,8 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@schoolorbit.app}
 
       RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ${POSTGRES_CA_FILE:-/opt/stack/postgresql/ca.crt}:/run/secrets/postgresql-ca.crt:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 30s

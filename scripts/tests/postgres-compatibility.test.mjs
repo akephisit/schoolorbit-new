@@ -6,10 +6,10 @@ import path from 'node:path';
 import test from 'node:test';
 const repo = path.resolve(import.meta.dirname, '../..');
 async function compatibilityScript() {
-    return readFile(path.join(repo, 'scripts/test_neon_compatibility.sh'), 'utf8');
+    return readFile(path.join(repo, 'scripts/test_postgres_compatibility.sh'), 'utf8');
 }
 async function runStub(mode, scope = 'full') {
-    const root = await mkdtemp(path.join(tmpdir(), 'schoolorbit-neon-selection-'));
+    const root = await mkdtemp(path.join(tmpdir(), 'schoolorbit-postgres-selection-'));
     try {
         const executable = path.join(root, 'cargo');
         await writeFile(executable, `#!/usr/bin/env node\nimport { appendFileSync } from 'node:fs';\nappendFileSync(process.env.SYNTHETIC_CARGO_ARGUMENTS,JSON.stringify(process.argv.slice(2))+'\\n');\nconst mode=process.env.SYNTHETIC_CARGO_MODE;\nconsole.log(mode==='zero'?'test result: ok. 0 passed; 0 failed; 0 ignored;':'test result: ok. 2 passed; 0 failed; 0 ignored;');\nprocess.exit(mode==='failure'?47:0);\n`);
@@ -20,7 +20,7 @@ async function runStub(mode, scope = 'full') {
             env: { ...process.env, PATH: root + path.delimiter + process.env.PATH,
                 TEST_DATABASE_URL: 'postgres://synthetic:synthetic@synthetic.invalid/synthetic',
                 SYNTHETIC_CARGO_ARGUMENTS: argumentsFile, SYNTHETIC_CARGO_MODE: mode,
-                NEON_COMPATIBILITY_SCOPE: scope }
+                POSTGRES_COMPATIBILITY_SCOPE: scope }
         });
         assert.ifError(result.error);
         const calls = (await readFile(argumentsFile, 'utf8')).trim().split('\n').map(line => JSON.parse(line));

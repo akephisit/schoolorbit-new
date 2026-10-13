@@ -2302,6 +2302,13 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     .await
     .unwrap_err();
     assert!(stale.public_message().contains("ถูกแก้ไขแล้ว"));
+    let audit: serde_json::Value = sqlx::query_scalar("SELECT payload FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_year.updated'")
+        .bind(FUTURE_YEAR_ID).fetch_one(&pool).await.unwrap();
+    assert_eq!(audit["before"]["name"], future.name);
+    assert_eq!(audit["after"]["name"], updated.name);
+    assert_eq!(audit["before"]["rowVersion"], future.row_version);
+    assert_eq!(audit["after"]["rowVersion"], updated.row_version);
+    assert_eq!(updated.id, FUTURE_YEAR_ID);
 
     let bell_schedule_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM bell_schedules WHERE academic_year_id = $1 AND is_default",
@@ -2379,6 +2386,12 @@ async fn planning_year_and_term_updates_reject_stale_versions_and_unused_term_de
     .await
     .unwrap_err();
     assert!(stale_term.public_message().contains("ถูกแก้ไขแล้ว"));
+    assert_eq!(created.id.get_version_num(), 7);
+    let audits: Vec<serde_json::Value> = sqlx::query_scalar("SELECT payload FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_term.updated'")
+        .bind(created.id).fetch_all(&pool).await.unwrap();
+    assert_eq!(audits.len(), 1, "a stale edit must not append an audit");
+    assert_eq!(audits[0]["before"]["name"], created.name);
+    assert_eq!(audits[0]["after"]["name"], updated_term.name);
 
     years_terms::delete_term(&pool, actor, created.id)
         .await

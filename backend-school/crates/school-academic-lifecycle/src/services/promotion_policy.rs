@@ -74,7 +74,7 @@ pub async fn create_promotion_policy(
     let mut tx = pool.begin().await?;
     let revision = validate_promotion_rules(&mut tx, &input.rules).await?;
     let stored: StoredPolicy = sqlx::query_as("INSERT INTO academic_promotion_policy_versions (id,name,rules,progression_row_version,reviewed_by) VALUES ($1,$2,$3,$4,$5) RETURNING id,name,rules,progression_row_version,reviewed_by,reviewed_at")
-        .bind(Uuid::new_v4()).bind(input.name.trim()).bind(Json(&input.rules))
+        .bind(Uuid::now_v7()).bind(input.name.trim()).bind(Json(&input.rules))
         .bind(revision).bind(actor.user_id).fetch_one(&mut *tx).await?;
     sqlx::query("INSERT INTO academic_audit_events (event_code,entity_type,entity_id,actor_user_id,payload) VALUES ('promotion_policy.approved','promotion_policy',$1,$2,$3)")
         .bind(stored.id).bind(actor.user_id)

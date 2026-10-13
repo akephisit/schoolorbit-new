@@ -289,7 +289,7 @@ pub async fn replace_program_structure(
         );
         builder.push_values(course_requirements, |mut values, requirement| {
             values
-                .push_bind(Uuid::new_v4())
+                .push_bind(Uuid::now_v7())
                 .push_bind(program.curriculum_level_id)
                 .push_bind(program_id)
                 .push_bind(requirement.catalog_version_id)
@@ -314,7 +314,7 @@ pub async fn replace_program_structure(
         );
         builder.push_values(activity_requirements, |mut values, requirement| {
             values
-                .push_bind(Uuid::new_v4())
+                .push_bind(Uuid::now_v7())
                 .push_bind(program.curriculum_level_id)
                 .push_bind(program_id)
                 .push_bind(requirement.catalog_version_id)

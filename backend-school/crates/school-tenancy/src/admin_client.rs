@@ -264,6 +264,28 @@ impl AdminClient {
         })
     }
 
+    /// Privileged connection is fetched only by the deployment migration path.
+    pub async fn get_migration_database_url(&self, subdomain: &str) -> Result<String, String> {
+        #[derive(Deserialize)]
+        struct Connection {
+            db_migration_connection_string: String,
+        }
+        let response = self
+            .get_with_retry(
+                &format!("/internal/schools/{subdomain}/migration-connection"),
+                "migration connection",
+            )
+            .await?;
+        if !response.status().is_success() {
+            return Err("Migration connection unavailable".into());
+        }
+        let connection: Connection = response
+            .json()
+            .await
+            .map_err(|_| "Invalid migration connection response".to_string())?;
+        Ok(connection.db_migration_connection_string)
+    }
+
     /// Fetch the school name from backend-admin for a given subdomain.
     pub async fn get_school_name(&self, subdomain: &str) -> Result<String, String> {
         let resp = self

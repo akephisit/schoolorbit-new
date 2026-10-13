@@ -4,7 +4,7 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 pub struct ProvisionRequest {
     pub school_id: String,
-    pub db_connection_string: String,
+    pub db_migration_connection_string: String,
     pub subdomain: String,
     pub admin_username: Option<String>,
     pub admin_password: String,

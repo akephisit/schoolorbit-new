@@ -429,7 +429,7 @@ pub async fn issue_request(
             AppError::InternalServerError("certificate_recipient_type_invalid".to_string())
         })?;
         let proof = generate_certificate_proof()?;
-        let certificate_id = Uuid::new_v4();
+        let certificate_id = Uuid::now_v7();
 
         sqlx::query(
             "INSERT INTO certificates (

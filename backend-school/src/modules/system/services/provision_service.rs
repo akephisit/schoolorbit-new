@@ -1,6 +1,7 @@
 use crate::modules::system::models::ProvisionRequest;
 use school_errors::AppError;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::ConnectOptions;
 
 pub struct ProvisionOutcome {
     pub school_id: String,
@@ -12,17 +13,24 @@ fn teacher_username_from_sequence(sequence: i64) -> String {
 }
 
 pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutcome, AppError> {
+    school_auth::session_policy::validate_new_password(&payload.admin_password)
+        .map_err(|_| AppError::ValidationError("รหัสผ่านผู้ดูแลไม่ผ่านข้อกำหนด".into()))?;
     tracing::info!(
         school_id = %payload.school_id,
         subdomain = %payload.subdomain,
-        admin_username = ?payload.admin_username,
+        username_hint_present = payload.admin_username.as_deref().is_some_and(|value| !value.is_empty()),
         "Provisioning tenant database"
     );
 
+    let options = payload
+        .db_migration_connection_string
+        .parse::<sqlx::postgres::PgConnectOptions>()
+        .map_err(|_| AppError::InternalServerError("Invalid migration connection".into()))?
+        .disable_statement_logging();
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .acquire_timeout(std::time::Duration::from_secs(30))
-        .connect(&payload.db_connection_string)
+        .connect_with(options)
         .await
         .map_err(|error| {
             tracing::error!("Failed to connect to tenant database: {}", error);

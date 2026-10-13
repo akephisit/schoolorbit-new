@@ -66,7 +66,7 @@ pub async fn replace(
             ) VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
-        .bind(Uuid::new_v4())
+        .bind(Uuid::now_v7())
         .bind(progression.from_grade_level_id)
         .bind(progression.to_grade_level_id)
         .bind(progression.transition_kind)
