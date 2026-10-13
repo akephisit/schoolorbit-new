@@ -283,7 +283,7 @@ test('canonical docs own the school session and cutover contract', async () => {
 	assert.doesNotMatch(rules, /current_user_tenant_context_from_claims/);
 	assert.match(testing, /X-CSRF-Token/);
 	assert.match(testing, /session-security\.spec\.ts/);
-	assert.match(operations, /SCHOOL_ROLLBACK_JWT_SECRET/);
+	assert.doesNotMatch(operations, /SCHOOL_ROLLBACK_JWT_SECRET/);
 	assert.match(operations, /thirty-day|30-day/i);
 	assert.match(podmanSetup, /SESSION_HMAC_KEY/);
 	assert.match(backendReadme, /SESSION_HMAC_KEY/);

@@ -31,9 +31,9 @@ pub async fn resolve_tenant_context_by_subdomain(
             AppError::NotFound("ไม่พบโรงเรียน".to_string())
         })?;
 
-    let (pool, permissions_changed) = runtime
+    let pool = runtime
         .pool_manager
-        .get_pool_with_permission_change(&school.database_url, subdomain)
+        .get_pool(&school.database_url, subdomain)
         .await
         .map_err(|error| {
             tracing::error!(
@@ -43,11 +43,6 @@ pub async fn resolve_tenant_context_by_subdomain(
             );
             AppError::InternalServerError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้".to_string())
         })?;
-
-    if permissions_changed {
-        runtime.invalidate_permission_tenant(subdomain);
-        runtime.notify_all_permissions_changed(subdomain);
-    }
 
     Ok(TenantContext {
         tenant_id: school.tenant_id,
@@ -98,16 +93,11 @@ pub async fn resolve_auth_tenant_context(
                 AppError::ServiceUnavailable("tenant_directory".to_string())
             }
         })?;
-    let (pool, permissions_changed) = runtime
+    let pool = runtime
         .pool_manager
-        .get_pool_with_permission_change(&school.database_url, &subdomain)
+        .get_pool(&school.database_url, &subdomain)
         .await
         .map_err(|_| AppError::ServiceUnavailable("tenant_pool".to_string()))?;
-
-    if permissions_changed {
-        runtime.invalidate_permission_tenant(&subdomain);
-        runtime.notify_all_permissions_changed(&subdomain);
-    }
 
     Ok(TenantContext {
         tenant_id: school.tenant_id,

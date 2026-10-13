@@ -550,6 +550,13 @@ The installer Bats directory includes focused Cockpit coverage:
 
 Do not replace these focused files with source-only assertions. The deployment static guard supplements them by preventing Compose, firewall, installer-entry-point, and canonical-document drift.
 
+The completed database transfer is guarded by `scripts/tests/postgres-runtime.test.mjs`;
+no Neon client, partial Admin migration or provider-transfer operation may return.
+The Admin suite's `database_cutover_cleanup` fixture verifies that migration 009
+removes only transfer checkpoint fields while preserving all other school fields,
+encrypted credential bytes and prior SQLx checksums, including safe repeat execution.
+School's runtime pool regression continues to reject request-time permission DDL.
+
 ## Permission Contract
 
 `contracts/permissions.json` is the handwritten permission source. The registries and lock are generated files; do not edit generated files directly.

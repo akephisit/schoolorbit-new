@@ -89,7 +89,7 @@ This file is the single active backlog for verified, unfinished technical work t
   - Split provider clients, orchestration, persistence, and progress delivery out of the current school service.
   - Persist idempotency keys, exact provider resource IDs, exact GitHub run IDs, leases, attempts, next retry, terminal state, and compensation state.
   - Mark a school active only after deployment readiness verification, not after workflow dispatch.
-  - Preserve tombstones and cleanup metadata until Cloudflare, Neon, and deployment resources are reconciled.
+  - Preserve tombstones and cleanup metadata until Cloudflare, PostgreSQL databases/roles, and deployment resources are reconciled.
 
 - [ ] **DB-001: Repair immediate schema invariants through forward migrations.**
   - Resolve contradictory `users.status` checks so every frontend-visible state has one canonical database contract.
@@ -194,7 +194,5 @@ Complete discovery with representative government, private, and international sc
 - [x] Frontend-school lint, Svelte check, static tests, permission contract tests, API contract tests, and production build pass.
   - Verified with lint, Svelte check at 0 errors and 0 warnings, 7 menu tests, 386 static tests, 19 permission contract tests, 4 API contract tests, and a production Cloudflare build.
 - [ ] Frontend-admin lint, Svelte check, tests, and production build pass.
-- [x] Fresh PostgreSQL migration tests pass locally, and the explicit disposable Neon compatibility gate passes for every active migration without editing applied migration files.
-  - Verified with 1 auth schema test and 12 file schema tests against fresh disposable local PostgreSQL, then with the same 13 tests in [Neon compatibility run 31497549528](https://github.com/akephisit/schoolorbit-new/actions/runs/31497549528); exact child-branch cleanup also passed.
 - [ ] JavaScript and Rust dependency advisory checks run in CI with an explicit blocking policy.
 - [ ] Authenticated smoke and Playwright flows run against a disposable or staging environment using secrets supplied outside the repository.

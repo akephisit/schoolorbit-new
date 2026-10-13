@@ -374,6 +374,9 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   and is not business retention, RAM cleanup or a guarantee that files shrink.
 - Monitor aggregate query/I/O statistics, route-template timings and pool wait, never credentials,
   SQL parameters or PII. Disable utility/parameter statement logging and driver SQL text.
+- The completed Neon transfer has no executable cutover CLI, partial Admin migrator,
+  release operation or runtime fallback. Recover on PostgreSQL through pgBackRest;
+  a future provider move requires a new reviewed plan. Preserve applied migrations.
 - Backup uses encrypted off-host pgBackRest chains with archived WAL. A successful restore
   of actual migrated data is a cutover gate. Keep source/config/key recovery material private.
 - Provider cutover preserves `_sqlx_migrations` checksums and all data under maintenance.
@@ -644,7 +647,8 @@ These six reviewed references guide the matching page responsibility. Inspect th
 - `/health` is dependency-free process liveness and owns recurring container and external uptime-monitor healthchecks. `/ready` verifies dependencies and is reserved for deployment, smoke, and intentional readiness checks so routine probes remain dependency-free.
 - Keep local Docker and production Podman service networking, reverse-proxy routes, CORS origins, cookies, and public backend URLs aligned.
 - Required backend-school runtime values include `SESSION_HMAC_KEY`, `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`, `BASE_DOMAIN`, and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` is an explicit local-development allowlist.
-- `SCHOOL_ROLLBACK_JWT_SECRET` exists only for a time-bounded backend-school rollback. The normal school runtime must not use it; `JWT_SECRET` is owned by backend-admin.
+- `JWT_SECRET` is owned only by backend-admin. School uses opaque sessions under
+  `SESSION_HMAC_KEY`; do not restore school JWT keys or pre-session rollback images.
 - Internal calls send `X-Internal-Caller`; caller-specific secrets may use `INTERNAL_API_SECRET_<CALLER>` with controlled fallback during rotation.
 - Treat permission/menu sync, tenant migrations, encryption keys, file storage, and data cutover as deployment concerns. Follow `docs/OPERATIONS.md`.
 - Legacy runtime compatibility is not a default requirement. Any temporary bridge must be limited to the approved rollout or rollback window and removed at its predefined cleanup gate; it must not become a permanent alias, fallback, dual path, or parallel business model.

@@ -184,7 +184,7 @@ chmod 600 .env
 
 แก้ `/opt/stack/.env` และแทนค่าตัวอย่างทั้งหมดด้วยค่าจาก secret manager ของ production กลุ่มสำคัญคือ:
 
-- security: backend-admin `JWT_SECRET`, backend-school `SESSION_HMAC_KEY`, rollback-only `SCHOOL_ROLLBACK_JWT_SECRET`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`;
+- security: backend-admin `JWT_SECRET`, backend-school `SESSION_HMAC_KEY`, `INTERNAL_API_SECRET`, `DEPLOY_KEY`;
 - school session boundary: `BASE_DOMAIN`, `TRUSTED_PROXY_CIDRS` และ `SCHOOL_ALLOWED_DEV_ORIGINS`;
 - encryption: `ENCRYPTION_KEY`, `BLIND_INDEX_KEY`;
 - internal services: `BACKEND_ADMIN_URL`, `BACKEND_SCHOOL_URL` และ timeout/retry variables;
@@ -198,7 +198,7 @@ chmod 600 .env
 - `INTERNAL_API_SECRET` ต้องตรงกันระหว่าง backend ทั้งสอง;
 - production database URLs ต้องใช้ `sslmode=verify-full` และ mount CA แบบ read-only ให้ทั้งสอง backend;
 - `SESSION_HMAC_KEY` ต้องสุ่มเฉพาะระบบนี้อย่างน้อย 32 ตัวอักษรและคงเดิมระหว่างทุก backend-school replica; การเปลี่ยนค่าจะทำให้ school session ปัจจุบันทั้งหมดใช้ต่อไม่ได้;
-- `SESSION_HMAC_KEY`, `SCHOOL_ROLLBACK_JWT_SECRET` และ backend-admin `JWT_SECRET` ต้องเป็นคนละค่า โดย Compose จะ map rollback key เข้า `JWT_SECRET` ของ process backend-school เพื่อรองรับการย้อนกลับเท่านั้น;
+- `SESSION_HMAC_KEY` และ backend-admin `JWT_SECRET` ต้องเป็นคนละค่า; School ใช้ opaque sessions และไม่มี JWT rollback mapping;
 - `BASE_DOMAIN` ต้องตรงกับ tenant domain จริง, `TRUSTED_PROXY_CIDRS` ต้องอนุญาตเฉพาะ proxy network ที่เชื่อถือได้ และ production ต้องตั้ง `SCHOOL_ALLOWED_DEV_ORIGINS=` เป็นค่าว่าง; local Compose จึงค่อย allowlist `http://localhost:5173,http://127.0.0.1:5173`;
 - `DEPLOY_KEY` ต้องตรงกับ server-only `DEPLOY_KEY` ที่ GitHub tenant deployment
   ใช้ในขั้น `Synchronize menu routes`; ห้ามส่ง key นี้เข้า Vite build หรือ Worker variables;

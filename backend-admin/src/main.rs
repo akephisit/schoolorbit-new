@@ -16,47 +16,13 @@ async fn main() {
 
     if let Some(mode) = env::args().nth(1) {
         match mode.as_str() {
-            "--provision-database" => {
-                use std::io::Read;
-                #[derive(serde::Deserialize)]
-                struct Input {
-                    tenant_id: uuid::Uuid,
-                    db_name: String,
-                    migration_password: String,
-                    runtime_password: String,
-                }
-                let mut bytes = Vec::new();
-                std::io::stdin()
-                    .take(16_385)
-                    .read_to_end(&mut bytes)
-                    .expect("Private input unavailable");
-                assert!(
-                    bytes.len() <= 16_384,
-                    "Private operation input is too large"
-                );
-                let input: Input = serde_json::from_slice(&bytes)
-                    .unwrap_or_else(|_| panic!("Invalid private operation input"));
-                let client = backend_admin::clients::postgres_client::PostgresClient::new()
-                    .expect("Invalid PostgreSQL provisioning configuration");
-                client
-                    .create_database(
-                        input.tenant_id,
-                        &input.db_name,
-                        &input.migration_password,
-                        &input.runtime_password,
-                    )
-                    .await
-                    .expect("Database provisioning failed; reconcile ownership before retry");
-                println!("{{\"provisioned\":true}}");
-                return;
-            }
-            "--migrate-admin" | "--migrate-admin-expand" => {
+            "--migrate-admin" => {
                 let database_url = env::var("ADMIN_MIGRATION_DATABASE_URL")
                     .expect("ADMIN_MIGRATION_DATABASE_URL is required for migration jobs");
                 let pool = init_admin_pool(&database_url)
                     .await
                     .expect("Admin migration connection failed");
-                backend_admin::db::migrate_admin(&pool, mode == "--migrate-admin-expand")
+                backend_admin::db::migrate_admin(&pool)
                     .await
                     .expect("Admin migration/reconciliation gate failed");
                 pool.close().await;

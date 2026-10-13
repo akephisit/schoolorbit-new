@@ -115,24 +115,8 @@ impl PoolManager {
     /// Get or create a connection pool for a specific school
     /// Runtime requests never run migrations or permission synchronization.
     pub async fn get_pool(&self, database_url: &str, subdomain: &str) -> Result<PgPool, String> {
-        Ok(self
-            .get_pool_with_permission_change(database_url, subdomain)
-            .await?
-            .0)
-    }
-
-    /// Compatibility for middleware event signaling: runtime pools never migrate.
-    /// Permission changes are reconciled and broadcast by the deployment owner.
-    pub async fn get_pool_with_permission_change(
-        &self,
-        database_url: &str,
-        subdomain: &str,
-    ) -> Result<(PgPool, bool), String> {
-        let pool = self
-            .get_pool_without_migrations(database_url, subdomain)
-            .await?;
-
-        Ok((pool, false))
+        self.get_pool_without_migrations(database_url, subdomain)
+            .await
     }
 
     /// Get or create a tenant pool without running migrations or permission synchronization.
@@ -223,13 +207,10 @@ mod tests {
         let manager = super::PoolManager::new();
         manager.insert_test_pool("test-only-runtime", pool).await;
         for _ in 0..4 {
-            assert!(
-                !manager
-                    .get_pool_with_permission_change("test-only-runtime", "tenant")
-                    .await
-                    .unwrap()
-                    .1
-            );
+            manager
+                .get_pool("test-only-runtime", "tenant")
+                .await
+                .unwrap();
         }
     }
 

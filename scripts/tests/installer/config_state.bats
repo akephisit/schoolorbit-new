@@ -99,7 +99,6 @@ teardown() {
 
     [ "${SO_SECRETS[INTERNAL_API_SECRET]}" = 'internal-api-7vK9nM3qR8wX2zLp' ]
     [ "${SO_SECRETS[SESSION_HMAC_KEY]}" = 'session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz' ]
-    [ "${SO_SECRETS[SCHOOL_ROLLBACK_JWT_SECRET]}" = 'school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M' ]
     [ "${SO_SECRETS[SMOKE_PASSWORD]}" = 'Smoke-Pass-7vK9nM3q' ]
     [ "${SO_CONFIG[runtime:POSTGRES_CA_FILE]}" = '/opt/stack/postgresql/ca.crt' ]
     [ "${SO_CONFIG[runtime:PG_TENANT_DATABASE_URL]}" = 'postgresql://db.invalid/postgres?sslmode=verify-full' ]
@@ -119,7 +118,7 @@ teardown() {
     local short_value=1234567890123456789012345678901
     local minimum_value=12345678901234567890123456789012
 
-    for name in SESSION_HMAC_KEY SCHOOL_ROLLBACK_JWT_SECRET; do
+    for name in SESSION_HMAC_KEY; do
         run _validate_secret "$name" "$short_value"
         [ "$status" -eq 64 ]
         [[ "$output" != *"$short_value"* ]]
@@ -128,14 +127,12 @@ teardown() {
     done
 }
 
-@test "school session secrets are distinct from each other and admin JWT" {
+@test "school session key differs from admin JWT" {
     local input="$TEST_ROOT/duplicate-session-secret.json"
     local shared_value=12345678901234567890123456789012
     local filter
     local -a filters=(
         '.JWT_SECRET = $value | .SESSION_HMAC_KEY = $value'
-        '.JWT_SECRET = $value | .SCHOOL_ROLLBACK_JWT_SECRET = $value'
-        '.SESSION_HMAC_KEY = $value | .SCHOOL_ROLLBACK_JWT_SECRET = $value'
     )
 
     for filter in "${filters[@]}"; do

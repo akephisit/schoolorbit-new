@@ -8,17 +8,13 @@ host. Production allows database ingress only from the backend address; operator
 use SSH. All backend connections use SCRAM and `sslmode=verify-full` with the
 private deployment CA. The CA signing key stays on the operator laptop.
 
-Preserve the existing immutable migration timeline. The currently inspected source
-databases use UTF8 and the built-in `C.UTF-8` locale provider, version 1. Create
-targets from `template0` with that same built-in provider/locale/version; checking only the
-locale name is insufficient. The libc `datcollate` label is not the effective collation
-when the provider is built-in. Rehearsal also compares synthetic Thai/Latin ordering
-and case conversion. Reconciliation normalizes only PostgreSQL's equivalent varchar
-literal-array-to-text coercion and logical column positions after dropped attributes;
-it also flattens only associative AND/OR groups while preserving operand order and
-precedence. Other constraint atoms remain exact. Restore preserves the source names
-of NOT NULL constraints by matching their columns, including after historical renames. Existing identities, password hashes, national-ID ciphertext,
-blind indexes, R2 references and all encryption/authentication keys remain stable.
+Preserve the immutable migration timeline, existing identities, password hashes,
+national-ID ciphertext, blind indexes, R2 references and encryption/authentication keys.
+The Neon transfer completed on 2026-10-13. Admin's forward migration 009 removes
+only the transfer reconciliation columns after migration 008 retired source credentials.
+The one-time transfer CLI, partial migrator and Operations cutover job are retired.
+After migration 009, Admin images that expect schema 008 are prohibited; recover
+with a schema-009-capable release or roll forward. Never bypass SQLx history checks.
 
 ### Identities, provisioning and owner jobs
 
@@ -44,68 +40,27 @@ alone runs `school_migrations::run_tenant_migrations` and reconciles runtime gra
 Owner pools close before runtime/scheduler use. Normal requests fail closed when
 the tenant schema does not match the release.
 
-### Transfer order and reconciliation gates
+### Recovery after the completed transfer
 
-1. Build/test the candidate and rehearse protected copies. Do not run application
-   schedulers, notifications or R2 deletion jobs against a rehearsal copy.
-2. Pause `RUNTIME_DEPLOY_ENABLED` and `FRONTEND_DEPLOY_ENABLED` during the coordinated
-   database move. Dispatch Operations `database-cutover` on current main with options
-   containing the verified database count (currently `{"databases":3}`). The operation
-   validates the latest-attempt Pipeline gate and holds `schoolorbit-production`
-   while the operator performs transfer/restore checks. It activates maintenance and stops every source
-   application writer/background job. Retain the accepted images, environment,
-   key material and source inventory privately. No source writes during final transfer.
-   Maintenance retries omit private upstream routes for absent or stopped backends;
-   the cutover job stops only containers that still exist. Retire stopped source
-   containers before release so their Neon environment cannot be started by accident;
-   retain their immutable images and private environment for the recovery window.
-   Keep the installer dotenv encoding (single-quoted values with escaped quote and
-   backslash characters). Native Podman migration jobs decode it through the shared
-   runtime helper and pass only the migration credential by environment name;
-   do not pass the Compose dotenv file directly to Podman's `--env-file`.
-3. Create empty target databases with assigned owners and matching encoding/locale.
-   `backend-admin --provision-database` accepts a bounded JSON stdin object with
-   `tenant_id`, `db_name`, `migration_password` and `runtime_password`; it invokes
-   the same checked provisioning owner, never a second implementation.
-4. Run `python3 -B scripts/postgres_data_transfer.py snapshot --config PRIVATE.json`,
-   then `restore`, then `reconcile` for Admin and every tenant. Config mode must be
-   0600 and contains `source_url`, `target_url`, `archive`; `client_image: true`
-   selects the pinned PostgreSQL 18.6 Docker client on laptops with older tools.
-   URLs never enter command arguments. Restore refuses a nonempty target and uses
-   no source ACL/owner. Private archives/manifests are outside the checkout.
-5. Reconcile table counts, ordered SHA-256 row hashes, columns/defaults, constraints,
-   locale provider/version and SQLx history before applying target migrations. Any
-   source drift or mismatch blocks switching. Evidence output contains aggregates.
-6. On the target Admin database, run `--migrate-admin-expand` through the same owner
-   job, adding credential/reconciliation storage through migration 007. For each
-   unchanged restored tenant, run transfer `bind-credentials` with the private
-   config additionally containing `tenant_id`, `runtime_password`, `migration_password`,
-   `credentials_key` and `admin_target_url`. It reruns preservation checks and encrypts
-   credentials; it does not print passwords, connection URLs or source rows.
-7. Run the full Admin migration job. Migration 008 refuses retiring legacy DSNs
-   unless every existing school has paired encrypted credentials and fresh passing
-   reconciliation with equal source/target digests. Then run canonical tenant
-   migrations and runtime grants, preserving every prior SQLx checksum.
-8. While the cutover operation still holds the production lock, install the public
-   CA file and atomically replace the protected backend environment with the target
-   runtime/migration/provisioning configuration, preserving identity/session/storage
-   keys. After the actual-data restore and runtime TLS checks pass, write the private
-   mode-0600 `database-cutover-ready.json` under the candidate release directory,
-   containing schemaVersion 1, exact sha, verified databases count and true
-   dataReconciled/runtimeTlsVerified/backupRestorePassed flags. This is operational
-   recovery evidence, not a local-test receipt. The cutover operation validates it
-   and rechecks current main before releasing the lock; maintenance remains active.
-   Dispatch the canonical Pipeline as a manual full release, then restore the prior
-   automatic-release variables after acceptance. Deploy the exact accepted images under maintenance,
-   validate every tenant and existing cutover audits, then authenticated proxy/browser
-   login, timetable, files and realtime flows. Create a backup of the migrated data
-   and prove PITR restoration in an isolated cluster before reopening.
+The application has accepted PostgreSQL writes. Recover or roll forward using the
+retained PostgreSQL release artifacts and encrypted pgBackRest backups with WAL;
+never reconnect an application to stale Neon data. Future database moves require a
+new reviewed rehearsal and cutover plan rather than reusing retired transfer tools.
 
-Before target application writes, recover with the retained source-compatible
-release/configuration. After target writes, recover/roll forward on PostgreSQL;
-never fall back automatically to stale source data. Remove Neon runtime secrets
-when switching, but retain protected source recovery access without application
-writes for at least seven days. Deleting the source project is a separate operation.
+Keep protected source recovery access without application writes until at least
+2026-10-20. Deleting the source project is a separate operation. Source access is
+outside runtime configuration and has no backend or frontend fallback consumer.
+Delete redundant transfer dumps, rehearsal copies, temporary SQL/configuration and
+logs after verifying the actual-data PITR result and preserving current recovery
+secrets. Retain the CA signing key, pgBackRest repository cipher password,
+`DATABASE_CREDENTIALS_KEY`, current business/session/storage keys and operator
+credentials in the private recovery store. Physical backups cannot replace these keys.
+
+Native Podman migration jobs decode installer dotenv encoding through
+`scripts/lib/pipeline-remote/runtime-env.sh`; pass only the owner credential by
+environment name. Never pass the Compose dotenv file directly to Podman's `--env-file`.
+Production changes still use the shared lock, exact Pipeline build gate, Maintenance
+Mode, canonical migrations and authenticated proxy/browser acceptance.
 
 ### Workload and retention
 
@@ -218,7 +173,7 @@ Core backend-school secrets:
 - `BLIND_INDEX_KEY`
 - `DEPLOY_KEY`
 
-Backend-school also requires `BASE_DOMAIN` and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` must be empty in production. `SCHOOL_ROLLBACK_JWT_SECRET` is a separate rollback-only secret and must differ from both `SESSION_HMAC_KEY` and the backend-admin `JWT_SECRET`. Backend-admin retains ownership of `JWT_SECRET`, its admin `DATABASE_URL`, and the provider credentials required by the operations it performs. Tenant provisioning uses `PG_PROVISIONING_DATABASE_URL` (CREATEDB/CREATEROLE,
+Backend-school also requires `BASE_DOMAIN` and `TRUSTED_PROXY_CIDRS`; `SCHOOL_ALLOWED_DEV_ORIGINS` must be empty in production. `SESSION_HMAC_KEY` must differ from the backend-admin `JWT_SECRET`. School has no JWT runtime key or pre-session rollback mapping. Backend-admin retains ownership of `JWT_SECRET`, its admin `DATABASE_URL`, and the provider credentials required by the operations it performs. Tenant provisioning uses `PG_PROVISIONING_DATABASE_URL` (CREATEDB/CREATEROLE,
 non-superuser), `PG_TENANT_DATABASE_URL` (TLS connection template without tenant
 passwords), and `DATABASE_CREDENTIALS_KEY` (32 random bytes as 64 hex characters).
 `ADMIN_MIGRATION_DATABASE_URL` belongs only to explicit migration jobs; the normal
@@ -573,15 +528,10 @@ the client refreshes authentication and reconciles authoritative state across th
 Web Push subscriptions remain independent of the SSE connection. The application change reduces
 session queries; actual database resource savings also depend on other traffic and background jobs.
 
-For the one-time JWT-to-session cutover:
-
-1. Enter backend-school maintenance and provision `SESSION_HMAC_KEY` plus a newly generated `SCHOOL_ROLLBACK_JWT_SECRET` without printing either.
-2. Run the centralized all-tenant migration gate through migration `034_auth_sessions.sql`; stop on any tenant failure.
-3. Deploy the session-enabled backend-school while maintenance remains active. Keep backend-admin and its `JWT_SECRET` unchanged.
-4. Deploy frontend-school. Validate Nginx CORS/preflight, then run login, `/api/auth/me`, a protected read, a CSRF mutation, session list/revoke, logout-all, SSE, WebSocket, the repository smoke script, and two-context Playwright.
-5. Leave maintenance only after every check passes. Every school user then performs one clean login.
-
-A rollback keeps migration `034_auth_sessions.sql` applied. Deploy the prior backend-school image with `SCHOOL_ROLLBACK_JWT_SECRET` mapped to that process's `JWT_SECRET`, roll back frontend-school, and require another clean login. Never restore the old shared school JWT key, never modify `_sqlx_migrations`, and never change backend-admin's `JWT_SECRET`. Remove the rollback mapping only after the rollback window closes.
+School authentication uses only opaque sessions. The completed JWT-to-session
+bridge and its key-provisioning script are retired. Keep the applied session migration
+and stable `SESSION_HMAC_KEY`; recovery uses session-capable releases. Do not deploy
+pre-session School images or change backend-admin's independent `JWT_SECRET`.
 
 ## Replacement VPS Migration and DNS Rollback
 

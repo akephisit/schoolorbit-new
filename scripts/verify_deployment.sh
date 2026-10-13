@@ -10,8 +10,8 @@ shfmt -d -i 4 -ci scripts/benchmark_backend_build.sh scripts/pipeline scripts/ve
 bats scripts/tests/installer
 node --test frontend-school/tests/static/deployment-installer.test.mjs scripts/tests/pipeline*.test.mjs \
     scripts/tests/backend-school-test-database.test.mjs \
-    scripts/tests/postgres-transfer.test.mjs \
     scripts/tests/runtime-env.test.mjs \
+    scripts/tests/postgres-runtime.test.mjs \
     scripts/tests/migration-completion-gate.test.mjs
 node --test --test-concurrency=1 scripts/tests/r2-cors.test.mjs scripts/tests/prune-ghcr-versions.test.mjs scripts/tests/worker-release-candidates.test.mjs
 # Compose remains the production rootless Podman owner; resolving it is engine-independent.

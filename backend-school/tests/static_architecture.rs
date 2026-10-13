@@ -6497,7 +6497,7 @@ fn school_session_runtime_is_deployment_owned() {
 
         assert!(admin.contains("${JWT_SECRET"));
         assert!(!admin.contains("${SCHOOL_ROLLBACK_JWT_SECRET"));
-        assert!(school.contains("${SCHOOL_ROLLBACK_JWT_SECRET"));
+        assert!(!school.contains("JWT_SECRET"));
         assert!(!school.contains("${JWT_SECRET"));
         assert!(school.contains("${SESSION_HMAC_KEY"));
         assert!(school.contains("${BASE_DOMAIN"));

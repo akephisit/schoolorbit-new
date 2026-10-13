@@ -148,7 +148,7 @@ Required groups include:
 - Web Push VAPID values;
 - `HOST`, `PORT`, and `RUST_LOG`.
 
-See `.env.example` for names. Keep the session HMAC, encryption, and blind-index keys stable after data exists. Root Compose owns `SCHOOL_ROLLBACK_JWT_SECRET` and maps it to the process-level `JWT_SECRET` for image compatibility; the current session runtime ignores that variable, and only a pre-session backend-school rollback image consumes it. Backend-admin keeps its separate `JWT_SECRET`. See [Operations](../docs/OPERATIONS.md) for the full cutover and rollback procedure.
+See `.env.example` for names. Keep the session HMAC, encryption, and blind-index keys stable after data exists. School uses only opaque sessions and has no JWT runtime key or pre-session rollback image mapping. Backend-admin keeps its separate `JWT_SECRET`. See [Operations](../docs/OPERATIONS.md) for the full cutover and rollback procedure.
 
 ## Health
 
