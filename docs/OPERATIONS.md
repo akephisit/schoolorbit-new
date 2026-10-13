@@ -86,14 +86,17 @@ the tenant schema does not match the release.
    unless every existing school has paired encrypted credentials and fresh passing
    reconciliation with equal source/target digests. Then run canonical tenant
    migrations and runtime grants, preserving every prior SQLx checksum.
-8. After the actual-data restore and runtime TLS checks pass, write the private
+8. While the cutover operation still holds the production lock, install the public
+   CA file and atomically replace the protected backend environment with the target
+   runtime/migration/provisioning configuration, preserving identity/session/storage
+   keys. After the actual-data restore and runtime TLS checks pass, write the private
    mode-0600 `database-cutover-ready.json` under the candidate release directory,
    containing schemaVersion 1, exact sha, verified databases count and true
    dataReconciled/runtimeTlsVerified/backupRestorePassed flags. This is operational
    recovery evidence, not a local-test receipt. The cutover operation validates it
    and rechecks current main before releasing the lock; maintenance remains active.
    Dispatch the canonical Pipeline as a manual full release, then restore the prior
-   automatic-release variables after acceptance. Switch backend configuration and deploy the exact accepted images under maintenance,
+   automatic-release variables after acceptance. Deploy the exact accepted images under maintenance,
    validate every tenant and existing cutover audits, then authenticated proxy/browser
    login, timetable, files and realtime flows. Create a backup of the migrated data
    and prove PITR restoration in an isolated cluster before reopening.
@@ -117,6 +120,11 @@ pgAdmin Desktop connects to `127.0.0.1:5432`, database `postgres`, with observer
 human administration credentials, verify-full TLS and the laptop CA file. Configure
 its SSH tunnel to the database host using the existing SSH key. Human superuser
 credentials must never become application credentials.
+Grant the observer `CONNECT` on application databases when inspecting their table
+statistics; keep application-table read/write grants absent. This allows per-tenant
+vacuum/I/O diagnostics without reading business records. Backend replacement uses
+the canonical maintenance owner before first start and after readiness, explicitly
+passing the validated domain and release SHA even after Compose exports are cleared.
 
 Use pgAdmin activity/dashboard and observer queries against `pg_stat_activity`,
 `pg_stat_database`, `pg_stat_user_tables` and `pg_stat_io`. Query aggregates use
