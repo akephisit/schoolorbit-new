@@ -12,6 +12,7 @@ pub mod curriculum;
 mod curriculum_publication_changes;
 pub mod curriculum_publications;
 pub mod curriculum_structure;
+pub mod dated_student_directory;
 pub mod homeroom_roster;
 pub mod lifecycle_context;
 pub mod lifecycle_guard;

@@ -3546,12 +3546,10 @@ async fn attendance_prefetched_score_change_reloads_reset_before_new_generation_
     assert!(!next.reset);
     assert!(next.row_version > current.row_version);
     assert!(changes::acknowledge(&mut tx, &current).await.unwrap());
-    assert!(
-        changes::current_on_connection(&mut tx, &prefetched)
-            .await
-            .unwrap()
-            .is_none()
-    );
+    assert!(changes::current_on_connection(&mut tx, &prefetched)
+        .await
+        .unwrap()
+        .is_none());
     tx.commit().await.unwrap();
 }
 

@@ -1012,3 +1012,23 @@ async fn grade_rule_precedes_newer_global_and_future_rule_and_special_override()
     assert_eq!(summary(&f, f.b).await.current.merit, 2);
     assert_eq!(summary(&f, f.unassigned).await.current.merit, 0);
 }
+
+#[tokio::test]
+async fn manual_selector_keeps_unassigned_students_without_optional_profile() {
+    let f = fixture("behavior_missing_optional_profile").await;
+    sqlx::query("DELETE FROM student_info WHERE user_id=$1")
+        .bind(f.unassigned)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let page = manual::students(&f.pool, f.admin, query(&f)).await.unwrap();
+    let student = page.items.iter().find(|s| s.id == f.unassigned).unwrap();
+    assert_eq!(student.student_code, None);
+    assert_eq!(student.homeroom_id, None);
+    assert!(manual::students(&f.pool, f.teacher, query(&f))
+        .await
+        .unwrap()
+        .items
+        .iter()
+        .all(|s| s.id != f.unassigned));
+}

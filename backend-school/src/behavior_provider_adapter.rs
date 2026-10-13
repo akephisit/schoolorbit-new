@@ -75,8 +75,7 @@ pub(crate) async fn run(pool: &PgPool) -> Result<(), AppError> {
             false,
         )
         .await?;
-        let Some(change) =
-            score_changes::current_on_connection(&mut transaction, &change).await?
+        let Some(change) = score_changes::current_on_connection(&mut transaction, &change).await?
         else {
             transaction.commit().await?;
             continue;

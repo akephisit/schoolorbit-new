@@ -171,28 +171,12 @@ pub async fn create_batch(
     {
         return Err(AppError::Conflict("วันเวลาอยู่นอกรอบคะแนนปัจจุบัน".into()));
     }
-    // Core placement creation/transfer locks these rows FOR UPDATE. Preserve the
-    // selected dated membership until score commit, including unassigned pupils.
-    sqlx::query("SELECT y.id FROM student_academic_years y JOIN academic_terms t ON t.academic_year_id=y.academic_year_id WHERE t.id=$1 AND y.student_id=ANY($2) ORDER BY y.id FOR SHARE OF y").bind(p.academic_term_id).bind(&p.student_ids).fetch_all(&mut *tx).await?;
-    let preliminary = roster(&mut tx, p.academic_term_id, date).await?;
-    let mut rooms: Vec<_> = preliminary
-        .iter()
-        .filter(|r| p.student_ids.binary_search(&r.id).is_ok())
-        .filter_map(|r| r.homeroom_id)
-        .collect();
-    rooms.sort_unstable();
-    rooms.dedup();
-    // Advisor replacement owns the parent room row; reading after acquiring its
-    // share lock observes any committed assignment change before token checking.
-    sqlx::query("SELECT id FROM homerooms WHERE id=ANY($1) ORDER BY id FOR SHARE")
-        .bind(rooms)
-        .fetch_all(&mut *tx)
-        .await?;
-    let rows: Vec<_> = roster(&mut tx, p.academic_term_id, date)
-        .await?
-        .into_iter()
-        .filter(|r| r.visible(access))
-        .collect();
+    let rows: Vec<_> =
+        crate::access::locked_roster(&mut tx, p.academic_term_id, date, &p.student_ids)
+            .await?
+            .into_iter()
+            .filter(|r| r.visible(access))
+            .collect();
     if roster_token(p.academic_term_id, date, &rows)? != p.roster_token {
         return Err(AppError::Conflict(
             "รายชื่อนักเรียนหรือสิทธิ์เปลี่ยนแล้ว กรุณาตรวจใหม่".into(),
