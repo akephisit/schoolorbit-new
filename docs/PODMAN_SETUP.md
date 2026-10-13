@@ -104,13 +104,21 @@ sudo loginctl enable-linger "$USER"
 server_uid=$(id -u)
 sudo systemctl start "user@${server_uid}.service"
 systemctl --user enable --now podman.socket
+systemctl --user enable podman-restart.service
 
 podman --version
 podman-compose version
 systemctl --user is-active podman.socket
+systemctl --user is-enabled podman-restart.service
 test -S "$XDG_RUNTIME_DIR/podman/podman.sock"
 podman --remote --url "unix://$XDG_RUNTIME_DIR/podman/podman.sock" info >/dev/null
 ```
+
+Compose ใช้ `restart: always` คู่กับ `podman-restart.service` ใน user manager ของ `schoolorbit`
+เพื่อให้ container เดิมกลับมาหลัง reboot ไม่ต้อง login ก่อน เปิด boot service โดยไม่ใช้ `--now`
+เพื่อไม่รบกวน container ระหว่างติดตั้ง การ deploy ตรวจและเปิด unit นี้ภายใต้ production lock
+หลังยืนยัน Maintenance Mode แล้ว ไฟล์ proxy คงสถานะ maintenance เดิมหลัง reboot;
+ต้องผ่านการตรวจรับของ Pipeline ก่อนเปิดระบบตามปกติ
 
 อย่าเปิด Cockpit ด้วย IP ของเครื่อง ก่อน start socket ต้องติดตั้ง override ให้มีเพียง
 `ListenStream=127.0.0.1:9090` และให้ cloudflared ใช้ token file แบบ root mode `0600` ตาม tracked

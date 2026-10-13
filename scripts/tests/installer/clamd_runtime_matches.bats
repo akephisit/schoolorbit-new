@@ -76,7 +76,7 @@ seed_matching_runtime() {
     export CLAMD_MEMORY=3221225472
     export CLAMD_NANO_CPUS=1000000000
     export CLAMD_PIDS_LIMIT=256
-    export CLAMD_RESTART_POLICY=unless-stopped
+    export CLAMD_RESTART_POLICY=always
     export CLAMD_SECURITY_OPT='["no-new-privileges:true"]'
     export CLAMD_PORT_BINDINGS='{}'
     export CLAMD_MOUNTS='[{"Type":"volume","Name":"schoolorbit-clamav-signatures","Destination":"/var/lib/clamav"}]'
@@ -130,7 +130,7 @@ image|CLAMD_RUNNING_IMAGE_ID|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 memory|CLAMD_MEMORY|2147483648|memory
 cpu|CLAMD_NANO_CPUS|500000000|cpu
 pids|CLAMD_PIDS_LIMIT|128|pids
-restart|CLAMD_RESTART_POLICY|always|restart
+restart|CLAMD_RESTART_POLICY|unless-stopped|restart
 security|CLAMD_SECURITY_OPT|[]|security
 port|CLAMD_PORT_BINDINGS|{"3310/tcp":[{"HostIp":"0.0.0.0","HostPort":"3310"}]}|published_port
 volume|CLAMD_MOUNTS|[]|signature_volume

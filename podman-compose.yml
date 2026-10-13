@@ -7,7 +7,7 @@ services:
   backend-admin:
     image: ${BACKEND_ADMIN_IMAGE:-ghcr.io/akephisit/schoolorbit-backend-admin:latest}
     container_name: schoolorbit-backend-admin
-    restart: unless-stopped
+    restart: always
     ports:
       - "127.0.0.1:8080:8080"
     environment:
@@ -50,7 +50,7 @@ services:
   backend-school:
     image: ${BACKEND_SCHOOL_IMAGE_REFERENCE:-ghcr.io/akephisit/schoolorbit-backend-school:latest}
     container_name: schoolorbit-backend-school
-    restart: unless-stopped
+    restart: always
     ports:
       - "127.0.0.1:8081:8081"
     environment:
@@ -125,7 +125,7 @@ services:
   clamd:
     image: docker.io/clamav/clamav-debian:1.5.3
     container_name: schoolorbit-clamd
-    restart: unless-stopped
+    restart: always
     volumes:
       - clamav_signatures:/var/lib/clamav
     networks:
@@ -146,7 +146,7 @@ services:
   nginx:
     image: docker.io/library/nginx:stable-alpine
     container_name: schoolorbit-nginx
-    restart: unless-stopped
+    restart: always
     ports:
       - "80:80"
       - "443:443"

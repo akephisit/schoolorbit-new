@@ -488,50 +488,6 @@ jobs:
           command_timeout: 10m
           envs: ACADEMIC_CORE_SMOKE_SUBDOMAIN,SMOKE_USERNAME,SMOKE_PASSWORD,BASE_DOMAIN
           script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-verify-academic.sh
-      - name: Retire completed provider transfer artifacts
-        uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          port: ${{ secrets.SERVER_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -eu
-            python3 - <<'PY'
-            import json, os, pathlib, subprocess, tempfile
-            stack = pathlib.Path('/opt/stack')
-            for name in ('schoolorbit-backend-admin', 'schoolorbit-backend-school'):
-                state = json.loads(subprocess.run(['podman', 'inspect', name], check=True, capture_output=True, text=True).stdout)[0]
-                assert state['State']['Running']
-                names = {line.split('=', 1)[0] for line in state['Config']['Env']}
-                assert not any(name.startswith('NEON_') for name in names)
-                if name == 'schoolorbit-backend-school':
-                    assert 'JWT_SECRET' not in names
-            env = stack / '.env'
-            assert not env.is_symlink() and env.stat().st_mode & 0o777 == 0o600
-            original = env.read_text()
-            retained = ''.join(line for line in original.splitlines(True) if not line.startswith(('SCHOOL_ROLLBACK_JWT_SECRET=', 'NEON_')))
-            descriptor, temporary = tempfile.mkstemp(prefix='.runtime-', dir=stack)
-            try:
-                with os.fdopen(descriptor, 'w') as output:
-                    output.write(retained)
-                    output.flush()
-                    os.fsync(output.fileno())
-                os.replace(temporary, env)
-            finally:
-                pathlib.Path(temporary).unlink(missing_ok=True)
-            for relative in (
-                'scripts/lib/pipeline-remote/postgres-cutover.sh',
-                'scripts/postgres_data_transfer.py', 'scripts/postgres_cutover_gate.mjs',
-                'scripts/lib/schoolorbit-installer/remote/provision_school_session_runtime.sh',
-            ):
-                (stack / 'deployment' / relative).unlink(missing_ok=True)
-            for release in (stack / 'deployment/releases').iterdir():
-                if release.is_dir() and not release.is_symlink():
-                    for name in ('database-cutover-ready.json', 'database-cutover-ready.json.verified'):
-                        (release / name).unlink(missing_ok=True)
-            print('Retired transfer files and unused runtime keys; current recovery artifacts preserved')
-            PY
   promote-frontends:
     needs:
       - verify-release-ci
