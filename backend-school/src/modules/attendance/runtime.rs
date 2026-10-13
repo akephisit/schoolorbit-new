@@ -12,7 +12,7 @@ use school_notifications::{
     models::Notification,
     publisher::{NotificationService, TenantNotificationPublisher},
 };
-use sqlx::{types::Json, PgPool};
+use sqlx::{PgPool, types::Json};
 use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -34,6 +34,7 @@ struct Registration {
     module_generation: Uuid,
     digests: HashSet<String>,
     last_retention: Option<NaiveDate>,
+    last_finalization_poll: Option<NaiveDate>,
 }
 static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static TENANTS: OnceLock<DashMap<String, Registration>> = OnceLock::new();
@@ -80,14 +81,20 @@ pub async fn touch(
             module_generation,
             digests,
             last_retention,
+            last_finalization_poll: None,
         },
     );
     WAKE.notify_one();
     Ok(())
 }
-pub async fn start(state: AppState) {
+async fn refresh_directory(state: &AppState) {
     match state.admin_client.list_active_schools().await {
         Ok(schools) => {
+            let active = schools
+                .iter()
+                .map(|s| s.subdomain.clone())
+                .collect::<HashSet<_>>();
+            tenants().retain(|tenant, _| active.contains(tenant));
             for school in schools {
                 if let Some(url) = school.db_connection_string.filter(|s| !s.is_empty()) {
                     match state
@@ -119,9 +126,21 @@ pub async fn start(state: AppState) {
             "Attendance directory unavailable"
         ),
     }
+}
+
+pub async fn start(state: AppState) {
+    refresh_directory(&state).await;
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+    let mut directory_interval = tokio::time::interval_at(
+        tokio::time::Instant::now() + std::time::Duration::from_secs(300),
+        std::time::Duration::from_secs(300),
+    );
     loop {
-        tokio::select! {_=interval.tick()=>{},_=WAKE.notified()=>{}}
+        tokio::select! {
+            _=interval.tick()=>{},
+            _=WAKE.notified()=>{},
+            _=directory_interval.tick()=>{ refresh_directory(&state).await; }
+        }
         let work: Vec<_> = tenants()
             .iter()
             .map(|v| (v.key().clone(), v.value().clone()))
@@ -139,6 +158,7 @@ pub async fn start(state: AppState) {
                     live.last_retention = r.last_retention;
                     live.pending = r.pending;
                     live.terms = r.terms;
+                    live.last_finalization_poll = r.last_finalization_poll;
                 }
             }
         }
@@ -147,6 +167,13 @@ pub async fn start(state: AppState) {
 async fn run(tenant: &str, r: &mut Registration) -> Result<(), AppError> {
     let now = Utc::now().with_timezone(&chrono_tz::Asia::Bangkok);
     let date = now.date_naive();
+    if r.last_finalization_poll != Some(date) {
+        let processed = super::services::finalization::catch_up(&r.pool, Utc::now(), 4).await?;
+        if processed < 4 {
+            r.last_finalization_poll = Some(date);
+        }
+    }
+    crate::behavior_provider_adapter::run(&r.pool).await?;
     for t in r.terms.clone() {
         if date < t.start || date > t.end {
             continue;
@@ -244,6 +271,7 @@ pub async fn wake_after_commit(
             WAKE.notify_one();
             entry.pending = true;
             entry.generation = Uuid::new_v4();
+            entry.last_finalization_poll = None;
             return;
         }
     }

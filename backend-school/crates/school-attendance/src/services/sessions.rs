@@ -8,9 +8,9 @@ use chrono::Utc;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use sha2::{Digest, Sha256};
-use sqlx::{types::Json, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction, types::Json};
 use uuid::Uuid;
-pub const COLUMNS:&str="id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
+pub const COLUMNS: &str = "id,academic_term_id,date,kind,source_key,title,teacher_ids,homeroom_id,learning_group_id,offering_id,special_round_id,start_time,end_time,count_override,cancelled,cancellation_reason,saved_at,saved_by,row_version,roster";
 #[derive(serde::Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 struct ResultSnapshot {
@@ -78,7 +78,9 @@ pub async fn list(
     actor: &ActorContext,
     q: &AttendanceQuery,
 ) -> Result<Vec<AttendanceSession>, AppError> {
-    let sql=format!("SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND ($3 OR $4=ANY(teacher_ids)) ORDER BY start_time,title,id");
+    let sql = format!(
+        "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND ($3 OR $4=ANY(teacher_ids)) ORDER BY start_time,title,id"
+    );
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(q.academic_term_id)
         .bind(q.date)
@@ -101,7 +103,9 @@ pub async fn ensure(
     insert_seed(&mut tx, &seed).await?;
     tx.commit().await?;
     let s = &seed.session;
-    let sql=format!("SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind=$3 AND source_key=$4");
+    let sql = format!(
+        "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind=$3 AND source_key=$4"
+    );
     let found: AttendanceSession = sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(s.academic_term_id)
         .bind(s.date)
@@ -146,14 +150,15 @@ pub async fn detail_unchecked(
     let students=sqlx::query_as(r#"WITH participants AS (
         SELECT * FROM jsonb_to_recordset($4) AS p("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer)
     ), arrivals AS (
-        SELECT a.student_id,min(a.observed_at) observed_at FROM attendance_records a
+        SELECT a.student_id,min(a.observed_at) observed_at,
+          (array_agg(a.result ORDER BY (a.result IN ('present','late')) DESC,a.result,arrival.id))[1] result FROM attendance_records a
         JOIN attendance_sessions arrival ON arrival.id=a.session_id
         WHERE arrival.academic_term_id=$2 AND arrival.date=$3 AND arrival.kind='arrival'
-          AND a.student_id IN (SELECT "studentId" FROM participants) GROUP BY a.student_id
+          AND NOT arrival.cancelled AND a.student_id IN (SELECT "studentId" FROM participants) GROUP BY a.student_id
     ) SELECT p."studentId" student_id,p."studentAcademicYearId" student_academic_year_id,
         concat_ws(' ',concat(u.title,u.first_name),u.last_name) display_name,p."classNumber" class_number,
         COALESCE(r.result,'unchecked') result,COALESCE(r.origin,'none') origin,
-        r.observed_at,e.evidence_file_id,a.observed_at arrival_at,COALESCE(r.row_version,0) row_version
+        r.observed_at,e.evidence_file_id,a.observed_at arrival_at,a.result arrival_result,r.processed_at,COALESCE(r.row_version,0) row_version
         FROM participants p JOIN users u ON u.id=p."studentId"
         LEFT JOIN attendance_records r ON r.session_id=$1 AND r.student_id=p."studentId"
         LEFT JOIN attendance_scan_events e ON e.session_id=$1 AND e.student_id=p."studentId"
@@ -331,7 +336,7 @@ pub async fn save_with_seed(
         SELECT $1,"studentId","studentAcademicYearId",$4,"classNumber",result,'teacher',$3
         FROM jsonb_to_recordset($2) AS i("studentId" uuid,"studentAcademicYearId" uuid,"classNumber" integer,result text)
         ON CONFLICT(session_id,student_id) DO UPDATE SET result=excluded.result,origin='teacher',
-        updated_by=$3,row_version=attendance_records.row_version+1"#).bind(id).bind(Json(&entries)).bind(actor.user_id).bind(s.special_round_id).execute(&mut *tx).await?;
+        updated_by=$3,processed_at=NULL,row_version=attendance_records.row_version+1"#).bind(id).bind(Json(&entries)).bind(actor.user_id).bind(s.special_round_id).execute(&mut *tx).await?;
     if !changed.is_empty() {
         let after:Vec<ResultSnapshot>=sqlx::query_as("SELECT student_id,result,row_version FROM attendance_records WHERE session_id=$1 ORDER BY student_id").bind(id).fetch_all(&mut *tx).await?;
         let notices: Vec<_> = after
@@ -352,6 +357,7 @@ pub async fn save_with_seed(
         }
         sqlx::query("UPDATE attendance_sessions SET saved_at=now(),saved_by=$2,row_version=row_version+1 WHERE id=$1").bind(id).bind(actor.user_id).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO audit_logs(user_id,action,entity_type,entity_id,old_values,new_values,description) VALUES($1,'update','attendance',$2,$3,$4,$5)").bind(actor.user_id).bind(id).bind(Json(&before)).bind(Json(&after)).bind(&p.reason).execute(&mut *tx).await?;
+        super::score_changes::enqueue_day(&mut tx, s.academic_term_id, s.date).await?;
     }
     tx.commit().await?;
     detail(pool, actor, id).await
@@ -429,6 +435,9 @@ pub async fn cancel_with_seed(
     policy::require_session(actor, &s, true)?;
     sqlx::query("UPDATE attendance_sessions SET cancelled=$2,cancellation_reason=$3,row_version=row_version+1 WHERE id=$1").bind(id).bind(p.cancelled).bind(&p.reason).execute(&mut *tx).await?;
     audit(&mut tx, actor.user_id, id, "update", &p.reason).await?;
+    super::score_changes::enqueue_day(&mut tx, s.academic_term_id, s.date).await?;
+    sqlx::query("DELETE FROM attendance_finalized_dates WHERE generation=$1 AND academic_term_id=$2 AND date=$3")
+        .bind(epoch).bind(s.academic_term_id).bind(s.date).execute(&mut *tx).await?;
     tx.commit().await?;
     detail(pool, actor, id).await
 }
