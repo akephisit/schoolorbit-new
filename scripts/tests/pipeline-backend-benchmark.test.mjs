@@ -35,6 +35,35 @@ function fixture(t) {
   }
   return { root, folder, run: () => spawnSync('python3', [summary, folder, 'backend-school', 'default', 'application', '2'], { encoding: 'utf8' }) };
 }
+for (const crate of ['backend_school', 'backend_admin']) {
+  test(`profiling ${crate} preserves dependency environments, arguments and compiler failure`, t => {
+    const f = fixture(t);
+    const compiler = path.join(f.root, 'compiler with spaces');
+    writeFileSync(compiler, `#!/usr/bin/env python3
+import json, os, sys
+print(json.dumps({'bootstrap': os.environ.get('RUSTC_BOOTSTRAP'), 'arguments': sys.argv[1:]}))
+sys.exit(int(os.environ.get('COMPILER_EXIT', '0')))
+`, { mode: 0o755 });
+    for (const selected of [crate, 'dependency', null]) {
+      const arguments_ = selected ? ['--crate-name', selected, 'source with spaces.rs', '-Z', 'time-passes'] : ['-vV'];
+      const result = spawnSync(path.join(repo, 'scripts/profile_backend_compiler.sh'), [compiler, ...arguments_], {
+        env: { ...process.env, BENCH_PROFILE_CRATE: crate, RUSTC_BOOTSTRAP: '1', COMPILER_EXIT: '42' }, encoding: 'utf8',
+      });
+      assert.equal(result.status, 42, result.stderr);
+      const evidence = JSON.parse(result.stdout);
+      assert.deepEqual(evidence.arguments, arguments_);
+      assert.equal(evidence.bootstrap, selected === crate ? crate : null);
+    }
+  });
+}
+test('diagnostic workflow scopes bootstrap to the executable rather than Cargo or dependency scripts', () => {
+  const source = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  assert.match(source, /scripts\/profile_backend_compiler\.sh:\/profile-backend-compiler:ro/);
+  assert.match(source, /docker exec -e RUSTC_WRAPPER=\/profile-backend-compiler/);
+  assert.match(source, /-e BENCH_PROFILE_CRATE="\$\{BENCH_BACKEND\/\/-\/_\}"/);
+  assert.match(source, /unset RUSTC_BOOTSTRAP; cargo rustc/);
+  assert.doesNotMatch(source, /-e RUSTC_BOOTSTRAP=/);
+});
 test('summary excludes flag priming, counts the final link once and ranks binary above build script', t => {
   const f = fixture(t), result = f.run();
   assert.equal(result.status, 0, result.stderr);

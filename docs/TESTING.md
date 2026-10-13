@@ -248,8 +248,11 @@ exports must equal the default-profile OpenAPI, including across compiler varian
 The final diagnostic compilation records compiler pass times and monomorphization estimates.
 Actions displays a bounded timing table; full per-unit JSON and compiler evidence stay in the
 downloadable artifact, avoiding GitHub's 1 MiB step-summary limit.
-It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only in the disposable benchmark
-container; that compilation is excluded from warm sample means and never produces a release
+Its [compiler wrapper](../scripts/profile_backend_compiler.sh) enables diagnostic `-Z` options
+with a crate-specific `RUSTC_BOOTSTRAP` only inside the selected executable's rustc process.
+Cargo and dependency build scripts retain their normal environment, preventing diagnostic
+profiling from invalidating environment-sensitive dependency caches. That compilation is
+excluded from warm sample means and never produces a release
 artifact. Production builds keep the pinned stable compiler and normal release flags.
 The container keeps a two-CPU quota and two Cargo jobs throughout. Compare compiler variants
 sequentially on one runner before attributing a change to a flag: different hosted machines

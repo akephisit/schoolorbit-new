@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-shellcheck -x backend-school/scripts/build_release.sh backend-school/scripts/release_linker.sh scripts/benchmark_backend_build.sh scripts/pipeline scripts/verify_deployment.sh scripts/test_school_database_suite.sh scripts/test_backend_school.sh scripts/test_backend_admin.sh scripts/test_postgres_compatibility.sh scripts/lib/pipeline-remote/*.sh \
+shellcheck -x backend-school/scripts/build_release.sh backend-school/scripts/release_linker.sh scripts/benchmark_backend_build.sh scripts/profile_backend_compiler.sh scripts/pipeline scripts/verify_deployment.sh scripts/test_school_database_suite.sh scripts/test_backend_school.sh scripts/test_backend_admin.sh scripts/test_postgres_compatibility.sh scripts/lib/pipeline-remote/*.sh \
     scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/reconcile_r2_cors.sh \
     scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
-shfmt -d -i 4 -ci backend-school/scripts/build_release.sh backend-school/scripts/release_linker.sh scripts/benchmark_backend_build.sh scripts/pipeline scripts/verify_deployment.sh scripts/test_school_database_suite.sh scripts/test_backend_school.sh scripts/test_backend_admin.sh scripts/test_postgres_compatibility.sh scripts/lib/pipeline-remote/*.sh \
+shfmt -d -i 4 -ci backend-school/scripts/build_release.sh backend-school/scripts/release_linker.sh scripts/benchmark_backend_build.sh scripts/profile_backend_compiler.sh scripts/pipeline scripts/verify_deployment.sh scripts/test_school_database_suite.sh scripts/test_backend_school.sh scripts/test_backend_admin.sh scripts/test_postgres_compatibility.sh scripts/lib/pipeline-remote/*.sh \
     scripts/schoolorbit-installer scripts/render_nginx_config.sh scripts/reconcile_r2_cors.sh \
     scripts/lib/schoolorbit-installer/*.sh scripts/lib/schoolorbit-installer/remote/*.sh
 bats scripts/tests/installer
