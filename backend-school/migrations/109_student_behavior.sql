@@ -52,6 +52,8 @@ CREATE TABLE behavior_cycles (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     side TEXT NOT NULL CHECK(side IN('merit','deduction')),
     starts_on DATE NOT NULL,
+    starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ,
     ends_on DATE,
     state TEXT NOT NULL CHECK(state IN('current','history')),
     label VARCHAR(200) NOT NULL,
@@ -59,8 +61,8 @@ CREATE TABLE behavior_cycles (
     CHECK(ends_on IS NULL OR ends_on>=starts_on)
 );
 CREATE UNIQUE INDEX behavior_current_cycle_idx ON behavior_cycles(side) WHERE state='current';
-INSERT INTO behavior_cycles(side,starts_on,state,label)
-SELECT side,activation_date,'current','รอบปัจจุบัน' FROM behavior_state CROSS JOIN(VALUES('merit'),('deduction')) s(side);
+INSERT INTO behavior_cycles(side,starts_on,starts_at,state,label)
+SELECT side,activation_date,activation_date::timestamp AT TIME ZONE 'Asia/Bangkok','current','รอบปัจจุบัน' FROM behavior_state CROSS JOIN(VALUES('merit'),('deduction')) s(side);
 CREATE TABLE behavior_batches (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     academic_term_id UUID NOT NULL REFERENCES academic_terms(id) ON DELETE RESTRICT,
@@ -77,13 +79,14 @@ CREATE TABLE behavior_daily_totals (
     date DATE NOT NULL,
     academic_term_id UUID NOT NULL REFERENCES academic_terms(id) ON DELETE RESTRICT,
     grade_level_id UUID NOT NULL REFERENCES grade_levels(id) ON DELETE RESTRICT,
-    homeroom_id UUID NOT NULL REFERENCES homerooms(id) ON DELETE RESTRICT,
+    homeroom_id UUID REFERENCES homerooms(id) ON DELETE RESTRICT,
     side TEXT NOT NULL CHECK(side IN('merit','deduction')),
     source TEXT NOT NULL CHECK(source IN('manual','arrival','lesson','special')),
     cycle_id UUID NOT NULL REFERENCES behavior_cycles(id) ON DELETE RESTRICT,
     points BIGINT NOT NULL CHECK(points>=0),
+    details_purged BOOLEAN NOT NULL DEFAULT false,
     row_version BIGINT NOT NULL DEFAULT 1,
-    UNIQUE(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id)
+    UNIQUE NULLS NOT DISTINCT(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id)
 );
 CREATE INDEX behavior_daily_scope_idx ON behavior_daily_totals(date,side,source,cycle_id);
 CREATE INDEX behavior_daily_student_idx ON behavior_daily_totals(student_id,date);
@@ -92,8 +95,11 @@ CREATE TABLE behavior_entries (
     total_id UUID NOT NULL REFERENCES behavior_daily_totals(id) ON DELETE RESTRICT,
     batch_id UUID REFERENCES behavior_batches(id) ON DELETE RESTRICT,
     source_key TEXT,
+    source_session_id UUID,
     source_generation UUID,
     source_revision BIGINT,
+    source_status TEXT,
+    raw_points INTEGER,
     rule_version_id UUID REFERENCES behavior_attendance_rules(id) ON DELETE RESTRICT,
     item_name VARCHAR(200) NOT NULL,
     points INTEGER NOT NULL CHECK(points>0),
@@ -105,7 +111,7 @@ CREATE TABLE behavior_entries (
     CHECK((batch_id IS NOT NULL AND source_key IS NULL) OR(batch_id IS NULL AND source_key IS NOT NULL)),
     UNIQUE(batch_id,total_id),
     CHECK((cancelled_at IS NULL AND cancelled_by IS NULL AND cancellation_reason IS NULL)
-        OR(cancelled_at IS NOT NULL AND cancelled_by IS NOT NULL AND length(btrim(cancellation_reason))>0))
+        OR(cancelled_at IS NOT NULL AND (cancelled_by IS NOT NULL OR (source_key IS NOT NULL AND source_generation IS NOT NULL)) AND length(btrim(cancellation_reason))>0))
 );
 CREATE INDEX behavior_entries_creator_idx ON behavior_entries(created_by,created_at DESC,id DESC);
 CREATE TABLE behavior_receipts (
@@ -131,6 +137,7 @@ CREATE TABLE behavior_source_days (
     academic_term_id UUID NOT NULL REFERENCES academic_terms(id) ON DELETE RESTRICT,
     date DATE NOT NULL,
     revision BIGINT NOT NULL CHECK(revision>0),
+    policy JSONB NOT NULL,
     PRIMARY KEY(generation,academic_term_id,date)
 );
 CREATE TABLE behavior_cleanup_previews (
