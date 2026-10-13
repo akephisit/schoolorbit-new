@@ -556,6 +556,8 @@ The Admin suite's `database_cutover_cleanup` fixture verifies that migration 009
 removes only transfer checkpoint fields while preserving all other school fields,
 encrypted credential bytes and prior SQLx checksums, including safe repeat execution.
 School's runtime pool regression continues to reject request-time permission DDL.
+The `deployment_runtime_verification` cases verify that a held request connection
+cannot block the independent deployment check, and incomplete history fails closed.
 
 ## Permission Contract
 
