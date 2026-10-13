@@ -189,6 +189,35 @@ async fn suppress_scope(
     connection: &mut PgConnection,
     scope: &BehaviorCleanupScope,
 ) -> Result<(), AppError> {
+    let mut checkpoints = QueryBuilder::<Postgres>::new(
+        "UPDATE behavior_source_effect_snapshots snap SET suppressed=true WHERE snap.kind=ANY(",
+    );
+    checkpoints
+        .push_bind(scope.sources.clone())
+        .push(") AND snap.action=ANY(")
+        .push_bind(
+            scope
+                .sides
+                .iter()
+                .map(|s| s.code().to_string())
+                .collect::<Vec<_>>(),
+        )
+        .push(")");
+    if let Some(d) = scope.start {
+        checkpoints.push(" AND snap.date>=").push_bind(d);
+    }
+    if let Some(d) = scope.end {
+        checkpoints.push(" AND snap.date<=").push_bind(d);
+    }
+    if let Some(id) = scope.academic_term_id {
+        checkpoints
+            .push(" AND snap.academic_term_id=")
+            .push_bind(id);
+    }
+    if let Some(id) = scope.academic_year_id {
+        checkpoints.push(" AND snap.academic_term_id IN(SELECT id FROM academic_terms WHERE academic_year_id=").push_bind(id).push(")");
+    }
+    checkpoints.build().execute(&mut *connection).await?;
     let (context_start, context_end): (NaiveDate, NaiveDate) = if let Some(term) =
         scope.academic_term_id
     {
@@ -412,6 +441,19 @@ pub async fn run_cleanup_jobs(pool: &PgPool, limit: u32) -> Result<bool, AppErro
     )
     .fetch_one(pool)
     .await?)
+}
+pub async fn require_drained(connection: &mut PgConnection) -> Result<(), AppError> {
+    let busy: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM behavior_cleanup_jobs WHERE status='pending')",
+    )
+    .fetch_one(connection)
+    .await?;
+    if busy {
+        return Err(AppError::Conflict(
+            "รอให้งานรีเซ็ตหรือล้างคะแนนเสร็จก่อนปิดภาคเรียน".into(),
+        ));
+    }
+    Ok(())
 }
 pub async fn job(pool: &PgPool, id: Uuid) -> Result<BehaviorCleanupOutcome, AppError> {
     let pending:Option<(String,i64,i64,i64,i64)>=sqlx::query_as("SELECT status,students,entries_deleted,merit,deduction FROM behavior_cleanup_jobs WHERE id=$1").bind(id).fetch_optional(pool).await?;

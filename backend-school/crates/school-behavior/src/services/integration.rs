@@ -54,6 +54,18 @@ struct Effect {
     cycle_id: Uuid,
     item_name: String,
 }
+#[derive(Debug, Clone, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+struct SourceDecision {
+    student_id: Uuid,
+    kind: BehaviorSource,
+    source_key: String,
+    status: String,
+    action: BehaviorScoreAction,
+    raw_points: i32,
+    rule_version_id: Option<Uuid>,
+    suppressed: bool,
+}
 fn select_rule(
     rules: &[BehaviorAttendanceRule],
     fact: &BehaviorAttendanceFact,
@@ -163,9 +175,20 @@ pub async fn replace_attendance_day(
         .filter(|f| f.kind == BehaviorSource::Arrival && f.counted && f.status == "absent")
         .map(|f| f.student_id)
         .collect();
+    let decisions:Vec<SourceDecision>=sqlx::query_as("SELECT student_id,kind,source_key,status,action,raw_points,rule_version_id,suppressed FROM behavior_source_effect_snapshots WHERE generation=$1 AND academic_term_id=$2 AND date=$3").bind(day.generation).bind(day.academic_term_id).bind(day.date).fetch_all(&mut *connection).await?;
+    let decisions: BTreeMap<_, _> = decisions
+        .into_iter()
+        .map(|d| ((d.student_id, d.kind, d.source_key.clone()), d))
+        .collect();
+    let mut new_decisions = Vec::new();
     let mut prior = BTreeMap::new();
+    let mut source_ids: BTreeMap<_, Vec<Uuid>> = BTreeMap::new();
     let mut active = BTreeMap::new();
     for old in &existing {
+        source_ids
+            .entry((old.student_id, old.source, old.source_key.as_str()))
+            .or_default()
+            .push(old.id);
         prior
             .entry((
                 old.student_id,
@@ -202,20 +225,42 @@ pub async fn replace_attendance_day(
                 fact.status.as_str(),
             ))
             .copied();
-        let (rule_action, raw_points, rule_version) = if let Some(old) = previous {
-            (
-                match old.side {
-                    BehaviorSide::Merit => BehaviorScoreAction::Merit,
-                    BehaviorSide::Deduction => BehaviorScoreAction::Deduction,
-                },
-                old.raw_points,
-                old.rule_version_id,
-            )
-        } else if settings.enabled {
-            select_rule(&rules, fact, day.date).unwrap_or((BehaviorScoreAction::None, 0, None))
-        } else {
-            (BehaviorScoreAction::None, 0, None)
-        };
+        let decision = decisions.get(&(fact.student_id, fact.kind, fact.source_key.clone()));
+        if decision.is_some_and(|d| d.suppressed) {
+            if let Some(ids) =
+                source_ids.get(&(fact.student_id, fact.kind, fact.source_key.as_str()))
+            {
+                protected.extend(ids.iter().copied());
+            }
+            continue;
+        }
+        let (rule_action, raw_points, rule_version) =
+            if let Some(old) = decision.filter(|d| d.status == fact.status) {
+                (old.action, old.raw_points, old.rule_version_id)
+            } else if let Some(old) = previous {
+                (
+                    match old.side {
+                        BehaviorSide::Merit => BehaviorScoreAction::Merit,
+                        BehaviorSide::Deduction => BehaviorScoreAction::Deduction,
+                    },
+                    old.raw_points,
+                    old.rule_version_id,
+                )
+            } else if settings.enabled {
+                select_rule(&rules, fact, day.date).unwrap_or((BehaviorScoreAction::None, 0, None))
+            } else {
+                (BehaviorScoreAction::None, 0, None)
+            };
+        new_decisions.push(SourceDecision {
+            student_id: fact.student_id,
+            kind: fact.kind,
+            source_key: fact.source_key.clone(),
+            status: fact.status.clone(),
+            action: rule_action,
+            raw_points,
+            rule_version_id: rule_version,
+            suppressed: false,
+        });
         let Some(side) = action_side(rule_action) else {
             continue;
         };
@@ -334,6 +379,11 @@ pub async fn replace_attendance_day(
         sqlx::query(r#"INSERT INTO behavior_entries(total_id,source_key,source_session_id,source_generation,source_revision,source_status,raw_points,rule_version_id,item_name,points)
           SELECT t.id,x."sourceKey",x."sourceSessionId",$2,$3,x.status,x."rawPoints",x."ruleVersionId",x."itemName",x.points FROM jsonb_to_recordset($1)x("studentId" uuid,"gradeLevelId" uuid,"homeroomId" uuid,side text,source text,"cycleId" uuid,points integer,"sourceKey" text,"sourceSessionId" uuid,status text,"rawPoints" integer,"ruleVersionId" uuid,"itemName" text)
           JOIN behavior_daily_totals t ON t.student_id=x."studentId" AND t.grade_level_id=x."gradeLevelId" AND t.homeroom_id IS NOT DISTINCT FROM x."homeroomId" AND t.side=x.side AND t.source=x.source AND t.cycle_id=x."cycleId" AND t.date=$4 AND t.academic_term_id=$5"#).bind(Json(&additions)).bind(day.generation).bind(day.revision).bind(day.date).bind(day.academic_term_id).execute(&mut *connection).await?;
+    }
+    if !new_decisions.is_empty() {
+        sqlx::query(r#"INSERT INTO behavior_source_effect_snapshots(generation,academic_term_id,date,kind,source_key,student_id,status,action,raw_points,rule_version_id)
+        SELECT $2,$3,$4,x.kind,x."sourceKey",x."studentId",x.status,x.action,x."rawPoints",x."ruleVersionId" FROM jsonb_to_recordset($1)x(kind text,"sourceKey" text,"studentId" uuid,status text,action text,"rawPoints" integer,"ruleVersionId" uuid)
+        ON CONFLICT(generation,academic_term_id,date,kind,source_key,student_id)DO UPDATE SET status=EXCLUDED.status,action=EXCLUDED.action,raw_points=EXCLUDED.raw_points,rule_version_id=EXCLUDED.rule_version_id WHERE NOT behavior_source_effect_snapshots.suppressed"#).bind(Json(&new_decisions)).bind(day.generation).bind(day.academic_term_id).bind(day.date).execute(&mut *connection).await?;
     }
     sqlx::query("INSERT INTO behavior_source_days(generation,academic_term_id,date,revision,policy)VALUES($1,$2,$3,$4,$5)ON CONFLICT(generation,academic_term_id,date)DO UPDATE SET revision=EXCLUDED.revision").bind(day.generation).bind(day.academic_term_id).bind(day.date).bind(day.revision).bind(Json(&policy)).execute(&mut *connection).await?;
     if !reverse.is_empty() || !additions.is_empty() {

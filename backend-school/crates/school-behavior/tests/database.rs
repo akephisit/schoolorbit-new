@@ -712,3 +712,91 @@ async fn durable_cleanup_chunks_keep_totals_until_completed_and_resume_after_res
         "restart does not repeat archive"
     );
 }
+
+#[tokio::test]
+async fn unchanged_no_score_snapshot_stays_zero_when_a_rule_is_added() {
+    let f = fixture("behavior_zero_snapshot").await;
+    let settings = catalog::settings(&f.pool).await.unwrap();
+    catalog::save_settings(
+        &f.pool,
+        SaveBehaviorSettings {
+            settings: BehaviorSettings {
+                enabled: true,
+                ..settings
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let fact = BehaviorAttendanceFact {
+        source_key: "lesson-zero".into(),
+        source_session_id: None,
+        kind: BehaviorSource::Lesson,
+        student_id: f.a,
+        status: "present".into(),
+        counted: true,
+        grade_level_id: f.grade,
+        homeroom_id: Some(f.room_a),
+        overrides: None,
+    };
+    let mut day = BehaviorAttendanceDay {
+        generation: Uuid::new_v4(),
+        academic_term_id: f.term,
+        date: today(),
+        revision: 1,
+        facts: vec![fact],
+    };
+    let mut tx = f.pool.begin().await.unwrap();
+    integration::replace_attendance_day(&mut tx, day.clone())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(summary(&f, f.a).await.current.merit, 0);
+    catalog::save_rule(
+        &f.pool,
+        f.admin.actor_id,
+        SaveBehaviorAttendanceRule {
+            kind: BehaviorSource::Lesson,
+            status: "present".into(),
+            grade_level_id: None,
+            effective_from: today(),
+            action: BehaviorScoreAction::Merit,
+            points: 9,
+        },
+    )
+    .await
+    .unwrap();
+    day.revision = 2;
+    let mut tx = f.pool.begin().await.unwrap();
+    integration::replace_attendance_day(&mut tx, day.clone())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(
+        summary(&f, f.a).await.current.merit,
+        0,
+        "adding criteria must not change an already captured no-score result"
+    );
+    catalog::save_rule(
+        &f.pool,
+        f.admin.actor_id,
+        SaveBehaviorAttendanceRule {
+            kind: BehaviorSource::Lesson,
+            status: "late".into(),
+            grade_level_id: None,
+            effective_from: today(),
+            action: BehaviorScoreAction::Deduction,
+            points: 2,
+        },
+    )
+    .await
+    .unwrap();
+    day.revision = 3;
+    day.facts[0].status = "late".into();
+    let mut tx = f.pool.begin().await.unwrap();
+    integration::replace_attendance_day(&mut tx, day)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(summary(&f, f.a).await.current.deduction, 2);
+}

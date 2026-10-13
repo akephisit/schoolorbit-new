@@ -214,3 +214,19 @@ CREATE TABLE behavior_cleanup_jobs (
     completed_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX behavior_one_pending_cleanup ON behavior_cleanup_jobs(status) WHERE status='pending';
+-- Compact replay checkpoints retain decisions including no-score/capped effects;
+-- they never retain narrative event detail and may survive detail retention.
+CREATE TABLE behavior_source_effect_snapshots (
+    generation UUID NOT NULL,
+    academic_term_id UUID NOT NULL REFERENCES academic_terms(id) ON DELETE RESTRICT,
+    date DATE NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN('arrival','lesson','special')),
+    source_key TEXT NOT NULL,
+    student_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    status TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN('none','merit','deduction')),
+    raw_points INTEGER NOT NULL CHECK(raw_points BETWEEN 0 AND 100000),
+    rule_version_id UUID REFERENCES behavior_attendance_rules(id) ON DELETE RESTRICT,
+    suppressed BOOLEAN NOT NULL DEFAULT false,
+    PRIMARY KEY(generation,academic_term_id,date,kind,source_key,student_id)
+);
