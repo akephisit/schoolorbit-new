@@ -9,12 +9,12 @@ pub async fn reset_boundaries(
     let terms: Vec<NaiveDate> = sqlx::query_scalar(
         "SELECT DISTINCT COALESCE(t.closed_on,t.planned_end_date,y.end_date) \
          FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id \
-         WHERE t.status<>'cancelled' ORDER BY 1 LIMIT 1001",
+         WHERE t.status IN('active','closing','closed') AND y.status IN('active','closing','closed','archived') ORDER BY 1 LIMIT 1001",
     )
     .fetch_all(&mut *connection)
     .await?;
     let years: Vec<NaiveDate> = sqlx::query_scalar(
-        "SELECT DISTINCT end_date FROM academic_years ORDER BY end_date LIMIT 1001",
+        "SELECT DISTINCT end_date FROM academic_years WHERE status IN('active','closing','closed','archived') ORDER BY end_date LIMIT 1001",
     )
     .fetch_all(connection)
     .await?;

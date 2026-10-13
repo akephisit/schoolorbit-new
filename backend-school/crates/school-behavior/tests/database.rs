@@ -1138,3 +1138,75 @@ async fn manual_selector_keeps_unassigned_students_without_optional_profile() {
         .iter()
         .all(|s| s.id != f.unassigned));
 }
+
+#[tokio::test]
+async fn summaries_retain_other_term_history_and_reset_calendar_excludes_unactivated_periods() {
+    let f = fixture("behavior_cross_term_history").await;
+    let now = today();
+    let planning_end = now - Duration::days(10);
+    let closed_on = now - Duration::days(1);
+    let old_term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,closed_on,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,2,'OLD','Archived Term','custom',$2,$3,$4,bell_schedule_id,'closed',false,false FROM academic_terms WHERE id=$1 RETURNING id").bind(f.term).bind(now-Duration::days(3)).bind(now-Duration::days(2)).bind(closed_on).fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_terms(academic_year_id,sequence_no,code,name,term_type,start_date,planned_end_date,bell_schedule_id,status,included_in_year_result,blocks_year_closure)SELECT academic_year_id,3,'UNUSED','Never Activated','custom',$2,$3,bell_schedule_id,'planning',false,false FROM academic_terms WHERE id=$1").bind(f.term).bind(now-Duration::days(20)).bind(planning_end).execute(&f.pool).await.unwrap();
+    let unused_year_end = now - Duration::days(5);
+    sqlx::query("INSERT INTO academic_years(year,name,start_date,end_date,status)VALUES(2998,'Unactivated year',$1,$2,'planning')").bind(now-Duration::days(30)).bind(unused_year_end).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE behavior_state SET activation_date=$1 WHERE singleton")
+        .bind(now - Duration::days(3))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let history:Uuid=sqlx::query_scalar("INSERT INTO behavior_cycles(side,starts_on,starts_at,ends_on,ends_at,state,label)VALUES('deduction',$1,$1::date::timestamp AT TIME ZONE 'Asia/Bangkok',$2,$3::date::timestamp AT TIME ZONE 'Asia/Bangkok','history','Earlier term')RETURNING id").bind(now-Duration::days(3)).bind(closed_on).bind(now).fetch_one(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO behavior_daily_totals(student_id,date,academic_term_id,grade_level_id,homeroom_id,side,source,cycle_id,points,details_purged)VALUES($1,$2,$3,$4,$5,'deduction','manual',$6,20,true)").bind(f.a).bind(now-Duration::days(2)).bind(old_term).bind(f.grade).bind(f.room_a).bind(history).execute(&f.pool).await.unwrap();
+    let current_item = item(&f, BehaviorSide::Deduction, 5).await;
+    let request = payload(&f, f.admin, &current_item, vec![f.a]).await;
+    manual::create_batch(&f.pool, f.admin, request)
+        .await
+        .unwrap();
+    let all = report::student_summary(
+        &f.pool,
+        f.admin,
+        f.a,
+        BehaviorSummaryQuery {
+            start: None,
+            end: None,
+            academic_term_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            all.current.deduction,
+            all.history.deduction,
+            all.lifetime.deduction
+        ),
+        (5, 20, 25)
+    );
+    let selected = report::student_summary(
+        &f.pool,
+        f.admin,
+        f.a,
+        BehaviorSummaryQuery {
+            start: None,
+            end: None,
+            academic_term_id: Some(f.term),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            selected.current.deduction,
+            selected.history.deduction,
+            selected.lifetime.deduction
+        ),
+        (5, 0, 5)
+    );
+    let (terms, years) = school_academic_core::services::score_calendar::reset_boundaries(
+        &mut *f.pool.acquire().await.unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(terms.contains(&closed_on));
+    assert!(!terms.contains(&planning_end));
+    assert!(!years.contains(&unused_year_end));
+}
