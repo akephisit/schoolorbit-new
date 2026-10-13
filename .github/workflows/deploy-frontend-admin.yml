@@ -7,7 +7,7 @@ on:
         required: true
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
@@ -122,9 +122,10 @@ jobs:
           npx wrangler deployments list --config wrangler.deploy.json --json > "$RUNNER_TEMP/admin-active.json"
           jq -e --arg id "$EXPECTED_VERSION" 'sort_by(.created_on // .created_at // "") | last | .versions | length == 1 and ((.[0].version_id // .[0].id) == $id) and .[0].percentage == 100' "$RUNNER_TEMP/admin-active.json" >/dev/null
           jq -n --arg sha "$GITHUB_SHA" --arg versionId "$EXPECTED_VERSION" '{sha:$sha,versionId:$versionId}' > "$RUNNER_TEMP/admin-worker.json"
-      - name: Install browser acceptance dependencies
-        working-directory: frontend-school
-        run: npm ci
+      - name: Restore locked browser acceptance tooling
+        uses: ./.github/actions/setup-deployment-tooling
+        with:
+          component: frontend-school
       - name: Set up cached Chromium for Admin maintenance acceptance
         uses: ./.github/actions/setup-chromium
       - name: Verify Admin maintenance page and exact prepared assets

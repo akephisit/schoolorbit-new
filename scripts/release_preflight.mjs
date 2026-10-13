@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { readAcceptedState } from './lib/pipeline-state.mjs';
 import { git, makePlan } from './lib/pipeline-policy.mjs';
 
@@ -6,10 +7,6 @@ const api = (route) => JSON.parse(execFileSync('gh', ['api', route], { encoding:
 const plan = JSON.parse(process.env.PLAN);
 const repo = process.env.GITHUB_REPOSITORY;
 const sha = process.env.GITHUB_SHA;
-if (process.env.GITHUB_EVENT_NAME === 'push' || process.env.AUTOMATIC_DISPATCH === 'true') {
-  if (plan.deploy.some((part) => part.startsWith('backend-')) && process.env.RUNTIME_DEPLOY_ENABLED !== 'true') throw new Error('RUNTIME_DEPLOY_ENABLED must allow this automatic release');
-  if (plan.deploy.some((part) => part.startsWith('frontend-')) && process.env.FRONTEND_DEPLOY_ENABLED !== 'true') throw new Error('FRONTEND_DEPLOY_ENABLED must allow this automatic release');
-}
 if (process.env.GITHUB_REF !== 'refs/heads/main' || plan.sha !== sha || plan.tree !== git('.', 'rev-parse', 'HEAD^{tree}')) throw new Error('Production candidate identity mismatch');
 if (api(`/repos/${repo}/git/ref/heads/main`).object.sha !== sha) throw new Error('A newer main exists; this stale candidate cannot change production');
 const run = api(`/repos/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}`);
@@ -22,6 +19,17 @@ const config = {
   'frontend-school': { backend: process.env.PUBLIC_BACKEND_URL || '', vapid: process.env.PUBLIC_VAPID_KEY || '' },
   'frontend-admin': { backend: process.env.PUBLIC_API_URL || '', schoolBackend: process.env.BACKEND_SCHOOL_URL || '' }
 };
-const fresh = makePlan({ root: '.', head: sha, base: plan.base, state: readAcceptedState(), publicConfig: config });
+const fresh = makePlan({ root: '.', head: sha, base: plan.base, state: readAcceptedState(), scope: plan.scope || 'auto', publicConfig: config });
 if (fresh.deploy.some((part) => !plan.deploy.includes(part)) || fresh.verify.some((suite) => !plan.verify.includes(suite)) || Object.keys(plan.hashes).some((part) => fresh.hashes[part] !== plan.hashes[part])) throw new Error('Production baselines or inputs changed; replan and verify before maintenance');
+if (process.env.GITHUB_EVENT_NAME === 'push' || process.env.AUTOMATIC_DISPATCH === 'true') {
+  if (fresh.deploy.some((part) => part.startsWith('backend-')) && process.env.RUNTIME_DEPLOY_ENABLED !== 'true') throw new Error('RUNTIME_DEPLOY_ENABLED must allow this automatic release');
+  if (fresh.deploy.some((part) => part.startsWith('frontend-')) && process.env.FRONTEND_DEPLOY_ENABLED !== 'true') throw new Error('FRONTEND_DEPLOY_ENABLED must allow this automatic release');
+}
+// Preparation can overlap an earlier release. Only trusted accepted state can
+// remove now-redundant work; never add an unprepared component under the lock.
+const effective = { ...plan, ...fresh };
+const removed = plan.deploy.filter(part => !effective.deploy.includes(part));
+appendFileSync(process.env.GITHUB_OUTPUT, `plan=${JSON.stringify(effective)}\ndeploy=${JSON.stringify(effective.deploy)}\n`);
+appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Scope under production lock\n\nSelected: ${effective.deploy.join(', ') || 'none'}. Already accepted since planning: ${removed.join(', ') || 'none'}. Explicit scope is retained.\n`);
+console.log(`::notice title=Release reconciliation::selected=${effective.deploy.join(',') || 'none'} already_accepted=${removed.join(',') || 'none'}`);
 console.log('Current main, selected inputs and exact-attempt CI gate verified under production lock.');

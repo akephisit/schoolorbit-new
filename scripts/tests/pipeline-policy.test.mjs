@@ -58,6 +58,8 @@ test('accepted per-component baselines retain queued changes across merges and r
   const first = f.commit();
   let plan = makePlan({ ...f, head: first });
   assert.deepEqual(plan.deploy, ['frontend-school']);
+  assert.deepEqual(plan.reasons['frontend-school'], ['unaccepted-runtime-paths', 'changed-artifact-inputs']);
+  assert.deepEqual(plan.reasons['backend-school'], []);
   assert.ok(!plan.verify.includes('backend-school'));
   writeFileSync(path.join(f.root, 'backend-admin/input.txt'), 'next backend edit');
   const second = f.commit();
@@ -67,6 +69,49 @@ test('accepted per-component baselines retain queued changes across merges and r
   plan = makePlan({ ...f, base: first, head: second });
   assert.deepEqual(plan.deploy, ['backend-admin']);
   assert.deepEqual(makePlan({ ...f, head: second, scope: 'frontend-admin' }).deploy, ['backend-admin', 'frontend-admin']);
+});
+
+test('reporting and orchestration retain artifact hashes; real build recipes invalidate only their owners', t => {
+  for (const [file, owners] of [
+    ['.github/workflows/prepare.yml', []],
+    ['.github/workflows/pipeline.yml', []],
+    ['.github/actions/build-backend-image/action.yml', ['backend-admin', 'backend-school']],
+    ['.github/actions/build-frontend-bundle/action.yml', ['frontend-admin', 'frontend-school']]
+  ]) {
+    const f = fixture(t);
+    mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
+    writeFileSync(path.join(f.root, file), 'changed recipe or report');
+    const head = f.commit();
+    const plan = makePlan({ ...f, head });
+    assert.deepEqual(plan.deploy, owners, file);
+    for (const part of components) {
+      assert.equal(inputHash(f.root, head, part) !== f.state.components[part].inputHash, owners.includes(part), `${file}: ${part}`);
+    }
+  }
+});
+
+test('component release changes keep pending siblings and never invalidate their compiled artifacts', t => {
+  for (const [file, owners] of [
+    ['.github/workflows/deploy-backend-admin.yml', ['backend-admin']],
+    ['.github/workflows/deploy-frontend-admin.yml', ['frontend-admin']],
+    ['.github/workflows/deploy-school-release.yml', ['backend-school', 'frontend-school']],
+    ['scripts/lib/pipeline-remote/school-deploy-backend.sh', ['backend-school']],
+    ['scripts/lib/pipeline-remote/school-verify-release.sh', ['backend-school', 'frontend-school']],
+    ['scripts/lib/pipeline-remote/admin-deploy.sh', ['backend-admin']]
+  ]) {
+    const f = fixture(t);
+    mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
+    writeFileSync(path.join(f.root, file), 'changed deployment');
+    const head = f.commit();
+    const plan = makePlan({ ...f, head });
+    assert.deepEqual(plan.deploy, owners, file);
+    assert.deepEqual(plan.verify, suites, 'control changes retain broad local verification');
+    for (const part of components) assert.equal(inputHash(f.root, head, part), f.state.components[part].inputHash);
+    f.state.components[owners[0]].sha = head;
+    assert.deepEqual(makePlan({ ...f, head }).deploy, owners.slice(1), 'only acceptance clears queued runtime work');
+  }
+  assert.deepEqual(classify(['scripts/lib/pipeline-remote/maintenance.sh']).deploy, components);
+  assert.deepEqual(classify(['.github/workflows/release.yml']).deploy, components);
 });
 
 test("Worker bundling recipe changes rebuild both frontend artifacts without invalidating backend images", (t) => {

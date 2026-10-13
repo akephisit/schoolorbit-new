@@ -816,14 +816,45 @@ test('backend workflows deploy the canonical target and verify the selected orig
 test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	const d = parseYaml(await readRepo('.github/workflows/prepare.yml'));
 	const steps = d.jobs.prepare.steps;
-	const build = steps.find((x) => x.name === 'Build selected OCI image');
-	assert.equal(build.with['cache-from'], 'type=gha,scope=${{ matrix.component }}');
-	assert.equal(build.with['cache-to'], 'type=gha,scope=${{ matrix.component }},mode=max');
-	assert.match(build.if, /startsWith\(matrix.component, 'backend-'\)/);
+	const caller = steps.find((x) => x.name === 'Build selected OCI image');
+	assert.equal(caller.uses, './.github/actions/build-backend-image');
+	assert.match(caller.if, /startsWith\(matrix.component, 'backend-'\)/);
+	const build = (await expandCompositeSteps(repoRoot, [caller])).find(
+		(x) => x.uses === 'docker/build-push-action@v7'
+	);
+	assert.equal(build.with['cache-from'], 'type=gha,scope=${{ inputs.component }}');
+	assert.equal(build.with['cache-to'], 'type=gha,scope=${{ inputs.component }},mode=max');
+	assert.equal(build.with.platforms, 'linux/amd64');
 	assert.ok(steps.some((x) => x.uses === 'docker/setup-buildx-action@v4'));
 	const policy = await readRepo('scripts/lib/pipeline-policy.mjs');
 	assert.match(policy, /'backend-admin'/);
 	assert.match(policy, /'backend-school'/);
+});
+
+test('artifact-producing commands stay in the hashed recipe actions instead of reporting orchestration', async () => {
+	const workflow = parseYaml(await readRepo('.github/workflows/prepare.yml'));
+	const steps = workflow.jobs.prepare.steps;
+	assert.ok(steps.some((step) => step.uses === './.github/actions/build-frontend-bundle'));
+	assert.ok(steps.some((step) => step.uses === './.github/actions/build-backend-image'));
+	assert.ok(
+		!steps.some((step) => /npm (?:ci|run build)|cargo (?:rustc|build)/.test(step.run || ''))
+	);
+	for (const step of steps.filter((step) => step.uses === 'docker/build-push-action@v7')) {
+		assert.equal(
+			step.with.target,
+			'build-timings',
+			'only evidence extraction may remain outside the artifact recipe'
+		);
+		assert.notEqual(step.with.push, true);
+	}
+	const frontend = parseYaml(
+		await readFile(path.join(repoRoot, '.github/actions/build-frontend-bundle/action.yml'), 'utf8')
+	);
+	assert.ok(frontend.runs.steps.some((step) => step.run === 'npm ci'));
+	assert.ok(frontend.runs.steps.some((step) => step.run === 'npm run build'));
+	assert.ok(
+		frontend.runs.steps.some((step) => step.run === 'node scripts/prepare_frontend_worker.mjs')
+	);
 });
 
 test('backend runtime images use deterministic builders without ownership copy-up', async () => {
@@ -897,7 +928,7 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			assert.match(dockerfile, /bash scripts\/build_release\.sh/);
 			assert.match(
 				release,
-				/^cargo rustc --release --locked --bin backend-school --timings -- -C lto=off$/m
+				/^cargo rustc --release --locked --bin backend-school --timings -- -C lto=off -C "linker=\$PWD\/scripts\/release_linker\.sh"$/m
 			);
 			assert.match(release, /SCCACHE_GHA_VERSION=schoolorbit-backend-school/);
 			assert.match(release, /ACTIONS_CACHE_SERVICE_V2=true/);
@@ -923,7 +954,9 @@ test('backend workflows export Cargo timings and pass compiler cache credentials
 	const d = parseYaml(await readRepo('.github/workflows/prepare.yml'));
 	const steps = d.jobs.prepare.steps;
 	for (const name of ['Build selected OCI image', 'Export compiler evidence']) {
-		const step = steps.find((x) => x.name === name);
+		const caller = steps.find((x) => x.name === name);
+		const expanded = await expandCompositeSteps(repoRoot, [caller]);
+		const step = expanded.find((x) => x.uses === 'docker/build-push-action@v7');
 		assert.match(step.with['secret-envs'], /sccache_gha_url=ACTIONS_RESULTS_URL/);
 		assert.match(step.with['secret-envs'], /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
 		assert.doesNotMatch(step.with['build-args'], /TOKEN|URL/);

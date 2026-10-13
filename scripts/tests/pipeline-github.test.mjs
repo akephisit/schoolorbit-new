@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import test from 'node:test';
-import {components,git,makePlan} from '../lib/pipeline-policy.mjs';
+import {components,git,inputHash,makePlan} from '../lib/pipeline-policy.mjs';
 const repo='team/school', root=path.resolve(import.meta.dirname,'../..'), sha='d'.repeat(40), head='b'.repeat(40), base='a'.repeat(40), tree='c'.repeat(40);
 function fixture(t) {
  const dir=mkdtempSync(path.join(os.tmpdir(),'pipeline-github-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
@@ -69,18 +69,46 @@ for(const stale of [false,true])test(`merge controller serializes two ready PRs 
  else assert.ok(inputs.some(x=>x.inputs?.automatic==='true'));
  assert.ok(f.calls().every(x=>!x.route.endsWith('/update-branch')));
 });
-for(const mode of ['valid','stale-main','failed-gate','wrong-attempt','rollout-disabled'])test(`release preflight ${mode} validates before any production mutation`,t=>{
+for(const mode of ['valid','stale-main','failed-gate','wrong-attempt','rollout-disabled','unprepared-component','changed-inputs'])test(`release preflight ${mode} validates before any production mutation`,t=>{
  const f=fixture(t);const checkout=path.join(f.dir,'checkout');mkdirSync(checkout);execFileSync('git',['init','-q',checkout]);
  git(checkout,'config','user.name','Fixture');git(checkout,'config','user.email','fixture@example.invalid');
  for(const part of components){mkdirSync(path.join(checkout,part));writeFileSync(path.join(checkout,part,'input'),'test');}
  git(checkout,'add','.');git(checkout,'commit','-qm','Fixture');const commit=git(checkout,'rev-parse','HEAD');
  const plan=makePlan({root:checkout,head:commit,base:commit,publicConfig:{'frontend-school':{backend:'',vapid:''},'frontend-admin':{backend:'',schoolBackend:''}}});
+ if(mode==='unprepared-component')plan.deploy=['backend-school'];
+ if(mode==='changed-inputs')plan.hashes['backend-school']='0'.repeat(64);
  f.routes[`/repos/${repo}/git/ref/heads/main`]={object:{sha:mode==='stale-main'?sha:commit}};
  f.routes[`/repos/${repo}/actions/runs/42`]={...runIdentity(42),event:'push',head_branch:'main',head_sha:commit,run_attempt:mode==='wrong-attempt'?2:1};
  f.routes[`/repos/${repo}/actions/runs/42/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'Pipeline gate',head_sha:commit,run_attempt:1,conclusion:mode==='failed-gate'?'failure':'success'}]}];
  f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]={artifacts:[]};
  const result=f.run('release_preflight.mjs',{PLAN:JSON.stringify(plan),GITHUB_SHA:commit,RUNTIME_DEPLOY_ENABLED:mode==='rollout-disabled'?'false':'true',FRONTEND_DEPLOY_ENABLED:'true',PUBLIC_BACKEND_URL:'',PUBLIC_VAPID_KEY:'',PUBLIC_API_URL:'',BACKEND_SCHOOL_URL:''},checkout);
  assert.equal(result.status,mode==='valid'?0:1,result.stderr);
+});
+
+for (const scope of ['auto', 'full', 'backend-school']) test(`production-lock reconciliation removes accepted work while retaining scope=${scope}`, t => {
+ const f=fixture(t),checkout=path.join(f.dir,'checkout');mkdirSync(checkout);execFileSync('git',['init','-q',checkout]);
+ git(checkout,'config','user.name','Fixture');git(checkout,'config','user.email','fixture@example.invalid');
+ for(const part of components){mkdirSync(path.join(checkout,part));writeFileSync(path.join(checkout,part,'input'),'same prepared source');}
+ git(checkout,'add','.');git(checkout,'commit','-qm','Fixture');const commit=git(checkout,'rev-parse','HEAD');
+ const config={'frontend-school':{backend:'',vapid:''},'frontend-admin':{backend:'',schoolBackend:''}};
+ const plan=makePlan({root:checkout,head:commit,base:commit,scope,publicConfig:config});
+ const run={...runIdentity(21),head_sha:commit,head_branch:'main',event:'push',run_attempt:1};
+ const state={...acceptedState(),sha:commit};
+ for(const part of components)state.components[part]={...state.components[part],sha:commit,inputHash:inputHash(checkout,commit,part,config[part]||{})};
+ f.routes[`/repos/${repo}/git/ref/heads/main`]={object:{sha:commit}};
+ f.routes[`/repos/${repo}/actions/runs/42`]={...run,id:42};
+ f.routes[`/repos/${repo}/actions/runs/42/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'Pipeline gate',head_sha:commit,run_attempt:1,conclusion:'success'}]}];
+ f.routes[`/repos/${repo}/actions/artifacts?name=pipeline-state&per_page=100`]={artifacts:[{id:12,workflow_run:{id:21}}]};
+ f.routes[`/repos/${repo}/actions/runs/21`]=run;
+ f.routes[`/repos/${repo}/actions/runs/21/attempts/1/jobs?per_page=100`]=[{jobs:[{name:'release / accept',head_sha:commit,conclusion:'success'}]}];
+ f.zip(12,'pipeline-state.json',state);
+ const result=f.run('release_preflight.mjs',{PLAN:JSON.stringify(plan),GITHUB_SHA:commit,RUNTIME_DEPLOY_ENABLED:'true',FRONTEND_DEPLOY_ENABLED:'true',PUBLIC_BACKEND_URL:'',PUBLIC_VAPID_KEY:'',PUBLIC_API_URL:'',BACKEND_SCHOOL_URL:''},checkout);
+ assert.equal(result.status,0,result.stderr);
+ const effective=JSON.parse(readFileSync(f.env.GITHUB_OUTPUT,'utf8').split('\n').find(line=>line.startsWith('plan=')).slice(5));
+ assert.deepEqual(effective.deploy,scope==='auto'?[]:scope==='full'?components:['backend-school']);
+ assert.deepEqual(effective.build,effective.deploy);
+ assert.equal(effective.sha,plan.sha);
+ assert.deepEqual(effective.hashes,plan.hashes);
 });
 
 test('a behind branch waits for its developer instead of mutating untested source',t=>{

@@ -87,6 +87,40 @@ test("missing compiler evidence is reported unavailable instead of zero hits", (
   assert.match(result.stdout, /\| hits \| unavailable \|/);
 });
 
+test('API-readable evidence distinguishes executable/link work and current BuildKit phases', t => {
+  const root = fixture(t);
+  writeFileSync(path.join(root, 'build-metrics.json'), JSON.stringify({compileNanoseconds: 170e9}));
+  writeFileSync(path.join(root, 'cargo-timing.html'), 'const UNIT_DATA = ' + JSON.stringify([
+    {name: 'school-academic-http', target: 'lib', duration: 3},
+    {name: 'backend-school', target: 'bin "backend-school"', duration: 160}
+  ]) + ';');
+  writeFileSync(path.join(root, 'link-nanoseconds.txt'), '1200000000\n');
+  const log = path.join(root, 'buildkit.log');
+  writeFileSync(log, '#3 [builder 7/7] RUN bash scripts/build_release.sh\n#3 DONE 171.0s\n#4 exporting to image\n#4 DONE 40.0s\n#5 exporting cache\n#5 DONE 50.0s\n');
+  const result = spawnSync('python3', [path.join(repo, 'scripts/render_backend_build_summary.py'), 'backend-school', root, log], {encoding:'utf8'});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /executable unit \(includes link\): 160.00s/);
+  assert.match(result.stdout, /final link \(within executable unit\): 1.20s/);
+  assert.match(result.stderr, /current_layer=executed.*executable=160.00s link=1.20s/);
+  assert.match(result.stderr, /image_export\/push=40.00s cache_export=50.00s/);
+});
+
+test('release linker preserves arguments and failure status without reporting a successful link', t => {
+  const root = fixture(t), bin = path.join(root, 'bin');
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, 'cc'), '#!/bin/bash\nprintf "%s\\n" "$@" > "$LINK_ARGUMENTS"\nexit "$LINK_EXIT"\n', {mode:0o755});
+  for (const code of [0, 42]) {
+    const metrics = path.join(root, `link-${code}.txt`);
+    const result = spawnSync('bash', [path.join(repo, 'backend-school/scripts/release_linker.sh'), '-fuse-ld=lld', 'input with spaces.o', '-o', 'app'], {
+      env:{...process.env,PATH:bin+':'+process.env.PATH,LINK_ARGUMENTS:path.join(root,'args'),LINK_EXIT:String(code),SCHOOLORBIT_LINK_METRICS:metrics}, encoding:'utf8'
+    });
+    assert.equal(result.status, code, result.stderr);
+    assert.equal(readFileSync(path.join(root, 'args'), 'utf8'), '-fuse-ld=lld\ninput with spaces.o\n-o\napp\n');
+    if (code === 0) assert.match(readFileSync(metrics, 'utf8'), /^[0-9]+\n$/);
+    else assert.throws(() => readFileSync(metrics));
+  }
+});
+
 for (const available of [true, false])
   test(`workflow reads the exact builder record and stderr progress; telemetry availability=${available}`, (t) => {
     const root = fixture(t),

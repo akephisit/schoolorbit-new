@@ -38,6 +38,24 @@ test('removed priming command cannot execute Cargo or fixtures',t=>{
  const f=fixture(t);const result=f.run();assert.notEqual(result.status,0);
  assert.equal(spawnSync('test',['-e',f.env.COMMAND_LOG]).status,1);
 });
+test('release planning emits bounded per-component selection reasons without changing its selected scope', t => {
+ const f=fixture(t);
+ execFileSync('git',['-C',f.root,'update-ref','refs/remotes/origin/main','HEAD']);
+ const base=execFileSync('git',['-C',f.root,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+ const summary=path.join(f.root,'summary'), output=path.join(f.root,'output');
+ const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'plan','--release','true','--base',base],{
+  cwd:f.root,env:{...f.env,GITHUB_STEP_SUMMARY:summary,GITHUB_OUTPUT:output},encoding:'utf8'
+ });
+ assert.equal(result.status,0,result.stderr);
+ const data=readFileSync(output,'utf8').split('\n').find(line=>line.startsWith('plan='));
+ const plan=JSON.parse(data.slice(5));
+ assert.equal(plan.deploy.length,4);
+ assert.ok(Object.values(plan.reasons).every(reasons=>reasons.join(',')==='missing-accepted-baseline'));
+ assert.deepEqual(JSON.parse(result.stdout),plan,'stdout remains the machine-readable plan even inside Actions');
+ assert.match(result.stderr,/::notice title=Component selection::backend-school selected=true reasons=missing-accepted-baseline/);
+ assert.match(readFileSync(summary,'utf8'),/frontend-admin \| deploy \| missing-accepted-baseline/);
+ assert.ok(readFileSync(summary).length<4096);
+});
 test('local School verification executes tests and database fixtures rather than compiling only',t=>{
  const f=fixture(t);
  const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope','backend-school'],{cwd:f.root,env:f.env,encoding:'utf8'});
