@@ -32,11 +32,14 @@
 
 <PageShell title={data.title} description="คะแนนความดี คะแนนที่ถูกหัก และประวัติรายบุคคล"
 	>{#snippet actions()}{#if $can.hasAny(...behaviorCreatePermissions)}<Button
+				class="min-h-[44px] min-w-[44px]"
 				href={destination('/new')}>บันทึกพฤติกรรม</Button
 			>{/if}{#if $can.has(PERMISSIONS.BEHAVIOR_MANAGE_SCHOOL)}<Button
+				class="min-h-[44px] min-w-[44px]"
 				href={destination('/settings')}
 				variant="outline">ตั้งค่า</Button
 			>{/if}{#if $can.has(PERMISSIONS.BEHAVIOR_CLEANUP_EXECUTE_SCHOOL)}<Button
+				class="min-h-[44px] min-w-[44px]"
 				href={destination('/cleanup')}
 				variant="outline">รีเซ็ต / ล้างข้อมูล</Button
 			>{/if}{/snippet}
@@ -56,12 +59,10 @@
 	{#if data.summary && data.studentId}{#key $behaviorIdentity + data.studentId + data.term}<BehaviorRegion
 				initial={data.summary}
 				permissions={behaviorReadPermissions}
-				retry={(signal) =>
-					behaviorSummary(data.studentId!, { academicTermId: data.term ?? undefined }, { signal })}
+				retry={(signal) => behaviorSummary(data.studentId!, {}, { signal })}
 				variant="detail"
 				>{#snippet children(summary)}<BehaviorSummary
 						initial={summary}
-						term={data.term}
 						refreshRevision={summaryRevision}
 					/>{/snippet}</BehaviorRegion
 			>{/key}{:else}<p class="text-sm text-muted-foreground">

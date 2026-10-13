@@ -130,6 +130,7 @@
 			<Label for="behavior-search">ชื่อหรือรหัสนักเรียน</Label>
 			<div class="flex gap-2">
 				<Input id="behavior-search" bind:value={search} /><Button
+					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					onclick={() => void load()}
 					variant="outline"
@@ -147,11 +148,13 @@
 		/>{/if}
 	<div class="flex flex-wrap items-center gap-2">
 		<LoadingButton
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			loading={pending}
 			onclick={() => void load(0, true)}>เลือกทั้งหมดตามตัวกรอง {page.total} คน</LoadingButton
 		><span aria-live="polite">เลือกไว้ {selected.length} คน</span><Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="ghost"
 			onclick={() => (selected = [])}>ล้างการเลือก</Button
@@ -159,7 +162,7 @@
 	</div>
 	<div class="max-h-80 space-y-1 overflow-y-auto rounded-md border" aria-busy={pending}>
 		{#each page.items as student (student.id)}<label
-				class="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2"
+				class="flex min-h-[44px] cursor-pointer items-center gap-3 px-3 py-2"
 				><Checkbox
 					aria-label={`เลือก ${student.name}`}
 					checked={selected.some((s) => s.id === student.id)}
@@ -174,11 +177,13 @@
 	</div>
 	<div class="flex items-center justify-between">
 		<Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={pending || offset === 0}
 			onclick={() => void load(Math.max(0, offset - limit))}>ก่อนหน้า</Button
 		><span>{offset + 1}–{Math.min(offset + limit, page.total)} / {page.total}</span><Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={pending || offset + limit >= page.total}
@@ -186,14 +191,15 @@
 		>
 	</div>
 	{#if selected.length}<details>
-			<summary class="min-h-11 cursor-pointer py-2"
+			<summary class="min-h-[44px] cursor-pointer py-2"
 				>ตรวจรายชื่อที่เลือก {selected.length} คน</summary
 			>
 			<ul class="max-h-60 overflow-y-auto">
 				{#each selected as student (student.id)}<li
-						class="flex min-h-11 items-center justify-between gap-2"
+						class="flex min-h-[44px] items-center justify-between gap-2"
 					>
 						<span>{student.name} · {student.homeroom}</span><Button
+							class="min-h-[44px] min-w-[44px]"
 							type="button"
 							variant="ghost"
 							aria-label={`นำ ${student.name} ออก`}

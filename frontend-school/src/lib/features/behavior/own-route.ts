@@ -53,9 +53,7 @@ export async function loadOwnBehavior(
 		query,
 		summary: studentId
 			? captureRouteLoad(
-					readBehavior(permissions, () =>
-						behaviorSummary(studentId, { academicTermId: term?.id }, { requestFetch, signal })
-					),
+					readBehavior(permissions, () => behaviorSummary(studentId, {}, { requestFetch, signal })),
 					'โหลดคะแนนไม่ได้'
 				)
 			: null,

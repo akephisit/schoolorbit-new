@@ -136,7 +136,7 @@ export const entries: BehaviorReportEntry[] = [
 		sourceKey: 'lesson-key',
 		sourceSessionId: id(853),
 		createdBy: null,
-		creatorName: null,
+		creatorName: '',
 		createdAt: '2026-10-14T03:01:00Z',
 		cancelledAt: null,
 		cancellationReason: null,
@@ -157,12 +157,14 @@ export async function mockBehavior(
 	page: Page,
 	options: {
 		permissions?: string[];
+		userType?: 'staff' | 'student' | 'parent';
 		failBatch?: boolean;
 		pendingCleanup?: boolean;
 		splitCycles?: boolean;
 	} = {}
 ) {
 	await mockStaffHome(page, {
+		userType: options.userType,
 		permissions: options.permissions ?? [
 			PERMISSIONS.BEHAVIOR_READ_SCHOOL,
 			PERMISSIONS.BEHAVIOR_CREATE_SCHOOL,
@@ -172,6 +174,7 @@ export async function mockBehavior(
 			PERMISSIONS.ATTENDANCE_READ_SCHOOL
 		]
 	});
+	const summaryQueries: string[] = [];
 	const reads: string[] = [],
 		batches: CreateBehaviorBatch[] = [],
 		cleanups: ExecuteBehaviorCleanup[] = [],
@@ -183,36 +186,48 @@ export async function mockBehavior(
 			headers: { 'X-CSRF-Token': 'synthetic-csrf' },
 			body: JSON.stringify(status < 400 ? { success: true, data } : { success: false, error: data })
 		});
-	await page.route('**/api/academic/context/options', (route) =>
+	await page.route(
+		(url) =>
+			[
+				'/api/academic/context/options',
+				'/api/me/academic-context/options',
+				'/api/parent/academic-context/options'
+			].includes(url.pathname),
+		(route) =>
+			reply(route, {
+				activeAcademicYearId: year,
+				activeAcademicTermId: behaviorTerm,
+				years: [
+					{
+						id: year,
+						name: '2569',
+						year: 2569,
+						status: 'open',
+						startDate: '2026-05-01',
+						plannedEndDate: '2027-04-30',
+						closedOn: null
+					}
+				],
+				terms: [
+					{
+						id: behaviorTerm,
+						academicYearId: year,
+						name: '1',
+						code: '1',
+						sequence: 1,
+						status: 'open',
+						startDate: '2026-05-01',
+						plannedEndDate: '2027-04-30',
+						closedOn: null,
+						includedInYearResult: true,
+						blocksYearClosure: true
+					}
+				]
+			})
+	);
+	await page.route('**/api/parent/profile?**', (route) =>
 		reply(route, {
-			activeAcademicYearId: year,
-			activeAcademicTermId: behaviorTerm,
-			years: [
-				{
-					id: year,
-					name: '2569',
-					year: 2569,
-					status: 'open',
-					startDate: '2026-05-01',
-					plannedEndDate: '2027-04-30',
-					closedOn: null
-				}
-			],
-			terms: [
-				{
-					id: behaviorTerm,
-					academicYearId: year,
-					name: '1',
-					code: '1',
-					sequence: 1,
-					status: 'open',
-					startDate: '2026-05-01',
-					plannedEndDate: '2027-04-30',
-					closedOn: null,
-					includedInYearResult: true,
-					blocksYearClosure: true
-				}
-			]
+			children: [{ id: behaviorStudent, first_name: 'นักเรียน', last_name: 'หนึ่ง' }]
 		})
 	);
 	const selector = {
@@ -253,16 +268,20 @@ export async function mockBehavior(
 			const rows = batch ? entries.filter((e) => e.batchId === batch) : entries;
 			return reply(route, { items: rows, total: rows.length });
 		}
+		if (path.endsWith('/summary')) {
+			summaryQueries.push(url.search);
+		}
 		if (path.endsWith('/summary'))
 			return reply(
 				route,
 				options.splitCycles
 					? {
 							...summary,
+							studentId: url.pathname.split('/').at(-2) ?? behaviorStudent,
 							current: { merit: 20, deduction: 8, net: null },
 							deductionCycle: { ...cycle('deduction'), startsOn: '2026-10-10' }
 						}
-					: summary
+					: { ...summary, studentId: url.pathname.split('/').at(-2) ?? behaviorStudent }
 			);
 		if (path.endsWith('/settings')) return reply(route, settings);
 		if (path.endsWith('/rules')) return reply(route, []);
@@ -323,5 +342,5 @@ export async function mockBehavior(
 		}
 		return reply(route, 'unexpected Behavior endpoint', 404);
 	});
-	return { reads, batches, cleanups, cancellations };
+	return { reads, batches, cleanups, cancellations, summaryQueries };
 }

@@ -314,8 +314,8 @@ export function attendanceSessionContext(session: AttendanceSession): OpenAttend
 export type AttendanceScoreRule = Schemas['AttendanceScoreRule'];
 export const writableAttendanceResults: Exclude<AttendanceResult, 'unchecked'>[] = [
 	'present',
-	'absent',
 	'late',
+	'absent',
 	'skipped',
 	'sick_leave',
 	'personal_leave',

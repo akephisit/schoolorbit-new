@@ -26,14 +26,14 @@
 	}
 	function tone(result: AttendanceResult) {
 		if (result === 'present')
-			return 'data-[state=on]:bg-success/15 data-[state=on]:text-success data-[state=on]:border-success/50';
+			return 'data-[state=on]:bg-success/15 dark:data-[state=on]:bg-success/15 dark:data-[state=on]:hover:bg-success/20 data-[state=on]:text-success data-[state=on]:border-success/50';
 		if (result === 'absent' || result === 'skipped')
-			return 'data-[state=on]:bg-destructive/15 data-[state=on]:text-destructive data-[state=on]:border-destructive/50';
+			return 'data-[state=on]:bg-destructive/15 dark:data-[state=on]:bg-destructive/15 dark:data-[state=on]:hover:bg-destructive/20 data-[state=on]:text-destructive data-[state=on]:border-destructive/50';
 		if (result === 'activity')
-			return 'data-[state=on]:bg-chart-4/15 data-[state=on]:text-foreground data-[state=on]:border-chart-4/50';
+			return 'data-[state=on]:bg-chart-4/15 dark:data-[state=on]:bg-chart-4/15 dark:data-[state=on]:hover:bg-chart-4/20 data-[state=on]:text-foreground data-[state=on]:border-chart-4/50';
 		if (result === 'late')
-			return 'data-[state=on]:bg-warning/15 data-[state=on]:text-warning data-[state=on]:border-warning/50';
-		return 'data-[state=on]:bg-primary/15 data-[state=on]:text-primary data-[state=on]:border-primary/50';
+			return 'data-[state=on]:bg-warning/15 dark:data-[state=on]:bg-warning/15 dark:data-[state=on]:hover:bg-warning/20 data-[state=on]:text-warning data-[state=on]:border-warning/50';
+		return 'data-[state=on]:bg-primary/15 dark:data-[state=on]:bg-primary/15 dark:data-[state=on]:hover:bg-primary/20 data-[state=on]:text-primary data-[state=on]:border-primary/50';
 	}
 </script>
 
@@ -47,13 +47,13 @@
 		>{#each writableAttendanceResults as result (result)}<ToggleGroup.Item
 				value={result}
 				aria-label={resultLabels[result]}
-				class={`min-h-11 min-w-11 px-1 text-xs ${tone(result)}`}
+				class={`min-h-[44px] min-w-[44px] px-1 text-xs ${tone(result)}`}
 				>{resultLabels[result]}</ToggleGroup.Item
 			>{/each}</ToggleGroup.Root
 	>{#if allowUnchecked}<Button
 			type="button"
 			variant="ghost"
-			class="size-11 shrink-0"
+			class="size-[44px] shrink-0"
 			disabled={disabled || value === 'unchecked'}
 			aria-label={`ยกเลิกการเลือก${label}`}
 			title="กลับเป็นยังไม่ได้เช็ค"

@@ -166,7 +166,7 @@
 <form class="mx-auto max-w-4xl space-y-4" onsubmit={inspect}>
 	<h2 class="text-lg font-semibold">ขอบเขตข้อมูล</h2>
 	<fieldset disabled={!!pending || !!requestId} class="space-y-4">
-		<label class="flex min-h-11 items-center gap-2"
+		<label class="flex min-h-[44px] items-center gap-2"
 			><Checkbox bind:checked={reset} />รีเซ็ตคะแนน เปิดรอบใหม่เริ่มศูนย์ และเก็บยอดเดิมเป็นประวัติ</label
 		>{#if reset}<p class="text-sm text-muted-foreground">
 				รีเซ็ตฝั่งที่เลือกทั้งโรงเรียน ต้องปิดยอดเช็กชื่อถึงวันที่เลือกก่อน
@@ -179,10 +179,10 @@
 					const m = modes.find((m) => m === v);
 					if (m) mode = m;
 				}}
-			/><label class="flex min-h-11 items-center gap-2"
+			/><label class="flex min-h-[44px] items-center gap-2"
 				><Checkbox bind:checked={termOnly} />เฉพาะภาคเรียนที่เลือก (ปิดเพื่อเลือกทุกภาคเรียน)</label
 			>{/if}
-		{#if !reset}<label class="flex min-h-11 items-center gap-2"
+		{#if !reset}<label class="flex min-h-[44px] items-center gap-2"
 				><Checkbox bind:checked={allDates} />ทุกวันในขอบเขตที่เลือก</label
 			>{/if}
 		<div class="grid gap-3 sm:grid-cols-2">
@@ -207,7 +207,7 @@
 			</div>
 		</div>
 		<div class="flex flex-wrap gap-4">
-			{#each sides as side (side)}<label class="flex min-h-11 items-center gap-2"
+			{#each sides as side (side)}<label class="flex min-h-[44px] items-center gap-2"
 					><Checkbox
 						checked={chosenSides.includes(side)}
 						onCheckedChange={(v) =>
@@ -216,7 +216,7 @@
 				>{/each}
 		</div>
 		{#if !reset}<div class="flex flex-wrap gap-4">
-				{#each sources as source (source)}<label class="flex min-h-11 items-center gap-2"
+				{#each sources as source (source)}<label class="flex min-h-[44px] items-center gap-2"
 						><Checkbox
 							checked={chosenSources.includes(source)}
 							onCheckedChange={(v) =>
@@ -228,6 +228,7 @@
 			</div>{/if}
 	</fieldset>
 	<LoadingButton
+		class="min-h-[44px] min-w-[44px]"
 		type="submit"
 		variant="outline"
 		loading={pending === 'preview'}
@@ -258,6 +259,7 @@
 		/>{#if previewKey !== key}<p class="text-warning">
 				ขอบเขตเปลี่ยน กรุณาตรวจผลกระทบใหม่
 			</p>{/if}<Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="destructive"
 			disabled={!!pending || previewKey !== key || !reason.trim()}
@@ -270,6 +272,7 @@
 		</h2>
 		<p>ลบรายละเอียดแล้ว {outcome.entriesDeleted} รายการ · นักเรียน {outcome.students} คน</p>
 		{#if outcome.status === 'pending' && !pending}<Button
+				class="min-h-[44px] min-w-[44px]"
 				type="button"
 				variant="outline"
 				onclick={() => {
@@ -289,6 +292,7 @@
 				กำลังดำเนินการ ลบแล้ว {outcome?.entriesDeleted ?? 0} รายการ
 			</p>{/if}{#if error}<p class="text-destructive">{error}</p>{/if}<AlertDialog.Footer
 			><AlertDialog.Cancel disabled={!!pending}>กลับ</AlertDialog.Cancel><LoadingButton
+				class="min-h-[44px] min-w-[44px]"
 				type="button"
 				variant="destructive"
 				loading={!!pending}

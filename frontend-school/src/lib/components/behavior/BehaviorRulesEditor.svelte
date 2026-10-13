@@ -60,6 +60,10 @@
 	<p class="text-sm text-muted-foreground">
 		แยกมาโรงเรียน รายคาบ และรอบพิเศษ เลือกเกณฑ์กลางหรือเฉพาะระดับชั้นได้
 	</p>
+	<p class="text-sm text-muted-foreground">
+		ยังไม่ได้เช็คไม่คิดคะแนนระหว่างวัน หลังเที่ยงคืนของวันที่นับยอด
+		ระบบจะบันทึกเป็นขาดและใช้เกณฑ์คะแนนของสถานะขาด
+	</p>
 	<form onsubmit={save} class="space-y-3">
 		{#if error}<PageState variant="error" title="บันทึกไม่สำเร็จ" description={error} />{/if}
 		<fieldset disabled={pending} class="grid gap-3 sm:grid-cols-3">
@@ -123,7 +127,9 @@
 			</div>
 		</fieldset>
 		<div class="flex justify-end">
-			<LoadingButton type="submit" loading={pending}>บันทึกเกณฑ์</LoadingButton>
+			<LoadingButton class="min-h-[44px] min-w-[44px]" type="submit" loading={pending}
+				>บันทึกเกณฑ์</LoadingButton
+			>
 		</div>
 	</form>
 	<ul class="divide-y">
@@ -133,6 +139,7 @@
 				]} · {initial.options.gradeLevels.find((o) => o.id === rule.gradeLevelId)?.label ??
 					'เกณฑ์กลาง'} · {actionLabels[rule.action]}
 				{rule.points} · เริ่ม {rule.effectiveFrom}<Button
+					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="ghost"
 					onclick={() =>

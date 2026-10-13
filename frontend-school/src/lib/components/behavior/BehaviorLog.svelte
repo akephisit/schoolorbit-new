@@ -241,10 +241,13 @@
 				bind:value={batchId}
 			/>
 		</div>
-		<label class="flex min-h-11 items-center gap-2"
+		<label class="flex min-h-[44px] items-center gap-2"
 			><Checkbox bind:checked={mine} />รายการที่ฉันบันทึก</label
-		><LoadingButton type="submit" loading={pending === 'read'} disabled={!!pending || !!frozen}
-			>ค้นหา</LoadingButton
+		><LoadingButton
+			class="min-h-[44px] min-w-[44px]"
+			type="submit"
+			loading={pending === 'read'}
+			disabled={!!pending || !!frozen}>ค้นหา</LoadingButton
 		>
 	</form>
 	{#if error}<PageState
@@ -255,6 +258,7 @@
 			onaction={() => void load(applied)}
 		/>{/if}
 	{#if canCancel && selected.length}<Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="destructive"
 			disabled={!!pending || !!frozen}
@@ -267,7 +271,7 @@
 		{#each page.items as row (row.id)}<li class="space-y-2 p-4">
 				<div class="flex flex-wrap items-start justify-between gap-3">
 					<div class="flex min-w-0 items-start gap-3">
-						{#if canCancel && row.canCancel}<label class="flex min-h-11 items-center"
+						{#if canCancel && row.canCancel}<label class="flex min-h-[44px] items-center"
 								><Checkbox
 									aria-label={`เลือกยกเลิก ${row.studentName} ${row.itemName}`}
 									disabled={!!requestId}
@@ -282,7 +286,7 @@
 							<Button
 								type="button"
 								variant="link"
-								class="h-auto whitespace-normal p-0 text-left"
+								class="min-h-[44px] min-w-[44px] h-auto whitespace-normal p-0 text-left"
 								onclick={() => onStudent?.(row.studentId)}>{row.studentName}</Button
 							>
 							<p class="text-xs text-muted-foreground">{row.studentCode ?? '—'} · {row.homeroom}</p>
@@ -302,16 +306,20 @@
 				<p class="text-xs text-muted-foreground">
 					เกิดเหตุ {row.occurredAt ? formatBehaviorTime(row.occurredAt) : row.date} · บันทึก {formatBehaviorTime(
 						row.createdAt
-					)} · {row.creatorName ?? 'ระบบ'} · {sourceLabels[row.source]}
+					)} · {row.creatorName || (row.createdBy ? 'ผู้บันทึก' : 'ระบบอัตโนมัติ')} · {sourceLabels[
+						row.source
+					]}
 				</p>
 				{#if row.cancelledAt}<p class="text-sm text-muted-foreground">
 						ยกเลิก: {row.cancellationReason}
 					</p>{/if}
 				<div class="flex flex-wrap gap-2">
 					{#if row.source !== 'manual' && $can.hasAny(PERMISSIONS.ATTENDANCE_READ_ASSIGNED, PERMISSIONS.ATTENDANCE_READ_SCHOOL, PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED, PERMISSIONS.ATTENDANCE_UPDATE_SCHOOL, PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL)}<Button
+							class="min-h-[44px] min-w-[44px]"
 							href={sourceHref(row)}
 							variant="outline">เปิดเช็กชื่อต้นทาง</Button
 						>{/if}{#if row.canCancel && canCancel && row.batchId}<Button
+							class="min-h-[44px] min-w-[44px]"
 							type="button"
 							variant="outline"
 							disabled={!!pending || !!frozen}
@@ -324,12 +332,14 @@
 	</ul>
 	<div class="flex items-center justify-between">
 		<Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={!!pending || !applied.offset}
 			onclick={() => void load({ ...applied, offset: Math.max(0, (applied.offset ?? 0) - 50) })}
 			>ก่อนหน้า</Button
 		><span>{page.total} รายการ</span><Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={!!pending || (applied.offset ?? 0) + 50 >= page.total}
@@ -351,12 +361,16 @@
 			/>
 			<div class="flex justify-end gap-2">
 				<Button
+					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="outline"
 					disabled={!!pending || !!frozen}
 					onclick={() => (confirming = false)}>กลับ</Button
-				><LoadingButton type="submit" variant="destructive" loading={pending === 'cancel'}
-					>ยืนยันยกเลิก</LoadingButton
+				><LoadingButton
+					class="min-h-[44px] min-w-[44px]"
+					type="submit"
+					variant="destructive"
+					loading={pending === 'cancel'}>ยืนยันยกเลิก</LoadingButton
 				>
 			</div>
 		</form>{/if}

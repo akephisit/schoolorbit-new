@@ -20,9 +20,8 @@
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	let {
 		initial,
-		term,
 		refreshRevision = 0
-	}: { initial: BehaviorStudentSummary; term?: string | null; refreshRevision?: number } = $props();
+	}: { initial: BehaviorStudentSummary; refreshRevision?: number } = $props();
 	let summary = $state(untrack(() => initial));
 	let editing = $state<BehaviorDailyTotal | null>(null);
 	let delta = $state(0);
@@ -44,11 +43,7 @@
 		refreshing = true;
 		error = '';
 		try {
-			const result = await behaviorSummary(
-				summary.studentId,
-				{ academicTermId: term ?? undefined },
-				{ signal: ticket.signal }
-			);
+			const result = await behaviorSummary(summary.studentId, {}, { signal: ticket.signal });
 			if (request.isCurrent(ticket.revision)) summary = result;
 		} catch (e) {
 			if (request.isCurrent(ticket.revision))
@@ -123,8 +118,9 @@
 			actionLabel="ลองโหลดใหม่"
 			onaction={() => void refresh()}
 		/>{/if}
+	<p class="text-sm text-muted-foreground">ประวัติและคะแนนสะสมรวมทุกปีการศึกษา</p>
 	<div class="grid gap-4 md:grid-cols-3">
-		{#each [{ label: 'รอบปัจจุบัน', totals: summary.current }, { label: 'ประวัติที่เก็บไว้', totals: summary.history }, { label: 'สะสมทั้งหมด', totals: summary.lifetime }] as group (group.label)}<Card.Root
+		{#each [{ label: 'รอบปัจจุบัน', totals: summary.current }, { label: 'ประวัติรวมทุกภาคเรียน', totals: summary.history }, { label: 'สะสมทั้งหมด', totals: summary.lifetime }] as group (group.label)}<Card.Root
 				><Card.Header><Card.Title>{group.label}</Card.Title></Card.Header><Card.Content
 					><dl class="grid grid-cols-2 gap-2">
 						<dt>ความดี</dt>
@@ -148,7 +144,7 @@
 			>{/if}
 	</p>
 	<details>
-		<summary class="min-h-11 cursor-pointer py-2"
+		<summary class="min-h-[44px] cursor-pointer py-2"
 			>ประวัติยอดรายวัน ({summary.historyTotals.length})</summary
 		>
 		<ul class="divide-y">
@@ -158,6 +154,7 @@
 					<span
 						>{row.date} · {sideLabels[row.side]} · {sourceLabels[row.source]} · {row.points} คะแนน</span
 					>{#if $can.has(PERMISSIONS.BEHAVIOR_CORRECT_SCHOOL)}<Button
+							class="min-h-[44px] min-w-[44px]"
 							type="button"
 							variant="outline"
 							disabled={pending || !!requestId}
@@ -195,11 +192,14 @@
 			/>
 			<div class="flex justify-end gap-2">
 				<Button
+					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="outline"
 					disabled={pending || !!requestId}
 					onclick={() => (editing = null)}>ยกเลิก</Button
-				><LoadingButton type="submit" loading={pending}>บันทึกการปรับยอด</LoadingButton>
+				><LoadingButton class="min-h-[44px] min-w-[44px]" type="submit" loading={pending}
+					>บันทึกการปรับยอด</LoadingButton
+				>
 			</div>
 		</form>{/if}
 </section>

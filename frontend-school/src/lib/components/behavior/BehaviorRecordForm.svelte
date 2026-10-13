@@ -42,7 +42,7 @@
 	let date = $state(untrack(() => initialDate));
 	let loadedDate = $state(untrack(() => initialDate));
 	let defaultInstant = $state(untrack(() => new Date().toISOString()));
-	let defaultClock = $state(untrack(() => bangkokDateTime(new Date(defaultInstant))));
+	const defaultClock = $derived(bangkokDateTime(new Date(defaultInstant)));
 	let time = $state(untrack(() => defaultClock.time));
 	let side = $state(sides[0]);
 	let itemId = $state('');
@@ -183,11 +183,12 @@
 			</div>
 		</div>
 		<Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			onclick={() => {
 				defaultInstant = new Date().toISOString();
-				defaultClock = bangkokDateTime(new Date(defaultInstant));
+
 				date = defaultClock.date;
 				time = defaultClock.time;
 			}}>ใช้วันเวลาปัจจุบัน</Button
@@ -216,6 +217,7 @@
 			</div>
 		</div>
 		{#if date !== loadedDate || error}<LoadingButton
+				class="min-h-[44px] min-w-[44px]"
 				type="button"
 				variant="outline"
 				loading={refreshing}
@@ -246,12 +248,16 @@
 		</p>{/if}
 	<div class="flex justify-end gap-2">
 		<Button
+			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={pending || !!frozen}
 			onclick={() => void goto(`/staff/behavior?academicTermId=${term}`)}>กลับ</Button
-		><LoadingButton type="submit" loading={pending} disabled={refreshing}
-			>บันทึกพฤติกรรม</LoadingButton
+		><LoadingButton
+			class="min-h-[44px] min-w-[44px]"
+			type="submit"
+			loading={pending}
+			disabled={refreshing}>บันทึกพฤติกรรม</LoadingButton
 		>
 	</div>
 </form>

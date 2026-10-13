@@ -8,6 +8,8 @@
 		label,
 		placeholder = 'เลือก',
 		disabled = false,
+		class: className = '',
+		itemClass = '',
 		onValueChange
 	}: {
 		id?: string;
@@ -16,6 +18,8 @@
 		label: string;
 		placeholder?: string;
 		disabled?: boolean;
+		class?: string;
+		itemClass?: string;
 		onValueChange?: (value: string) => void;
 	} = $props();
 	let search = $state('');
@@ -34,7 +38,7 @@
 		if (!open) search = '';
 	}}
 >
-	<Select.Trigger {id} aria-label={label} class="w-full min-w-0"
+	<Select.Trigger {id} aria-label={label} class={`w-full min-w-0 ${className}`}
 		><span class="truncate">{current}</span></Select.Trigger
 	>
 	<Select.Content class="max-w-[calc(100vw-2rem)]">
@@ -45,6 +49,7 @@
 				onkeydown={(e) => e.stopPropagation()}
 			/>{/if}
 		{#each filtered.slice(0, 100) as option (option.value)}<Select.Item
+				class={itemClass}
 				value={option.value}
 				label={option.label}
 				title={option.description ? `${option.label} · ${option.description}` : option.label}

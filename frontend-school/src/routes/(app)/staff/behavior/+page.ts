@@ -51,11 +51,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		summary: studentId
 			? captureRouteLoad(
 					readBehavior(behaviorReadPermissions, () =>
-						behaviorSummary(
-							studentId,
-							{ academicTermId: term ?? undefined },
-							{ requestFetch: fetch }
-						)
+						behaviorSummary(studentId, {}, { requestFetch: fetch })
 					),
 					'โหลดคะแนนไม่ได้'
 				)

@@ -73,6 +73,7 @@
 					>{item.name} · {sideLabels[item.side]}
 					{item.points ?? 'ยังไม่มีเกณฑ์'} · {item.enabled ? 'เปิดใช้' : 'ปิดใช้'}</span
 				><Button
+					class="min-h-[44px] min-w-[44px]"
 					type="button"
 					variant="outline"
 					disabled={pending || !!frozen}
@@ -122,17 +123,20 @@
 					}}
 				/>
 			</div>
-			<label class="flex min-h-11 items-center gap-2"
+			<label class="flex min-h-[44px] items-center gap-2"
 				><Checkbox bind:checked={draft.enabled} />เปิดใช้งานรายการ</label
 			>
 		</fieldset>
 		<div class="flex justify-end gap-2">
 			<Button
+				class="min-h-[44px] min-w-[44px]"
 				type="button"
 				variant="outline"
 				disabled={pending || !!frozen}
 				onclick={() => (draft = blank())}>ยกเลิกการแก้ไข</Button
-			><LoadingButton type="submit" loading={pending}>บันทึกรายการ</LoadingButton>
+			><LoadingButton class="min-h-[44px] min-w-[44px]" type="submit" loading={pending}
+				>บันทึกรายการ</LoadingButton
+			>
 		</div>
 	</form>
 </section>

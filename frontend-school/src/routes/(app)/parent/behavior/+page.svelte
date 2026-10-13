@@ -25,6 +25,7 @@
 						aria-label="เลือกภาคเรียน"
 					>
 						{#each context.terms as term (term.id)}<Button
+								class="min-h-[44px] min-w-[44px]"
 								variant={term.id === context.termId ? 'default' : 'outline'}
 								href={`/parent/behavior?academicTermId=${term.id}${context.studentId ? '&studentId=' + context.studentId : ''}`}
 								>ภาคเรียน {term.name}</Button
@@ -32,6 +33,7 @@
 					</nav>
 					{#if context.children.length}<nav class="flex flex-wrap gap-2" aria-label="เลือกนักเรียน">
 							{#each context.children as child (child.id)}<Button
+									class="min-h-[44px] min-w-[44px]"
 									variant={child.id === context.studentId ? 'default' : 'outline'}
 									href={`/parent/behavior?academicTermId=${context.termId ?? ''}&studentId=${child.id}`}
 									>{child.first_name} {child.last_name}</Button
@@ -40,12 +42,7 @@
 							initial={context.summary}
 							{permissions}
 							variant="detail"
-							retry={(signal) =>
-								behaviorSummary(
-									context.studentId!,
-									{ academicTermId: context.termId ?? undefined },
-									{ signal }
-								)}
+							retry={(signal) => behaviorSummary(context.studentId!, {}, { signal })}
 							>{#snippet children(summary)}<BehaviorSummary
 									initial={summary}
 								/>{/snippet}</BehaviorRegion

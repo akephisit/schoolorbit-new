@@ -16,6 +16,7 @@ test('reader loads history without settings or action-only selector reads', asyn
 	await page.goto(behaviorPath());
 	await expect(page.getByRole('heading', { name: 'พฤติกรรมนักเรียน', exact: true })).toBeVisible();
 	await expect(page.getByText('ช่วยจัดห้อง', { exact: true })).toBeVisible();
+	await expect(page.getByText(/ระบบอัตโนมัติ/)).toBeVisible();
 	await expect(page.getByRole('link', { name: 'บันทึกพฤติกรรม', exact: true })).toHaveCount(0);
 	expect(api.reads).not.toContain('/api/behavior/settings');
 	expect(api.reads).not.toContain('/api/behavior/options');
@@ -50,9 +51,12 @@ test('mixed room selection deduplicates and preserves draft after roster conflic
 });
 
 test('split cycle summary avoids showing mismatched current net', async ({ page }) => {
-	await mockBehavior(page, { splitCycles: true });
+	const api = await mockBehavior(page, { splitCycles: true });
 	await page.goto(behaviorPath() + `&studentId=${behaviorStudent}`);
 	await expect(page.getByText('ต่างช่วงเวลา', { exact: true })).toBeVisible();
+	expect(
+		api.summaryQueries.every((query) => !new URLSearchParams(query).has('academicTermId'))
+	).toBe(true);
 	await expect(page.getByText('สุทธิในช่วงเดียวกัน', { exact: false })).toContainText('12');
 });
 
@@ -109,6 +113,28 @@ for (const theme of ['light', 'dark'])
 		await expect
 			.poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
 			.toBe(theme === 'dark');
+		const choice = page.getByRole('button', { name: 'ประเภท', exact: true });
+		await choice.click();
+		const option = page.getByRole('option', { name: 'คะแนนความดี', exact: true });
+		await expect
+			.poll(async () => (await option.boundingBox())?.height ?? 0)
+			.toBeGreaterThanOrEqual(44);
+		await page.keyboard.press('Escape');
+		const checkbox = page.getByRole('checkbox', { name: 'เลือก นักเรียน หนึ่ง', exact: true });
+		expect((await checkbox.locator('..').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+		await checkbox.check();
+		await page.getByText('ตรวจรายชื่อที่เลือก 1 คน', { exact: true }).click();
+		for (const target of [
+			choice,
+			page.getByRole('button', { name: 'ค้นหา', exact: true }),
+			page.getByRole('button', { name: 'ล้างการเลือก', exact: true }),
+			page.getByRole('button', { name: 'นำ นักเรียน หนึ่ง ออก', exact: true }),
+			page.getByRole('button', { name: 'ถัดไป', exact: true })
+		]) {
+			const bounds = (await target.boundingBox())!;
+			expect(bounds.height).toBeGreaterThanOrEqual(44);
+			expect(bounds.width).toBeGreaterThanOrEqual(44);
+		}
 		await page.screenshot({ path: `/tmp/schoolorbit-behavior-${theme}.png`, fullPage: true });
 	});
 
@@ -186,3 +212,20 @@ test('a date change during roster reload never labels the older response as curr
 	).toBeVisible();
 	expect(api.batches).toHaveLength(0);
 });
+
+for (const userType of ['student', 'parent'] as const)
+	test(`${userType} reads cumulative scores across terms without admin data`, async ({ page }) => {
+		const api = await mockBehavior(page, {
+			userType,
+			permissions: [PERMISSIONS.BEHAVIOR_READ_OWN]
+		});
+		await page.goto(`/${userType}/behavior?academicTermId=${behaviorTerm}`);
+		await expect(page.getByText('สะสมทั้งหมด', { exact: true })).toBeVisible();
+		await expect.poll(() => api.summaryQueries.length).toBeGreaterThan(0);
+		expect(
+			api.summaryQueries.every((query) => !new URLSearchParams(query).has('academicTermId'))
+		).toBe(true);
+		expect(api.reads).not.toContain('/api/behavior/settings');
+		expect(api.reads).not.toContain('/api/behavior/items');
+		await expect(page.getByRole('button', { name: 'ยืนยันยกเลิก', exact: true })).toHaveCount(0);
+	});
