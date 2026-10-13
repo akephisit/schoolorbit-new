@@ -558,6 +558,8 @@ encrypted credential bytes and prior SQLx checksums, including safe repeat execu
 School's runtime pool regression continues to reject request-time permission DDL.
 The `deployment_runtime_verification` cases verify that a held request connection
 cannot block the independent deployment check, and incomplete history fails closed.
+The tenancy retirement test holds old clones, retires the cached pool, checks that
+all old clones are closed, and verifies a fresh pool against the unchanged history.
 
 ## Permission Contract
 

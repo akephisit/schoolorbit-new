@@ -182,6 +182,20 @@ impl PoolManager {
             .retain(|_, lock| Arc::strong_count(lock) > 1);
     }
 
+    /// Deployment retires pre-migration connections before registering runtime work.
+    pub async fn retire_pool(&self, database_url: &str, subdomain: &str) {
+        let creation_lock = self
+            .creation_locks
+            .entry(subdomain.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _guard = creation_lock.lock().await;
+        let retired = self.pools.write().await.remove(database_url);
+        if let Some(entry) = retired {
+            entry.pool.close().await;
+        }
+    }
+
     /// Get current pool count (for monitoring)
     pub async fn pool_count(&self) -> usize {
         self.pools.read().await.len()
@@ -196,6 +210,37 @@ impl Default for PoolManager {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn deployment_retirement_closes_old_clones_and_reopens_a_verified_pool() {
+        let fixture = school_test_db::create_named_test_pool("runtime_pool_retirement").await;
+        school_test_db::run_test_migrations(&fixture).await;
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        let manager = super::PoolManager::new();
+        let old = manager.get_pool(url.as_str(), "tenant").await.unwrap();
+        let held_clone = old.clone();
+        manager.retire_pool(url.as_str(), "tenant").await;
+        assert_eq!(manager.pool_count().await, 0);
+        assert!(old.is_closed());
+        assert!(held_clone.is_closed());
+        let fresh = manager.get_pool(url.as_str(), "tenant").await.unwrap();
+        assert!(!fresh.is_closed());
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT 1")
+                .fetch_one(&fresh)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(manager.pool_count().await, 1);
+        manager.retire_pool(url.as_str(), "tenant").await;
+    }
+
     #[tokio::test]
     async fn runtime_pool_access_does_not_reconcile_permissions() {
         let pool = school_test_db::create_named_test_pool("pool_no_runtime_ddl").await;

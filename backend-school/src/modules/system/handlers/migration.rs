@@ -490,6 +490,10 @@ async fn migrate_single_school(
             .get_school_database_info(subdomain)
             .await?;
         let version = verify_runtime_schema(&runtime.database_url).await?;
+        state
+            .pool_manager
+            .retire_pool(&runtime.database_url, subdomain)
+            .await;
         let pool = state
             .pool_manager
             .get_pool_without_migrations(&runtime.database_url, subdomain)
@@ -521,6 +525,17 @@ async fn migrate_single_school(
         state.notification_channel.clone(),
     )
     .await
+    .map_err(|error| {
+        tracing::warn!(
+            operation = "attendance_schedule_registration",
+            pool_connections = pool.size(),
+            pool_idle_connections = pool.num_idle(),
+            pool_closed = pool.is_closed(),
+            error_code = "attendance_schedule_registration_failed",
+            "Attendance schedule registration failed"
+        );
+        error
+    })
     .is_err()
     {
         return MigrationResult {
