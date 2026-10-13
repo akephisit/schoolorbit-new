@@ -84,12 +84,20 @@ test('database cutover can re-enter maintenance when both source containers exis
 });
 test('School boot delegates maintenance before replacement and refreshes private upstreams after readiness',()=>{
  const source=readFileSync(path.join(repo,'scripts/lib/pipeline-remote/school-deploy-backend.sh'),'utf8');
- const command='bash "$deployment_root/scripts/lib/pipeline-remote/maintenance.sh" enter';
- const first=source.indexOf(command),second=source.indexOf(command,first+command.length);
+ const first=source.indexOf('if ! enter_maintenance ||'),second=source.indexOf('\nenter_maintenance\n');
  assert.ok(first>=0);assert.ok(first<source.indexOf('podman rm --force schoolorbit-backend-school'));
  assert.ok(second>source.indexOf('schoolorbit_timer_report backend_readiness'));
  assert.ok(second<source.indexOf('tenant_migration_started='));
  assert.doesNotMatch(source,/cp "\$maintenance_proxy_source" "\$proxy_target"/);
+});
+test('School maintenance receives validated domain and release after Compose removes exported context',t=>{
+ const source=readFileSync(path.join(repo,'scripts/lib/pipeline-remote/school-deploy-backend.sh'),'utf8');
+ const helper=source.match(/enter_maintenance\(\) \{[\s\S]*?\n\}/)?.[0];assert.ok(helper);
+ const root=mkdtempSync(path.join(os.tmpdir(),'maintenance-context-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const remote=path.join(root,'scripts/lib/pipeline-remote');mkdirSync(remote,{recursive:true});
+ writeFileSync(path.join(remote,'maintenance.sh'),'#!/bin/bash\nset -eu\n[[ $BASE_DOMAIN == example.test && $RELEASE_SHA == '+ 'a'.repeat(40)+' && $1 == enter ]]\n');
+ const result=spawnSync('bash',['-euc',helper+'\nunset BASE_DOMAIN\nbase_domain=example.test\nRELEASE_SHA='+ 'a'.repeat(40)+'\ndeployment_root="$1"\nenter_maintenance','fixture',root],{encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr);
 });
 test('private verification preserves maintenance and acceptance opens both proxies last',t=>{
  const f=fixture(t);assert.equal(f.run('enter').status,0);const first=readFileSync(path.join(f.root,'releases','a'.repeat(40),'probe-token'),'utf8');

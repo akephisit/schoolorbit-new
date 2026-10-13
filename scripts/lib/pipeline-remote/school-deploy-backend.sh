@@ -107,6 +107,12 @@ unset_school_compose_env() {
     unset SCHOOL_ROLLBACK_JWT_SECRET BASE_DOMAIN
     unset TRUSTED_PROXY_CIDRS SCHOOL_ALLOWED_DEV_ORIGINS
 }
+enter_maintenance() {
+    # Compose cleanup intentionally removes BASE_DOMAIN from the parent shell.
+    # Pass the validated deployment context explicitly to the canonical owner.
+    BASE_DOMAIN="$base_domain" RELEASE_SHA="$RELEASE_SHA" \
+        bash "$deployment_root/scripts/lib/pipeline-remote/maintenance.sh" enter
+}
 if ! session_hmac_key="$(runtime_env_value SESSION_HMAC_KEY)"; then
     echo "Required backend-school runtime value is unavailable: SESSION_HMAC_KEY"
     exit 1
@@ -364,7 +370,7 @@ fi
 echo "Activate School API maintenance for release ${RELEASE_SHA}"
 # The central owner omits private upstreams while the source backend is absent
 # or stopped, including the database cutover's first container start.
-if ! bash "$deployment_root/scripts/lib/pipeline-remote/maintenance.sh" enter ||
+if ! enter_maintenance ||
     ! recreate_nginx ||
     ! validate_nginx_config_with_retry ||
     ! podman exec schoolorbit-nginx nginx -s reload; then
@@ -413,7 +419,7 @@ schoolorbit_timer_report backend_readiness "$backend_readiness_started"
 
 # Resolve the new backend address only after it is running and ready. Public
 # requests stay in maintenance while authenticated release probes become usable.
-bash "$deployment_root/scripts/lib/pipeline-remote/maintenance.sh" enter
+enter_maintenance
 
 migration_response="$(mktemp /opt/stack/.backend-school-migration.XXXXXX)"
 chmod 600 "$migration_response"
