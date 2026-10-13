@@ -38,32 +38,8 @@ fn named_test_schema(test_name: &str, _process_id: u32) -> String {
 
 fn explicit_test_database_url() -> String {
     dotenvy::dotenv().ok();
-    let database_url = env::var("TEST_DATABASE_URL")
-        .expect("TEST_DATABASE_URL must be set for database-backed backend tests");
-
-    direct_test_database_url(database_url)
-}
-
-fn direct_test_database_url(database_url: String) -> String {
-    let scheme_end = database_url.find("://").map(|index| index + 3).unwrap_or(0);
-    let authority_start = database_url[scheme_end..]
-        .rfind('@')
-        .map(|index| scheme_end + index + 1)
-        .unwrap_or(scheme_end);
-    let authority_end = database_url[authority_start..]
-        .find(['/', '?'])
-        .map(|index| authority_start + index)
-        .unwrap_or(database_url.len());
-
-    let authority = &database_url[authority_start..authority_end];
-    if !authority.contains("-pooler.") {
-        return database_url;
-    }
-
-    let direct_authority = authority.replace("-pooler.", ".");
-    let mut direct_url = database_url;
-    direct_url.replace_range(authority_start..authority_end, &direct_authority);
-    direct_url
+    env::var("TEST_DATABASE_URL")
+        .expect("TEST_DATABASE_URL must be set for database-backed backend tests")
 }
 
 fn shared_test_schema() -> String {
@@ -260,36 +236,6 @@ mod tests {
             .chars()
             .chain(limits.chars())
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_'));
-    }
-
-    #[test]
-    fn direct_test_database_url_removes_neon_pooler_host_marker() {
-        let database_url = "postgresql://user:pass@ep-example-pooler.ap-southeast-1.aws.neon.tech/db?sslmode=require"
-            .to_string();
-
-        assert_eq!(
-            direct_test_database_url(database_url),
-            "postgresql://user:pass@ep-example.ap-southeast-1.aws.neon.tech/db?sslmode=require"
-        );
-    }
-
-    #[test]
-    fn direct_test_database_url_keeps_non_pooler_urls() {
-        let database_url = "postgresql://user:pass@localhost/schoolorbit_test".to_string();
-
-        assert_eq!(direct_test_database_url(database_url.clone()), database_url);
-    }
-
-    #[test]
-    fn direct_test_database_url_only_rewrites_authority() {
-        let database_url =
-            "postgresql://user:pass-pooler.marker@ep-example-pooler.aws.neon.tech/db?tag=-pooler."
-                .to_string();
-
-        assert_eq!(
-            direct_test_database_url(database_url),
-            "postgresql://user:pass-pooler.marker@ep-example.aws.neon.tech/db?tag=-pooler."
-        );
     }
 
     #[tokio::test]

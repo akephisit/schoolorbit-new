@@ -40,37 +40,26 @@ pub async fn verify_admin_schema(pool: &PgPool) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn migrate_admin(pool: &PgPool, expand_only: bool) -> Result<(), String> {
-    let mut migrator = sqlx::migrate!("./migrations");
-    if expand_only {
-        migrator.migrations = std::borrow::Cow::Owned(
-            migrator
-                .iter()
-                .filter(|m| m.version <= 7)
-                .cloned()
-                .collect(),
-        );
-    }
+pub async fn migrate_admin(pool: &PgPool) -> Result<(), String> {
+    let migrator = sqlx::migrate!("./migrations");
     migrator
         .run(pool)
         .await
         .map_err(|_| "Admin migration gate failed".to_string())?;
-    if !expand_only {
-        // Only production's owner/runtime pair needs grants; fixtures use their owned role.
-        let owner: String = sqlx::query_scalar("SELECT current_user::text")
-            .fetch_one(pool)
-            .await
-            .map_err(|_| "Admin migration identity unavailable".to_string())?;
-        if owner == "schoolorbit_admin_owner" {
-            sqlx::raw_sql("REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-                GRANT USAGE ON SCHEMA public TO schoolorbit_admin_runtime;
-                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO schoolorbit_admin_runtime;
-                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO schoolorbit_admin_runtime;
-                REVOKE INSERT, UPDATE, DELETE ON _sqlx_migrations FROM schoolorbit_admin_runtime;
-                ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO schoolorbit_admin_runtime;
-                ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO schoolorbit_admin_runtime")
-                .execute(pool).await.map_err(|_| "Admin runtime grants failed".to_string())?;
-        }
+    // Only production's owner/runtime pair needs grants; fixtures use their owned role.
+    let owner: String = sqlx::query_scalar("SELECT current_user::text")
+        .fetch_one(pool)
+        .await
+        .map_err(|_| "Admin migration identity unavailable".to_string())?;
+    if owner == "schoolorbit_admin_owner" {
+        sqlx::raw_sql("REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+            GRANT USAGE ON SCHEMA public TO schoolorbit_admin_runtime;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO schoolorbit_admin_runtime;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO schoolorbit_admin_runtime;
+            REVOKE INSERT, UPDATE, DELETE ON _sqlx_migrations FROM schoolorbit_admin_runtime;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO schoolorbit_admin_runtime;
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO schoolorbit_admin_runtime")
+            .execute(pool).await.map_err(|_| "Admin runtime grants failed".to_string())?;
     }
     Ok(())
 }

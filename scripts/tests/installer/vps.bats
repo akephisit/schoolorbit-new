@@ -35,7 +35,6 @@ setup() {
     SO_SECRETS[DATABASE_URL]="${database_scheme}://schoolorbit:DbPass@db.invalid/schoolorbit"
     SO_SECRETS[JWT_SECRET]=jwt-runtime-secret-value
     SO_SECRETS[SESSION_HMAC_KEY]=session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz
-    SO_SECRETS[SCHOOL_ROLLBACK_JWT_SECRET]=school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M
     SO_SECRETS[INTERNAL_API_SECRET]=internal-runtime-secret-value
     SO_SECRETS[ENCRYPTION_KEY]=encryption-runtime-secret-value-32chars
     SO_SECRETS[BLIND_INDEX_KEY]=blind-index-runtime-secret-value-32chars
@@ -169,7 +168,6 @@ teardown() {
     grep -Fxq "BACKEND_SCHOOL_URL='http://schoolorbit-backend-school:8081'" "$TEST_ROOT/runtime.env"
     grep -Fxq "API_URL='https://school-api.schoolorbit.app'" "$TEST_ROOT/runtime.env"
     grep -Fxq "SESSION_HMAC_KEY='session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz'" "$TEST_ROOT/runtime.env"
-    grep -Fxq "SCHOOL_ROLLBACK_JWT_SECRET='school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M'" "$TEST_ROOT/runtime.env"
     grep -Fxq "BASE_DOMAIN='schoolorbit.app'" "$TEST_ROOT/runtime.env"
     grep -Fxq "TRUSTED_PROXY_CIDRS='10.0.0.0/8,172.16.0.0/12'" "$TEST_ROOT/runtime.env"
     grep -Fxq "SCHOOL_ALLOWED_DEV_ORIGINS=''" "$TEST_ROOT/runtime.env"
@@ -186,7 +184,6 @@ teardown() {
     grep -Fq 'chmod 0600' "$FAKE_COMMAND_LOG"
     grep -R -Fq "DATABASE_URL='$database_url'" "$TEST_ROOT"/ssh-stdin-*
     grep -R -Fq "SESSION_HMAC_KEY='session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz'" "$TEST_ROOT"/ssh-stdin-*
-    grep -R -Fq "SCHOOL_ROLLBACK_JWT_SECRET='school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M'" "$TEST_ROOT"/ssh-stdin-*
     ! grep -R -Fq must-not-reach-vps "$TEST_ROOT"/ssh-stdin-*
     ! grep -Fq 'session-hmac-7Qp2Vm9Kx4Ld8Ns5Rc3Ty6Wz' "$FAKE_COMMAND_LOG"
     ! grep -Fq 'school-rollback-jwt-8Fn3Qa6Uv1Jk5Pe9Xs2M' "$FAKE_COMMAND_LOG"

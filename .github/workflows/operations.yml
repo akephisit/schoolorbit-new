@@ -13,7 +13,6 @@ on:
           - diagnostics
           - benchmark
           - http-benchmark
-          - database-cutover
       request_id:
         description: Exact provisioning request identifier
         type: string
@@ -39,53 +38,6 @@ permissions:
   actions: read
   packages: write
 jobs:
-  database-cutover:
-    if: inputs.operation == 'database-cutover' && github.ref == 'refs/heads/main'
-    concurrency:
-      group: schoolorbit-production
-      cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 100
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-      - name: Verify current main and its exact-attempt build gate before quiescing writers
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUNTIME_DEPLOY_ENABLED: ${{ vars.RUNTIME_DEPLOY_ENABLED }}
-          FRONTEND_DEPLOY_ENABLED: ${{ vars.FRONTEND_DEPLOY_ENABLED }}
-        run: node scripts/postgres_cutover_gate.mjs
-      - name: Upload trusted maintenance implementations
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          port: ${{ secrets.SERVER_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: scripts/lib/pipeline-remote/maintenance.sh,scripts/lib/pipeline-remote/postgres-cutover.sh,scripts/render_nginx_config.sh,nginx-configs
-          target: /opt/stack/deployment
-      - name: Keep the production lock and maintenance during operator data transfer and restore verification
-        uses: appleboy/ssh-action@v1.2.5
-        env:
-          BASE_DOMAIN: ${{ vars.BASE_DOMAIN }}
-          RELEASE_SHA: ${{ github.sha }}
-          EXPECTED_DATABASES: ${{ fromJson(inputs.options).databases }}
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          port: ${{ secrets.SERVER_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: BASE_DOMAIN,RELEASE_SHA,EXPECTED_DATABASES
-          command_timeout: 95m
-          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/postgres-cutover.sh
-      - name: Refuse a stale main after transfer while retaining maintenance
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUNTIME_DEPLOY_ENABLED: ${{ vars.RUNTIME_DEPLOY_ENABLED }}
-          FRONTEND_DEPLOY_ENABLED: ${{ vars.FRONTEND_DEPLOY_ENABLED }}
-        run: node scripts/postgres_cutover_gate.mjs
   smoke:
     if: inputs.operation == 'smoke'
     uses: ./.github/workflows/smoke-test.yml

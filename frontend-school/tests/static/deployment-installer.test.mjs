@@ -111,7 +111,7 @@ test('school session runtime is required and isolated from admin JWT', async () 
 		const admin = compose.slice(adminStart, schoolStart);
 		const school = compose.slice(schoolStart, schoolEnd);
 		assert.match(admin, /JWT_SECRET[^\n]*\$\{JWT_SECRET/);
-		assert.match(school, /JWT_SECRET[^\n]*\$\{SCHOOL_ROLLBACK_JWT_SECRET/);
+		assert.doesNotMatch(school, /JWT_SECRET/);
 		assert.doesNotMatch(school, /JWT_SECRET[^\n]*\$\{JWT_SECRET/);
 		assert.match(school, /SESSION_HMAC_KEY[^\n]*\$\{SESSION_HMAC_KEY/);
 		assert.match(school, /BASE_DOMAIN[^\n]*\$\{BASE_DOMAIN/);
@@ -126,9 +126,9 @@ test('school session runtime is required and isolated from admin JWT', async () 
 	const config = await readRepo('scripts/lib/schoolorbit-installer/config.sh');
 	const vps = await readRepo('scripts/lib/schoolorbit-installer/vps.sh');
 	assert.match(config, /SO_REQUIRED_SECRETS[\s\S]*SESSION_HMAC_KEY/);
-	assert.match(config, /SO_REQUIRED_SECRETS[\s\S]*SCHOOL_ROLLBACK_JWT_SECRET/);
+	assert.doesNotMatch(config, /SCHOOL_ROLLBACK_JWT_SECRET/);
 	assert.match(vps, /_dotenv_line SESSION_HMAC_KEY/);
-	assert.match(vps, /_dotenv_line SCHOOL_ROLLBACK_JWT_SECRET/);
+	assert.doesNotMatch(vps, /SCHOOL_ROLLBACK_JWT_SECRET/);
 });
 
 test('backend-school deployment validates session runtime before compose activation', async () => {
@@ -148,7 +148,6 @@ test('backend-school deployment validates session runtime before compose activat
 	for (const name of [
 		'JWT_SECRET',
 		'SESSION_HMAC_KEY',
-		'SCHOOL_ROLLBACK_JWT_SECRET',
 		'BASE_DOMAIN',
 		'TRUSTED_PROXY_CIDRS',
 		'SCHOOL_ALLOWED_DEV_ORIGINS'
@@ -156,21 +155,16 @@ test('backend-school deployment validates session runtime before compose activat
 		assert.match(guard, new RegExp(`runtime_env_value ${name}`));
 	}
 	assert.match(guard, /\$\{#session_hmac_key\}[^\n]*-lt 32/);
-	assert.match(guard, /\$\{#school_rollback_jwt_secret\}[^\n]*-lt 32/);
-	assert.match(guard, /session_hmac_key[^\n]*school_rollback_jwt_secret/);
-	assert.match(guard, /school_rollback_jwt_secret[^\n]*admin_jwt_secret/);
+	assert.match(guard, /session_hmac_key[^\n]*admin_jwt_secret/);
+	assert.doesNotMatch(guard, /school_rollback_jwt_secret/);
 	assert.match(guard, /runtime_base_domain[^\n]*base_domain/);
-	assert.doesNotMatch(
-		guard,
-		/echo[^\n]*(?:session_hmac_key|school_rollback_jwt_secret|admin_jwt_secret)/
-	);
+	assert.doesNotMatch(guard, /echo[^\n]*(?:session_hmac_key|admin_jwt_secret)/);
 
 	assert.ok(exportDefinition > validatorStart, 'the decoded runtime bridge must be defined');
 	const exportDefinitionEnd = workflow.indexOf('            }', exportDefinition);
 	const exportBridge = workflow.slice(exportDefinition, exportDefinitionEnd);
 	for (const name of [
 		'SESSION_HMAC_KEY',
-		'SCHOOL_ROLLBACK_JWT_SECRET',
 		'BASE_DOMAIN',
 		'TRUSTED_PROXY_CIDRS',
 		'SCHOOL_ALLOWED_DEV_ORIGINS'
@@ -749,11 +743,10 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		/91a8a5567efa6bf941162aa806b3ba476aaddf7867640e53053b35fb225a5dae/
 	);
 
-	const workflowPortCounts = new Map([
-		['.github/workflows/deploy-backend-admin.yml', 2],
-		['.github/workflows/deploy-school-release.yml', 4]
-	]);
-	for (const [file, expectedPortCount] of workflowPortCounts) {
+	for (const file of [
+		'.github/workflows/deploy-backend-admin.yml',
+		'.github/workflows/deploy-school-release.yml'
+	]) {
 		const workflow = await readRepo(file);
 		assert.match(workflow, /podman-compose\.yml/);
 		assert.match(workflow, /scripts\/render_nginx_config\.sh/);
@@ -788,10 +781,14 @@ test('backend workflows deploy the canonical target and verify the selected orig
 		assert.match(workflow, /grep -lF "server_name/);
 		const parent = await readRepo('.github/workflows/pipeline.yml');
 		assert.match(parent, /group: schoolorbit-production/);
-		assert.equal(
-			(workflow.match(/port: \$\{\{ secrets\.SERVER_PORT \}\}/g) ?? []).length,
-			expectedPortCount
+		const definition = parseYaml(workflow);
+		const remoteSteps = Object.values(definition.jobs).flatMap((job) =>
+			(job.steps ?? []).filter((step) => /^appleboy\/(?:scp|ssh)-action@/.test(step.uses ?? ''))
 		);
+		assert.ok(remoteSteps.length > 0);
+		for (const step of remoteSteps) {
+			assert.equal(step.with.port, '${{ secrets.SERVER_PORT }}');
+		}
 		assert.doesNotMatch(workflow, /backend-(?:admin|school)\/docker-compose\.yml/);
 		assert.doesNotMatch(workflow, /file-platform-runtime/);
 		assert.doesNotMatch(workflow, /"\$\{runtime_compose\}\.next" config/);
@@ -1066,7 +1063,11 @@ test('runtime diagnostics expose container state without environment or applicat
 	assert.match(workflow, /pg_stat_activity/);
 	assert.match(workflow, /'nginx_restarts=[^']*'\s*\\\s*schoolorbit-nginx\s*\|\| true/);
 	assert.match(workflow, /if \[ -r \/opt\/stack\/\.env \]; then/);
-	assert.match(workflow, /if \[ -n "\$database_url" \]; then/);
+	assert.match(workflow, /if \[ -n "\$PGDATABASE" \]; then/);
+	assert.match(workflow, /schoolorbit_runtime_env_value DATABASE_URL/);
+	assert.match(workflow, /postgres:18\.6-alpine@sha256:/);
+	assert.match(workflow, /podman run --rm -e PGDATABASE/);
+	assert.doesNotMatch(workflow, /psql "\$|postgres:17|sed -n 's\/\^DATABASE_URL/);
 	assert.match(workflow, /database_activity=status_unavailable reason=database_url_missing/);
 	assert.match(workflow, /podman info --format '\{\{\.Store\.GraphRoot\}\}'/);
 	assert.match(workflow, /df -P "\$graph_root"/);
