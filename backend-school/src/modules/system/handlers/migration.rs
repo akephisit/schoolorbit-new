@@ -482,22 +482,23 @@ async fn migrate_single_school(
         let result = school_migrations::run_tenant_migrations(&owner_pool).await;
         owner_pool.close().await;
         result?;
+        // Permission synchronization committed; invalidate before fallible verification.
+        state.invalidate_permission_tenant(subdomain);
+        state.notify_all_permissions_changed(subdomain);
         let runtime = state
             .admin_client
             .get_school_database_info(subdomain)
             .await?;
-        state
+        let version = verify_runtime_schema(&runtime.database_url).await?;
+        let pool = state
             .pool_manager
             .get_pool_without_migrations(&runtime.database_url, subdomain)
-            .await
+            .await?;
+        Ok::<_, String>((pool, version))
     }
     .await;
-    let pool = match migration {
-        Ok(pool) => {
-            state.invalidate_permission_tenant(subdomain);
-            state.notify_all_permissions_changed(subdomain);
-            pool
-        }
+    let (pool, current_version) = match migration {
+        Ok((pool, version)) => (pool, version),
         Err(error) => {
             let _ = state
                 .admin_client
@@ -508,23 +509,6 @@ async fn migrate_single_school(
                 status: "failed".into(),
                 version: None,
                 error: Some(error),
-            };
-        }
-    };
-
-    let current_version = match get_current_version(&pool).await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("❌ Failed to get version for {}: {}", subdomain, e);
-            let _ = state
-                .admin_client
-                .update_migration_status(subdomain, 0, "failed", Some(&e))
-                .await;
-            return MigrationResult {
-                subdomain: subdomain.to_string(),
-                status: "failed".to_string(),
-                version: None,
-                error: Some(e),
             };
         }
     };
@@ -607,13 +591,45 @@ async fn get_latest_migration_version() -> Result<i64, String> {
     Ok(max_version)
 }
 
+/// Deployment verification owns a short-lived DML connection, independent of request pools.
+async fn verify_runtime_schema(database_url: &str) -> Result<i64, String> {
+    use sqlx::ConnectOptions;
+    let options = database_url
+        .parse::<sqlx::postgres::PgConnectOptions>()
+        .map_err(|_| "Invalid runtime verification connection".to_string())?
+        .disable_statement_logging();
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .min_connections(0)
+        .acquire_timeout(std::time::Duration::from_secs(20))
+        .connect_with(options)
+        .await
+        .map_err(|_| "Runtime verification connection failed".to_string())?;
+    let result = async {
+        school_migrations::verify_tenant_schema(&pool).await?;
+        get_current_version(&pool).await
+    }
+    .await;
+    pool.close().await;
+    result
+}
+
 /// Get current migration version from school database
 async fn get_current_version(pool: &PgPool) -> Result<i64, String> {
     let version =
         sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations")
             .fetch_one(pool)
             .await
-            .map_err(|e| format!("Failed to get current version: {}", e))?;
+            .map_err(|e| {
+                tracing::warn!(
+                    operation = "tenant_schema_version",
+                    pool_connections = pool.size(),
+                    pool_idle_connections = pool.num_idle(),
+                    pool_closed = pool.is_closed(),
+                    "Tenant schema version read failed"
+                );
+                format!("Failed to get current version: {}", e)
+            })?;
 
     Ok(version)
 }
@@ -626,6 +642,50 @@ mod tests {
         seed_academic_cutover_fixture, seed_release_two_predecessor, CutoverFixture,
     };
     use school_test_db::create_named_test_pool;
+
+    async fn verification_url(pool: &PgPool) -> String {
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        url.to_string()
+    }
+
+    #[tokio::test]
+    async fn deployment_runtime_verification_does_not_borrow_an_exhausted_request_pool() {
+        let pool = create_named_test_pool("deployment_runtime_verifier").await;
+        school_migrations::run_tenant_migrations(&pool)
+            .await
+            .unwrap();
+        let url = verification_url(&pool).await;
+        let requests = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        let held = requests.acquire().await.unwrap();
+        assert!(requests.try_acquire().is_none());
+        let version = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            verify_runtime_schema(&url),
+        )
+        .await
+        .expect("deployment verification must not wait for a request connection")
+        .unwrap();
+        assert_eq!(version, get_latest_migration_version().await.unwrap());
+        drop(held);
+        requests.close().await;
+    }
+
+    #[tokio::test]
+    async fn deployment_runtime_verification_rejects_incomplete_history() {
+        let pool = phase_a_pool("deployment_runtime_verifier_old_schema").await;
+        let result = verify_runtime_schema(&verification_url(&pool).await).await;
+        assert!(result.is_err());
+    }
 
     #[tokio::test]
     async fn delivery_cutover_status_requires_both_actual_reconciliation_audits() {

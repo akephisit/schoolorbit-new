@@ -37,7 +37,10 @@ The Admin image runs `/app/backend-admin --migrate-admin` as a one-shot job with
 `ADMIN_MIGRATION_DATABASE_URL` before starting the ordinary service. Runtime startup
 validates SQLx history without applying migrations. Tenant provisioning/deployment
 alone runs `school_migrations::run_tenant_migrations` and reconciles runtime grants.
-Owner pools close before runtime/scheduler use. Normal requests fail closed when
+Owner pools close before runtime/scheduler use. Each deployment then checks the
+complete SQLx history and current version through a separate, short-lived DML pool
+with one connection; it closes before request/scheduler registration. This verification
+must not borrow a busy cached request pool. Normal requests fail closed when
 the tenant schema does not match the release.
 
 ### Recovery after the completed transfer
