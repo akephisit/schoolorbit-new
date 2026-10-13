@@ -1219,6 +1219,76 @@
       "scope": "school",
       "name": "ล้างรายละเอียดเช็คชื่อภาคเรียนที่ปิดแล้ว",
       "description": "ล้างรายละเอียดเช็คชื่อภาคเรียนที่ปิดแล้ว"
+    },
+    {
+      "module": "behavior",
+      "action": "read",
+      "scope": "own",
+      "name": "ดูพฤติกรรมและคะแนนนักเรียน",
+      "description": "ดูพฤติกรรมและคะแนนนักเรียน ตามขอบเขต own"
+    },
+    {
+      "module": "behavior",
+      "action": "read",
+      "scope": "assigned",
+      "name": "ดูพฤติกรรมและคะแนนนักเรียน",
+      "description": "ดูพฤติกรรมและคะแนนนักเรียน ตามขอบเขต assigned"
+    },
+    {
+      "module": "behavior",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูพฤติกรรมและคะแนนนักเรียน",
+      "description": "ดูพฤติกรรมและคะแนนนักเรียน ตามขอบเขต school"
+    },
+    {
+      "module": "behavior",
+      "action": "create",
+      "scope": "assigned",
+      "name": "บันทึกพฤติกรรมนักเรียน",
+      "description": "บันทึกพฤติกรรมนักเรียน ตามขอบเขต assigned"
+    },
+    {
+      "module": "behavior",
+      "action": "create",
+      "scope": "school",
+      "name": "บันทึกพฤติกรรมนักเรียน",
+      "description": "บันทึกพฤติกรรมนักเรียน ตามขอบเขต school"
+    },
+    {
+      "module": "behavior",
+      "action": "delete",
+      "scope": "own",
+      "name": "ยกเลิกรายการพฤติกรรม",
+      "description": "ยกเลิกรายการพฤติกรรม ตามขอบเขต own"
+    },
+    {
+      "module": "behavior",
+      "action": "delete",
+      "scope": "school",
+      "name": "ยกเลิกรายการพฤติกรรม",
+      "description": "ยกเลิกรายการพฤติกรรม ตามขอบเขต school"
+    },
+    {
+      "module": "behavior",
+      "action": "manage",
+      "scope": "school",
+      "name": "ตั้งเกณฑ์คะแนนพฤติกรรม",
+      "description": "ตั้งเกณฑ์คะแนนพฤติกรรม ตามขอบเขต school"
+    },
+    {
+      "module": "behavior",
+      "action": "correct",
+      "scope": "school",
+      "name": "ปรับยอดประวัติคะแนน",
+      "description": "ปรับยอดประวัติคะแนน ตามขอบเขต school"
+    },
+    {
+      "module": "behavior_cleanup",
+      "action": "execute",
+      "scope": "school",
+      "name": "รีเซ็ตและล้างข้อมูลคะแนน",
+      "description": "รีเซ็ตและล้างข้อมูลคะแนน ตามขอบเขต school"
     }
   ]
 }
