@@ -41,7 +41,9 @@ function detail(): AttendanceDetail {
 			result: 'unchecked',
 			origin: 'unchecked',
 			observedAt: null,
+			processedAt: null,
 			arrivalAt: null,
+			arrivalResult: null,
 			evidenceFileId: null,
 			rowVersion: 1
 		}))
@@ -69,13 +71,13 @@ test('overlapping fields require a choice while unrelated fields still merge', (
 		latest = copyAttendanceDetail(base);
 	local.students[0].result = 'present';
 	latest.students[0].result = 'late';
-	latest.students[1].result = 'leave';
+	latest.students[1].result = 'personal_leave';
 	const merged = mergeAttendanceDetail(base, local, latest);
 	assert.deepEqual(
 		merged.conflicts.map((row) => row.fields),
 		[['result']]
 	);
-	assert.equal(merged.detail.students[1].result, 'leave');
+	assert.equal(merged.detail.students[1].result, 'personal_leave');
 	assert.equal(merged.detail.students[0].result, 'present');
 	assert.equal(merged.conflicts[0].latest.result, 'late');
 });
@@ -100,9 +102,9 @@ test('partial patches exclude unchecked and unchanged pupils; additions do not r
 	});
 	const saved = copyAttendanceDetail(local),
 		later = copyAttendanceDetail(saved);
-	later.students[1].result = 'leave';
+	later.students[1].result = 'personal_leave';
 	assert.deepEqual(attendanceResultPatch(saved, later), {
-		students: [{ studentId: 'two', result: 'leave' }],
+		students: [{ studentId: 'two', result: 'personal_leave' }],
 		needsReason: false
 	});
 	later.students[0].result = 'absent';

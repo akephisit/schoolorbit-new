@@ -83,6 +83,7 @@ function blocks(): TimetableBlock[] {
 		startTime: `${String(8 + index).padStart(2, '0')}:00:00`,
 		endTime: `${9 + index}:00:00`,
 		groups: [],
+		scoring: null,
 		homerooms: [
 			{
 				id: id(820),
@@ -128,7 +129,9 @@ const attendance = (studentId: string): AttendanceReport => ({
 			present: 7,
 			late: 1,
 			absent: 2,
-			leave: 0,
+			skipped: 0,
+			sickLeave: 0,
+			personalLeave: 0,
 			activity: 0,
 			unchecked: 0,
 			expected: 10

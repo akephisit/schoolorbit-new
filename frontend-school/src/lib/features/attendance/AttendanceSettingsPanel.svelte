@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
@@ -48,6 +49,7 @@
 		);
 	const manager = $derived($can.has(PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL));
 	const weekdays = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+	let autoFinalizeFrom = $state(untrack(() => initial.autoFinalizeFrom));
 	let disposed = false;
 	onDestroy(() => {
 		disposed = true;
@@ -111,7 +113,8 @@
 			};
 			const saved = await saveAttendanceSettings(term, {
 				configuration: savedConfiguration,
-				rowVersion: settings.rowVersion
+				rowVersion: settings.rowVersion,
+				autoFinalizeFrom
 			});
 			if (disposed) return;
 			settings = saved;
@@ -144,6 +147,14 @@
 					novalidate
 				>
 					<fieldset disabled={busy || settings.archived} class="space-y-6">
+						<div class="space-y-2">
+							<Label for="attendance-finalize-from">เริ่มปิดยอดอัตโนมัติหลังเที่ยงคืน</Label
+							><DatePicker id="attendance-finalize-from" bind:value={autoFinalizeFrom} />
+							<p class="text-sm text-muted-foreground">
+								หลังเที่ยงคืน เปลี่ยนผู้ที่ยังไม่ได้เช็คเป็นขาด เฉพาะวันและรอบที่นับยอด
+								ตั้งเริ่มใช้ไปข้างหน้าได้
+							</p>
+						</div>
 						{#if settingsError}<Alert.Root variant="destructive"
 								><Alert.Title>บันทึกการตั้งค่าไม่ได้</Alert.Title><Alert.Description
 									>{settingsError}</Alert.Description

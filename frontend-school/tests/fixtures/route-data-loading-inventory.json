@@ -52,6 +52,16 @@
 			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
 		},
 		{
+			"route": "parent/behavior",
+			"wave": "behavior",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "actor-scoped academic context",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Loader owns independent typed primary regions; exact capability guards action-only reads, local drafts retained, identity/context and LatestRequest supersession, focused Behavior workflow browser tests."
+		},
+		{
 			"route": "parent/student/[id]",
 			"wave": "self-service",
 			"dataOwner": "route",
@@ -756,6 +766,16 @@
 			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
 		},
 		{
+			"route": "staff/attendance/sessions/[id]",
+			"wave": "attendance",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "resource-scoped term and round",
+			"status": "complete",
+			"backendOwner": "school-attendance",
+			"notes": "Loader authorizes exact session detail before dated workspace; no mount read. Existing Attendance roster/correction controls respect school/assigned permissions and revisions."
+		},
+		{
 			"route": "staff/attendance/settings",
 			"wave": "attendance",
 			"dataOwner": "route",
@@ -764,6 +784,46 @@
 			"status": "complete",
 			"backendOwner": "school-attendance",
 			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
+		},
+		{
+			"route": "staff/behavior",
+			"wave": "behavior",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "term_required",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Loader owns independent typed primary regions; exact capability guards action-only reads, local drafts retained, identity/context and LatestRequest supersession, focused Behavior workflow browser tests."
+		},
+		{
+			"route": "staff/behavior/cleanup",
+			"wave": "behavior",
+			"dataOwner": "interaction-only",
+			"preload": "tap",
+			"context": "term_required",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Loader owns URL context. Exact cleanup permission gates preview/execute; destructive impact reads start only on explicit action and status polling follows durable jobs. No catalog permission dependency."
+		},
+		{
+			"route": "staff/behavior/new",
+			"wave": "behavior",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "term_required",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Loader owns independent typed primary regions; exact capability guards action-only reads, local drafts retained, identity/context and LatestRequest supersession, focused Behavior workflow browser tests."
+		},
+		{
+			"route": "staff/behavior/settings",
+			"wave": "behavior",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "term_required",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Loader owns independent typed primary regions; exact capability guards action-only reads, local drafts retained, identity/context and LatestRequest supersession, focused Behavior workflow browser tests."
 		},
 		{
 			"route": "staff/calendar",
@@ -1194,6 +1254,16 @@
 			"status": "complete",
 			"backendOwner": "school-attendance",
 			"notes": "Route loader owns initial typed reads. Interactions patch the affected session or configuration. Camera and scans start only from user actions; no descriptors in durable browser storage."
+		},
+		{
+			"route": "student/behavior",
+			"wave": "behavior",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "actor-scoped academic context",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Loader owns independent typed primary regions; exact capability guards action-only reads, local drafts retained, identity/context and LatestRequest supersession, focused Behavior workflow browser tests."
 		},
 		{
 			"route": "student/calendar",

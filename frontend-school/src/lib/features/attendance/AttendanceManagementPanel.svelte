@@ -4,6 +4,8 @@
 	import { toast } from 'svelte-sonner';
 	import AttendanceSelect from './AttendanceSelect.svelte';
 	import AttendanceMultiSelect from './AttendanceMultiSelect.svelte';
+	import AttendanceScoringEditor from './AttendanceScoringEditor.svelte';
+	import type { AttendanceScoreRule } from '#lib/api/attendance.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import CalendarTimeInput from '#lib/components/calendar/CalendarTimeInput.svelte';
 	import { normalizeCalendarTime } from '#lib/utils/calendar.js';
@@ -52,6 +54,7 @@
 		deviceName = $state('เครื่องหน้าโรงเรียน'),
 		operator = $state('');
 	let groupDialog = $state(false);
+	let scoring = $state<AttendanceScoreRule[] | null>(null);
 	const manager = $derived($can.has(PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL));
 	let disposed = false;
 	onDestroy(() => {
@@ -176,7 +179,8 @@
 				endTime: normalizedEnd + ':00',
 				counted,
 				notify,
-				groups
+				groups,
+				scoring: $can.has(PERMISSIONS.BEHAVIOR_MANAGE_SCHOOL) ? scoring : null
 			});
 			if (disposed) return;
 			options = { ...options, specials: [...options.specials, result] };
@@ -444,6 +448,9 @@
 					ระบบตรวจกลุ่มซ้ำก่อนบันทึก
 				</p>
 				{#if fieldErrors.groups}<p class="text-sm text-destructive">{fieldErrors.groups}</p>{/if}
+				{#if $can.has(PERMISSIONS.BEHAVIOR_MANAGE_SCHOOL)}<AttendanceScoringEditor
+						bind:value={scoring}
+					/>{/if}
 				{#each groups as group, i (i)}
 					<section
 						aria-label={`กลุ่มในรอบ ${i + 1}`}

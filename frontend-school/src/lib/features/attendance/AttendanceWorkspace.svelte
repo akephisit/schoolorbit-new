@@ -14,6 +14,7 @@
 	import { formatCalendarDate } from '#lib/utils/calendar.js';
 	import AttendanceSelect from './AttendanceSelect.svelte';
 	import AttendanceResultToggle from './AttendanceResultToggle.svelte';
+	import AttendanceStatusBadge from './AttendanceStatusBadge.svelte';
 	import { lessonRoomOptions, matchesLessonRoom, roundOption } from './round-presentation.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { onDestroy, untrack } from 'svelte';
@@ -52,17 +53,19 @@
 		term,
 		date,
 		initial,
+		initialDetail,
 		onDateChange
 	}: {
 		term: string;
 		date: string;
 		initial: AttendanceWorkspace;
+		initialDetail?: AttendanceDetail;
 		onDateChange?: (date: string) => void;
 	} = $props();
 	let workspace = $state(untrack(() => initial)),
 		selectedDate = $state(untrack(() => date)),
-		kind = $state<AttendanceKind>('arrival'),
-		detail = $state<AttendanceDetail | null>(null),
+		kind = $state<AttendanceKind>(untrack(() => initialDetail?.session.kind ?? 'arrival')),
+		detail = $state<AttendanceDetail | null>(untrack(() => initialDetail ?? null)),
 		busy = $state(false),
 		pendingAction = $state(''),
 		workspaceError = $state(''),
@@ -72,7 +75,9 @@
 		failedSession = $state.raw<AttendanceSession | null>(null),
 		reason = $state(''),
 		search = $state('');
-	let baseline = $state.raw<AttendanceDetail | null>(null);
+	let baseline = $state.raw<AttendanceDetail | null>(
+		untrack(() => (initialDetail ? copyAttendanceDetail(initialDetail) : null))
+	);
 	let conflicts = $state<AttendanceConflict[]>([]);
 	let rosterPage = $state(1);
 	let lessonRoom = $state('');
@@ -580,7 +585,7 @@
 								<Table.Row
 									><Table.Head class="w-56">เลขที่ / ชื่อ</Table.Head><Table.Head class="w-96"
 										>ผล</Table.Head
-									><Table.Head class="w-32">เข้าโรงเรียน</Table.Head></Table.Row
+									><Table.Head class="w-40">มาโรงเรียน</Table.Head></Table.Row
 								>
 							</Table.Header>
 							<Table.Body class="block sm:table-row-group"
@@ -598,6 +603,10 @@
 													>{resultLabels[s.result]}</span
 												>
 											</div>
+											{#if kind !== 'arrival'}<span
+													class="flex items-center gap-2 py-1 text-xs sm:hidden"
+													>มาโรงเรียน <AttendanceStatusBadge value={s.arrivalResult} /></span
+												>{/if}
 											{#if s.arrivalAt}<span class="block text-xs text-muted-foreground sm:hidden"
 													>เข้าโรงเรียน {new Date(s.arrivalAt).toLocaleTimeString('th-TH', {
 														timeZone: 'Asia/Bangkok',
@@ -618,7 +627,9 @@
 												)?.result === 'unchecked'}
 											/></Table.Cell
 										><Table.Cell class="hidden text-muted-foreground sm:table-cell"
-											><span class="block text-xs sm:hidden">เข้าโรงเรียน</span>{s.arrivalAt
+											>{#if kind !== 'arrival'}<AttendanceStatusBadge
+													value={s.arrivalResult}
+												/>{/if}<span class="block text-xs sm:hidden">เข้าโรงเรียน</span>{s.arrivalAt
 												? new Date(s.arrivalAt).toLocaleTimeString('th-TH', {
 														timeZone: 'Asia/Bangkok'
 													})

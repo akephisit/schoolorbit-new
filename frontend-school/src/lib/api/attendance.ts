@@ -48,11 +48,13 @@ export function currentAttendanceDate(date = new Date()): string {
 	}).format(date);
 }
 export const resultLabels: Record<AttendanceResult, string> = {
-	unchecked: 'ยังไม่เช็ค',
+	unchecked: 'ยังไม่ได้เช็ค',
 	present: 'มา',
 	late: 'สาย',
 	absent: 'ขาด',
-	leave: 'ลา',
+	skipped: 'หนีเรียน',
+	sick_leave: 'ลาป่วย',
+	personal_leave: 'ลากิจ',
 	activity: 'กิจกรรม'
 };
 export const kindLabels: Record<AttendanceKind, string> = {
@@ -308,3 +310,14 @@ export function attendanceSessionContext(session: AttendanceSession): OpenAttend
 		sourceKey: session.sourceKey
 	};
 }
+
+export type AttendanceScoreRule = Schemas['AttendanceScoreRule'];
+export const writableAttendanceResults: Exclude<AttendanceResult, 'unchecked'>[] = [
+	'present',
+	'absent',
+	'late',
+	'skipped',
+	'sick_leave',
+	'personal_leave',
+	'activity'
+];

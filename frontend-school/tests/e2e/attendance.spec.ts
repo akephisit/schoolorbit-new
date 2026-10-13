@@ -43,7 +43,7 @@ async function chooseResult(page: Page, name: string, result: string) {
 async function expectResult(page: Page, name: string, result: string) {
 	const control = resultControl(page, name);
 	await expect(control).toBeVisible();
-	if (result === 'ยังไม่เช็ค')
+	if (result === 'ยังไม่ได้เช็ค')
 		await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
 	else
 		await expect(control.getByRole('radio', { name: result, exact: true })).toHaveAttribute(
@@ -331,6 +331,7 @@ test('webcam discards a pending capture across Bangkok midnight and reopens toda
 const settings: AttendanceSettings = {
 	academicTermId: term,
 	configuration,
+	autoFinalizeFrom: '2026-10-09',
 	rowVersion: 1,
 	archived: false
 };
@@ -369,8 +370,10 @@ function detail(): AttendanceDetail {
 			result: 'unchecked',
 			origin: 'none',
 			observedAt: null,
+			processedAt: null,
 			evidenceFileId: null,
 			arrivalAt: null,
+			arrivalResult: null,
 			rowVersion: 1
 		}))
 	};
@@ -540,7 +543,9 @@ async function mockAttendance(
 						present: 1,
 						late: 0,
 						absent: 0,
-						leave: 0,
+						skipped: 0,
+						sickLeave: 0,
+						personalLeave: 0,
 						activity: 0,
 						unchecked: 1,
 						expected: 2
@@ -583,6 +588,7 @@ async function mockAttendance(
 					sessions: [{ ...session, kind: 'arrival' }],
 					students: options.students,
 					configuration,
+					autoFinalizeFrom: '2026-10-09',
 					faces: [
 						{
 							studentId: student,
@@ -680,7 +686,7 @@ test('explicit refresh discards input while search preserves current edits witho
 	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByLabel('เหตุผลแก้ไข / งดคาบ').fill('ตรวจซ้ำ');
 	await page.getByRole('button', { name: 'โหลดผลล่าสุด', exact: true }).click();
-	await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่เช็ค');
+	await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่ได้เช็ค');
 	await expect(page.getByLabel('เหตุผลแก้ไข / งดคาบ')).toHaveValue('');
 	await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 	await page.getByLabel('ค้นหาชื่อนักเรียน').fill('ไม่มีชื่อนี้');
@@ -926,7 +932,7 @@ test('teacher saves explicit results, retains unchecked and adds a pupil without
 	expect(api.writes).toHaveLength(0);
 	await chooseResult(page, 'นักเรียนคนแรก', 'กิจกรรม');
 	await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-	await expectResult(page, 'นักเรียนคนที่สอง', 'ยังไม่เช็ค');
+	await expectResult(page, 'นักเรียนคนที่สอง', 'ยังไม่ได้เช็ค');
 	expect(api.writes).toHaveLength(1);
 	expect(api.reads.filter((p) => p.endsWith('/workspace'))).toHaveLength(1);
 	expect(api.writes[0].data).toMatchObject({
@@ -1392,7 +1398,7 @@ for (const overlap of [false, true])
 		if (overlap)
 			expect(writes[1].students.find((row) => row.studentId === student)?.result).toBe('present');
 		else expect(writes[1].students.some((row) => row.studentId === second)).toBe(false);
-		await expectResult(page, 'นักเรียนคนที่สอง', overlap ? 'ยังไม่เช็ค' : 'สาย');
+		await expectResult(page, 'นักเรียนคนที่สอง', overlap ? 'ยังไม่ได้เช็ค' : 'สาย');
 	});
 test('manual workspace refresh reloads selected detail and discards unsaved input', async ({
 	page
@@ -1426,7 +1432,9 @@ test('reports page at the server and export all filtered rows from any visible p
 		present: 10,
 		late: 1,
 		absent: 1,
-		leave: 0,
+		skipped: 0,
+		sickLeave: 0,
+		personalLeave: 0,
 		activity: 0,
 		unchecked: 0,
 		expected: 12
@@ -2169,7 +2177,7 @@ for (const width of [390, 1440])
 			await first.click();
 			const result = resultControl(page, 'นักเรียนคนแรก');
 			const colors = new Set<string>();
-			for (const text of ['มา', 'สาย', 'ขาด', 'ลา', 'กิจกรรม']) {
+			for (const text of ['มา', 'สาย', 'ขาด', 'ลากิจ', 'กิจกรรม']) {
 				const button = result.getByRole('radio', { name: text, exact: true });
 				await button.click();
 				await expect(button).toHaveAttribute('aria-checked', 'true');
@@ -2185,7 +2193,7 @@ for (const width of [390, 1440])
 			await result
 				.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
 				.click();
-			await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่เช็ค');
+			await expectResult(page, 'นักเรียนคนแรก', 'ยังไม่ได้เช็ค');
 			await chooseResult(page, 'นักเรียนคนแรก', 'มา');
 			await result.getByRole('radio', { name: 'มา', exact: true }).evaluate(async (element) => {
 				await Promise.all(element.getAnimations().map((animation) => animation.finished));
