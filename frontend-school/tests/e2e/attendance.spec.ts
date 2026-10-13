@@ -1519,7 +1519,7 @@ test.describe('mobile roster scroll chaining', () => {
 	test.use({ viewport: { width: 482, height: 884 }, hasTouch: true, isMobile: true });
 	for (const colorScheme of ['light', 'dark'] as const)
 		for (const input of ['wheel', 'touch'] as const)
-			test(`${input} reaches the page at both roster boundaries in ${colorScheme}`, async ({
+			test(`two consecutive ${input} gestures reach the page at both roster boundaries in ${colorScheme}`, async ({
 				page
 			}) => {
 				await page.emulateMedia({ colorScheme });
@@ -1544,17 +1544,30 @@ test.describe('mobile roster scroll chaining', () => {
 					const main = element.closest('main')!;
 					main.scrollTop +=
 						element.getBoundingClientRect().top - main.getBoundingClientRect().top - 100;
+					main.scrollTop = Math.min(main.scrollTop, main.scrollHeight - main.clientHeight - 200);
 					element.scrollTop = 100;
 				});
 				const pageStart = await main.evaluate((element) => element.scrollTop);
+				expect(pageStart).toBeGreaterThan(180);
+				expect(
+					await main.evaluate(
+						(element) => element.scrollHeight - element.clientHeight - element.scrollTop
+					)
+				).toBeGreaterThanOrEqual(180);
 				const cdp = await page.context().newCDPSession(page);
 				const scroll = async (delta: number) => {
 					const box = (await roster.boundingBox())!;
 					const x = box.x + box.width / 2;
 					const y = box.y + box.height / 2;
 					if (input === 'wheel') {
-						await page.mouse.move(x, y);
-						await page.mouse.wheel(0, delta);
+						await cdp.send('Input.synthesizeScrollGesture', {
+							x,
+							y,
+							yDistance: -delta,
+							speed: 600,
+							gestureSourceType: 'mouse',
+							preventFling: true
+						});
 					} else {
 						await cdp.send('Input.dispatchTouchEvent', {
 							type: 'touchStart',
@@ -1570,6 +1583,7 @@ test.describe('mobile roster scroll chaining', () => {
 						await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 					}
 				};
+
 				await scroll(120);
 				await expect
 					.poll(() => roster.evaluate((element) => element.scrollTop))
@@ -1578,6 +1592,22 @@ test.describe('mobile roster scroll chaining', () => {
 
 				await roster.evaluate((element) => (element.scrollTop = element.scrollHeight));
 				const rosterEnd = await roster.evaluate((element) => element.scrollTop);
+				expect(rosterEnd).toBe(
+					await roster.evaluate((element) => element.scrollHeight - element.clientHeight)
+				);
+				const assertRosterHit = async () =>
+					expect(
+						await roster.evaluate((element) => {
+							const box = element.getBoundingClientRect();
+							return element.contains(
+								document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+							);
+						})
+					).toBe(true);
+				await assertRosterHit();
+				// Chromium can retain its scroll transaction after a programmatic jump with fractional rows.
+				// Two fixed completed gestures model continued scrolling and still catch a trapped outer page.
+				await scroll(180);
 				await scroll(180);
 				await expect
 					.poll(() => main.evaluate((element) => element.scrollTop))
@@ -1590,6 +1620,9 @@ test.describe('mobile roster scroll chaining', () => {
 
 				await main.evaluate((element, value) => (element.scrollTop = value), pageStart);
 				await roster.evaluate((element) => (element.scrollTop = 0));
+				expect(await roster.evaluate((element) => element.scrollTop)).toBe(0);
+				await assertRosterHit();
+				await scroll(-180);
 				await scroll(-180);
 				await expect
 					.poll(() => main.evaluate((element) => element.scrollTop))
