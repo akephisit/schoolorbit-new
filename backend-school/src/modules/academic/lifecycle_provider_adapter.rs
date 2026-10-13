@@ -31,7 +31,8 @@ impl ExternalLifecyclePort for ApplicationLifecycleProviders {
         )
         .await?;
         school_attendance::services::score_changes::require_drained(transaction, academic_term_id)
-            .await
+            .await?;
+        school_behavior::services::cleanup::require_drained(transaction).await
     }
 
     async fn pending_exam_work(

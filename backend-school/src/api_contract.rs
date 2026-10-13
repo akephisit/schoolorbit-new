@@ -167,6 +167,7 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::modules::behavior::handlers::cleanup_job,
         crate::modules::behavior::handlers::overview,
         crate::modules::behavior::handlers::list_items,
         crate::modules::behavior::handlers::save_item,

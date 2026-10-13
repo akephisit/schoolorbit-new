@@ -191,7 +191,9 @@ pub async fn create_special(
 ) -> Result<Json<ApiResponse<SpecialAttendanceTemplate>>, AppError> {
     let context = actor_tenant_context_from_session(&state, &session).await?;
     if payload.scoring.is_some() {
-        context.actor.require_permission(codes::BEHAVIOR_MANAGE_SCHOOL)?;
+        context
+            .actor
+            .require_permission(codes::BEHAVIOR_MANAGE_SCHOOL)?;
     }
     let pool = &context.tenant.pool;
     let result = services::create_special(pool, &context.actor, term, payload).await?;

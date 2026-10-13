@@ -443,6 +443,7 @@ pub async fn run_cleanup_jobs(pool: &PgPool, limit: u32) -> Result<bool, AppErro
     .await?)
 }
 pub async fn require_drained(connection: &mut PgConnection) -> Result<(), AppError> {
+    super::shared::raw_lock(connection).await?;
     let busy: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM behavior_cleanup_jobs WHERE status='pending')",
     )

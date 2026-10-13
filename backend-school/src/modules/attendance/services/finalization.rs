@@ -2,7 +2,7 @@
 //! owns facts and durable progress. All reads share the finalization transaction.
 use super::*;
 use chrono::{DateTime, Utc};
-use sqlx::{PgConnection, types::Json};
+use sqlx::{types::Json, PgConnection};
 
 pub async fn expected_rounds_on_connection(
     connection: &mut PgConnection,

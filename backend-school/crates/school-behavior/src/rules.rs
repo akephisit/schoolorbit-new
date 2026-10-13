@@ -20,7 +20,7 @@ pub fn validate_status(status: &str) -> Result<(), AppError> {
         "present"
             | "absent"
             | "late"
-            | "truant"
+            | "skipped"
             | "sick_leave"
             | "personal_leave"
             | "activity"

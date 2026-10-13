@@ -6,10 +6,10 @@ use school_attendance::{
 };
 use school_behavior::{
     models::{
-        BehaviorAttendanceDay, BehaviorAttendanceFact, BehaviorResetReadiness,
-        BehaviorScoreAction, BehaviorScoreOverride, BehaviorSource,
+        BehaviorAttendanceDay, BehaviorAttendanceFact, BehaviorResetReadiness, BehaviorScoreAction,
+        BehaviorScoreOverride, BehaviorSource,
     },
-    services::{integration, schedules},
+    services::{cleanup, integration, schedules},
 };
 use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
@@ -17,13 +17,14 @@ use sqlx::{PgConnection, PgPool};
 fn behavior_fact(
     fact: score_changes::AttendanceScoreFact,
 ) -> Result<BehaviorAttendanceFact, AppError> {
-    let source_session_id = if fact.kind == AttendanceKind::Arrival {
-        None
-    } else {
-        Some(uuid::Uuid::parse_str(&fact.source_key).map_err(|_| {
-            AppError::InternalServerError("รหัสรอบเช็กชื่อสำหรับคะแนนไม่ถูกต้อง".into())
-        })?)
-    };
+    let source_session_id =
+        if fact.kind == AttendanceKind::Arrival {
+            None
+        } else {
+            Some(uuid::Uuid::parse_str(&fact.source_key).map_err(|_| {
+                AppError::InternalServerError("รหัสรอบเช็กชื่อสำหรับคะแนนไม่ถูกต้อง".into())
+            })?)
+        };
     Ok(BehaviorAttendanceFact {
         source_key: fact.source_key,
         source_session_id,
@@ -55,6 +56,10 @@ fn behavior_fact(
 }
 
 pub(crate) async fn run(pool: &PgPool) -> Result<(), AppError> {
+    if cleanup::run_cleanup_jobs(pool, 32).await? {
+        crate::modules::attendance::runtime::wake_background_work();
+        return Ok(());
+    }
     let changes = {
         let mut connection = pool.acquire().await?;
         score_changes::pending_on_connection(&mut connection, 20).await?
@@ -120,11 +125,10 @@ async fn reset_readiness(
     connection: &mut PgConnection,
     today: NaiveDate,
 ) -> Result<BehaviorResetReadiness, AppError> {
-    let finalized_through =
-        finalization::ready_through_on_connection(connection, today).await?;
-    let tomorrow = today.succ_opt().ok_or_else(|| {
-        AppError::ValidationError("วันที่เกินขอบเขตงานรีเซ็ตคะแนน".into())
-    })?;
+    let finalized_through = finalization::ready_through_on_connection(connection, today).await?;
+    let tomorrow = today
+        .succ_opt()
+        .ok_or_else(|| AppError::ValidationError("วันที่เกินขอบเขตงานรีเซ็ตคะแนน".into()))?;
     let delivered_through =
         score_changes::delivered_through_on_connection(connection, tomorrow).await?;
     let (term_ends, year_ends) =
@@ -150,7 +154,8 @@ pub(crate) async fn reset_scores(
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive();
     let readiness = reset_readiness(&mut transaction, today).await?;
-    let outcome = schedules::reset_on_connection(&mut transaction, actor, payload, readiness).await?;
+    let outcome =
+        schedules::reset_on_connection(&mut transaction, actor, payload, readiness).await?;
     transaction.commit().await?;
     Ok(outcome)
 }

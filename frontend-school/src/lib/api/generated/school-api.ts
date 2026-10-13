@@ -4124,6 +4124,278 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/behavior/batches': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['behavior_create_batch'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/cleanup': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['behavior_execute_cleanup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/cleanup/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_cleanup_job'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/cleanup/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['behavior_preview_cleanup'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/cycles': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_cycles'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/entries': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_report'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/entries/cancel': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['behavior_cancel_entries'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/history/adjustments': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['behavior_adjust_history'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/items': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_list_items'];
+		put?: never;
+		post: operations['behavior_save_item'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_selector_options'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/overview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_overview'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/reset': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['behavior_reset'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/reset/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['behavior_preview_reset'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/rules': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_list_rules'];
+		put?: never;
+		post: operations['behavior_save_rule'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_get_settings'];
+		put: operations['behavior_save_settings'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/students': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_students'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/behavior/students/{id}/summary': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['behavior_student_summary'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/calendar/categories': {
 		parameters: {
 			query?: never;
@@ -7233,6 +7505,17 @@ export interface components {
 			/** Format: uuid */
 			user_id: string;
 		};
+		AdjustBehaviorHistory: {
+			/** Format: int64 */
+			delta: number;
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			totalId: string;
+		};
 		/** @description ห้องประจำชั้นที่ครูเป็นที่ปรึกษา */
 		AdvisorHomeroomItem: {
 			/** Format: int32 */
@@ -7954,6 +8237,8 @@ export interface components {
 				/** Format: uuid */
 				academicTermId: string;
 				archived: boolean;
+				/** Format: date */
+				autoFinalizeFrom: string;
 				configuration: components['schemas']['AttendanceConfiguration'];
 				/** Format: int64 */
 				rowVersion: number;
@@ -7969,6 +8254,193 @@ export interface components {
 				lessonChoices: components['schemas']['AttendanceLessonChoice'][];
 				sessions: components['schemas']['AttendanceSession'][];
 				settings: components['schemas']['AttendanceSettings'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorAttendanceRule: {
+			data: {
+				action: components['schemas']['BehaviorScoreAction'];
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: uuid */
+				gradeLevelId: string | null;
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['BehaviorSource'];
+				/** Format: int32 */
+				points: number;
+				status: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorBatchReceipt: {
+			data: {
+				/** Format: int64 */
+				affectedStudents: number;
+				detailsAvailable: boolean;
+				/** Format: uuid */
+				id: string;
+				/** Format: int32 */
+				pointsPerStudent: number;
+				replayed: boolean;
+				side: components['schemas']['BehaviorSide'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorCancellation: {
+			data: {
+				/** Format: int64 */
+				alreadyCancelled: number;
+				/** Format: int64 */
+				cancelled: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorCleanupOutcome: {
+			data: {
+				/** Format: int64 */
+				deduction: number;
+				/** Format: int64 */
+				entriesDeleted: number;
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				merit: number;
+				status: string;
+				/** Format: int64 */
+				students: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorCleanupPreview: {
+			data: {
+				current: components['schemas']['BehaviorScoreTotals'];
+				/** Format: int64 */
+				deduction: number;
+				/** Format: int64 */
+				entries: number;
+				history: components['schemas']['BehaviorScoreTotals'];
+				lifetime: components['schemas']['BehaviorScoreTotals'];
+				/** Format: int64 */
+				merit: number;
+				/** Format: int64 */
+				revision: number;
+				/** Format: int64 */
+				students: number;
+				/** Format: uuid */
+				token: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorHistoryAdjustment: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				/** Format: int64 */
+				points: number;
+				/** Format: int64 */
+				rowVersion: number;
+				/** Format: uuid */
+				totalId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorItem: {
+			data: {
+				/** Format: date */
+				effectiveFrom: string | null;
+				enabled: boolean;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: int32 */
+				points: number | null;
+				/** Format: int64 */
+				rowVersion: number;
+				side: components['schemas']['BehaviorSide'];
+				/** Format: uuid */
+				versionId: string | null;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorOverview: {
+			data: {
+				/** Format: date */
+				activationDate: string;
+				cycles: components['schemas']['BehaviorCycle'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorReportPage: {
+			data: {
+				items: components['schemas']['BehaviorReportEntry'][];
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorSelectorOptions: {
+			data: {
+				gradeLevels: components['schemas']['BehaviorSelectorOption'][];
+				homerooms: components['schemas']['BehaviorSelectorOption'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorSettings: {
+			data: {
+				countAbsentLessons: boolean;
+				countSpecial: boolean;
+				/** Format: int32 */
+				dailyDeductionCap: number | null;
+				/** Format: int32 */
+				dailyMeritCap: number | null;
+				deductionReset: components['schemas']['BehaviorResetSchedule'];
+				enabled: boolean;
+				meritReset: components['schemas']['BehaviorResetSchedule'];
+				/** Format: int64 */
+				rowVersion: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorStudentPage: {
+			data: {
+				items: components['schemas']['BehaviorStudent'][];
+				options: components['schemas']['BehaviorSelectorOptions'];
+				rosterToken: string;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BehaviorStudentSummary: {
+			data: {
+				comparableCurrent: components['schemas']['BehaviorCurrentTotals'];
+				/** Format: date */
+				comparisonEnd: string;
+				comparisonExact: boolean;
+				/** Format: date */
+				comparisonStart: string;
+				current: components['schemas']['BehaviorCurrentTotals'];
+				deductionCycle: components['schemas']['BehaviorCycle'];
+				history: components['schemas']['BehaviorScoreTotals'];
+				historyTotals: components['schemas']['BehaviorDailyTotal'][];
+				lifetime: components['schemas']['BehaviorScoreTotals'];
+				meritCycle: components['schemas']['BehaviorCycle'];
+				/** Format: uuid */
+				studentId: string;
 			};
 			message?: string;
 			success: boolean;
@@ -11497,6 +11969,61 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_BehaviorAttendanceRule: {
+			data: {
+				action: components['schemas']['BehaviorScoreAction'];
+				/** Format: date */
+				effectiveFrom: string;
+				/** Format: uuid */
+				gradeLevelId: string | null;
+				/** Format: uuid */
+				id: string;
+				kind: components['schemas']['BehaviorSource'];
+				/** Format: int32 */
+				points: number;
+				status: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_BehaviorCycle: {
+			data: {
+				/** Format: date-time */
+				endsAt: string | null;
+				/** Format: date */
+				endsOn: string | null;
+				/** Format: uuid */
+				id: string;
+				label: string;
+				side: components['schemas']['BehaviorSide'];
+				/** Format: date-time */
+				startsAt: string;
+				/** Format: date */
+				startsOn: string;
+				state: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_BehaviorItem: {
+			data: {
+				/** Format: date */
+				effectiveFrom: string | null;
+				enabled: boolean;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: int32 */
+				points: number | null;
+				/** Format: int64 */
+				rowVersion: number;
+				side: components['schemas']['BehaviorSide'];
+				/** Format: uuid */
+				versionId: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_BellSchedule: {
 			data: {
 				/** Format: uuid */
@@ -13538,6 +14065,7 @@ export interface components {
 		AttendanceRecord: {
 			/** Format: date-time */
 			arrivalAt: string | null;
+			arrivalResult: null | components['schemas']['AttendanceResult'];
 			/** Format: int32 */
 			classNumber: number | null;
 			displayName: string;
@@ -13546,6 +14074,8 @@ export interface components {
 			/** Format: date-time */
 			observedAt: string | null;
 			origin: string;
+			/** Format: date-time */
+			processedAt: string | null;
 			result: components['schemas']['AttendanceResult'];
 			/** Format: int64 */
 			rowVersion: number;
@@ -13597,7 +14127,15 @@ export interface components {
 			token: string;
 		};
 		/** @enum {string} */
-		AttendanceResult: 'unchecked' | 'present' | 'late' | 'absent' | 'leave' | 'activity';
+		AttendanceResult:
+			| 'unchecked'
+			| 'present'
+			| 'late'
+			| 'absent'
+			| 'skipped'
+			| 'sick_leave'
+			| 'personal_leave'
+			| 'activity';
 		AttendanceResultInput: {
 			result: components['schemas']['AttendanceResult'];
 			/** Format: uuid */
@@ -13628,6 +14166,12 @@ export interface components {
 			/** Format: uuid */
 			studentId: string;
 			teacherConflict: boolean;
+		};
+		AttendanceScoreRule: {
+			action: components['schemas']['ScoreAction'];
+			/** Format: int32 */
+			points: number;
+			result: components['schemas']['AttendanceResult'];
 		};
 		AttendanceSession: {
 			/** Format: uuid */
@@ -13665,6 +14209,8 @@ export interface components {
 			/** Format: uuid */
 			academicTermId: string;
 			archived: boolean;
+			/** Format: date */
+			autoFinalizeFrom: string;
 			configuration: components['schemas']['AttendanceConfiguration'];
 			/** Format: int64 */
 			rowVersion: number;
@@ -13691,11 +14237,15 @@ export interface components {
 			/** Format: int64 */
 			late: number;
 			/** Format: int64 */
-			leave: number;
+			personalLeave: number;
 			/** Format: int64 */
 			present: number;
 			scopeKey: string;
 			scopeLabel: string;
+			/** Format: int64 */
+			sickLeave: number;
+			/** Format: int64 */
+			skipped: number;
 			/** Format: uuid */
 			studentId: string;
 			/** Format: int64 */
@@ -13713,6 +14263,276 @@ export interface components {
 			lessonChoices: components['schemas']['AttendanceLessonChoice'][];
 			sessions: components['schemas']['AttendanceSession'][];
 			settings: components['schemas']['AttendanceSettings'];
+		};
+		BehaviorAttendanceRule: {
+			action: components['schemas']['BehaviorScoreAction'];
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: uuid */
+			gradeLevelId: string | null;
+			/** Format: uuid */
+			id: string;
+			kind: components['schemas']['BehaviorSource'];
+			/** Format: int32 */
+			points: number;
+			status: string;
+		};
+		BehaviorBatchReceipt: {
+			/** Format: int64 */
+			affectedStudents: number;
+			detailsAvailable: boolean;
+			/** Format: uuid */
+			id: string;
+			/** Format: int32 */
+			pointsPerStudent: number;
+			replayed: boolean;
+			side: components['schemas']['BehaviorSide'];
+		};
+		BehaviorCancellation: {
+			/** Format: int64 */
+			alreadyCancelled: number;
+			/** Format: int64 */
+			cancelled: number;
+		};
+		/** @enum {string} */
+		BehaviorCleanupMode: 'details_only' | 'archive' | 'delete_effects';
+		BehaviorCleanupOutcome: {
+			/** Format: int64 */
+			deduction: number;
+			/** Format: int64 */
+			entriesDeleted: number;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			merit: number;
+			status: string;
+			/** Format: int64 */
+			students: number;
+		};
+		BehaviorCleanupPreview: {
+			current: components['schemas']['BehaviorScoreTotals'];
+			/** Format: int64 */
+			deduction: number;
+			/** Format: int64 */
+			entries: number;
+			history: components['schemas']['BehaviorScoreTotals'];
+			lifetime: components['schemas']['BehaviorScoreTotals'];
+			/** Format: int64 */
+			merit: number;
+			/** Format: int64 */
+			revision: number;
+			/** Format: int64 */
+			students: number;
+			/** Format: uuid */
+			token: string;
+		};
+		BehaviorCleanupScope: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId?: string | null;
+			/** Format: date */
+			end?: string | null;
+			sides: components['schemas']['BehaviorSide'][];
+			sources: components['schemas']['BehaviorSource'][];
+			/** Format: date */
+			start?: string | null;
+		};
+		BehaviorCurrentTotals: {
+			/** Format: int64 */
+			deduction: number;
+			/** Format: int64 */
+			merit: number;
+			/** Format: int64 */
+			net: number | null;
+		};
+		BehaviorCycle: {
+			/** Format: date-time */
+			endsAt: string | null;
+			/** Format: date */
+			endsOn: string | null;
+			/** Format: uuid */
+			id: string;
+			label: string;
+			side: components['schemas']['BehaviorSide'];
+			/** Format: date-time */
+			startsAt: string;
+			/** Format: date */
+			startsOn: string;
+			state: string;
+		};
+		BehaviorDailyTotal: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			cycleId: string;
+			/** Format: date */
+			date: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			homeroomId: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			points: number;
+			/** Format: int64 */
+			rowVersion: number;
+			side: components['schemas']['BehaviorSide'];
+			source: components['schemas']['BehaviorSource'];
+			/** Format: uuid */
+			studentId: string;
+		};
+		BehaviorHistoryAdjustment: {
+			/** Format: uuid */
+			id: string;
+			/** Format: int64 */
+			points: number;
+			/** Format: int64 */
+			rowVersion: number;
+			/** Format: uuid */
+			totalId: string;
+		};
+		BehaviorItem: {
+			/** Format: date */
+			effectiveFrom: string | null;
+			enabled: boolean;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int32 */
+			points: number | null;
+			/** Format: int64 */
+			rowVersion: number;
+			side: components['schemas']['BehaviorSide'];
+			/** Format: uuid */
+			versionId: string | null;
+		};
+		BehaviorOverview: {
+			/** Format: date */
+			activationDate: string;
+			cycles: components['schemas']['BehaviorCycle'][];
+		};
+		BehaviorReportEntry: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			batchId: string | null;
+			canCancel: boolean;
+			cancellationReason: string | null;
+			/** Format: date-time */
+			cancelledAt: string | null;
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			createdBy: string | null;
+			creatorName: string | null;
+			/** Format: date */
+			date: string;
+			detail: string | null;
+			/** Format: uuid */
+			gradeLevelId: string;
+			homeroom: string;
+			/** Format: uuid */
+			homeroomId: string | null;
+			/** Format: uuid */
+			id: string;
+			itemName: string;
+			/** Format: date-time */
+			occurredAt: string | null;
+			/** Format: int32 */
+			points: number;
+			side: components['schemas']['BehaviorSide'];
+			source: components['schemas']['BehaviorSource'];
+			sourceKey: string | null;
+			/** Format: uuid */
+			sourceSessionId: string | null;
+			studentCode: string | null;
+			/** Format: uuid */
+			studentId: string;
+			studentName: string;
+		};
+		BehaviorReportPage: {
+			items: components['schemas']['BehaviorReportEntry'][];
+			/** Format: int64 */
+			total: number;
+		};
+		/** @enum {string} */
+		BehaviorResetSchedule: 'manual' | 'monthly' | 'term' | 'year';
+		/** @enum {string} */
+		BehaviorScoreAction: 'none' | 'merit' | 'deduction';
+		BehaviorScoreTotals: {
+			/** Format: int64 */
+			deduction: number;
+			/** Format: int64 */
+			merit: number;
+			/** Format: int64 */
+			net: number;
+		};
+		BehaviorSelectorOption: {
+			/** Format: uuid */
+			id: string;
+			label: string;
+		};
+		BehaviorSelectorOptions: {
+			gradeLevels: components['schemas']['BehaviorSelectorOption'][];
+			homerooms: components['schemas']['BehaviorSelectorOption'][];
+		};
+		BehaviorSettings: {
+			countAbsentLessons: boolean;
+			countSpecial: boolean;
+			/** Format: int32 */
+			dailyDeductionCap: number | null;
+			/** Format: int32 */
+			dailyMeritCap: number | null;
+			deductionReset: components['schemas']['BehaviorResetSchedule'];
+			enabled: boolean;
+			meritReset: components['schemas']['BehaviorResetSchedule'];
+			/** Format: int64 */
+			rowVersion: number;
+		};
+		/** @enum {string} */
+		BehaviorSide: 'merit' | 'deduction';
+		/** @enum {string} */
+		BehaviorSource: 'manual' | 'arrival' | 'lesson' | 'special';
+		BehaviorStudent: {
+			/** Format: int32 */
+			classNumber: number | null;
+			gradeLevel: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			homeroom: string;
+			/** Format: uuid */
+			homeroomId: string | null;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: uuid */
+			studentAcademicYearId: string;
+			studentCode: string | null;
+		};
+		BehaviorStudentPage: {
+			items: components['schemas']['BehaviorStudent'][];
+			options: components['schemas']['BehaviorSelectorOptions'];
+			rosterToken: string;
+			/** Format: int64 */
+			total: number;
+		};
+		BehaviorStudentSummary: {
+			comparableCurrent: components['schemas']['BehaviorCurrentTotals'];
+			/** Format: date */
+			comparisonEnd: string;
+			comparisonExact: boolean;
+			/** Format: date */
+			comparisonStart: string;
+			current: components['schemas']['BehaviorCurrentTotals'];
+			deductionCycle: components['schemas']['BehaviorCycle'];
+			history: components['schemas']['BehaviorScoreTotals'];
+			historyTotals: components['schemas']['BehaviorDailyTotal'][];
+			lifetime: components['schemas']['BehaviorScoreTotals'];
+			meritCycle: components['schemas']['BehaviorCycle'];
+			/** Format: uuid */
+			studentId: string;
 		};
 		BellSchedule: {
 			/** Format: uuid */
@@ -13974,6 +14794,12 @@ export interface components {
 		};
 		/** @enum {string} */
 		CalendarVisibility: 'public' | 'private';
+		CancelBehaviorEntries: {
+			entryIds: string[];
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+		};
 		CancelObservationRequest: {
 			reason?: string | null;
 		};
@@ -15012,6 +15838,23 @@ export interface components {
 			name: string;
 			schedulingMode: string;
 			termCode?: string | null;
+		};
+		CreateBehaviorBatch: {
+			/** Format: uuid */
+			academicTermId: string;
+			detail?: string | null;
+			/** Format: uuid */
+			itemId: string;
+			/** Format: int64 */
+			itemRowVersion: number;
+			/** Format: uuid */
+			itemVersionId: string;
+			/** Format: date-time */
+			occurredAt: string;
+			/** Format: uuid */
+			requestId: string;
+			rosterToken: string;
+			studentIds: string[];
 		};
 		CreateBellScheduleRequest: {
 			/** Format: uuid */
@@ -16755,6 +17598,17 @@ export interface components {
 		};
 		/** @enum {string} */
 		ExamSourceSyncItemStatus: 'applied' | 'conflict';
+		ExecuteBehaviorCleanup: {
+			mode: components['schemas']['BehaviorCleanupMode'];
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			revision: number;
+			scope: components['schemas']['BehaviorCleanupScope'];
+			/** Format: uuid */
+			token: string;
+		};
 		ExecutePromotionRunInput: {
 			/** Format: int32 */
 			limit: number;
@@ -18282,6 +19136,15 @@ export interface components {
 			/** Format: uuid */
 			studentAcademicYearId: string;
 		};
+		PreviewBehaviorCleanup: {
+			mode: components['schemas']['BehaviorCleanupMode'];
+			scope: components['schemas']['BehaviorCleanupScope'];
+		};
+		PreviewBehaviorReset: {
+			sides: components['schemas']['BehaviorSide'][];
+			/** Format: date */
+			through: string;
+		};
 		PreviewCurriculumOfferingsRequest: {
 			/** Format: uuid */
 			academicTermId: string;
@@ -19147,6 +20010,18 @@ export interface components {
 			reason: string;
 			token: string;
 		};
+		ResetBehaviorScores: {
+			reason: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			revision: number;
+			sides: components['schemas']['BehaviorSide'][];
+			/** Format: date */
+			through: string;
+			/** Format: uuid */
+			token: string;
+		};
 		ResolvePromotionImpactInput: {
 			reason: string;
 			replacementDecision?: null | components['schemas']['PromotionDecisionInput'];
@@ -19502,9 +20377,38 @@ export interface components {
 			students: components['schemas']['AttendanceResultInput'][];
 		};
 		SaveAttendanceSettings: {
+			/** Format: date */
+			autoFinalizeFrom: string | null;
 			configuration: components['schemas']['AttendanceConfiguration'];
 			/** Format: int64 */
 			rowVersion: number;
+		};
+		SaveBehaviorAttendanceRule: {
+			action: components['schemas']['BehaviorScoreAction'];
+			/** Format: date */
+			effectiveFrom: string;
+			/** Format: uuid */
+			gradeLevelId?: string | null;
+			kind: components['schemas']['BehaviorSource'];
+			/** Format: int32 */
+			points: number;
+			status: string;
+		};
+		SaveBehaviorItem: {
+			/** Format: date */
+			effectiveFrom: string;
+			enabled: boolean;
+			/** Format: uuid */
+			id?: string | null;
+			name: string;
+			/** Format: int32 */
+			points: number;
+			/** Format: int64 */
+			rowVersion?: number | null;
+			side: components['schemas']['BehaviorSide'];
+		};
+		SaveBehaviorSettings: {
+			settings: components['schemas']['BehaviorSettings'];
 		};
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
@@ -19558,6 +20462,8 @@ export interface components {
 			/** Format: uuid */
 			logoFileId: string | null;
 		};
+		/** @enum {string} */
+		ScoreAction: 'none' | 'merit' | 'deduction';
 		ScoreBatchInput: {
 			cells: components['schemas']['ScoreCellMutation'][];
 		};
@@ -19676,6 +20582,7 @@ export interface components {
 			endTime: string;
 			groups: components['schemas']['SpecialAttendanceGroup'][];
 			notify: boolean;
+			scoring: components['schemas']['AttendanceScoreRule'][] | null;
 			startTime: string;
 			title: string;
 		};
@@ -41344,6 +42251,933 @@ export interface operations {
 			};
 			/** @description Session store unavailable */
 			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_create_batch: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateBehaviorBatch'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorBatchReceipt'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_execute_cleanup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ExecuteBehaviorCleanup'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorCleanupOutcome'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_cleanup_job: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorCleanupOutcome'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_preview_cleanup: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewBehaviorCleanup'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorCleanupPreview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_cycles: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_BehaviorCycle'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_report: {
+		parameters: {
+			query: {
+				academicTermId?: string;
+				batchId?: string;
+				cancelled?: boolean;
+				createdBy?: string;
+				end: string;
+				gradeLevelId?: string;
+				homeroomId?: string;
+				limit?: number;
+				mine?: boolean;
+				offset?: number;
+				search?: string;
+				side?: components['schemas']['BehaviorSide'];
+				source?: components['schemas']['BehaviorSource'];
+				start: string;
+				studentId?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorReportPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_cancel_entries: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CancelBehaviorEntries'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorCancellation'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_adjust_history: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['AdjustBehaviorHistory'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorHistoryAdjustment'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_list_items: {
+		parameters: {
+			query?: {
+				date?: string;
+				includeDisabled?: boolean;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_BehaviorItem'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_save_item: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBehaviorItem'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorItem'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_selector_options: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				date: string;
+				gradeLevelId?: string;
+				homeroomId?: string;
+				limit?: number;
+				offset?: number;
+				search?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorSelectorOptions'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_overview: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorOverview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_reset: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResetBehaviorScores'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorCleanupOutcome'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_preview_reset: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewBehaviorReset'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorCleanupPreview'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_list_rules: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_BehaviorAttendanceRule'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_save_rule: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBehaviorAttendanceRule'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorAttendanceRule'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_get_settings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorSettings'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_save_settings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBehaviorSettings'];
+			};
+		};
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorSettings'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_students: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				date: string;
+				gradeLevelId?: string;
+				homeroomId?: string;
+				limit?: number;
+				offset?: number;
+				search?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorStudentPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	behavior_student_summary: {
+		parameters: {
+			query?: {
+				academicTermId?: string;
+				end?: string;
+				start?: string;
+			};
+			header?: never;
+			path: {
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BehaviorStudentSummary'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

@@ -12,7 +12,7 @@ use school_notifications::{
     models::Notification,
     publisher::{NotificationService, TenantNotificationPublisher},
 };
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -37,6 +37,9 @@ struct Registration {
     last_finalization_poll: Option<NaiveDate>,
 }
 static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
+pub(crate) fn wake_background_work() {
+    WAKE.notify_one();
+}
 static TENANTS: OnceLock<DashMap<String, Registration>> = OnceLock::new();
 fn tenants() -> &'static DashMap<String, Registration> {
     TENANTS.get_or_init(DashMap::new)
@@ -173,7 +176,15 @@ async fn run(tenant: &str, r: &mut Registration) -> Result<(), AppError> {
             r.last_finalization_poll = Some(date);
         }
     }
-    crate::behavior_provider_adapter::run(&r.pool).await?;
+    if crate::behavior_provider_adapter::run(&r.pool)
+        .await
+        .is_err()
+    {
+        tracing::warn!(
+            error_code = "behavior_background_retry",
+            "Score delivery remains queued and will retry"
+        );
+    }
     for t in r.terms.clone() {
         if date < t.start || date > t.end {
             continue;

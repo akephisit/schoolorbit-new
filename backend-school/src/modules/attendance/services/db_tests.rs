@@ -221,12 +221,10 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
         .await
         .unwrap();
     assert_eq!(detail.session.id, saved_session.id);
-    assert!(
-        sqlx::query("SELECT note FROM attendance_records")
-            .execute(&f.pool)
-            .await
-            .is_err()
-    );
+    assert!(sqlx::query("SELECT note FROM attendance_records")
+        .execute(&f.pool)
+        .await
+        .is_err());
     let mut correction = save_payload(&detail, STUDENT, AttendanceResult::Late);
     correction.reason = "verified correction".into();
     let corrected = sessions::save(&f.pool, &f.actor, detail.session.id, correction)
@@ -243,14 +241,12 @@ async fn attendance_note_migration_preserves_results_and_audits_without_note_tex
     );
     let latest:sqlx::types::Json<serde_json::Value>=sqlx::query_scalar("SELECT new_values FROM audit_logs WHERE entity_type='attendance' AND entity_id=$1 AND action='update' ORDER BY created_at DESC,id DESC LIMIT 1")
         .bind(detail.session.id).fetch_one(&f.pool).await.unwrap();
-    assert!(
-        latest
-            .0
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|item| item.get("note").is_none() && item.get("rowVersion").is_some())
-    );
+    assert!(latest
+        .0
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item.get("note").is_none() && item.get("rowVersion").is_some()));
 }
 
 #[tokio::test]
@@ -292,11 +288,9 @@ async fn attendance_note_migration_refuses_ambiguous_snapshots_and_can_retry() {
             .await
             .unwrap();
         let failure = apply_migrations_through(&f.pool, 106).await.unwrap_err();
-        assert!(
-            failure
-                .to_string()
-                .contains("ATTENDANCE_NOTE_AUDIT_UNMAPPABLE")
-        );
+        assert!(failure
+            .to_string()
+            .contains("ATTENDANCE_NOTE_AUDIT_UNMAPPABLE"));
         assert_eq!(
             sqlx::query_scalar::<_, String>(
                 "SELECT note FROM attendance_records WHERE session_id=$1 AND student_id=$2"
@@ -321,13 +315,11 @@ async fn attendance_note_migration_refuses_ambiguous_snapshots_and_can_retry() {
         .execute(&f.pool)
         .await
         .unwrap();
-    assert!(
-        apply_migrations_through(&f.pool, 106)
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("ATTENDANCE_NOTE_AUDIT_UNMAPPABLE")
-    );
+    assert!(apply_migrations_through(&f.pool, 106)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("ATTENDANCE_NOTE_AUDIT_UNMAPPABLE"));
     sqlx::query("UPDATE audit_logs SET new_values='[]' WHERE id=$1")
         .bind(audit)
         .execute(&f.pool)
@@ -373,11 +365,9 @@ async fn attendance_note_migration_blocks_cleanup_when_audit_preservation_fails(
     sqlx::raw_sql("CREATE FUNCTION corrupt_note_audit_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.description='corrupted'; RETURN NEW; END $$; CREATE TRIGGER corrupt_note_audit_fixture BEFORE UPDATE ON audit_logs FOR EACH ROW EXECUTE FUNCTION corrupt_note_audit_fixture();")
         .execute(&f.pool).await.unwrap();
     let failure = apply_migrations_through(&f.pool, 106).await.unwrap_err();
-    assert!(
-        failure
-            .to_string()
-            .contains("ATTENDANCE_NOTE_PRESERVATION_FAILED")
-    );
+    assert!(failure
+        .to_string()
+        .contains("ATTENDANCE_NOTE_PRESERVATION_FAILED"));
     assert_eq!(
         sqlx::query_scalar::<_, String>("SELECT note FROM attendance_records WHERE session_id=$1")
             .bind(s.id)
@@ -397,12 +387,10 @@ async fn attendance_note_migration_blocks_cleanup_when_audit_preservation_fails(
     );
     sqlx::raw_sql("DROP TRIGGER corrupt_note_audit_fixture ON audit_logs; DROP FUNCTION corrupt_note_audit_fixture();").execute(&f.pool).await.unwrap();
     apply_migrations_through(&f.pool, 106).await.unwrap();
-    assert!(
-        sqlx::query("SELECT note FROM attendance_records")
-            .execute(&f.pool)
-            .await
-            .is_err()
-    );
+    assert!(sqlx::query("SELECT note FROM attendance_records")
+        .execute(&f.pool)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -436,20 +424,18 @@ async fn attendance_calendar_can_be_first_save_and_stale_settings_cannot_overwri
             .await
             .unwrap()
     );
-    assert!(
-        settings::save(
-            &f.pool,
-            TEACHER,
-            TERM,
-            SaveAttendanceSettings {
-                auto_finalize_from: None,
-                row_version: 0,
-                configuration: before.configuration,
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(settings::save(
+        &f.pool,
+        TEACHER,
+        TERM,
+        SaveAttendanceSettings {
+            auto_finalize_from: None,
+            row_version: 0,
+            configuration: before.configuration,
+        }
+    )
+    .await
+    .is_err());
     assert_eq!(settings::get(&f.pool, TERM).await.unwrap().row_version, 1);
 }
 #[tokio::test]
@@ -461,27 +447,24 @@ async fn attendance_partial_save_preserves_unchecked_and_deduplicates_every_guar
         .await
         .unwrap();
     let d = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
-    assert!(
-        d.students
-            .iter()
-            .all(|r| r.result == AttendanceResult::Unchecked)
-    );
-    assert!(
-        sessions::save(
-            &f.pool,
-            &f.actor,
-            s.id,
-            SaveAttendanceResults {
-                session: session_context(&d.session),
-                roster_token: d.session.roster_token.clone(),
-                row_version: d.session.row_version,
-                reason: String::new(),
-                students: vec![]
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(d
+        .students
+        .iter()
+        .all(|r| r.result == AttendanceResult::Unchecked));
+    assert!(sessions::save(
+        &f.pool,
+        &f.actor,
+        s.id,
+        SaveAttendanceResults {
+            session: session_context(&d.session),
+            roster_token: d.session.roster_token.clone(),
+            row_version: d.session.row_version,
+            reason: String::new(),
+            students: vec![]
+        }
+    )
+    .await
+    .is_err());
     let payload = save_payload(&d, STUDENT, AttendanceResult::Present);
     let saved = sessions::save(&f.pool, &f.actor, s.id, payload)
         .await
@@ -657,14 +640,12 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
     )
     .await
     .unwrap();
-    assert!(
-        sessions::detail(&f.pool, &f.actor, unchecked.id)
-            .await
-            .unwrap()
-            .students
-            .iter()
-            .all(|r| r.result == AttendanceResult::Unchecked)
-    );
+    assert!(sessions::detail(&f.pool, &f.actor, unchecked.id)
+        .await
+        .unwrap()
+        .students
+        .iter()
+        .all(|r| r.result == AttendanceResult::Unchecked));
     let before = reports::summaries(&f.pool, TERM, None, None).await.unwrap();
     assert!(before.summaries.iter().any(|s| s.student_id == STUDENT
         && s.category == "school"
@@ -679,19 +660,17 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
         serde_json::to_value(&before.summaries).unwrap()
     );
     let impact = reports::impact(&f.pool, TERM).await.unwrap();
-    assert!(
-        reports::purge(
-            &f.pool,
-            TEACHER,
-            TERM,
-            PurgeAttendanceTerm {
-                expected_records: impact.records,
-                reason: "ทดสอบ".into()
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(reports::purge(
+        &f.pool,
+        TEACHER,
+        TERM,
+        PurgeAttendanceTerm {
+            expected_records: impact.records,
+            reason: "ทดสอบ".into()
+        }
+    )
+    .await
+    .is_err());
     for n in notifications::pending(&f.pool).await.unwrap() {
         notifications::store(&f.pool, &n).await.unwrap();
         notifications::delivered(&f.pool, n.id).await.unwrap();
@@ -701,19 +680,17 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
         .execute(&f.pool)
         .await
         .unwrap();
-    assert!(
-        reports::purge(
-            &f.pool,
-            TEACHER,
-            TERM,
-            PurgeAttendanceTerm {
-                expected_records: impact.records + 1,
-                reason: "ทดสอบ".into()
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(reports::purge(
+        &f.pool,
+        TEACHER,
+        TERM,
+        PurgeAttendanceTerm {
+            expected_records: impact.records + 1,
+            reason: "ทดสอบ".into()
+        }
+    )
+    .await
+    .is_err());
     drain_score_changes(&f.pool).await;
     reports::purge(
         &f.pool,
@@ -754,16 +731,14 @@ async fn attendance_calendar_cancelled_and_unchecked_results_survive_verified_pu
         archived_first
     );
     assert_eq!(reports::impact(&f.pool, TERM).await.unwrap().records, 0);
-    assert!(
-        sessions::save(
-            &f.pool,
-            &f.actor,
-            s.id,
-            save_payload(&saved, STUDENT, AttendanceResult::Present)
-        )
-        .await
-        .is_err()
-    );
+    assert!(sessions::save(
+        &f.pool,
+        &f.actor,
+        s.id,
+        save_payload(&saved, STUDENT, AttendanceResult::Present)
+    )
+    .await
+    .is_err());
 }
 #[tokio::test]
 async fn attendance_special_round_refuses_overlapping_students_and_distinct_rounds_are_valid() {
@@ -788,17 +763,15 @@ async fn attendance_special_round_refuses_overlapping_students_and_distinct_roun
     };
     let s = seed(&f, AttendanceKind::Special, date);
     let overlapping = vec![s.clone(), s.clone()];
-    assert!(
-        specials::create_template(
-            &f.pool,
-            TEACHER,
-            TERM,
-            definition.clone(),
-            vec![overlapping]
-        )
-        .await
-        .is_err()
-    );
+    assert!(specials::create_template(
+        &f.pool,
+        TEACHER,
+        TERM,
+        definition.clone(),
+        vec![overlapping]
+    )
+    .await
+    .is_err());
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_special_templates")
             .fetch_one(&f.pool)
@@ -948,14 +921,12 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
             .unwrap(),
         0
     );
-    assert!(
-        sessions::detail(&f.pool, &f.actor, s.id)
-            .await
-            .unwrap()
-            .students
-            .iter()
-            .all(|r| r.result == AttendanceResult::Unchecked)
-    );
+    assert!(sessions::detail(&f.pool, &f.actor, s.id)
+        .await
+        .unwrap()
+        .students
+        .iter()
+        .all(|r| r.result == AttendanceResult::Unchecked));
     faces::enroll(
         &f.pool,
         TEACHER,
@@ -999,11 +970,9 @@ async fn attendance_scans_commit_evidence_once_and_do_not_mark_other_students_ab
         Err(AppError::Conflict(_))
     ));
     expired_replay.event_id = Uuid::new_v4();
-    assert!(
-        faces::scan(&f.pool, &f.actor, expired_replay)
-            .await
-            .is_err()
-    );
+    assert!(faces::scan(&f.pool, &f.actor, expired_replay)
+        .await
+        .is_err());
     let d = sessions::detail(&f.pool, &f.actor, s.id).await.unwrap();
     assert_eq!(
         d.students
@@ -1401,13 +1370,11 @@ async fn attendance_scoped_arrival_preserves_roster_identity_and_read_only_scope
             .count(),
         1
     );
-    assert!(
-        saved
-            .students
-            .iter()
-            .filter(|r| r.student_id != STUDENT)
-            .all(|r| r.result == AttendanceResult::Unchecked)
-    );
+    assert!(saved
+        .students
+        .iter()
+        .filter(|r| r.student_id != STUDENT)
+        .all(|r| r.result == AttendanceResult::Unchecked));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_records")
             .fetch_one(&f.pool)
@@ -1530,11 +1497,10 @@ async fn attendance_lesson_choices_use_published_rooms_and_respect_assigned_scop
     let rooms = core::rooms(&f.pool, term).await.unwrap();
     assert!(w.lesson_choices.iter().any(|c| !c.homerooms.is_empty()));
     for choice in &w.lesson_choices {
-        assert!(
-            w.sessions
-                .iter()
-                .any(|s| s.id == choice.session_id && s.kind == AttendanceKind::Lesson)
-        );
+        assert!(w
+            .sessions
+            .iter()
+            .any(|s| s.id == choice.session_id && s.kind == AttendanceKind::Lesson));
         assert!(!choice.period_name.is_empty());
         assert!(!choice.offering_name.is_empty());
         for room in &choice.homerooms {
@@ -1673,20 +1639,16 @@ async fn attendance_concurrent_saves_keep_one_revision_and_do_not_grant_own_acce
         .unwrap();
     assert!(own.summaries.iter().all(|s| s.student_id == STUDENT));
     assert!(!own.summaries.is_empty());
-    assert!(
-        report(
-            &f.pool,
-            &student,
-            report_query(Some(f.students[1].student_id), 1, 50)
-        )
+    assert!(report(
+        &f.pool,
+        &student,
+        report_query(Some(f.students[1].student_id), 1, 50)
+    )
+    .await
+    .is_err());
+    assert!(report(&f.pool, &student, report_query(None, 1, 50))
         .await
-        .is_err()
-    );
-    assert!(
-        report(&f.pool, &student, report_query(None, 1, 50))
-            .await
-            .is_err()
-    );
+        .is_err());
 }
 
 async fn evidence_file(pool: &PgPool, student: Uuid) -> Uuid {
@@ -1831,17 +1793,15 @@ async fn attendance_mixed_own_and_assigned_permissions_cannot_expand_student_his
     use school_file_platform::repository::FileRepository;
     let repository = school_file_platform::repository::SqlFileRepository::new(f.pool.clone());
     let platform_file = repository.load_delivery(file).await.unwrap().unwrap().file;
-    assert!(
-        require_evidence_file(
-            &f.pool,
-            &mixed,
-            &platform_file,
-            crate::policies::file_access_policy::FilePolicyAction::Read,
-            Some(STUDENT)
-        )
-        .await
-        .is_err()
-    );
+    assert!(require_evidence_file(
+        &f.pool,
+        &mixed,
+        &platform_file,
+        crate::policies::file_access_policy::FilePolicyAction::Read,
+        Some(STUDENT)
+    )
+    .await
+    .is_err());
     let linked = ActorContext {
         user_id: parent,
         permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
@@ -2043,16 +2003,12 @@ async fn attendance_report_pages_preserve_counts_filters_and_teacher_scope() {
     assert!(school.summaries.iter().all(|row| row.expected == 1));
     filtered.search = "%".into();
     assert_eq!(report(&f.pool, &f.actor, filtered).await.unwrap().total, 0);
-    assert!(
-        report(&f.pool, &f.actor, report_query(None, 0, 1))
-            .await
-            .is_err()
-    );
-    assert!(
-        report(&f.pool, &f.actor, report_query(None, 1, 101))
-            .await
-            .is_err()
-    );
+    assert!(report(&f.pool, &f.actor, report_query(None, 0, 1))
+        .await
+        .is_err());
+    assert!(report(&f.pool, &f.actor, report_query(None, 1, 101))
+        .await
+        .is_err());
     let outsider = ActorContext {
         user_id: Uuid::new_v4(),
         permissions: vec![codes::ATTENDANCE_READ_ASSIGNED.into()],
@@ -2072,12 +2028,12 @@ async fn attendance_report_pages_preserve_counts_filters_and_teacher_scope() {
 #[tokio::test]
 async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_history() {
     let f = fixture_at("attendance_parent_role", 101).await;
-    assert!(
-        !sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM roles WHERE code='PARENT')")
-            .fetch_one(&f.pool)
-            .await
-            .unwrap()
-    );
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM roles WHERE code='PARENT')"
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
     let mut parents = vec![];
     for index in 0..3 {
         let parent = Uuid::new_v4();
@@ -2096,11 +2052,9 @@ async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_hi
         .await
         .unwrap();
     assert!(actor.has_permission(codes::ATTENDANCE_READ_OWN));
-    assert!(
-        report(&f.pool, &actor, report_query(Some(STUDENT), 1, 50))
-            .await
-            .is_ok()
-    );
+    assert!(report(&f.pool, &actor, report_query(Some(STUDENT), 1, 50))
+        .await
+        .is_ok());
     assert!(matches!(
         report(
             &f.pool,
@@ -2156,12 +2110,10 @@ async fn attendance_enrollment_metadata_is_scoped_and_withdrawal_reconciles_it()
         user_id: Uuid::new_v4(),
         permissions: scoped.permissions.clone(),
     };
-    assert!(
-        face_enrollments(&f.pool, &outsider, TERM)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(face_enrollments(&f.pool, &outsider, TERM)
+        .await
+        .unwrap()
+        .is_empty());
     assert!(matches!(
         face_enrollments(&f.pool, &f.actor, TERM).await,
         Err(AppError::Forbidden(_))
@@ -2182,24 +2134,20 @@ async fn attendance_enrollment_metadata_is_scoped_and_withdrawal_reconciles_it()
         .execute(&f.pool)
         .await
         .unwrap();
-    assert!(
-        face_enrollments(&f.pool, &school, TERM)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(face_enrollments(&f.pool, &school, TERM)
+        .await
+        .unwrap()
+        .is_empty());
     sqlx::query("UPDATE users SET status='active' WHERE id=$1")
         .bind(STUDENT)
         .execute(&f.pool)
         .await
         .unwrap();
     faces::remove(&f.pool, TEACHER, STUDENT).await.unwrap();
-    assert!(
-        face_enrollments(&f.pool, &scoped, TERM)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(face_enrollments(&f.pool, &scoped, TERM)
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]
@@ -2369,16 +2317,14 @@ async fn attendance_sparse_first_save_additions_corrections_and_stale_roster_are
             .result,
         AttendanceResult::Absent
     );
-    assert!(
-        sessions::save(
-            &f.pool,
-            &f.actor,
-            first.session.id,
-            save_payload(&corrected, STUDENT, AttendanceResult::Unchecked)
-        )
-        .await
-        .is_err()
-    );
+    assert!(sessions::save(
+        &f.pool,
+        &f.actor,
+        first.session.id,
+        save_payload(&corrected, STUDENT, AttendanceResult::Unchecked)
+    )
+    .await
+    .is_err());
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM audit_logs WHERE entity_type='attendance' AND old_values IS NOT NULL AND new_values IS NOT NULL").fetch_one(&f.pool).await.unwrap(),3);
 }
 
@@ -2470,13 +2416,13 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
         Err(AppError::ServiceUnavailable(_))
     ));
     assert_eq!(reports::impact(&f.pool, TERM).await.unwrap().records, 1);
-    assert!(
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM notifications WHERE id=$1)")
-            .bind(owned_notice)
-            .fetch_one(&f.pool)
-            .await
-            .unwrap()
-    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM notifications WHERE id=$1)"
+    )
+    .bind(owned_notice)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
     assert_eq!(
         sessions::module_generation(&f.pool).await.unwrap(),
         impact.generation
@@ -2524,13 +2470,13 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
             .unwrap(),
         before_users
     );
-    assert!(
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM notifications WHERE id=$1)")
-            .bind(unrelated_notice)
-            .fetch_one(&f.pool)
-            .await
-            .unwrap()
-    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM notifications WHERE id=$1)"
+    )
+    .bind(unrelated_notice)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
     assert_eq!(
         sqlx::query_scalar::<_, String>("SELECT lifecycle_status FROM files WHERE id=$1")
             .bind(evidence)
@@ -2540,13 +2486,13 @@ async fn attendance_reset_is_scoped_reconciled_and_invalidates_old_requests() {
         "delete_requested"
     );
     assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM file_operations WHERE file_id=$1 AND operation_type='delete_object')").bind(evidence).fetch_one(&f.pool).await.unwrap());
-    assert!(
-        !sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM notifications WHERE id=$1)")
-            .bind(owned_notice)
-            .fetch_one(&f.pool)
-            .await
-            .unwrap()
-    );
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM notifications WHERE id=$1)"
+    )
+    .bind(owned_notice)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
     for notice in pending {
         assert!(!notifications::store(&f.pool, &notice).await.unwrap());
     }
@@ -2793,14 +2739,12 @@ async fn attendance_migration_refuses_roster_drift_and_fact_corruption() {
             "{error}"
         );
         assert_eq!(sqlx::query_as::<_,(String,String)>("SELECT s.kind,r.note FROM attendance_sessions s JOIN attendance_records r ON r.session_id=s.id WHERE s.id=$1").bind(session).fetch_one(&f.pool).await.unwrap(),("flag".into(),"preserved".into()));
-        assert!(
-            sqlx::query_scalar::<_, bool>(
-                "SELECT to_regclass('attendance_calendar_snapshots') IS NOT NULL"
-            )
-            .fetch_one(&f.pool)
-            .await
-            .unwrap()
-        );
+        assert!(sqlx::query_scalar::<_, bool>(
+            "SELECT to_regclass('attendance_calendar_snapshots') IS NOT NULL"
+        )
+        .fetch_one(&f.pool)
+        .await
+        .unwrap());
     }
 }
 
@@ -2851,18 +2795,14 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
     let before = report(&f.pool, &school, report_query(Some(STUDENT), 1, 100))
         .await
         .unwrap();
-    assert!(
-        before
-            .summaries
-            .iter()
-            .any(|r| r.category == "school" && r.unchecked > 0)
-    );
-    assert!(
-        before
-            .summaries
-            .iter()
-            .all(|r| r.absent == 0 && r.present == 0 && r.expected == r.unchecked)
-    );
+    assert!(before
+        .summaries
+        .iter()
+        .any(|r| r.category == "school" && r.unchecked > 0));
+    assert!(before
+        .summaries
+        .iter()
+        .all(|r| r.absent == 0 && r.present == 0 && r.expected == r.unchecked));
     let own = ActorContext {
         user_id: STUDENT,
         permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
@@ -2880,11 +2820,9 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
     .await
     .unwrap();
     assert!(!history.is_empty());
-    assert!(
-        history
-            .iter()
-            .all(|r| r.result == AttendanceResult::Unchecked)
-    );
+    assert!(history
+        .iter()
+        .all(|r| r.result == AttendanceResult::Unchecked));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_sessions")
             .fetch_one(&f.pool)
@@ -2926,12 +2864,10 @@ async fn attendance_virtual_coverage_and_history_remain_read_only_and_archive_ex
     )
     .await
     .unwrap();
-    assert!(
-        saved
-            .students
-            .iter()
-            .any(|r| r.result == AttendanceResult::Present)
-    );
+    assert!(saved
+        .students
+        .iter()
+        .any(|r| r.result == AttendanceResult::Present));
     let after = report(&f.pool, &school, report_query(Some(STUDENT), 1, 100))
         .await
         .unwrap();
@@ -3062,21 +2998,19 @@ async fn attendance_guarded_reads_digest_and_archive_work_with_one_connection() 
         user_id: STUDENT,
         permissions: vec![codes::ATTENDANCE_READ_OWN.into()],
     };
-    assert!(
-        !history(
-            &pool,
-            &own,
-            AttendanceHistoryQuery {
-                academic_term_id: TERM,
-                student_id: STUDENT,
-                start: date,
-                end: date
-            }
-        )
-        .await
-        .unwrap()
-        .is_empty()
-    );
+    assert!(!history(
+        &pool,
+        &own,
+        AttendanceHistoryQuery {
+            academic_term_id: TERM,
+            student_id: STUDENT,
+            start: date,
+            end: date
+        }
+    )
+    .await
+    .unwrap()
+    .is_empty());
     let mut tx = pool.begin().await.unwrap();
     school_attendance::services::lock_term(&mut tx, TERM, false, true)
         .await
@@ -3173,14 +3107,12 @@ async fn attendance_migration_refuses_unchecked_capture_and_rolls_back_before_cl
             .unwrap(),
         1
     );
-    assert!(
-        sqlx::query_scalar::<_, bool>(
-            "SELECT to_regclass('attendance_calendar_snapshots') IS NOT NULL"
-        )
-        .fetch_one(&f.pool)
-        .await
-        .unwrap()
-    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT to_regclass('attendance_calendar_snapshots') IS NOT NULL"
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
 }
 
 #[tokio::test]
@@ -3205,14 +3137,12 @@ async fn attendance_migration_refuses_unresolved_special_participants() {
             .unwrap(),
         1
     );
-    assert!(
-        sqlx::query_scalar::<_, bool>(
-            "SELECT to_regclass('attendance_calendar_snapshots') IS NOT NULL"
-        )
-        .fetch_one(&f.pool)
-        .await
-        .unwrap()
-    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT to_regclass('attendance_calendar_snapshots') IS NOT NULL"
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap());
 }
 
 #[tokio::test]
@@ -3292,18 +3222,16 @@ async fn attendance_midnight_finalizer_preserves_checked_results_and_skips_exclu
     let seeds = vec![arrival, lesson, excluded, cancelled];
     let generation = sessions::module_generation(&f.pool).await.unwrap();
     let mut tx = f.pool.begin().await.unwrap();
-    assert!(
-        closing::finalize_date_in_transaction(
-            &mut tx,
-            TERM,
-            date,
-            generation,
-            &seeds,
-            Utc.with_ymd_and_hms(2025, 10, 9, 16, 59, 59).unwrap()
-        )
-        .await
-        .is_err()
-    );
+    assert!(closing::finalize_date_in_transaction(
+        &mut tx,
+        TERM,
+        date,
+        generation,
+        &seeds,
+        Utc.with_ymd_and_hms(2025, 10, 9, 16, 59, 59).unwrap()
+    )
+    .await
+    .is_err());
     tx.rollback().await.unwrap();
     let now = Utc.with_ymd_and_hms(2025, 10, 9, 17, 0, 0).unwrap();
     let mut tx = f.pool.begin().await.unwrap();
@@ -3463,13 +3391,11 @@ async fn attendance_status_migration_refuses_unclassified_leave_without_modifyin
         .unwrap();
     sqlx::query("INSERT INTO attendance_term_summaries(academic_term_id,student_id,category,scope_key,scope_label,present,late,absent,leave,activity,unchecked,expected) VALUES($1,$2,'school','','school',0,0,0,1,0,0,1)")
         .bind(TERM).bind(STUDENT).execute(&f.pool).await.unwrap();
-    assert!(
-        apply_migrations_through(&f.pool, 108)
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("ATTENDANCE_UNCLASSIFIED_LEAVE")
-    );
+    assert!(apply_migrations_through(&f.pool, 108)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("ATTENDANCE_UNCLASSIFIED_LEAVE"));
     sqlx::query("DELETE FROM attendance_term_summaries")
         .execute(&f.pool)
         .await

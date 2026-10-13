@@ -522,7 +522,7 @@ async fn attendance_replay_correction_cap_suppression_and_null_room() {
     )
     .await
     .unwrap();
-    for status in ["absent", "truant"] {
+    for status in ["absent", "skipped"] {
         catalog::save_rule(
             &f.pool,
             f.admin.actor_id,

@@ -1,7 +1,7 @@
 use crate::models::*;
 use chrono::{NaiveDate, NaiveTime};
 use school_errors::AppError;
-use sqlx::{PgPool, Postgres, Transaction, types::Json};
+use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 #[derive(serde::Serialize)]
 pub struct AttendanceNotice {

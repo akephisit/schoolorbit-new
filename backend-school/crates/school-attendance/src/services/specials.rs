@@ -1,7 +1,7 @@
 use super::{audit, lock_term};
 use crate::{models::*, rules::invalid};
 use school_errors::AppError;
-use sqlx::{PgPool, types::Json};
+use sqlx::{types::Json, PgPool};
 use uuid::Uuid;
 pub async fn audiences(
     pool: &PgPool,

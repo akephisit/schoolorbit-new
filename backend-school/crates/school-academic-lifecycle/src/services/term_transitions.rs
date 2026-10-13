@@ -91,9 +91,9 @@ pub async fn transition_term(
     }
     let target = target_state(before.term_status, before.year_status, request.action)?;
     if request.action == TermTransitionAction::Close {
-        let closed_on = request.closed_on.ok_or_else(|| {
-            AppError::ValidationError("ระบุวันสุดท้ายก่อนปิดภาคเรียน".into())
-        })?;
+        let closed_on = request
+            .closed_on
+            .ok_or_else(|| AppError::ValidationError("ระบุวันสุดท้ายก่อนปิดภาคเรียน".into()))?;
         external
             .require_attendance_delivery_complete(&mut tx, term, closed_on)
             .await?;

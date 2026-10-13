@@ -38,7 +38,7 @@ CREATE TABLE behavior_item_versions (
 CREATE TABLE behavior_attendance_rules (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     kind TEXT NOT NULL CHECK(kind IN('arrival','lesson','special')),
-    status TEXT NOT NULL CHECK(status IN('present','absent','late','truant','sick_leave','personal_leave','activity','unchecked')),
+    status TEXT NOT NULL CHECK(status IN('present','absent','late','skipped','sick_leave','personal_leave','activity','unchecked')),
     grade_level_id UUID REFERENCES grade_levels(id) ON DELETE RESTRICT,
     effective_from DATE NOT NULL,
     action TEXT NOT NULL CHECK(action IN('none','merit','deduction')),

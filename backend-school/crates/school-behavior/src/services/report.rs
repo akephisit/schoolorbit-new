@@ -226,7 +226,8 @@ mod tests {
             offset: None,
             limit: None,
         };
-        let sql = report_filter(a, &q, "SELECT count(*)").sql().to_string();
+        let sql = report_filter(a, &q, "SELECT count(*)").sql();
+        let sql = sql.as_str();
         assert!(sql.contains("OR("));
         assert!(sql.contains("student_parents"));
         assert!(sql.contains("homeroom_advisors"));
