@@ -80,9 +80,11 @@ test -f "$maintenance_proxy_template" || {
 # shellcheck source=scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
 . "$timing_helper_source"
 
+# shellcheck source=scripts/lib/pipeline-remote/runtime-env.sh
+. "$deployment_root/scripts/lib/pipeline-remote/runtime-env.sh"
+
 runtime_env_value() {
-    local key=$1 line value decoded char
-    local -i index=0
+    local key=$1
     case "$key" in
         JWT_SECRET | SESSION_HMAC_KEY | SCHOOL_ROLLBACK_JWT_SECRET | \
             BASE_DOMAIN | TRUSTED_PROXY_CIDRS | SCHOOL_ALLOWED_DEV_ORIGINS | \
@@ -90,32 +92,7 @@ runtime_env_value() {
             R2_PUBLIC_BUCKET_NAME | R2_PRIVATE_BUCKET_NAME) ;;
         *) return 64 ;;
     esac
-    line="$(grep -m 1 "^${key}=" "$runtime_env")" || return
-    value=${line#*=}
-    if [[ ${#value} -lt 2 || ${value:0:1} != "'" || ${value: -1} != "'" ]]; then
-        echo "Runtime environment value is not installer encoded: ${key}" >&2
-        return 65
-    fi
-    value=${value:1:${#value}-2}
-    decoded=
-    while ((index < ${#value})); do
-        char=${value:index:1}
-        if [[ $char == \\ ]]; then
-            ((index += 1))
-            if ((index >= ${#value})); then
-                echo "Runtime environment value has invalid escaping: ${key}" >&2
-                return 65
-            fi
-            char=${value:index:1}
-            if [[ $char != \\ && $char != "'" ]]; then
-                echo "Runtime environment value has invalid escaping: ${key}" >&2
-                return 65
-            fi
-        fi
-        decoded+=$char
-        ((index += 1))
-    done
-    printf '%s' "$decoded"
+    schoolorbit_runtime_env_value "$key" "$runtime_env"
 }
 export_school_compose_env() {
     export BACKEND_SCHOOL_IMAGE_REFERENCE="$backend_school_image_reference"
