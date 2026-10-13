@@ -16,6 +16,7 @@ pub mod homeroom_roster;
 pub mod lifecycle_context;
 pub mod lifecycle_guard;
 pub mod progressions;
+pub mod score_calendar;
 pub mod promotion_execution;
 pub mod promotion_reconciliation;
 pub mod promotion_students;

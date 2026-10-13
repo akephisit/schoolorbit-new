@@ -2,6 +2,7 @@
 
 pub mod api_contract;
 mod app;
+mod behavior_provider_adapter;
 mod db;
 mod http_state;
 mod middleware;

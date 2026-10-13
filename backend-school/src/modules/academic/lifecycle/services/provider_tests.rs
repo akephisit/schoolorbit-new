@@ -20,6 +20,15 @@ struct StubExternalLifecyclePort {
 
 #[async_trait]
 impl ExternalLifecyclePort for StubExternalLifecyclePort {
+    async fn require_attendance_delivery_complete(
+        &self,
+        _transaction: &mut Transaction<'_, Postgres>,
+        _academic_term_id: Uuid,
+        _closed_on: chrono::NaiveDate,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+
     async fn pending_exam_work(
         &self,
         _transaction: &mut Transaction<'_, Postgres>,

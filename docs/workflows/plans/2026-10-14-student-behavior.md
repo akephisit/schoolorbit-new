@@ -2,7 +2,7 @@
 
 วันที่ 14 ตุลาคม 2026
 
-อ้างอิง [แบบที่ตกลง](../specs/2026-10-14-student-behavior-design.md) และ [.rules](../../../.rules) แผนนี้จัดลำดับงานเพื่อพัฒนาระบบในอนาคต รอบที่จัดทำแผนนี้แก้เฉพาะเอกสาร ไม่แก้ runtime, schema, permissions หรือข้อมูลโรงเรียนจริง
+อ้างอิง [แบบที่ตกลง](../specs/2026-10-14-student-behavior-design.md) และ [.rules](../../../.rules) ผู้ใช้อนุญาตให้เริ่มพัฒนาแล้ว และยืนยันว่าระบบยังไม่มีข้อมูลบุคคลที่ต้องรองรับแบบเก่า
 
 ## ผลลัพธ์ที่ต้องได้
 
@@ -37,7 +37,7 @@ Coordinator owns router composition, OpenAPI composition, permission contract, m
 
 - เริ่มจาก `origin/main` ล่าสุดบน feature branch ตรวจ migration timeline ทั้งหมด ห้ามเลือกเลข migration ล่วงหน้าหรือแก้ migration ที่ใช้แล้ว
 - ตรวจสถานะและ summaries เดิม รวม unchecked, generic `leave`, sessions, roster snapshot, module generation, term archive และช่องทางเขียนทั้งหมด
-- กำหนดการแยก `leave` เดิมจากข้อมูลที่เชื่อถือได้ ตรวจข้อมูลแบบสรุปที่ไม่มีรายละเอียด หากจับคู่ไม่ได้ให้รายงานเฉพาะจำนวนและ finding code และแก้แผนการย้ายข้อมูลก่อน cutover ห้ามเดา illness/personal หรือทิ้งข้อมูล
+- ไม่สร้างระบบ mapping หรือ runtime compatibility สำหรับ `leave` เดิม ใช้สถานะใหม่โดยตรง ตรวจว่าไม่มีข้อมูลที่ขัดกับคำยืนยันก่อนลบโครงสร้างเก่าผ่าน forward migration
 - กำหนดวันเริ่มปิดยอดอัตโนมัติและคะแนนอัตโนมัติ แยกจาก historical backfill เพื่อไม่ให้วันเก่าถูกหักโดยปริยาย
 - ประเมิน owner ของ domain พฤติกรรมตามเกณฑ์ crate admission ใน `.rules`: interface แคบ dependency ไม่มี cycle lifecycle ต่างจาก Attendance และ focused coverage หากสร้าง crate ใหม่ต้องเก็บ compile-scope evidence ตามมาตรฐานก่อน/หลัง หากไม่ผ่านให้คง cohesive application module และบันทึกเหตุผล
 - ยืนยันวิธีคืนสภาพและ binary/schema compatibility สำหรับสถานะใหม่และการล้างข้อมูล กำหนดจุดที่ห้ามใช้ binary เดิมและวิธี roll forward เมื่อจำเป็น
@@ -120,7 +120,7 @@ Coordinator owns router composition, OpenAPI composition, permission contract, m
 
 | กลุ่ม | Acceptance ที่ต้องตรวจ |
 | --- | --- |
-| Migration | identities/counts/relationships คงเดิม, leave mapping, refusal เมื่อจับคู่ไม่ได้, retry, expanded-schema compatibility และ cleanup gate |
+| Migration | identities/counts/relationships คงเดิม, สถานะใหม่โดยตรง, refusal หากพบข้อมูลเดิมที่ห้ามลบ, retry และ cleanup gate |
 | ปิดยอด | ก่อน/หลัง Bangkok midnight, holiday/override, canceled/ไม่มีคาบ, roster ตามวัน, multi-day downtime, วันสิ้นเดือน/term, race กับครู, retry ไม่ซ้ำ |
 | เกณฑ์/เชื่อม | ทุกสถานะ/ประเภท/action, round-specific rules, future versions, scan/save/finalizer, daily canonical result, caps/duplicate policy, module reset generation, outbox retry |
 | บันทึกกลุ่ม | ห้อง+ข้ามห้อง, คนซ้ำ, select-all ข้ามหน้า, date/rule/roster conflict, unauthorized member, all-or-nothing rollback, ambiguous network retry |

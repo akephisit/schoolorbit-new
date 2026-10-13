@@ -18,6 +18,22 @@ pub(crate) static LIFECYCLE_PROVIDERS: ApplicationLifecycleProviders =
 
 #[async_trait]
 impl ExternalLifecyclePort for ApplicationLifecycleProviders {
+    async fn require_attendance_delivery_complete(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        academic_term_id: Uuid,
+        closed_on: NaiveDate,
+    ) -> Result<(), AppError> {
+        school_attendance::services::finalization::require_finalized_through(
+            transaction,
+            academic_term_id,
+            closed_on,
+        )
+        .await?;
+        school_attendance::services::score_changes::require_drained(transaction, academic_term_id)
+            .await
+    }
+
     async fn pending_exam_work(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
