@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 pub use admin_client::{ActiveSchool, AdminClient, AdminClientConfig, SchoolDatabaseInfo};
-pub use pool_manager::PoolManager;
+pub use pool_manager::{close_pool, PoolManager};
 pub use school_mapping::get_school_database_info;
 
 #[derive(Clone)]

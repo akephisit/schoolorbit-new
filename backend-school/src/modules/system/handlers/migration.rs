@@ -480,11 +480,13 @@ async fn migrate_single_school(
             .await
             .map_err(|_| "Migration connection failed".to_string())?;
         let result = school_migrations::run_tenant_migrations(&owner_pool).await;
-        owner_pool.close().await;
-        result?;
-        // Permission synchronization committed; invalidate before fallible verification.
+        // Migrations/permission sync may have committed even if a later grant failed.
+        // Invalidate before drainage or any other fallible post-migration work.
         state.invalidate_permission_tenant(subdomain);
         state.notify_all_permissions_changed(subdomain);
+        let drainage = school_tenancy::close_pool(&owner_pool, "migration_owner_drain").await;
+        result?;
+        drainage?;
         let runtime = state
             .admin_client
             .get_school_database_info(subdomain)
@@ -493,7 +495,7 @@ async fn migrate_single_school(
         state
             .pool_manager
             .retire_pool(&runtime.database_url, subdomain)
-            .await;
+            .await?;
         let pool = state
             .pool_manager
             .get_pool_without_migrations(&runtime.database_url, subdomain)
@@ -519,30 +521,50 @@ async fn migrate_single_school(
 
     // Startup can precede tenant migration during a coordinated deployment.
     // Register attendance only after the new schema is available, without idle tenant polling.
-    if crate::modules::attendance::runtime::touch(
-        subdomain,
-        pool.clone(),
-        state.notification_channel.clone(),
+    let registration = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        crate::modules::attendance::runtime::touch(
+            subdomain,
+            pool.clone(),
+            state.notification_channel.clone(),
+        ),
     )
-    .await
-    .map_err(|error| {
+    .await;
+    if !matches!(registration, Ok(Ok(()))) {
+        let error_code = if registration.is_err() {
+            "attendance_schedule_registration_timeout"
+        } else {
+            "attendance_schedule_registration_failed"
+        };
         tracing::warn!(
             operation = "attendance_schedule_registration",
+            error_code,
             pool_connections = pool.size(),
             pool_idle_connections = pool.num_idle(),
             pool_closed = pool.is_closed(),
-            error_code = "attendance_schedule_registration_failed",
             "Attendance schedule registration failed"
         );
-        error
-    })
-    .is_err()
-    {
+        if state
+            .admin_client
+            .update_migration_status(
+                subdomain,
+                current_version as i32,
+                "failed",
+                Some(error_code),
+            )
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                operation = "migration_status_update",
+                error_code = "migration_status_update_failed"
+            );
+        }
         return MigrationResult {
             subdomain: subdomain.into(),
             status: "failed".into(),
             version: Some(current_version),
-            error: Some("attendance_schedule_registration_failed".into()),
+            error: Some(error_code.into()),
         };
     }
 
@@ -606,27 +628,42 @@ async fn get_latest_migration_version() -> Result<i64, String> {
     Ok(max_version)
 }
 
-/// Deployment verification owns a short-lived DML connection, independent of request pools.
+/// A one-shot verifier owns one connection, not a second pool lifecycle.
 async fn verify_runtime_schema(database_url: &str) -> Result<i64, String> {
-    use sqlx::ConnectOptions;
-    let options = database_url
-        .parse::<sqlx::postgres::PgConnectOptions>()
-        .map_err(|_| "Invalid runtime verification connection".to_string())?
-        .disable_statement_logging();
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(1)
-        .min_connections(0)
-        .acquire_timeout(std::time::Duration::from_secs(20))
-        .connect_with(options)
-        .await
-        .map_err(|_| "Runtime verification connection failed".to_string())?;
-    let result = async {
-        school_migrations::verify_tenant_schema(&pool).await?;
-        get_current_version(&pool).await
-    }
+    use sqlx::{ConnectOptions, Connection};
+    let started = std::time::Instant::now();
+    let mut stage = "connect";
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let options = database_url
+            .parse::<sqlx::postgres::PgConnectOptions>()
+            .map_err(|_| "Invalid runtime verification connection".to_string())?
+            .disable_statement_logging();
+        let mut connection = sqlx::PgConnection::connect_with(&options)
+            .await
+            .map_err(|_| "Runtime verification connection failed".to_string())?;
+        stage = "schema_history";
+        let result = school_migrations::verify_tenant_schema(&mut connection).await;
+        stage = "connection_close";
+        let closed = connection.close().await;
+        let version = result?;
+        closed.map_err(|_| "Runtime verification connection close failed".to_string())?;
+        Ok(version)
+    })
     .await;
-    pool.close().await;
-    result
+    tracing::info!(
+        operation = "runtime_schema_verification",
+        stage,
+        duration_ms = started.elapsed().as_secs_f64() * 1000.0,
+        succeeded = matches!(&result, Ok(Ok(_)))
+    );
+    result.map_err(|_| {
+        tracing::warn!(
+            operation = "runtime_schema_verification",
+            stage,
+            error_code = "runtime_schema_verification_timeout"
+        );
+        "Runtime schema verification timed out".to_string()
+    })?
 }
 
 /// Get current migration version from school database
@@ -700,6 +737,39 @@ mod tests {
         let pool = phase_a_pool("deployment_runtime_verifier_old_schema").await;
         let result = verify_runtime_schema(&verification_url(&pool).await).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn deployment_verification_rejects_corrupt_history_without_repairing_it() {
+        let pool = create_named_test_pool("runtime_verifier_corrupt_history").await;
+        // This fixture exercises the immutable history contract, not business DDL.
+        sqlx::query("CREATE TABLE _sqlx_migrations (version bigint PRIMARY KEY, success boolean NOT NULL, checksum bytea NOT NULL)")
+            .execute(&pool).await.unwrap();
+        for migration in sqlx::migrate!("./migrations").iter() {
+            sqlx::query(
+                "INSERT INTO _sqlx_migrations (version,success,checksum) VALUES ($1,true,$2)",
+            )
+            .bind(migration.version)
+            .bind(migration.checksum.as_ref())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let url = verification_url(&pool).await;
+        let version = verify_runtime_schema(&url).await.unwrap();
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = decode('00', 'hex') WHERE version=$1")
+            .bind(version)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(verify_runtime_schema(&url).await.is_err());
+        let checksum: Vec<u8> =
+            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version=$1")
+                .bind(version)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(checksum, vec![0]);
     }
 
     #[tokio::test]

@@ -117,10 +117,13 @@ pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
 }
 
 /// Runtime readiness validates the immutable timeline; it never creates migration tables.
-pub async fn verify_tenant_schema(pool: &PgPool) -> Result<(), String> {
+pub async fn verify_tenant_schema<'e, E>(executor: E) -> Result<i64, String>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let applied: Vec<(i64, bool, Vec<u8>)> =
         sqlx::query_as("SELECT version, success, checksum FROM _sqlx_migrations ORDER BY version")
-            .fetch_all(pool)
+            .fetch_all(executor)
             .await
             .map_err(|_| "Tenant migration history unavailable".to_string())?;
     let migrator = all_migrations_without_db_lock();
@@ -136,7 +139,7 @@ pub async fn verify_tenant_schema(pool: &PgPool) -> Result<(), String> {
     {
         return Err("Tenant schema is not ready for this release".into());
     }
-    Ok(())
+    Ok(applied.last().map_or(0, |(version, _, _)| *version))
 }
 
 /// Only the tenant owner may grant the corresponding runtime role. Disposable
