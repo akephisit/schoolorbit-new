@@ -31,9 +31,15 @@ RUN --mount=type=cache,id=school-sccache-tool-build,target=/tmp/sccache-target \
     && printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/sccache "$@"' > /usr/local/bin/rustc-cache \
     && chmod 0755 /usr/local/bin/rustc-cache \
     && rm -rf /tmp/sccache-source /tmp/sccache-source.tar.gz /tmp/sccache-gha-retry.patch
+COPY scripts/sccache-startup.json /etc/sccache-school.json
+ENV SCCACHE_CONF=/etc/sccache-school.json
 
 FROM base AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends jq \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=sccache-tool /usr/local/bin/sccache /usr/local/bin/rustc-cache /usr/local/bin/
+COPY --from=sccache-tool /etc/sccache-school.json /etc/sccache-school.json
+ENV SCCACHE_CONF=/etc/sccache-school.json
 COPY --from=planner /app/recipe.json recipe.json
 COPY scripts/build_release.sh scripts/release_linker.sh scripts/
 ARG SCHOOL_COMPILER_CACHE=off

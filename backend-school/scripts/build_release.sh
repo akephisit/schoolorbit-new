@@ -4,21 +4,27 @@ set -euo pipefail
 wait_for_cache_writes() {
     local observed status deadline=$((SECONDS + 120))
     while ((SECONDS < deadline)); do
-        if ! observed=$(timeout 5 /usr/local/bin/sccache --show-stats); then
+        if ! observed=$(timeout 5 /usr/local/bin/sccache --show-stats --stats-format=json); then
             return 1
         fi
-        # The pinned CLI exposes aggregate counts separately from per-language rows.
+        # The human CLI omits successful writes; use the pinned JSON counters.
         # A miss is settled when its asynchronous write succeeds or reports an error.
         status=0
-        awk '
-            /^Cache misses[[:space:]]+[0-9]+$/ { misses=$NF; seen++ }
-            /^Cache writes[[:space:]]+[0-9]+$/ { writes=$NF; seen++ }
-            /^Cache write errors[[:space:]]+[0-9]+$/ { errors=$NF; seen++ }
-            END { if (seen != 3) exit 2; if (writes + errors < misses) exit 1 }
-        ' <<<"$observed" || status=$?
+        jq -e '
+            def count: type == "number" and . >= 0 and floor == .;
+            .stats as $s |
+            if ($s.cache_misses.counts | type) != "object"
+                or ($s.cache_misses.counts | all(.[]; count) | not)
+                or ($s.cache_writes | count | not)
+                or ($s.cache_write_errors | count | not)
+            then error("Invalid compiler counters")
+            else $s.cache_writes + $s.cache_write_errors >= ([$s.cache_misses.counts[]] | add // 0)
+            end
+        ' <<<"$observed" >/dev/null 2>&1 || status=$?
         case "$status" in
             0) return 0 ;;
-            2) return 1 ;;
+            1) ;;
+            *) return 1 ;;
         esac
         sleep 1
     done
