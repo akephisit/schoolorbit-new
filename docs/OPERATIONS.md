@@ -382,6 +382,11 @@ Operations `compiler-cache-diagnostic` compiles an isolated library with the pin
 then restores its new GHA entry in a fresh container. Daemon logs remain on private tmpfs mounts;
 only allowlisted error classes, HTTP statuses and numeric counters enter the evidence artifact.
 The probe publishes no release image and fails unless the new write and restoration are observed.
+Set `options={"workload":"dependencies"}` to repeat the canonical School dependency cook in
+two fresh containers, importing only its GHCR preparation layers. This preserves the release
+toolchain, recipe and compiler settings, checks all eligible writes and subsequent hits, and
+exports neither BuildKit layers nor a release image. Feature-ref writes remain scoped to that ref;
+a successful branch diagnostic alone does not prove that a main-only failure is resolved.
 School enables JPEG, PNG and WebP codecs to match the File Platform's inspected-content policy,
 with Rayon processing retained. GIF, BMP and TIFF decoding additionally supports temporary supply image sources, which are normalized before canonical storage. The School image dependency keeps its codec features explicit.
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use

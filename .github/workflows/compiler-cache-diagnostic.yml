@@ -36,7 +36,7 @@ jobs:
             core.setSecret(token);
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', token);
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
-      - name: Probe a new compiler entry and restore it in a fresh container
+      - name: Probe compiler writes and restoration in fresh containers
         env:
           COMPILER_CACHE_OUTPUT: ${{ runner.temp }}/compiler-cache-evidence
           COMPILER_CACHE_WORKLOAD: ${{ inputs.workload }}

@@ -52,6 +52,52 @@ test('compiler failures retain only sanitized diagnostics and clean the owned co
   assert.equal(result.status,0,result.stderr);
   assert.doesNotMatch(result.stdout+result.stderr,/sentinel/);
 });
+for (const scenario of ['healthy', 'write_error', 'restore_miss']) {
+  test(`canonical dependency diagnostic rejects incomplete population: ${scenario}`, () => {
+    const evidence = python(`
+import contextlib,io,json,os,tempfile
+from pathlib import Path
+import diagnose_compiler_cache as p
+original_run=p.subprocess.run
+with tempfile.TemporaryDirectory() as output:
+ os.environ.update(GITHUB_RUN_ID='12345',GITHUB_RUN_ATTEMPT='1',GITHUB_REPOSITORY_OWNER='akephisit',ACTIONS_RESULTS_URL='private-url-sentinel',ACTIONS_RUNTIME_TOKEN='private-token-sentinel',COMPILER_CACHE_OUTPUT=output,COMPILER_CACHE_WORKLOAD='dependencies')
+ commands=[]
+ current=[0]
+ def run(args,stage):
+  commands.append(args)
+  if stage=='fresh_container': current[0]+=1
+  if stage=='pinned_image':
+   context=Path(args[-1])
+   assert (context/'Cargo.lock').is_file() and (context/'scripts/build_release.sh').is_file()
+   assert 'bash scripts/build_release.sh dependencies' not in (context/'Dockerfile').read_text()
+   assert args[:3]==['docker','buildx','build'] and '--load' in args
+   assert 'type=registry,ref=ghcr.io/akephisit/schoolorbit-backend-school-cache:buildcache' in args
+   assert '--cache-to' not in args and '--push' not in args
+  if stage=='compile': assert args[-1].endswith('exec bash scripts/build_release.sh dependencies')
+  return 'a'*40 if stage=='source' else ''
+ def counters(_):
+  first=current[0]==1
+  failed=${JSON.stringify(scenario)}=='write_error' and first
+  miss=2 if first else int(${JSON.stringify(scenario)}=='restore_miss')
+  return dict(cache_hits=563 if first else 565-miss,cache_misses=miss,cache_writes=0 if failed else miss,cache_write_errors=2 if failed else 0,cache_errors=0,cache_read_errors=0,cache_timeouts=0)
+ class Result:
+  stdout='private-daemon-sentinel'
+ p.command=run
+ p.stats=counters
+ p.subprocess.run=lambda args,**kw: original_run(args,**kw) if args[0]=='git' else (commands.append(args) or Result())
+ with contextlib.redirect_stdout(io.StringIO()):
+  try: p.main()
+  except SystemExit as error: assert error.code==1
+ result=json.loads((Path(output)/'evidence.json').read_text())
+ assert result['complete'] and result['healthy']==(${JSON.stringify(scenario)}=='healthy')
+ assert len(result['samples'])==2
+ assert not any('sentinel' in ' '.join(args) for args in commands)
+ print(json.dumps(result))
+`);
+    assert.equal(evidence.healthy, scenario === 'healthy');
+    assert.doesNotMatch(JSON.stringify(evidence), /sentinel/);
+  });
+}
 test('operations publishes only the numeric evidence file and never private daemon logs',()=>{
   const workflow=readFileSync(path.join(repo,'.github/workflows/compiler-cache-diagnostic.yml'),'utf8');
   const operations=readFileSync(path.join(repo,'.github/workflows/operations.yml'),'utf8');
