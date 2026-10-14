@@ -18,6 +18,28 @@ test('compiler profiling refuses paired-source or altered-profile selections', (
   assert.match(workflow, /run: node scripts\/lib\/pipeline-build-cache\.mjs/);
   assert.doesNotMatch(workflow, /cache-to:|push: true/);
 });
+test('profile-only mode skips warm samples and compares credential-free exports', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'compiler-profile-'));
+  t.after(() => rmSync(root, {recursive:true,force:true}));
+  const bin = path.join(root, 'bin');
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, 'docker'), `#!/bin/bash
+printf '%s\\n' "$*" >> "$PROFILE_CALLS"
+case " $* " in
+ *" /benchmark.sh backend-school "*) exit 99;;
+ *" export-openapi "*) printf '{"openapi":"3.1.0","paths":{"/fixture":{}}}\\n';;
+esac
+`, {mode:0o755});
+  const workflow = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  const body = workflow.match(/name: Compare on the same runner and persistent Cargo state[\s\S]*?        run: \|\n([\s\S]*?)(?=      - uses: actions\/upload-artifact)/)[1].replace(/^          /gm, '');
+  const result = spawnSync('bash', ['-e', '-c', body], {cwd:repo,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,BENCH_BACKEND:'backend-school',BENCH_SAMPLES:'2',BENCH_VARIANTS:'default',BENCH_BASELINE:'',BENCH_PROFILE_ONLY:'true',PROFILE_CALLS:path.join(root,'calls'),RUNNER_TEMP:root,GITHUB_SHA:'a'.repeat(40),GITHUB_STEP_SUMMARY:path.join(root,'summary')}});
+  assert.equal(result.status, 0, result.stderr);
+  const calls = readFileSync(path.join(root,'calls'),'utf8');
+  assert.doesNotMatch(calls, /bash \/benchmark\.sh/);
+  assert.match(calls, /RUSTC_BOOTSTRAP=1.*-Z llvm-time-trace/);
+  assert.equal(calls.match(/env -i .*export-openapi/g).length, 2);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(root,'build-benchmark/compiler-profile/openapi.json'),'utf8')),JSON.parse(readFileSync(path.join(root,'build-benchmark/openapi-baseline.json'),'utf8')));
+});
 const summary = path.join(repo, 'scripts/summarize_backend_benchmark.py');
 const api = { openapi: '3.1.0', paths: { '/fixture': {} } };
 function fixture(t) {
