@@ -87,6 +87,84 @@ test("missing compiler evidence is reported unavailable instead of zero hits", (
   assert.match(result.stdout, /\| hits \| unavailable \|/);
 });
 
+test("real GHA export headings and dependency timings stay separate from the application", (t) => {
+  const root = fixture(t);
+  writeFileSync(path.join(root, "dependency-build-metrics.json"), JSON.stringify({compileNanoseconds: 349e9}));
+  writeFileSync(path.join(root, "dependency-sccache-stats.json"), JSON.stringify({stats: {
+    cache_hits: {counts: {Rust: 100}}, cache_misses: {counts: {}}
+  }}));
+  const log = path.join(root, "buildkit.log");
+  writeFileSync(log, [
+    "#19 [builder 5/7] RUN bash scripts/build_release.sh dependencies",
+    "#19 CACHED",
+    "#23 [builder 7/7] RUN bash scripts/build_release.sh",
+    "#23 DONE 317.2s",
+    "#30 exporting to GitHub Actions Cache",
+    "#30 preparing build cache for export 66.5s done",
+    "#30 DONE 120.3s",
+  ].join("\n"));
+  const result = spawnSync("python3", [path.join(repo, "scripts/render_backend_build_summary.py"), "backend-school", root, log], {encoding: "utf8"});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Recorded dependency cook: 349.00s/);
+  assert.match(result.stdout, /Dependency Rust library cache: hits=100, misses=0/);
+  assert.match(result.stdout, /\| dependency layer \| 0.00s \|/);
+  assert.match(result.stdout, /\| compiler layer \| 317.20s \|/);
+  assert.match(result.stdout, /\| cache export \| 120.30s \|/);
+  assert.match(result.stderr, /current_layer=executed/);
+  assert.match(result.stderr, /dependency_layer=0.00s compiler_layer=317.20s.*cache_export=120.30s/);
+});
+
+test("an observed empty Rust cache counter is zero while absent counters remain unavailable", (t) => {
+  const root = fixture(t);
+  writeFileSync(path.join(root, "sccache-stats.json"), JSON.stringify({stats: {
+    cache_hits: {counts: {}}, cache_misses: {}, cache_write_errors: 0
+  }}));
+  const result = spawnSync("python3", [path.join(repo, "scripts/render_backend_build_summary.py"), "backend-school", root, "absent"], {encoding: "utf8"});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\| hits \| 0 \|/);
+  assert.match(result.stdout, /\| misses \| unavailable \|/);
+});
+
+for (const phase of ["application", "dependencies"])
+  for (const mode of ["off", "local", "gha", "missing-secrets"])
+    test(`School ${phase} compiler cache preserves commands and failure status (${mode})`, (t) => {
+      const root = fixture(t), bin = path.join(root, "bin"), secrets = path.join(root, "secrets");
+      mkdirSync(bin);
+      mkdirSync(secrets);
+      if (mode === "gha")
+        for (const name of ["sccache_gha_url", "sccache_gha_token"])
+          writeFileSync(path.join(secrets, name), "private-cache-fixture-sentinel");
+      writeFileSync(path.join(bin, "cargo"), '#!/bin/bash\nprintf "%s\\n" "$@" > "$CARGO_ARGS"\nprintf "%s\\n" "${RUSTC_WRAPPER:-off}" "${ACTIONS_CACHE_SERVICE_V2:-off}" "${SCCACHE_GHA_VERSION:-off}" > "$CACHE_ENV"\nexit "$CARGO_EXIT"\n', {mode: 0o755});
+      writeFileSync(path.join(bin, "sccache"), '#!/bin/bash\nexit 9\n', {mode: 0o755});
+      const script = readFileSync(path.join(repo, "backend-school/scripts/build_release.sh"), "utf8")
+        .replaceAll("/run/secrets", secrets).replaceAll("/usr/local/bin/sccache", path.join(bin, "sccache"));
+      for (const status of [42, 0]) {
+        const runRoot = path.join(root, String(status));
+        mkdirSync(runRoot);
+        const result = spawnSync("bash", ["-c", script, "build_release.sh", phase], {
+          cwd: runRoot,
+          env: {...process.env, PATH: bin + ":" + process.env.PATH, RUSTC_WRAPPER: "must-be-cleared", SCHOOL_COMPILER_CACHE: mode === "missing-secrets" ? "gha" : mode, CARGO_EXIT: String(status), CARGO_ARGS: path.join(root, "args"), CACHE_ENV: path.join(root, "cache-env")},
+          encoding: "utf8"
+        });
+        assert.equal(result.status, status, result.stderr);
+        const args = readFileSync(path.join(root, "args"), "utf8");
+        assert.equal(args, phase === "dependencies"
+          ? "chef\ncook\n--release\n--recipe-path\nrecipe.json\n"
+          : `rustc\n--release\n--locked\n--bin\nbackend-school\n--timings\n--\n-C\nlto=off\n-C\nlinker=${runRoot}/scripts/release_linker.sh\n`);
+        const cacheEnv = readFileSync(path.join(root, "cache-env"), "utf8").split("\n");
+        assert.equal(cacheEnv[0], ["gha", "local"].includes(mode) ? path.join(bin, "sccache") : "off");
+        if (mode === "gha") assert.deepEqual(cacheEnv.slice(1, 3), ["true", "schoolorbit-backend-school"]);
+        assert.doesNotMatch(result.stdout + result.stderr, /private-cache-fixture-sentinel/);
+        const metricsDir = path.join(runRoot, "target", phase === "dependencies" ? "dependency-timings" : "cargo-timings");
+        if (status === 0) {
+          const metrics = JSON.parse(readFileSync(path.join(metricsDir, "build-metrics.json"), "utf8"));
+          assert.equal(metrics.cacheEnabled, ["gha", "local"].includes(mode));
+          assert.ok(metrics.compileNanoseconds >= 0);
+          assert.deepEqual(JSON.parse(readFileSync(path.join(metricsDir, "sccache-stats.json"), "utf8")), {});
+        } else assert.throws(() => readFileSync(path.join(metricsDir, "build-metrics.json")));
+      }
+    });
+
 test('API-readable evidence distinguishes executable/link work and current BuildKit phases', t => {
   const root = fixture(t);
   writeFileSync(path.join(root, 'build-metrics.json'), JSON.stringify({compileNanoseconds: 170e9}));

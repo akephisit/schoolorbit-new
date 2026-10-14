@@ -6,6 +6,8 @@ import pathlib
 import re
 import sys
 
+PHASE_NAMES = ["cache manifest import", "dependency layer", "compiler layer", "image export/push", "cache export"]
+
 
 def load_json(file):
     try:
@@ -22,7 +24,9 @@ def number(value):
 def counter(stats, key):
     value = stats.get(key)
     if isinstance(value, dict):
-        return number(value.get("counts", {}).get("Rust"))
+        counts = value.get("counts")
+        # sccache serializes an observed zero counter as an empty counts map.
+        return number(counts.get("Rust", 0)) if isinstance(counts, dict) else None
     return number(value)
 
 
@@ -41,10 +45,12 @@ def buildkit_phases(text):
         stage = stages.setdefault(key, {})
         if "importing cache manifest" in content:
             stage["kind"] = "cache manifest import"
-        elif "exporting cache" in content:
+        elif "exporting cache" in content or "exporting to GitHub Actions Cache" in content:
             stage["kind"] = "cache export"
         elif "exporting to image" in content:
             stage["kind"] = "image export/push"
+        elif "RUN" in content and ("cargo chef cook" in content or "bash scripts/build_release.sh dependencies" in content):
+            stage["kind"] = "dependency layer"
         elif "RUN" in content and ("bash scripts/build_release.sh" in content or re.search(r"cargo (?:rustc|build)\b", content)):
             stage["kind"] = "compiler layer"
         if content == "CACHED":
@@ -87,6 +93,11 @@ def summary(component, folder, log_file):
     folder = pathlib.Path(folder)
     metrics = load_json(folder / "build-metrics.json")
     cache = load_json(folder / "sccache-stats.json")
+    dependency_metrics = load_json(folder / "dependency-build-metrics.json")
+    dependency_cache = load_json(folder / "dependency-sccache-stats.json")
+    dependency_stats = dependency_cache.get("stats", dependency_cache)
+    if not isinstance(dependency_stats, dict):
+        dependency_stats = {}
     stats = cache.get("stats", cache)
     if not isinstance(stats, dict):
         stats = {}
@@ -98,13 +109,18 @@ def summary(component, folder, log_file):
     layer = phases.get("compiler layer", {})
     state = "cached" if layer.get("cached") else "executed" if "duration" in layer else "unconfirmed"
     elapsed = number(metrics.get("compileNanoseconds"))
+    dependency_elapsed = number(dependency_metrics.get("compileNanoseconds"))
+    dependency_hits = counter(dependency_stats, "cache_hits")
+    dependency_misses = counter(dependency_stats, "cache_misses")
     lines = [f"### {component} build evidence", "", f"- Current compiler layer: **{state}**.",
              f"- Recorded Cargo invocation: {seconds(elapsed / 1e9 if elapsed is not None else None)}.",
              f"- Recorded executable unit (includes link): {seconds(executable_seconds(component, units))}.",
              f"- Recorded final link (within executable unit): {seconds(link_seconds(folder))}.",
+             f"- Recorded dependency cook: {seconds(dependency_elapsed / 1e9 if dependency_elapsed is not None else None)}.",
+             f"- Dependency Rust library cache: hits={dependency_hits if dependency_hits is not None else 'unavailable'}, misses={dependency_misses if dependency_misses is not None else 'unavailable'}.",
              "- Builder-layer evidence can come from an earlier invocation when BuildKit reuses that layer.",
              "", "| BuildKit phase | Duration |", "| --- | ---: |"]
-    for name in ["cache manifest import", "compiler layer", "image export/push", "cache export"]:
+    for name in PHASE_NAMES:
         lines.append(f"| {name} | {seconds(phases.get(name, {}).get('duration'))} |")
     lines += ["", "Phase durations can overlap; do not sum them. Cached-layer transfer/extraction may occur outside these rows.", "", "| Rust library cache counter | Count |", "| --- | ---: |"]
     for label, key in [("hits", "cache_hits"), ("misses", "cache_misses"), ("errors", "cache_errors"), ("write errors", "cache_write_errors"), ("non-cacheable compiler calls", "non_cacheable_calls")]:
@@ -139,4 +155,4 @@ if __name__ == "__main__":
     layer = phases.get("compiler layer", {})
     state = "cached" if layer.get("cached") else "executed" if "duration" in layer else "unconfirmed"
     print(f"::notice title=Recorded compiler evidence::{sys.argv[1]} current_layer={state} builder_cargo={seconds(elapsed / 1e9 if elapsed is not None else None)} executable={seconds(executable_seconds(sys.argv[1], cargo_units(folder)))} link={seconds(link_seconds(folder))} library_hits={hits if hits is not None else 'unavailable'} library_misses={misses if misses is not None else 'unavailable'}; cached layers can reuse older evidence", file=sys.stderr)
-    print(f"::notice title=BuildKit phases::{sys.argv[1]} " + " ".join(f"{name.replace(' ', '_')}={seconds(phases.get(name, {}).get('duration'))}" for name in ["cache manifest import", "compiler layer", "image export/push", "cache export"]) + "; phases can overlap and exclude some lazy transfers", file=sys.stderr)
+    print(f"::notice title=BuildKit phases::{sys.argv[1]} " + " ".join(f"{name.replace(' ', '_')}={seconds(phases.get(name, {}).get('duration'))}" for name in PHASE_NAMES) + "; phases can overlap and exclude some lazy transfers", file=sys.stderr)
