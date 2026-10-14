@@ -112,7 +112,7 @@ test('backend routes assessment plans through offering IDs and registers OpenAPI
 	const handler = await readRepoFile(
 		'backend-school/crates/school-academic-http/src/handlers/assessment.rs'
 	);
-	const router = await readRepoFile('backend-school/src/modules/academic.rs');
+	const router = await readRepoFile('backend-school/crates/school-academic-http/src/routes.rs');
 	const contract = await readRepoFile('backend-school/src/api_contract.rs');
 
 	assert.match(handler, /path = "\/api\/academic\/assessments\/offerings\/\{offering_id\}"/);

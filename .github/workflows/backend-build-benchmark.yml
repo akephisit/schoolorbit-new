@@ -15,7 +15,7 @@ on:
         type: string
         default: default,cgu64
       baseline:
-        description: Exact School baseline SHA for a paired API-registry-only source comparison
+        description: Exact School baseline SHA for a bounded paired source comparison
         type: string
         default: ""
       profile_only:
@@ -49,22 +49,36 @@ jobs:
             [[ -z "$BENCH_BASELINE" && "$BENCH_VARIANTS" = default ]]
           fi
           if [ -n "$BENCH_BASELINE" ]; then
-            [[ "$BENCH_BACKEND" = backend-school && "$BENCH_BASELINE" =~ ^[a-f0-9]{40}$ && "$BENCH_VARIANTS" = default,api-batches ]]
+            [[ "$BENCH_BACKEND" = backend-school && "$BENCH_BASELINE" =~ ^[a-f0-9]{40}$ ]]
+            [[ "$BENCH_VARIANTS" = default,api-batches || "$BENCH_VARIANTS" = default,http-routes ]]
           else
             [[ "$BENCH_VARIANTS" =~ ^default(,(opt2|cgu64|cgu256)){0,3}$ ]]
           fi
-      - name: Select exact baseline source when comparing API registry construction
+      - name: Select exact baseline source for a bounded comparison
         id: source
         env:
           BENCH_BACKEND: ${{ matrix.backend }}
           BENCH_BASELINE: ${{ inputs.baseline }}
+          BENCH_VARIANTS: ${{ inputs.variants }}
         run: |
           set -euo pipefail
           context="$GITHUB_WORKSPACE/$BENCH_BACKEND"
           if [ -n "$BENCH_BASELINE" ]; then
             git fetch --no-tags origin "$BENCH_BASELINE"
             changed=$(git diff --name-only "$BENCH_BASELINE" HEAD -- backend-school)
-            test "$changed" = backend-school/src/api_contract.rs
+            if [ "$BENCH_VARIANTS" = default,http-routes ]; then
+              test -n "$changed"
+              while IFS= read -r file; do
+                case "$file" in
+                  backend-school/src/app.rs|backend-school/src/modules/academic.rs|backend-school/src/modules/academic/core.rs|backend-school/src/modules/academic/delivery.rs|backend-school/src/modules/academic/gradebook.rs|backend-school/src/modules/academic/learner_evaluation.rs|backend-school/src/modules/academic/lifecycle.rs|backend-school/src/modules/academic/results.rs|backend-school/crates/school-academic-http/src/core.rs|backend-school/crates/school-academic-http/src/delivery.rs|backend-school/crates/school-academic-http/src/gradebook.rs|backend-school/crates/school-academic-http/src/learner_evaluation.rs|backend-school/crates/school-academic-http/src/lib.rs|backend-school/crates/school-academic-http/src/lifecycle.rs|backend-school/crates/school-academic-http/src/results.rs|backend-school/crates/school-academic-http/src/routes.rs|backend-school/src/modules/auth/session_http_tests.rs|backend-school/tests/static_architecture.rs) ;;
+                  *) printf 'Unrelated backend change: %s\n' "$file" >&2; exit 64 ;;
+                esac
+              done <<< "$changed"
+              mkdir -p "$RUNNER_TEMP/candidate/backend-school"
+              git archive HEAD:backend-school | tar -xf - -C "$RUNNER_TEMP/candidate/backend-school"
+            else
+              test "$changed" = backend-school/src/api_contract.rs
+            fi
             context="$RUNNER_TEMP/baseline/backend-school"
             mkdir -p "$context"
             git archive "$BENCH_BASELINE:backend-school" | tar -xf - -C "$context"
@@ -117,6 +131,9 @@ jobs:
           if [ "$BENCH_BACKEND" = backend-school ]; then
             mounts+=(-v "$PWD/backend-school/src/api_contract.rs:/candidate-api.rs:ro")
           fi
+          if [ "$BENCH_VARIANTS" = default,http-routes ]; then
+            mounts+=(-v "$RUNNER_TEMP/candidate/backend-school:/candidate-backend:ro")
+          fi
           docker create --name schoolorbit-benchmark --cpus=2 \
             -e BENCH_SAMPLES \
             "${mounts[@]}" \
@@ -145,6 +162,9 @@ jobs:
             IFS=',' read -r -a variants <<< "$BENCH_VARIANTS"
             for variant in "${variants[@]}"; do
               docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/application"
+              if [ "$BENCH_VARIANTS" = default,http-routes ]; then
+                docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/academic" academic
+              fi
               if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ] && [ -z "$BENCH_BASELINE" ]; then
                 for owner in academic attendance; do
                   docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" default "/benchmark-results/default/$owner" "$owner"

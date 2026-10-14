@@ -1132,6 +1132,115 @@ mod protected_router {
     }
 
     #[tokio::test]
+    async fn concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries() {
+        use school_academic_http::state::AcademicHttpState;
+
+        static ROSTERS: school_academic_delivery::services::roster_tracking::RoomRosterTracking =
+            school_academic_delivery::services::roster_tracking::RoomRosterTracking;
+        let fixture = ProtectedFixture::new().await;
+        let user_id = fixture
+            .insert_user(&fixture.tenant_a_pool, "academic-router-user", "active")
+            .await;
+        let (session_id, token) = fixture
+            .insert_session(&fixture.tenant_a_pool, user_id, 74, false)
+            .await;
+        let narrow = AcademicHttpState {
+            auth_runtime: fixture.runtime.clone(),
+            websocket_manager: Arc::new(
+                crate::modules::academic::websockets::WebSocketManager::new(),
+            ),
+            placement_rosters: &ROSTERS,
+            result_locks: &crate::modules::academic::result_lock_adapter::RESULT_LOCKS,
+            lifecycle_providers:
+                &crate::modules::academic::lifecycle_provider_adapter::LIFECYCLE_PROVIDERS,
+        };
+        let app = Router::new()
+            .nest(
+                "/api/academic",
+                school_academic_http::routes::academic_routes().with_state(narrow),
+            )
+            .route_layer(from_fn_with_state(
+                fixture.runtime.clone(),
+                session_middleware,
+            ));
+        let origin = "https://tenant-a.schoolorbit.test";
+
+        for path in [
+            "/api/academic/context/options",
+            "/api/academic/delivery-versions",
+            "/api/academic/gradebook/subjects",
+            "/api/academic/learner-evaluations/subjects",
+            "/api/academic/lifecycle/promotion-runs",
+            "/api/academic/results/effective",
+            "/api/academic/exam-schedules",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(request(Method::GET, path, Some(origin), None, None))
+                .await
+                .expect("protected academic route");
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        }
+
+        let cases = [
+            (
+                Method::GET,
+                "/api/academic/context/options",
+                origin,
+                None,
+                None,
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                Method::GET,
+                "/api/academic/context/options",
+                "https://tenant-b.schoolorbit.test",
+                Some(&token),
+                None,
+                StatusCode::UNAUTHORIZED,
+            ),
+            // A valid session reaches the handler, which still requires the existing domain permission.
+            (
+                Method::GET,
+                "/api/academic/context/options",
+                origin,
+                Some(&token),
+                None,
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                Method::POST,
+                "/api/academic/years",
+                origin,
+                Some(&token),
+                None,
+                StatusCode::FORBIDDEN,
+            ),
+        ];
+        for (method, path, origin, token, csrf, expected) in cases {
+            let response = app
+                .clone()
+                .oneshot(request(method.clone(), path, Some(origin), token, csrf))
+                .await
+                .expect("academic response");
+            assert_eq!(response.status(), expected, "{method} {path} {origin}");
+        }
+        // A valid tenant-bound CSRF token reaches the existing JSON extractor; no mutation occurs.
+        let csrf = fixture.csrf(session_id);
+        let response = app
+            .oneshot(request(
+                Method::POST,
+                "/api/academic/years",
+                Some(origin),
+                Some(&token),
+                Some(&csrf),
+            ))
+            .await
+            .expect("academic mutation response");
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    #[tokio::test]
     async fn auth_json_limit_rejects_before_handler_while_application_payload_remains_available() {
         let service_invocations = Arc::new(AtomicUsize::new(0));
         let handler_service_invocations = Arc::clone(&service_invocations);

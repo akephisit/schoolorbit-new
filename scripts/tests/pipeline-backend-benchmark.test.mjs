@@ -99,6 +99,13 @@ test('summary excludes flag priming, counts the final link once and ranks binary
   assert.equal(value.samples[0].link_seconds, 0.25);
   assert.equal(value.samples[0].units_by_duration[0].target, 'bin');
 });
+test('academic comparison requires the owning HTTP crate to actually recompile', t => {
+  const f = fixture(t);
+  const run = () => spawnSync('python3', [summary, f.folder, 'backend-school', 'default', 'academic', '2'], {encoding:'utf8'});
+  assert.notEqual(run().status, 0);
+  for (const sample of [1, 2]) writeFileSync(path.join(f.folder, `compile-${sample}.log`), '   Compiling school-academic-http v0.1.0\n   Compiling backend-school v0.1.0\n');
+  assert.equal(run().status, 0);
+});
 test('Actions summary stays small even when full evidence contains many long compiler unit names', t => {
   const f = fixture(t), result = f.run();
   assert.equal(result.status, 0, result.stderr);
@@ -170,7 +177,7 @@ for (const unrelated of [false, true]) test(`paired source comparison ${unrelate
   if (unrelated) writeFileSync(path.join(f.root, 'backend-school/src/main.rs'), 'unrelated application change\n');
   git('commit', '-qam', 'candidate');
   const result = spawnSync('bash', ['-c', command], { cwd: f.root, encoding: 'utf8', env: {
-    ...process.env, BENCH_BACKEND: 'backend-school', BENCH_BASELINE: baseline,
+    ...process.env, BENCH_BACKEND: 'backend-school', BENCH_BASELINE: baseline, BENCH_VARIANTS: 'default,api-batches',
     GITHUB_WORKSPACE: f.root, RUNNER_TEMP: path.join(f.root, 'runner'), GITHUB_OUTPUT: path.join(f.root, 'output'),
   } });
   if (unrelated) assert.notEqual(result.status, 0);
@@ -178,5 +185,31 @@ for (const unrelated of [false, true]) test(`paired source comparison ${unrelate
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(path.join(f.root, 'runner/baseline/backend-school/src/api_contract.rs'), 'utf8'), 'baseline registry\n');
     assert.equal(readFileSync(path.join(f.root, 'backend-school/src/api_contract.rs'), 'utf8'), 'candidate registry\n');
+  }
+});
+
+for (const unrelated of [false, true]) test(`HTTP route comparison ${unrelated ? 'rejects handler or profile changes' : 'archives frozen candidate and baseline sources'}`, t => {
+  const f = fixture(t);
+  const source = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  const body = source.match(/      - name: Select exact baseline source[^\n]*\n[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      -)/)[1].replace(/^          /gm, '');
+  mkdirSync(path.join(f.root, 'backend-school/src'), { recursive: true });
+  writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'baseline router\n');
+  writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), 'baseline manifest\n');
+  const git = (...args) => execFileSync('git', ['-C', f.root, ...args], {encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+  git('init','-q'); git('config','user.name','Fixture'); git('config','user.email','fixture@example.invalid');
+  git('add','.'); git('commit','-qm','baseline');
+  const baseline = git('rev-parse','HEAD');
+  git('remote','add','origin',f.root);
+  writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'candidate router\n');
+  if (unrelated) writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), 'changed optimization\n');
+  git('commit','-qam','candidate');
+  // The mounted candidate comes from Git, even if the checkout is later modified.
+  writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'uncommitted router\n');
+  const result = spawnSync('bash',['-c',body],{cwd:f.root,encoding:'utf8',env:{...process.env,BENCH_BACKEND:'backend-school',BENCH_BASELINE:baseline,BENCH_VARIANTS:'default,http-routes',GITHUB_WORKSPACE:f.root,RUNNER_TEMP:path.join(f.root,'runner'),GITHUB_OUTPUT:path.join(f.root,'output')}});
+  if (unrelated) assert.equal(result.status,64,result.stderr);
+  else {
+    assert.equal(result.status,0,result.stderr);
+    assert.equal(readFileSync(path.join(f.root,'runner/baseline/backend-school/src/app.rs'),'utf8'),'baseline router\n');
+    assert.equal(readFileSync(path.join(f.root,'runner/candidate/backend-school/src/app.rs'),'utf8'),'candidate router\n');
   }
 });
