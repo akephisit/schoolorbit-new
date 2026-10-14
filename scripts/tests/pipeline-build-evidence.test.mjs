@@ -109,6 +109,26 @@ test("missing compiler evidence is reported unavailable instead of zero hits", (
   assert.match(result.stdout, /\| hits \| unavailable \|/);
 });
 
+test("registry restore without CACHED differs from transferred inputs followed by compiler execution", (t) => {
+  const root = fixture(t);
+  const log = path.join(root, "buildkit.log");
+  writeFileSync(log, [
+    "#23 [builder 7/7] RUN bash scripts/build_release.sh",
+    "#23 sha256:fixture 614.89MB / 614.89MB 18.3s done",
+    "#23 extracting sha256:fixture 9.8s done",
+    "#23 DONE 28.2s",
+  ].join("\n"));
+  const args = [path.join(repo, "scripts/render_backend_build_summary.py"), "backend-school", root, log];
+  let result = spawnSync("python3", args, {encoding: "utf8"});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /compiler layer: \*\*cached\*\*/);
+  assert.match(result.stdout, /\| compiler layer \| 28.20s \|/);
+  writeFileSync(log, readFileSync(log, "utf8").replace("#23 DONE", "#23 28.3 school_compiler_cache phase=application mode=local enabled=true\n#23 DONE"));
+  result = spawnSync("python3", args, {encoding: "utf8"});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /compiler layer: \*\*executed\*\*/);
+});
+
 test("real GHA export headings and dependency timings stay separate from the application", (t) => {
   const root = fixture(t);
   writeFileSync(path.join(root, "dependency-build-metrics.json"), JSON.stringify({compileNanoseconds: 349e9}));

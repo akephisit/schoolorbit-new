@@ -55,6 +55,13 @@ def buildkit_phases(text):
             stage["kind"] = "compiler layer"
         if content == "CACHED":
             stage.update(cached=True, duration=0)
+        if stage.get("kind") in ("dependency layer", "compiler layer"):
+            # Registry lazy restores can omit CACHED. These compiler commands emit
+            # timestamped output when executed; distinguish it from layer transfers.
+            if re.match(r"(?:sha256:|extracting sha256:)", content):
+                stage.setdefault("cached", True)
+            elif re.match(r"[0-9]+(?:\.[0-9]+)?\s", content):
+                stage["cached"] = False
         duration = re.fullmatch(r"DONE ([0-9.]+)s", content)
         if duration:
             # Lazy remote layers print CACHED before transfer/extraction and DONE.

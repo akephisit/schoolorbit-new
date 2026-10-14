@@ -38,25 +38,31 @@ def context_digest(folder):
     return digest.hexdigest()
 
 
-def context(root, destination, namespace, scenario, sample, readonly=True):
+def context(root, destination, scenario, sample, readonly=True):
     """Apply identical, disposable source/recipe changes to both cache backends."""
     destination.mkdir(parents=True)
     archive = subprocess.check_output(["git", "-C", str(root), "archive", "HEAD:backend-school"])
     with tarfile.open(fileobj=io.BytesIO(archive)) as source:
         source.extractall(destination, filter="data")
-    script = destination / "scripts/build_release.sh"
-    text = script.read_text()
-    marker = "export SCCACHE_GHA_VERSION=schoolorbit-backend-school"
-    if text.count(marker) != 1:
-        raise ValueError("Compiler cache namespace owner changed")
-    script.write_text(text.replace(marker, f"export SCCACHE_GHA_VERSION={namespace}"))
+    dockerfile = destination / "Dockerfile"
+    text = dockerfile.read_text()
     if readonly:
-        dockerfile = destination / "Dockerfile"
-        text = dockerfile.read_text()
         marker = "FROM base AS builder\n"
         if text.count(marker) != 1:
             raise ValueError("School builder owner changed")
-        dockerfile.write_text(text.replace(marker, marker + "ENV SCCACHE_GHA_RW_MODE=READ_ONLY\n"))
+        mount = "--mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache"
+        if text.count(mount) != 2:
+            raise ValueError("School compiler cache mounts changed")
+        text = text.replace(marker, marker + "ENV SCCACHE_LOCAL_RW_MODE=READ_ONLY\n")
+        text = text.replace(mount, mount + ",readonly")
+    else:
+        # Export only the owned compiler cache mount after the untimed seed build.
+        text += ("\nFROM builder AS compiler-cache-capture\n"
+                 "RUN --mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache "
+                 "mkdir /compiler-cache-seed && cp -a /var/cache/sccache/. /compiler-cache-seed/\n"
+                 "FROM scratch AS compiler-cache-export\n"
+                 "COPY --from=compiler-cache-capture /compiler-cache-seed/ /\n")
+    dockerfile.write_text(text)
     if scenario == "source":
         with (destination / "src/main.rs").open("a") as file:
             file.write(f"\n// BuildKit cache benchmark source sample {sample}\n")
@@ -128,8 +134,9 @@ def compiler_evidence(folder, readonly=True):
 
 def report(records):
     lines = ["### BuildKit remote cache comparison", "",
-             "Same runner, fresh pinned BuildKit builders, production release flags; compiler cache seeded once then read-only.",
-             "Image export/load is included. Image push, evidence export, API checks and builder bootstrap are excluded from build wall time.",
+             "Same runner, fresh pinned BuildKit builders, production release flags; identical local compiler snapshot mounted read-only.",
+             "The compiler snapshot isolates BuildKit storage performance from GHA compiler-cache service failures; production compiler caching is unchanged.",
+             "Image export/load is included. Image push, evidence export, API checks, builder bootstrap and compiler snapshot priming are excluded from build wall time.",
              "Network bytes cover the builder's total external traffic, not cache traffic alone. Phase durations can overlap.", "",
              "| Case | Backend | Samples | Mean build wall | Mean cache export | Mean received / sent |",
              "| --- | --- | ---: | ---: | ---: | ---: |"]
@@ -152,6 +159,21 @@ class Benchmark:
     def __init__(self, root, output, namespace, buildkit_image):
         self.root, self.output, self.namespace, self.buildkit_image = root, output, namespace, buildkit_image
         self.sequence = 0
+        self.snapshot = output / "compiler-cache-snapshot"
+        self.snapshot_digest = None
+        self.prime_source = output / "contexts/compiler-cache-prime"
+        self.prime_source.mkdir(parents=True)
+        runtime = re.search(r"^FROM (\S+@sha256:[a-f0-9]{64}) AS runtime$",
+                            (root / "backend-school/Dockerfile").read_text(), re.M)
+        if not runtime:
+            raise ValueError("A pinned School runtime base is required")
+        # Prime cache mounts in a separate untimed graph. Compiler snapshot bytes
+        # must never become extra layers in either measured BuildKit exporter.
+        (self.prime_source / "Dockerfile").write_text(
+            f"FROM {runtime.group(1)} AS compiler-cache-prime\n"
+            "RUN --mount=type=bind,from=compiler-cache,target=/compiler-cache,ro "
+            "--mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache "
+            "cp -a /compiler-cache/. /var/cache/sccache/\n")
         self.reference = json.loads((root / "contracts/openapi/school-api.json").read_text())
 
     def build(self, source, digest, backend, scenario, sample, cache_import=True, compiler_seed=False):
@@ -167,12 +189,17 @@ class Benchmark:
             cache = f"type=registry,ref={ref}"
         exporter = cache + ",mode=max" + (",image-manifest=true,oci-mediatypes=true" if backend == "registry" else "")
         base = ["docker", "buildx", "build", "--builder", builder, "--platform", "linux/amd64",
-                "--progress", "plain", "--build-arg", "SCHOOL_COMPILER_CACHE=gha",
-                "--secret", "id=sccache_gha_url,env=ACTIONS_RESULTS_URL",
-                "--secret", "id=sccache_gha_token,env=ACTIONS_RUNTIME_TOKEN"]
+                "--progress", "plain", "--build-arg", "SCHOOL_COMPILER_CACHE=local"]
+        if not compiler_seed:
+            if not self.snapshot_digest or context_digest(self.snapshot) != self.snapshot_digest:
+                raise ValueError("The frozen compiler snapshot is unavailable or changed")
         try:
             run(["docker", "buildx", "create", "--name", builder, "--driver", "docker-container",
                  "--driver-opt", f"image={self.buildkit_image}", "--bootstrap"], folder / "bootstrap.log")
+            priming = 0
+            if not compiler_seed:
+                priming = run(base + ["--target", "compiler-cache-prime", "--build-context", f"compiler-cache={self.snapshot}",
+                                     "--output", "type=cacheonly", str(self.prime_source)], folder / "compiler-prime.log")
             before = network_bytes(builder)
             args = base + ["--target", "runtime", "--load", "--tag", image,
                            "--metadata-file", str(folder / "metadata.json")]
@@ -192,6 +219,15 @@ class Benchmark:
             config = json.loads(run(["docker", "image", "inspect", image]))[0]
             if uid != "1000" or config["Config"]["Cmd"] != ["/app/backend-school"]:
                 raise ValueError("Runtime image configuration changed")
+            compiler = compiler_evidence(folder / "timings", readonly=not compiler_seed)
+            if compiler_seed:
+                run(base + ["--target", "compiler-cache-export", "--output", f"type=local,dest={self.snapshot}", str(source)],
+                    folder / "snapshot.log")
+                if not any(file.is_file() for file in self.snapshot.rglob("*")):
+                    raise ValueError("The compiler snapshot is empty")
+                self.snapshot_digest = context_digest(self.snapshot)
+            elif context_digest(self.snapshot) != self.snapshot_digest:
+                raise ValueError("The frozen compiler snapshot changed during measurement")
             stored_bytes = None
             if backend == "registry" and not compiler_seed:
                 manifest = json.loads(run(["docker", "buildx", "imagetools", "inspect", ref, "--raw"]))
@@ -200,8 +236,10 @@ class Benchmark:
                           wall_seconds=wall, network_received_bytes=after[0] - before[0],
                           network_sent_bytes=after[1] - before[1], image_id=config["Id"],
                           runtime_uid=1000, openapi_equal=True, registry_cache_layer_bytes=stored_bytes,
+                          compiler_snapshot_sha256=self.snapshot_digest,
+                          compiler_priming_seconds=priming,
                           phases=buildkit_phases((folder / "build.log").read_text()),
-                          compiler=compiler_evidence(folder / "timings", readonly=not compiler_seed))
+                          compiler=compiler)
             (folder / "result.json").write_text(json.dumps(record, indent=2) + "\n")
             return record
         finally:
@@ -227,22 +265,26 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     namespace = f"cache-benchmark-{run_id}-{attempt}"
     bench = Benchmark(root, output, namespace, pinned)
-    (output / "environment.json").write_text(json.dumps(dict(
+    environment = dict(
         source_sha=run(["git", "-C", str(root), "rev-parse", "HEAD"]),
         buildkit_image=pinned, namespace=namespace, samples_per_warm_case=int(samples),
-        compiler_cache="isolated GHA namespace, seeded once then READ_ONLY",
+        compiler_cache="identical local snapshot seeded once, mounted read-only; production compiler cache unchanged",
         registry_cache_package=f"schoolorbit-{namespace}",
         runner=run(["uname", "-m"]), cpus=os.cpu_count(),
         docker=run(["docker", "version", "--format", "{{.Server.Version}}"]),
-    ), indent=2) + "\n")
+    )
+    (output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n")
     source = output / "contexts/compiler-seed"
-    digest = context(root, source, namespace, "seed", 0, readonly=False)
+    digest = context(root, source, "seed", 0, readonly=False)
     bench.build(source, digest, "gha", "seed", 0, compiler_seed=True)
+    environment["compiler_snapshot_sha256"] = bench.snapshot_digest
+    environment["compiler_snapshot_bytes"] = sum(file.stat().st_size for file in bench.snapshot.rglob("*") if file.is_file())
+    (output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n")
     records = []
     cases = [("seed", 0)] + [(scenario, sample) for scenario in ("source", "workspace") for sample in range(1, int(samples) + 1)]
     for index, (scenario, sample) in enumerate(cases):
         source = output / f"contexts/{scenario}-{sample}"
-        digest = context(root, source, namespace, scenario, sample)
+        digest = context(root, source, scenario, sample)
         # Reverse each pair to reduce systematic ordering advantage on the same runner.
         order = ("gha", "registry") if index % 2 == 0 else ("registry", "gha")
         for backend in order:

@@ -28,7 +28,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Expose cache runtime through BuildKit secrets
+      - name: Expose BuildKit cache runtime
         uses: actions/github-script@v8
         with:
           script: |
@@ -60,6 +60,7 @@ jobs:
           path: |
             ${{ runner.temp }}/backend-cache-benchmark
             !${{ runner.temp }}/backend-cache-benchmark/contexts/**
+            !${{ runner.temp }}/backend-cache-benchmark/compiler-cache-snapshot/**
           retention-days: 7
           if-no-files-found: error
       - name: Remove only this run's disposable registry package

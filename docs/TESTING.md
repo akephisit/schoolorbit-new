@@ -56,7 +56,7 @@ For deployment dependency selection and compiler evidence, run
 `node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
 Cache-backend experiment fixtures run with
 `node --test scripts/tests/pipeline-cache-benchmark.test.mjs`. They exercise paired scratch
-contexts, fresh builder ownership, cleanup on failure, read-only compiler counters, missing metrics
+contexts, fresh builder ownership, cleanup on failure, frozen local compiler snapshots, read-only counters, missing metrics
 and complete counterbalanced sampling. Dispatch the isolated remote comparison through Operations
 `cache-benchmark` with `options={"samples":"2"}` on the reviewed experiment branch. Both variants
 must retain the runtime UID/command and canonical offline OpenAPI; inspect full build wall time,
