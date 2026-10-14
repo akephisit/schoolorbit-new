@@ -1,5 +1,5 @@
 use axum::{
-    extract::{DefaultBodyLimit, Request},
+    extract::{DefaultBodyLimit, FromRef, Request},
     http::{header::CACHE_CONTROL, HeaderName, HeaderValue},
     middleware::{from_fn, from_fn_with_state, Next},
     response::Response,
@@ -16,8 +16,14 @@ pub const APPLICATION_BODY_LIMIT: usize = 20 * 1024 * 1024;
 
 pub fn build_app(state: AppState) -> Router {
     let runtime = state.auth_runtime.clone();
+    let protected = protected_routes().nest(
+        "/api/academic",
+        modules::academic::academic_routes(
+            school_academic_http::state::AcademicHttpState::from_ref(&state),
+        ),
+    );
     public_routes()
-        .merge(protected_routes().route_layer(from_fn_with_state(runtime, session_middleware)))
+        .merge(protected.route_layer(from_fn_with_state(runtime, session_middleware)))
         .layer(DefaultBodyLimit::max(APPLICATION_BODY_LIMIT))
         .layer(axum::middleware::from_fn(request_timing))
         .with_state(state)
@@ -659,7 +665,6 @@ fn protected_routes() -> Router<AppState> {
             "/api/files/{id}/download",
             post(modules::files::handlers::download_file),
         )
-        .nest("/api/academic", modules::academic::academic_routes())
         .nest("/api/calendar", modules::calendar::calendar_routes())
         .nest(
             "/api/supervision",

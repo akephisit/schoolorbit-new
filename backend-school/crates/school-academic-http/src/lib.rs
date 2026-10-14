@@ -7,4 +7,5 @@ pub mod lifecycle;
 pub mod policies;
 pub mod realtime;
 pub mod results;
+pub mod routes;
 pub mod state;

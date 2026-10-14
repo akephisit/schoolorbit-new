@@ -15,14 +15,19 @@ on:
         type: string
         default: default,cgu64
       baseline:
-        description: Exact School baseline SHA for a paired API-registry-only source comparison
+        description: Exact School baseline SHA for a bounded paired source comparison
         type: string
         default: ""
+      profile_only:
+        description: Diagnose compiler passes without running warm comparison samples
+        type: boolean
+        default: false
 permissions:
   contents: read
+  packages: read
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -36,36 +41,68 @@ jobs:
           BENCH_SAMPLES: ${{ inputs.samples }}
           BENCH_VARIANTS: ${{ inputs.variants }}
           BENCH_BASELINE: ${{ inputs.baseline }}
+          BENCH_PROFILE_ONLY: ${{ inputs.profile_only }}
         run: |
           case "$BENCH_BACKEND" in backend-school|backend-admin) ;; *) exit 64 ;; esac
           [[ "$BENCH_SAMPLES" =~ ^[2-5]$ ]]
+          if [ "$BENCH_PROFILE_ONLY" = true ]; then
+            [[ -z "$BENCH_BASELINE" && "$BENCH_VARIANTS" = default ]]
+          fi
           if [ -n "$BENCH_BASELINE" ]; then
-            [[ "$BENCH_BACKEND" = backend-school && "$BENCH_BASELINE" =~ ^[a-f0-9]{40}$ && "$BENCH_VARIANTS" = default,api-batches ]]
+            [[ "$BENCH_BACKEND" = backend-school && "$BENCH_BASELINE" =~ ^[a-f0-9]{40}$ ]]
+            [[ "$BENCH_VARIANTS" = default,api-batches || "$BENCH_VARIANTS" = default,http-routes ]]
           else
             [[ "$BENCH_VARIANTS" =~ ^default(,(opt2|cgu64|cgu256)){0,3}$ ]]
           fi
-      - name: Select exact baseline source when comparing API registry construction
+      - name: Select exact baseline source for a bounded comparison
         id: source
         env:
           BENCH_BACKEND: ${{ matrix.backend }}
           BENCH_BASELINE: ${{ inputs.baseline }}
+          BENCH_VARIANTS: ${{ inputs.variants }}
         run: |
           set -euo pipefail
           context="$GITHUB_WORKSPACE/$BENCH_BACKEND"
           if [ -n "$BENCH_BASELINE" ]; then
             git fetch --no-tags origin "$BENCH_BASELINE"
             changed=$(git diff --name-only "$BENCH_BASELINE" HEAD -- backend-school)
-            test "$changed" = backend-school/src/api_contract.rs
+            if [ "$BENCH_VARIANTS" = default,http-routes ]; then
+              test -n "$changed"
+              while IFS= read -r file; do
+                case "$file" in
+                  backend-school/src/app.rs|backend-school/src/modules/academic.rs|backend-school/src/modules/academic/core.rs|backend-school/src/modules/academic/delivery.rs|backend-school/src/modules/academic/gradebook.rs|backend-school/src/modules/academic/learner_evaluation.rs|backend-school/src/modules/academic/lifecycle.rs|backend-school/src/modules/academic/results.rs|backend-school/crates/school-academic-http/src/core.rs|backend-school/crates/school-academic-http/src/delivery.rs|backend-school/crates/school-academic-http/src/gradebook.rs|backend-school/crates/school-academic-http/src/learner_evaluation.rs|backend-school/crates/school-academic-http/src/lib.rs|backend-school/crates/school-academic-http/src/lifecycle.rs|backend-school/crates/school-academic-http/src/results.rs|backend-school/crates/school-academic-http/src/routes.rs|backend-school/src/modules/auth/session_http_tests.rs|backend-school/tests/static_architecture.rs) ;;
+                  *) printf 'Unrelated backend change: %s\n' "$file" >&2; exit 64 ;;
+                esac
+              done <<< "$changed"
+              mkdir -p "$RUNNER_TEMP/candidate/backend-school"
+              git archive HEAD:backend-school | tar -xf - -C "$RUNNER_TEMP/candidate/backend-school"
+            else
+              test "$changed" = backend-school/src/api_contract.rs
+            fi
             context="$RUNNER_TEMP/baseline/backend-school"
             mkdir -p "$context"
             git archive "$BENCH_BASELINE:backend-school" | tar -xf - -C "$context"
           fi
           printf 'context=%s\n' "$context" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Select canonical backend cache for read-only restoration
+        id: cache
+        env:
+          COMPONENT: ${{ matrix.backend }}
+        run: node scripts/lib/pipeline-build-cache.mjs
       - name: Configure compiler cache transport
         uses: actions/github-script@v8
         with:
           script: |
+            core.setSecret(process.env.ACTIONS_RUNTIME_TOKEN || '')
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '')
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '')
       - name: Restore exact production builder
@@ -75,7 +112,7 @@ jobs:
           target: builder
           load: true
           tags: schoolorbit-benchmark:builder
-          cache-from: type=gha,scope=${{ matrix.backend }}
+          cache-from: ${{ steps.cache.outputs.from }}
           build-args: SCHOOL_COMPILER_CACHE=gha
           secret-envs: |
             sccache_gha_url=ACTIONS_RESULTS_URL
@@ -86,6 +123,7 @@ jobs:
           BENCH_SAMPLES: ${{ inputs.samples }}
           BENCH_VARIANTS: ${{ inputs.variants }}
           BENCH_BASELINE: ${{ inputs.baseline }}
+          BENCH_PROFILE_ONLY: ${{ inputs.profile_only }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/build-benchmark"
@@ -93,11 +131,15 @@ jobs:
           if [ "$BENCH_BACKEND" = backend-school ]; then
             mounts+=(-v "$PWD/backend-school/src/api_contract.rs:/candidate-api.rs:ro")
           fi
+          if [ "$BENCH_VARIANTS" = default,http-routes ]; then
+            mounts+=(-v "$RUNNER_TEMP/candidate/backend-school:/candidate-backend:ro")
+          fi
           docker create --name schoolorbit-benchmark --cpus=2 \
             -e BENCH_SAMPLES \
             "${mounts[@]}" \
             -v "$PWD/scripts/benchmark_backend_build.sh:/benchmark.sh:ro" \
             -v "$PWD/scripts/summarize_backend_benchmark.py:/summarize_backend_benchmark.py:ro" \
+            -v "$PWD/scripts/profile_backend_compiler.sh:/profile.sh:ro" \
             -v "$RUNNER_TEMP/build-benchmark:/benchmark-results" \
             --entrypoint sleep schoolorbit-benchmark:builder infinity
           trap 'docker rm --force schoolorbit-benchmark >/dev/null' EXIT
@@ -111,23 +153,30 @@ jobs:
             docker exec schoolorbit-benchmark sh -c 'cat /sys/fs/cgroup/cpu.max; cat /sys/fs/cgroup/memory.max; uname -m'
             lscpu
           } > "$RUNNER_TEMP/build-benchmark/environment.txt"
-          IFS=',' read -r -a variants <<< "$BENCH_VARIANTS"
-          for variant in "${variants[@]}"; do
-            docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/application"
-            if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ] && [ -z "$BENCH_BASELINE" ]; then
-              for owner in academic attendance; do
-                docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" default "/benchmark-results/default/$owner" "$owner"
-              done
+          if [ "$BENCH_PROFILE_ONLY" = true ]; then
+            if [ "$BENCH_BACKEND" = backend-school ]; then
+              docker exec schoolorbit-benchmark env -i PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin HOME=/tmp \
+                target/release/backend-school export-openapi > "$RUNNER_TEMP/build-benchmark/openapi-baseline.json"
             fi
-          done
+          else
+            IFS=',' read -r -a variants <<< "$BENCH_VARIANTS"
+            for variant in "${variants[@]}"; do
+              docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/application"
+              if [ "$BENCH_VARIANTS" = default,http-routes ]; then
+                docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" "$variant" "/benchmark-results/$variant/academic" academic
+              fi
+              if [ "$variant" = default ] && [ "$BENCH_BACKEND" = backend-school ] && [ -z "$BENCH_BASELINE" ]; then
+                for owner in academic attendance; do
+                  docker exec schoolorbit-benchmark bash /benchmark.sh "$BENCH_BACKEND" default "/benchmark-results/default/$owner" "$owner"
+                done
+              fi
+            done
+          fi
           # Diagnostic compilation only: stable release settings remain unchanged.
-          # Bootstrap enables logging/monomorphization statistics on the pinned compiler.
+          # Bootstrap reaches only the final rustc, preserving dependency fingerprints.
           mkdir -p "$RUNNER_TEMP/build-benchmark/compiler-profile"
-          profile_flags=(-Z time-passes -Z dump-mono-stats=/benchmark-results/compiler-profile/mono -Z dump-mono-stats-format=json)
-          if [ "$BENCH_BACKEND" = backend-school ]; then profile_flags+=(-C lto=off); fi
-          docker exec -e RUSTC_BOOTSTRAP=1 -e CARGO_INCREMENTAL=0 -e CARGO_BUILD_JOBS=2 \
-            schoolorbit-benchmark bash -c 'unset RUSTC_WRAPPER; cargo rustc --release --locked --bin "$1" -- "${@:2}"' \
-            bash "$BENCH_BACKEND" "${profile_flags[@]}" 2>&1 | tee "$RUNNER_TEMP/build-benchmark/compiler-profile/passes.log"
+          docker exec schoolorbit-benchmark bash /profile.sh "$BENCH_BACKEND" /benchmark-results/compiler-profile \
+            2>&1 | tee "$RUNNER_TEMP/build-benchmark/compiler-profile/passes.log"
           if [ "$BENCH_BACKEND" = backend-school ]; then
             docker exec schoolorbit-benchmark env -i PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin HOME=/tmp \
               target/release/backend-school export-openapi > "$RUNNER_TEMP/build-benchmark/compiler-profile/openapi.json"
@@ -140,11 +189,16 @@ jobs:
           fi
           {
             echo "### $BENCH_BACKEND / $GITHUB_SHA"
-            echo 'Source-changing Cargo/link timings on one runner; dependencies already built.'
-            echo 'Each timed build links once. Profile/graph priming is reported separately.'
-            echo 'Wrapper disabled for Cargo invalidation; builder cache evidence is separate.'
-            echo 'Two CPU quota and two Cargo jobs throughout. Results are not deployment or API latency.'
-            python3 scripts/render_backend_benchmark_summary.py "$RUNNER_TEMP/build-benchmark"
+            if [ "$BENCH_PROFILE_ONLY" = true ]; then
+              echo 'Compiler profile only; no warm timing samples or speed comparison.'
+              echo 'Compiler passes and monomorphization estimates are in the artifact.'
+            else
+              echo 'Source-changing Cargo/link timings on one runner; dependencies already built.'
+              echo 'Each timed build links once. Profile/graph priming is reported separately.'
+              echo 'Wrapper disabled for Cargo invalidation; builder cache evidence is separate.'
+              echo 'Two CPU quota and two Cargo jobs throughout. Results are not deployment or API latency.'
+              python3 scripts/render_backend_benchmark_summary.py "$RUNNER_TEMP/build-benchmark"
+            fi
           } >>"$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v6
         if: always()

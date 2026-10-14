@@ -27,6 +27,8 @@ def summarize(folder, backend, variant, owner, count):
         compiled = re.findall(r"^\s*Compiling (\S+)", (folder / f"compile-{sample}.log").read_text(), re.M)
         if backend not in compiled:
             raise ValueError("Source-changing sample did not rebuild the application")
+        if backend == "backend-school" and owner == "academic" and "school-academic-http" not in compiled:
+            raise ValueError("Academic source-changing sample did not rebuild its owning HTTP crate")
         link_times = (folder / f"link-nanoseconds-{sample}.txt").read_text().splitlines()
         if len(link_times) != 1:
             raise ValueError("Expected exactly one final binary link per sample")

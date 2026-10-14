@@ -196,6 +196,11 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   receive narrow state through application-owned `FromRef` implementations, and use provider-owned
   ports for cross-domain operations. `school-auth-http` is the single session/tenant request-context
   and cookie/origin adapter owner; root facades delegate to it without duplicating identity logic.
+- Keep domain route factories non-generic over the application state and return
+  `Router<DomainHttpState>`. Bind the existing narrow `FromRef` state at application composition,
+  before the shared session middleware. This keeps handler futures, extractors and response
+  encoding in the owning HTTP crate rather than regenerating them in the executable. Global
+  prefixes, public/protected partitioning and cross-domain assembly remain application-owned.
 - Evaluate crate placement whenever a capability is added or an existing capability materially
   expands. Create a crate only for a cohesive owner with a public interface materially narrower
   than its implementation, acyclic and intentionally directed dependencies, meaningful focused

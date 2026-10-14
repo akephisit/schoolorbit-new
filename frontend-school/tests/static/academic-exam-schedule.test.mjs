@@ -591,7 +591,7 @@ test('exam invigilator staff loading is split from room option loading', () => {
 	);
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const backendRoutes = readFileSync(
-		projectPath('../backend-school/src/modules/academic.rs'),
+		projectPath('../backend-school/crates/school-academic-http/src/routes.rs'),
 		'utf8'
 	);
 	const backendHandler = readFileSync(

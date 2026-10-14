@@ -8,7 +8,7 @@ output=${3:?output directory is required}
 owner=${4:-application}
 samples=${BENCH_SAMPLES:-2}
 case "$backend" in backend-school | backend-admin) ;; *) exit 64 ;; esac
-case "$variant" in default | opt2 | cgu64 | cgu256 | api-batches) ;; *) exit 64 ;; esac
+case "$variant" in default | opt2 | cgu64 | cgu256 | api-batches | http-routes) ;; *) exit 64 ;; esac
 [[ $samples =~ ^[2-5]$ ]] || exit 64
 case "$backend/$owner" in
     */application) source_file=src/main.rs ;;
@@ -20,6 +20,20 @@ test -f "$source_file"
 if [[ "$variant" == api-batches ]]; then
     [[ "$backend/$owner" == backend-school/application ]] || exit 64
     cp /candidate-api.rs src/api_contract.rs
+fi
+if [[ "$variant" == http-routes ]]; then
+    [[ "$backend" == backend-school ]] || exit 64
+    if [[ "$owner" == application ]]; then
+        files=(src/app.rs src/modules/academic.rs crates/school-academic-http/src/lib.rs crates/school-academic-http/src/routes.rs)
+        for domain in core delivery gradebook learner_evaluation lifecycle results; do
+            files+=("src/modules/academic/$domain.rs" "crates/school-academic-http/src/$domain.rs")
+        done
+        # Preserve untouched dependency sources and their production fingerprints.
+        for file in "${files[@]}"; do cp "/candidate-backend/$file" "$file"; done
+        touch /tmp/schoolorbit-http-routes-applied
+    else
+        test -f /tmp/schoolorbit-http-routes-applied
+    fi
 fi
 mkdir -p "$output"
 unset RUSTC_WRAPPER
@@ -67,6 +81,9 @@ if [[ "$backend" == backend-school ]]; then
 fi
 sha256sum src/main.rs >"$output/source-sha256.txt"
 if [[ "$backend" == backend-school ]]; then sha256sum src/api_contract.rs >>"$output/source-sha256.txt"; fi
+if [[ "$variant" == http-routes ]]; then
+    sha256sum src/app.rs crates/school-academic-http/src/routes.rs >>"$output/source-sha256.txt"
+fi
 
 original=$(mktemp)
 cp "$source_file" "$original"

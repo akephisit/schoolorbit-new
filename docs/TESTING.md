@@ -265,10 +265,24 @@ Artifacts include per-unit Cargo times, actual linker flags, binary sizes, CPU/t
 and the original builder's cache evidence separately from warm Cargo measurements. All School
 exports must equal the default-profile OpenAPI, including across compiler variants.
 The final diagnostic compilation records compiler pass times and monomorphization estimates.
+Academic HTTP routes use concrete `Router<AcademicHttpState>` factories in their owning crate.
+The application binds its existing narrow state before applying the shared session boundary;
+this prevents the executable from regenerating domain handler futures and HTTP encoding.
+Route ownership guards and protected-router tests cover this boundary. Compare source-changing
+application and Academic HTTP builds before changing the factory's compile scope.
+For a paired route-factory comparison against an exact baseline commit, select
+`options={"backend":"backend-school","samples":"2","variants":"default,http-routes","baseline":"<40-character SHA>"}`.
+This validates a bounded source allowlist, freezes both sources from Git, and measures both
+application-only edits and Academic HTTP edits on the same runner without changing release flags.
+Use `options={"backend":"backend-school","profile_only":true,"variants":"default"}`
+to collect only the compiler profile from the exact production builder. This mode skips warm
+comparison samples; it does not establish a speed improvement. Pass timings and monomorphization
+size estimates identify expensive generated code. The benchmark imports the canonical backend cache without exporting it.
 Actions displays a bounded timing table; full per-unit JSON and compiler evidence stay in the
 downloadable artifact, avoiding GitHub's 1 MiB step-summary limit.
-It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only in the disposable benchmark
-container; that compilation is excluded from warm sample means and never produces a release
+It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only for the selected binary's
+rustc invocation in the disposable benchmark container. Cargo and dependency build scripts keep
+their ordinary environment and fingerprints. That compilation is excluded from warm sample means and never produces a release
 artifact. Production builds keep the pinned stable compiler and normal release flags.
 The container keeps a two-CPU quota and two Cargo jobs throughout. Compare compiler variants
 sequentially on one runner before attributing a change to a flag: different hosted machines

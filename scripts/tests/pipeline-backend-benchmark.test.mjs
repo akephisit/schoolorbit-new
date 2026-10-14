@@ -7,7 +7,62 @@ import test from 'node:test';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 const script = path.join(repo, 'scripts/benchmark_backend_build.sh');
+test('compiler profiling refuses paired-source or altered-profile selections', () => {
+  const workflow = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  const body = workflow.match(/name: Validate bounded benchmark selection[\s\S]*?        run: \|\n([\s\S]*?)(?=      -)/)[1].replace(/^          /gm, '');
+  for (const [baseline, variants, code] of [['', 'default', 0], ['', 'default,cgu64', 1], ['a'.repeat(40), 'default,api-batches', 1]]) {
+    const result = spawnSync('bash', ['-e', '-c', body], {encoding:'utf8',env:{...process.env,BENCH_BACKEND:'backend-school',BENCH_SAMPLES:'2',BENCH_BASELINE:baseline,BENCH_VARIANTS:variants,BENCH_PROFILE_ONLY:'true'}});
+    assert.equal(result.status, code, result.stderr);
+  }
+  assert.match(workflow, /cache-from: \$\{\{ steps\.cache\.outputs\.from \}\}/);
+  assert.match(workflow, /run: node scripts\/lib\/pipeline-build-cache\.mjs/);
+  assert.doesNotMatch(workflow, /cache-to:|push: true/);
+});
+test('profile-only mode skips warm samples and compares credential-free exports', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'compiler-profile-'));
+  t.after(() => rmSync(root, {recursive:true,force:true}));
+  const bin = path.join(root, 'bin');
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, 'docker'), `#!/bin/bash
+printf '%s\\n' "$*" >> "$PROFILE_CALLS"
+case " $* " in
+ *" /benchmark.sh backend-school "*) exit 99;;
+ *" export-openapi "*) printf '{"openapi":"3.1.0","paths":{"/fixture":{}}}\\n';;
+esac
+`, {mode:0o755});
+  const workflow = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  const body = workflow.match(/name: Compare on the same runner and persistent Cargo state[\s\S]*?        run: \|\n([\s\S]*?)(?=      - uses: actions\/upload-artifact)/)[1].replace(/^          /gm, '');
+  const result = spawnSync('bash', ['-e', '-c', body], {cwd:repo,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,BENCH_BACKEND:'backend-school',BENCH_SAMPLES:'2',BENCH_VARIANTS:'default',BENCH_BASELINE:'',BENCH_PROFILE_ONLY:'true',PROFILE_CALLS:path.join(root,'calls'),RUNNER_TEMP:root,GITHUB_SHA:'a'.repeat(40),GITHUB_STEP_SUMMARY:path.join(root,'summary')}});
+  assert.equal(result.status, 0, result.stderr);
+  const calls = readFileSync(path.join(root,'calls'),'utf8');
+  assert.doesNotMatch(calls, /bash \/benchmark\.sh/);
+  assert.match(calls, /exec schoolorbit-benchmark bash \/profile\.sh backend-school/);
+  assert.doesNotMatch(calls, /exec -e RUSTC_BOOTSTRAP/);
+  assert.equal(calls.match(/env -i .*export-openapi/g).length, 2);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(root,'build-benchmark/compiler-profile/openapi.json'),'utf8')),JSON.parse(readFileSync(path.join(root,'build-benchmark/openapi-baseline.json'),'utf8')));
+});
 const summary = path.join(repo, 'scripts/summarize_backend_benchmark.py');
+for (const code of [0, 37]) test(`compiler diagnostics scope bootstrap to the binary and preserve exit ${code}`, t => {
+  const f = fixture(t), bin = path.join(f.root,'bin');
+  mkdirSync(bin);
+  const rustc = path.join(bin,'rustc with spaces');
+  writeFileSync(rustc,'#!/bin/bash\nprintf "%s:%s\\n" "$*" "${RUSTC_BOOTSTRAP:-off}" >> "$PROFILE_RUSTC_CALLS"\n',{mode:0o755});
+  writeFileSync(path.join(bin,'cargo'),`#!/bin/bash
+set -euo pipefail
+printf '%s\\n' "$RUSTC_WRAPPER" > "$PROFILE_WRAPPER"
+printf '%s\\n' "$@" > "$PROFILE_ARGUMENTS"
+"$RUSTC_WRAPPER" "$PROFILE_RUSTC" --crate-name dependency
+"$RUSTC_WRAPPER" "$PROFILE_RUSTC" --crate-name backend_school
+mkdir -p target/release
+exit ${code}
+`,{mode:0o755});
+  const result=spawnSync('bash',[path.join(repo,'scripts/profile_backend_compiler.sh'),'backend-school',f.folder],{cwd:f.root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,RUSTC_BOOTSTRAP:'parent-only',PROFILE_RUSTC:rustc,PROFILE_RUSTC_CALLS:path.join(f.root,'calls'),PROFILE_WRAPPER:path.join(f.root,'wrapper'),PROFILE_ARGUMENTS:path.join(f.root,'arguments')}});
+  assert.equal(result.status,code,result.stderr);
+  assert.equal(readFileSync(path.join(f.root,'calls'),'utf8'),'--crate-name dependency:off\n--crate-name backend_school:1\n');
+  assert.match(readFileSync(path.join(f.root,'arguments'),'utf8'),/-Z\ntime-passes/);
+  assert.match(readFileSync(path.join(f.root,'arguments'),'utf8'),/-C\nlto=off/);
+  assert.throws(()=>readFileSync(readFileSync(path.join(f.root,'wrapper'),'utf8').trim()));
+});
 const api = { openapi: '3.1.0', paths: { '/fixture': {} } };
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'backend-benchmark-'));
@@ -43,6 +98,13 @@ test('summary excludes flag priming, counts the final link once and ranks binary
   assert.equal(value.prime_seconds, 999);
   assert.equal(value.samples[0].link_seconds, 0.25);
   assert.equal(value.samples[0].units_by_duration[0].target, 'bin');
+});
+test('academic comparison requires the owning HTTP crate to actually recompile', t => {
+  const f = fixture(t);
+  const run = () => spawnSync('python3', [summary, f.folder, 'backend-school', 'default', 'academic', '2'], {encoding:'utf8'});
+  assert.notEqual(run().status, 0);
+  for (const sample of [1, 2]) writeFileSync(path.join(f.folder, `compile-${sample}.log`), '   Compiling school-academic-http v0.1.0\n   Compiling backend-school v0.1.0\n');
+  assert.equal(run().status, 0);
 });
 test('Actions summary stays small even when full evidence contains many long compiler unit names', t => {
   const f = fixture(t), result = f.run();
@@ -115,7 +177,7 @@ for (const unrelated of [false, true]) test(`paired source comparison ${unrelate
   if (unrelated) writeFileSync(path.join(f.root, 'backend-school/src/main.rs'), 'unrelated application change\n');
   git('commit', '-qam', 'candidate');
   const result = spawnSync('bash', ['-c', command], { cwd: f.root, encoding: 'utf8', env: {
-    ...process.env, BENCH_BACKEND: 'backend-school', BENCH_BASELINE: baseline,
+    ...process.env, BENCH_BACKEND: 'backend-school', BENCH_BASELINE: baseline, BENCH_VARIANTS: 'default,api-batches',
     GITHUB_WORKSPACE: f.root, RUNNER_TEMP: path.join(f.root, 'runner'), GITHUB_OUTPUT: path.join(f.root, 'output'),
   } });
   if (unrelated) assert.notEqual(result.status, 0);
@@ -123,5 +185,31 @@ for (const unrelated of [false, true]) test(`paired source comparison ${unrelate
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(path.join(f.root, 'runner/baseline/backend-school/src/api_contract.rs'), 'utf8'), 'baseline registry\n');
     assert.equal(readFileSync(path.join(f.root, 'backend-school/src/api_contract.rs'), 'utf8'), 'candidate registry\n');
+  }
+});
+
+for (const unrelated of [false, true]) test(`HTTP route comparison ${unrelated ? 'rejects handler or profile changes' : 'archives frozen candidate and baseline sources'}`, t => {
+  const f = fixture(t);
+  const source = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  const body = source.match(/      - name: Select exact baseline source[^\n]*\n[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      -)/)[1].replace(/^          /gm, '');
+  mkdirSync(path.join(f.root, 'backend-school/src'), { recursive: true });
+  writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'baseline router\n');
+  writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), 'baseline manifest\n');
+  const git = (...args) => execFileSync('git', ['-C', f.root, ...args], {encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+  git('init','-q'); git('config','user.name','Fixture'); git('config','user.email','fixture@example.invalid');
+  git('add','.'); git('commit','-qm','baseline');
+  const baseline = git('rev-parse','HEAD');
+  git('remote','add','origin',f.root);
+  writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'candidate router\n');
+  if (unrelated) writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), 'changed optimization\n');
+  git('commit','-qam','candidate');
+  // The mounted candidate comes from Git, even if the checkout is later modified.
+  writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'uncommitted router\n');
+  const result = spawnSync('bash',['-c',body],{cwd:f.root,encoding:'utf8',env:{...process.env,BENCH_BACKEND:'backend-school',BENCH_BASELINE:baseline,BENCH_VARIANTS:'default,http-routes',GITHUB_WORKSPACE:f.root,RUNNER_TEMP:path.join(f.root,'runner'),GITHUB_OUTPUT:path.join(f.root,'output')}});
+  if (unrelated) assert.equal(result.status,64,result.stderr);
+  else {
+    assert.equal(result.status,0,result.stderr);
+    assert.equal(readFileSync(path.join(f.root,'runner/baseline/backend-school/src/app.rs'),'utf8'),'baseline router\n');
+    assert.equal(readFileSync(path.join(f.root,'runner/candidate/backend-school/src/app.rs'),'utf8'),'candidate router\n');
   }
 });
