@@ -19,6 +19,7 @@ pub enum PolicyKey {
     ExplicitOwningResource,
     CertificateTemplate,
     SchoolFont,
+    SupplyCatalog,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -300,6 +301,21 @@ pub fn purpose_definition(purpose: FilePurpose) -> Result<PurposeDefinition, Pur
             derivatives: &[],
             retention_class: RetentionClass::Temporary,
             policy_key: PolicyKey::CertificateTemplate,
+        },
+        FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => PurposeDefinition {
+            domain_segment: "supply-catalog",
+            purpose_segment: if purpose == FilePurpose::SupplyCatalogImage {
+                "image"
+            } else {
+                "source"
+            },
+            visibility: FileVisibility::Private,
+            allowed_content: IMAGE_CONTENT,
+            limits: image_limits_with_pixels(20 * 1024 * 1024, 16000, 16000, 80_000_000),
+            scan_requirement: ScanRequirement::RequiredClean,
+            derivatives: &[],
+            retention_class: RetentionClass::Temporary,
+            policy_key: PolicyKey::SupplyCatalog,
         },
         FilePurpose::SchoolFont => PurposeDefinition {
             domain_segment: "school",
@@ -699,7 +715,7 @@ mod tests {
             assert_eq!(definition.policy_key, PolicyKey::CertificateTemplate);
         }
 
-        assert_eq!(FilePurpose::ALL.len(), 16);
+        assert_eq!(FilePurpose::ALL.len(), 18);
     }
 
     #[test]
@@ -715,6 +731,23 @@ mod tests {
         assert_eq!(policy.limits.max_width, Some(1280));
         assert!(!policy.allowed_content.contains(&DetectedContent::Pdf));
         assert!(policy.derivatives.is_empty());
+    }
+
+    #[test]
+    fn supply_images_are_private_scanned_temporary_and_have_no_extra_objects() {
+        for purpose in [
+            FilePurpose::SupplyCatalogImage,
+            FilePurpose::SupplyProposalSource,
+        ] {
+            assert_eq!(purpose_from_code(purpose.code()), Ok(purpose));
+            let definition = purpose_definition(purpose).unwrap();
+            assert_eq!(definition.visibility, FileVisibility::Private);
+            assert_eq!(definition.retention_class, RetentionClass::Temporary);
+            assert_eq!(definition.scan_requirement, ScanRequirement::RequiredClean);
+            assert_eq!(definition.policy_key, PolicyKey::SupplyCatalog);
+            assert_eq!(definition.limits.max_bytes, 20 * 1024 * 1024);
+            assert!(definition.derivatives.is_empty());
+        }
     }
 
     #[test]

@@ -19,6 +19,7 @@ pub mod school_fonts;
 pub mod staff;
 pub mod students;
 pub mod supervision;
+pub mod supply_catalog;
 pub mod system;
 pub mod work;
 pub mod workflow;

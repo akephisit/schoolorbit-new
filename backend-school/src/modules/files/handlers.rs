@@ -351,6 +351,11 @@ pub async fn delete_file(
             )
             .await?,
         ),
+        FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => Some(
+            crate::modules::supply_catalog::file_relationships::authorize_delete_guard(
+                repository.pool(), &context.actor, &file, query.resource_id,
+            ).await?,
+        ),
         FilePurpose::SchoolFont => Some(
             file_access_policy::authorize_school_font_delete_guard(
                 repository.pool(),

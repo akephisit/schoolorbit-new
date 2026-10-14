@@ -1,3 +1,4 @@
+mod catalog_images;
 mod file_hash;
 pub mod file_inspector;
 mod file_processor;

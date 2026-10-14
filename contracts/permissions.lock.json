@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "c0065712fc5da8a76dd8bf770d6c6bad3eebdf2243fb3ab7a2709321829af856",
+  "contract_sha256": "75e29fe7fd95850507cd370677acf8806f6bdb3606cec923d3224cbf6b3338e0",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -185,6 +185,10 @@
     "supervision.read.organization_unit",
     "supervision.read.own",
     "supervision.read.school",
-    "supervision.request.own"
+    "supervision.request.own",
+    "supply_catalog.approve.school",
+    "supply_catalog.manage.school",
+    "supply_catalog.read.school",
+    "supply_catalog.request.own"
   ]
 }

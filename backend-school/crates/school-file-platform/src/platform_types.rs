@@ -23,10 +23,12 @@ pub enum FilePurpose {
     CertificateTemplateBackground,
     CertificateTemplateImage,
     SchoolFont,
+    SupplyCatalogImage,
+    SupplyProposalSource,
 }
 
 impl FilePurpose {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 18] = [
         Self::AttendanceEvidence,
         Self::SchoolLogo,
         Self::SchoolBanner,
@@ -43,6 +45,8 @@ impl FilePurpose {
         Self::CertificateTemplateBackground,
         Self::CertificateTemplateImage,
         Self::SchoolFont,
+        Self::SupplyCatalogImage,
+        Self::SupplyProposalSource,
     ];
 
     pub const fn code(self) -> &'static str {
@@ -63,6 +67,8 @@ impl FilePurpose {
             Self::CertificateTemplateBackground => "certificate_template_background",
             Self::CertificateTemplateImage => "certificate_template_image",
             Self::SchoolFont => "school_font",
+            Self::SupplyCatalogImage => "supply_catalog_image",
+            Self::SupplyProposalSource => "supply_proposal_source",
         }
     }
 }

@@ -1289,6 +1289,34 @@
       "scope": "school",
       "name": "รีเซ็ตและล้างข้อมูลคะแนน",
       "description": "รีเซ็ตและล้างข้อมูลคะแนน ตามขอบเขต school"
+    },
+    {
+      "module": "supply_catalog",
+      "action": "read",
+      "scope": "school",
+      "name": "ดูคลังพัสดุ",
+      "description": "ค้นหาพัสดุ ราคา ร้านค้า รายการโปรดและชุดรายการ"
+    },
+    {
+      "module": "supply_catalog",
+      "action": "manage",
+      "scope": "school",
+      "name": "จัดการคลังพัสดุ",
+      "description": "จัดการหมวดหมู่ พัสดุ รุ่นราคา รูปสินค้าและชุดกลาง"
+    },
+    {
+      "module": "supply_catalog",
+      "action": "request",
+      "scope": "own",
+      "name": "เสนอพัสดุใหม่",
+      "description": "เสนอรายการและดูคำเสนอของตนเอง"
+    },
+    {
+      "module": "supply_catalog",
+      "action": "approve",
+      "scope": "school",
+      "name": "ตรวจคำเสนอพัสดุ",
+      "description": "แก้ไขและอนุมัติหรือปฏิเสธคำเสนอพัสดุ"
     }
   ]
 }
