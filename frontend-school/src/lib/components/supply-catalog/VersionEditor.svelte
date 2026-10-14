@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { appendVersion, updateVersion, type SupplyVersion, type SupplyItemDetail } from '#lib/api/supply-catalog.js';
+	import {
+		appendVersion,
+		updateVersion,
+		type SupplyVersion,
+		type SupplyItemDetail
+	} from '#lib/api/supply-catalog.js';
 	import { uploadFile, deleteFile } from '#lib/api/files.js';
 	import { normalizeCatalogImage } from '#lib/utils/catalog-image.js';
 	import { validateItem, itemDraft, message } from '#lib/supply-catalog/drafts.js';

@@ -399,7 +399,7 @@
 						</p>{/if}{#if selected.status === 'approved'}<p class="text-sm text-muted-foreground">
 							รับเข้าคลังแล้ว แหล่งที่มาชั่วคราวถูกลบ
 						</p>
-						{#if selected.itemId}<Button variant="outline" href={'/staff/supply-catalog'}
+						{#if selected.itemId}<Button variant="outline" href="/staff/supply-catalog"
 								>เปิดคลังพัสดุ</Button
 							>{/if}{/if}{#if canApprove && query.review && selected.status === 'pending'}<div
 							class="flex justify-end gap-2"

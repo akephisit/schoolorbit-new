@@ -7,7 +7,8 @@ import {
 	sumPrices,
 	validateItem,
 	emptyItem,
-	itemFilters
+	itemFilters,
+	matchesItem
 } from '../../src/lib/supply-catalog/drafts.ts';
 
 test('catalog decimal money preserves cents at the largest allowed bundle total', () => {
@@ -38,4 +39,19 @@ test('catalog URL paging remains bounded and favorite filter is explicit', () =>
 		itemFilters(new URL('https://example.invalid/?favoritesOnly=false')).favoritesOnly,
 		false
 	);
+});
+
+test('active catalog filter membership follows normalized name and description', () => {
+	const item = {
+		name: '  ＰＡＰＥＲ  A4 ',
+		description: 'กระดาษสำหรับสำนักงาน',
+		categoryId: 'office',
+		favorite: true
+	};
+	const query = { search: 'paper a4', categoryId: 'office', favoritesOnly: true };
+	assert.equal(matchesItem(item, query), true);
+	assert.equal(matchesItem({ ...item, name: 'Pen' }, query), false);
+	assert.equal(matchesItem(item, { ...query, search: 'สำนักงาน' }), true);
+	assert.equal(matchesItem(item, { ...query, categoryId: 'other' }), false);
+	assert.equal(matchesItem({ ...item, favorite: false }, query), false);
 });

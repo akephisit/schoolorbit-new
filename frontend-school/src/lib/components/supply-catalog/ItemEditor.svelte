@@ -99,6 +99,10 @@
 		if (target?.imageFileId === draft.imageFileId)
 			draft.imageFileId = proposal?.imageFileId ?? null;
 		target = selected;
+		draft.name = selected.name;
+		draft.description = selected.description;
+		draft.categoryId = selected.categoryId;
+		draft.unit = selected.unit;
 		if (!draft.imageFileId) draft.imageFileId = selected.imageFileId ?? null;
 	}
 	function resetTarget() {

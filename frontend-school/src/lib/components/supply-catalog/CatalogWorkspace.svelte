@@ -17,7 +17,7 @@
 	} from '#lib/api/supply-catalog.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
-	import { money, message, itemFilters } from '#lib/supply-catalog/drafts.js';
+	import { money, message, itemFilters, matchesItem } from '#lib/supply-catalog/drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -60,7 +60,8 @@
 	} = $props();
 	const itemRequest = new LatestRequest(),
 		categoryRequest = new LatestRequest(),
-		detailRequest = new LatestRequest(), historyRequest = new LatestRequest();
+		detailRequest = new LatestRequest(),
+		historyRequest = new LatestRequest();
 	let disposed = false;
 	let result = $state.raw<SupplyItemPage | null>(null),
 		categories = $state.raw<SupplyCategory[]>([]),
@@ -88,7 +89,12 @@
 		selectedId = $state<string | null>(null),
 		detailLoading = $state(false),
 		detailError = $state<string | null>(null);
-	let history = $state.raw<SupplyVersion[]>([]), historyPage = $state(1), historyLoading = $state(false), historyError = $state<string | null>(null), versionTarget = $state.raw<SupplyVersion | null>(null);
+	let history = $state.raw<SupplyVersion[]>([]),
+		historyPage = $state(1),
+		historyTarget = $state(1),
+		historyLoading = $state(false),
+		historyError = $state<string | null>(null),
+		versionTarget = $state.raw<SupplyVersion | null>(null);
 	let editor = $state<{ discard: () => Promise<boolean> } | undefined>(undefined);
 	let actionOwner = $state<{ discard: () => Promise<boolean> } | undefined>(undefined);
 	$effect.pre(() => {
@@ -179,19 +185,20 @@
 	function patchItem(item: SupplyItem, created = false) {
 		itemRequest.abort();
 		itemsLoading = false;
+		if (created) {
+			void retryItems();
+			return;
+		}
 		if (!result) return;
 		const exists = result.items.some((row) => row.id === item.id);
-		const visible =
-			(!query.categoryId || item.categoryId === query.categoryId) &&
-			(!query.favoritesOnly || item.favorite);
+		const visible = matchesItem(item, query);
 		const rows = result.items
 			.map((row) => (row.id === item.id ? item : row))
 			.filter((row) => row.id !== item.id || visible);
-		if (created && visible && !query.search && query.page === 1 && !exists) rows.unshift(item);
 		result = {
 			...result,
 			items: rows.slice(0, result.pageSize),
-			total: result.total + (created ? 1 : exists && !visible ? -1 : 0)
+			total: Math.max(0, result.total - (exists && !visible ? 1 : 0))
 		};
 	}
 	async function favorite(item: SupplyItem) {
@@ -201,8 +208,9 @@
 		try {
 			const saved = await setFavorite(item.id, !item.favorite);
 			if (!disposed) {
-				patchItem(saved);
-				if (selected?.id === saved.id) selected = { ...selected, ...saved };
+				const current = result?.items.find((row) => row.id === saved.id);
+				if (current) patchItem({ ...current, favorite: saved.favorite });
+				if (selected?.id === saved.id) selected = { ...selected, favorite: saved.favorite };
 			}
 		} catch (e) {
 			if (!disposed) actionError = message(e, 'บันทึกรายการโปรดไม่สำเร็จ');
@@ -214,13 +222,21 @@
 		selectedId = id;
 		mode = 'detail';
 		selected = null;
-		history = []; historyPage = 1; historyError = null; historyRequest.abort();
+		history = [];
+		historyPage = 1;
+		historyTarget = 1;
+		historyLoading = false;
+		historyError = null;
+		historyRequest.abort();
 		detailLoading = true;
 		detailError = null;
 		const ticket = detailRequest.begin();
 		try {
 			const loaded = await getItem(id, { signal: ticket.signal });
-			if (detailRequest.isCurrent(ticket.revision)) { selected = loaded; history = loaded.versions; }
+			if (detailRequest.isCurrent(ticket.revision)) {
+				selected = loaded;
+				history = loaded.versions;
+			}
 		} catch (e) {
 			if (detailRequest.isCurrent(ticket.revision))
 				detailError = message(e, 'โหลดรายละเอียดไม่สำเร็จ');
@@ -237,8 +253,43 @@
 		detailRequest.abort();
 		historyRequest.abort();
 	}
-	async function loadHistory(next: number) { if (!selected) return; const itemId = selected.id; const ticket = historyRequest.begin(); historyLoading = true; historyError = null; try { const loaded = await listVersions(itemId, { page: next, pageSize: 100 }, { signal: ticket.signal }); if (historyRequest.isCurrent(ticket.revision)) { history = loaded.items; historyPage = loaded.page; } } catch (e) { if (historyRequest.isCurrent(ticket.revision)) historyError = message(e, 'โหลดประวัติราคาไม่สำเร็จ'); } finally { if (historyRequest.isCurrent(ticket.revision)) historyLoading = false; } }
-	function editVersion(version: SupplyVersion) { versionTarget = version; mode = 'version'; }
+	async function loadHistory(next: number) {
+		if (!selected) return;
+		historyTarget = next;
+		if (next === 1) {
+			historyRequest.abort();
+			history = selected.versions;
+			historyPage = 1;
+			historyLoading = false;
+			historyError = null;
+			return;
+		}
+		const itemId = selected.id;
+		const ticket = historyRequest.begin();
+		historyLoading = true;
+		historyError = null;
+		try {
+			const loaded = await listVersions(
+				itemId,
+				{ page: next, pageSize: 100 },
+				{ signal: ticket.signal }
+			);
+			if (historyRequest.isCurrent(ticket.revision)) {
+				history = loaded.items;
+				historyPage = loaded.page;
+				if (selected?.id === itemId) selected = { ...selected, versionsTotal: loaded.total };
+			}
+		} catch (e) {
+			if (historyRequest.isCurrent(ticket.revision))
+				historyError = message(e, 'โหลดประวัติราคาไม่สำเร็จ');
+		} finally {
+			if (historyRequest.isCurrent(ticket.revision)) historyLoading = false;
+		}
+	}
+	function editVersion(version: SupplyVersion) {
+		versionTarget = version;
+		mode = 'version';
+	}
 	function saved(resource: SupplyItem | SupplyProposal) {
 		if ('latestVersion' in resource) patchItem(resource, mode === 'create');
 		mode = null;
@@ -247,7 +298,14 @@
 	function versionSaved(item: SupplyItemDetail) {
 		selected = item;
 		patchItem(item);
-		if (historyPage === 1) history = item.versions; else void loadHistory(historyPage);
+		if (mode === 'append') {
+			historyRequest.abort();
+			historyPage = 1;
+			history = item.versions;
+			historyLoading = false;
+			historyError = null;
+		} else if (historyPage === 1) history = item.versions;
+		else void loadHistory(historyPage);
 		mode = 'detail';
 		toast.success('บันทึกราคาแล้ว');
 	}
@@ -257,6 +315,8 @@
 			: [...categories.filter((row) => row.id !== category.id), category].toSorted((a, b) =>
 					a.name.localeCompare(b.name, 'th')
 				);
+		if (selected?.categoryId === category.id && !deleted)
+			selected = { ...selected, categoryName: category.name };
 		if (result && !deleted)
 			result = {
 				...result,
@@ -434,7 +494,7 @@
 							: mode === 'append'
 								? 'เพิ่มรุ่นราคาใหม่'
 								: mode === 'version'
-									? 'แก้ไขรุ่นราคาปัจจุบัน'
+									? `แก้ไขรุ่นราคา ${versionTarget?.version ?? selected?.latestVersion.version ?? ''}`
 									: mode === 'categories'
 										? 'จัดการหมวดหมู่'
 										: mode === 'bundles'
@@ -482,10 +542,19 @@
 						<p class="break-words text-sm">{selected.latestVersion.shop}</p>
 					</section>
 					{#if canManage}<div class="flex flex-wrap gap-2">
-							<Button variant="outline" onclick={() => (mode = 'edit')}>แก้ไขข้อมูล / รูป</Button
-							><Button variant="outline" onclick={() => selected && editVersion(selected.latestVersion)}
+							<Button
+								variant="outline"
+								disabled={favoritePending.includes(selected.id)}
+								onclick={() => (mode = 'edit')}>แก้ไขข้อมูล / รูป</Button
+							><Button
+								variant="outline"
+								disabled={favoritePending.includes(selected.id)}
+								onclick={() => selected && editVersion(selected.latestVersion)}
 								>แก้ไขรุ่นปัจจุบัน</Button
-							><Button onclick={() => (mode = 'append')}>เพิ่มรุ่นราคา</Button>
+							><Button
+								disabled={favoritePending.includes(selected.id)}
+								onclick={() => (mode = 'append')}>เพิ่มรุ่นราคา</Button
+							>
 						</div>{/if}
 					<section class="space-y-2">
 						<h3 class="font-semibold">ประวัติราคา ({selected.versionsTotal} รุ่น)</h3>
@@ -494,7 +563,7 @@
 							>
 								แสดงครั้งละ 100 รุ่น เรียงจากใหม่ไปเก่า
 							</p>{/if}
-						<ul class="divide-y rounded-xl border">
+						<ul class="divide-y rounded-xl border" aria-busy={historyLoading}>
 							{#each history as version (version.id)}<li
 									class="flex justify-between gap-3 p-3 text-sm"
 								>
@@ -504,9 +573,42 @@
 												'th-TH'
 											)}</span
 										></span
-									><div class="flex shrink-0 items-center gap-2"><span class="tabular-nums">{money(version.price)} ฿</span>{#if canManage}<Button variant="ghost" size="sm" onclick={() => editVersion(version)} aria-label={`แก้ไขรุ่น ${version.version}`}>แก้ไข</Button>{/if}</div>
+									>
+									<div class="flex shrink-0 items-center gap-2">
+										<span class="tabular-nums">{money(version.price)} ฿</span>{#if canManage}<Button
+												variant="ghost"
+												size="sm"
+												disabled={favoritePending.includes(selected.id)}
+												onclick={() => editVersion(version)}
+												aria-label={`แก้ไขรุ่น ${version.version}`}>แก้ไข</Button
+											>{/if}
+									</div>
 								</li>{/each}
 						</ul>
+						{#if historyError}<PageState
+								variant="error"
+								title="โหลดประวัติราคาไม่สำเร็จ"
+								description={historyError}
+								actionLabel="ลองอีกครั้ง"
+								onaction={() => loadHistory(historyTarget)}
+							/>{/if}
+						{#if selected.versionsTotal > 100}<div class="flex items-center justify-between gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={historyLoading || historyPage === 1}
+									onclick={() => loadHistory(historyPage - 1)}>รุ่นใหม่กว่า</Button
+								><span class="text-xs text-muted-foreground" role="status"
+									>{historyLoading
+										? 'กำลังโหลด'
+										: `หน้า ${historyPage} / ${Math.ceil(selected.versionsTotal / 100)}`}</span
+								><Button
+									variant="outline"
+									size="sm"
+									disabled={historyLoading || historyPage * 100 >= selected.versionsTotal}
+									onclick={() => loadHistory(historyPage + 1)}>รุ่นเก่ากว่า</Button
+								>
+							</div>{/if}
 					</section>
 				</div>{/if}
 		{:else if mode === 'create' || mode === 'edit' || mode === 'propose'}{#key mode}<ItemEditor

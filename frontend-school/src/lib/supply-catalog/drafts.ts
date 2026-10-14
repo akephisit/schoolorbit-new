@@ -73,3 +73,20 @@ export function itemFilters(url: URL) {
 		pageSize: 24
 	};
 }
+
+export function normalizeSearch(value: string): string {
+	return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase();
+}
+export function matchesItem(
+	item: SupplyItem,
+	query: { search: string; categoryId: string; favoritesOnly: boolean }
+): boolean {
+	const search = normalizeSearch(query.search);
+	return (
+		(!query.categoryId || item.categoryId === query.categoryId) &&
+		(!query.favoritesOnly || item.favorite) &&
+		(!search ||
+			normalizeSearch(item.name).includes(search) ||
+			item.description.normalize('NFKC').toLowerCase().includes(search))
+	);
+}

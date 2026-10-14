@@ -186,6 +186,13 @@ export async function findDuplicates(
 	);
 }
 
-export async function listVersions(id: string, query: PageFilters = {}, options: ApiRequestOptions = {}): Promise<SupplyVersionPage> {
-	return requireApiData(await apiClient.get<SupplyVersionPage>(`${path('items', id)}/versions`, { ...options, query }), 'โหลดประวัติราคาไม่สำเร็จ');
+export async function listVersions(
+	id: string,
+	query: PageFilters = {},
+	options: ApiRequestOptions = {}
+): Promise<SupplyVersionPage> {
+	return requireApiData(
+		await apiClient.get<SupplyVersionPage>(`${path('items', id)}/versions`, { ...options, query }),
+		'โหลดประวัติราคาไม่สำเร็จ'
+	);
 }

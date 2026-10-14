@@ -6,7 +6,7 @@ import type {
 	SupplyProposal,
 	SupplyCategory
 } from '../../src/lib/api/supply-catalog.js';
-import { subtotal, sumPrices } from '../../src/lib/supply-catalog/drafts.js';
+import { subtotal, sumPrices, matchesItem } from '../../src/lib/supply-catalog/drafts.js';
 const categoryId = id(400),
 	secondCategoryId = id(401),
 	itemId = id(410),
@@ -72,7 +72,12 @@ test.beforeEach(async ({ page }) => {
 async function catalog(
 	page: Page,
 	permissions: string[],
-	options: { failCreate?: boolean; failProposal?: boolean; holdItems?: boolean } = {}
+	options: {
+		failCreate?: boolean;
+		failProposal?: boolean;
+		holdItems?: boolean;
+		longHistory?: boolean;
+	} = {}
 ) {
 	await mockStaffHome(page, { permissions });
 	const reads: string[] = [],
@@ -90,7 +95,19 @@ async function catalog(
 		item.latestVersion,
 		{ ...item.latestVersion, id: id(412), version: 1, price: '120.00', revision: 1 }
 	];
-	const detail = (): SupplyItemDetail => ({ ...item, versions, versionsTotal: versions.length });
+	if (options.longHistory) {
+		versions = Array.from({ length: 102 }, (_, index) => ({
+			...item.latestVersion,
+			id: id(600 + index),
+			version: 102 - index
+		}));
+		item = { ...item, latestVersion: versions[0] };
+	}
+	const detail = (): SupplyItemDetail => ({
+		...item,
+		versions: versions.slice(0, 100),
+		versionsTotal: versions.length
+	});
 	const reply = (route: Route, data: unknown, status = 200) =>
 		route.fulfill({
 			status,
@@ -108,10 +125,11 @@ async function catalog(
 			if (path.endsWith('/categories')) return reply(route, categories);
 			if (path.endsWith('/items')) {
 				if (options.holdItems) await hold;
-				const matches =
-					(!url.searchParams.get('categoryId') ||
-						url.searchParams.get('categoryId') === item.categoryId) &&
-					(url.searchParams.get('favoritesOnly') !== 'true' || item.favorite);
+				const matches = matchesItem(item, {
+					search: url.searchParams.get('search') ?? '',
+					categoryId: url.searchParams.get('categoryId') ?? '',
+					favoritesOnly: url.searchParams.get('favoritesOnly') === 'true'
+				});
 				return reply(route, {
 					items: matches ? [item] : [],
 					total: matches ? 1 : 0,
@@ -121,6 +139,16 @@ async function catalog(
 			}
 			if (path.endsWith('/duplicates')) return reply(route, []);
 			if (path === `/api/supply-catalog/items/${itemId}`) return reply(route, detail());
+			if (path === `/api/supply-catalog/items/${itemId}/versions`) {
+				const pageNumber = Number(url.searchParams.get('page') ?? 1),
+					size = Number(url.searchParams.get('pageSize') ?? 100);
+				return reply(route, {
+					items: versions.slice((pageNumber - 1) * size, pageNumber * size),
+					total: versions.length,
+					page: pageNumber,
+					pageSize: size
+				});
+			}
 			if (path.endsWith('/bundles'))
 				return reply(route, { items: [], total: 0, page: 1, pageSize: 10 });
 			if (path.endsWith('/proposals'))
@@ -151,22 +179,40 @@ async function catalog(
 		}
 		if (path.includes('/versions')) {
 			const append = method === 'POST';
-			item = {
-				...item,
-				revision: item.revision + 1,
-				...(append ? { imageFileId: payload.imageFileId } : {}),
-				latestVersion: {
-					...item.latestVersion,
-					id: append ? id(413) : item.latestVersion.id,
-					version: item.latestVersion.version + (append ? 1 : 0),
-					price: payload.price,
-					shop: payload.shop,
-					revision: item.latestVersion.revision + 1
-				}
-			};
-			versions = append
-				? [item.latestVersion, ...versions]
-				: versions.map((v) => (v.version === item.latestVersion.version ? item.latestVersion : v));
+			if (append) {
+				item = {
+					...item,
+					revision: item.revision + 1,
+					imageFileId: payload.imageFileId,
+					latestVersion: {
+						...item.latestVersion,
+						id: id(413),
+						version: item.latestVersion.version + 1,
+						price: payload.price,
+						shop: payload.shop,
+						revision: item.latestVersion.revision + 1
+					}
+				};
+				versions = [item.latestVersion, ...versions];
+			} else {
+				const targetId = path.split('/').at(-1);
+				versions = versions.map((version) =>
+					version.id === targetId
+						? {
+								...version,
+								price: payload.price,
+								shop: payload.shop,
+								revision: version.revision + 1
+							}
+						: version
+				);
+				item = {
+					...item,
+					revision: item.revision + 1,
+					latestVersion:
+						versions.find((version) => version.id === item.latestVersion.id) ?? item.latestVersion
+				};
+			}
 			return reply(route, detail());
 		}
 		if (path === `/api/supply-catalog/items/${itemId}`) {
@@ -470,4 +516,98 @@ test('cancelled proposal deletes both unattached upload stages', async ({ page }
 	await expect(dialog).toHaveCount(0);
 	expect(api.deleted).toEqual([`/api/files/${id(450)}`, `/api/files/${id(451)}`]);
 	expect(api.writes).toHaveLength(0);
+});
+
+test('old version history is bounded, loaded lazily and edited without changing the latest price', async ({
+	page
+}) => {
+	const api = await catalog(page, [read, manage], { longHistory: true });
+	await page.goto('/staff/supply-catalog');
+	await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog).toContainText('ประวัติราคา (102 รุ่น)');
+	expect(api.reads.some((path) => path.includes('/versions?'))).toBe(false);
+	await dialog.getByRole('button', { name: 'รุ่นเก่ากว่า', exact: true }).click();
+	await expect(dialog).toContainText('หน้า 2 / 2');
+	await expect(dialog.getByRole('listitem')).toHaveCount(2);
+	await dialog.getByRole('button', { name: 'แก้ไขรุ่น 1', exact: true }).click();
+	await dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true }).fill('100.00');
+	await dialog.getByRole('button', { name: 'บันทึกรุ่นที่เลือก', exact: true }).click();
+	await expect(dialog).toContainText('ราคาล่าสุด · รุ่น 102');
+	await expect(dialog).toContainText('125.50');
+	await expect(dialog).toContainText('100.00');
+	await expect(dialog.getByRole('listitem')).toHaveCount(2);
+	expect(api.writes[0].path).toBe(`/api/supply-catalog/items/${itemId}/versions/${id(701)}`);
+});
+test('metadata edits remove an item from the active search and correct the filtered count locally', async ({
+	page
+}) => {
+	const api = await catalog(page, [read, manage]);
+	await page.goto('/staff/supply-catalog?search=กระดาษ');
+	await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'แก้ไขข้อมูล / รูป', exact: true }).click();
+	await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ปากกา');
+	await dialog.getByLabel('รายละเอียด', { exact: true }).fill('สำหรับเขียน');
+	await dialog.getByRole('button', { name: 'บันทึกพัสดุ', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByTestId('supply-catalog')).toContainText('0 รายการ');
+	await expect(page.getByTestId('supply-catalog')).toContainText('ไม่พบพัสดุที่ตรงกับตัวกรอง');
+	expect(api.reads.filter((path) => path.startsWith('/api/supply-catalog/items?'))).toHaveLength(1);
+});
+test('choosing existing approval target uses its canonical metadata while keeping proposed price and shop', async ({
+	page
+}) => {
+	const api = await catalog(page, [read, approve]);
+	await page.goto('/staff/supply-catalog/proposals?review=true');
+	await page.getByRole('button', { name: 'ตรวจข้อเสนอ', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'แก้ไขและอนุมัติ', exact: true }).click();
+	await dialog.getByRole('button', { name: 'ค้นหา', exact: true }).click();
+	await dialog.getByRole('button', { name: /กระดาษ A4.*125.50/ }).click();
+	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue('กระดาษ A4');
+	await expect(dialog.getByLabel('รายละเอียด', { exact: true })).toHaveValue(
+		'กระดาษสำหรับงานเอกสาร'
+	);
+	await expect(dialog.getByLabel('หน่วยนับ *', { exact: true })).toHaveValue('รีม');
+	await expect(dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true })).toHaveValue('45.00');
+	await expect(dialog.getByLabel('ร้านค้า *', { exact: true })).toHaveValue('ร้านเดิม');
+	await dialog.getByRole('button', { name: 'อนุมัติและรับเข้าคลัง', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(api.writes[0].payload).toMatchObject({
+		name: 'กระดาษ A4',
+		description: 'กระดาษสำหรับงานเอกสาร',
+		unit: 'รีม',
+		price: '45.00',
+		shop: 'ร้านเดิม',
+		existingItemId: itemId,
+		existingItemRevision: 3
+	});
+});
+test('permission revocation disposes a delayed catalog response before it can be displayed', async ({
+	page
+}) => {
+	const api = await catalog(page, [read], { holdItems: true });
+	await page.goto('/staff/supply-catalog');
+	await expect
+		.poll(() => api.reads.some((path) => path.startsWith('/api/supply-catalog/items?')))
+		.toBe(true);
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/stores/auth.ts';
+		const { authStore } = await import(modulePath);
+		authStore.setUser(
+			{
+				id: '55000000-0000-4000-8000-000000000010',
+				firstName: 'เจ้าของ',
+				lastName: 'โปรไฟล์',
+				role: 'staff',
+				user_type: 'staff',
+				status: 'active'
+			},
+			[]
+		);
+	});
+	api.releaseItems();
+	await expect(page.getByTestId('supply-catalog')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'กระดาษ A4', exact: true })).toHaveCount(0);
 });
