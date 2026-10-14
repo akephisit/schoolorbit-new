@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Probe the pinned Rust/GHA cache and publish only bounded, allowlisted evidence."""
+import io
 import json
 import os
 import pathlib
 import re
 import subprocess
+import tarfile
 import tempfile
 import time
-import io
-import tarfile
 
 from render_backend_build_summary import counter
 
@@ -131,7 +131,7 @@ def main():
                 sample = dict(sample=index, counters=None, diagnostics=[])
                 try:
                     command(["docker", "run", "--detach", "--name", container,
-                             "--tmpfs", "/private:rw,nosuid,nodev,noexec,mode=0700,size=16m", "--tmpfs", "/probe:rw,nosuid,nodev",
+                             "--tmpfs", "/private:rw,nosuid,nodev,noexec,mode=0700,size=64m", "--tmpfs", "/probe:rw,nosuid,nodev",
                              "--mount", f"type=bind,src={fixture},dst=/fixture,readonly",
                              "-e", "ACTIONS_RESULTS_URL", "-e", "ACTIONS_RUNTIME_TOKEN",
                              "-e", "ACTIONS_CACHE_SERVICE_V2=true", "-e", "SCCACHE_GHA_ENABLED=on",
@@ -152,7 +152,7 @@ def main():
                                  'exec bash scripts/build_release.sh dependencies'], "compile")
                     else:
                         command(["docker", "exec", container, "cargo", "build", "--release", "--lib", "--locked", "--offline"], "compile")
-                    # Cache writes finish asynchronously. Wait for an observed write, error or hit.
+                    # Cache writes finish asynchronously. Wait until every observed miss has settled.
                     values = stats(container)
                     deadline = time.monotonic() + 60
                     while values["cache_writes"] + values["cache_write_errors"] < values["cache_misses"] and time.monotonic() < deadline:
@@ -164,7 +164,12 @@ def main():
                     raise
                 finally:
                     private = subprocess.run(["docker", "exec", container, "cat", "/private/server.log"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    sample["diagnostics"] = classify_private_log(private.stdout[-8 * 1024 * 1024:])
+                    # Keep startup storage checks as well as late write failures. Raw logs
+                    # stay private; the tmpfs capacity bounds even a verbose dependency run.
+                    raw = private.stdout
+                    if len(raw) > 9 * 1024 * 1024:
+                        raw = raw[:1024 * 1024] + "\n[2000-01-01T00:00:00Z omitted]\n" + raw[-8 * 1024 * 1024:]
+                    sample["diagnostics"] = classify_private_log(raw)
                     result["samples"].append(sample)
                     evidence.write_text(json.dumps(result, indent=2) + "\n")
                     subprocess.run(["docker", "rm", "--force", container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
