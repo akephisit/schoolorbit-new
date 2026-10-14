@@ -53,7 +53,7 @@ test('compiler failures retain only sanitized diagnostics and clean the owned co
   assert.equal(result.status,0,result.stderr);
   assert.doesNotMatch(result.stdout+result.stderr,/sentinel/);
 });
-for (const scenario of ['healthy', 'write_error', 'restore_miss']) {
+for (const scenario of ['healthy', 'write_error', 'restore_miss', 'cold_healthy', 'cold_reused']) {
   test(`canonical dependency diagnostic rejects incomplete population: ${scenario}`, () => {
     const evidence = python(`
 import contextlib,io,json,os,tempfile
@@ -61,14 +61,16 @@ from pathlib import Path
 import diagnose_compiler_cache as p
 original_run=p.subprocess.run
 with tempfile.TemporaryDirectory() as output:
- os.environ.update(GITHUB_RUN_ID='12345',GITHUB_RUN_ATTEMPT='1',GITHUB_REPOSITORY_OWNER='akephisit',ACTIONS_RESULTS_URL='private-url-sentinel',ACTIONS_RUNTIME_TOKEN='private-token-sentinel',COMPILER_CACHE_OUTPUT=output,COMPILER_CACHE_WORKLOAD='dependencies')
+ os.environ.update(GITHUB_RUN_ID='12345',GITHUB_RUN_ATTEMPT='1',GITHUB_REPOSITORY_OWNER='akephisit',ACTIONS_RESULTS_URL='private-url-sentinel',ACTIONS_RUNTIME_TOKEN='private-token-sentinel',COMPILER_CACHE_OUTPUT=output,COMPILER_CACHE_WORKLOAD='cold-dependencies' if ${JSON.stringify(scenario)}.startswith('cold_') else 'dependencies')
  commands=[]
  current=[0]
  def run(args,stage):
   commands.append(args)
   if stage=='fresh_container':
    current[0]+=1
-   assert not any(arg.startswith('CARGO_') for arg in args)
+   if ${JSON.stringify(scenario)}.startswith('cold_'):
+    assert 'CARGO_SCHOOLORBIT_CACHE_PROBE=compiler-cache-probe-12345-1' in args
+   else: assert not any(arg.startswith('CARGO_') for arg in args)
   if stage=='pinned_image':
    context=Path(args[-1])
    assert (context/'Cargo.lock').is_file() and (context/'scripts/build_release.sh').is_file()
@@ -82,9 +84,12 @@ with tempfile.TemporaryDirectory() as output:
   first=current[0]==1
   failed=${JSON.stringify(scenario)}=='write_error' and first
   miss=2 if first else int(${JSON.stringify(scenario)}=='restore_miss')
-  return dict(cache_hits=563 if first else 565-miss,cache_misses=miss,cache_writes=0 if failed else miss,cache_write_errors=2 if failed else 0,cache_errors=0,cache_read_errors=0,cache_timeouts=0)
+  hits=563 if first else 565-miss
+  if first and ${JSON.stringify(scenario)}=='cold_healthy': hits,miss=0,565
+  if first and ${JSON.stringify(scenario)}=='cold_reused': hits,miss=565,0
+  return dict(cache_hits=hits,cache_misses=miss,cache_writes=0 if failed else miss,cache_write_errors=2 if failed else 0,cache_errors=0,cache_read_errors=0,cache_timeouts=0)
  class Result:
-  stdout='private-daemon-sentinel'
+  stdout='will retry after 1s because: RateLimited status: 429 private-daemon-sentinel'
  p.command=run
  p.stats=counters
  p.subprocess.run=lambda args,**kw: original_run(args,**kw) if args[0]=='git' else (commands.append(args) or Result())
@@ -92,12 +97,13 @@ with tempfile.TemporaryDirectory() as output:
   try: p.main()
   except SystemExit as error: assert error.code==1
  result=json.loads((Path(output)/'evidence.json').read_text())
- assert result['complete'] and result['healthy']==(${JSON.stringify(scenario)}=='healthy')
+ assert result['complete'] and result['healthy']==(${JSON.stringify(scenario)} in ('healthy','cold_healthy'))
  assert len(result['samples'])==2
+ assert all(sample['observed_retry_events']==1 and sample['diagnostics'][0]['stage']=='cache_retry' for sample in result['samples'])
  assert not any('sentinel' in ' '.join(args) for args in commands)
  print(json.dumps(result))
 `);
-    assert.equal(evidence.healthy, scenario === 'healthy');
+    assert.equal(evidence.healthy, ['healthy', 'cold_healthy'].includes(scenario));
     assert.doesNotMatch(JSON.stringify(evidence), /sentinel/);
   });
 }
