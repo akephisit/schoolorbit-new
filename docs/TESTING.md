@@ -288,9 +288,12 @@ container. Flag priming is separate, both cases use unchanged release settings, 
 must equal the baseline document. This paired mode measures application-source changes; the normal
 benchmark mode retains the Academic HTTP and attendance invalidation cases.
 
-Explicit schema registration uses bounded constructors in `src/api_contract.rs` to limit one
-generated function's optimiser and stack workload. Keep each group near 64 registrations and
-preserve their order when adding types. Later explicit declarations override earlier explicit
+OpenAPI path and explicit schema registration use bounded constructors in `src/api_contract.rs`
+to limit one generated function's optimiser and stack workload. Keep schema groups near 16
+registrations and path groups near 32, preserving their order when adding entries. The composition
+helper also stays out of line so LLVM cannot combine the groups back into one large constructor.
+Paths retain their first operation; later handler-derived schemas retain registration-order priority.
+Later explicit declarations override earlier explicit
 declarations; handler-derived schemas retain priority over the combined explicit registry.
 The precedence regression and full generated-contract check protect both rules. The application
 continues owning the entire OpenAPI composition, and the exporter runs without runtime credentials.

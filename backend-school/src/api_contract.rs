@@ -164,593 +164,781 @@ use school_supervision::models::*;
 use serde_json::Value;
 use utoipa::OpenApi;
 
+// Bound path construction and its generated schema references before composing the document.
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::behavior::handlers::cleanup_job,
+    crate::modules::supply_catalog::handlers::duplicates,
+    crate::modules::supply_catalog::handlers::list_categories,
+    crate::modules::supply_catalog::handlers::create_category,
+    crate::modules::supply_catalog::handlers::update_category,
+    crate::modules::supply_catalog::handlers::list_items,
+    crate::modules::supply_catalog::handlers::create_item,
+    crate::modules::supply_catalog::handlers::get_item,
+    crate::modules::supply_catalog::handlers::update_item,
+    crate::modules::supply_catalog::handlers::list_versions,
+    crate::modules::supply_catalog::handlers::append_version,
+    crate::modules::supply_catalog::handlers::update_version,
+    crate::modules::supply_catalog::handlers::set_favorite,
+    crate::modules::supply_catalog::handlers::list_bundles,
+    crate::modules::supply_catalog::handlers::create_bundle,
+    crate::modules::supply_catalog::handlers::update_bundle,
+    crate::modules::supply_catalog::handlers::delete_bundle,
+    crate::modules::supply_catalog::handlers::list_proposals,
+    crate::modules::supply_catalog::handlers::create_proposal,
+    crate::modules::supply_catalog::handlers::get_proposal,
+    crate::modules::supply_catalog::handlers::approve_proposal,
+    crate::modules::supply_catalog::handlers::reject_proposal,
+    crate::modules::behavior::handlers::overview,
+    crate::modules::behavior::handlers::list_items,
+    crate::modules::behavior::handlers::save_item,
+    crate::modules::behavior::handlers::list_rules,
+    crate::modules::behavior::handlers::save_rule,
+    crate::modules::behavior::handlers::get_settings,
+    crate::modules::behavior::handlers::save_settings,
+    crate::modules::behavior::handlers::students,
+    crate::modules::behavior::handlers::selector_options,
+    crate::modules::behavior::handlers::create_batch,
+))]
+struct SchoolApiPathsGroup1;
+
+#[inline(never)]
+fn build_path_group_1() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup1::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::behavior::handlers::report,
+    crate::modules::behavior::handlers::cancel_entries,
+    crate::modules::behavior::handlers::cycles,
+    crate::modules::behavior::handlers::preview_cleanup,
+    crate::modules::behavior::handlers::execute_cleanup,
+    crate::modules::behavior::handlers::adjust_history,
+    crate::modules::behavior::handlers::preview_reset,
+    crate::modules::behavior::handlers::reset,
+    crate::modules::behavior::handlers::student_summary,
+    crate::modules::attendance::handlers::get_settings,
+    crate::modules::attendance::handlers::save_settings,
+    crate::modules::attendance::handlers::list_days,
+    crate::modules::attendance::handlers::save_days,
+    crate::modules::attendance::handlers::workspace,
+    crate::modules::attendance::handlers::open_session,
+    crate::modules::attendance::handlers::reset_impact,
+    crate::modules::attendance::handlers::reset_module,
+    crate::modules::attendance::handlers::get_session,
+    crate::modules::attendance::handlers::save_results,
+    crate::modules::attendance::handlers::cancel_session,
+    crate::modules::attendance::handlers::get_options,
+    crate::modules::attendance::handlers::create_audience,
+    crate::modules::attendance::handlers::create_special,
+    crate::modules::attendance::handlers::save_device,
+    crate::modules::attendance::handlers::face_enrollments,
+    crate::modules::attendance::handlers::enroll_face,
+    crate::modules::attendance::handlers::delete_face,
+    crate::modules::attendance::handlers::open_kiosk,
+    crate::modules::attendance::handlers::scan,
+    crate::modules::attendance::handlers::report,
+    crate::modules::attendance::handlers::history,
+    crate::modules::attendance::handlers::purge_impact,
+))]
+struct SchoolApiPathsGroup2;
+
+#[inline(never)]
+fn build_path_group_2() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup2::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::attendance::handlers::purge_term,
+    crate::modules::auth::session_handlers::login,
+    crate::modules::auth::session_handlers::logout,
+    crate::modules::auth::session_handlers::me,
+    crate::modules::auth::handlers::get_profile,
+    crate::modules::auth::handlers::update_profile,
+    crate::modules::auth::session_handlers::change_password,
+    crate::modules::auth::session_handlers::list_sessions,
+    crate::modules::auth::session_handlers::revoke_session,
+    crate::modules::auth::session_handlers::logout_all,
+    crate::modules::consent::handlers::get_my_consent_status,
+    crate::modules::consent::handlers::withdraw_consent,
+    crate::modules::files::handlers::upload_file,
+    crate::modules::files::handlers::get_file_metadata,
+    crate::modules::files::handlers::download_file,
+    crate::modules::files::handlers::delete_file,
+    crate::modules::files::handlers::get_public_file_content,
+    crate::modules::files::handlers::get_public_file_delivery,
+    crate::modules::school_fonts::handlers::list_school_fonts,
+    crate::modules::school_fonts::handlers::inspect_school_font_uploads,
+    crate::modules::school_fonts::handlers::attach_school_font_batch,
+    crate::modules::school_fonts::handlers::delete_school_font,
+    crate::modules::admission::handlers::applications::staff_upload_document,
+    crate::modules::admission::handlers::applications::search_applications_by_identifier,
+    crate::modules::admission::handlers::applications::staff_delete_document,
+    crate::modules::admission::handlers::applications::complete_enrollment,
+    crate::modules::admission::handlers::scores::get_score_room_roster,
+    crate::modules::admission::handlers::selections::get_ranking,
+    crate::modules::admission::handlers::selections::get_track_ranking,
+    crate::modules::admission::handlers::selections::get_global_ranking,
+    crate::modules::admission::handlers::selections::get_round_rooms,
+    crate::modules::admission::handlers::portal::portal_upload_document,
+))]
+struct SchoolApiPathsGroup3;
+
+#[inline(never)]
+fn build_path_group_3() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup3::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::admission::handlers::portal::portal_delete_document,
+    crate::modules::admission::handlers::portal::portal_download_document,
+    crate::modules::menu::handlers::public::get_user_menu,
+    crate::modules::system::handlers::feature_toggles::list_features,
+    crate::modules::system::handlers::feature_toggles::get_feature,
+    crate::modules::menu::handlers::admin::list_menu_workspaces,
+    crate::modules::menu::handlers::admin::create_menu_workspace,
+    crate::modules::menu::handlers::admin::update_menu_workspace,
+    crate::modules::menu::handlers::admin::delete_menu_workspace,
+    crate::modules::menu::handlers::admin::reorder_menu_workspaces,
+    crate::modules::menu::handlers::admin::list_menu_groups,
+    crate::modules::menu::handlers::admin::create_menu_group,
+    crate::modules::menu::handlers::admin::update_menu_group,
+    crate::modules::menu::handlers::admin::delete_menu_group,
+    crate::modules::menu::handlers::admin::reorder_menu_groups,
+    crate::modules::menu::handlers::admin::list_menu_items,
+    crate::modules::menu::handlers::admin::create_menu_item,
+    crate::modules::menu::handlers::admin::update_menu_item,
+    crate::modules::menu::handlers::admin::delete_menu_item,
+    crate::modules::menu::handlers::admin::move_item_to_group,
+    crate::modules::menu::handlers::admin::reorder_menu_items,
+    crate::modules::menu::handlers::admin::preview_recommended_academic_menu_template,
+    crate::modules::menu::handlers::admin::apply_recommended_academic_menu_template,
+    crate::modules::lookup::handlers::lookup_staff,
+    crate::modules::lookup::handlers::lookup_students,
+    crate::modules::facility::handlers::list_buildings,
+    crate::modules::facility::handlers::create_building,
+    crate::modules::facility::handlers::update_building,
+    crate::modules::facility::handlers::delete_building,
+    crate::modules::facility::handlers::list_rooms,
+    crate::modules::facility::handlers::create_room,
+    crate::modules::facility::handlers::update_room,
+))]
+struct SchoolApiPathsGroup4;
+
+#[inline(never)]
+fn build_path_group_4() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup4::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::facility::handlers::delete_room,
+    crate::modules::lookup::handlers::lookup_rooms,
+    crate::modules::lookup::handlers::lookup_roles,
+    crate::modules::lookup::handlers::lookup_organization_units,
+    crate::modules::lookup::handlers::lookup_organization_unit_by_id,
+    crate::modules::lookup::handlers::lookup_grade_levels,
+    crate::modules::lookup::handlers::lookup_homerooms,
+    crate::modules::lookup::handlers::lookup_academic_years,
+    crate::modules::lookup::handlers::lookup_subjects,
+    crate::modules::staff::handlers::career::list_career_history,
+    crate::modules::staff::handlers::career::append_career_history,
+    crate::modules::staff::handlers::career::correct_career_history,
+    crate::modules::staff::handlers::personnel::get_personnel_overview,
+    crate::modules::staff::handlers::personnel::get_rank_milestone_overview,
+    crate::modules::staff::handlers::personnel::list_job_positions,
+    crate::modules::staff::handlers::staff::list_staff,
+    crate::modules::staff::handlers::staff::get_staff_dashboard,
+    crate::modules::staff::handlers::staff::get_staff_profile,
+    crate::modules::staff::handlers::staff::get_public_staff_profile,
+    crate::modules::staff::handlers::staff::create_staff,
+    crate::modules::staff::handlers::staff::update_staff,
+    crate::modules::staff::handlers::staff::delete_staff,
+    crate::modules::students::handlers::get_own_profile,
+    crate::modules::students::handlers::update_own_profile,
+    crate::modules::students::handlers::list_students,
+    crate::modules::students::handlers::create_student,
+    crate::modules::students::handlers::get_student,
+    crate::modules::students::handlers::update_student,
+    crate::modules::students::handlers::delete_student,
+    crate::modules::students::handlers_parents::add_parent_to_student,
+    crate::modules::students::handlers_parents::remove_parent_from_student,
+    crate::modules::achievement::handlers::list_achievements,
+))]
+struct SchoolApiPathsGroup5;
+
+#[inline(never)]
+fn build_path_group_5() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup5::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::achievement::handlers::create_achievement,
+    crate::modules::achievement::handlers::update_achievement,
+    crate::modules::achievement::handlers::delete_achievement,
+    crate::modules::certificates::handlers::list_certificate_campaigns,
+    crate::modules::certificates::handlers::create_certificate_campaign,
+    crate::modules::certificates::handlers::get_certificate_campaign,
+    crate::modules::certificates::handlers::update_certificate_campaign,
+    crate::modules::certificates::handlers::change_certificate_campaign_status,
+    crate::modules::certificates::handlers::get_certificate_campaign_purge_impact,
+    crate::modules::certificates::handlers::start_certificate_campaign_purge,
+    crate::modules::certificates::handlers::get_certificate_campaign_purge_status,
+    crate::modules::certificates::handlers::retry_certificate_campaign_purge,
+    crate::modules::certificates::handlers::list_certificate_owner_options,
+    crate::modules::certificates::handlers::list_certificate_templates,
+    crate::modules::certificates::handlers::create_certificate_template,
+    crate::modules::certificates::handlers::get_certificate_template,
+    crate::modules::certificates::handlers::update_certificate_template,
+    crate::modules::certificates::handlers::delete_certificate_template,
+    crate::modules::certificates::handlers::attach_certificate_template_background,
+    crate::modules::certificates::handlers::attach_certificate_template_asset,
+    crate::modules::certificates::handlers::list_certificate_school_fonts,
+    crate::modules::certificates::handlers::inspect_certificate_font_uploads,
+    crate::modules::certificates::handlers::attach_certificate_font_batch,
+    crate::modules::certificates::handlers::delete_certificate_template_asset,
+    crate::modules::certificates::handlers::get_certificate_template_variable_catalog,
+    crate::modules::certificates::handlers::create_certificate_template_preview_manifest,
+    crate::modules::certificates::handlers::list_certificate_candidates,
+    crate::modules::certificates::handlers::import_certificate_candidates,
+    crate::modules::certificates::handlers::create_manual_certificate_candidate,
+    crate::modules::certificates::handlers::search_certificate_candidate_accounts,
+    crate::modules::certificates::handlers::create_account_certificate_candidate,
+    crate::modules::certificates::handlers::bulk_update_certificate_candidates,
+))]
+struct SchoolApiPathsGroup6;
+
+#[inline(never)]
+fn build_path_group_6() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup6::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::certificates::handlers::get_certificate_candidate,
+    crate::modules::certificates::handlers::update_certificate_candidate,
+    crate::modules::certificates::handlers::delete_certificate_candidate,
+    crate::modules::certificates::handlers::list_certificate_campaign_issue_requests,
+    crate::modules::certificates::handlers::submit_certificate_issue_request,
+    crate::modules::certificates::handlers::list_certificate_issue_requests,
+    crate::modules::certificates::handlers::get_certificate_issue_request,
+    crate::modules::certificates::handlers::withdraw_certificate_issue_request,
+    crate::modules::certificates::handlers::start_certificate_issue_request_review,
+    crate::modules::certificates::handlers::return_certificate_issue_request,
+    crate::modules::certificates::handlers::issue_certificates,
+    crate::modules::certificates::handlers::list_issued_certificates,
+    crate::modules::certificates::handlers::get_issued_certificate,
+    crate::modules::certificates::handlers::revoke_issued_certificate,
+    crate::modules::certificates::handlers::create_issued_certificate_render_manifest,
+    crate::modules::certificates::handlers::create_issued_certificate_render_manifests,
+    crate::modules::certificates::handlers::list_own_certificates,
+    crate::modules::certificates::handlers::get_own_certificate,
+    crate::modules::certificates::handlers::create_own_certificate_render_manifest,
+    crate::modules::certificates::handlers::verify_certificate_manually,
+    crate::modules::certificates::handlers::verify_certificate_by_qr,
+    crate::modules::certificates::handlers::create_public_certificate_render_manifest,
+    crate::modules::parents::handlers::get_own_parent_profile,
+    crate::modules::parents::handlers::get_parent_academic_context_options,
+    crate::modules::parents::handlers::get_child_profile,
+    crate::modules::parents::handlers::get_child_academic_context_options,
+    crate::modules::parents::handlers::get_child_timetable,
+    crate::modules::parents::handlers::get_child_exam_schedule,
+    crate::modules::parents::handlers::get_child_calendar_events,
+    crate::modules::academic::handlers::timetable_blocks::get_my_timetable,
+    crate::modules::academic::core::handlers::list_my_context_options,
+    crate::modules::academic::handlers::timetable_blocks::get_workspace,
+))]
+struct SchoolApiPathsGroup7;
+
+#[inline(never)]
+fn build_path_group_7() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup7::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::handlers::timetable_blocks::preview_placement,
+    crate::modules::academic::handlers::timetable_blocks::create_ordinary,
+    crate::modules::academic::handlers::timetable_blocks::create_synchronized,
+    crate::modules::academic::handlers::timetable_blocks::create_structural,
+    crate::modules::academic::handlers::timetable_blocks::update_block,
+    crate::modules::academic::handlers::timetable_blocks::remove_target,
+    crate::modules::academic::handlers::timetable_blocks::restore_group,
+    crate::modules::academic::handlers::timetable_blocks::retry_sync,
+    crate::modules::academic::handlers::timetable_blocks::delete_block,
+    crate::modules::academic::handlers::timetable_blocks::delete_series,
+    crate::modules::academic::handlers::timetable_blocks::swap_blocks,
+    crate::modules::academic::handlers::timetable_blocks::daily_teaching_overview,
+    crate::modules::academic::handlers::timetable_versions::list_versions,
+    crate::modules::academic::handlers::timetable_versions::create_version,
+    crate::modules::academic::handlers::timetable_versions::resolve_version,
+    crate::modules::academic::handlers::timetable_versions::clone_version,
+    crate::modules::academic::handlers::timetable_versions::update_delivery_source,
+    crate::modules::academic::handlers::timetable_versions::delete_draft,
+    crate::modules::academic::handlers::timetable_versions::preview_publication,
+    crate::modules::academic::handlers::timetable_versions::publish_version,
+    crate::modules::academic::handlers::timetable_templates::list_templates,
+    crate::modules::academic::handlers::timetable_templates::get_template,
+    crate::modules::academic::handlers::timetable_templates::create_template,
+    crate::modules::academic::handlers::timetable_templates::update_template,
+    crate::modules::academic::handlers::timetable_templates::delete_template,
+    crate::modules::academic::handlers::timetable_templates::from_current,
+    crate::modules::academic::handlers::timetable_templates::apply_template,
+    crate::modules::academic::handlers::timetable_templates::clear_timetable,
+    crate::modules::academic::handlers::assessment::list_assessment_plans,
+    crate::modules::academic::handlers::assessment::list_assessment_phase_controls,
+    crate::modules::academic::handlers::assessment::update_assessment_phase_control,
+    crate::modules::academic::handlers::assessment::get_assessment_plan,
+))]
+struct SchoolApiPathsGroup8;
+
+#[inline(never)]
+fn build_path_group_8() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup8::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::handlers::assessment::save_assessment_plan,
+    crate::modules::academic::gradebook::handlers::list_subjects,
+    crate::modules::academic::gradebook::handlers::list_controls,
+    crate::modules::academic::gradebook::handlers::update_control,
+    crate::modules::academic::gradebook::handlers::get_group_phase_workspace,
+    crate::modules::academic::gradebook::handlers::create_item,
+    crate::modules::academic::gradebook::handlers::update_item,
+    crate::modules::academic::gradebook::handlers::remove_item,
+    crate::modules::academic::gradebook::handlers::save_scores_batch,
+    crate::modules::academic::gradebook::handlers::confirm_phase,
+    crate::modules::academic::learner_evaluation::handlers::list_policies,
+    crate::modules::academic::learner_evaluation::handlers::create_policy,
+    crate::modules::academic::learner_evaluation::handlers::activate_policy,
+    crate::modules::academic::learner_evaluation::handlers::list_subjects,
+    crate::modules::academic::learner_evaluation::handlers::lock_readiness,
+    crate::modules::academic::learner_evaluation::handlers::list_catalog,
+    crate::modules::academic::learner_evaluation::handlers::create_catalog,
+    crate::modules::academic::learner_evaluation::handlers::update_catalog,
+    crate::modules::academic::learner_evaluation::handlers::remove_catalog,
+    crate::modules::academic::learner_evaluation::handlers::list_controls,
+    crate::modules::academic::learner_evaluation::handlers::update_control,
+    crate::modules::academic::learner_evaluation::handlers::get_configuration,
+    crate::modules::academic::learner_evaluation::handlers::create_criterion,
+    crate::modules::academic::learner_evaluation::handlers::update_criterion,
+    crate::modules::academic::learner_evaluation::handlers::remove_criterion,
+    crate::modules::academic::learner_evaluation::handlers::get_workspace,
+    crate::modules::academic::learner_evaluation::handlers::save_responses,
+    crate::modules::academic::learner_evaluation::handlers::confirm_group,
+    crate::modules::academic::learner_evaluation::handlers::lock_subject,
+    crate::modules::academic::learner_evaluation::handlers::student_summary,
+    crate::modules::academic::results::handlers::list_policies,
+    crate::modules::academic::results::handlers::create_policy,
+))]
+struct SchoolApiPathsGroup9;
+
+#[inline(never)]
+fn build_path_group_9() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup9::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::results::handlers::activate_policy,
+    crate::modules::academic::results::handlers::get_course_workspace,
+    crate::modules::academic::results::handlers::save_selection,
+    crate::modules::academic::results::handlers::confirm_group_results,
+    crate::modules::academic::results::handlers::get_activity_workspace,
+    crate::modules::academic::results::handlers::save_activity_outcomes,
+    crate::modules::academic::results::handlers::confirm_activity,
+    crate::modules::academic::results::handlers::readiness,
+    crate::modules::academic::results::handlers::lock_course_subject,
+    crate::modules::academic::results::handlers::lock_activity_group,
+    crate::modules::academic::results::handlers::lock_all_ready_activities,
+    crate::modules::academic::results::handlers::search_effective_results,
+    crate::modules::academic::results::handlers::preview_student_term,
+    crate::modules::academic::results::handlers::list_aggregate_policies,
+    crate::modules::academic::results::handlers::list_aggregate_students,
+    crate::modules::academic::results::handlers::preview_annual,
+    crate::modules::academic::results::handlers::list_annual_students,
+    crate::modules::academic::results::handlers::list_annual_revisions,
+    crate::modules::academic::results::handlers::lock_annual,
+    crate::modules::academic::lifecycle::handlers::get_workspace,
+    crate::modules::academic::lifecycle::handlers::get_activation_workspace,
+    crate::modules::academic::lifecycle::handlers::get_opening_policy,
+    crate::modules::academic::lifecycle::handlers::update_opening_policy,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::list_promotion_runs,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::get_promotion_run_workspace,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::create_promotion_run,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::calculate_promotion_run,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::review_promotion_run_item,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::approve_promotion_run,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::execute_promotion_run,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::get_promotion_run_impacts,
+    crate::modules::academic::lifecycle::handlers::promotion_runs::resolve_promotion_run_impact,
+))]
+struct SchoolApiPathsGroup10;
+
+#[inline(never)]
+fn build_path_group_10() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup10::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::lifecycle::handlers::list_promotion_policies,
+    crate::modules::academic::lifecycle::handlers::create_promotion_policy,
+    crate::modules::academic::lifecycle::handlers::get_promotion_policy_options,
+    crate::modules::academic::lifecycle::handlers::get_year_workspace,
+    crate::modules::academic::lifecycle::handlers::transition_year,
+    crate::modules::academic::lifecycle::handlers::year_reopening::get_year_reopening_workspace,
+    crate::modules::academic::lifecycle::handlers::year_reopening::reopen_year,
+    crate::modules::academic::lifecycle::handlers::transition_term,
+    crate::modules::academic::lifecycle::handlers::preview_term_preparation,
+    crate::modules::academic::lifecycle::handlers::apply_term_preparation,
+    crate::modules::academic::results::handlers::create_aggregate_policy,
+    crate::modules::academic::results::handlers::preview_aggregate,
+    crate::modules::academic::results::handlers::list_term_aggregate_revisions,
+    crate::modules::academic::results::handlers::lock_term_aggregate,
+    crate::modules::academic::results::handlers::correct_result,
+    crate::modules::academic::handlers::exam_schedule::list_rounds,
+    crate::modules::academic::handlers::exam_schedule::create_round,
+    crate::modules::academic::handlers::exam_schedule::update_round,
+    crate::modules::academic::handlers::exam_schedule::delete_round,
+    crate::modules::academic::handlers::exam_schedule::get_workspace,
+    crate::modules::academic::handlers::exam_schedule::preview_sources,
+    crate::modules::academic::handlers::exam_schedule::sync_sources,
+    crate::modules::academic::handlers::exam_schedule::upsert_day,
+    crate::modules::academic::handlers::exam_schedule::update_day,
+    crate::modules::academic::handlers::exam_schedule::delete_day,
+    crate::modules::academic::handlers::exam_schedule::list_day_room_assignments,
+    crate::modules::academic::handlers::exam_schedule::get_invigilator_workspace,
+    crate::modules::academic::handlers::exam_schedule::get_invigilator_staff_options,
+    crate::modules::academic::handlers::exam_schedule::upsert_day_room_assignment,
+    crate::modules::academic::handlers::exam_schedule::update_assignment_invigilators,
+    crate::modules::academic::handlers::exam_schedule::assign_assignment_invigilator,
+    crate::modules::academic::handlers::exam_schedule::remove_assignment_invigilator,
+))]
+struct SchoolApiPathsGroup11;
+
+#[inline(never)]
+fn build_path_group_11() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup11::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::handlers::exam_schedule::generate_seats,
+    crate::modules::academic::handlers::exam_schedule::place_session,
+    crate::modules::academic::handlers::exam_schedule::delete_session,
+    crate::modules::academic::handlers::exam_schedule::publish_round,
+    crate::modules::academic::handlers::exam_schedule::list_my_exam_schedule,
+    crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
+    crate::modules::academic::core::handlers::list_context_options,
+    crate::modules::academic::core::handlers::list_public_context_options,
+    crate::modules::academic::core::handlers::get_academic_setup_workspace,
+    crate::modules::academic::core::handlers::list_years,
+    crate::modules::academic::core::handlers::create_year,
+    crate::modules::academic::core::handlers::get_year,
+    crate::modules::academic::core::handlers::update_year,
+    crate::modules::academic::core::handlers::list_terms,
+    crate::modules::academic::core::handlers::create_term,
+    crate::modules::academic::core::handlers::get_term,
+    crate::modules::academic::core::handlers::update_term,
+    crate::modules::academic::core::handlers::delete_term,
+    crate::modules::academic::core::handlers::list_bell_schedules,
+    crate::modules::academic::core::handlers::create_bell_schedule,
+    crate::modules::academic::core::handlers::get_bell_schedule,
+    crate::modules::academic::core::handlers::update_bell_schedule,
+    crate::modules::academic::core::handlers::list_bell_schedule_periods,
+    crate::modules::academic::core::handlers::replace_bell_schedule_periods,
+    crate::modules::academic::core::handlers::list_grade_progressions,
+    crate::modules::academic::core::handlers::replace_grade_progressions,
+    crate::modules::academic::core::handlers::list_catalog_subjects,
+    crate::modules::academic::core::handlers::get_catalog_subject_overview,
+    crate::modules::academic::core::handlers::create_catalog_subject,
+    crate::modules::academic::core::handlers::get_catalog_subject,
+    crate::modules::academic::core::handlers::update_catalog_subject,
+    crate::modules::academic::core::handlers::list_subject_versions,
+))]
+struct SchoolApiPathsGroup12;
+
+#[inline(never)]
+fn build_path_group_12() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup12::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::core::handlers::create_subject_version,
+    crate::modules::academic::core::handlers::get_subject_version,
+    crate::modules::academic::core::handlers::update_subject_version,
+    crate::modules::academic::core::handlers::publish_subject_version,
+    crate::modules::academic::core::handlers::list_subject_default_teachers,
+    crate::modules::academic::core::handlers::replace_subject_default_teachers,
+    crate::modules::academic::core::handlers::list_subject_groups,
+    crate::modules::academic::core::handlers::create_subject_group,
+    crate::modules::academic::core::handlers::get_subject_group,
+    crate::modules::academic::core::handlers::update_subject_group,
+    crate::modules::academic::core::handlers::delete_subject_group,
+    crate::modules::academic::core::handlers::list_catalog_activities,
+    crate::modules::academic::core::handlers::get_catalog_activity_overview,
+    crate::modules::academic::core::handlers::create_catalog_activity,
+    crate::modules::academic::core::handlers::get_catalog_activity,
+    crate::modules::academic::core::handlers::update_catalog_activity,
+    crate::modules::academic::core::handlers::list_activity_versions,
+    crate::modules::academic::core::handlers::create_activity_version,
+    crate::modules::academic::core::handlers::get_activity_version,
+    crate::modules::academic::core::handlers::update_activity_version,
+    crate::modules::academic::core::handlers::publish_activity_version,
+    crate::modules::academic::core::handlers::list_activity_default_teachers,
+    crate::modules::academic::core::handlers::replace_activity_default_teachers,
+    crate::modules::academic::core::handlers::list_curricula,
+    crate::modules::academic::core::handlers::get_curriculum_overview,
+    crate::modules::academic::core::handlers::get_curriculum_create_options,
+    crate::modules::academic::core::handlers::list_study_program_options_for_year,
+    crate::modules::academic::core::handlers::create_curriculum,
+    crate::modules::academic::core::handlers::get_curriculum,
+    crate::modules::academic::core::handlers::update_curriculum,
+    crate::modules::academic::core::handlers::list_curriculum_levels,
+    crate::modules::academic::core::handlers::create_curriculum_level,
+))]
+struct SchoolApiPathsGroup13;
+
+#[inline(never)]
+fn build_path_group_13() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup13::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::core::handlers::copy_study_program,
+    crate::modules::academic::core::handlers::get_curriculum_level,
+    crate::modules::academic::core::handlers::get_curriculum_management_options,
+    crate::modules::academic::core::handlers::update_curriculum_level,
+    crate::modules::academic::core::handlers::publish_curriculum,
+    crate::modules::academic::core::handlers::open_curriculum_draft,
+    crate::modules::academic::core::handlers::discard_curriculum_draft,
+    crate::modules::academic::core::handlers::preview_curriculum_draft_discard,
+    crate::modules::academic::core::handlers::list_curriculum_publications,
+    crate::modules::academic::core::handlers::get_curriculum_publication_history,
+    crate::modules::academic::core::handlers::get_curriculum_structure_workspace,
+    crate::modules::academic::core::handlers::replace_curriculum_term_slots,
+    crate::modules::academic::core::handlers::list_study_programs,
+    crate::modules::academic::core::handlers::create_study_program,
+    crate::modules::academic::core::handlers::get_study_program,
+    crate::modules::academic::core::handlers::update_study_program,
+    crate::modules::academic::core::handlers::replace_curriculum_structure,
+    crate::modules::academic::core::handlers::list_homerooms,
+    crate::modules::academic::core::handlers::create_homeroom,
+    crate::modules::academic::core::handlers::get_homeroom,
+    crate::modules::academic::core::handlers::update_homeroom,
+    crate::modules::academic::core::handlers::list_homeroom_advisors,
+    crate::modules::academic::core::handlers::list_homeroom_advisors_for_year,
+    crate::modules::academic::core::handlers::replace_homeroom_advisors,
+    crate::modules::academic::core::handlers::list_student_years,
+    crate::modules::academic::core::handlers::list_student_year_candidates,
+    crate::modules::academic::core::handlers::create_student_year,
+    crate::modules::academic::core::handlers::get_student_year,
+    crate::modules::academic::core::handlers::update_student_year,
+    crate::modules::academic::core::handlers::list_placements,
+    crate::modules::academic::core::handlers::list_placements_for_year,
+    crate::modules::academic::core::handlers::create_placement,
+))]
+struct SchoolApiPathsGroup14;
+
+#[inline(never)]
+fn build_path_group_14() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup14::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::core::handlers::transfer_placement,
+    crate::modules::academic::core::handlers::get_homeroom_roster,
+    crate::modules::academic::core::handlers::list_homeroom_candidates,
+    crate::modules::academic::core::handlers::preview_homeroom_numbers,
+    crate::modules::academic::core::handlers::update_homeroom_numbers,
+    crate::modules::academic::core::handlers::mutate_homeroom_roster,
+    crate::modules::academic::core::handlers::list_homeroom_transfer_targets,
+    crate::modules::academic::delivery::handlers::list_offerings,
+    crate::modules::academic::delivery::handlers::get_delivery_overview,
+    crate::modules::academic::delivery::handlers::get_homeroom_delivery_workspace,
+    crate::modules::academic::delivery::handlers::get_delivery_management_options,
+    crate::modules::academic::delivery::handlers::create_offering,
+    crate::modules::academic::delivery::handlers::preview_offerings_from_curriculum,
+    crate::modules::academic::delivery::handlers::apply_offerings_from_curriculum,
+    crate::modules::academic::delivery::handlers::get_offering,
+    crate::modules::academic::delivery::handlers::update_offering,
+    crate::modules::academic::delivery::handlers::publish_offering,
+    crate::modules::academic::delivery::handlers::list_groups_for_term,
+    crate::modules::academic::delivery::handlers::list_groups,
+    crate::modules::academic::delivery::handlers::create_group,
+    crate::modules::academic::delivery::handlers::get_group,
+    crate::modules::academic::delivery::handlers::update_group,
+    crate::modules::academic::delivery::handlers::list_group_homerooms,
+    crate::modules::academic::delivery::handlers::replace_group_homerooms,
+    crate::modules::academic::delivery::handlers::list_group_teachers,
+    crate::modules::academic::delivery::handlers::replace_group_teachers,
+    crate::modules::academic::delivery::handlers::get_group_roster_tracking,
+    crate::modules::academic::delivery::handlers::update_group_roster_tracking,
+    crate::modules::academic::delivery::handlers::preview_group_roster,
+    crate::modules::academic::delivery::handlers::apply_group_roster,
+    crate::modules::academic::delivery::handlers::publish_group_roster,
+    crate::modules::academic::delivery::handlers::list_term_change_sets,
+))]
+struct SchoolApiPathsGroup15;
+
+#[inline(never)]
+fn build_path_group_15() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup15::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::academic::delivery::version_handlers::list_versions,
+    crate::modules::academic::delivery::version_handlers::get_version,
+    crate::modules::academic::delivery::version_handlers::delete_version,
+    crate::modules::academic::delivery::handlers::create_term_change_set,
+    crate::modules::academic::delivery::handlers::get_term_change_set,
+    crate::modules::academic::delivery::handlers::update_term_change_set,
+    crate::modules::academic::delivery::handlers::upsert_term_change_item,
+    crate::modules::academic::delivery::handlers::delete_term_change_item,
+    crate::modules::academic::delivery::handlers::preview_term_change_set,
+    crate::modules::academic::handlers::teacher_handoff::preview_teacher_handoff,
+    crate::modules::academic::handlers::teacher_handoff::apply_teacher_handoff,
+    crate::modules::academic::delivery::handlers::publish_term_change_set,
+    crate::modules::academic::delivery::handlers::list_group_memberships,
+    crate::modules::academic::delivery::handlers::add_group_membership,
+    crate::modules::academic::delivery::handlers::end_group_membership,
+    crate::modules::academic::delivery::handlers::list_my_activity_registrations,
+    crate::modules::academic::delivery::handlers::enroll_my_activity_registration,
+    crate::modules::academic::delivery::handlers::unenroll_my_activity_registration,
+    crate::modules::supervision::handlers::list_cycles,
+    crate::modules::supervision::handlers::get_cycle,
+    crate::modules::supervision::handlers::get_template_summary,
+    crate::modules::supervision::handlers::create_cycle,
+    crate::modules::supervision::handlers::update_cycle,
+    crate::modules::supervision::handlers::list_templates,
+    crate::modules::supervision::handlers::list_template_summaries,
+    crate::modules::supervision::handlers::create_template,
+    crate::modules::supervision::handlers::get_template,
+    crate::modules::supervision::handlers::update_template,
+    crate::modules::supervision::handlers::list_observations,
+    crate::modules::supervision::handlers::get_observation,
+    crate::modules::supervision::handlers::get_observation_review,
+    crate::modules::supervision::handlers::evaluator_availability,
+))]
+struct SchoolApiPathsGroup16;
+
+#[inline(never)]
+fn build_path_group_16() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup16::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::supervision::handlers::observation_timetable_options,
+    crate::modules::supervision::handlers::request_observation,
+    crate::modules::supervision::handlers::update_requested_observation,
+    crate::modules::supervision::handlers::cancel_requested_observation,
+    crate::modules::supervision::handlers::update_observation,
+    crate::modules::supervision::handlers::replace_observation_evaluators,
+    crate::modules::supervision::handlers::cancel_observation,
+    crate::modules::supervision::handlers::approve_observation_request,
+    crate::modules::supervision::handlers::return_observation_request,
+    crate::modules::supervision::handlers::submit_my_evaluation,
+    crate::modules::supervision::handlers::certify_observation,
+    crate::modules::supervision::handlers::approve_observation,
+    crate::modules::supervision::handlers::acknowledge_observation,
+    crate::modules::supervision::handlers::cycle_progress,
+    crate::modules::supervision::handlers::teacher_status_overview,
+    crate::modules::question_bank::handlers::list_options,
+    crate::modules::question_bank::handlers::list_questions,
+    crate::modules::question_bank::handlers::create_question,
+    crate::modules::question_bank::handlers::export_question_data,
+    crate::modules::question_bank::handlers::get_question,
+    crate::modules::question_bank::handlers::update_question,
+    crate::modules::question_bank::handlers::delete_question,
+    crate::modules::question_bank::handlers::get_question_file,
+    crate::modules::calendar::request_handlers::list_requests,
+    crate::modules::calendar::request_handlers::list_pending_calendar,
+    crate::modules::calendar::request_handlers::get_request_for_review,
+    crate::modules::calendar::request_handlers::create_request,
+    crate::modules::calendar::request_handlers::approve_request,
+    crate::modules::calendar::request_handlers::reject_request,
+    crate::modules::calendar::request_handlers::list_target_options,
+    crate::modules::calendar::handlers::list_my_calendar_events,
+    crate::modules::calendar::handlers::list_public_calendar_events,
+))]
+struct SchoolApiPathsGroup17;
+
+#[inline(never)]
+fn build_path_group_17() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup17::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::calendar::handlers::list_calendar_events,
+    crate::modules::calendar::handlers::create_calendar_event,
+    crate::modules::calendar::handlers::update_calendar_event,
+    crate::modules::calendar::handlers::delete_calendar_event,
+    crate::modules::calendar::handlers::list_calendar_categories,
+    crate::modules::calendar::handlers::list_calendar_tags,
+    crate::modules::school::handlers::get_public_info,
+    crate::modules::school::handlers::get_public_statistics,
+    crate::modules::school::handlers::get_public_organization,
+    crate::modules::school::handlers::get_public_organization_avatar,
+    crate::modules::school::handlers::get_settings,
+    crate::modules::notification::handlers::list_notifications,
+    crate::modules::staff::handlers::roles::list_roles,
+    crate::modules::staff::handlers::roles::get_role,
+    crate::modules::staff::handlers::roles::create_role,
+    crate::modules::staff::handlers::roles::update_role,
+    crate::modules::staff::handlers::roles::deactivate_role,
+    crate::modules::staff::handlers::permissions::list_permissions,
+    crate::modules::staff::handlers::permissions::list_permissions_by_module,
+    crate::modules::staff::handlers::user_roles::get_user_roles,
+    crate::modules::staff::handlers::user_roles::assign_user_role,
+    crate::modules::staff::handlers::user_roles::remove_user_role,
+    crate::modules::staff::handlers::user_roles::get_user_permissions,
+    crate::modules::staff::handlers::roles::list_organization_units,
+    crate::modules::staff::handlers::roles::get_organization_unit,
+    crate::modules::staff::handlers::roles::create_organization_unit,
+    crate::modules::staff::handlers::roles::update_organization_unit,
+    crate::modules::staff::handlers::roles::deactivate_organization_unit,
+    crate::modules::staff::handlers::organization_permissions::get_organization_permissions,
+    crate::modules::staff::handlers::organization_permissions::update_organization_permissions,
+    crate::modules::staff::handlers::organization_delegations::list_delegatable_permissions,
+    crate::modules::staff::handlers::organization_delegations::list_delegations,
+))]
+struct SchoolApiPathsGroup18;
+
+#[inline(never)]
+fn build_path_group_18() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup18::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(paths(
+    crate::modules::staff::handlers::organization_delegations::create_delegation,
+    crate::modules::staff::handlers::organization_delegations::revoke_delegation,
+    crate::modules::staff::handlers::organization_members::list_members,
+    crate::modules::staff::handlers::organization_members::add_member,
+    crate::modules::staff::handlers::organization_members::update_member,
+    crate::modules::staff::handlers::organization_members::remove_member,
+))]
+struct SchoolApiPathsGroup19;
+
+#[inline(never)]
+fn build_path_group_19() -> utoipa::openapi::OpenApi {
+    SchoolApiPathsGroup19::openapi()
+}
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(
-        crate::modules::behavior::handlers::cleanup_job,
-        crate::modules::supply_catalog::handlers::duplicates,
-        crate::modules::supply_catalog::handlers::list_categories,
-        crate::modules::supply_catalog::handlers::create_category,
-        crate::modules::supply_catalog::handlers::update_category,
-        crate::modules::supply_catalog::handlers::list_items,
-        crate::modules::supply_catalog::handlers::create_item,
-        crate::modules::supply_catalog::handlers::get_item,
-        crate::modules::supply_catalog::handlers::update_item,
-        crate::modules::supply_catalog::handlers::list_versions,
-        crate::modules::supply_catalog::handlers::append_version,
-        crate::modules::supply_catalog::handlers::update_version,
-        crate::modules::supply_catalog::handlers::set_favorite,
-        crate::modules::supply_catalog::handlers::list_bundles,
-        crate::modules::supply_catalog::handlers::create_bundle,
-        crate::modules::supply_catalog::handlers::update_bundle,
-        crate::modules::supply_catalog::handlers::delete_bundle,
-        crate::modules::supply_catalog::handlers::list_proposals,
-        crate::modules::supply_catalog::handlers::create_proposal,
-        crate::modules::supply_catalog::handlers::get_proposal,
-        crate::modules::supply_catalog::handlers::approve_proposal,
-        crate::modules::supply_catalog::handlers::reject_proposal,
-        crate::modules::behavior::handlers::overview,
-        crate::modules::behavior::handlers::list_items,
-        crate::modules::behavior::handlers::save_item,
-        crate::modules::behavior::handlers::list_rules,
-        crate::modules::behavior::handlers::save_rule,
-        crate::modules::behavior::handlers::get_settings,
-        crate::modules::behavior::handlers::save_settings,
-        crate::modules::behavior::handlers::students,
-        crate::modules::behavior::handlers::selector_options,
-        crate::modules::behavior::handlers::create_batch,
-        crate::modules::behavior::handlers::report,
-        crate::modules::behavior::handlers::cancel_entries,
-        crate::modules::behavior::handlers::cycles,
-        crate::modules::behavior::handlers::preview_cleanup,
-        crate::modules::behavior::handlers::execute_cleanup,
-        crate::modules::behavior::handlers::adjust_history,
-        crate::modules::behavior::handlers::preview_reset,
-        crate::modules::behavior::handlers::reset,
-        crate::modules::behavior::handlers::student_summary,
-        crate::modules::attendance::handlers::get_settings,
-        crate::modules::attendance::handlers::save_settings,
-        crate::modules::attendance::handlers::list_days,
-        crate::modules::attendance::handlers::save_days,
-        crate::modules::attendance::handlers::workspace,
-        crate::modules::attendance::handlers::open_session,
-        crate::modules::attendance::handlers::reset_impact,
-        crate::modules::attendance::handlers::reset_module,
-        crate::modules::attendance::handlers::get_session,
-        crate::modules::attendance::handlers::save_results,
-        crate::modules::attendance::handlers::cancel_session,
-        crate::modules::attendance::handlers::get_options,
-        crate::modules::attendance::handlers::create_audience,
-        crate::modules::attendance::handlers::create_special,
-        crate::modules::attendance::handlers::save_device,
-        crate::modules::attendance::handlers::face_enrollments,
-        crate::modules::attendance::handlers::enroll_face,
-        crate::modules::attendance::handlers::delete_face,
-        crate::modules::attendance::handlers::open_kiosk,
-        crate::modules::attendance::handlers::scan,
-        crate::modules::attendance::handlers::report,
-        crate::modules::attendance::handlers::history,
-        crate::modules::attendance::handlers::purge_impact,
-        crate::modules::attendance::handlers::purge_term,
-        crate::modules::auth::session_handlers::login,
-        crate::modules::auth::session_handlers::logout,
-        crate::modules::auth::session_handlers::me,
-        crate::modules::auth::handlers::get_profile,
-        crate::modules::auth::handlers::update_profile,
-        crate::modules::auth::session_handlers::change_password,
-        crate::modules::auth::session_handlers::list_sessions,
-        crate::modules::auth::session_handlers::revoke_session,
-        crate::modules::auth::session_handlers::logout_all,
-        crate::modules::consent::handlers::get_my_consent_status,
-        crate::modules::consent::handlers::withdraw_consent,
-        crate::modules::files::handlers::upload_file,
-        crate::modules::files::handlers::get_file_metadata,
-        crate::modules::files::handlers::download_file,
-        crate::modules::files::handlers::delete_file,
-        crate::modules::files::handlers::get_public_file_content,
-        crate::modules::files::handlers::get_public_file_delivery,
-        crate::modules::school_fonts::handlers::list_school_fonts,
-        crate::modules::school_fonts::handlers::inspect_school_font_uploads,
-        crate::modules::school_fonts::handlers::attach_school_font_batch,
-        crate::modules::school_fonts::handlers::delete_school_font,
-        crate::modules::admission::handlers::applications::staff_upload_document,
-        crate::modules::admission::handlers::applications::search_applications_by_identifier,
-        crate::modules::admission::handlers::applications::staff_delete_document,
-        crate::modules::admission::handlers::applications::complete_enrollment,
-        crate::modules::admission::handlers::scores::get_score_room_roster,
-        crate::modules::admission::handlers::selections::get_ranking,
-        crate::modules::admission::handlers::selections::get_track_ranking,
-        crate::modules::admission::handlers::selections::get_global_ranking,
-        crate::modules::admission::handlers::selections::get_round_rooms,
-        crate::modules::admission::handlers::portal::portal_upload_document,
-        crate::modules::admission::handlers::portal::portal_delete_document,
-        crate::modules::admission::handlers::portal::portal_download_document,
-        crate::modules::menu::handlers::public::get_user_menu,
-        crate::modules::system::handlers::feature_toggles::list_features,
-        crate::modules::system::handlers::feature_toggles::get_feature,
-        crate::modules::menu::handlers::admin::list_menu_workspaces,
-        crate::modules::menu::handlers::admin::create_menu_workspace,
-        crate::modules::menu::handlers::admin::update_menu_workspace,
-        crate::modules::menu::handlers::admin::delete_menu_workspace,
-        crate::modules::menu::handlers::admin::reorder_menu_workspaces,
-        crate::modules::menu::handlers::admin::list_menu_groups,
-        crate::modules::menu::handlers::admin::create_menu_group,
-        crate::modules::menu::handlers::admin::update_menu_group,
-        crate::modules::menu::handlers::admin::delete_menu_group,
-        crate::modules::menu::handlers::admin::reorder_menu_groups,
-        crate::modules::menu::handlers::admin::list_menu_items,
-        crate::modules::menu::handlers::admin::create_menu_item,
-        crate::modules::menu::handlers::admin::update_menu_item,
-        crate::modules::menu::handlers::admin::delete_menu_item,
-        crate::modules::menu::handlers::admin::move_item_to_group,
-        crate::modules::menu::handlers::admin::reorder_menu_items,
-        crate::modules::menu::handlers::admin::preview_recommended_academic_menu_template,
-        crate::modules::menu::handlers::admin::apply_recommended_academic_menu_template,
-        crate::modules::lookup::handlers::lookup_staff,
-        crate::modules::lookup::handlers::lookup_students,
-        crate::modules::facility::handlers::list_buildings,
-        crate::modules::facility::handlers::create_building,
-        crate::modules::facility::handlers::update_building,
-        crate::modules::facility::handlers::delete_building,
-        crate::modules::facility::handlers::list_rooms,
-        crate::modules::facility::handlers::create_room,
-        crate::modules::facility::handlers::update_room,
-        crate::modules::facility::handlers::delete_room,
-        crate::modules::lookup::handlers::lookup_rooms,
-        crate::modules::lookup::handlers::lookup_roles,
-        crate::modules::lookup::handlers::lookup_organization_units,
-        crate::modules::lookup::handlers::lookup_organization_unit_by_id,
-        crate::modules::lookup::handlers::lookup_grade_levels,
-        crate::modules::lookup::handlers::lookup_homerooms,
-        crate::modules::lookup::handlers::lookup_academic_years,
-        crate::modules::lookup::handlers::lookup_subjects,
-        crate::modules::staff::handlers::career::list_career_history,
-        crate::modules::staff::handlers::career::append_career_history,
-        crate::modules::staff::handlers::career::correct_career_history,
-        crate::modules::staff::handlers::personnel::get_personnel_overview,
-        crate::modules::staff::handlers::personnel::get_rank_milestone_overview,
-        crate::modules::staff::handlers::personnel::list_job_positions,
-        crate::modules::staff::handlers::staff::list_staff,
-        crate::modules::staff::handlers::staff::get_staff_dashboard,
-        crate::modules::staff::handlers::staff::get_staff_profile,
-        crate::modules::staff::handlers::staff::get_public_staff_profile,
-        crate::modules::staff::handlers::staff::create_staff,
-        crate::modules::staff::handlers::staff::update_staff,
-        crate::modules::staff::handlers::staff::delete_staff,
-        crate::modules::students::handlers::get_own_profile,
-        crate::modules::students::handlers::update_own_profile,
-        crate::modules::students::handlers::list_students,
-        crate::modules::students::handlers::create_student,
-        crate::modules::students::handlers::get_student,
-        crate::modules::students::handlers::update_student,
-        crate::modules::students::handlers::delete_student,
-        crate::modules::students::handlers_parents::add_parent_to_student,
-        crate::modules::students::handlers_parents::remove_parent_from_student,
-        crate::modules::achievement::handlers::list_achievements,
-        crate::modules::achievement::handlers::create_achievement,
-        crate::modules::achievement::handlers::update_achievement,
-        crate::modules::achievement::handlers::delete_achievement,
-        crate::modules::certificates::handlers::list_certificate_campaigns,
-        crate::modules::certificates::handlers::create_certificate_campaign,
-        crate::modules::certificates::handlers::get_certificate_campaign,
-        crate::modules::certificates::handlers::update_certificate_campaign,
-        crate::modules::certificates::handlers::change_certificate_campaign_status,
-        crate::modules::certificates::handlers::get_certificate_campaign_purge_impact,
-        crate::modules::certificates::handlers::start_certificate_campaign_purge,
-        crate::modules::certificates::handlers::get_certificate_campaign_purge_status,
-        crate::modules::certificates::handlers::retry_certificate_campaign_purge,
-        crate::modules::certificates::handlers::list_certificate_owner_options,
-        crate::modules::certificates::handlers::list_certificate_templates,
-        crate::modules::certificates::handlers::create_certificate_template,
-        crate::modules::certificates::handlers::get_certificate_template,
-        crate::modules::certificates::handlers::update_certificate_template,
-        crate::modules::certificates::handlers::delete_certificate_template,
-        crate::modules::certificates::handlers::attach_certificate_template_background,
-        crate::modules::certificates::handlers::attach_certificate_template_asset,
-        crate::modules::certificates::handlers::list_certificate_school_fonts,
-        crate::modules::certificates::handlers::inspect_certificate_font_uploads,
-        crate::modules::certificates::handlers::attach_certificate_font_batch,
-        crate::modules::certificates::handlers::delete_certificate_template_asset,
-        crate::modules::certificates::handlers::get_certificate_template_variable_catalog,
-        crate::modules::certificates::handlers::create_certificate_template_preview_manifest,
-        crate::modules::certificates::handlers::list_certificate_candidates,
-        crate::modules::certificates::handlers::import_certificate_candidates,
-        crate::modules::certificates::handlers::create_manual_certificate_candidate,
-        crate::modules::certificates::handlers::search_certificate_candidate_accounts,
-        crate::modules::certificates::handlers::create_account_certificate_candidate,
-        crate::modules::certificates::handlers::bulk_update_certificate_candidates,
-        crate::modules::certificates::handlers::get_certificate_candidate,
-        crate::modules::certificates::handlers::update_certificate_candidate,
-        crate::modules::certificates::handlers::delete_certificate_candidate,
-        crate::modules::certificates::handlers::list_certificate_campaign_issue_requests,
-        crate::modules::certificates::handlers::submit_certificate_issue_request,
-        crate::modules::certificates::handlers::list_certificate_issue_requests,
-        crate::modules::certificates::handlers::get_certificate_issue_request,
-        crate::modules::certificates::handlers::withdraw_certificate_issue_request,
-        crate::modules::certificates::handlers::start_certificate_issue_request_review,
-        crate::modules::certificates::handlers::return_certificate_issue_request,
-        crate::modules::certificates::handlers::issue_certificates,
-        crate::modules::certificates::handlers::list_issued_certificates,
-        crate::modules::certificates::handlers::get_issued_certificate,
-        crate::modules::certificates::handlers::revoke_issued_certificate,
-        crate::modules::certificates::handlers::create_issued_certificate_render_manifest,
-        crate::modules::certificates::handlers::create_issued_certificate_render_manifests,
-        crate::modules::certificates::handlers::list_own_certificates,
-        crate::modules::certificates::handlers::get_own_certificate,
-        crate::modules::certificates::handlers::create_own_certificate_render_manifest,
-        crate::modules::certificates::handlers::verify_certificate_manually,
-        crate::modules::certificates::handlers::verify_certificate_by_qr,
-        crate::modules::certificates::handlers::create_public_certificate_render_manifest,
-        crate::modules::parents::handlers::get_own_parent_profile,
-        crate::modules::parents::handlers::get_parent_academic_context_options,
-        crate::modules::parents::handlers::get_child_profile,
-        crate::modules::parents::handlers::get_child_academic_context_options,
-        crate::modules::parents::handlers::get_child_timetable,
-        crate::modules::parents::handlers::get_child_exam_schedule,
-        crate::modules::parents::handlers::get_child_calendar_events,
-        crate::modules::academic::handlers::timetable_blocks::get_my_timetable,
-        crate::modules::academic::core::handlers::list_my_context_options,
-        crate::modules::academic::handlers::timetable_blocks::get_workspace,
-        crate::modules::academic::handlers::timetable_blocks::preview_placement,
-        crate::modules::academic::handlers::timetable_blocks::create_ordinary,
-        crate::modules::academic::handlers::timetable_blocks::create_synchronized,
-        crate::modules::academic::handlers::timetable_blocks::create_structural,
-        crate::modules::academic::handlers::timetable_blocks::update_block,
-        crate::modules::academic::handlers::timetable_blocks::remove_target,
-        crate::modules::academic::handlers::timetable_blocks::restore_group,
-        crate::modules::academic::handlers::timetable_blocks::retry_sync,
-        crate::modules::academic::handlers::timetable_blocks::delete_block,
-        crate::modules::academic::handlers::timetable_blocks::delete_series,
-        crate::modules::academic::handlers::timetable_blocks::swap_blocks,
-        crate::modules::academic::handlers::timetable_blocks::daily_teaching_overview,
-        crate::modules::academic::handlers::timetable_versions::list_versions,
-        crate::modules::academic::handlers::timetable_versions::create_version,
-        crate::modules::academic::handlers::timetable_versions::resolve_version,
-        crate::modules::academic::handlers::timetable_versions::clone_version,
-        crate::modules::academic::handlers::timetable_versions::update_delivery_source,
-        crate::modules::academic::handlers::timetable_versions::delete_draft,
-        crate::modules::academic::handlers::timetable_versions::preview_publication,
-        crate::modules::academic::handlers::timetable_versions::publish_version,
-        crate::modules::academic::handlers::timetable_templates::list_templates,
-        crate::modules::academic::handlers::timetable_templates::get_template,
-        crate::modules::academic::handlers::timetable_templates::create_template,
-        crate::modules::academic::handlers::timetable_templates::update_template,
-        crate::modules::academic::handlers::timetable_templates::delete_template,
-        crate::modules::academic::handlers::timetable_templates::from_current,
-        crate::modules::academic::handlers::timetable_templates::apply_template,
-        crate::modules::academic::handlers::timetable_templates::clear_timetable,
-        crate::modules::academic::handlers::assessment::list_assessment_plans,
-        crate::modules::academic::handlers::assessment::list_assessment_phase_controls,
-        crate::modules::academic::handlers::assessment::update_assessment_phase_control,
-        crate::modules::academic::handlers::assessment::get_assessment_plan,
-        crate::modules::academic::handlers::assessment::save_assessment_plan,
-        crate::modules::academic::gradebook::handlers::list_subjects,
-        crate::modules::academic::gradebook::handlers::list_controls,
-        crate::modules::academic::gradebook::handlers::update_control,
-        crate::modules::academic::gradebook::handlers::get_group_phase_workspace,
-        crate::modules::academic::gradebook::handlers::create_item,
-        crate::modules::academic::gradebook::handlers::update_item,
-        crate::modules::academic::gradebook::handlers::remove_item,
-        crate::modules::academic::gradebook::handlers::save_scores_batch,
-        crate::modules::academic::gradebook::handlers::confirm_phase,
-        crate::modules::academic::learner_evaluation::handlers::list_policies,
-        crate::modules::academic::learner_evaluation::handlers::create_policy,
-        crate::modules::academic::learner_evaluation::handlers::activate_policy,
-        crate::modules::academic::learner_evaluation::handlers::list_subjects,
-        crate::modules::academic::learner_evaluation::handlers::lock_readiness,
-        crate::modules::academic::learner_evaluation::handlers::list_catalog,
-        crate::modules::academic::learner_evaluation::handlers::create_catalog,
-        crate::modules::academic::learner_evaluation::handlers::update_catalog,
-        crate::modules::academic::learner_evaluation::handlers::remove_catalog,
-        crate::modules::academic::learner_evaluation::handlers::list_controls,
-        crate::modules::academic::learner_evaluation::handlers::update_control,
-        crate::modules::academic::learner_evaluation::handlers::get_configuration,
-        crate::modules::academic::learner_evaluation::handlers::create_criterion,
-        crate::modules::academic::learner_evaluation::handlers::update_criterion,
-        crate::modules::academic::learner_evaluation::handlers::remove_criterion,
-        crate::modules::academic::learner_evaluation::handlers::get_workspace,
-        crate::modules::academic::learner_evaluation::handlers::save_responses,
-        crate::modules::academic::learner_evaluation::handlers::confirm_group,
-        crate::modules::academic::learner_evaluation::handlers::lock_subject,
-        crate::modules::academic::learner_evaluation::handlers::student_summary,
-        crate::modules::academic::results::handlers::list_policies,
-        crate::modules::academic::results::handlers::create_policy,
-        crate::modules::academic::results::handlers::activate_policy,
-        crate::modules::academic::results::handlers::get_course_workspace,
-        crate::modules::academic::results::handlers::save_selection,
-        crate::modules::academic::results::handlers::confirm_group_results,
-        crate::modules::academic::results::handlers::get_activity_workspace,
-        crate::modules::academic::results::handlers::save_activity_outcomes,
-        crate::modules::academic::results::handlers::confirm_activity,
-        crate::modules::academic::results::handlers::readiness,
-        crate::modules::academic::results::handlers::lock_course_subject,
-        crate::modules::academic::results::handlers::lock_activity_group,
-        crate::modules::academic::results::handlers::lock_all_ready_activities,
-        crate::modules::academic::results::handlers::search_effective_results,
-        crate::modules::academic::results::handlers::preview_student_term,
-        crate::modules::academic::results::handlers::list_aggregate_policies,
-        crate::modules::academic::results::handlers::list_aggregate_students,
-        crate::modules::academic::results::handlers::preview_annual,
-        crate::modules::academic::results::handlers::list_annual_students,
-        crate::modules::academic::results::handlers::list_annual_revisions,
-        crate::modules::academic::results::handlers::lock_annual,
-        crate::modules::academic::lifecycle::handlers::get_workspace,
-        crate::modules::academic::lifecycle::handlers::get_activation_workspace,
-        crate::modules::academic::lifecycle::handlers::get_opening_policy,
-        crate::modules::academic::lifecycle::handlers::update_opening_policy,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::list_promotion_runs,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::get_promotion_run_workspace,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::create_promotion_run,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::calculate_promotion_run,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::review_promotion_run_item,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::approve_promotion_run,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::execute_promotion_run,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::get_promotion_run_impacts,
-        crate::modules::academic::lifecycle::handlers::promotion_runs::resolve_promotion_run_impact,
-        crate::modules::academic::lifecycle::handlers::list_promotion_policies,
-        crate::modules::academic::lifecycle::handlers::create_promotion_policy,
-        crate::modules::academic::lifecycle::handlers::get_promotion_policy_options,
-        crate::modules::academic::lifecycle::handlers::get_year_workspace,
-        crate::modules::academic::lifecycle::handlers::transition_year,
-        crate::modules::academic::lifecycle::handlers::year_reopening::get_year_reopening_workspace,
-        crate::modules::academic::lifecycle::handlers::year_reopening::reopen_year,
-        crate::modules::academic::lifecycle::handlers::transition_term,
-        crate::modules::academic::lifecycle::handlers::preview_term_preparation,
-        crate::modules::academic::lifecycle::handlers::apply_term_preparation,
-        crate::modules::academic::results::handlers::create_aggregate_policy,
-        crate::modules::academic::results::handlers::preview_aggregate,
-        crate::modules::academic::results::handlers::list_term_aggregate_revisions,
-        crate::modules::academic::results::handlers::lock_term_aggregate,
-        crate::modules::academic::results::handlers::correct_result,
-        crate::modules::academic::handlers::exam_schedule::list_rounds,
-        crate::modules::academic::handlers::exam_schedule::create_round,
-        crate::modules::academic::handlers::exam_schedule::update_round,
-        crate::modules::academic::handlers::exam_schedule::delete_round,
-        crate::modules::academic::handlers::exam_schedule::get_workspace,
-        crate::modules::academic::handlers::exam_schedule::preview_sources,
-        crate::modules::academic::handlers::exam_schedule::sync_sources,
-        crate::modules::academic::handlers::exam_schedule::upsert_day,
-        crate::modules::academic::handlers::exam_schedule::update_day,
-        crate::modules::academic::handlers::exam_schedule::delete_day,
-        crate::modules::academic::handlers::exam_schedule::list_day_room_assignments,
-        crate::modules::academic::handlers::exam_schedule::get_invigilator_workspace,
-        crate::modules::academic::handlers::exam_schedule::get_invigilator_staff_options,
-        crate::modules::academic::handlers::exam_schedule::upsert_day_room_assignment,
-        crate::modules::academic::handlers::exam_schedule::update_assignment_invigilators,
-        crate::modules::academic::handlers::exam_schedule::assign_assignment_invigilator,
-        crate::modules::academic::handlers::exam_schedule::remove_assignment_invigilator,
-        crate::modules::academic::handlers::exam_schedule::generate_seats,
-        crate::modules::academic::handlers::exam_schedule::place_session,
-        crate::modules::academic::handlers::exam_schedule::delete_session,
-        crate::modules::academic::handlers::exam_schedule::publish_round,
-        crate::modules::academic::handlers::exam_schedule::list_my_exam_schedule,
-        crate::modules::academic::handlers::exam_schedule::list_staff_exam_schedule,
-        crate::modules::academic::core::handlers::list_context_options,
-		crate::modules::academic::core::handlers::list_public_context_options,
-        crate::modules::academic::core::handlers::get_academic_setup_workspace,
-        crate::modules::academic::core::handlers::list_years,
-        crate::modules::academic::core::handlers::create_year,
-        crate::modules::academic::core::handlers::get_year,
-        crate::modules::academic::core::handlers::update_year,
-        crate::modules::academic::core::handlers::list_terms,
-        crate::modules::academic::core::handlers::create_term,
-        crate::modules::academic::core::handlers::get_term,
-        crate::modules::academic::core::handlers::update_term,
-        crate::modules::academic::core::handlers::delete_term,
-        crate::modules::academic::core::handlers::list_bell_schedules,
-        crate::modules::academic::core::handlers::create_bell_schedule,
-        crate::modules::academic::core::handlers::get_bell_schedule,
-        crate::modules::academic::core::handlers::update_bell_schedule,
-        crate::modules::academic::core::handlers::list_bell_schedule_periods,
-        crate::modules::academic::core::handlers::replace_bell_schedule_periods,
-        crate::modules::academic::core::handlers::list_grade_progressions,
-        crate::modules::academic::core::handlers::replace_grade_progressions,
-        crate::modules::academic::core::handlers::list_catalog_subjects,
-        crate::modules::academic::core::handlers::get_catalog_subject_overview,
-        crate::modules::academic::core::handlers::create_catalog_subject,
-        crate::modules::academic::core::handlers::get_catalog_subject,
-        crate::modules::academic::core::handlers::update_catalog_subject,
-        crate::modules::academic::core::handlers::list_subject_versions,
-        crate::modules::academic::core::handlers::create_subject_version,
-        crate::modules::academic::core::handlers::get_subject_version,
-        crate::modules::academic::core::handlers::update_subject_version,
-        crate::modules::academic::core::handlers::publish_subject_version,
-        crate::modules::academic::core::handlers::list_subject_default_teachers,
-        crate::modules::academic::core::handlers::replace_subject_default_teachers,
-        crate::modules::academic::core::handlers::list_subject_groups,
-        crate::modules::academic::core::handlers::create_subject_group,
-        crate::modules::academic::core::handlers::get_subject_group,
-        crate::modules::academic::core::handlers::update_subject_group,
-        crate::modules::academic::core::handlers::delete_subject_group,
-        crate::modules::academic::core::handlers::list_catalog_activities,
-        crate::modules::academic::core::handlers::get_catalog_activity_overview,
-        crate::modules::academic::core::handlers::create_catalog_activity,
-        crate::modules::academic::core::handlers::get_catalog_activity,
-        crate::modules::academic::core::handlers::update_catalog_activity,
-        crate::modules::academic::core::handlers::list_activity_versions,
-        crate::modules::academic::core::handlers::create_activity_version,
-        crate::modules::academic::core::handlers::get_activity_version,
-        crate::modules::academic::core::handlers::update_activity_version,
-        crate::modules::academic::core::handlers::publish_activity_version,
-        crate::modules::academic::core::handlers::list_activity_default_teachers,
-        crate::modules::academic::core::handlers::replace_activity_default_teachers,
-        crate::modules::academic::core::handlers::list_curricula,
-        crate::modules::academic::core::handlers::get_curriculum_overview,
-        crate::modules::academic::core::handlers::get_curriculum_create_options,
-        crate::modules::academic::core::handlers::list_study_program_options_for_year,
-        crate::modules::academic::core::handlers::create_curriculum,
-        crate::modules::academic::core::handlers::get_curriculum,
-        crate::modules::academic::core::handlers::update_curriculum,
-        crate::modules::academic::core::handlers::list_curriculum_levels,
-        crate::modules::academic::core::handlers::create_curriculum_level,
-        crate::modules::academic::core::handlers::copy_study_program,
-        crate::modules::academic::core::handlers::get_curriculum_level,
-        crate::modules::academic::core::handlers::get_curriculum_management_options,
-        crate::modules::academic::core::handlers::update_curriculum_level,
-        crate::modules::academic::core::handlers::publish_curriculum,
-        crate::modules::academic::core::handlers::open_curriculum_draft,
-        crate::modules::academic::core::handlers::discard_curriculum_draft,
-        crate::modules::academic::core::handlers::preview_curriculum_draft_discard,
-        crate::modules::academic::core::handlers::list_curriculum_publications,
-        crate::modules::academic::core::handlers::get_curriculum_publication_history,
-        crate::modules::academic::core::handlers::get_curriculum_structure_workspace,
-        crate::modules::academic::core::handlers::replace_curriculum_term_slots,
-        crate::modules::academic::core::handlers::list_study_programs,
-        crate::modules::academic::core::handlers::create_study_program,
-        crate::modules::academic::core::handlers::get_study_program,
-        crate::modules::academic::core::handlers::update_study_program,
-        crate::modules::academic::core::handlers::replace_curriculum_structure,
-        crate::modules::academic::core::handlers::list_homerooms,
-        crate::modules::academic::core::handlers::create_homeroom,
-        crate::modules::academic::core::handlers::get_homeroom,
-        crate::modules::academic::core::handlers::update_homeroom,
-        crate::modules::academic::core::handlers::list_homeroom_advisors,
-        crate::modules::academic::core::handlers::list_homeroom_advisors_for_year,
-        crate::modules::academic::core::handlers::replace_homeroom_advisors,
-        crate::modules::academic::core::handlers::list_student_years,
-        crate::modules::academic::core::handlers::list_student_year_candidates,
-        crate::modules::academic::core::handlers::create_student_year,
-        crate::modules::academic::core::handlers::get_student_year,
-        crate::modules::academic::core::handlers::update_student_year,
-        crate::modules::academic::core::handlers::list_placements,
-        crate::modules::academic::core::handlers::list_placements_for_year,
-        crate::modules::academic::core::handlers::create_placement,
-        crate::modules::academic::core::handlers::transfer_placement,
-        crate::modules::academic::core::handlers::get_homeroom_roster,
-        crate::modules::academic::core::handlers::list_homeroom_candidates,
-        crate::modules::academic::core::handlers::preview_homeroom_numbers,
-        crate::modules::academic::core::handlers::update_homeroom_numbers,
-        crate::modules::academic::core::handlers::mutate_homeroom_roster,
-        crate::modules::academic::core::handlers::list_homeroom_transfer_targets,
-
-        crate::modules::academic::delivery::handlers::list_offerings,
-        crate::modules::academic::delivery::handlers::get_delivery_overview,
-        crate::modules::academic::delivery::handlers::get_homeroom_delivery_workspace,
-        crate::modules::academic::delivery::handlers::get_delivery_management_options,
-        crate::modules::academic::delivery::handlers::create_offering,
-        crate::modules::academic::delivery::handlers::preview_offerings_from_curriculum,
-        crate::modules::academic::delivery::handlers::apply_offerings_from_curriculum,
-        crate::modules::academic::delivery::handlers::get_offering,
-        crate::modules::academic::delivery::handlers::update_offering,
-        crate::modules::academic::delivery::handlers::publish_offering,
-        crate::modules::academic::delivery::handlers::list_groups_for_term,
-        crate::modules::academic::delivery::handlers::list_groups,
-        crate::modules::academic::delivery::handlers::create_group,
-        crate::modules::academic::delivery::handlers::get_group,
-        crate::modules::academic::delivery::handlers::update_group,
-        crate::modules::academic::delivery::handlers::list_group_homerooms,
-        crate::modules::academic::delivery::handlers::replace_group_homerooms,
-        crate::modules::academic::delivery::handlers::list_group_teachers,
-        crate::modules::academic::delivery::handlers::replace_group_teachers,
-        crate::modules::academic::delivery::handlers::get_group_roster_tracking,
-        crate::modules::academic::delivery::handlers::update_group_roster_tracking,
-        crate::modules::academic::delivery::handlers::preview_group_roster,
-        crate::modules::academic::delivery::handlers::apply_group_roster,
-        crate::modules::academic::delivery::handlers::publish_group_roster,
-        crate::modules::academic::delivery::handlers::list_term_change_sets,
-        crate::modules::academic::delivery::version_handlers::list_versions,
-        crate::modules::academic::delivery::version_handlers::get_version,
-        crate::modules::academic::delivery::version_handlers::delete_version,
-        crate::modules::academic::delivery::handlers::create_term_change_set,
-        crate::modules::academic::delivery::handlers::get_term_change_set,
-        crate::modules::academic::delivery::handlers::update_term_change_set,
-        crate::modules::academic::delivery::handlers::upsert_term_change_item,
-        crate::modules::academic::delivery::handlers::delete_term_change_item,
-        crate::modules::academic::delivery::handlers::preview_term_change_set,
-        crate::modules::academic::handlers::teacher_handoff::preview_teacher_handoff,
-        crate::modules::academic::handlers::teacher_handoff::apply_teacher_handoff,
-        crate::modules::academic::delivery::handlers::publish_term_change_set,
-        crate::modules::academic::delivery::handlers::list_group_memberships,
-        crate::modules::academic::delivery::handlers::add_group_membership,
-        crate::modules::academic::delivery::handlers::end_group_membership,
-        crate::modules::academic::delivery::handlers::list_my_activity_registrations,
-        crate::modules::academic::delivery::handlers::enroll_my_activity_registration,
-        crate::modules::academic::delivery::handlers::unenroll_my_activity_registration,
-        crate::modules::supervision::handlers::list_cycles,
-        crate::modules::supervision::handlers::get_cycle,
-        crate::modules::supervision::handlers::get_template_summary,
-        crate::modules::supervision::handlers::create_cycle,
-        crate::modules::supervision::handlers::update_cycle,
-        crate::modules::supervision::handlers::list_templates,
-        crate::modules::supervision::handlers::list_template_summaries,
-        crate::modules::supervision::handlers::create_template,
-        crate::modules::supervision::handlers::get_template,
-        crate::modules::supervision::handlers::update_template,
-        crate::modules::supervision::handlers::list_observations,
-        crate::modules::supervision::handlers::get_observation,
-        crate::modules::supervision::handlers::get_observation_review,
-        crate::modules::supervision::handlers::evaluator_availability,
-        crate::modules::supervision::handlers::observation_timetable_options,
-        crate::modules::supervision::handlers::request_observation,
-        crate::modules::supervision::handlers::update_requested_observation,
-        crate::modules::supervision::handlers::cancel_requested_observation,
-        crate::modules::supervision::handlers::update_observation,
-        crate::modules::supervision::handlers::replace_observation_evaluators,
-        crate::modules::supervision::handlers::cancel_observation,
-        crate::modules::supervision::handlers::approve_observation_request,
-        crate::modules::supervision::handlers::return_observation_request,
-        crate::modules::supervision::handlers::submit_my_evaluation,
-        crate::modules::supervision::handlers::certify_observation,
-        crate::modules::supervision::handlers::approve_observation,
-        crate::modules::supervision::handlers::acknowledge_observation,
-        crate::modules::supervision::handlers::cycle_progress,
-        crate::modules::supervision::handlers::teacher_status_overview,
-        crate::modules::question_bank::handlers::list_options,
-        crate::modules::question_bank::handlers::list_questions,
-        crate::modules::question_bank::handlers::create_question,
-        crate::modules::question_bank::handlers::export_question_data,
-        crate::modules::question_bank::handlers::get_question,
-        crate::modules::question_bank::handlers::update_question,
-        crate::modules::question_bank::handlers::delete_question,
-        crate::modules::question_bank::handlers::get_question_file,
-        crate::modules::calendar::request_handlers::list_requests,
-        crate::modules::calendar::request_handlers::list_pending_calendar,
-        crate::modules::calendar::request_handlers::get_request_for_review,
-        crate::modules::calendar::request_handlers::create_request,
-        crate::modules::calendar::request_handlers::approve_request,
-        crate::modules::calendar::request_handlers::reject_request,
-        crate::modules::calendar::request_handlers::list_target_options,
-        crate::modules::calendar::handlers::list_my_calendar_events,
-        crate::modules::calendar::handlers::list_public_calendar_events,
-        crate::modules::calendar::handlers::list_calendar_events,
-        crate::modules::calendar::handlers::create_calendar_event,
-        crate::modules::calendar::handlers::update_calendar_event,
-        crate::modules::calendar::handlers::delete_calendar_event,
-        crate::modules::calendar::handlers::list_calendar_categories,
-        crate::modules::calendar::handlers::list_calendar_tags,
-        crate::modules::school::handlers::get_public_info,
-        crate::modules::school::handlers::get_public_statistics,
-        crate::modules::school::handlers::get_public_organization,
-        crate::modules::school::handlers::get_public_organization_avatar,
-        crate::modules::school::handlers::get_settings,
-        crate::modules::notification::handlers::list_notifications,
-        crate::modules::staff::handlers::roles::list_roles,
-        crate::modules::staff::handlers::roles::get_role,
-        crate::modules::staff::handlers::roles::create_role,
-        crate::modules::staff::handlers::roles::update_role,
-        crate::modules::staff::handlers::roles::deactivate_role,
-        crate::modules::staff::handlers::permissions::list_permissions,
-        crate::modules::staff::handlers::permissions::list_permissions_by_module,
-        crate::modules::staff::handlers::user_roles::get_user_roles,
-        crate::modules::staff::handlers::user_roles::assign_user_role,
-        crate::modules::staff::handlers::user_roles::remove_user_role,
-        crate::modules::staff::handlers::user_roles::get_user_permissions,
-        crate::modules::staff::handlers::roles::list_organization_units,
-        crate::modules::staff::handlers::roles::get_organization_unit,
-        crate::modules::staff::handlers::roles::create_organization_unit,
-        crate::modules::staff::handlers::roles::update_organization_unit,
-        crate::modules::staff::handlers::roles::deactivate_organization_unit,
-        crate::modules::staff::handlers::organization_permissions::get_organization_permissions,
-        crate::modules::staff::handlers::organization_permissions::update_organization_permissions,
-        crate::modules::staff::handlers::organization_delegations::list_delegatable_permissions,
-        crate::modules::staff::handlers::organization_delegations::list_delegations,
-        crate::modules::staff::handlers::organization_delegations::create_delegation,
-        crate::modules::staff::handlers::organization_delegations::revoke_delegation,
-        crate::modules::staff::handlers::organization_members::list_members,
-        crate::modules::staff::handlers::organization_members::add_member,
-        crate::modules::staff::handlers::organization_members::update_member,
-        crate::modules::staff::handlers::organization_members::remove_member
-    ),
     tags(
         (name = "auth", description = "Authentication and current-user operations"),
         (name = "consent", description = "Owned consent status and withdrawal"),
@@ -800,6 +988,16 @@ struct SchoolApiDoc;
         ApiResponse<SessionListData>,
         ApiResponse<LoginData>,
         ApiResponse<ProfileResponse>,
+)))]
+struct SchoolApiSchemasGroup1;
+
+#[inline(never)]
+fn build_schema_group_1() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup1::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         EmptyData,
         ApiResponse<EmptyData>,
         UuidIdData,
@@ -816,6 +1014,16 @@ struct SchoolApiDoc;
         ApiResponse<std::collections::HashMap<String, Vec<Permission>>>,
         ApiResponse<Vec<UserRoleAssignmentResponse>>,
         ApiResponse<Vec<String>>,
+)))]
+struct SchoolApiSchemasGroup2;
+
+#[inline(never)]
+fn build_schema_group_2() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup2::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         OrganizationUnit,
         CreateOrganizationUnitRequest,
         UpdateOrganizationUnitRequest,
@@ -832,6 +1040,16 @@ struct SchoolApiDoc;
         OrganizationMemberItem,
         ListMembersQuery,
         AddMemberRequest,
+)))]
+struct SchoolApiSchemasGroup3;
+
+#[inline(never)]
+fn build_schema_group_3() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup3::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         UpdateMemberRequest,
         ApiResponse<Vec<DelegatablePermission>>,
         ApiResponse<Vec<DelegationItem>>,
@@ -848,17 +1066,17 @@ struct SchoolApiDoc;
         Room,
         Building,
         CreateBuildingRequest,
-        UpdateBuildingRequest
 )))]
-struct SchoolApiSchemasGroup1;
+struct SchoolApiSchemasGroup4;
 
 #[inline(never)]
-fn build_schema_group_1() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup1::openapi()
+fn build_schema_group_4() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup4::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        UpdateBuildingRequest,
         CreateRoomRequest,
         UpdateRoomRequest,
         ApiResponse<Vec<Building>>,
@@ -874,6 +1092,16 @@ fn build_schema_group_1() -> utoipa::openapi::OpenApi {
         CertificateCampaignSummary,
         CertificateCampaignDetail,
         CertificateCampaignListQuery,
+)))]
+struct SchoolApiSchemasGroup5;
+
+#[inline(never)]
+fn build_schema_group_5() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup5::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         CertificateCampaignPurgeCounts,
         StartCertificateCampaignPurgeRequest,
         CertificateCampaignPurgeImpact,
@@ -890,49 +1118,69 @@ fn build_schema_group_1() -> utoipa::openapi::OpenApi {
         RecipientType,
         CertificateTemplateAssetKind,
         GeometryAction,
-        CertificatePreviewKind,
-        CertificateTemplateDeleteDisposition,
-        CertificateLayoutV1,
-        CertificateElement,
-        CertificateFontSource,
-        SchoolFontStyle,
-        SchoolFontUploadStatus,
-        SchoolFontSummary,
-        SchoolFontListResponse,
-        InspectSchoolFontUploadsRequest,
-        AttachSchoolFontBatchRequest,
-        SchoolFontUploadInspectionFile,
-        SchoolFontUploadInspection,
-        SchoolFontDeleteConflict,
-        ElementFrame,
-        TextElement,
-        TextAlignment,
-        TextShadow,
-        ImageElement,
-        QrElement,
-        CreateCertificateTemplateRequest,
-        UpdateCertificateTemplateRequest,
-        AttachCertificateBackgroundRequest,
-        AttachCertificateAssetRequest,
-        CertificatePageBox,
-        CertificatePageGeometry,
-        CertificateTemplateCapabilities,
-        CertificateTemplateAsset,
-        CertificateTemplateDetail,
-        CertificateTemplateDeleteResult,
-        CertificateTemplateVariableCatalog,
-        CertificatePreviewManifestRequest,
-        CertificateRenderFileGrant
 )))]
-struct SchoolApiSchemasGroup2;
+struct SchoolApiSchemasGroup6;
 
 #[inline(never)]
-fn build_schema_group_2() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup2::openapi()
+fn build_schema_group_6() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup6::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    CertificatePreviewKind,
+    CertificateTemplateDeleteDisposition,
+    CertificateLayoutV1,
+    CertificateElement,
+    CertificateFontSource,
+    SchoolFontStyle,
+    SchoolFontUploadStatus,
+    SchoolFontSummary,
+    SchoolFontListResponse,
+    InspectSchoolFontUploadsRequest,
+    AttachSchoolFontBatchRequest,
+    SchoolFontUploadInspectionFile,
+    SchoolFontUploadInspection,
+    SchoolFontDeleteConflict,
+    ElementFrame,
+    TextElement,
+)))]
+struct SchoolApiSchemasGroup7;
+
+#[inline(never)]
+fn build_schema_group_7() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup7::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    TextAlignment,
+    TextShadow,
+    ImageElement,
+    QrElement,
+    CreateCertificateTemplateRequest,
+    UpdateCertificateTemplateRequest,
+    AttachCertificateBackgroundRequest,
+    AttachCertificateAssetRequest,
+    CertificatePageBox,
+    CertificatePageGeometry,
+    CertificateTemplateCapabilities,
+    CertificateTemplateAsset,
+    CertificateTemplateDetail,
+    CertificateTemplateDeleteResult,
+    CertificateTemplateVariableCatalog,
+    CertificatePreviewManifestRequest,
+)))]
+struct SchoolApiSchemasGroup8;
+
+#[inline(never)]
+fn build_schema_group_8() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup8::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+        CertificateRenderFileGrant,
         CertificateBuiltInFont,
         CertificateRenderFontGrant,
         CertificateRenderImageGrant,
@@ -948,22 +1196,42 @@ fn build_schema_group_2() -> utoipa::openapi::OpenApi {
         ApiResponse<CertificateRenderManifest>,
         CertificateImportSource,
         CandidateMatchStatus,
-        CandidateValidationStatus,
-        CandidateNameSource,
-        CandidateValidationCode,
-        CertificateImportRequest,
-        CertificateImportRowInput,
-        CertificateCandidateListQuery,
-        CertificateAccountSearchQuery,
-        CertificateCandidateCapabilities,
-        CertificateCandidateDetail,
-        CertificateCandidateSummary,
-        CertificateCandidateListResponse,
-        CertificateImportBatchSummary,
-        CertificateCandidateImportResult,
-        CertificateCandidateAccount,
-        CreateManualExternalCandidateRequest,
-        CreateAccountCertificateCandidateRequest,
+)))]
+struct SchoolApiSchemasGroup9;
+
+#[inline(never)]
+fn build_schema_group_9() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup9::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    CandidateValidationStatus,
+    CandidateNameSource,
+    CandidateValidationCode,
+    CertificateImportRequest,
+    CertificateImportRowInput,
+    CertificateCandidateListQuery,
+    CertificateAccountSearchQuery,
+    CertificateCandidateCapabilities,
+    CertificateCandidateDetail,
+    CertificateCandidateSummary,
+    CertificateCandidateListResponse,
+    CertificateImportBatchSummary,
+    CertificateCandidateImportResult,
+    CertificateCandidateAccount,
+    CreateManualExternalCandidateRequest,
+    CreateAccountCertificateCandidateRequest,
+)))]
+struct SchoolApiSchemasGroup10;
+
+#[inline(never)]
+fn build_schema_group_10() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup10::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         UpdateCertificateCandidateRequest,
         CertificateCandidateBulkRequest,
         CertificateCandidateBulkResult,
@@ -980,6 +1248,16 @@ fn build_schema_group_2() -> utoipa::openapi::OpenApi {
         CertificateIssueRequestListQuery,
         CertificateIssueRequestCapabilities,
         CertificateIssueRequestSummary,
+)))]
+struct SchoolApiSchemasGroup11;
+
+#[inline(never)]
+fn build_schema_group_11() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup11::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         CertificateIssueRequestItem,
         CertificateIssueRequestDetail,
         CertificateResourceLocked,
@@ -996,17 +1274,17 @@ fn build_schema_group_2() -> utoipa::openapi::OpenApi {
         RevokeCertificateRequest,
         CertificateReplacementCandidate,
         RevokeCertificateResult,
-        CertificateRenderManifestBatchRequest
 )))]
-struct SchoolApiSchemasGroup3;
+struct SchoolApiSchemasGroup12;
 
 #[inline(never)]
-fn build_schema_group_3() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup3::openapi()
+fn build_schema_group_12() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup12::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        CertificateRenderManifestBatchRequest,
         ManualCertificateVerificationRequest,
         QrCertificateVerificationRequest,
         PublicCertificateRenderRequest,
@@ -1022,6 +1300,16 @@ fn build_schema_group_3() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<GradeLevelLookupItem>>,
         ApiResponse<Vec<HomeroomLookupItem>>,
         ApiResponse<Vec<AcademicYearLookupItem>>,
+)))]
+struct SchoolApiSchemasGroup13;
+
+#[inline(never)]
+fn build_schema_group_13() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup13::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<Vec<StudentLookupItem>>,
         ApiResponse<Vec<Room>>,
         MenuItemResponse,
@@ -1038,6 +1326,16 @@ fn build_schema_group_3() -> utoipa::openapi::OpenApi {
         CreateMenuItemRequest,
         UpdateMenuItemRequest,
         ReorderItem,
+)))]
+struct SchoolApiSchemasGroup14;
+
+#[inline(never)]
+fn build_schema_group_14() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup14::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ReorderRequest,
         ReorderGroupsRequest,
         ReorderWorkspacesRequest,
@@ -1054,6 +1352,16 @@ fn build_schema_group_3() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<MenuGroup>>,
         ApiResponse<Vec<MenuItem>>,
         ApiResponse<AcademicMenuTemplatePreview>,
+)))]
+struct SchoolApiSchemasGroup15;
+
+#[inline(never)]
+fn build_schema_group_15() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup15::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<AcademicMenuTemplateApplyResult>,
         FeatureToggle,
         FeatureListResponse,
@@ -1065,22 +1373,74 @@ fn build_schema_group_3() -> utoipa::openapi::OpenApi {
         OrganizationUnitResponse,
         TeachingAssignmentItem,
         AdvisorHomeroomItem,
-        PersonnelOverview,PersonnelBucket,PersonnelStatusFilter,PersonnelDimension,ApiResponse<PersonnelOverview>,
-        StaffSubjectGroupSummary, StaffAcademicRank, StaffEducationLevel, StaffJobPositionSummary,
-        UpdateStaffInfoRequest, JobPositionPage,
-        ApiResponse<JobPositionPage>,
-        StaffPersonnelType,StaffCareerKind,StaffCareerSource,StaffCareerFact,StaffCareerEntryInput,StaffCareerReference,StaffCareerCurrent,StaffCareerEntry,CreateStaffCareerRequest,StaffCareerCurrentChange,UpdateStaffCareerRequest,CreateStaffCareerHistoryRequest,CorrectStaffCareerHistoryRequest,StaffCareerHistoryPage,StaffCareerMutationAck,ApiResponse<StaffCareerHistoryPage>,ApiResponse<StaffCareerMutationAck>,
-        RankMilestone,RankMilestoneStatus,RankMilestoneReason,RankCriteriaVersion,RankCriteriaSource,RankMilestoneOverview,RankMilestonePerson,RankMilestoneCounts,ApiResponse<RankMilestoneOverview>
+        PersonnelOverview,
+        PersonnelBucket,
+        PersonnelStatusFilter,
+        PersonnelDimension,
+        ApiResponse<PersonnelOverview>,
 )))]
-struct SchoolApiSchemasGroup4;
+struct SchoolApiSchemasGroup16;
 
 #[inline(never)]
-fn build_schema_group_4() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup4::openapi()
+fn build_schema_group_16() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup16::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        StaffSubjectGroupSummary,
+        StaffAcademicRank,
+        StaffEducationLevel,
+        StaffJobPositionSummary,
+        UpdateStaffInfoRequest,
+        JobPositionPage,
+        ApiResponse<JobPositionPage>,
+        StaffPersonnelType,
+        StaffCareerKind,
+        StaffCareerSource,
+        StaffCareerFact,
+        StaffCareerEntryInput,
+        StaffCareerReference,
+        StaffCareerCurrent,
+        StaffCareerEntry,
+        CreateStaffCareerRequest,
+)))]
+struct SchoolApiSchemasGroup17;
+
+#[inline(never)]
+fn build_schema_group_17() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup17::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+        StaffCareerCurrentChange,
+        UpdateStaffCareerRequest,
+        CreateStaffCareerHistoryRequest,
+        CorrectStaffCareerHistoryRequest,
+        StaffCareerHistoryPage,
+        StaffCareerMutationAck,
+        ApiResponse<StaffCareerHistoryPage>,
+        ApiResponse<StaffCareerMutationAck>,
+        RankMilestone,
+        RankMilestoneStatus,
+        RankMilestoneReason,
+        RankCriteriaVersion,
+        RankCriteriaSource,
+        RankMilestoneOverview,
+        RankMilestonePerson,
+        RankMilestoneCounts,
+)))]
+struct SchoolApiSchemasGroup18;
+
+#[inline(never)]
+fn build_schema_group_18() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup18::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+        ApiResponse<RankMilestoneOverview>,
         StaffInfoResponse,
         StaffProfileResponse,
         CreateStaffInfoRequest,
@@ -1096,6 +1456,16 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         ApiResponse<PublicStaffProfile>,
         ParentDto,
         StudentDbRow,
+)))]
+struct SchoolApiSchemasGroup19;
+
+#[inline(never)]
+fn build_schema_group_19() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup19::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         StudentProfile,
         StudentListItem,
         StudentListResponse,
@@ -1112,6 +1482,16 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         ApiResponse<Achievement>,
         ChildDto,
         ParentProfile,
+)))]
+struct SchoolApiSchemasGroup20;
+
+#[inline(never)]
+fn build_schema_group_20() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup20::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<StudentProfile>,
         ApiResponse<StudentListResponse>,
         ApiResponse<ParentProfile>,
@@ -1128,33 +1508,43 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         BellSchedulePeriodInput,
         ReplaceBellSchedulePeriodsRequest,
         GradeProgressionInput,
-        ReplaceGradeProgressionsRequest,
-        AcademicYear,
-        AcademicTerm,
-        AcademicYearOption,
-        AcademicTermOption,
-        AcademicContextOptions,
-        CreateBellScheduleRequest,
-        UpdateBellScheduleRequest,
-        BellSchedule,
-        BellSchedulePeriod,
-        GradeProgression,
-        GradeProgressionSet,
-        CatalogDisplayState,
-        CatalogOwnerOption,
-        CatalogSubjectGroupOption,
-        CatalogSubject,
-        CatalogSubjectOverviewItem
 )))]
-struct SchoolApiSchemasGroup5;
+struct SchoolApiSchemasGroup21;
 
 #[inline(never)]
-fn build_schema_group_5() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup5::openapi()
+fn build_schema_group_21() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup21::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    ReplaceGradeProgressionsRequest,
+    AcademicYear,
+    AcademicTerm,
+    AcademicYearOption,
+    AcademicTermOption,
+    AcademicContextOptions,
+    CreateBellScheduleRequest,
+    UpdateBellScheduleRequest,
+    BellSchedule,
+    BellSchedulePeriod,
+    GradeProgression,
+    GradeProgressionSet,
+    CatalogDisplayState,
+    CatalogOwnerOption,
+    CatalogSubjectGroupOption,
+    CatalogSubject,
+)))]
+struct SchoolApiSchemasGroup22;
+
+#[inline(never)]
+fn build_schema_group_22() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup22::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    CatalogSubjectOverviewItem,
     CatalogSubjectOverview,
     CreateCatalogSubjectRequest,
     UpdateCatalogSubjectRequest,
@@ -1170,6 +1560,16 @@ fn build_schema_group_5() -> utoipa::openapi::OpenApi {
     CreateActivityVersionRequest,
     UpdateActivityVersionRequest,
     DefaultTeacher,
+)))]
+struct SchoolApiSchemasGroup23;
+
+#[inline(never)]
+fn build_schema_group_23() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup23::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
     ReplaceDefaultTeachersRequest,
     SubjectGroup,
     CreateSubjectGroupRequest,
@@ -1186,6 +1586,16 @@ fn build_schema_group_5() -> utoipa::openapi::OpenApi {
     StudyProgram,
     StudyProgramOption,
     CreateStudyProgramRequest,
+)))]
+struct SchoolApiSchemasGroup24;
+
+#[inline(never)]
+fn build_schema_group_24() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup24::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
     UpdateStudyProgramRequest,
     RequirementKind,
     RequirementResourceKind,
@@ -1202,6 +1612,16 @@ fn build_schema_group_5() -> utoipa::openapi::OpenApi {
     CurriculumStructureWorkspace,
     CurriculumTermSlotInput,
     ReplaceCurriculumTermSlotsRequest,
+)))]
+struct SchoolApiSchemasGroup25;
+
+#[inline(never)]
+fn build_schema_group_25() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup25::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
     CurriculumStructureRequirementInput,
     ReplaceCurriculumStructureRequest,
     AcademicSetupWorkspace,
@@ -1218,32 +1638,42 @@ fn build_schema_group_5() -> utoipa::openapi::OpenApi {
     CreateStudentAcademicYearRequest,
     UpdateStudentAcademicYearRequest,
     StudentAcademicYearFilter,
-    HomeroomPlacementStatus
 )))]
-struct SchoolApiSchemasGroup6;
+struct SchoolApiSchemasGroup26;
 
 #[inline(never)]
-fn build_schema_group_6() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup6::openapi()
+fn build_schema_group_26() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup26::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
-        HomeroomPlacement,
-        CreateHomeroomPlacementRequest,
-        TransferHomeroomPlacementRequest,
-        HomeroomPlacementTransfer,
-        HomeroomRosterStudent,
-        HomeroomRoster,
-        HomeroomNumberingMethod,
-        HomeroomNumberingQuery,
-        HomeroomNumberInput,
-        UpdateHomeroomNumbersRequest,
-        HomeroomNumberingPreview,
-        HomeroomRosterCandidate,
-        HomeroomCandidateQuery,
-        HomeroomRosterAction,
-        HomeroomRosterSelection,
+    HomeroomPlacementStatus,
+    HomeroomPlacement,
+    CreateHomeroomPlacementRequest,
+    TransferHomeroomPlacementRequest,
+    HomeroomPlacementTransfer,
+    HomeroomRosterStudent,
+    HomeroomRoster,
+    HomeroomNumberingMethod,
+    HomeroomNumberingQuery,
+    HomeroomNumberInput,
+    UpdateHomeroomNumbersRequest,
+    HomeroomNumberingPreview,
+    HomeroomRosterCandidate,
+    HomeroomCandidateQuery,
+    HomeroomRosterAction,
+    HomeroomRosterSelection,
+)))]
+struct SchoolApiSchemasGroup27;
+
+#[inline(never)]
+fn build_schema_group_27() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup27::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         MutateHomeroomRosterRequest,
         ApiResponse<HomeroomRoster>,
         ApiResponse<HomeroomNumberingPreview>,
@@ -1260,6 +1690,16 @@ fn build_schema_group_6() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<CatalogSubject>>,
         ApiResponse<CatalogSubjectOverview>,
         ApiResponse<CatalogSubject>,
+)))]
+struct SchoolApiSchemasGroup28;
+
+#[inline(never)]
+fn build_schema_group_28() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup28::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<Vec<SubjectVersion>>,
         ApiResponse<SubjectVersion>,
         ApiResponse<Vec<DefaultTeacher>>,
@@ -1276,6 +1716,16 @@ fn build_schema_group_6() -> utoipa::openapi::OpenApi {
         ApiResponse<CurriculumManagementOptions>,
         ApiResponse<CurriculumEdition>,
         ApiResponse<Vec<CurriculumLevel>>,
+)))]
+struct SchoolApiSchemasGroup29;
+
+#[inline(never)]
+fn build_schema_group_29() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup29::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<CurriculumLevel>,
         ApiResponse<Vec<StudyProgram>>,
         ApiResponse<Vec<StudyProgramOption>>,
@@ -1292,17 +1742,17 @@ fn build_schema_group_6() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<HomeroomPlacement>>,
         ApiResponse<HomeroomPlacement>,
         ApiResponse<HomeroomPlacementTransfer>,
-        SaveAssessmentPlanRequest
 )))]
-struct SchoolApiSchemasGroup7;
+struct SchoolApiSchemasGroup30;
 
 #[inline(never)]
-fn build_schema_group_7() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup7::openapi()
+fn build_schema_group_30() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup30::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        SaveAssessmentPlanRequest,
         SaveAssessmentPhaseRequest,
         AssessmentPhaseCode,
         AssessmentExamArrangement,
@@ -1318,22 +1768,42 @@ fn build_schema_group_7() -> utoipa::openapi::OpenApi {
         ApiResponse<AssessmentPlanDetail>,
         ApiResponse<Vec<AssessmentPhaseControl>>,
         ApiResponse<AssessmentPhaseControl>,
-        GradebookContext,
-        ItemInput,
-        ScoreCellMutation,
-        ConfirmInput,
-        ScoreItem,
-        ScoreItemRemovalDisposition,
-        ScoreItemRemovalOutcome,
-        ScoreCell,
-        GradebookStudent,
-        PhaseConfirmation,
-        GroupPhaseWorkspace,
-        ScoreBatchOutcome,
-        GradebookControl,
-        UpdateControlInput,
-        GradebookSubject,
-        GradebookPhaseSummary,
+)))]
+struct SchoolApiSchemasGroup31;
+
+#[inline(never)]
+fn build_schema_group_31() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup31::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    GradebookContext,
+    ItemInput,
+    ScoreCellMutation,
+    ConfirmInput,
+    ScoreItem,
+    ScoreItemRemovalDisposition,
+    ScoreItemRemovalOutcome,
+    ScoreCell,
+    GradebookStudent,
+    PhaseConfirmation,
+    GroupPhaseWorkspace,
+    ScoreBatchOutcome,
+    GradebookControl,
+    UpdateControlInput,
+    GradebookSubject,
+    GradebookPhaseSummary,
+)))]
+struct SchoolApiSchemasGroup32;
+
+#[inline(never)]
+fn build_schema_group_32() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup32::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         RemoveItemInput,
         ScoreBatchInput,
         ApiResponse<Vec<GradebookSubject>>,
@@ -1350,33 +1820,43 @@ fn build_schema_group_7() -> utoipa::openapi::OpenApi {
         EvaluationCriterion,
         CriterionInput,
         CatalogCriterion,
-        CatalogInput,
-        EvaluationConfiguration,
-        EvaluationControl,
-        ControlInput,
-        EvaluationStudent,
-        EvaluationResponse,
-        ResponseInput,
-        ResponseBatchInput,
-        EvaluationConfirmation,
-        ConfirmationInput,
-        MissingEvaluation,
-        ConfirmationOutcome,
-        EvaluationWorkspace,
-        EvaluationLock,
-        LockBlocker,
-        LockOutcome,
-        LearnerEvaluationGroupLockReadiness
 )))]
-struct SchoolApiSchemasGroup8;
+struct SchoolApiSchemasGroup33;
 
 #[inline(never)]
-fn build_schema_group_8() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup8::openapi()
+fn build_schema_group_33() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup33::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    CatalogInput,
+    EvaluationConfiguration,
+    EvaluationControl,
+    ControlInput,
+    EvaluationStudent,
+    EvaluationResponse,
+    ResponseInput,
+    ResponseBatchInput,
+    EvaluationConfirmation,
+    ConfirmationInput,
+    MissingEvaluation,
+    ConfirmationOutcome,
+    EvaluationWorkspace,
+    EvaluationLock,
+    LockBlocker,
+    LockOutcome,
+)))]
+struct SchoolApiSchemasGroup34;
+
+#[inline(never)]
+fn build_schema_group_34() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup34::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+        LearnerEvaluationGroupLockReadiness,
         LearnerEvaluationSubjectLockReadiness,
         CriterionRemoval,
         VersionInput,
@@ -1392,6 +1872,16 @@ fn build_schema_group_8() -> utoipa::openapi::OpenApi {
         StudentEvaluationSummary,
         EvaluationSubject,
         ApiResponse<Vec<AggregationPolicyVersion>>,
+)))]
+struct SchoolApiSchemasGroup35;
+
+#[inline(never)]
+fn build_schema_group_35() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup35::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<AggregationPolicyVersion>,
         ApiResponse<Vec<EvaluationSubject>>,
         ApiResponse<Vec<CatalogCriterion>>,
@@ -1408,6 +1898,16 @@ fn build_schema_group_8() -> utoipa::openapi::OpenApi {
         ApiResponse<StudentEvaluationSummary>,
         ResultContext,
         TermResultPreviewQuery,
+)))]
+struct SchoolApiSchemasGroup36;
+
+#[inline(never)]
+fn build_schema_group_36() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup36::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         CourseAggregateInput,
         CourseCreditTotals,
         ActivityAggregateInput,
@@ -1424,6 +1924,16 @@ fn build_schema_group_8() -> utoipa::openapi::OpenApi {
         TermAggregateRevision,
         AnnualResultContext,
         AnnualResultStudent,
+)))]
+struct SchoolApiSchemasGroup37;
+
+#[inline(never)]
+fn build_schema_group_37() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup37::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         AnnualClosureStudent,
         AnnualClosureCoverage,
         ApiResponse<Vec<AnnualResultStudent>>,
@@ -1440,48 +1950,68 @@ fn build_schema_group_8() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<AggregateStudent>>,
         TermTransitionAction,
         TermTransitionRequest,
-        TermTransitionOutcome
 )))]
-struct SchoolApiSchemasGroup9;
+struct SchoolApiSchemasGroup38;
 
 #[inline(never)]
-fn build_schema_group_9() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup9::openapi()
+fn build_schema_group_38() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup38::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
-        TermLifecycleContext,
-        TermLifecycleQuery,
-        TermLifecycleWorkspace,
-        TermActivationWorkspace,
-        OpeningPolicy,
-        UpdateOpeningPolicyInput,
-        YearLifecycleContext,
-        YearTermLifecycleState,
-        YearTransitionAction,
-        YearTransitionRequest,
-        YearTransitionOutcome,
-        YearReopeningRequest,
-        YearReopeningOutcome,
-        YearReopeningWorkspace,
-        YearLifecycleWorkspace,
-        PromotionPolicyInput,
-        PromotionRun,
-        PromotionRunStatus,
-        PromotionDecisionOutcome,
-        PromotionDecisionInput,
-        CreatePromotionRunInput,
-        CalculatePromotionRunInput,
-        ApprovePromotionRunInput,
-        ExecutePromotionRunInput,
-        ReviewPromotionItemInput,
-        PromotionRunItem,
-        PromotionItemStatus,
-        PromotionItemReview,
-        PromotionRunCalculation,
-        PromotionExecutionReceipt,
-        PromotionExecutionFailure,
+    TermTransitionOutcome,
+    TermLifecycleContext,
+    TermLifecycleQuery,
+    TermLifecycleWorkspace,
+    TermActivationWorkspace,
+    OpeningPolicy,
+    UpdateOpeningPolicyInput,
+    YearLifecycleContext,
+    YearTermLifecycleState,
+    YearTransitionAction,
+    YearTransitionRequest,
+    YearTransitionOutcome,
+    YearReopeningRequest,
+    YearReopeningOutcome,
+    YearReopeningWorkspace,
+    YearLifecycleWorkspace,
+)))]
+struct SchoolApiSchemasGroup39;
+
+#[inline(never)]
+fn build_schema_group_39() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup39::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    PromotionPolicyInput,
+    PromotionRun,
+    PromotionRunStatus,
+    PromotionDecisionOutcome,
+    PromotionDecisionInput,
+    CreatePromotionRunInput,
+    CalculatePromotionRunInput,
+    ApprovePromotionRunInput,
+    ExecutePromotionRunInput,
+    ReviewPromotionItemInput,
+    PromotionRunItem,
+    PromotionItemStatus,
+    PromotionItemReview,
+    PromotionRunCalculation,
+    PromotionExecutionReceipt,
+    PromotionExecutionFailure,
+)))]
+struct SchoolApiSchemasGroup40;
+
+#[inline(never)]
+fn build_schema_group_40() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup40::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         PromotionExecutionResult,
         PromotionRunListQuery,
         PromotionRunList,
@@ -1498,6 +2028,16 @@ fn build_schema_group_9() -> utoipa::openapi::OpenApi {
         PromotionImpactResolution,
         ApiResponse<PromotionImpactResolution>,
         ApiResponse<PromotionRun>,
+)))]
+struct SchoolApiSchemasGroup41;
+
+#[inline(never)]
+fn build_schema_group_41() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup41::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<PromotionRunCalculation>,
         ApiResponse<PromotionItemReview>,
         ApiResponse<PromotionExecutionResult>,
@@ -1514,17 +2054,17 @@ fn build_schema_group_9() -> utoipa::openapi::OpenApi {
         PromotionRecommendationFinding,
         ApiResponse<PromotionPolicyVersion>,
         ApiResponse<Vec<PromotionPolicyVersion>>,
-        ApiResponse<YearLifecycleWorkspace>
 )))]
-struct SchoolApiSchemasGroup10;
+struct SchoolApiSchemasGroup42;
 
 #[inline(never)]
-fn build_schema_group_10() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup10::openapi()
+fn build_schema_group_42() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup42::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        ApiResponse<YearLifecycleWorkspace>,
         ApiResponse<YearTransitionOutcome>,
         ApiResponse<YearReopeningOutcome>,
         ApiResponse<YearReopeningWorkspace>,
@@ -1540,6 +2080,16 @@ fn build_schema_group_10() -> utoipa::openapi::OpenApi {
         TermPreparationDateMapping,
         TermPreparationMappings,
         PreviewTermPreparationInput,
+)))]
+struct SchoolApiSchemasGroup43;
+
+#[inline(never)]
+fn build_schema_group_43() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup43::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApplyTermPreparationInput,
         TermPreparationContext,
         TermPreparationMappingOption,
@@ -1556,49 +2106,69 @@ fn build_schema_group_10() -> utoipa::openapi::OpenApi {
         ApiResponse<TermAggregatePreview>,
         ApiResponse<TermAggregateRevision>,
         ApiResponse<Vec<TermAggregateRevision>>,
-        GradingPolicyBand,
-        GradingPolicyInput,
-        GradingPolicyVersion,
-        CourseOutcomeSelection,
-        ActivityOutcome,
-        SelectionInput,
-        ActivityCellInput,
-        ActivityBatchInput,
-        ResultConfirmationInput,
-        PolicyActivationInput,
-        ResultConfirmation,
-        ResultBlockerCode,
-        ResultBlocker,
-        PreparedCourseStudent,
-        PreparedActivityStudent,
-        CoursePreparationWorkspace,
-        ActivityPreparationWorkspace,
-        GroupResultReadiness,
-        SubjectResultReadiness,
-        ResultReadiness,
-        CourseResultLock,
-        CourseResultLockOutcome,
-        ActivityResultLock,
-        ActivityResultLockOutcome,
-        BulkActivityResultLockOutcome,
-        CourseOfficialOutcome,
-        ResultCorrectionInput,
-        EffectiveResultValue,
-        ResultCorrectionRecord,
-        EffectiveResult,
-        EffectiveResultKind,
-        EffectiveResultSearch,
-        EffectiveResultSearchItem
 )))]
-struct SchoolApiSchemasGroup11;
+struct SchoolApiSchemasGroup44;
 
 #[inline(never)]
-fn build_schema_group_11() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup11::openapi()
+fn build_schema_group_44() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup44::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    GradingPolicyBand,
+    GradingPolicyInput,
+    GradingPolicyVersion,
+    CourseOutcomeSelection,
+    ActivityOutcome,
+    SelectionInput,
+    ActivityCellInput,
+    ActivityBatchInput,
+    ResultConfirmationInput,
+    PolicyActivationInput,
+    ResultConfirmation,
+    ResultBlockerCode,
+    ResultBlocker,
+    PreparedCourseStudent,
+    PreparedActivityStudent,
+    CoursePreparationWorkspace,
+)))]
+struct SchoolApiSchemasGroup45;
+
+#[inline(never)]
+fn build_schema_group_45() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup45::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    ActivityPreparationWorkspace,
+    GroupResultReadiness,
+    SubjectResultReadiness,
+    ResultReadiness,
+    CourseResultLock,
+    CourseResultLockOutcome,
+    ActivityResultLock,
+    ActivityResultLockOutcome,
+    BulkActivityResultLockOutcome,
+    CourseOfficialOutcome,
+    ResultCorrectionInput,
+    EffectiveResultValue,
+    ResultCorrectionRecord,
+    EffectiveResult,
+    EffectiveResultKind,
+    EffectiveResultSearch,
+)))]
+struct SchoolApiSchemasGroup46;
+
+#[inline(never)]
+fn build_schema_group_46() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup46::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+        EffectiveResultSearchItem,
         ApiResponse<Vec<GradingPolicyVersion>>,
         ApiResponse<GradingPolicyVersion>,
         ApiResponse<CoursePreparationWorkspace>,
@@ -1614,80 +2184,120 @@ fn build_schema_group_11() -> utoipa::openapi::OpenApi {
         OfferingTargetKind,
         ActivityRegistrationType,
         ActivitySchedulingMode,
-        LearningTeacherRole,
-        RosterStatus,
-        MembershipStatus,
-        RosterOverrideAction,
-        CurriculumPreviewAction,
-        ActivityAttendanceRequirement,
-        ActivityPassCriteria,
-        OfferingTargetInput,
-        CreateCourseOfferingRequest,
-        CreateActivityOfferingRequest,
-        CreateLearningOfferingRequest,
-        CreateLearningOfferingQuery,
-        UpdateLearningOfferingRequest,
-        PublishLearningOfferingRequest,
-        LearningOfferingQuery,
-        HomeroomDeliveryQuery,
-        LearningGroupTermQuery,
-        PreviewCurriculumOfferingsRequest,
-        ApplyCurriculumOfferingsRequest,
-        LearningOfferingTarget,
-        CourseOfferingSnapshot,
-        ActivityOfferingSnapshot,
-        LearningOfferingSnapshot,
-        LearningOffering,
-        LearningOfferingOverviewItem,
-        LearningDeliveryOverview,
-        HomeroomOfferingState,
-        HomeroomGroupMode,
-        HomeroomTeacherState,
-        DeliveryPrerequisite,
-        UnlinkedDeliveryItem,
-        HomeroomDeliveryGroupSummary,
-        HomeroomDeliveryItem,
-        HomeroomDeliveryRoom,
-        HomeroomDeliveryWorkspace,
-        DeliveryCatalogVersionOption,
-        DeliveryManagementOptions,
-        PreparationAction,
-        PreparationGroupingState,
-        CurriculumGroupProposal,
-        PreparationConflict,
-        CurriculumPreparationProposal,
-        CurriculumPreparationChoice,
-        CurriculumOfferingPreview,
-        ApplyCurriculumOfferingsResult,
-        CreateLearningGroupRequest,
-        UpdateLearningGroupRequest,
-        TeacherAssignmentInput,
-        LearningGroupTeacherAssignment
 )))]
-struct SchoolApiSchemasGroup12;
+struct SchoolApiSchemasGroup47;
 
 #[inline(never)]
-fn build_schema_group_12() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup12::openapi()
+fn build_schema_group_47() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup47::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
-        ReplaceLearningGroupTeachersRequest,
-        ReplaceLearningGroupHomeroomsRequest,
-        LearningGroupHomeroomIds,
-        LearningGroup,
-        RosterPreviewStudent,
-        RosterPreview,
-        RosterOverrideInput,
-        ApplyRosterRequest,
-        PublishRosterRequest,
-        LearningGroupStudent,
-        AcademicTermChangeSetStatus,
-        DeliveryVersionStatus,
-        DeliverySnapshot,
-        DeliveryVersionOffering,
-        DeliveryVersionGroup,
+    LearningTeacherRole,
+    RosterStatus,
+    MembershipStatus,
+    RosterOverrideAction,
+    CurriculumPreviewAction,
+    ActivityAttendanceRequirement,
+    ActivityPassCriteria,
+    OfferingTargetInput,
+    CreateCourseOfferingRequest,
+    CreateActivityOfferingRequest,
+    CreateLearningOfferingRequest,
+    CreateLearningOfferingQuery,
+    UpdateLearningOfferingRequest,
+    PublishLearningOfferingRequest,
+    LearningOfferingQuery,
+    HomeroomDeliveryQuery,
+)))]
+struct SchoolApiSchemasGroup48;
+
+#[inline(never)]
+fn build_schema_group_48() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup48::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    LearningGroupTermQuery,
+    PreviewCurriculumOfferingsRequest,
+    ApplyCurriculumOfferingsRequest,
+    LearningOfferingTarget,
+    CourseOfferingSnapshot,
+    ActivityOfferingSnapshot,
+    LearningOfferingSnapshot,
+    LearningOffering,
+    LearningOfferingOverviewItem,
+    LearningDeliveryOverview,
+    HomeroomOfferingState,
+    HomeroomGroupMode,
+    HomeroomTeacherState,
+    DeliveryPrerequisite,
+    UnlinkedDeliveryItem,
+    HomeroomDeliveryGroupSummary,
+)))]
+struct SchoolApiSchemasGroup49;
+
+#[inline(never)]
+fn build_schema_group_49() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup49::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    HomeroomDeliveryItem,
+    HomeroomDeliveryRoom,
+    HomeroomDeliveryWorkspace,
+    DeliveryCatalogVersionOption,
+    DeliveryManagementOptions,
+    PreparationAction,
+    PreparationGroupingState,
+    CurriculumGroupProposal,
+    PreparationConflict,
+    CurriculumPreparationProposal,
+    CurriculumPreparationChoice,
+    CurriculumOfferingPreview,
+    ApplyCurriculumOfferingsResult,
+    CreateLearningGroupRequest,
+    UpdateLearningGroupRequest,
+    TeacherAssignmentInput,
+)))]
+struct SchoolApiSchemasGroup50;
+
+#[inline(never)]
+fn build_schema_group_50() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup50::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    LearningGroupTeacherAssignment,
+    ReplaceLearningGroupTeachersRequest,
+    ReplaceLearningGroupHomeroomsRequest,
+    LearningGroupHomeroomIds,
+    LearningGroup,
+    RosterPreviewStudent,
+    RosterPreview,
+    RosterOverrideInput,
+    ApplyRosterRequest,
+    PublishRosterRequest,
+    LearningGroupStudent,
+    AcademicTermChangeSetStatus,
+    DeliveryVersionStatus,
+    DeliverySnapshot,
+    DeliveryVersionOffering,
+    DeliveryVersionGroup,
+)))]
+struct SchoolApiSchemasGroup51;
+
+#[inline(never)]
+fn build_schema_group_51() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup51::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         DeliveryVersionTeacher,
         DeliveryVersion,
         DeliveryVersionSummary,
@@ -1704,22 +2314,42 @@ fn build_schema_group_12() -> utoipa::openapi::OpenApi {
         UpdateAcademicTermChangeSetRequest,
         DeliveryPublicationPreviewQuery,
         AcademicTermChangeSetQuery,
-        UpsertAcademicTermChangeItemRequest,
-        DeleteAcademicTermChangeItemRequest,
-        AcademicChangeFindingSeverity,
-        AcademicChangeFindingCode,
-        AcademicChangeFinding,
-        AcademicChangeImpactCounts,
-        AcademicTermChangeSetPreview,
-        PublishAcademicTermChangeSetRequest,
-        TeacherHandoffMode,
-        PreviewTeacherHandoffRequest,
-        TeacherHandoffEntryVersion,
-        ApplyTeacherHandoffRequest,
-        TeacherHandoffInstructorPreview,
-        TeacherHandoffConflictKind,
-        TeacherHandoffConflict,
-        TeacherHandoffEntryPreview,
+)))]
+struct SchoolApiSchemasGroup52;
+
+#[inline(never)]
+fn build_schema_group_52() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup52::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    UpsertAcademicTermChangeItemRequest,
+    DeleteAcademicTermChangeItemRequest,
+    AcademicChangeFindingSeverity,
+    AcademicChangeFindingCode,
+    AcademicChangeFinding,
+    AcademicChangeImpactCounts,
+    AcademicTermChangeSetPreview,
+    PublishAcademicTermChangeSetRequest,
+    TeacherHandoffMode,
+    PreviewTeacherHandoffRequest,
+    TeacherHandoffEntryVersion,
+    ApplyTeacherHandoffRequest,
+    TeacherHandoffInstructorPreview,
+    TeacherHandoffConflictKind,
+    TeacherHandoffConflict,
+    TeacherHandoffEntryPreview,
+)))]
+struct SchoolApiSchemasGroup53;
+
+#[inline(never)]
+fn build_schema_group_53() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup53::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         TeacherHandoffPreview,
         ApplyTeacherHandoffResponse,
         DatedRosterMembership,
@@ -1736,17 +2366,17 @@ fn build_schema_group_12() -> utoipa::openapi::OpenApi {
         ApiResponse<ApplyTeacherHandoffResponse>,
         ApiResponse<HomeroomDeliveryWorkspace>,
         ApiResponse<DeliveryManagementOptions>,
-        ApiResponse<CurriculumOfferingPreview>
 )))]
-struct SchoolApiSchemasGroup13;
+struct SchoolApiSchemasGroup54;
 
 #[inline(never)]
-fn build_schema_group_13() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup13::openapi()
+fn build_schema_group_54() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup54::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        ApiResponse<CurriculumOfferingPreview>,
         ApiResponse<ApplyCurriculumOfferingsResult>,
         ApiResponse<Vec<LearningGroup>>,
         ApiResponse<LearningGroup>,
@@ -1762,38 +2392,68 @@ fn build_schema_group_13() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<StudentActivityOfferingOption>>,
         ApiResponse<StudentActivityRegistrationResult>,
         TimetableTemplate,
-        TimetableTemplateEntry,
-        TimetableTemplateTargetSelector,
-        TemplateWithEntries,
-        CreateTemplateRequest,
-        UpdateTemplateRequest,
-        FromCurrentRequest,
-        ApplyTemplateRequest,
-        ClearTimetableRequest,
-        TemplateApplyResult,
-        TimetableBlockKind,
-        TimetableStructuralKind,
-        TimetableTargetKind,
-        TimetableBlockSyncStatus,
-        TimetableBlockConflictType,
-        TimetableBlockPlacementState,
-        TimetableBlockMutationKind,
-        TimetableBlockInstructor,
-        TimetableBlockGroup,
-        TimetableBlockHomeroom,
-        TimetableBlockTeacher,
-        TimetableBlockSyncState,
-        TimetableBlock,
-        TimetableBlockWorkspaceLearningGroup,
-        TimetableBlockWorkspaceHomeroom,
-        TimetableBlockWorkspaceRoom,
-        TimetableBlockWorkspaceStaff,
-        TimetableSubjectGroup,
-        TimetableOfferingSubjectGroup,
-        TimetableOrdinaryDemand,
-        TimetableSynchronizedDemand,
-        TimetableBlockSummary,
-        TimetableBlockWorkspace,
+)))]
+struct SchoolApiSchemasGroup55;
+
+#[inline(never)]
+fn build_schema_group_55() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup55::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    TimetableTemplateEntry,
+    TimetableTemplateTargetSelector,
+    TemplateWithEntries,
+    CreateTemplateRequest,
+    UpdateTemplateRequest,
+    FromCurrentRequest,
+    ApplyTemplateRequest,
+    ClearTimetableRequest,
+    TemplateApplyResult,
+    TimetableBlockKind,
+    TimetableStructuralKind,
+    TimetableTargetKind,
+    TimetableBlockSyncStatus,
+    TimetableBlockConflictType,
+    TimetableBlockPlacementState,
+    TimetableBlockMutationKind,
+)))]
+struct SchoolApiSchemasGroup56;
+
+#[inline(never)]
+fn build_schema_group_56() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup56::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    TimetableBlockInstructor,
+    TimetableBlockGroup,
+    TimetableBlockHomeroom,
+    TimetableBlockTeacher,
+    TimetableBlockSyncState,
+    TimetableBlock,
+    TimetableBlockWorkspaceLearningGroup,
+    TimetableBlockWorkspaceHomeroom,
+    TimetableBlockWorkspaceRoom,
+    TimetableBlockWorkspaceStaff,
+    TimetableSubjectGroup,
+    TimetableOfferingSubjectGroup,
+    TimetableOrdinaryDemand,
+    TimetableSynchronizedDemand,
+    TimetableBlockSummary,
+    TimetableBlockWorkspace,
+)))]
+struct SchoolApiSchemasGroup57;
+
+#[inline(never)]
+fn build_schema_group_57() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup57::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         CreateOrdinaryTimetableBlockRequest,
         CreateSynchronizedTimetableBlockRequest,
         TimetableStructuralSlotInput,
@@ -1810,17 +2470,17 @@ fn build_schema_group_13() -> utoipa::openapi::OpenApi {
         SwapTimetableBlocksRequest,
         SwapTimetableBlocksResponse,
         ApiResponse<TimetableBlock>,
-        ApiResponse<Vec<TimetableBlock>>
 )))]
-struct SchoolApiSchemasGroup14;
+struct SchoolApiSchemasGroup58;
 
 #[inline(never)]
-fn build_schema_group_14() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup14::openapi()
+fn build_schema_group_58() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup58::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        ApiResponse<Vec<TimetableBlock>>,
         ApiResponse<TimetableBlockWorkspace>,
         ApiResponse<TimetableBlockPlacementPreview>,
         ApiResponse<SwapTimetableBlocksResponse>,
@@ -1836,6 +2496,16 @@ fn build_schema_group_14() -> utoipa::openapi::OpenApi {
         PublishTimetableVersionRequest,
         TimetablePublicationPreview,
         TimetablePublicationFinding,
+)))]
+struct SchoolApiSchemasGroup59;
+
+#[inline(never)]
+fn build_schema_group_59() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup59::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         TimetablePublicationFindingCode,
         TimetableSourceIssue,
         TimetableSourceIssueCode,
@@ -1852,6 +2522,16 @@ fn build_schema_group_14() -> utoipa::openapi::OpenApi {
         DailyTeachingPeriodCell,
         DailyTeachingEntry,
         DailyTeachingSummary,
+)))]
+struct SchoolApiSchemasGroup60;
+
+#[inline(never)]
+fn build_schema_group_60() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup60::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<DailyTeachingOverview>,
         ExamRound,
         CreateExamRoundRequest,
@@ -1868,33 +2548,43 @@ fn build_schema_group_14() -> utoipa::openapi::OpenApi {
         ExamSourceSyncItemStatus,
         ExamSourceSyncItemResult,
         SyncExamSourcesRequest,
-        SyncExamSourcesResult,
-        DayRoomAssignmentView,
-        InvigilatorView,
-        ExamInvigilatorAssignmentSummary,
-        ExamInvigilatorDayWorkload,
-        ExamInvigilatorStaffWorkload,
-        ExamInvigilatorWorkspace,
-        ExamInvigilatorStaffOption,
-        GenerateSeatsRequest,
-        SeatAssignmentView,
-        PlaceExamSessionRequest,
-        ExamDayDetail,
-        ExamDayRoomAssignmentView,
-        ExamInvigilatorView,
-        ExamScheduleItem,
-        ExamScheduleItemView,
-        ExamPaperReceiptItem
 )))]
-struct SchoolApiSchemasGroup15;
+struct SchoolApiSchemasGroup61;
 
 #[inline(never)]
-fn build_schema_group_15() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup15::openapi()
+fn build_schema_group_61() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup61::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+    SyncExamSourcesResult,
+    DayRoomAssignmentView,
+    InvigilatorView,
+    ExamInvigilatorAssignmentSummary,
+    ExamInvigilatorDayWorkload,
+    ExamInvigilatorStaffWorkload,
+    ExamInvigilatorWorkspace,
+    ExamInvigilatorStaffOption,
+    GenerateSeatsRequest,
+    SeatAssignmentView,
+    PlaceExamSessionRequest,
+    ExamDayDetail,
+    ExamDayRoomAssignmentView,
+    ExamInvigilatorView,
+    ExamScheduleItem,
+    ExamScheduleItemView,
+)))]
+struct SchoolApiSchemasGroup62;
+
+#[inline(never)]
+fn build_schema_group_62() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup62::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+        ExamPaperReceiptItem,
         ExamSession,
         ExamSessionView,
         ExamScheduleWorkspace,
@@ -1910,6 +2600,16 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<DayRoomAssignmentView>>,
         ApiResponse<DayRoomAssignmentView>,
         ApiResponse<ExamInvigilatorWorkspace>,
+)))]
+struct SchoolApiSchemasGroup63;
+
+#[inline(never)]
+fn build_schema_group_63() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup63::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<Vec<ExamInvigilatorStaffOption>>,
         ApiResponse<Vec<SeatAssignmentView>>,
         ApiResponse<ExamSessionView>,
@@ -1926,6 +2626,16 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         CalendarVisibility,
         CalendarEventTag,
         CalendarViewerEvent,
+)))]
+struct SchoolApiSchemasGroup64;
+
+#[inline(never)]
+fn build_schema_group_64() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup64::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<Vec<CalendarViewerEvent>>,
         CalendarCategory,
         CalendarTag,
@@ -1942,6 +2652,16 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         ApiResponse<SchoolSettingsResponse>,
         ApiResponse<PublicSchoolInfoData>,
         PublicStudentCounts,
+)))]
+struct SchoolApiSchemasGroup65;
+
+#[inline(never)]
+fn build_schema_group_65() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup65::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         PublicHomeroomStatistics,
         PublicGradeStatistics,
         PublicAcademicYear,
@@ -1958,17 +2678,17 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         FileDeleteResult,
         FileDownloadGrantResponse,
         PublicFileDeliveryResponse,
-        ApiResponse<FileMetadata>
 )))]
-struct SchoolApiSchemasGroup16;
+struct SchoolApiSchemasGroup66;
 
 #[inline(never)]
-fn build_schema_group_16() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup16::openapi()
+fn build_schema_group_66() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup66::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        ApiResponse<FileMetadata>,
         ApiResponse<FileDeleteResult>,
         ApiResponse<FileDownloadGrantResponse>,
         ApiResponse<PublicFileDeliveryResponse>,
@@ -1984,38 +2704,68 @@ fn build_schema_group_16() -> utoipa::openapi::OpenApi {
         SupervisionTargetType,
         SupervisionTemplateItemType,
         SupervisionTemplateStepActorKind,
-        SupervisionTemplateStepActionKind,
-        SupervisionObservationStatus,
-        SupervisionEvaluatorStatus,
-        LessonSnapshot,
-        SupervisionCycleTarget,
-        SupervisionCycle,
-        SupervisionTemplateItem,
-        SupervisionTemplateSection,
-        SupervisionTemplateStep,
-        SupervisionTemplate,
-        SupervisionTemplateSummary,
-        SupervisionEvaluator,
-        SupervisionEvaluatorConflict,
-        SupervisionEvaluatorAvailability,
-        SupervisionAction,
-        SupervisionObservation,
-        SupervisionReviewResponse,
-        SupervisionReviewEvaluatorResult,
-        SupervisionReviewItemSummary,
-        SupervisionObservationReview,
-        ManualLesson,
-        CreateSupervisionCycleTargetRequest,
-        CreateSupervisionCycleRequest,
-        UpdateSupervisionCycleRequest,
-        SupervisionCycleQuery,
-        CreateSupervisionTemplateItemRequest,
-        CreateSupervisionTemplateSectionRequest,
-        CreateSupervisionTemplateStepRequest,
-        CreateSupervisionTemplateRequest,
-        UpdateSupervisionTemplateRequest,
-        ManualLessonInput,
-        RequestSupervisionObservationRequest,
+)))]
+struct SchoolApiSchemasGroup67;
+
+#[inline(never)]
+fn build_schema_group_67() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup67::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    SupervisionTemplateStepActionKind,
+    SupervisionObservationStatus,
+    SupervisionEvaluatorStatus,
+    LessonSnapshot,
+    SupervisionCycleTarget,
+    SupervisionCycle,
+    SupervisionTemplateItem,
+    SupervisionTemplateSection,
+    SupervisionTemplateStep,
+    SupervisionTemplate,
+    SupervisionTemplateSummary,
+    SupervisionEvaluator,
+    SupervisionEvaluatorConflict,
+    SupervisionEvaluatorAvailability,
+    SupervisionAction,
+    SupervisionObservation,
+)))]
+struct SchoolApiSchemasGroup68;
+
+#[inline(never)]
+fn build_schema_group_68() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup68::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    SupervisionReviewResponse,
+    SupervisionReviewEvaluatorResult,
+    SupervisionReviewItemSummary,
+    SupervisionObservationReview,
+    ManualLesson,
+    CreateSupervisionCycleTargetRequest,
+    CreateSupervisionCycleRequest,
+    UpdateSupervisionCycleRequest,
+    SupervisionCycleQuery,
+    CreateSupervisionTemplateItemRequest,
+    CreateSupervisionTemplateSectionRequest,
+    CreateSupervisionTemplateStepRequest,
+    CreateSupervisionTemplateRequest,
+    UpdateSupervisionTemplateRequest,
+    ManualLessonInput,
+    RequestSupervisionObservationRequest,
+)))]
+struct SchoolApiSchemasGroup69;
+
+#[inline(never)]
+fn build_schema_group_69() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup69::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         UpdateRequestedObservationRequest,
         UpdateSupervisionObservationRequest,
         ReplaceObservationEvaluatorsRequest,
@@ -2032,17 +2782,17 @@ fn build_schema_group_16() -> utoipa::openapi::OpenApi {
         SupervisionTimetableOption,
         ItemsData<SupervisionCycle>,
         ItemsData<SupervisionTemplate>,
-        ItemsData<SupervisionTemplateSummary>
 )))]
-struct SchoolApiSchemasGroup17;
+struct SchoolApiSchemasGroup70;
 
 #[inline(never)]
-fn build_schema_group_17() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup17::openapi()
+fn build_schema_group_70() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup70::openapi()
 }
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        ItemsData<SupervisionTemplateSummary>,
         ItemsData<SupervisionObservation>,
         ItemsData<SupervisionEvaluatorAvailability>,
         ItemsData<SupervisionTimetableOption>,
@@ -2058,6 +2808,16 @@ fn build_schema_group_17() -> utoipa::openapi::OpenApi {
         ApiResponse<ItemsData<SupervisionEvaluatorAvailability>>,
         ApiResponse<ItemsData<SupervisionTimetableOption>>,
         ApiResponse<SupervisionCycleProgress>,
+)))]
+struct SchoolApiSchemasGroup71;
+
+#[inline(never)]
+fn build_schema_group_71() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup71::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         ApiResponse<ItemsData<SupervisionTeacherStatusRow>>,
         RichContent,
         RichDocument,
@@ -2074,6 +2834,16 @@ fn build_schema_group_17() -> utoipa::openapi::OpenApi {
         QuestionSummary,
         QuestionDetail,
         QuestionFile,
+)))]
+struct SchoolApiSchemasGroup72;
+
+#[inline(never)]
+fn build_schema_group_72() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup72::openapi()
+}
+
+#[derive(OpenApi)]
+#[openapi(components(schemas(
         QuestionBankSummary,
         QuestionBankPage,
         QuestionBankSubjectOption,
@@ -2086,13 +2856,13 @@ fn build_schema_group_17() -> utoipa::openapi::OpenApi {
         Notification,
         ListNotificationsResponse,
         ApiResponse<ListNotificationsResponse>,
-        ApiErrorResponse
+        ApiErrorResponse,
 )))]
-struct SchoolApiSchemasGroup18;
+struct SchoolApiSchemasGroup73;
 
 #[inline(never)]
-fn build_schema_group_18() -> utoipa::openapi::OpenApi {
-    SchoolApiSchemasGroup18::openapi()
+fn build_schema_group_73() -> utoipa::openapi::OpenApi {
+    SchoolApiSchemasGroup73::openapi()
 }
 
 #[derive(OpenApi)]
@@ -2133,34 +2903,87 @@ struct SchoolApiSchemasDoc;
 impl OpenApi for SchoolApiSchemasDoc {
     fn openapi() -> utoipa::openapi::OpenApi {
         let mut document = build_schema_group_1();
-        append_schema_registry(&mut document, build_schema_group_2());
-        append_schema_registry(&mut document, build_schema_group_3());
-        append_schema_registry(&mut document, build_schema_group_4());
-        append_schema_registry(&mut document, build_schema_group_5());
-        append_schema_registry(&mut document, build_schema_group_6());
-        append_schema_registry(&mut document, build_schema_group_7());
-        append_schema_registry(&mut document, build_schema_group_8());
-        append_schema_registry(&mut document, build_schema_group_9());
-        append_schema_registry(&mut document, build_schema_group_10());
-        append_schema_registry(&mut document, build_schema_group_11());
-        append_schema_registry(&mut document, build_schema_group_12());
-        append_schema_registry(&mut document, build_schema_group_13());
-        append_schema_registry(&mut document, build_schema_group_14());
-        append_schema_registry(&mut document, build_schema_group_15());
-        append_schema_registry(&mut document, build_schema_group_16());
-        append_schema_registry(&mut document, build_schema_group_17());
-        append_schema_registry(&mut document, build_schema_group_18());
-        append_schema_registry(&mut document, build_supply_catalog_schemas());
+        append_api_group(&mut document, build_schema_group_2());
+        append_api_group(&mut document, build_schema_group_3());
+        append_api_group(&mut document, build_schema_group_4());
+        append_api_group(&mut document, build_schema_group_5());
+        append_api_group(&mut document, build_schema_group_6());
+        append_api_group(&mut document, build_schema_group_7());
+        append_api_group(&mut document, build_schema_group_8());
+        append_api_group(&mut document, build_schema_group_9());
+        append_api_group(&mut document, build_schema_group_10());
+        append_api_group(&mut document, build_schema_group_11());
+        append_api_group(&mut document, build_schema_group_12());
+        append_api_group(&mut document, build_schema_group_13());
+        append_api_group(&mut document, build_schema_group_14());
+        append_api_group(&mut document, build_schema_group_15());
+        append_api_group(&mut document, build_schema_group_16());
+        append_api_group(&mut document, build_schema_group_17());
+        append_api_group(&mut document, build_schema_group_18());
+        append_api_group(&mut document, build_schema_group_19());
+        append_api_group(&mut document, build_schema_group_20());
+        append_api_group(&mut document, build_schema_group_21());
+        append_api_group(&mut document, build_schema_group_22());
+        append_api_group(&mut document, build_schema_group_23());
+        append_api_group(&mut document, build_schema_group_24());
+        append_api_group(&mut document, build_schema_group_25());
+        append_api_group(&mut document, build_schema_group_26());
+        append_api_group(&mut document, build_schema_group_27());
+        append_api_group(&mut document, build_schema_group_28());
+        append_api_group(&mut document, build_schema_group_29());
+        append_api_group(&mut document, build_schema_group_30());
+        append_api_group(&mut document, build_schema_group_31());
+        append_api_group(&mut document, build_schema_group_32());
+        append_api_group(&mut document, build_schema_group_33());
+        append_api_group(&mut document, build_schema_group_34());
+        append_api_group(&mut document, build_schema_group_35());
+        append_api_group(&mut document, build_schema_group_36());
+        append_api_group(&mut document, build_schema_group_37());
+        append_api_group(&mut document, build_schema_group_38());
+        append_api_group(&mut document, build_schema_group_39());
+        append_api_group(&mut document, build_schema_group_40());
+        append_api_group(&mut document, build_schema_group_41());
+        append_api_group(&mut document, build_schema_group_42());
+        append_api_group(&mut document, build_schema_group_43());
+        append_api_group(&mut document, build_schema_group_44());
+        append_api_group(&mut document, build_schema_group_45());
+        append_api_group(&mut document, build_schema_group_46());
+        append_api_group(&mut document, build_schema_group_47());
+        append_api_group(&mut document, build_schema_group_48());
+        append_api_group(&mut document, build_schema_group_49());
+        append_api_group(&mut document, build_schema_group_50());
+        append_api_group(&mut document, build_schema_group_51());
+        append_api_group(&mut document, build_schema_group_52());
+        append_api_group(&mut document, build_schema_group_53());
+        append_api_group(&mut document, build_schema_group_54());
+        append_api_group(&mut document, build_schema_group_55());
+        append_api_group(&mut document, build_schema_group_56());
+        append_api_group(&mut document, build_schema_group_57());
+        append_api_group(&mut document, build_schema_group_58());
+        append_api_group(&mut document, build_schema_group_59());
+        append_api_group(&mut document, build_schema_group_60());
+        append_api_group(&mut document, build_schema_group_61());
+        append_api_group(&mut document, build_schema_group_62());
+        append_api_group(&mut document, build_schema_group_63());
+        append_api_group(&mut document, build_schema_group_64());
+        append_api_group(&mut document, build_schema_group_65());
+        append_api_group(&mut document, build_schema_group_66());
+        append_api_group(&mut document, build_schema_group_67());
+        append_api_group(&mut document, build_schema_group_68());
+        append_api_group(&mut document, build_schema_group_69());
+        append_api_group(&mut document, build_schema_group_70());
+        append_api_group(&mut document, build_schema_group_71());
+        append_api_group(&mut document, build_schema_group_72());
+        append_api_group(&mut document, build_schema_group_73());
+        append_api_group(&mut document, build_supply_catalog_schemas());
         document
     }
 }
 
-fn append_schema_registry(
-    document: &mut utoipa::openapi::OpenApi,
-    mut group: utoipa::openapi::OpenApi,
-) {
-    // OpenApi::merge keeps existing names. Explicit registration instead has
-    // last-definition priority, just like the original ComponentsBuilder.
+#[inline(never)]
+fn append_api_group(document: &mut utoipa::openapi::OpenApi, mut group: utoipa::openapi::OpenApi) {
+    // Paths keep their first operation, like PathsBuilder. SchemaReferences and
+    // ComponentsBuilder extend schemas in registration order, so later names win.
     let schemas = match group.components.as_mut() {
         Some(components) => std::mem::take(&mut components.schemas),
         None => std::collections::BTreeMap::new(),
@@ -2188,6 +3011,25 @@ fn sort_json(value: &mut Value) {
 
 pub fn school_api_value() -> Result<Value, serde_json::Error> {
     let mut document = SchoolApiDoc::openapi();
+    append_api_group(&mut document, build_path_group_1());
+    append_api_group(&mut document, build_path_group_2());
+    append_api_group(&mut document, build_path_group_3());
+    append_api_group(&mut document, build_path_group_4());
+    append_api_group(&mut document, build_path_group_5());
+    append_api_group(&mut document, build_path_group_6());
+    append_api_group(&mut document, build_path_group_7());
+    append_api_group(&mut document, build_path_group_8());
+    append_api_group(&mut document, build_path_group_9());
+    append_api_group(&mut document, build_path_group_10());
+    append_api_group(&mut document, build_path_group_11());
+    append_api_group(&mut document, build_path_group_12());
+    append_api_group(&mut document, build_path_group_13());
+    append_api_group(&mut document, build_path_group_14());
+    append_api_group(&mut document, build_path_group_15());
+    append_api_group(&mut document, build_path_group_16());
+    append_api_group(&mut document, build_path_group_17());
+    append_api_group(&mut document, build_path_group_18());
+    append_api_group(&mut document, build_path_group_19());
     document.merge(SchoolApiSchemasDoc::openapi());
     let mut value = serde_json::to_value(document)?;
     sort_json(&mut value);
@@ -2206,6 +3048,36 @@ mod tests {
     use std::collections::{BTreeSet, HashSet};
 
     #[test]
+    fn path_groups_preserve_first_operations_and_later_schema_definitions() {
+        let mut first: utoipa::openapi::OpenApi = serde_json::from_value(serde_json::json!({
+            "openapi": "3.1.0",
+            "info": { "title": "original metadata", "version": "test" },
+            "paths": { "/grouped": { "get": { "operationId": "firstGet", "responses": {} } } },
+            "components": { "schemas": { "SharedName": { "type": "string" } } }
+        }))
+        .expect("valid first path group");
+        let second = serde_json::from_value(serde_json::json!({
+            "openapi": "3.1.0",
+            "info": { "title": "group metadata", "version": "test" },
+            "paths": { "/grouped": {
+                "get": { "operationId": "duplicateGet", "responses": {} },
+                "post": { "operationId": "newPost", "responses": {} }
+            } },
+            "components": { "schemas": { "SharedName": { "type": "integer" } } }
+        }))
+        .expect("valid later path group");
+        super::append_api_group(&mut first, second);
+        let value = serde_json::to_value(first).expect("serializable combined paths");
+        assert_eq!(value["info"]["title"], "original metadata");
+        assert_eq!(value["paths"]["/grouped"]["get"]["operationId"], "firstGet");
+        assert_eq!(value["paths"]["/grouped"]["post"]["operationId"], "newPost");
+        assert_eq!(
+            value["components"]["schemas"]["SharedName"]["type"],
+            "integer"
+        );
+    }
+
+    #[test]
     fn schema_groups_preserve_explicit_override_order_and_handler_priority() {
         fn fixture(schema_type: &str) -> utoipa::openapi::OpenApi {
             serde_json::from_value(serde_json::json!({
@@ -2217,7 +3089,7 @@ mod tests {
             .expect("valid isolated schema fixture")
         }
         let mut explicit = fixture("string");
-        super::append_schema_registry(&mut explicit, fixture("integer"));
+        super::append_api_group(&mut explicit, fixture("integer"));
         assert_eq!(
             serde_json::to_value(&explicit).expect("serializable fixture")["components"]["schemas"]
                 ["SharedName"]["type"],
