@@ -271,8 +271,9 @@ comparison samples; it does not establish a speed improvement. LLVM time traces 
 expensive generated functions. The benchmark imports the canonical backend cache without exporting it.
 Actions displays a bounded timing table; full per-unit JSON and compiler evidence stay in the
 downloadable artifact, avoiding GitHub's 1 MiB step-summary limit.
-It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only in the disposable benchmark
-container; that compilation is excluded from warm sample means and never produces a release
+It enables diagnostic `-Z` options with `RUSTC_BOOTSTRAP=1` only for the selected binary's
+rustc invocation in the disposable benchmark container. Cargo and dependency build scripts keep
+their ordinary environment and fingerprints. That compilation is excluded from warm sample means and never produces a release
 artifact. Production builds keep the pinned stable compiler and normal release flags.
 The container keeps a two-CPU quota and two Cargo jobs throughout. Compare compiler variants
 sequentially on one runner before attributing a change to a flag: different hosted machines

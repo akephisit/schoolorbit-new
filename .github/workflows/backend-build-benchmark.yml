@@ -122,6 +122,7 @@ jobs:
             "${mounts[@]}" \
             -v "$PWD/scripts/benchmark_backend_build.sh:/benchmark.sh:ro" \
             -v "$PWD/scripts/summarize_backend_benchmark.py:/summarize_backend_benchmark.py:ro" \
+            -v "$PWD/scripts/profile_backend_compiler.sh:/profile.sh:ro" \
             -v "$RUNNER_TEMP/build-benchmark:/benchmark-results" \
             --entrypoint sleep schoolorbit-benchmark:builder infinity
           trap 'docker rm --force schoolorbit-benchmark >/dev/null' EXIT
@@ -152,14 +153,10 @@ jobs:
             done
           fi
           # Diagnostic compilation only: stable release settings remain unchanged.
-          # Bootstrap enables logging/monomorphization statistics on the pinned compiler.
+          # Bootstrap reaches only the final rustc, preserving dependency fingerprints.
           mkdir -p "$RUNNER_TEMP/build-benchmark/compiler-profile"
-          profile_flags=(-Z time-passes -Z llvm-time-trace -Z dump-mono-stats=/benchmark-results/compiler-profile/mono -Z dump-mono-stats-format=json)
-          if [ "$BENCH_BACKEND" = backend-school ]; then profile_flags+=(-C lto=off); fi
-          docker exec -e RUSTC_BOOTSTRAP=1 -e CARGO_INCREMENTAL=0 -e CARGO_BUILD_JOBS=2 \
-            schoolorbit-benchmark bash -c 'unset RUSTC_WRAPPER; cargo rustc --release --locked --bin "$1" -- "${@:2}"' \
-            bash "$BENCH_BACKEND" "${profile_flags[@]}" 2>&1 | tee "$RUNNER_TEMP/build-benchmark/compiler-profile/passes.log"
-          docker exec schoolorbit-benchmark sh -c 'find target/release -name "*.llvm_timings.json" -exec cp {} /benchmark-results/compiler-profile/ \;'
+          docker exec schoolorbit-benchmark bash /profile.sh "$BENCH_BACKEND" /benchmark-results/compiler-profile \
+            2>&1 | tee "$RUNNER_TEMP/build-benchmark/compiler-profile/passes.log"
           if [ "$BENCH_BACKEND" = backend-school ]; then
             docker exec schoolorbit-benchmark env -i PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin HOME=/tmp \
               target/release/backend-school export-openapi > "$RUNNER_TEMP/build-benchmark/compiler-profile/openapi.json"

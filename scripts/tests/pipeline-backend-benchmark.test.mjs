@@ -36,11 +36,33 @@ esac
   assert.equal(result.status, 0, result.stderr);
   const calls = readFileSync(path.join(root,'calls'),'utf8');
   assert.doesNotMatch(calls, /bash \/benchmark\.sh/);
-  assert.match(calls, /RUSTC_BOOTSTRAP=1.*-Z llvm-time-trace/);
+  assert.match(calls, /exec schoolorbit-benchmark bash \/profile\.sh backend-school/);
+  assert.doesNotMatch(calls, /exec -e RUSTC_BOOTSTRAP/);
   assert.equal(calls.match(/env -i .*export-openapi/g).length, 2);
   assert.deepEqual(JSON.parse(readFileSync(path.join(root,'build-benchmark/compiler-profile/openapi.json'),'utf8')),JSON.parse(readFileSync(path.join(root,'build-benchmark/openapi-baseline.json'),'utf8')));
 });
 const summary = path.join(repo, 'scripts/summarize_backend_benchmark.py');
+for (const code of [0, 37]) test(`compiler diagnostics scope bootstrap to the binary and preserve exit ${code}`, t => {
+  const f = fixture(t), bin = path.join(f.root,'bin');
+  mkdirSync(bin);
+  const rustc = path.join(bin,'rustc with spaces');
+  writeFileSync(rustc,'#!/bin/bash\nprintf "%s:%s\\n" "$*" "${RUSTC_BOOTSTRAP:-off}" >> "$PROFILE_RUSTC_CALLS"\n',{mode:0o755});
+  writeFileSync(path.join(bin,'cargo'),`#!/bin/bash
+set -euo pipefail
+printf '%s\\n' "$RUSTC_WRAPPER" > "$PROFILE_WRAPPER"
+printf '%s\\n' "$@" > "$PROFILE_ARGUMENTS"
+"$RUSTC_WRAPPER" "$PROFILE_RUSTC" --crate-name dependency
+"$RUSTC_WRAPPER" "$PROFILE_RUSTC" --crate-name backend_school
+mkdir -p target/release
+exit ${code}
+`,{mode:0o755});
+  const result=spawnSync('bash',[path.join(repo,'scripts/profile_backend_compiler.sh'),'backend-school',f.folder],{cwd:f.root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,RUSTC_BOOTSTRAP:'parent-only',PROFILE_RUSTC:rustc,PROFILE_RUSTC_CALLS:path.join(f.root,'calls'),PROFILE_WRAPPER:path.join(f.root,'wrapper'),PROFILE_ARGUMENTS:path.join(f.root,'arguments')}});
+  assert.equal(result.status,code,result.stderr);
+  assert.equal(readFileSync(path.join(f.root,'calls'),'utf8'),'--crate-name dependency:off\n--crate-name backend_school:1\n');
+  assert.match(readFileSync(path.join(f.root,'arguments'),'utf8'),/-Z\nllvm-time-trace/);
+  assert.match(readFileSync(path.join(f.root,'arguments'),'utf8'),/-C\nlto=off/);
+  assert.throws(()=>readFileSync(readFileSync(path.join(f.root,'wrapper'),'utf8').trim()));
+});
 const api = { openapi: '3.1.0', paths: { '/fixture': {} } };
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'backend-benchmark-'));
