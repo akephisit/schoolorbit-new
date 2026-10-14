@@ -10,6 +10,12 @@ inputs:
   input_hash:
     description: Verified artifact inputs
     required: true
+  cache_from:
+    description: Remote cache selected by pipeline policy
+    required: true
+  cache_to:
+    description: Main-owned cache exporter, empty for read-only consumers
+    default: ""
 outputs:
   metadata:
     description: BuildKit record and image metadata
@@ -33,8 +39,8 @@ runs:
         push: true
         tags: ${{ inputs.reference }}
         labels: org.schoolorbit.input-hash=${{ inputs.input_hash }}
-        cache-from: type=gha,scope=${{ inputs.component }}
-        cache-to: type=gha,scope=${{ inputs.component }},mode=max
+        cache-from: ${{ inputs.cache_from }}
+        cache-to: ${{ inputs.cache_to }}
         build-args: SCHOOL_COMPILER_CACHE=gha
         secret-envs: |
           sccache_gha_url=ACTIONS_RESULTS_URL

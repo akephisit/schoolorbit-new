@@ -54,6 +54,13 @@ Production acceptance also checks aliases and socket source addresses after star
 
 For deployment dependency selection and compiler evidence, run
 `node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
+Cache-backend experiment fixtures run with
+`node --test scripts/tests/pipeline-cache-benchmark.test.mjs`. They exercise paired scratch
+contexts, fresh builder ownership, cleanup on failure, frozen local compiler snapshots, read-only counters, missing metrics
+and complete counterbalanced sampling. Dispatch the isolated remote comparison through Operations
+`cache-benchmark` with `options={"samples":"2"}` on the reviewed experiment branch. Both variants
+must retain the runtime UID/command and canonical offline OpenAPI; inspect full build wall time,
+dependency-layer reuse, cache export and error counters before changing production cache policy.
 Scope fixtures in `scripts/tests/pipeline-policy.test.mjs` cover recipe/report separation,
 component deployment ownership and queued baseline reconciliation. The School release source guards
 exercise parallel branch failure joins, backend prerequisite refusal, pinned runner compatibility and
@@ -540,12 +547,15 @@ For focused deployment-runtime work, run:
 bats scripts/tests/installer/runtime_image_retention.bats \
   scripts/tests/installer/deployment_timing.bats \
   scripts/tests/installer/clamd_runtime_matches.bats
-node --test scripts/tests/prune-ghcr-versions.test.mjs
+node --test scripts/tests/prune-ghcr-versions.test.mjs scripts/tests/pipeline-build-cache.test.mjs
 node --test frontend-school/tests/static/deployment-installer.test.mjs
 node --test frontend-school/tests/static/documentation-policy.test.mjs
 ```
 
-The retention tests use only fake Podman and a loopback HTTP server. They must not contact the
+The retention tests use only fake Podman and a loopback HTTP server. Cache fixtures cover protected
+tags, newest-version retention, the 24-hour grace period, missing packages, denied inventories and
+retagging during revalidation. Selector tests cover main-only registry exports, preserved Admin GHA
+policy, CLI output and image/evidence wiring. They must not contact the
 production VPS, delete a live package version, or replace the manual GHCR dry-run review. Dockerfile
 changes also require Docker runtime-target builds and config inspection:
 

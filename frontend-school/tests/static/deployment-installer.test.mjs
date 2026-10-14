@@ -813,7 +813,7 @@ test('backend workflows deploy the canonical target and verify the selected orig
 	}
 });
 
-test('backend image workflows use distinct BuildKit cache scopes', async () => {
+test('backend image workflows pass the selected cache policy to the hashed build recipe', async () => {
 	const d = parseYaml(await readRepo('.github/workflows/prepare.yml'));
 	const steps = d.jobs.prepare.steps;
 	const caller = steps.find((x) => x.name === 'Build selected OCI image');
@@ -822,8 +822,14 @@ test('backend image workflows use distinct BuildKit cache scopes', async () => {
 	const build = (await expandCompositeSteps(repoRoot, [caller])).find(
 		(x) => x.uses === 'docker/build-push-action@v7'
 	);
-	assert.equal(build.with['cache-from'], 'type=gha,scope=${{ inputs.component }}');
-	assert.equal(build.with['cache-to'], 'type=gha,scope=${{ inputs.component }},mode=max');
+	assert.equal(build.with['cache-from'], '${{ inputs.cache_from }}');
+	assert.equal(build.with['cache-to'], '${{ inputs.cache_to }}');
+	assert.equal(caller.with.cache_from, '${{ steps.backend-cache.outputs.from }}');
+	assert.equal(caller.with.cache_to, '${{ steps.backend-cache.outputs.to }}');
+	assert.equal(
+		steps.find((step) => step.id === 'backend-cache').run,
+		'node scripts/lib/pipeline-build-cache.mjs'
+	);
 	assert.equal(build.with.platforms, 'linux/amd64');
 	assert.ok(steps.some((x) => x.uses === 'docker/setup-buildx-action@v4'));
 	const policy = await readRepo('scripts/lib/pipeline-policy.mjs');
@@ -1013,7 +1019,19 @@ test('GHCR retention is bounded, dry-run by default, and isolated from deploymen
 	assert.match(workflow, /uses: actions\/setup-node@v6/);
 	assert.match(workflow, /node-version: "24"/);
 	assert.match(workflow, /node scripts\/prune_ghcr_versions\.mjs/);
-	assert.match(workflow, /--keep 30/);
+	const retentionJob = parseYaml(workflow).jobs.retain;
+	assert.deepEqual(retentionJob.strategy.matrix.include, [
+		{ package: 'schoolorbit-backend-admin', keep: 30 },
+		{ package: 'schoolorbit-backend-school', keep: 30 },
+		{ package: 'schoolorbit-backend-school-cache', keep: 2 }
+	]);
+	const retentionStep = retentionJob.steps.find((step) => step.env?.PACKAGE_NAME);
+	assert.equal(retentionStep.env.KEEP, '${{ matrix.keep }}');
+	assert.match(retentionStep.run, /--keep "\$KEEP"/);
+	assert.equal(
+		retentionStep.env.EXECUTE,
+		"${{ (github.event_name == 'schedule' && (matrix.package == 'schoolorbit-backend-school-cache' || vars.GHCR_RETENTION_ENABLED == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}"
+	);
 	assert.match(workflow, /--execute/);
 	assert.match(workflow, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 	assert.doesNotMatch(

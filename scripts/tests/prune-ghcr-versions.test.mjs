@@ -4,8 +4,10 @@ import test from 'node:test';
 
 import {
 	pruneGhcrVersions,
-	selectDeletionCandidates
+	selectDeletionCandidates,
+	selectCacheDeletionCandidates
 } from '../prune_ghcr_versions.mjs';
+import { SCHOOL_BUILD_CACHE_PACKAGE } from '../lib/pipeline-build-cache.mjs';
 
 const OWNER = 'akephisit';
 const PACKAGE = 'schoolorbit-backend-admin';
@@ -31,11 +33,12 @@ async function startPackageServer({
 	versions,
 	listStatus = 200,
 	linkHeader,
-	readVersion
+	readVersion,
+	packageName = PACKAGE
 }) {
 	const requests = [];
 	const versionReads = new Map();
-	const packagePath = `/users/${OWNER}/packages/container/${PACKAGE}/versions`;
+	const packagePath = `/users/${OWNER}/packages/container/${packageName}/versions`;
 	const server = http.createServer((request, response) => {
 		const url = new URL(request.url, 'http://127.0.0.1');
 		requests.push(`${request.method} ${url.pathname}${url.search}`);
@@ -305,4 +308,62 @@ test('retention covers prepared input tags and preserves the accepted older comp
     const candidates = selectDeletionCandidates(inventory, 30, [accepted]);
     assert.ok(candidates.some(x => x.id === inventory[33].id));
     assert.ok(!candidates.some(x => x.id === inventory[34].id));
+});
+
+function cacheInventory(count) {
+	return releaseInventory(count).map((version) => ({ ...version, metadata: { package_type: 'container', container: { tags: [] } } }));
+}
+
+test('cache selector protects all tags, two newest versions and the 24-hour grace period', () => {
+	const now = Date.UTC(2026, 9, 14);
+	const versions = cacheInventory(8);
+	versions[0].metadata.container.tags = ['buildcache'];
+	versions[1].metadata.container.tags = ['unknown-tag'];
+	versions[5].created_at = new Date(now - 1000).toISOString();
+	versions[6].created_at = new Date(now - 2000).toISOString();
+	versions[7].created_at = new Date(now - 3600000).toISOString();
+	assert.deepEqual(selectCacheDeletionCandidates(versions, 2, now).map(({ id }) => id), [1004, 1003, 1002]);
+	assert.throws(() => selectCacheDeletionCandidates([versions[0], versions[0]], 2, now), /duplicate/);
+	assert.throws(() => selectCacheDeletionCandidates(versions, 0, now), /retention count/);
+	assert.throws(() => selectCacheDeletionCandidates(versions, 2, NaN), /retention clock/);
+});
+
+test('cache execution deletes only old untagged versions from its separate package', async (t) => {
+	const versions = cacheInventory(8);
+	versions[6].metadata.container.tags = ['buildcache'];
+	versions[7].metadata.container.tags = ['unknown-tag'];
+	const api = await startPackageServer({ versions, packageName: SCHOOL_BUILD_CACHE_PACKAGE });
+	t.after(api.close);
+	const result = await pruneGhcrVersions({ owner: OWNER, packageName: SCHOOL_BUILD_CACHE_PACKAGE, keep: 2, execute: true, token: 'test-token', apiBase: api.apiBase, logger() {} });
+	assert.equal(result.deleted, 4);
+	assert.deepEqual(api.requests.filter((request) => request.startsWith('DELETE ')), [1005, 1004, 1003, 1002].map((id) => `DELETE /users/${OWNER}/packages/container/${SCHOOL_BUILD_CACHE_PACKAGE}/versions/${id}`));
+	assert.ok(api.requests.every((request) => request.includes(`/container/${SCHOOL_BUILD_CACHE_PACKAGE}/`)));
+});
+
+test('a cache version becoming tagged during immediate revalidation prevents every deletion', async (t) => {
+	const api = await startPackageServer({ versions: cacheInventory(5), packageName: SCHOOL_BUILD_CACHE_PACKAGE, readVersion(version, count) {
+		if (version.id === 1004 && count === 2) version.metadata.container.tags = ['buildcache'];
+		return version;
+	} });
+	t.after(api.close);
+	await assert.rejects(pruneGhcrVersions({ owner: OWNER, packageName: SCHOOL_BUILD_CACHE_PACKAGE, keep: 2, execute: true, token: 'test-token', apiBase: api.apiBase, logger() {} }), /changed during revalidation/);
+	assert.equal(api.requests.filter((request) => request.startsWith('DELETE ')).length, 0);
+});
+
+for (const status of [404, 403]) test(`new cache package inventory status ${status} is handled explicitly`, async (t) => {
+	const api = await startPackageServer({ versions: [], packageName: SCHOOL_BUILD_CACHE_PACKAGE, listStatus: status });
+	t.after(api.close);
+	const operation = pruneGhcrVersions({ owner: OWNER, packageName: SCHOOL_BUILD_CACHE_PACKAGE, keep: 2, execute: true, token: 'test-token', apiBase: api.apiBase, logger() {} });
+	if (status === 404) assert.deepEqual(await operation, { candidates: 0, selected: 0, deleted: 0 });
+	else await assert.rejects(operation, /status 403/);
+	assert.equal(api.requests.filter((request) => request.startsWith('DELETE ')).length, 0);
+});
+
+test('runtime packages retain their missing-inventory failure and cache packages reject release-protection arguments', async (t) => {
+	const api = await startPackageServer({ versions: [], listStatus: 404 });
+	t.after(api.close);
+	await assert.rejects(pruneGhcrVersions({ owner: OWNER, packageName: PACKAGE, keep: 30, execute: true, token: 'test-token', apiBase: api.apiBase, logger() {} }), /status 404/);
+	let requests = 0;
+	await assert.rejects(pruneGhcrVersions({ owner: OWNER, packageName: SCHOOL_BUILD_CACHE_PACKAGE, keep: 2, protectedTags: ['a'.repeat(40)], token: 'test-token', fetchImpl() { requests++; }, logger() {} }), /does not accept release protection/);
+	assert.equal(requests, 0);
 });

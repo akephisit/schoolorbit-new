@@ -99,6 +99,10 @@ jobs:
             exit 1
           fi
           printf 'repository=%s\nreference=%s\n' "$image" "$reference" >> "$GITHUB_OUTPUT"
+      - name: Select backend BuildKit cache
+        id: backend-cache
+        if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
+        run: node scripts/lib/pipeline-build-cache.mjs
       - name: Expose compiler cache runtime through BuildKit secrets
         if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
         uses: actions/github-script@v8
@@ -114,6 +118,8 @@ jobs:
           component: ${{ matrix.component }}
           reference: ${{ steps.image.outputs.reference }}
           input_hash: ${{ env.INPUT_HASH }}
+          cache_from: ${{ steps.backend-cache.outputs.from }}
+          cache_to: ${{ steps.backend-cache.outputs.to }}
       - name: Export compiler evidence
         if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
         uses: docker/build-push-action@v7
@@ -122,7 +128,7 @@ jobs:
           target: build-timings
           platforms: linux/amd64
           outputs: type=local,dest=${{ runner.temp }}/timings-${{ matrix.component }}
-          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-from: ${{ steps.backend-cache.outputs.from }}
           build-args: SCHOOL_COMPILER_CACHE=gha
           secret-envs: |
             sccache_gha_url=ACTIONS_RESULTS_URL
