@@ -9,11 +9,18 @@
 	} from '#lib/api/supply-catalog.js';
 	import { uploadFile, deleteFile } from '#lib/api/files.js';
 	import { normalizeCatalogImage } from '#lib/utils/catalog-image.js';
-	import { validateItem, itemDraft, message } from '#lib/supply-catalog/drafts.js';
+	import {
+		validatePriceFields,
+		trimSupplyText,
+		message,
+		type PriceFieldErrors
+	} from '#lib/supply-catalog/drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
+	import { Alert, AlertTitle, AlertDescription } from '#lib/components/ui/alert/index.js';
+	import FieldError from './FieldError.svelte';
 	import CatalogImage from './CatalogImage.svelte';
 	import { toast } from 'svelte-sonner';
 	let {
@@ -34,7 +41,13 @@
 		imageFileId = $state<string | null>(untrack(() => item.imageFileId ?? null)),
 		pending = $state(false),
 		uploading = $state(false),
-		error = $state<string | null>(null);
+		actionError = $state<string | null>(null);
+	let submitted = $state(false),
+		removing = $state(false);
+	const busy = $derived(pending || uploading || removing);
+	const fieldErrors: PriceFieldErrors = $derived(
+		submitted ? validatePriceFields({ price, shop }) : {}
+	);
 	const staged = new SvelteSet<string>();
 	let disposed = false;
 	async function cleanup() {
@@ -45,12 +58,12 @@
 			}
 			return true;
 		} catch (e) {
-			error = message(e, 'ล้างรูปชั่วคราวไม่สำเร็จ');
+			actionError = message(e, 'ล้างรูปชั่วคราวไม่สำเร็จ');
 			return false;
 		}
 	}
 	export async function discard() {
-		if (pending || uploading) return false;
+		if (busy) return false;
 		return cleanup();
 	}
 	onDestroy(() => {
@@ -61,9 +74,9 @@
 			});
 	});
 	async function upload(file: File | undefined) {
-		if (!file || pending || uploading) return;
+		if (!file || busy || disposed) return;
 		uploading = true;
-		error = null;
+		actionError = null;
 		try {
 			const normalized = await normalizeCatalogImage(file);
 			if (disposed) return;
@@ -80,13 +93,15 @@
 			}
 			imageFileId = uploaded.id;
 		} catch (e) {
-			if (!disposed) error = message(e, 'อัปโหลดรูปไม่สำเร็จ');
+			if (!disposed) actionError = message(e, 'อัปโหลดรูปไม่สำเร็จ');
 		} finally {
 			if (!disposed) uploading = false;
 		}
 	}
 	async function removeImage() {
-		if (pending || uploading) return;
+		if (busy || disposed) return;
+		removing = true;
+		actionError = null;
 		try {
 			if (imageFileId && staged.has(imageFileId)) {
 				await deleteFile(imageFileId);
@@ -94,19 +109,22 @@
 			}
 			imageFileId = null;
 		} catch (e) {
-			error = message(e, 'นำรูปออกไม่สำเร็จ');
+			actionError = message(e, 'นำรูปออกไม่สำเร็จ');
+		} finally {
+			if (!disposed) removing = false;
 		}
 	}
 	async function cancel() {
-		if (pending || uploading) return;
+		if (busy || disposed) return;
 		pending = true;
 		if ((await cleanup()) && !disposed) oncancel();
 		if (!disposed) pending = false;
 	}
 	async function save() {
-		if (pending || uploading) return;
-		error = validateItem({ ...itemDraft(item), price, shop });
-		if (error) return;
+		if (busy || disposed) return;
+		submitted = true;
+		actionError = null;
+		if (Object.keys(validatePriceFields({ price, shop })).length) return;
 		pending = true;
 		try {
 			for (const id of staged)
@@ -116,7 +134,7 @@
 				}
 			const payload = {
 				price,
-				shop: shop.trim(),
+				shop: trimSupplyText(shop),
 				revision: append ? item.revision : (version ?? item.latestVersion).revision
 			};
 			const saved = append
@@ -125,7 +143,7 @@
 			staged.clear();
 			if (!disposed) onsaved(saved);
 		} catch (e) {
-			if (!disposed) error = message(e, 'บันทึกราคาไม่สำเร็จ');
+			if (!disposed) actionError = message(e, 'บันทึกราคาไม่สำเร็จ');
 		} finally {
 			if (!disposed) pending = false;
 		}
@@ -133,64 +151,81 @@
 </script>
 
 <form
-	class="space-y-4"
-	onsubmit={(e) => {
-		e.preventDefault();
+	class="w-full max-w-xl space-y-5"
+	novalidate
+	aria-busy={busy}
+	onsubmit={(event) => {
+		event.preventDefault();
 		void save();
 	}}
 >
-	<p class="text-sm text-muted-foreground">
-		{append
-			? 'เพิ่มรุ่นราคาใหม่ โดยเก็บรุ่นเดิมไว้ในประวัติ'
-			: `แก้ไขราคาและร้านค้าในรุ่น ${(version ?? item.latestVersion).version} โดยไม่สร้างรุ่นใหม่`}
-	</p>
-	<div class="space-y-1">
-		<Label for="version-price">ราคาต่อหน่วย (บาท) *</Label><Input
-			id="version-price"
-			bind:value={price}
-			inputmode="decimal"
-			disabled={pending || uploading}
-			required
-		/>
-	</div>
-	<div class="space-y-1">
-		<Label for="version-shop">ร้านค้า *</Label><Input
-			id="version-shop"
-			bind:value={shop}
-			maxlength={300}
-			disabled={pending || uploading}
-			required
-		/>
-	</div>
-	{#if append}<section class="space-y-2 rounded-xl border p-3">
-			<Label for="version-image">รูปสินค้า</Label>
-			<p class="text-xs text-muted-foreground">
-				รูปใหม่จะใช้ร่วมกันทุกเวอร์ชัน และแทนที่รูปเก่าเมื่อบันทึกสำเร็จ
+	<fieldset class="space-y-5" disabled={busy}>
+		<section class="space-y-3" aria-labelledby="version-price-title">
+			<h3 id="version-price-title" class="text-sm font-semibold">ราคาและร้านค้า</h3>
+			<p class="text-sm text-muted-foreground">
+				{append
+					? 'เพิ่มรุ่นราคาใหม่ โดยเก็บรุ่นเดิมไว้ในประวัติ'
+					: `แก้ไขราคาและร้านค้าในรุ่น ${(version ?? item.latestVersion).version} โดยไม่สร้างรุ่นใหม่`}
 			</p>
-			{#if imageFileId}<CatalogImage
-					fileId={imageFileId}
-					resourceId={staged.has(imageFileId) ? undefined : item.id}
-					alt={item.name}
-					class="h-32 rounded-lg"
-				/><Button
-					type="button"
-					variant="outline"
-					size="sm"
-					onclick={removeImage}
-					disabled={pending || uploading}>นำรูปสินค้าออก</Button
-				>{/if}<Input
-				id="version-image"
-				type="file"
-				accept="image/*,.heic,.heif,.tif,.tiff"
-				disabled={pending || uploading}
-				onchange={(e) => upload(e.currentTarget.files?.[0])}
-			/>{#if uploading}<p role="status" class="text-sm">กำลังอัปโหลดรูปสินค้า</p>{/if}
-		</section>{/if}
-	{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
-	<div class="flex justify-end gap-2">
-		<Button type="button" variant="outline" disabled={pending || uploading} onclick={cancel}
-			>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={uploading}
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="space-y-1">
+					<Label for="version-price">ราคาต่อหน่วย (บาท) *</Label><Input
+						id="version-price"
+						bind:value={price}
+						inputmode="decimal"
+						disabled={busy}
+						required
+						aria-invalid={!!fieldErrors.price}
+						aria-describedby={fieldErrors.price ? 'version-price-error' : undefined}
+					/><FieldError id="version-price-error" message={fieldErrors.price} />
+				</div>
+				<div class="space-y-1">
+					<Label for="version-shop">ร้านค้า *</Label><Input
+						id="version-shop"
+						bind:value={shop}
+						disabled={busy}
+						required
+						aria-invalid={!!fieldErrors.shop}
+						aria-describedby={fieldErrors.shop ? 'version-shop-error' : undefined}
+					/><FieldError id="version-shop-error" message={fieldErrors.shop} />
+				</div>
+			</div>
+		</section>
+		{#if append}<section class="space-y-3 border-t pt-4" aria-labelledby="version-image-title">
+				<h3 id="version-image-title" class="text-sm font-semibold">รูปประกอบพัสดุ</h3>
+				<p id="version-image-help" class="text-sm text-muted-foreground">
+					รูปใหม่จะใช้ร่วมกันทุกเวอร์ชัน และแทนที่รูปเก่าเมื่อบันทึกสำเร็จ
+				</p>
+				{#if imageFileId}<CatalogImage
+						fileId={imageFileId}
+						resourceId={staged.has(imageFileId) ? undefined : item.id}
+						alt={item.name}
+						class="h-32 rounded-lg"
+					/><Button type="button" variant="outline" size="sm" disabled={busy} onclick={removeImage}
+						>นำรูปสินค้าออก</Button
+					>{/if}
+				<div class="space-y-1">
+					<Label for="version-image">รูปสินค้า</Label><Input
+						id="version-image"
+						type="file"
+						accept="image/*,.heic,.heif,.tif,.tiff"
+						disabled={busy}
+						aria-describedby="version-image-help"
+						onchange={(event) => upload(event.currentTarget.files?.[0])}
+					/>
+				</div>
+				{#if uploading || removing}<p role="status" class="text-sm">
+						{removing ? 'กำลังนำรูปสินค้าออก' : 'กำลังอัปโหลดรูปสินค้า'}
+					</p>{/if}
+			</section>{/if}
+	</fieldset>
+	{#if actionError}<Alert variant="destructive"
+			><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{actionError}</AlertDescription
+			></Alert
+		>{/if}
+	<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
+		<Button type="button" variant="outline" disabled={busy} onclick={cancel}>ยกเลิก</Button
+		><LoadingButton type="submit" loading={pending} disabled={uploading || removing}
 			>{append ? 'เพิ่มรุ่นราคา' : 'บันทึกรุ่นราคา'}</LoadingButton
 		>
 	</div>
