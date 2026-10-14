@@ -57,7 +57,10 @@ def buildkit_phases(text):
             stage.update(cached=True, duration=0)
         duration = re.fullmatch(r"DONE ([0-9.]+)s", content)
         if duration:
-            stage.update(cached=False, duration=float(duration.group(1)))
+            # Lazy remote layers print CACHED before transfer/extraction and DONE.
+            # Preserve reuse while retaining the time spent materializing the layer.
+            stage.update(duration=float(duration.group(1)))
+            stage.setdefault("cached", False)
     return {value["kind"]: value for value in stages.values() if "kind" in value}
 
 
@@ -122,7 +125,7 @@ def summary(component, folder, log_file):
              "", "| BuildKit phase | Duration |", "| --- | ---: |"]
     for name in PHASE_NAMES:
         lines.append(f"| {name} | {seconds(phases.get(name, {}).get('duration'))} |")
-    lines += ["", "Phase durations can overlap; do not sum them. Cached-layer transfer/extraction may occur outside these rows.", "", "| Rust library cache counter | Count |", "| --- | ---: |"]
+    lines += ["", "Phase durations can overlap; do not sum them. Cached-layer durations can include transfer/extraction; some lazy transfers may occur outside these rows.", "", "| Rust library cache counter | Count |", "| --- | ---: |"]
     for label, key in [("hits", "cache_hits"), ("misses", "cache_misses"), ("errors", "cache_errors"), ("write errors", "cache_write_errors"), ("non-cacheable compiler calls", "non_cacheable_calls")]:
         value = counter(stats, key)
         lines.append(f"| {label} | {value if value is not None else 'unavailable'} |")

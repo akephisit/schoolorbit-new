@@ -70,6 +70,28 @@ test("build summary separates parallel phases, exposes library hits, and labels 
   assert.doesNotMatch(result.stdout, /private-diagnostic-sentinel/);
   assert.ok(Buffer.byteLength(result.stdout) < 4096);
 });
+test("lazy cached-layer downloads retain reuse status and materialization duration", (t) => {
+  const root = fixture(t);
+  writeFileSync(path.join(root, "build-metrics.json"), JSON.stringify({compileNanoseconds: 190e9}));
+  const log = path.join(root, "buildkit.log");
+  writeFileSync(log, [
+    "#22 [builder 5/7] RUN bash scripts/build_release.sh dependencies",
+    "#22 CACHED",
+    "#22 sha256:fixture 614.89MB / 614.89MB 139.0s done",
+    "#22 extracting sha256:fixture 10.3s done",
+    "#22 DONE 149.3s",
+    "#24 [builder 7/7] RUN bash scripts/build_release.sh",
+    "#24 CACHED",
+    "#24 DONE 28.2s",
+  ].join("\n"));
+  const result = spawnSync("python3", [path.join(repo, "scripts/render_backend_build_summary.py"), "backend-school", root, log], {encoding: "utf8"});
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /compiler layer: \*\*cached\*\*/);
+  assert.match(result.stdout, /Recorded Cargo invocation: 190.00s/);
+  assert.match(result.stdout, /\| dependency layer \| 149.30s \|/);
+  assert.match(result.stdout, /\| compiler layer \| 28.20s \|/);
+  assert.match(result.stderr, /current_layer=cached/);
+});
 test("missing compiler evidence is reported unavailable instead of zero hits", (t) => {
   const root = fixture(t);
   const result = spawnSync(
