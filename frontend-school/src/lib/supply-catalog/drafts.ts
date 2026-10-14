@@ -22,22 +22,81 @@ export function itemDraft(item: SupplyItem | SupplyProposal): ItemDraft {
 		shop: 'latestVersion' in item ? item.latestVersion.shop : item.shop
 	};
 }
-export function validateItem(draft: ItemDraft): string | null {
-	if (!draft.name.trim()) return 'กรอกชื่อพัสดุ';
-	if (!draft.categoryId) return 'เลือกหมวดหมู่';
-	if (!draft.unit.trim()) return 'กรอกหน่วยนับ';
-	if (!/^\d{1,10}(?:\.\d{1,2})?$/.test(draft.price) || Number(draft.price) > 9999999999.99)
-		return 'กรอกราคา 0–9,999,999,999.99 และมีทศนิยมไม่เกิน 2 ตำแหน่ง';
-	if (!draft.shop.trim()) return 'กรอกชื่อร้านค้า';
+export type ItemField = 'name' | 'description' | 'categoryId' | 'unit' | 'price' | 'shop';
+export type ItemFieldErrors = Partial<Record<ItemField, string>>;
+export type PriceFieldErrors = Partial<Record<'price' | 'shop', string>>;
+export function trimSupplyText(value: string): string {
+	return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, '');
+}
+export function validateSupplyText(
+	value: string,
+	label: string,
+	max: number,
+	required = true
+): string | null {
+	const trimmed = trimSupplyText(value);
+	if (required && !trimmed) return `กรอก${label}`;
+	if (Array.from(trimmed).length > max)
+		return `${label}ต้องไม่เกิน ${max.toLocaleString('th-TH')} ตัวอักษร`;
+	if (/\p{Cc}/u.test(trimmed.replace(/[\n\t]/g, ''))) return `${label}มีอักขระควบคุมที่ใช้ไม่ได้`;
 	return null;
+}
+export function validatePriceFields(draft: { price: string; shop: string }): PriceFieldErrors {
+	const errors: PriceFieldErrors = {};
+	if (!draft.price) errors.price = 'กรอกราคาต่อหน่วย';
+	else if (
+		!/^[0-9]{1,10}(?:\.[0-9]{1,2})?$/.test(draft.price) ||
+		satang(draft.price) > 999999999999n
+	)
+		errors.price = 'กรอกราคา 0–9,999,999,999.99 และมีทศนิยมไม่เกิน 2 ตำแหน่ง';
+	const shop = validateSupplyText(draft.shop, 'ชื่อร้านค้า', 300, true);
+	if (shop) errors.shop = shop;
+	return errors;
+}
+export function validateItemFields(
+	draft: ItemDraft,
+	{ metadataOnly = false }: { metadataOnly?: boolean } = {}
+): ItemFieldErrors {
+	const errors: ItemFieldErrors = {};
+	const name = validateSupplyText(draft.name, 'ชื่อพัสดุ', 200, true);
+	const description = validateSupplyText(draft.description, 'รายละเอียด', 5000, false);
+	const unit = validateSupplyText(draft.unit, 'หน่วยนับ', 80, true);
+	if (name) errors.name = name;
+	if (description) errors.description = description;
+	if (!draft.categoryId) errors.categoryId = 'เลือกหมวดหมู่';
+	if (unit) errors.unit = unit;
+	return metadataOnly ? errors : { ...errors, ...validatePriceFields(draft) };
+}
+export function validateSourceUrl(value: string): string | null {
+	const trimmed = trimSupplyText(value);
+	if (!trimmed) return null;
+	const error = validateSupplyText(trimmed, 'ลิงก์แหล่งที่มา', 2048, false);
+	if (error) return error;
+	const invalid = 'กรอกลิงก์ http หรือ https ที่ไม่มีชื่อผู้ใช้หรือรหัสผ่าน';
+	try {
+		const url = new URL(trimmed);
+		if (
+			['https:', 'http:'].includes(url.protocol) &&
+			url.hostname &&
+			!url.username &&
+			!url.password
+		)
+			return null;
+	} catch {
+		return invalid;
+	}
+	return invalid;
+}
+export function validateItem(draft: ItemDraft): string | null {
+	return Object.values(validateItemFields(draft))[0] ?? null;
 }
 export function cleanItem(draft: ItemDraft): ItemDraft {
 	return {
 		...draft,
-		name: draft.name.trim(),
-		description: draft.description.trim(),
-		unit: draft.unit.trim(),
-		shop: draft.shop.trim()
+		name: trimSupplyText(draft.name),
+		description: trimSupplyText(draft.description),
+		unit: trimSupplyText(draft.unit),
+		shop: trimSupplyText(draft.shop)
 	};
 }
 export function satang(price: string): bigint {
