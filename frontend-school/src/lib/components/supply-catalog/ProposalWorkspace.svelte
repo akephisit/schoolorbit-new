@@ -66,7 +66,6 @@
 		loadedCategoryOwner = '';
 	let loading = $state(true),
 		error = $state<string | null>(null),
-		categoriesLoading = $state(true),
 		categoriesError = $state<string | null>(null);
 	let mode = $state<'detail' | 'propose' | 'approve' | null>(null),
 		selected = $state.raw<SupplyProposal | null>(null),
@@ -114,11 +113,9 @@
 			const ticket = categoryRequest.begin();
 			if (loadedCategoryOwner !== key) categories = [];
 			loadedCategoryOwner = key;
-			categoriesLoading = true;
 			categoriesError = null;
 			void source.then((loaded) => {
 				if (!categoryRequest.isCurrent(ticket.revision)) return;
-				categoriesLoading = false;
 				if (!loaded.ok) categoriesError = loaded.error;
 				else if (loaded.data.ownerKey === key) categories = loaded.data.categories ?? [];
 			});
@@ -146,7 +143,6 @@
 	}
 	async function loadCategories() {
 		const ticket = categoryRequest.begin();
-		categoriesLoading = true;
 		categoriesError = null;
 		try {
 			const loaded = await listCategories({ signal: ticket.signal });
@@ -154,8 +150,6 @@
 		} catch (e) {
 			if (categoryRequest.isCurrent(ticket.revision))
 				categoriesError = message(e, 'โหลดหมวดหมู่ไม่สำเร็จ');
-		} finally {
-			if (categoryRequest.isCurrent(ticket.revision)) categoriesLoading = false;
 		}
 	}
 	function navigate(next: number) {
