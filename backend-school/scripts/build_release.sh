@@ -26,14 +26,14 @@ case "$cache_mode" in
             export SCCACHE_GHA_ENABLED=on
             export SCCACHE_GHA_VERSION=schoolorbit-backend-school
             export SCCACHE_IGNORE_SERVER_IO_ERROR=1
-            export RUSTC_WRAPPER=/usr/local/bin/sccache
+            export RUSTC_WRAPPER=/usr/local/bin/rustc-cache
             cache_enabled=true
         fi
         ;;
     local)
         # Local benchmark only; GitHub builds use the remote cache across runners.
         export SCCACHE_DIR=/var/cache/sccache
-        export RUSTC_WRAPPER=/usr/local/bin/sccache
+        export RUSTC_WRAPPER=/usr/local/bin/rustc-cache
         cache_enabled=true
         ;;
     off) ;;
@@ -44,6 +44,9 @@ case "$cache_mode" in
 esac
 
 echo "school_compiler_cache phase=$phase mode=$cache_mode enabled=$cache_enabled"
+# cc-rs recognizes the basename "sccache" and otherwise wraps native compilers too.
+# Invoke the same pinned binary through a Rust-only wrapper to avoid hundreds of extra
+# C/C++/assembly cache requests against GitHub's rate-limited cache service.
 compile_started=$(date +%s%N)
 if [[ "$phase" == dependencies ]]; then
     cargo chef cook --release --recipe-path recipe.json

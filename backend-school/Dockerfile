@@ -21,6 +21,8 @@ RUN tar -xzf /tmp/sccache.tar.gz -C /tmp \
     && install -m 0755 \
         /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl/sccache \
         /usr/local/bin/sccache \
+    && printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/sccache "$@"' > /usr/local/bin/rustc-cache \
+    && chmod 0755 /usr/local/bin/rustc-cache \
     && rm -rf /tmp/sccache.tar.gz /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl
 COPY --from=planner /app/recipe.json recipe.json
 COPY scripts/build_release.sh scripts/release_linker.sh scripts/
