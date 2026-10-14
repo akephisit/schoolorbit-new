@@ -65,6 +65,7 @@ jobs:
       samples: ${{ fromJson(inputs.options).samples || '2' }}
       variants: ${{ fromJson(inputs.options).variants || 'default,cgu64' }}
       baseline: ${{ fromJson(inputs.options).baseline || '' }}
+      profile_only: ${{ fromJson(inputs.options).profile_only == true }}
   http-benchmark:
     if: inputs.operation == 'http-benchmark'
     uses: ./.github/workflows/backend-http-boundary-experiment.yml

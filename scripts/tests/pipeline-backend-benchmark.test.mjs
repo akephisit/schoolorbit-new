@@ -7,6 +7,17 @@ import test from 'node:test';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 const script = path.join(repo, 'scripts/benchmark_backend_build.sh');
+test('compiler profiling refuses paired-source or altered-profile selections', () => {
+  const workflow = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
+  const body = workflow.match(/name: Validate bounded benchmark selection[\s\S]*?        run: \|\n([\s\S]*?)(?=      -)/)[1].replace(/^          /gm, '');
+  for (const [baseline, variants, code] of [['', 'default', 0], ['', 'default,cgu64', 1], ['a'.repeat(40), 'default,api-batches', 1]]) {
+    const result = spawnSync('bash', ['-e', '-c', body], {encoding:'utf8',env:{...process.env,BENCH_BACKEND:'backend-school',BENCH_SAMPLES:'2',BENCH_BASELINE:baseline,BENCH_VARIANTS:variants,BENCH_PROFILE_ONLY:'true'}});
+    assert.equal(result.status, code, result.stderr);
+  }
+  assert.match(workflow, /cache-from: \$\{\{ steps\.cache\.outputs\.from \}\}/);
+  assert.match(workflow, /run: node scripts\/lib\/pipeline-build-cache\.mjs/);
+  assert.doesNotMatch(workflow, /cache-to:|push: true/);
+});
 const summary = path.join(repo, 'scripts/summarize_backend_benchmark.py');
 const api = { openapi: '3.1.0', paths: { '/fixture': {} } };
 function fixture(t) {
