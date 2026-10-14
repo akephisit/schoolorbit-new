@@ -14,21 +14,18 @@
 	});
 </script>
 
-<PageShell
-	title="คลังพัสดุ"
-	description="ค้นหาพัสดุและราคาล่าสุดของโรงเรียน เก็บรายการโปรดและจัดชุดที่ใช้บ่อย"
->
-	{#if $can.has(PERMISSIONS.SUPPLY_CATALOG_READ_SCHOOL)}
-		{#key identity}<CatalogWorkspace
-				{identity}
-				initialItems={data.items}
-				initialCategories={data.categories}
-				query={data.query}
-				requestKey={data.requestKey}
-				canManage={$can.has(PERMISSIONS.SUPPLY_CATALOG_MANAGE_SCHOOL)}
-				canPropose={$can.has(PERMISSIONS.SUPPLY_CATALOG_REQUEST_OWN)}
-				canApprove={$can.has(PERMISSIONS.SUPPLY_CATALOG_APPROVE_SCHOOL)}
-				userId={$authStore.user?.id ?? ''}
-			/>{/key}
-	{:else}<PageState variant="permission" title="ไม่มีสิทธิ์ดูคลังพัสดุ" />{/if}
-</PageShell>
+{#if $can.has(PERMISSIONS.SUPPLY_CATALOG_READ_SCHOOL)}
+	{#key identity}<CatalogWorkspace
+			{identity}
+			initialItems={data.items}
+			initialCategories={data.categories}
+			query={data.query}
+			requestKey={data.requestKey}
+			canManage={$can.has(PERMISSIONS.SUPPLY_CATALOG_MANAGE_SCHOOL)}
+			canPropose={$can.has(PERMISSIONS.SUPPLY_CATALOG_REQUEST_OWN)}
+			canApprove={$can.has(PERMISSIONS.SUPPLY_CATALOG_APPROVE_SCHOOL)}
+			userId={$authStore.user?.id ?? ''}
+		/>{/key}
+{:else}<PageShell title="คลังพัสดุ"
+		><PageState variant="permission" title="ไม่มีสิทธิ์ดูคลังพัสดุ" /></PageShell
+	>{/if}

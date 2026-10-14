@@ -9,7 +9,14 @@
 		type SupplyItem
 	} from '#lib/api/supply-catalog.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
-	import { message, money, subtotal, sumPrices } from '#lib/supply-catalog/drafts.js';
+	import {
+		message,
+		money,
+		subtotal,
+		sumPrices,
+		validateSupplyText,
+		trimSupplyText
+	} from '#lib/supply-catalog/drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -17,6 +24,10 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { AlertCircle } from '@lucide/svelte';
+	import FieldError from './FieldError.svelte';
 	import ItemPicker from './ItemPicker.svelte';
 	let { userId, canManage }: { userId: string; canManage: boolean } = $props();
 	const request = new LatestRequest();
@@ -31,6 +42,16 @@
 		shared = $state(false);
 	let entries = $state<{ item: SupplyItem; quantity: number }[]>([]),
 		deleting = $state.raw<SupplyBundle | null>(null);
+	let submitted = $state(false);
+	const nameError = $derived(submitted ? validateSupplyText(name, 'ชื่อชุดพัสดุ', 200) : null);
+	const entriesError = $derived(
+		submitted && entries.length === 0 ? 'เพิ่มพัสดุอย่างน้อยหนึ่งรายการ' : null
+	);
+	function quantityError(quantity: number): string | null {
+		return Number.isSafeInteger(quantity) && quantity >= 1 && quantity <= 1000000
+			? null
+			: 'จำนวนต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง 1,000,000';
+	}
 	const total = $derived(
 		sumPrices(entries.map((entry) => subtotal(entry.item.latestVersion.price, entry.quantity)))
 	);
@@ -68,6 +89,7 @@
 		entries =
 			bundle?.entries.map((entry) => ({ item: entry.item, quantity: entry.quantity })) ?? [];
 		editing = true;
+		submitted = false;
 		error = null;
 	}
 	function add(item: SupplyItem) {
@@ -78,24 +100,14 @@
 	}
 	async function save() {
 		if (pending || disposed) return;
-		if (!name.trim() || entries.length === 0) {
-			error = 'กรอกชื่อชุดและเพิ่มพัสดุอย่างน้อยหนึ่งรายการ';
-			return;
-		}
-		if (
-			entries.some(
-				(entry) =>
-					!Number.isInteger(entry.quantity) || entry.quantity < 1 || entry.quantity > 1000000
-			)
-		) {
-			error = 'จำนวนพัสดุต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง 1,000,000';
-			return;
-		}
+		submitted = true;
+		error = null;
+		if (nameError || entriesError || entries.some((entry) => quantityError(entry.quantity))) return;
 		pending = true;
 		error = null;
 		try {
 			const saved = await saveBundle(selected?.id ?? null, {
-				name: name.trim(),
+				name: trimSupplyText(name),
 				shared,
 				revision: selected?.revision ?? null,
 				entries: entries.map((entry) => ({ itemId: entry.item.id, quantity: entry.quantity }))
@@ -151,66 +163,90 @@
 
 <div class="space-y-4" data-testid="supply-bundles">
 	<p class="text-sm text-muted-foreground">ชุดเก็บพัสดุและจำนวน ราคาคำนวณจากรุ่นล่าสุดเสมอ</p>
-	{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
+	{#if error}<Alert.Root variant="destructive"
+			><AlertCircle aria-hidden="true" /><Alert.Title>จัดการชุดพัสดุไม่สำเร็จ</Alert.Title
+			><Alert.Description>{error}</Alert.Description></Alert.Root
+		>{/if}
 	{#if editing}<form
-			class="space-y-4"
+			class="space-y-5"
+			novalidate
 			onsubmit={(e) => {
 				e.preventDefault();
 				void save();
 			}}
 		>
-			<div class="space-y-1">
-				<Label for="bundle-name">ชื่อชุดพัสดุ *</Label><Input
-					id="bundle-name"
-					bind:value={name}
-					maxlength={200}
-					required
-					disabled={pending}
-				/>
-			</div>
-			{#if canManage}<div class="flex items-center gap-2">
-					<Checkbox id="bundle-shared" bind:checked={shared} disabled={pending} /><Label
-						for="bundle-shared">ใช้ร่วมกันทั้งโรงเรียน</Label
-					>
-				</div>{/if}
-			<ItemPicker onselect={add} disabled={pending} />
-			<div class="space-y-3">
-				{#each entries as entry (entry.item.id)}<div class="rounded-xl border p-3">
-						<div class="flex items-start gap-2">
-							<div class="min-w-0 flex-1">
-								<p class="break-words text-sm font-medium">{entry.item.name}</p>
-								<p class="text-xs text-muted-foreground">
-									{money(entry.item.latestVersion.price)} ฿ / {entry.item.unit} · รุ่น {entry.item
-										.latestVersion.version}
-								</p>
-							</div>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								disabled={pending}
-								onclick={() =>
-									(entries = entries.filter((value) => value.item.id !== entry.item.id))}
-								>นำออก</Button
-							>
-						</div>
-						<div class="mt-2 flex items-center gap-3">
-							<Label for={`quantity-${entry.item.id}`}>จำนวน</Label><Input
-								id={`quantity-${entry.item.id}`}
-								aria-label={`จำนวน ${entry.item.name}`}
-								type="number"
-								min={1}
-								max={1000000}
-								step={1}
-								bind:value={entry.quantity}
-								class="w-24"
-								disabled={pending}
-							/><span class="ml-auto text-sm tabular-nums"
-								>{money(subtotal(entry.item.latestVersion.price, entry.quantity))} ฿</span
-							>
-						</div>
-					</div>{/each}
-			</div>
+			<section class="space-y-3" aria-labelledby="bundle-identity-heading">
+				<h3 id="bundle-identity-heading" class="font-semibold">
+					{selected ? 'แก้ไขชุดพัสดุ' : 'สร้างชุดพัสดุ'}
+				</h3>
+				<div class="space-y-1">
+					<Label for="bundle-name">ชื่อชุดพัสดุ *</Label><Input
+						id="bundle-name"
+						bind:value={name}
+						required
+						disabled={pending}
+						aria-invalid={!!nameError}
+						aria-describedby={nameError ? 'bundle-name-error' : undefined}
+					/><FieldError id="bundle-name-error" message={nameError} />
+				</div>
+				{#if canManage}<div class="flex items-center gap-2">
+						<Checkbox id="bundle-shared" bind:checked={shared} disabled={pending} /><Label
+							for="bundle-shared">ใช้ร่วมกันทั้งโรงเรียน</Label
+						>
+					</div>{/if}
+			</section>
+			<section class="space-y-3" aria-labelledby="bundle-items-heading">
+				<h3 id="bundle-items-heading" class="font-semibold">รายการในชุด</h3>
+				<ItemPicker onselect={add} disabled={pending} />
+				<FieldError id="bundle-entries-error" message={entriesError} />
+				<div class="space-y-3" aria-describedby={entriesError ? 'bundle-entries-error' : undefined}>
+					{#each entries as entry (entry.item.id)}<Card.Root class="gap-0 py-0"
+							><Card.Content class="p-3">
+								<div class="flex items-start gap-2">
+									<div class="min-w-0 flex-1">
+										<p class="break-words text-sm font-medium">{entry.item.name}</p>
+										<p class="text-xs text-muted-foreground">
+											{money(entry.item.latestVersion.price)} ฿ / {entry.item.unit} · รุ่น {entry
+												.item.latestVersion.version}
+										</p>
+									</div>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										disabled={pending}
+										onclick={() =>
+											(entries = entries.filter((value) => value.item.id !== entry.item.id))}
+										>นำออก</Button
+									>
+								</div>
+								<div class="mt-2 flex items-center gap-3">
+									<Label for={`quantity-${entry.item.id}`}>จำนวน</Label><Input
+										id={`quantity-${entry.item.id}`}
+										aria-label={`จำนวน ${entry.item.name}`}
+										type="number"
+										min={1}
+										max={1000000}
+										step={1}
+										bind:value={entry.quantity}
+										class="w-24"
+										disabled={pending}
+										aria-invalid={submitted && !!quantityError(entry.quantity)}
+										aria-describedby={submitted && quantityError(entry.quantity)
+											? `quantity-error-${entry.item.id}`
+											: undefined}
+									/><span class="ml-auto text-sm tabular-nums"
+										>{money(subtotal(entry.item.latestVersion.price, entry.quantity))} ฿</span
+									>
+								</div>
+								{#if submitted}<FieldError
+										id={`quantity-error-${entry.item.id}`}
+										message={quantityError(entry.quantity)}
+									/>{/if}
+							</Card.Content></Card.Root
+						>{/each}
+				</div>
+			</section>
 			<p class="text-right font-semibold">รวม {money(total)} ฿</p>
 			<div class="flex justify-end gap-2">
 				<Button type="button" variant="outline" disabled={pending} onclick={() => (editing = false)}
@@ -226,28 +262,41 @@
 				>ลองอีกครั้ง</Button
 			>{/if}
 		{#if result}<div class="space-y-3" aria-busy={loading}>
-				{#each result.items as bundle (bundle.id)}<article class="space-y-3 rounded-xl border p-3">
-						<div class="flex flex-wrap items-center gap-2">
-							<h3 class="min-w-0 flex-1 break-words font-medium">{bundle.name}</h3>
-							<Badge variant="secondary">{bundle.shared ? 'ชุดส่วนกลาง' : 'ชุดส่วนตัว'}</Badge>
-						</div>
-						<ul class="space-y-1 text-sm">
-							{#each bundle.entries as entry (entry.item.id)}<li class="flex justify-between gap-3">
-									<span class="min-w-0 break-words"
-										>{entry.item.name} × {entry.quantity} {entry.item.unit}</span
-									><span class="shrink-0 tabular-nums">{money(entry.subtotal)} ฿</span>
-								</li>{/each}
-						</ul>
-						<div class="flex flex-wrap items-center justify-between gap-2">
-							<p class="font-semibold">รวม {money(bundle.totalPrice)} ฿</p>
-							{#if writable(bundle)}<div class="flex gap-1">
-									<Button size="sm" variant="outline" onclick={() => edit(bundle)}>แก้ไขชุด</Button
-									><Button size="sm" variant="ghost" onclick={() => (deleting = bundle)}
-										>ลบชุด</Button
+				{#each result.items as bundle (bundle.id)}<Card.Root class="gap-0 py-0"
+						><Card.Content class="space-y-3 p-4">
+							<div class="flex flex-wrap items-center gap-2">
+								<h3 class="min-w-0 flex-1 break-words font-medium">{bundle.name}</h3>
+								<Badge variant="secondary">{bundle.shared ? 'ชุดส่วนกลาง' : 'ชุดส่วนตัว'}</Badge>
+							</div>
+							<ul class="space-y-1 text-sm">
+								{#each bundle.entries as entry (entry.item.id)}<li
+										class="flex justify-between gap-3"
 									>
-								</div>{/if}
-						</div>
-					</article>{/each}{#if result.items.length === 0}<PageState
+										<span class="min-w-0 break-words"
+											>{entry.item.name} × {entry.quantity} {entry.item.unit}</span
+										><span class="shrink-0 tabular-nums">{money(entry.subtotal)} ฿</span>
+									</li>{/each}
+							</ul>
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<p class="font-semibold">รวม {money(bundle.totalPrice)} ฿</p>
+								{#if writable(bundle)}<div class="flex gap-1">
+										<Button
+											type="button"
+											size="sm"
+											variant="outline"
+											disabled={pending}
+											onclick={() => edit(bundle)}>แก้ไขชุด</Button
+										><Button
+											type="button"
+											size="sm"
+											variant="destructive"
+											disabled={pending}
+											onclick={() => (deleting = bundle)}>ลบชุด</Button
+										>
+									</div>{/if}
+							</div>
+						</Card.Content></Card.Root
+					>{/each}{#if result.items.length === 0}<PageState
 						title="ยังไม่มีชุดพัสดุ"
 						description="สร้างชุดส่วนตัวเพื่อเก็บพัสดุและจำนวนที่ใช้บ่อย"
 					/>{/if}
