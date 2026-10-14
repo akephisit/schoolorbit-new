@@ -926,7 +926,10 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			const release = await readRepo('backend-school/scripts/build_release.sh');
 			assert.match(dockerfile, /bash scripts\/build_release\.sh dependencies/);
 			assert.match(release, /cargo chef cook --release --recipe-path recipe.json/);
-			assert.match(dockerfile, /sccache\/archive\/c037e117c7625a2668633574028a6addf2a96a6e\.tar\.gz/);
+			assert.match(
+				dockerfile,
+				/sccache\/archive\/c037e117c7625a2668633574028a6addf2a96a6e\.tar\.gz/
+			);
 			assert.match(
 				dockerfile,
 				/--checksum=sha256:6d445dc788b9f51d131d193d9ab466e76425b39f7df079f0dfddcac3222f7eb5/

@@ -142,7 +142,7 @@ def main():
                         command(["docker", "exec", container, "cargo", "build", "--release", "--lib", "--locked", "--offline"], "compile")
                     # Cache writes finish asynchronously. Wait until every observed miss has settled.
                     values = stats(container)
-                    deadline = time.monotonic() + 60
+                    deadline = time.monotonic() + 120
                     while values["cache_writes"] + values["cache_write_errors"] < values["cache_misses"] and time.monotonic() < deadline:
                         time.sleep(0.2)
                         values = stats(container)

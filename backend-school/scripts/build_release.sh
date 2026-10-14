@@ -1,6 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+wait_for_cache_writes() {
+    local observed status deadline=$((SECONDS + 120))
+    while ((SECONDS < deadline)); do
+        if ! observed=$(timeout 5 /usr/local/bin/sccache --show-stats); then
+            return 1
+        fi
+        # The pinned CLI exposes aggregate counts separately from per-language rows.
+        # A miss is settled when its asynchronous write succeeds or reports an error.
+        status=0
+        awk '
+            /^Cache misses[[:space:]]+[0-9]+$/ { misses=$NF; seen++ }
+            /^Cache writes[[:space:]]+[0-9]+$/ { writes=$NF; seen++ }
+            /^Cache write errors[[:space:]]+[0-9]+$/ { errors=$NF; seen++ }
+            END { if (seen != 3) exit 2; if (writes + errors < misses) exit 1 }
+        ' <<<"$observed" || status=$?
+        case "$status" in
+            0) return 0 ;;
+            2) return 1 ;;
+        esac
+        sleep 1
+    done
+    return 1
+}
+
 phase=${1:-application}
 case "$phase" in
     application) metrics_dir=target/cargo-timings ;;
@@ -58,9 +82,17 @@ else
 fi
 compile_nanoseconds=$(($(date +%s%N) - compile_started))
 
+cache_writes_settled=true
+cache_wait_started=$(date +%s%N)
+if [[ -n ${RUSTC_WRAPPER:-} ]] && ! wait_for_cache_writes; then
+    cache_writes_settled=false
+    echo 'Compiler cache write settlement is unavailable or timed out' >&2
+fi
+cache_write_wait_nanoseconds=$(($(date +%s%N) - cache_wait_started))
+
 mkdir -p "$metrics_dir"
-printf '{"schemaVersion":1,"compileNanoseconds":%s,"cacheMode":"%s","cacheEnabled":%s}\n' \
-    "$compile_nanoseconds" "$cache_mode" "$cache_enabled" >"$metrics_dir/build-metrics.json"
+printf '{"schemaVersion":1,"compileNanoseconds":%s,"cacheMode":"%s","cacheEnabled":%s,"cacheWriteWaitNanoseconds":%s,"cacheWritesSettled":%s}\n' \
+    "$compile_nanoseconds" "$cache_mode" "$cache_enabled" "$cache_write_wait_nanoseconds" "$cache_writes_settled" >"$metrics_dir/build-metrics.json"
 printf '{}\n' >"$metrics_dir/sccache-stats.json"
 if [[ -n ${RUSTC_WRAPPER:-} ]]; then
     # Metrics failure must not turn a successful compile into a failed release.

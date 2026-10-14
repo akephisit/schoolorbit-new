@@ -132,6 +132,12 @@ def summary(component, folder, log_file):
              "", "| BuildKit phase | Duration |", "| --- | ---: |"]
     for name in PHASE_NAMES:
         lines.append(f"| {name} | {seconds(phases.get(name, {}).get('duration'))} |")
+    for label, recorded in (("Application", metrics), ("Dependency", dependency_metrics)):
+        waited = number(recorded.get("cacheWriteWaitNanoseconds"))
+        if waited is not None:
+            settled = recorded.get("cacheWritesSettled")
+            status = "yes" if settled is True else "no" if settled is False else "unavailable"
+            lines += ["", f"{label} compiler cache write wait: {seconds(waited / 1e9)}; writes settled: {status}."]
     lines += ["", "Phase durations can overlap; do not sum them. Cached-layer durations can include transfer/extraction; some lazy transfers may occur outside these rows.", "", "| Rust library cache counter | Count |", "| --- | ---: |"]
     for label, key in [("hits", "cache_hits"), ("misses", "cache_misses"), ("errors", "cache_errors"), ("write errors", "cache_write_errors"), ("non-cacheable compiler calls", "non_cacheable_calls")]:
         value = counter(stats, key)
