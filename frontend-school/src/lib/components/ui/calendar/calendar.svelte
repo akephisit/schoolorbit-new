@@ -57,7 +57,6 @@ get along, so we shut typescript up by casting `value` to `never`.
 	class={cn(
 		'bg-background group/calendar p-3 [--cell-size:--spacing(8)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent',
 		hasDropdownCaption && '[--cell-size:--spacing(9)]',
-		'[@media(any-pointer:coarse)]:[--cell-size:44px]',
 		className
 	)}
 	{locale}

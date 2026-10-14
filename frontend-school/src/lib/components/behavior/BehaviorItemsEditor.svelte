@@ -147,7 +147,7 @@
 					}}
 				/>
 			</div>
-			<label class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-2"
+			<label class="flex items-center gap-2"
 				><Checkbox bind:checked={draft.enabled} />เปิดใช้งานรายการ</label
 			>
 		</fieldset>

@@ -483,7 +483,6 @@
 											<Button
 												variant="ghost"
 												size="icon"
-												class="min-h-[44px] min-w-[44px]"
 												aria-label={`เปิดรายละเอียด ${activityName(item)}`}
 												onclick={() => openActivity(item)}><ArrowUpRight class="size-4" /></Button
 											>

@@ -2040,66 +2040,69 @@ for (const width of [390, 474])
 			expect(api.writes).toHaveLength(0);
 		});
 
-for (const width of [320, 488, 1440])
-	for (const theme of ['light', 'dark'] as const)
-		test(`direct result controls need one tap and retain keyboard selection ${width} ${theme}`, async ({
-			page
-		}) => {
-			const api = await mockAttendance(page);
-			await page.setViewportSize({ width, height: 884 });
-			await page.emulateMedia({ colorScheme: theme });
-			await page.goto(path());
-			await chooseRound(page);
-			const control = resultControl(page, 'นักเรียนคนแรก');
-			await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
-			await expect(control.getByRole('radio')).toHaveCount(7);
-			const present = control.getByRole('radio', { name: 'มา', exact: true });
-			const late = control.getByRole('radio', { name: 'สาย', exact: true });
-			for (const button of [
-				present,
-				late,
-				control.getByRole('radio', { name: 'กิจกรรม', exact: true })
-			]) {
-				const bounds = (await button.boundingBox())!;
-				expect(bounds.height).toBeGreaterThanOrEqual(44);
-				expect(bounds.width).toBeGreaterThanOrEqual(44);
-			}
-			await present.click();
-			await expect(present).toHaveAttribute('aria-checked', 'true');
-			await present.click();
-			await expect(present).toHaveAttribute('aria-checked', 'true');
-			await present.focus();
-			await page.keyboard.press('ArrowRight');
-			await expect(late).toBeFocused();
-			await page.keyboard.press('Space');
-			await expect(late).toHaveAttribute('aria-checked', 'true');
-			await page.keyboard.press('Enter');
-			await expect(late).toHaveAttribute('aria-checked', 'true');
-			await control
-				.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
-				.click();
-			await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
-			expect(api.writes).toHaveLength(0);
-			await chooseResult(page, 'นักเรียนคนแรก', 'มา');
-			await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
-			await expect(
-				control.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
-			).toHaveCount(0);
-			expect(api.writes[0].data).toMatchObject({
-				students: [{ studentId: student, result: 'present' }]
+test.describe('compact touch-enabled attendance controls', () => {
+	test.use({ hasTouch: true });
+	for (const width of [320, 488, 1440])
+		for (const theme of ['light', 'dark'] as const)
+			test(`direct result controls need one tap and retain keyboard selection ${width} ${theme}`, async ({
+				page
+			}) => {
+				const api = await mockAttendance(page);
+				await page.setViewportSize({ width, height: 884 });
+				await page.emulateMedia({ colorScheme: theme });
+				await page.goto(path());
+				await chooseRound(page);
+				const control = resultControl(page, 'นักเรียนคนแรก');
+				await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
+				await expect(control.getByRole('radio')).toHaveCount(7);
+				const present = control.getByRole('radio', { name: 'มา', exact: true });
+				const late = control.getByRole('radio', { name: 'สาย', exact: true });
+				for (const button of [
+					present,
+					late,
+					control.getByRole('radio', { name: 'กิจกรรม', exact: true })
+				]) {
+					const bounds = (await button.boundingBox())!;
+					expect(bounds.height).toBeLessThan(44);
+					expect(bounds.width).toBeGreaterThan(0);
+				}
+				await present.tap();
+				await expect(present).toHaveAttribute('aria-checked', 'true');
+				await present.tap();
+				await expect(present).toHaveAttribute('aria-checked', 'true');
+				await present.focus();
+				await page.keyboard.press('ArrowRight');
+				await expect(late).toBeFocused();
+				await page.keyboard.press('Space');
+				await expect(late).toHaveAttribute('aria-checked', 'true');
+				await page.keyboard.press('Enter');
+				await expect(late).toHaveAttribute('aria-checked', 'true');
+				await control
+					.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
+					.tap();
+				await expect(control.getByRole('radio', { checked: true })).toHaveCount(0);
+				expect(api.writes).toHaveLength(0);
+				await chooseResult(page, 'นักเรียนคนแรก', 'มา');
+				await page.getByRole('button', { name: 'บันทึก', exact: true }).click();
+				await expect(
+					control.getByRole('button', { name: 'ยกเลิกการเลือกผลของ นักเรียนคนแรก', exact: true })
+				).toHaveCount(0);
+				expect(api.writes[0].data).toMatchObject({
+					students: [{ studentId: student, result: 'present' }]
+				});
+				expect(
+					(api.writes[0].data as SaveAttendanceResults).students.every(
+						(row) => !Object.hasOwn(row, 'note')
+					)
+				).toBe(true);
+				await expect(page.getByText('เพิ่มหมายเหตุ', { exact: true })).toHaveCount(0);
+				await expect(page.getByLabel(/หมายเหตุ(?:เพิ่มเติม)?ของ/)).toHaveCount(0);
+				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+					true
+				);
+				await page.screenshot({ path: `/tmp/attendance-direct-tap-${width}-${theme}.png` });
 			});
-			expect(
-				(api.writes[0].data as SaveAttendanceResults).students.every(
-					(row) => !Object.hasOwn(row, 'note')
-				)
-			).toBe(true);
-			await expect(page.getByText('เพิ่มหมายเหตุ', { exact: true })).toHaveCount(0);
-			await expect(page.getByLabel(/หมายเหตุ(?:เพิ่มเติม)?ของ/)).toHaveCount(0);
-			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-				true
-			);
-			await page.screenshot({ path: `/tmp/attendance-direct-tap-${width}-${theme}.png` });
-		});
+});
 
 for (const width of [390, 1440])
 	for (const theme of ['light', 'dark'] as const)

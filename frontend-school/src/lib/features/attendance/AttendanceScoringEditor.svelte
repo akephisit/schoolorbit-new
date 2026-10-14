@@ -19,7 +19,7 @@
 </script>
 
 <section class="space-y-3 rounded-md border p-4" aria-label="คะแนนรอบพิเศษ">
-	<label class="flex min-h-[44px] items-center gap-2"
+	<label class="flex items-center gap-2"
 		><Checkbox checked={value !== null} onCheckedChange={enable} />กำหนดคะแนนเฉพาะรอบนี้</label
 	>{#if value}<p class="text-sm text-muted-foreground">
 			เลือกไม่คิดคะแนน เพิ่มความดี หรือหักคะแนนให้แต่ละสถานะ
@@ -29,8 +29,6 @@
 			>
 				<Label for={`special-score-${rule.result}`}>{resultLabels[rule.result]}</Label
 				><AttendanceSelect
-					class="min-h-[44px]"
-					itemClass="min-h-[44px]"
 					id={`special-score-${rule.result}`}
 					label={`คะแนนเมื่อ${resultLabels[rule.result]}`}
 					value={rule.action}
@@ -45,7 +43,6 @@
 				/><Input
 					aria-label={`จำนวนคะแนนเมื่อ${resultLabels[rule.result]}`}
 					type="number"
-					class="min-h-[44px]"
 					min={rule.action === 'none' ? 0 : 1}
 					bind:value={rule.points}
 					disabled={rule.action === 'none'}

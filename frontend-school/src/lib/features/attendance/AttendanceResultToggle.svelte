@@ -47,13 +47,12 @@
 		>{#each writableAttendanceResults as result (result)}<ToggleGroup.Item
 				value={result}
 				aria-label={resultLabels[result]}
-				class={`min-h-[44px] min-w-[44px] px-1 text-xs ${tone(result)}`}
-				>{resultLabels[result]}</ToggleGroup.Item
+				class={`px-1 text-xs ${tone(result)}`}>{resultLabels[result]}</ToggleGroup.Item
 			>{/each}</ToggleGroup.Root
 	>{#if allowUnchecked}<Button
 			type="button"
 			variant="ghost"
-			class="size-[44px] shrink-0"
+			size="icon-sm"
 			disabled={disabled || value === 'unchecked'}
 			aria-label={`ยกเลิกการเลือก${label}`}
 			title="กลับเป็นยังไม่ได้เช็ค"

@@ -228,7 +228,7 @@
 				<p class="text-sm font-medium">ฝั่งคะแนน</p>
 				<div class="grid gap-3 sm:grid-cols-2">
 					{#each sides as side (side)}<label
-							class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3 rounded-xl border p-3 has-[[data-state=checked]]:border-primary/30 has-[[data-state=checked]]:bg-primary/5"
+							class="flex items-center gap-3 rounded-xl border p-3 has-[[data-state=checked]]:border-primary/30 has-[[data-state=checked]]:bg-primary/5"
 							><Checkbox
 								checked={chosenSides.includes(side)}
 								onCheckedChange={(checked) =>
@@ -240,9 +240,9 @@
 				</div>
 			</div>
 			{#if !reset}<div class="space-y-2 border-t pt-4">
-					<label class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3"
+					<label class="flex items-center gap-3"
 						><Checkbox bind:checked={termOnly} />เฉพาะภาคเรียนที่เลือก (ปิดเพื่อเลือกทุกภาคเรียน)</label
-					><label class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3"
+					><label class="flex items-center gap-3"
 						><Checkbox bind:checked={allDates} />ทุกวันในขอบเขตที่เลือก</label
 					>
 				</div>{/if}
@@ -272,8 +272,7 @@
 			{#if !reset}<div class="space-y-2 border-t pt-4">
 					<p class="text-sm font-medium">ที่มาของคะแนน</p>
 					<div class="grid gap-2 sm:grid-cols-2">
-						{#each sources as source (source)}<label
-								class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-3 rounded-lg px-2"
+						{#each sources as source (source)}<label class="flex items-center gap-3 rounded-lg px-2"
 								><Checkbox
 									checked={chosenSources.includes(source)}
 									onCheckedChange={(checked) =>

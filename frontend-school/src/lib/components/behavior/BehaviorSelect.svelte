@@ -40,7 +40,6 @@
 		>
 		<Select.Content class="max-w-[calc(100vw-2rem)]">
 			{#if options.length > 20}<Input
-					class="[@media(any-pointer:coarse)]:min-h-[44px]"
 					aria-label={`ค้นหา ${label}`}
 					bind:value={search}
 					onkeydown={(event) => event.stopPropagation()}
