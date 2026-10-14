@@ -75,6 +75,7 @@ async function catalog(
 	options: {
 		failCreate?: boolean;
 		failProposal?: boolean;
+		failApprove?: boolean;
 		holdItems?: boolean;
 		longHistory?: boolean;
 	} = {}
@@ -88,7 +89,8 @@ async function catalog(
 		proposal = sampleProposal(),
 		fileNumber = 450,
 		createFailed = false,
-		proposalFailed = false;
+		proposalFailed = false,
+		approvalFailed = false;
 	let releaseItems = () => {};
 	const hold = new Promise<void>((resolve) => (releaseItems = resolve));
 	let versions = [
@@ -220,6 +222,10 @@ async function catalog(
 			return reply(route, item);
 		}
 		if (path.endsWith('/approve')) {
+			if (options.failApprove && !approvalFailed) {
+				approvalFailed = true;
+				return reply(route, 'อนุมัติไม่สำเร็จ กรุณาตรวจสอบก่อนส่งอีกครั้ง', 503);
+			}
 			item = {
 				...item,
 				...payload,
@@ -488,6 +494,10 @@ test('reviewer edits every approved field while source stays out of approved pay
 	await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
 	await expect(dialog.getByRole('status')).toHaveCount(0);
 	await dialog.getByRole('button', { name: 'อนุมัติและรับเข้าคลัง', exact: true }).click();
+	await page
+		.getByRole('alertdialog')
+		.getByRole('button', { name: 'ยืนยันอนุมัติ', exact: true })
+		.click();
 	await expect(dialog).toHaveCount(0);
 	await expect(page.getByTestId('supply-proposals')).toContainText('ไม่มีข้อเสนอรออนุมัติ');
 	const write = api.writes.find((entry) => entry.path.endsWith('/approve'));
@@ -563,14 +573,14 @@ test('old version history is bounded, loaded lazily and edited without changing 
 	expect(api.reads.some((path) => path.includes('/versions?'))).toBe(false);
 	await dialog.getByRole('button', { name: 'รุ่นเก่ากว่า', exact: true }).click();
 	await expect(dialog).toContainText('หน้า 2 / 2');
-	await expect(dialog.getByRole('listitem')).toHaveCount(2);
+	await expect(dialog.getByRole('table', { name: 'ประวัติราคา' }).getByRole('row')).toHaveCount(3);
 	await dialog.getByRole('button', { name: 'แก้ไขรุ่น 1', exact: true }).click();
 	await dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true }).fill('100.00');
 	await dialog.getByRole('button', { name: 'บันทึกรุ่นราคา', exact: true }).click();
 	await expect(dialog).toContainText('ราคาล่าสุด · รุ่น 102');
 	await expect(dialog).toContainText('125.50');
 	await expect(dialog).toContainText('100.00');
-	await expect(dialog.getByRole('listitem')).toHaveCount(2);
+	await expect(dialog.getByRole('table', { name: 'ประวัติราคา' }).getByRole('row')).toHaveCount(3);
 	expect(api.writes[0].path).toBe(`/api/supply-catalog/items/${itemId}/versions/${id(701)}`);
 });
 test('metadata edits remove an item from the active search and correct the filtered count locally', async ({
@@ -612,6 +622,10 @@ test('choosing existing approval target uses its canonical metadata while keepin
 	await expect(dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true })).toHaveValue('45.00');
 	await expect(dialog.getByLabel('ร้านค้า *', { exact: true })).toHaveValue('ร้านเดิม');
 	await dialog.getByRole('button', { name: 'อนุมัติและรับเข้าคลัง', exact: true }).click();
+	await page
+		.getByRole('alertdialog')
+		.getByRole('button', { name: 'ยืนยันอนุมัติ', exact: true })
+		.click();
 	await expect(dialog).toHaveCount(0);
 	expect(api.writes[0].payload).toMatchObject({
 		name: 'กระดาษ A4',
@@ -649,4 +663,208 @@ test('permission revocation disposes a delayed catalog response before it can be
 	api.releaseItems();
 	await expect(page.getByTestId('supply-catalog')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'กระดาษ A4', exact: true })).toHaveCount(0);
+});
+
+for (const width of [375, 1280]) {
+	test(`manager field errors are associated with inputs and never write invalid drafts at ${width}px`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		const api = await catalog(page, [read, manage]);
+		await page.goto('/staff/supply-catalog');
+		const header = page
+			.locator('header')
+			.filter({ has: page.getByRole('heading', { name: 'คลังพัสดุ', exact: true }) });
+		await expect(header.getByRole('button', { name: 'เพิ่มพัสดุ', exact: true })).toBeEnabled();
+		if (width === 375)
+			await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+		await header.getByRole('button', { name: 'เพิ่มพัสดุ', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByRole('button', { name: 'บันทึกพัสดุ', exact: true }).click();
+		for (const label of ['ชื่อพัสดุ *', 'หน่วยนับ *', 'ราคาต่อหน่วย (บาท) *', 'ร้านค้า *']) {
+			const input = dialog.getByLabel(label, { exact: true });
+			await expect(input).toHaveAttribute('aria-invalid', 'true');
+			const errorId = await input.getAttribute('aria-describedby');
+			expect(errorId).toBeTruthy();
+			await expect(dialog.locator(`#${errorId}`)).toBeVisible();
+		}
+		expect(api.writes).toEqual([]);
+		await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ข้อความที่ยังไม่บันทึก');
+		await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveAttribute(
+			'aria-invalid',
+			'false'
+		);
+		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+		await header.getByRole('button', { name: 'จัดการหมวดหมู่', exact: true }).click();
+		await dialog.getByRole('button', { name: 'เพิ่มหมวดหมู่', exact: true }).click();
+		await expect(dialog.getByLabel('ชื่อหมวดหมู่ *', { exact: true })).toHaveAttribute(
+			'aria-invalid',
+			'true'
+		);
+		await expect(dialog.locator('#category-name-error')).toBeVisible();
+		await page.keyboard.press('Escape');
+		await header.getByRole('button', { name: 'ชุดพัสดุ', exact: true }).click();
+		await dialog.getByRole('button', { name: 'สร้างชุดพัสดุ', exact: true }).click();
+		await dialog.getByRole('button', { name: 'บันทึกชุดพัสดุ', exact: true }).click();
+		await expect(dialog.getByLabel('ชื่อชุดพัสดุ *', { exact: true })).toHaveAttribute(
+			'aria-invalid',
+			'true'
+		);
+		await expect(dialog.locator('#bundle-entries-error')).toBeVisible();
+		expect(api.writes).toEqual([]);
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+			true
+		);
+	});
+}
+
+test('approval confirmation cancels without writes or stage cleanup and preserves failure drafts', async ({
+	page
+}) => {
+	const api = await catalog(page, [read, approve], { failApprove: true });
+	await page.goto('/staff/supply-catalog/proposals?review=true');
+	await page.getByRole('button', { name: 'ตรวจข้อเสนอ', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'แก้ไขและอนุมัติ', exact: true }).click();
+	await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ชื่อที่ตรวจแล้ว');
+	await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
+	await expect(dialog.getByRole('status')).toHaveCount(0);
+	await dialog.getByRole('button', { name: 'อนุมัติและรับเข้าคลัง', exact: true }).click();
+	const confirmation = page.getByRole('alertdialog');
+	await expect(confirmation).toContainText('ชื่อที่ตรวจแล้ว');
+	await expect(confirmation).toContainText('45.00');
+	await confirmation.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue('ชื่อที่ตรวจแล้ว');
+	await expect(dialog.getByRole('img', { name: 'ชื่อที่ตรวจแล้ว', exact: true })).toBeVisible();
+	await expect(confirmation).toHaveCount(0);
+	expect(api.writes).toEqual([]);
+	expect(api.deleted).toEqual([]);
+	await dialog.getByRole('button', { name: 'อนุมัติและรับเข้าคลัง', exact: true }).click();
+	await confirmation.getByRole('button', { name: 'ยืนยันอนุมัติ', exact: true }).click();
+	await expect(confirmation.getByRole('alert')).toContainText('อนุมัติไม่สำเร็จ');
+	await confirmation.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue('ชื่อที่ตรวจแล้ว');
+	expect(api.writes).toHaveLength(1);
+	expect(api.deleted).toEqual([]);
+});
+
+async function navigateSameContext(page: Page, destination: string) {
+	await page.evaluate((href) => {
+		const link = document.createElement('a');
+		link.href = href;
+		link.dataset.sveltekitPreloadData = 'off';
+		document.body.append(link);
+		link.click();
+		link.remove();
+	}, destination);
+	await expect(page).toHaveURL(new RegExp(destination.replace(/[?]/g, '\\?')));
+}
+
+test('same-owner loader refresh retains visible catalog and unsent search text', async ({
+	page
+}) => {
+	const api = await catalog(page, [read]);
+	await page.goto('/staff/supply-catalog');
+	await expect(page.getByRole('heading', { name: 'กระดาษ A4', exact: true })).toBeVisible();
+	await page.getByLabel('ค้นหาพัสดุ', { exact: true }).fill('คำค้นที่ยังไม่ส่ง');
+	let entered = false;
+	let release = () => {};
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await page.route(
+		(url) => url.pathname === '/api/supply-catalog/items',
+		async (route) => {
+			entered = true;
+			await held;
+			await route.fallback();
+		}
+	);
+	await navigateSameContext(page, '/staff/supply-catalog?page=1');
+	await expect.poll(() => entered).toBe(true);
+	await expect(page.getByRole('heading', { name: 'กระดาษ A4', exact: true })).toBeVisible();
+	await expect(page.getByLabel('ค้นหาพัสดุ', { exact: true })).toHaveValue('คำค้นที่ยังไม่ส่ง');
+	release();
+	await expect
+		.poll(() => api.reads.filter((path) => path.startsWith('/api/supply-catalog/items?')).length)
+		.toBe(2);
+	await expect(page.getByLabel('ค้นหาพัสดุ', { exact: true })).toHaveValue('คำค้นที่ยังไม่ส่ง');
+	expect(api.writes).toEqual([]);
+});
+
+test('same-owner proposal navigation retains the open upload draft and never deletes its stages', async ({
+	page
+}) => {
+	const api = await catalog(page, [read, propose]);
+	await page.goto('/staff/supply-catalog/proposals');
+	await page.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('ชื่อพัสดุ *', { exact: true }).fill('ข้อเสนอที่ยังไม่บันทึก');
+	await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
+	await expect(dialog.getByRole('status')).toHaveCount(0);
+	await navigateSameContext(page, '/staff/supply-catalog/proposals?page=1');
+	await expect
+		.poll(
+			() => api.reads.filter((path) => path.startsWith('/api/supply-catalog/proposals?')).length
+		)
+		.toBe(2);
+	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue(
+		'ข้อเสนอที่ยังไม่บันทึก'
+	);
+	await expect(
+		dialog.getByRole('img', { name: 'ข้อเสนอที่ยังไม่บันทึก', exact: true })
+	).toBeVisible();
+	expect(api.writes).toEqual([]);
+	expect(api.deleted).toEqual([]);
+});
+
+test.describe('touch catalog controls', () => {
+	test.use({ viewport: { width: 375, height: 900 }, hasTouch: true, isMobile: true });
+	test('compact favorites and native history scrolling remain usable with touch and keyboard', async ({
+		page
+	}) => {
+		const api = await catalog(page, [read]);
+		await page.goto('/staff/supply-catalog');
+		const favorite = page.getByRole('button', {
+			name: 'เพิ่ม กระดาษ A4 เป็นรายการโปรด',
+			exact: true
+		});
+		await expect(favorite).toBeVisible();
+		const size = await favorite.boundingBox();
+		expect(size?.height).toBe(36);
+		expect(size?.width).toBe(36);
+		await favorite.tap();
+		await expect(
+			page.getByRole('button', { name: 'นำ กระดาษ A4 ออกจากรายการโปรด', exact: true })
+		).toHaveAttribute('aria-pressed', 'true');
+		await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).tap();
+		const dialog = page.getByRole('dialog');
+		const scroller = dialog.locator('[data-slot="table-container"]');
+		await scroller.scrollIntoViewIfNeeded();
+		const box = await scroller.boundingBox();
+		expect(box).not.toBeNull();
+		if (!box) throw new Error('History scroller missing');
+		expect(box.x + box.width).toBeLessThanOrEqual(375);
+		expect(await scroller.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+		const client = await page.context().newCDPSession(page);
+		for (let step = 0; step <= 6; step++) {
+			await client.send('Input.dispatchTouchEvent', {
+				type: step === 0 ? 'touchStart' : 'touchMove',
+				touchPoints: [
+					{
+						x: box.x + box.width - 20 - (step * (box.width - 40)) / 6,
+						y: box.y + Math.min(box.height / 2, 35)
+					}
+				]
+			});
+			await page.evaluate(
+				() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+			);
+		}
+		await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		await expect.poll(() => scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+		await page.keyboard.press('Tab');
+		expect(await dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+		expect(api.writes).toHaveLength(1);
+	});
 });
