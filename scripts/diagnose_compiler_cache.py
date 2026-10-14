@@ -139,7 +139,7 @@ def main():
                              "-e", "SCCACHE_LOG=sccache::server=debug", "-e", "SCCACHE_ERROR_LOG=/private/server.log",
                              "--tmpfs", "/run/secrets:rw,nosuid,nodev,noexec,mode=0700,size=1m",
                              "-e", "SCHOOL_COMPILER_CACHE=gha",
-                             "-e", "RUSTC_WRAPPER=/usr/local/bin/rustc-cache", "-e", "CARGO_INCREMENTAL=0",
+                             "-e", "RUSTC_WRAPPER=/usr/local/bin/rustc-cache",
                              "--entrypoint", "sleep", image, "infinity"], "fresh_container")
                     # docker cp writes beneath a running tmpfs mount on some daemons.
                     # Copy inside the mount namespace used by Cargo instead.
