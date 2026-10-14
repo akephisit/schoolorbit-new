@@ -320,6 +320,14 @@
 		toast.success('บันทึกราคาแล้ว');
 	}
 	function patchCategory(category: SupplyCategory, deleted = false) {
+		const existing = categories.some((row) => row.id === category.id);
+		categoryRequest.abort();
+		categoriesLoading = false;
+		if (existing) {
+			itemRequest.abort();
+			itemsLoading = false;
+			if (!result) void retryItems();
+		}
 		categories = deleted
 			? categories.filter((row) => row.id !== category.id)
 			: [...categories.filter((row) => row.id !== category.id), category].toSorted((a, b) =>
@@ -536,7 +544,7 @@
 					description={detailError}
 					actionLabel="ลองอีกครั้ง"
 					onaction={() => selectedId && detail(selectedId)}
-				/>{:else if selected}<div class="space-y-4">
+				/>{:else if selected}<div class="min-w-0 space-y-4">
 					{#if canManage}<div class="flex flex-wrap gap-2">
 							<Button
 								variant="outline"

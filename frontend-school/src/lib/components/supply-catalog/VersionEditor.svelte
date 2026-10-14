@@ -214,11 +214,11 @@
 						onchange={(event) => upload(event.currentTarget.files?.[0])}
 					/>
 				</div>
-				{#if uploading || removing}<p role="status" class="text-sm">
-						{removing ? 'กำลังนำรูปสินค้าออก' : 'กำลังอัปโหลดรูปสินค้า'}
-					</p>{/if}
 			</section>{/if}
 	</fieldset>
+	{#if append}<p role="status" class="min-h-5 text-sm text-muted-foreground">
+			{removing ? 'กำลังนำรูปสินค้าออก' : uploading ? 'กำลังอัปโหลดรูปสินค้า' : ''}
+		</p>{/if}
 	{#if actionError}<Alert variant="destructive"
 			><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{actionError}</AlertDescription
 			></Alert

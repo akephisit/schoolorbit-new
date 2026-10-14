@@ -444,9 +444,6 @@
 					onchange={(event) => upload(event.currentTarget.files?.[0], 'image')}
 				/>
 			</div>
-			{#if uploading === 'image' || removing === 'image'}<p role="status" class="text-sm">
-					{removing === 'image' ? 'กำลังนำรูปสินค้าออก' : 'กำลังอัปโหลดรูปสินค้า'}
-				</p>{/if}
 		</section>
 		{#if mode === 'propose'}<section
 				class="space-y-3 border-t pt-4"
@@ -489,12 +486,7 @@
 						size="sm"
 						disabled={controlsDisabled}
 						onclick={removeSource}>นำรูปแหล่งที่มาออก</Button
-					>{/if}{#if uploading === 'source' || removing === 'source'}<p
-						role="status"
-						class="text-sm"
-					>
-						{removing === 'source' ? 'กำลังนำรูปแหล่งที่มาออก' : 'กำลังอัปโหลดรูปแหล่งที่มา'}
-					</p>{/if}
+					>{/if}
 			</section>{/if}
 		{#if mode === 'approve'}<section
 				class="space-y-3 border-t pt-4"
@@ -520,6 +512,17 @@
 				/>
 			</section>{/if}
 	</fieldset>
+	<p role="status" class="min-h-5 text-sm text-muted-foreground">
+		{removing === 'image'
+			? 'กำลังนำรูปสินค้าออก'
+			: removing === 'source'
+				? 'กำลังนำรูปแหล่งที่มาออก'
+				: uploading === 'image'
+					? 'กำลังอัปโหลดรูปสินค้า'
+					: uploading === 'source'
+						? 'กำลังอัปโหลดรูปแหล่งที่มา'
+						: ''}
+	</p>
 	{#if actionError}<Alert variant="destructive"
 			><AlertTitle>ดำเนินการไม่สำเร็จ</AlertTitle><AlertDescription>{actionError}</AlertDescription
 			></Alert
