@@ -826,6 +826,26 @@
 			"notes": "Loader owns independent typed primary regions; exact capability guards action-only reads, local drafts retained, identity/context and LatestRequest supersession, focused Behavior workflow browser tests."
 		},
 		{
+			"route": "staff/behavior/settings/attendance",
+			"wave": "behavior",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "term_required",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Dedicated read-first settings section. Loader owns only the selected section; exact Behavior management permission gates reads and saves. Feature drafts and independent retry remain with their component."
+		},
+		{
+			"route": "staff/behavior/settings/items",
+			"wave": "behavior",
+			"dataOwner": "route",
+			"preload": "tap",
+			"context": "term_required",
+			"status": "complete",
+			"backendOwner": "school-behavior",
+			"notes": "Dedicated read-first settings section. Loader owns only the selected section; exact Behavior management permission gates reads and saves. Feature drafts and independent retry remain with their component."
+		},
+		{
 			"route": "staff/calendar",
 			"wave": "staff",
 			"dataOwner": "route",

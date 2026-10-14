@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { RotateCcw } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageState } from '#lib/components/app-state/index.js';
@@ -10,6 +11,7 @@
 </script>
 
 <PageShell
+	icon={RotateCcw}
 	title="รีเซ็ตและล้างข้อมูลคะแนน"
 	backHref={`/staff/behavior?academicTermId=${data.term ?? ''}`}
 	description="เลือกขอบเขต ตรวจผลกระทบ แล้วลบรายละเอียดหรือเปิดรอบคะแนนใหม่"

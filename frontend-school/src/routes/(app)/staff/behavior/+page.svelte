@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { formatBehaviorDate } from '#lib/features/behavior/presentation.js';
+	import { Award, Plus, Settings2, RotateCcw } from '@lucide/svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { PageProps } from './$types';
 	import { goto } from '$app/navigation';
@@ -30,31 +33,51 @@
 	}
 </script>
 
-<PageShell title={data.title} description="คะแนนความดี คะแนนที่ถูกหัก และประวัติรายบุคคล"
+<PageShell
+	icon={Award}
+	title={data.title}
+	description="คะแนนความดี คะแนนที่ถูกหัก และประวัติรายบุคคล"
 	>{#snippet actions()}{#if $can.hasAny(...behaviorCreatePermissions)}<Button
 				class="min-h-[44px] min-w-[44px]"
-				href={destination('/new')}>บันทึกพฤติกรรม</Button
+				href={destination('/new')}><Plus class="size-4" aria-hidden="true" />บันทึกพฤติกรรม</Button
 			>{/if}{#if $can.has(PERMISSIONS.BEHAVIOR_MANAGE_SCHOOL)}<Button
 				class="min-h-[44px] min-w-[44px]"
 				href={destination('/settings')}
-				variant="outline">ตั้งค่า</Button
+				variant="outline"><Settings2 class="size-4" aria-hidden="true" />ตั้งค่า</Button
 			>{/if}{#if $can.has(PERMISSIONS.BEHAVIOR_CLEANUP_EXECUTE_SCHOOL)}<Button
 				class="min-h-[44px] min-w-[44px]"
 				href={destination('/cleanup')}
-				variant="outline">รีเซ็ต / ล้างข้อมูล</Button
+				variant="ghost"><RotateCcw class="size-4" aria-hidden="true" />รีเซ็ต / ล้างข้อมูล</Button
 			>{/if}{/snippet}
 	{#key $behaviorIdentity + data.term}<BehaviorRegion
 			initial={data.overview}
 			permissions={behaviorReadPermissions}
 			retry={(signal) => behaviorOverview({ signal })}
 			variant="detail"
-			>{#snippet children(overview)}<section class="rounded-md border bg-primary/5 p-4">
-					<h2 class="font-semibold">รอบคะแนน</h2>
-					<p class="text-sm text-muted-foreground">เริ่มใช้ระบบ {overview.activationDate}</p>
-					{#each overview.cycles.filter((c) => c.state === 'current') as cycle (cycle.id)}<p>
-							{sideLabels[cycle.side]} · {cycle.label} · เริ่ม {cycle.startsOn}
-						</p>{/each}
-				</section>{/snippet}</BehaviorRegion
+			>{#snippet children(overview)}<Card.Root
+					class="gap-0 border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card py-0"
+					><Card.Content class="p-4 sm:p-5">
+						<div class="flex flex-wrap items-start justify-between gap-3">
+							<div>
+								<h2 class="font-semibold">รอบคะแนน</h2>
+								<p class="mt-1 text-sm text-muted-foreground">
+									เริ่มใช้ระบบ {formatBehaviorDate(overview.activationDate)}
+								</p>
+							</div>
+							<Award class="size-5 text-primary" aria-hidden="true" />
+						</div>
+						<dl class="mt-4 grid gap-3 sm:grid-cols-2">
+							{#each overview.cycles.filter((cycle) => cycle.state === 'current') as cycle (cycle.id)}<div
+									class="space-y-1 border-t border-primary/15 pt-3"
+								>
+									<dt class="text-sm font-medium">{sideLabels[cycle.side]}</dt>
+									<dd class="mt-1 text-sm text-muted-foreground">
+										{cycle.label} · เริ่ม {formatBehaviorDate(cycle.startsOn)}
+									</dd>
+								</div>{/each}
+						</dl>
+					</Card.Content></Card.Root
+				>{/snippet}</BehaviorRegion
 		>{/key}
 	{#if data.summary && data.studentId}{#key $behaviorIdentity + data.studentId + data.term}<BehaviorRegion
 				initial={data.summary}
@@ -65,7 +88,9 @@
 						initial={summary}
 						refreshRevision={summaryRevision}
 					/>{/snippet}</BehaviorRegion
-			>{/key}{:else}<p class="text-sm text-muted-foreground">
+			>{/key}{:else}<p
+			class="rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground"
+		>
 			เลือกชื่อนักเรียนจากรายการด้านล่างเพื่อดูคะแนนปัจจุบัน ประวัติ และสะสม
 		</p>{/if}
 	{#if data.entries}{#key $behaviorIdentity + data.term}<BehaviorRegion

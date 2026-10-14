@@ -94,9 +94,9 @@
 </script>
 
 <section class="space-y-4" aria-label="เลือกนักเรียน">
-	<div class="grid gap-3 sm:grid-cols-3">
+	<div class="grid gap-3 rounded-xl border bg-muted/20 p-3 sm:grid-cols-3 sm:p-4">
 		<div>
-			<Label for="behavior-grade">ระดับชั้น</Label><BehaviorSelect
+			<BehaviorSelect
 				id="behavior-grade"
 				label="ระดับชั้น"
 				value={grade}
@@ -112,7 +112,7 @@
 			/>
 		</div>
 		<div>
-			<Label for="behavior-room">ห้องเรียน</Label><BehaviorSelect
+			<BehaviorSelect
 				id="behavior-room"
 				label="ห้องเรียน"
 				value={room}
@@ -126,7 +126,7 @@
 				}}
 			/>
 		</div>
-		<div>
+		<div class="space-y-2">
 			<Label for="behavior-search">ชื่อหรือรหัสนักเรียน</Label>
 			<div class="flex gap-2">
 				<Input id="behavior-search" bind:value={search} /><Button
@@ -146,7 +146,7 @@
 			actionLabel="โหลดรายชื่อใหม่"
 			onaction={() => void load()}
 		/>{/if}
-	<div class="flex flex-wrap items-center gap-2">
+	<div class="flex flex-wrap items-center gap-2 border-b pb-3">
 		<LoadingButton
 			class="min-h-[44px] min-w-[44px]"
 			type="button"
@@ -160,9 +160,9 @@
 			onclick={() => (selected = [])}>ล้างการเลือก</Button
 		>
 	</div>
-	<div class="max-h-80 space-y-1 overflow-y-auto rounded-md border" aria-busy={pending}>
+	<div class="max-h-80 divide-y overflow-y-auto rounded-xl border bg-card" aria-busy={pending}>
 		{#each page.items as student (student.id)}<label
-				class="flex min-h-[44px] cursor-pointer items-center gap-3 px-3 py-2"
+				class="flex min-h-[44px] cursor-pointer items-center gap-3 px-3 py-3 transition-colors hover:bg-accent/50 has-[[data-state=checked]]:bg-primary/5"
 				><Checkbox
 					aria-label={`เลือก ${student.name}`}
 					checked={selected.some((s) => s.id === student.id)}
@@ -175,14 +175,15 @@
 				></label
 			>{:else}<p class="p-4 text-muted-foreground">ไม่พบรายชื่อ</p>{/each}
 	</div>
-	<div class="flex items-center justify-between">
+	<div class="flex items-center justify-between gap-3 text-sm">
 		<Button
 			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
 			disabled={pending || offset === 0}
 			onclick={() => void load(Math.max(0, offset - limit))}>ก่อนหน้า</Button
-		><span>{offset + 1}–{Math.min(offset + limit, page.total)} / {page.total}</span><Button
+		><span>{page.total ? offset + 1 : 0}–{Math.min(offset + limit, page.total)} / {page.total}</span
+		><Button
 			class="min-h-[44px] min-w-[44px]"
 			type="button"
 			variant="outline"
@@ -190,11 +191,11 @@
 			onclick={() => void load(offset + limit)}>ถัดไป</Button
 		>
 	</div>
-	{#if selected.length}<details>
+	{#if selected.length}<details class="rounded-xl border bg-muted/20 px-4">
 			<summary class="min-h-[44px] cursor-pointer py-2"
 				>ตรวจรายชื่อที่เลือก {selected.length} คน</summary
 			>
-			<ul class="max-h-60 overflow-y-auto">
+			<ul class="max-h-60 divide-y overflow-y-auto pb-2">
 				{#each selected as student (student.id)}<li
 						class="flex min-h-[44px] items-center justify-between gap-2"
 					>

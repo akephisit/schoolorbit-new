@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Award } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageState } from '#lib/components/app-state/index.js';
@@ -14,14 +15,17 @@
 	const permissions = [PERMISSIONS.BEHAVIOR_READ_OWN];
 </script>
 
-<PageShell title="พฤติกรรมและคะแนน"
+<PageShell
+	title="พฤติกรรมและคะแนน"
+	icon={Award}
+	description="คะแนนปัจจุบัน ยอดสะสม และประวัติพฤติกรรม"
 	>{#key $behaviorIdentity + data.url}<BehaviorRegion
 			initial={data.initial}
 			{permissions}
 			variant="detail"
 			retry={(signal) => loadOwnBehavior(fetch, new URL(data.url), 'student', signal)}
 			>{#snippet children(context)}{#if context}<nav
-						class="flex flex-wrap gap-2"
+						class="flex flex-wrap gap-2 rounded-xl border bg-card p-3 sm:p-4"
 						aria-label="เลือกภาคเรียน"
 					>
 						{#each context.terms as term (term.id)}<Button
@@ -31,7 +35,10 @@
 								>ภาคเรียน {term.name}</Button
 							>{/each}
 					</nav>
-					{#if context.children.length}<nav class="flex flex-wrap gap-2" aria-label="เลือกนักเรียน">
+					{#if context.children.length}<nav
+							class="flex flex-wrap gap-2 rounded-xl border bg-card p-3 sm:p-4"
+							aria-label="เลือกนักเรียน"
+						>
 							{#each context.children as child (child.id)}<Button
 									class="min-h-[44px] min-w-[44px]"
 									variant={child.id === context.studentId ? 'default' : 'outline'}

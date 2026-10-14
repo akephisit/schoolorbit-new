@@ -72,3 +72,10 @@ export function resolveBehaviorOccurredAt(
 	const clock = bangkokDateTime(new Date(defaultInstant));
 	return date === clock.date && time === clock.time ? defaultInstant : occurredAt(date, time);
 }
+
+export function formatBehaviorDate(value: string): string {
+	return new Intl.DateTimeFormat('th-TH', {
+		timeZone: 'Asia/Bangkok',
+		dateStyle: 'medium'
+	}).format(new Date(`${value}T12:00:00+07:00`));
+}

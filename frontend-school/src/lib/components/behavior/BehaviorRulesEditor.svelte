@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatBehaviorDate } from '#lib/features/behavior/presentation.js';
 	import { untrack, onDestroy } from 'svelte';
 	import {
 		saveBehaviorRule,
@@ -20,6 +21,9 @@
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import BehaviorSelect from './BehaviorSelect.svelte';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import BehaviorFormSection from './BehaviorFormSection.svelte';
+	import { CalendarCheck } from '@lucide/svelte';
 	let {
 		initial
 	}: { initial: { rules: BehaviorAttendanceRule[]; options: BehaviorSelectorOptions } } = $props();
@@ -55,11 +59,11 @@
 	}
 </script>
 
-<section class="space-y-4 rounded-md border p-4">
-	<h2 class="text-lg font-semibold">เกณฑ์จากเช็กชื่อ</h2>
-	<p class="text-sm text-muted-foreground">
-		แยกมาโรงเรียน รายคาบ และรอบพิเศษ เลือกเกณฑ์กลางหรือเฉพาะระดับชั้นได้
-	</p>
+<BehaviorFormSection
+	title="เกณฑ์จากเช็กชื่อ"
+	description="แยกมาโรงเรียน รายคาบ และรอบพิเศษ เลือกเกณฑ์กลางหรือเฉพาะระดับชั้นได้"
+	icon={CalendarCheck}
+>
 	<p class="text-sm text-muted-foreground">
 		ยังไม่ได้เช็คไม่คิดคะแนนระหว่างวัน หลังเที่ยงคืนของวันที่นับยอด
 		ระบบจะบันทึกเป็นขาดและใช้เกณฑ์คะแนนของสถานะขาด
@@ -106,7 +110,7 @@
 					}
 				}}
 			/>
-			<div>
+			<div class="space-y-2">
 				<Label for="rule-points">จำนวนคะแนน</Label><Input
 					id="rule-points"
 					type="number"
@@ -116,7 +120,7 @@
 					required
 				/>
 			</div>
-			<div>
+			<div class="space-y-2">
 				<Label for="rule-effective">วันเริ่มใช้เกณฑ์</Label><DatePicker
 					id="rule-effective"
 					value={draft.effectiveFrom}
@@ -126,32 +130,64 @@
 				/>
 			</div>
 		</fieldset>
-		<div class="flex justify-end">
+		<div class="flex justify-end border-t pt-4">
 			<LoadingButton class="min-h-[44px] min-w-[44px]" type="submit" loading={pending}
 				>บันทึกเกณฑ์</LoadingButton
 			>
 		</div>
 	</form>
-	<ul class="divide-y">
-		{#each rules as rule (rule.id)}<li class="py-3 text-sm">
-				{sourceLabels[rule.kind]} · {resultLabels[
-					writableAttendanceResults.find((s) => s === rule.status) ?? 'unchecked'
-				]} · {initial.options.gradeLevels.find((o) => o.id === rule.gradeLevelId)?.label ??
-					'เกณฑ์กลาง'} · {actionLabels[rule.action]}
-				{rule.points} · เริ่ม {rule.effectiveFrom}<Button
-					class="min-h-[44px] min-w-[44px]"
-					type="button"
-					variant="ghost"
-					onclick={() =>
-						(draft = {
-							kind: rule.kind,
-							status: rule.status,
-							gradeLevelId: rule.gradeLevelId,
-							effectiveFrom: bangkokDateTime().date,
-							action: rule.action,
-							points: rule.points
-						})}>ตั้งเกณฑ์ใหม่</Button
-				>
-			</li>{/each}
-	</ul>
-</section>
+	<div class="overflow-hidden rounded-xl border">
+		<Table.Root
+			><Table.Header
+				><Table.Row
+					><Table.Head>ประเภท / สถานะ</Table.Head><Table.Head>ระดับชั้น</Table.Head><Table.Head
+						>การคิดคะแนน</Table.Head
+					><Table.Head>เริ่มใช้</Table.Head><Table.Head></Table.Head></Table.Row
+				></Table.Header
+			><Table.Body
+				>{#each rules as rule (rule.id)}<Table.Row
+						><Table.Cell class="whitespace-normal"
+							><span class="block font-medium">{sourceLabels[rule.kind]}</span><span
+								class="text-xs text-muted-foreground"
+								>{resultLabels[
+									writableAttendanceResults.find((status) => status === rule.status) ?? 'unchecked'
+								]}</span
+							></Table.Cell
+						><Table.Cell class="whitespace-normal"
+							>{initial.options.gradeLevels.find((option) => option.id === rule.gradeLevelId)
+								?.label ?? 'เกณฑ์กลาง'}</Table.Cell
+						><Table.Cell class="whitespace-normal"
+							><span
+								class={rule.action === 'merit'
+									? 'text-success'
+									: rule.action === 'deduction'
+										? 'text-destructive'
+										: 'text-muted-foreground'}>{actionLabels[rule.action]} {rule.points}</span
+							></Table.Cell
+						><Table.Cell class="whitespace-normal"
+							>{formatBehaviorDate(rule.effectiveFrom)}</Table.Cell
+						><Table.Cell class="text-end"
+							><Button
+								class="min-h-[44px] min-w-[44px]"
+								type="button"
+								variant="ghost"
+								onclick={() =>
+									(draft = {
+										kind: rule.kind,
+										status: rule.status,
+										gradeLevelId: rule.gradeLevelId,
+										effectiveFrom: bangkokDateTime().date,
+										action: rule.action,
+										points: rule.points
+									})}>ตั้งเกณฑ์ใหม่</Button
+							></Table.Cell
+						></Table.Row
+					>{:else}<Table.Row
+						><Table.Cell colspan={5} class="p-6 text-center text-muted-foreground"
+							>ยังไม่มีรายการ</Table.Cell
+						></Table.Row
+					>{/each}</Table.Body
+			></Table.Root
+		>
+	</div>
+</BehaviorFormSection>
