@@ -355,7 +355,10 @@ for (const width of [1280, 375])
 				api.reads.some((path) => path.includes('favoritesOnly=true') && path.includes('search='))
 			)
 			.toBe(true);
-		await page.screenshot({ path: testInfo.outputPath(`catalog-grid-${width}-light.png`) });
+		await page.screenshot({
+			path: testInfo.outputPath(`catalog-grid-${width}-light.png`),
+			animations: 'disabled'
+		});
 		await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await expect(dialog).toContainText('ประวัติราคา (2 รุ่น)');
@@ -368,17 +371,26 @@ for (const width of [1280, 375])
 		const lightColor = await dialog.evaluate(
 			(element) => getComputedStyle(element).backgroundColor
 		);
-		await page.screenshot({ path: testInfo.outputPath(`catalog-${width}-light.png`) });
+		await page.screenshot({
+			path: testInfo.outputPath(`catalog-${width}-light.png`),
+			animations: 'disabled'
+		});
 		await page.keyboard.press('Escape');
 		await expect(dialog).toHaveCount(0);
 		await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
-		await page.screenshot({ path: testInfo.outputPath(`catalog-grid-${width}-dark.png`) });
+		await page.screenshot({
+			path: testInfo.outputPath(`catalog-grid-${width}-dark.png`),
+			animations: 'disabled'
+		});
 		await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).click();
 		await expect(dialog).toContainText('ประวัติราคา (2 รุ่น)');
 		await expect
 			.poll(() => dialog.evaluate((element) => getComputedStyle(element).backgroundColor))
 			.not.toBe(lightColor);
-		await page.screenshot({ path: testInfo.outputPath(`catalog-${width}-dark.png`) });
+		await page.screenshot({
+			path: testInfo.outputPath(`catalog-${width}-dark.png`),
+			animations: 'disabled'
+		});
 		await page.keyboard.press('Escape');
 		await expect(dialog).toHaveCount(0);
 		expect(api.writes).toHaveLength(1);
