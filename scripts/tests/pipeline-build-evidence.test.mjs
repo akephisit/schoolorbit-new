@@ -137,7 +137,8 @@ for (const phase of ["application", "dependencies"])
       writeFileSync(path.join(bin, "cargo"), '#!/bin/bash\nprintf "%s\\n" "$@" > "$CARGO_ARGS"\nprintf "%s\\n" "${RUSTC_WRAPPER:-off}" "${ACTIONS_CACHE_SERVICE_V2:-off}" "${SCCACHE_GHA_VERSION:-off}" > "$CACHE_ENV"\nexit "$CARGO_EXIT"\n', {mode: 0o755});
       writeFileSync(path.join(bin, "sccache"), '#!/bin/bash\nexit 9\n', {mode: 0o755});
       const script = readFileSync(path.join(repo, "backend-school/scripts/build_release.sh"), "utf8")
-        .replaceAll("/run/secrets", secrets).replaceAll("/usr/local/bin/sccache", path.join(bin, "sccache"));
+        .replaceAll("/run/secrets", secrets).replaceAll("/usr/local/bin/sccache", path.join(bin, "sccache"))
+        .replaceAll("/usr/local/bin/rustc-cache", path.join(bin, "rustc-cache"));
       for (const status of [42, 0]) {
         const runRoot = path.join(root, String(status));
         mkdirSync(runRoot);
@@ -152,7 +153,7 @@ for (const phase of ["application", "dependencies"])
           ? "chef\ncook\n--release\n--recipe-path\nrecipe.json\n"
           : `rustc\n--release\n--locked\n--bin\nbackend-school\n--timings\n--\n-C\nlto=off\n-C\nlinker=${runRoot}/scripts/release_linker.sh\n`);
         const cacheEnv = readFileSync(path.join(root, "cache-env"), "utf8").split("\n");
-        assert.equal(cacheEnv[0], ["gha", "local"].includes(mode) ? path.join(bin, "sccache") : "off");
+        assert.equal(cacheEnv[0], ["gha", "local"].includes(mode) ? path.join(bin, "rustc-cache") : "off");
         if (mode === "gha") assert.deepEqual(cacheEnv.slice(1, 3), ["true", "schoolorbit-backend-school"]);
         assert.doesNotMatch(result.stdout + result.stderr, /private-cache-fixture-sentinel/);
         const metricsDir = path.join(runRoot, "target", phase === "dependencies" ? "dependency-timings" : "cargo-timings");
