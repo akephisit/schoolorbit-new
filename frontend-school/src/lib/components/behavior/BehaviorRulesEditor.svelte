@@ -131,9 +131,7 @@
 			</div>
 		</fieldset>
 		<div class="flex justify-end border-t pt-4">
-			<LoadingButton class="min-h-[44px] min-w-[44px]" type="submit" loading={pending}
-				>บันทึกเกณฑ์</LoadingButton
-			>
+			<LoadingButton type="submit" loading={pending}>บันทึกเกณฑ์</LoadingButton>
 		</div>
 	</form>
 	<div class="overflow-hidden rounded-xl border">
@@ -168,7 +166,6 @@
 							>{formatBehaviorDate(rule.effectiveFrom)}</Table.Cell
 						><Table.Cell class="text-end"
 							><Button
-								class="min-h-[44px] min-w-[44px]"
 								type="button"
 								variant="ghost"
 								onclick={() =>

@@ -91,7 +91,6 @@
 							></Table.Cell
 						><Table.Cell class="text-end"
 							><Button
-								class="min-h-[44px] min-w-[44px]"
 								type="button"
 								variant="outline"
 								disabled={pending || !!frozen}
@@ -148,20 +147,17 @@
 					}}
 				/>
 			</div>
-			<label class="flex min-h-[44px] items-center gap-2"
+			<label class="flex [@media(any-pointer:coarse)]:min-h-[44px] items-center gap-2"
 				><Checkbox bind:checked={draft.enabled} />เปิดใช้งานรายการ</label
 			>
 		</fieldset>
 		<div class="flex justify-end gap-2">
 			<Button
-				class="min-h-[44px] min-w-[44px]"
 				type="button"
 				variant="outline"
 				disabled={pending || !!frozen}
 				onclick={() => (draft = blank())}>ยกเลิกการแก้ไข</Button
-			><LoadingButton class="min-h-[44px] min-w-[44px]" type="submit" loading={pending}
-				>บันทึกรายการ</LoadingButton
-			>
+			><LoadingButton type="submit" loading={pending}>บันทึกรายการ</LoadingButton>
 		</div>
 	</form>
 </BehaviorFormSection>

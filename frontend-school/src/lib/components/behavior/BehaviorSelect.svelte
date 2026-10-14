@@ -35,18 +35,17 @@
 			if (!open) search = '';
 		}}
 	>
-		<Select.Trigger {id} aria-label={label} class="min-h-[44px] w-full"
+		<Select.Trigger {id} aria-label={label} class="w-full"
 			><span class="truncate">{selected}</span></Select.Trigger
 		>
 		<Select.Content class="max-w-[calc(100vw-2rem)]">
 			{#if options.length > 20}<Input
-					class="min-h-[44px]"
+					class="[@media(any-pointer:coarse)]:min-h-[44px]"
 					aria-label={`ค้นหา ${label}`}
 					bind:value={search}
 					onkeydown={(event) => event.stopPropagation()}
 				/>{/if}
 			{#each filtered.slice(0, 100) as option (option.value)}<Select.Item
-					class="min-h-[44px]"
 					value={option.value}
 					label={option.label}>{option.label}</Select.Item
 				>{/each}

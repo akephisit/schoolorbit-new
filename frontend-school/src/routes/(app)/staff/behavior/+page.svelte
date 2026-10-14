@@ -38,14 +38,11 @@
 	title={data.title}
 	description="คะแนนความดี คะแนนที่ถูกหัก และประวัติรายบุคคล"
 	>{#snippet actions()}{#if $can.hasAny(...behaviorCreatePermissions)}<Button
-				class="min-h-[44px] min-w-[44px]"
 				href={destination('/new')}><Plus class="size-4" aria-hidden="true" />บันทึกพฤติกรรม</Button
 			>{/if}{#if $can.has(PERMISSIONS.BEHAVIOR_MANAGE_SCHOOL)}<Button
-				class="min-h-[44px] min-w-[44px]"
 				href={destination('/settings')}
 				variant="outline"><Settings2 class="size-4" aria-hidden="true" />ตั้งค่า</Button
 			>{/if}{#if $can.has(PERMISSIONS.BEHAVIOR_CLEANUP_EXECUTE_SCHOOL)}<Button
-				class="min-h-[44px] min-w-[44px]"
 				href={destination('/cleanup')}
 				variant="ghost"><RotateCcw class="size-4" aria-hidden="true" />รีเซ็ต / ล้างข้อมูล</Button
 			>{/if}{/snippet}

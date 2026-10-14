@@ -174,49 +174,52 @@ test('cleanup requires a matching preview and follows durable job to completion'
 	expect(api.cleanups[0].reason).toBe('ปิดรอบเดือน');
 });
 
-for (const theme of ['light', 'dark'])
-	test(`group form stays usable on mobile in ${theme}`, async ({ page }) => {
-		await page.setViewportSize({ width: 375, height: 812 });
-		await page.emulateMedia({ colorScheme: theme === 'dark' ? 'dark' : 'light' });
-		await mockBehavior(page);
-		await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
-		await page.goto(behaviorPath('/new'));
-		await expect(page.getByRole('button', { name: 'บันทึกพฤติกรรม', exact: true })).toBeVisible();
-		expect(
-			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
-		).toBe(true);
-		await expect
-			.poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
-			.toBe(theme === 'dark');
-		const choice = page.getByRole('radio', { name: 'ความดี', exact: true });
-		await choice.click();
-		await expect(choice).toBeChecked();
-		await choice.click();
-		await expect(choice).toBeChecked();
-		const misconduct = page.getByRole('radio', { name: 'ความผิด', exact: true });
-		await misconduct.focus();
-		await page.keyboard.press('Space');
-		await expect(misconduct).toBeChecked();
-		await choice.focus();
-		await page.keyboard.press('Space');
-		await expect(choice).toBeChecked();
-		const checkbox = page.getByRole('checkbox', { name: 'เลือก นักเรียน หนึ่ง', exact: true });
-		expect((await checkbox.locator('..').boundingBox())!.height).toBeGreaterThanOrEqual(44);
-		await checkbox.check();
-		await page.getByText('ตรวจรายชื่อที่เลือก 1 คน', { exact: true }).click();
-		for (const target of [
-			choice,
-			page.getByRole('button', { name: 'ค้นหา', exact: true }),
-			page.getByRole('button', { name: 'ล้างการเลือก', exact: true }),
-			page.getByRole('button', { name: 'นำ นักเรียน หนึ่ง ออก', exact: true }),
-			page.getByRole('button', { name: 'ถัดไป', exact: true })
-		]) {
-			const bounds = (await target.boundingBox())!;
-			expect(bounds.height).toBeGreaterThanOrEqual(44);
-			expect(bounds.width).toBeGreaterThanOrEqual(44);
-		}
-		await page.screenshot({ path: `/tmp/schoolorbit-behavior-${theme}.png`, fullPage: true });
-	});
+test.describe('touch-enabled mobile behavior form', () => {
+	test.use({ hasTouch: true });
+	for (const theme of ['light', 'dark'])
+		test(`group form stays usable on mobile in ${theme}`, async ({ page }) => {
+			await page.setViewportSize({ width: 375, height: 812 });
+			await page.emulateMedia({ colorScheme: theme === 'dark' ? 'dark' : 'light' });
+			await mockBehavior(page);
+			await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
+			await page.goto(behaviorPath('/new'));
+			await expect(page.getByRole('button', { name: 'บันทึกพฤติกรรม', exact: true })).toBeVisible();
+			expect(
+				await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+			).toBe(true);
+			await expect
+				.poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
+				.toBe(theme === 'dark');
+			const choice = page.getByRole('radio', { name: 'ความดี', exact: true });
+			await choice.click();
+			await expect(choice).toBeChecked();
+			await choice.click();
+			await expect(choice).toBeChecked();
+			const misconduct = page.getByRole('radio', { name: 'ความผิด', exact: true });
+			await misconduct.focus();
+			await page.keyboard.press('Space');
+			await expect(misconduct).toBeChecked();
+			await choice.focus();
+			await page.keyboard.press('Space');
+			await expect(choice).toBeChecked();
+			const checkbox = page.getByRole('checkbox', { name: 'เลือก นักเรียน หนึ่ง', exact: true });
+			expect((await checkbox.locator('..').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+			await checkbox.check();
+			await page.getByText('ตรวจรายชื่อที่เลือก 1 คน', { exact: true }).click();
+			for (const target of [
+				choice,
+				page.getByRole('button', { name: 'ค้นหา', exact: true }),
+				page.getByRole('button', { name: 'ล้างการเลือก', exact: true }),
+				page.getByRole('button', { name: 'นำ นักเรียน หนึ่ง ออก', exact: true }),
+				page.getByRole('button', { name: 'ถัดไป', exact: true })
+			]) {
+				const bounds = (await target.boundingBox())!;
+				expect(bounds.height).toBeGreaterThanOrEqual(44);
+				expect(bounds.width).toBeGreaterThanOrEqual(44);
+			}
+			await page.screenshot({ path: `/tmp/schoolorbit-behavior-${theme}.png`, fullPage: true });
+		});
+});
 
 test('pending cancellation freezes filter and selection until original result arrives', async ({
 	page

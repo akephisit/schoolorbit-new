@@ -29,7 +29,6 @@
 						aria-label="เลือกภาคเรียน"
 					>
 						{#each context.terms as term (term.id)}<Button
-								class="min-h-[44px] min-w-[44px]"
 								variant={term.id === context.termId ? 'default' : 'outline'}
 								href={`/student/behavior?academicTermId=${term.id}${context.studentId ? '&studentId=' + context.studentId : ''}`}
 								>ภาคเรียน {term.name}</Button
@@ -40,7 +39,6 @@
 							aria-label="เลือกนักเรียน"
 						>
 							{#each context.children as child (child.id)}<Button
-									class="min-h-[44px] min-w-[44px]"
 									variant={child.id === context.studentId ? 'default' : 'outline'}
 									href={`/student/behavior?academicTermId=${context.termId ?? ''}&studentId=${child.id}`}
 									>{child.first_name} {child.last_name}</Button
