@@ -178,6 +178,34 @@ async fn lifecycle(pool: &PgPool, id: Uuid) -> String {
 }
 
 #[tokio::test]
+async fn description_search_normalizes_thai_and_fullwidth_text() {
+    let (pool, manager, _, category) = fixture("supply-description-search").await;
+    let mut payload = product(category, "Paper", None);
+    payload.description = "กระดาษสำหรับสำนักงาน Ａ４".into();
+    let item = services::create_item(&pool, &manager, payload)
+        .await
+        .unwrap();
+    for search in ["สำนักงาน", "สํานักงาน", "a4", "Ａ４"] {
+        let result = services::list_items(
+            &pool,
+            &manager,
+            SupplyItemQuery {
+                search: Some(search.into()),
+                category_id: None,
+                favorites_only: None,
+                page: None,
+                page_size: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.total, 1, "{search}");
+        assert_eq!(result.items[0].id, item.id, "{search}");
+    }
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn normalized_duplicates_and_concurrent_creation_are_conflicts() {
     let (pool, manager, _, category) = fixture("supply_duplicates").await;
     let (a, b) = tokio::join!(

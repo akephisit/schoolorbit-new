@@ -100,7 +100,7 @@ pub async fn list_items(
         .transpose()?
         .map(|s| normalize(&s));
     let favorite = query.favorites_only.unwrap_or(false);
-    let filter=" WHERE ($2::text IS NULL OR strpos(i.normalized_name,$2)>0 OR strpos(lower(i.description),$2)>0) AND ($3::uuid IS NULL OR i.category_id=$3) AND (NOT $4 OR EXISTS(SELECT 1 FROM supply_favorites f WHERE f.item_id=i.id AND f.user_id=$1))";
+    let filter=" WHERE ($2::text IS NULL OR strpos(i.normalized_name,$2)>0 OR strpos(lower(normalize(i.description,NFKC)),$2)>0) AND ($3::uuid IS NULL OR i.category_id=$3) AND (NOT $4 OR EXISTS(SELECT 1 FROM supply_favorites f WHERE f.item_id=i.id AND f.user_id=$1))";
     let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT count(*) FROM supply_items i{filter}"
     )))
