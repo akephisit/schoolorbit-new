@@ -6992,7 +6992,7 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		get?: never;
+		get: operations['supplyListVersions'];
 		put?: never;
 		post: operations['supplyAppendVersion'];
 		delete?: never;
@@ -11490,6 +11490,8 @@ export interface components {
 		ApiResponse_SupplyItemDetail: {
 			data: components['schemas']['SupplyItem'] & {
 				versions: components['schemas']['SupplyVersion'][];
+				/** Format: int64 */
+				versionsTotal: number;
 			};
 			message?: string;
 			success: boolean;
@@ -11544,6 +11546,19 @@ export interface components {
 		ApiResponse_SupplyProposalPage: {
 			data: {
 				items: components['schemas']['SupplyProposal'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyVersionPage: {
+			data: {
+				items: components['schemas']['SupplyVersion'][];
 				/** Format: int64 */
 				page: number;
 				/** Format: int64 */
@@ -21941,6 +21956,8 @@ export interface components {
 		};
 		SupplyItemDetail: components['schemas']['SupplyItem'] & {
 			versions: components['schemas']['SupplyVersion'][];
+			/** Format: int64 */
+			versionsTotal: number;
 		};
 		SupplyItemPage: {
 			items: components['schemas']['SupplyItem'][];
@@ -21956,7 +21973,7 @@ export interface components {
 			categoryId: string;
 			description: string;
 			/** Format: uuid */
-			imageFileId?: string | null;
+			imageFileId: string | null;
 			name: string;
 			/** Format: int64 */
 			revision: number;
@@ -22012,7 +22029,7 @@ export interface components {
 			/** Format: int64 */
 			existingItemRevision?: number | null;
 			/** Format: uuid */
-			imageFileId?: string | null;
+			imageFileId: string | null;
 			name: string;
 			price: string;
 			/** Format: int64 */
@@ -22068,11 +22085,20 @@ export interface components {
 		};
 		SupplyVersionAppend: {
 			/** Format: uuid */
-			imageFileId?: string | null;
+			imageFileId: string | null;
 			price: string;
 			/** Format: int64 */
 			revision: number;
 			shop: string;
+		};
+		SupplyVersionPage: {
+			items: components['schemas']['SupplyVersion'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
+			/** Format: int64 */
+			total: number;
 		};
 		SupplyVersionWrite: {
 			price: string;
@@ -53800,12 +53826,12 @@ export interface operations {
 	};
 	supplyListBundles: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				page: number | null;
-				pageSize: number | null;
+			query?: {
+				page?: number;
+				pageSize?: number;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -54287,12 +54313,12 @@ export interface operations {
 	};
 	supplyDuplicates: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
+			query: {
 				name: string;
 				unit: string;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -54355,15 +54381,15 @@ export interface operations {
 	};
 	supplyListItems: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				categoryId: string | null;
-				favoritesOnly: boolean | null;
-				page: number | null;
-				pageSize: number | null;
-				search: string | null;
+			query?: {
+				categoryId?: string;
+				favoritesOnly?: boolean;
+				page?: number;
+				pageSize?: number;
+				search?: string;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;
@@ -54705,6 +54731,63 @@ export interface operations {
 			};
 		};
 	};
+	supplyListVersions: {
+		parameters: {
+			query?: {
+				page?: number;
+				pageSize?: number;
+			};
+			header?: never;
+			path: {
+				/** @description Supply item ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyVersionPage'];
+				};
+			};
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	supplyAppendVersion: {
 		parameters: {
 			query?: never;
@@ -54853,13 +54936,13 @@ export interface operations {
 	};
 	supplyListProposals: {
 		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				page: number | null;
-				pageSize: number | null;
-				review: boolean | null;
+			query?: {
+				page?: number;
+				pageSize?: number;
+				review?: boolean;
 			};
+			header?: never;
+			path?: never;
 			cookie?: never;
 		};
 		requestBody?: never;

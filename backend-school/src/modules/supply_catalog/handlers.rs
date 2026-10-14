@@ -1,8 +1,5 @@
 use super::{models::*, services};
-use crate::{
-    utils::request_context::{actor_tenant_context_from_session, ActorTenantContext},
-    AppState,
-};
+use crate::{utils::request_context::actor_tenant_context_from_session, AppState};
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
@@ -13,14 +10,11 @@ use school_errors::AppError;
 use school_http::{ApiErrorResponse, ApiResponse, EmptyData, HttpError};
 use uuid::Uuid;
 
-async fn staff_context(
-    state: &AppState,
-    session: &AuthenticatedSession,
-) -> Result<ActorTenantContext, AppError> {
+fn require_staff(session: &AuthenticatedSession) -> Result<(), AppError> {
     if session.user_type != "staff" {
         return Err(AppError::Forbidden("ทะเบียนวัสดุสำหรับบุคลากรเท่านั้น".into()));
     }
-    actor_tenant_context_from_session(state, session).await
+    Ok(())
 }
 
 #[utoipa::path(get, path="/api/supply-catalog/categories", operation_id="supplyListCategories", tag="supply-catalog",responses((status=200,description="Supply catalog result",body=ApiResponse<Vec<SupplyCategory>>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission required",body=ApiErrorResponse),(status=404,description="Resource missing",body=ApiErrorResponse),(status=409,description="Duplicate or stale revision",body=ApiErrorResponse)))]
@@ -28,7 +22,8 @@ pub async fn list_categories(
     State(state): State<AppState>,
     Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<Json<ApiResponse<Vec<SupplyCategory>>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::list_categories(&context.tenant.pool, &context.actor).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -39,7 +34,8 @@ pub async fn create_category(
     Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<SupplyCategoryWrite>,
 ) -> Result<(StatusCode, Json<ApiResponse<SupplyCategory>>), HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result =
         services::write_category(&context.tenant.pool, &context.actor, None, payload).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(result))))
@@ -52,7 +48,8 @@ pub async fn update_category(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyCategoryWrite>,
 ) -> Result<Json<ApiResponse<SupplyCategory>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result =
         services::write_category(&context.tenant.pool, &context.actor, Some(id), payload).await?;
     Ok(Json(ApiResponse::ok(result)))
@@ -64,7 +61,8 @@ pub async fn list_items(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<SupplyItemQuery>,
 ) -> Result<Json<ApiResponse<SupplyItemPage>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::list_items(&context.tenant.pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -75,7 +73,8 @@ pub async fn duplicates(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<SupplyDuplicateQuery>,
 ) -> Result<Json<ApiResponse<Vec<SupplyItem>>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::duplicates(&context.tenant.pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -86,7 +85,8 @@ pub async fn create_item(
     Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<SupplyItemWrite>,
 ) -> Result<(StatusCode, Json<ApiResponse<SupplyItem>>), HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::create_item(&context.tenant.pool, &context.actor, payload).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(result))))
 }
@@ -97,7 +97,8 @@ pub async fn get_item(
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<SupplyItemDetail>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::get_item(&context.tenant.pool, &context.actor, id).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -109,7 +110,8 @@ pub async fn update_item(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyItemUpdate>,
 ) -> Result<Json<ApiResponse<SupplyItem>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::update_item(
         &context.tenant.pool,
         state.file_platform.as_ref(),
@@ -128,7 +130,8 @@ pub async fn append_version(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyVersionAppend>,
 ) -> Result<Json<ApiResponse<SupplyItemDetail>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::append_version(
         &context.tenant.pool,
         state.file_platform.as_ref(),
@@ -147,7 +150,8 @@ pub async fn update_version(
     Path((id, version_id)): Path<(Uuid, Uuid)>,
     Json(payload): Json<SupplyVersionWrite>,
 ) -> Result<Json<ApiResponse<SupplyItemDetail>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::write_version(
         &context.tenant.pool,
         &context.actor,
@@ -166,7 +170,8 @@ pub async fn set_favorite(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyFavoriteWrite>,
 ) -> Result<Json<ApiResponse<SupplyItem>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::set_favorite(&context.tenant.pool, &context.actor, id, payload).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -177,7 +182,8 @@ pub async fn list_bundles(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<SupplyPageQuery>,
 ) -> Result<Json<ApiResponse<SupplyBundlePage>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::list_bundles(&context.tenant.pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -188,7 +194,8 @@ pub async fn create_bundle(
     Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<SupplyBundleWrite>,
 ) -> Result<(StatusCode, Json<ApiResponse<SupplyBundle>>), HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result =
         services::write_bundle(&context.tenant.pool, &context.actor, None, payload).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(result))))
@@ -201,7 +208,8 @@ pub async fn update_bundle(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyBundleWrite>,
 ) -> Result<Json<ApiResponse<SupplyBundle>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result =
         services::write_bundle(&context.tenant.pool, &context.actor, Some(id), payload).await?;
     Ok(Json(ApiResponse::ok(result)))
@@ -214,7 +222,8 @@ pub async fn delete_bundle(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyRevision>,
 ) -> Result<Json<ApiResponse<EmptyData>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     services::delete_bundle(&context.tenant.pool, &context.actor, id, payload).await?;
     Ok(Json(ApiResponse::empty()))
 }
@@ -225,7 +234,8 @@ pub async fn list_proposals(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<SupplyProposalQuery>,
 ) -> Result<Json<ApiResponse<SupplyProposalPage>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::list_proposals(&context.tenant.pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -236,7 +246,8 @@ pub async fn create_proposal(
     Extension(session): Extension<AuthenticatedSession>,
     Json(payload): Json<SupplyProposalWrite>,
 ) -> Result<(StatusCode, Json<ApiResponse<SupplyProposal>>), HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::create_proposal(&context.tenant.pool, &context.actor, payload).await?;
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(result))))
 }
@@ -247,7 +258,8 @@ pub async fn get_proposal(
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApiResponse<SupplyProposal>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::get_proposal(&context.tenant.pool, &context.actor, id).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
@@ -259,7 +271,8 @@ pub async fn approve_proposal(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyProposalApprove>,
 ) -> Result<Json<ApiResponse<SupplyItemDetail>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::approve_proposal(
         &context.tenant.pool,
         state.file_platform.as_ref(),
@@ -278,7 +291,8 @@ pub async fn reject_proposal(
     Path(id): Path<Uuid>,
     Json(payload): Json<SupplyProposalReject>,
 ) -> Result<Json<ApiResponse<SupplyProposal>>, HttpError> {
-    let context = staff_context(&state, &session).await?;
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
     let result = services::reject_proposal(
         &context.tenant.pool,
         state.file_platform.as_ref(),
@@ -288,4 +302,18 @@ pub async fn reject_proposal(
     )
     .await?;
     Ok(Json(ApiResponse::ok(result)))
+}
+
+#[utoipa::path(get, path="/api/supply-catalog/items/{id}/versions", operation_id="supplyListVersions", tag="supply-catalog", params(("id"=Uuid, Path, description="Supply item ID"), SupplyPageQuery), responses((status=200,body=ApiResponse<SupplyVersionPage>),(status=400,body=ApiErrorResponse),(status=401,body=ApiErrorResponse),(status=403,body=ApiErrorResponse),(status=404,body=ApiErrorResponse)))]
+pub async fn list_versions(
+    State(state): State<AppState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<SupplyPageQuery>,
+) -> Result<Json<ApiResponse<SupplyVersionPage>>, HttpError> {
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        services::list_versions(&context.tenant.pool, &context.actor, id, query).await?,
+    )))
 }

@@ -101,14 +101,18 @@ pub async fn list_items(
         .map(|s| normalize(&s));
     let favorite = query.favorites_only.unwrap_or(false);
     let filter=" WHERE ($2::text IS NULL OR strpos(i.normalized_name,$2)>0 OR strpos(lower(i.description),$2)>0) AND ($3::uuid IS NULL OR i.category_id=$3) AND (NOT $4 OR EXISTS(SELECT 1 FROM supply_favorites f WHERE f.item_id=i.id AND f.user_id=$1))";
-    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM supply_items i{filter}")))
-        .bind(actor.user_id)
-        .bind(&search)
-        .bind(query.category_id)
-        .bind(favorite)
-        .fetch_one(pool)
-        .await?;
-    let items = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!("{ITEM_SELECT}{filter} ORDER BY i.normalized_name,i.id LIMIT $5 OFFSET $6")))
+    let total: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT count(*) FROM supply_items i{filter}"
+    )))
+    .bind(actor.user_id)
+    .bind(&search)
+    .bind(query.category_id)
+    .bind(favorite)
+    .fetch_one(pool)
+    .await?;
+    let items = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
+        "{ITEM_SELECT}{filter} ORDER BY i.normalized_name,i.id LIMIT $5 OFFSET $6"
+    )))
     .bind(actor.user_id)
     .bind(search)
     .bind(query.category_id)
@@ -135,22 +139,65 @@ pub async fn get_item(
     require_action(actor, SupplyAction::Read, None, false)?;
     read_item(pool, actor.user_id, id).await
 }
+pub async fn list_versions(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    query: SupplyPageQuery,
+) -> Result<SupplyVersionPage, AppError> {
+    require_action(actor, SupplyAction::Read, None, false)?;
+    let (page, page_size, offset) = paging(query.page, query.page_size)?;
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM supply_items WHERE id=$1)")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if !exists {
+        return Err(missing());
+    }
+    let total = sqlx::query_scalar("SELECT count(*) FROM supply_item_versions WHERE item_id=$1")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let items = sqlx::query_as("SELECT id,version,(price_satang/100)::text||'.'||lpad((price_satang%100)::text,2,'0') AS price,shop,revision,created_at,updated_at FROM supply_item_versions WHERE item_id=$1 ORDER BY version DESC LIMIT $2 OFFSET $3").bind(id).bind(page_size).bind(offset).fetch_all(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(SupplyVersionPage {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
 async fn read_item(pool: &PgPool, user: Uuid, id: Uuid) -> Result<SupplyItemDetail, AppError> {
     // One snapshot covers metadata and history so concurrent price edits cannot split the response.
     let mut tx = pool.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
         .await?;
-    let item = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!("{ITEM_SELECT} WHERE i.id=$2")))
-        .bind(user)
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(missing)?
-        .dto();
-    let versions=sqlx::query_as("SELECT id,version,(price_satang/100)::text||'.'||lpad((price_satang%100)::text,2,'0') AS price,shop,revision,created_at,updated_at FROM supply_item_versions WHERE item_id=$1 ORDER BY version DESC").bind(id).fetch_all(&mut *tx).await?;
+    let item =
+        sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!("{ITEM_SELECT} WHERE i.id=$2")))
+            .bind(user)
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(missing)?
+            .dto();
+    let versions=sqlx::query_as("SELECT id,version,(price_satang/100)::text||'.'||lpad((price_satang%100)::text,2,'0') AS price,shop,revision,created_at,updated_at FROM supply_item_versions WHERE item_id=$1 ORDER BY version DESC LIMIT 100").bind(id).fetch_all(&mut *tx).await?;
+    let versions_total =
+        sqlx::query_scalar("SELECT count(*) FROM supply_item_versions WHERE item_id=$1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
     tx.commit().await?;
-    Ok(SupplyItemDetail { item, versions })
+    Ok(SupplyItemDetail {
+        item,
+        versions,
+        versions_total,
+    })
 }
 #[derive(Clone, sqlx::FromRow)]
 struct ItemScope {
@@ -393,16 +440,24 @@ struct BundleEntryRow {
     #[sqlx(flatten)]
     item: ItemRow,
     quantity: i32,
+    bundle_id: Uuid,
 }
 fn total_money(value: i128) -> String {
     format!("{}.{:02}", value / 100, value % 100)
 }
-async fn bundle_dto(
+async fn fetch_bundle_entries(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
-    row: BundleRow,
-) -> Result<SupplyBundle, AppError> {
-    let entries=sqlx::query_as::<_,BundleEntryRow>(sqlx::AssertSqlSafe(format!("SELECT item.*,e.quantity FROM({ITEM_SELECT})item JOIN supply_bundle_entries e ON e.item_id=item.id WHERE e.bundle_id=$2 ORDER BY item.name,item.id"))).bind(user).bind(row.id).fetch_all(&mut **tx).await?;
+    ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<BundleEntryRow>>, AppError> {
+    let entries=sqlx::query_as::<_,BundleEntryRow>(sqlx::AssertSqlSafe(format!("SELECT item.*,e.quantity,e.bundle_id FROM({ITEM_SELECT})item JOIN supply_bundle_entries e ON e.item_id=item.id WHERE e.bundle_id=ANY($2) ORDER BY e.bundle_id,item.name,item.id"))).bind(user).bind(ids).fetch_all(&mut **tx).await?;
+    let mut grouped = std::collections::HashMap::<Uuid, Vec<BundleEntryRow>>::new();
+    for entry in entries {
+        grouped.entry(entry.bundle_id).or_default().push(entry);
+    }
+    Ok(grouped)
+}
+fn bundle_dto(row: BundleRow, entries: Vec<BundleEntryRow>) -> SupplyBundle {
     let mut total = 0_i128;
     let entries = entries
         .into_iter()
@@ -416,7 +471,7 @@ async fn bundle_dto(
             }
         })
         .collect();
-    Ok(SupplyBundle {
+    SupplyBundle {
         id: row.id,
         name: row.name,
         shared: row.shared,
@@ -424,7 +479,7 @@ async fn bundle_dto(
         revision: row.revision,
         entries,
         total_price: total_money(total),
-    })
+    }
 }
 pub async fn list_bundles(
     pool: &PgPool,
@@ -443,10 +498,15 @@ pub async fn list_bundles(
             .fetch_one(&mut *tx)
             .await?;
     let rows=sqlx::query_as::<_,BundleRow>("SELECT id,name,shared,owner_user_id,revision FROM supply_bundles WHERE shared OR owner_user_id=$1 ORDER BY name,id LIMIT $2 OFFSET $3").bind(actor.user_id).bind(page_size).bind(offset).fetch_all(&mut *tx).await?;
-    let mut items = Vec::new();
-    for row in rows {
-        items.push(bundle_dto(&mut tx, actor.user_id, row).await?);
-    }
+    let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let mut grouped = fetch_bundle_entries(&mut tx, actor.user_id, &ids).await?;
+    let items = rows
+        .into_iter()
+        .map(|row| {
+            let entries = grouped.remove(&row.id).unwrap_or_default();
+            bundle_dto(row, entries)
+        })
+        .collect();
     tx.commit().await?;
     Ok(SupplyBundlePage {
         items,
@@ -518,24 +578,25 @@ pub async fn write_bundle(
             .await?;
         id
     };
-    for entry in payload.entries {
-        sqlx::query(
-            "INSERT INTO supply_bundle_entries(bundle_id,item_id,quantity)VALUES($1,$2,$3)",
-        )
-        .bind(id)
-        .bind(entry.item_id)
-        .bind(entry.quantity)
-        .execute(&mut *tx)
-        .await
-        .map_err(db)?;
-    }
+    let item_ids = payload
+        .entries
+        .iter()
+        .map(|entry| entry.item_id)
+        .collect::<Vec<_>>();
+    let quantities = payload
+        .entries
+        .iter()
+        .map(|entry| entry.quantity)
+        .collect::<Vec<_>>();
+    sqlx::query("INSERT INTO supply_bundle_entries(bundle_id,item_id,quantity) SELECT $1,item_id,quantity FROM UNNEST($2::uuid[],$3::integer[]) AS e(item_id,quantity)").bind(id).bind(&item_ids).bind(&quantities).execute(&mut *tx).await.map_err(db)?;
     let row = sqlx::query_as::<_, BundleRow>(
         "SELECT id,name,shared,owner_user_id,revision FROM supply_bundles WHERE id=$1",
     )
     .bind(id)
     .fetch_one(&mut *tx)
     .await?;
-    let result = bundle_dto(&mut tx, actor.user_id, row).await?;
+    let mut grouped = fetch_bundle_entries(&mut tx, actor.user_id, &[id]).await?;
+    let result = bundle_dto(row, grouped.remove(&id).unwrap_or_default());
     tx.commit().await?;
     Ok(result)
 }
@@ -569,11 +630,13 @@ pub async fn delete_bundle(
 }
 const PROPOSAL_SELECT:&str="SELECT id,name,description,category_id,unit,image_file_id,(price_satang/100)::text||'.'||lpad((price_satang%100)::text,2,'0') AS price,shop,source_file_id,source_url,status,proposed_by,reviewed_by,reviewed_at,rejection_reason,item_id,revision,created_at FROM supply_proposals";
 async fn load_proposal(pool: &PgPool, id: Uuid) -> Result<SupplyProposal, AppError> {
-    sqlx::query_as(sqlx::AssertSqlSafe(format!("{PROPOSAL_SELECT} WHERE id=$1")))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(missing)
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "{PROPOSAL_SELECT} WHERE id=$1"
+    )))
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(missing)
 }
 fn require_proposal(actor: &ActorContext, row: &SupplyProposal) -> Result<(), AppError> {
     if actor.has_permission(school_permissions::registry::codes::SUPPLY_CATALOG_APPROVE_SCHOOL) {
@@ -609,17 +672,21 @@ pub async fn list_proposals(
     )?;
     let (page, page_size, offset) = paging(query.page, query.page_size)?;
     let filter = " WHERE (($2 AND status='pending') OR (NOT $2 AND proposed_by=$1))";
-    let total = sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT count(*) FROM supply_proposals{filter}")))
-        .bind(actor.user_id)
-        .bind(review)
-        .fetch_one(pool)
-        .await?;
+    let total = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT count(*) FROM supply_proposals{filter}"
+    )))
+    .bind(actor.user_id)
+    .bind(review)
+    .fetch_one(pool)
+    .await?;
     let order = if review {
         "created_at ASC,id ASC"
     } else {
         "created_at DESC,id DESC"
     };
-    let items = sqlx::query_as(sqlx::AssertSqlSafe(format!("{PROPOSAL_SELECT}{filter} ORDER BY {order} LIMIT $3 OFFSET $4")))
+    let items = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "{PROPOSAL_SELECT}{filter} ORDER BY {order} LIMIT $3 OFFSET $4"
+    )))
     .bind(actor.user_id)
     .bind(review)
     .bind(page_size)
@@ -700,12 +767,13 @@ async fn lock_proposal(
     expected: i64,
     snapshot: &SupplyProposal,
 ) -> Result<SupplyProposal, AppError> {
-    let row =
-        sqlx::query_as::<_, SupplyProposal>(sqlx::AssertSqlSafe(format!("{PROPOSAL_SELECT} WHERE id=$1 FOR UPDATE")))
-            .bind(id)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or_else(missing)?;
+    let row = sqlx::query_as::<_, SupplyProposal>(sqlx::AssertSqlSafe(format!(
+        "{PROPOSAL_SELECT} WHERE id=$1 FOR UPDATE"
+    )))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(missing)?;
     revision(row.revision, expected)?;
     if row.status != "pending"
         || row.image_file_id != snapshot.image_file_id

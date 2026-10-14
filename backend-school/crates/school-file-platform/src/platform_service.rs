@@ -174,11 +174,19 @@ impl FilePlatform {
             .collect::<Vec<_>>();
         let byte_size =
             i64::try_from(upload_bytes.len()).map_err(|_| FilePlatformError::InspectionRejected)?;
-        let display_filename = if matches!(command.purpose,
-            FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource) {
-            let extension = if inspected.canonical_mime_type() == "image/jpeg" { "jpg" } else { "webp" };
+        let display_filename = if matches!(
+            command.purpose,
+            FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource
+        ) {
+            let extension = if inspected.canonical_mime_type() == "image/jpeg" {
+                "jpg"
+            } else {
+                "webp"
+            };
             format!("supply-image.{extension}")
-        } else { sanitized_display_filename(&command.display_filename) };
+        } else {
+            sanitized_display_filename(&command.display_filename)
+        };
         let upload = NewUpload {
             file_id,
             version_id,

@@ -47,6 +47,7 @@ pub struct SupplyItemDetail {
     #[serde(flatten)]
     pub item: SupplyItem,
     pub versions: Vec<SupplyVersion>,
+    pub versions_total: i64,
 }
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +59,7 @@ pub struct SupplyItemPage {
 }
 #[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in=Query)]
 pub struct SupplyItemQuery {
     pub search: Option<String>,
     pub category_id: Option<Uuid>,
@@ -83,6 +85,8 @@ pub struct SupplyItemUpdate {
     pub description: String,
     pub category_id: Uuid,
     pub unit: String,
+    #[serde(deserialize_with = "required_nullable_image")]
+    #[schema(required = true)]
     pub image_file_id: Option<Uuid>,
     pub revision: i64,
 }
@@ -132,6 +136,7 @@ pub struct SupplyBundle {
 }
 #[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in=Query)]
 pub struct SupplyPageQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
@@ -186,6 +191,7 @@ pub struct SupplyProposal {
 }
 #[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in=Query)]
 pub struct SupplyProposalQuery {
     pub review: Option<bool>,
     pub page: Option<i64>,
@@ -209,6 +215,8 @@ pub struct SupplyProposalApprove {
     pub description: String,
     pub category_id: Uuid,
     pub unit: String,
+    #[serde(deserialize_with = "required_nullable_image")]
+    #[schema(required = true)]
     pub image_file_id: Option<Uuid>,
     pub price: String,
     pub shop: String,
@@ -225,11 +233,56 @@ pub struct SupplyVersionAppend {
     pub price: String,
     pub shop: String,
     pub revision: i64,
+    #[serde(deserialize_with = "required_nullable_image")]
+    #[schema(required = true)]
     pub image_file_id: Option<Uuid>,
 }
 #[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[into_params(parameter_in=Query)]
 pub struct SupplyDuplicateQuery {
     pub name: String,
     pub unit: String,
+}
+
+// Missing image fields must never mean an implicit destructive removal.
+fn required_nullable_image<'de, D>(deserializer: D) -> Result<Option<Uuid>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<Uuid>::deserialize(deserializer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn append_requires_an_explicit_image_decision() {
+        let missing = serde_json::json!({"price":"10.00","shop":"Shop","revision":1});
+        assert!(serde_json::from_value::<SupplyVersionAppend>(missing).is_err());
+        let clear =
+            serde_json::json!({"price":"10.00","shop":"Shop","revision":1,"imageFileId":null});
+        assert!(serde_json::from_value::<SupplyVersionAppend>(clear)
+            .unwrap()
+            .image_file_id
+            .is_none());
+        let id = Uuid::now_v7();
+        let retain =
+            serde_json::json!({"price":"10.00","shop":"Shop","revision":1,"imageFileId":id});
+        assert_eq!(
+            serde_json::from_value::<SupplyVersionAppend>(retain)
+                .unwrap()
+                .image_file_id,
+            Some(id)
+        );
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplyVersionPage {
+    pub items: Vec<SupplyVersion>,
+    pub total: i64,
+    pub page: i64,
+    pub page_size: i64,
 }

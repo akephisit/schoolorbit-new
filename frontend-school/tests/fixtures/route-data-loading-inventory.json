@@ -1186,6 +1186,26 @@
 			"notes": "Student creation form has only a submit mutation; no initial collection read."
 		},
 		{
+			"route": "staff/supply-catalog",
+			"wave": "supply-catalog",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "backend-school supply_catalog",
+			"notes": "Loader owns independent streamed item and category reads with identity checks; action-only detail, version, bundle and proposal workflows remain lazy. LatestRequest supersession, local resource patches and exact permission checks."
+		},
+		{
+			"route": "staff/supply-catalog/proposals",
+			"wave": "supply-catalog",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "backend-school supply_catalog",
+			"notes": "Loader owns independent proposal page and categories, selecting own history or the exact approve-gated review queue. Review detail and editing are lazy; identity supersession preserves no stale private data."
+		},
+		{
 			"route": "staff/timetable",
 			"wave": "teaching",
 			"dataOwner": "route",

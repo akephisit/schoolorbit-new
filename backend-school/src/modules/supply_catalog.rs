@@ -27,7 +27,10 @@ pub fn supply_catalog_routes() -> Router<AppState> {
             "/items/{id}",
             get(handlers::get_item).put(handlers::update_item),
         )
-        .route("/items/{id}/versions", post(handlers::append_version))
+        .route(
+            "/items/{id}/versions",
+            get(handlers::list_versions).post(handlers::append_version),
+        )
         .route(
             "/items/{id}/versions/{version_id}",
             put(handlers::update_version),

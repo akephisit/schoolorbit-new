@@ -15760,10 +15760,15 @@
                       "$ref": "#/components/schemas/SupplyVersion"
                     },
                     "type": "array"
+                  },
+                  "versionsTotal": {
+                    "format": "int64",
+                    "type": "integer"
                   }
                 },
                 "required": [
-                  "versions"
+                  "versions",
+                  "versionsTotal"
                 ],
                 "type": "object"
               }
@@ -15951,6 +15956,50 @@
               "items": {
                 "items": {
                   "$ref": "#/components/schemas/SupplyProposal"
+                },
+                "type": "array"
+              },
+              "page": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "pageSize": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "total": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "items",
+              "total",
+              "page",
+              "pageSize"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SupplyVersionPage": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/SupplyVersion"
                 },
                 "type": "array"
               },
@@ -53687,10 +53736,15 @@
                   "$ref": "#/components/schemas/SupplyVersion"
                 },
                 "type": "array"
+              },
+              "versionsTotal": {
+                "format": "int64",
+                "type": "integer"
               }
             },
             "required": [
-              "versions"
+              "versions",
+              "versionsTotal"
             ],
             "type": "object"
           }
@@ -53758,6 +53812,7 @@
           "description",
           "categoryId",
           "unit",
+          "imageFileId",
           "revision"
         ],
         "type": "object"
@@ -53959,6 +54014,7 @@
           "description",
           "categoryId",
           "unit",
+          "imageFileId",
           "price",
           "shop"
         ],
@@ -54140,7 +54196,37 @@
         "required": [
           "price",
           "shop",
-          "revision"
+          "revision",
+          "imageFileId"
+        ],
+        "type": "object"
+      },
+      "SupplyVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupplyVersion"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pageSize": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
         ],
         "type": "object"
       },
@@ -100625,27 +100711,21 @@
         "operationId": "supplyListBundles",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "page",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "pageSize",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -101221,7 +101301,7 @@
         "operationId": "supplyDuplicates",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "name",
             "required": true,
             "schema": {
@@ -101229,7 +101309,7 @@
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "unit",
             "required": true,
             "schema": {
@@ -101309,61 +101389,46 @@
         "operationId": "supplyListItems",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "search",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "categoryId",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "uuid",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "favoritesOnly",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "boolean"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "page",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "pageSize",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],
@@ -101777,6 +101842,94 @@
       }
     },
     "/api/supply-catalog/items/{id}/versions": {
+      "get": {
+        "operationId": "supplyListVersions",
+        "parameters": [
+          {
+            "description": "Supply item ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupplyVersionPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "supply-catalog"
+        ]
+      },
       "post": {
         "operationId": "supplyAppendVersion",
         "parameters": [
@@ -101975,38 +102128,29 @@
         "operationId": "supplyListProposals",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "review",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "boolean",
-                "null"
-              ]
+              "type": "boolean"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "page",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           },
           {
-            "in": "path",
+            "in": "query",
             "name": "pageSize",
-            "required": true,
+            "required": false,
             "schema": {
               "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
+              "type": "integer"
             }
           }
         ],

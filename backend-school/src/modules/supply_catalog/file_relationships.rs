@@ -66,7 +66,7 @@ pub async fn attach(
     purpose: FilePurpose,
     allowed_relation: Option<Uuid>,
 ) -> Result<(), AppError> {
-    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 AND f.purpose_code=$2 AND f.visibility='private' AND f.lifecycle_status='ready' AND v.storage_status='stored' AND v.storage_class='private' AND (f.expires_at IS NULL OR f.expires_at>now()) AND (f.created_by=$3 OR EXISTS(SELECT 1 FROM supply_proposals p WHERE p.id=$4 AND p.status='pending' AND p.image_file_id=f.id AND $2='supply_catalog_image')))").bind(id).bind(purpose.code()).bind(actor.user_id).bind(allowed_relation).fetch_one(&mut **tx).await?;
+    let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM files f JOIN file_versions v ON v.id=f.current_version_id AND v.file_id=f.id WHERE f.id=$1 AND f.purpose_code=$2 AND f.visibility='private' AND f.lifecycle_status='ready' AND f.deleted_at IS NULL AND v.deleted_at IS NULL AND v.storage_status='stored' AND v.scan_status='clean' AND v.storage_class='private' AND (f.expires_at IS NULL OR f.expires_at>now()) AND (f.created_by=$3 OR EXISTS(SELECT 1 FROM supply_proposals p WHERE p.id=$4 AND p.status='pending' AND p.image_file_id=f.id AND $2='supply_catalog_image')))").bind(id).bind(purpose.code()).bind(actor.user_id).bind(allowed_relation).fetch_one(&mut **tx).await?;
     if !valid {
         return Err(AppError::BadRequest(
             "ไฟล์ต้องเป็นไฟล์ส่วนตัวที่พร้อมใช้งานและอัปโหลดโดยผู้ดำเนินการ".into(),
