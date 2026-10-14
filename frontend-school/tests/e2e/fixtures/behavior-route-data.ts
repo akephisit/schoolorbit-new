@@ -3,6 +3,7 @@ import { mockStaffHome, id, year, actor } from './staff-home-route-data';
 import { PERMISSIONS } from '../../../src/lib/permissions/registry';
 import type {
 	BehaviorItem,
+	BehaviorAttendanceRule,
 	BehaviorStudent,
 	BehaviorReportEntry,
 	BehaviorStudentSummary,
@@ -284,7 +285,29 @@ export async function mockBehavior(
 					: { ...summary, studentId: url.pathname.split('/').at(-2) ?? behaviorStudent }
 			);
 		if (path.endsWith('/settings')) return reply(route, settings);
-		if (path.endsWith('/rules')) return reply(route, []);
+		if (path.endsWith('/rules')) {
+			const rules: BehaviorAttendanceRule[] = [
+				{
+					id: id(880),
+					kind: 'arrival',
+					status: 'present',
+					gradeLevelId: null,
+					action: 'merit',
+					points: 1,
+					effectiveFrom: '2026-10-01'
+				},
+				{
+					id: id(881),
+					kind: 'lesson',
+					status: 'skipped',
+					gradeLevelId: id(830),
+					action: 'deduction',
+					points: 5,
+					effectiveFrom: '2026-10-01'
+				}
+			];
+			return reply(route, rules);
+		}
 		if (path.endsWith('/cycles')) return reply(route, [cycle('merit'), cycle('deduction')]);
 		if (path.endsWith('/batches')) {
 			const payload: CreateBehaviorBatch = route.request().postDataJSON();

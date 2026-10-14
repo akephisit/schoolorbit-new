@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { formatBehaviorDate } from '#lib/features/behavior/presentation.js';
+	import { Award, ShieldAlert, Scale, History } from '@lucide/svelte';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { untrack, onDestroy } from 'svelte';
 	import { LatestRequest } from '#lib/async/latest-request.js';
@@ -132,33 +134,79 @@
 			actionLabel="ลองโหลดใหม่"
 			onaction={() => void refresh()}
 		/>{/if}
-	<p class="text-sm text-muted-foreground">ประวัติและคะแนนสะสมรวมทุกปีการศึกษา</p>
-	<div class="grid gap-4 md:grid-cols-3">
-		{#each [{ label: 'รอบปัจจุบัน', totals: summary.current, showNet: true }, { label: 'ประวัติรวมทุกภาคเรียน', totals: summary.history, showNet: false }, { label: 'สะสมทั้งหมด', totals: summary.lifetime, showNet: true }] as group (group.label)}<Card.Root
-				aria-label={group.label}
-				><Card.Header><Card.Title>{group.label}</Card.Title></Card.Header><Card.Content
-					><dl class="grid grid-cols-2 gap-2">
-						<dt>ความดี</dt>
-						<dd class="text-end font-semibold text-success">{group.totals.merit}</dd>
-						<dt>ถูกหัก</dt>
-						<dd class="text-end font-semibold text-destructive">{group.totals.deduction}</dd>
-						{#if group.showNet}<dt>สุทธิ</dt>
-							<dd class="text-end font-semibold">{group.totals.net ?? 'ต่างช่วงเวลา'}</dd>{/if}
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div>
+			<h2 class="text-lg font-semibold">คะแนนของนักเรียน</h2>
+			<p class="mt-1 text-sm text-muted-foreground">
+				ยอดปัจจุบันแยกจากประวัติและคะแนนสะสมทุกปีการศึกษา
+			</p>
+		</div>
+	</div>
+	<section aria-label="รอบปัจจุบัน" class="grid grid-cols-3 gap-3">
+		{#each [{ label: 'ความดี', points: summary.current.merit, icon: Award, color: 'text-success', tint: 'bg-success/10' }, { label: 'ถูกหัก', points: summary.current.deduction, icon: ShieldAlert, color: 'text-destructive', tint: 'bg-destructive/10' }, { label: 'สุทธิ', points: summary.current.net, icon: Scale, color: 'text-primary', tint: 'bg-primary/10' }] as metric (metric.label)}
+			<Card.Root class="gap-0 py-0"
+				><Card.Content class="p-3 sm:p-5">
+					<div class="flex items-center justify-between gap-3">
+						<p class="text-sm text-muted-foreground">{metric.label}</p>
+						<span
+							class={`hidden size-9 items-center justify-center rounded-xl sm:flex ${metric.tint} ${metric.color}`}
+							><metric.icon class="size-4" aria-hidden="true" /></span
+						>
+					</div>
+					<p
+						class={`mt-3 break-words font-semibold tabular-nums ${metric.color} ${metric.points === null ? 'text-lg' : 'text-2xl sm:text-3xl'}`}
+					>
+						{metric.points ?? 'ต่างช่วงเวลา'}
+					</p>
+					<p class="mt-1 text-xs text-muted-foreground">
+						{metric.points === null ? 'ดูผลเปรียบเทียบช่วงเดียวกันด้านล่าง' : 'คะแนน'}
+					</p>
+				</Card.Content></Card.Root
+			>
+		{/each}
+	</section>
+	<div class="grid gap-4 lg:grid-cols-2">
+		{#each [{ label: 'ประวัติรวมทุกภาคเรียน', totals: summary.history, showNet: false, description: 'ยอดที่เก็บไว้จากรอบก่อนและการย้ายเป็นประวัติ' }, { label: 'สะสมทั้งหมด', totals: summary.lifetime, showNet: true, description: 'รวมคะแนนปัจจุบันและประวัติทุกปีการศึกษา' }] as group (group.label)}
+			<Card.Root aria-label={group.label} class="gap-0 py-0">
+				<Card.Header class="border-b p-4 sm:p-5"
+					><div class="flex items-center gap-2">
+						<History class="size-4 text-muted-foreground" aria-hidden="true" />
+						<h3 class="font-semibold">{group.label}</h3>
+					</div>
+					<Card.Description>{group.description}</Card.Description></Card.Header
+				>
+				<Card.Content class="p-4 sm:p-5"
+					><dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+						<dt class="text-muted-foreground">ความดี</dt>
+						<dd class="text-end font-semibold tabular-nums text-success">{group.totals.merit}</dd>
+						<dt class="text-muted-foreground">ถูกหัก</dt>
+						<dd class="text-end font-semibold tabular-nums text-destructive">
+							{group.totals.deduction}
+						</dd>
+						{#if group.showNet}<dt class="text-muted-foreground">สุทธิ</dt>
+							<dd class="text-end font-semibold tabular-nums">
+								{group.totals.net ?? 'ต่างช่วงเวลา'}
+							</dd>{/if}
 					</dl></Card.Content
-				></Card.Root
-			>{/each}
+				>
+			</Card.Root>
+		{/each}
 	</div>
 	<p class="text-sm text-muted-foreground">
-		ความดีเริ่ม {summary.meritCycle.startsOn} · คะแนนหักเริ่ม {summary.deductionCycle.startsOn}
+		ความดีเริ่ม {formatBehaviorDate(summary.meritCycle.startsOn)} · คะแนนหักเริ่ม {formatBehaviorDate(
+			summary.deductionCycle.startsOn
+		)}
 	</p>
-	<p>
-		สุทธิในช่วงเดียวกัน {summary.comparisonStart}–{summary.comparisonEnd}:
+	<p class="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">
+		สุทธิในช่วงเดียวกัน {formatBehaviorDate(summary.comparisonStart)}–{formatBehaviorDate(
+			summary.comparisonEnd
+		)}:
 		<strong>{summary.comparableCurrent.net ?? 'เปรียบเทียบไม่ได้'}</strong
 		>{#if !summary.comparisonExact}<span class="block text-sm text-muted-foreground"
 				>รอบคะแนนหรือข้อมูลที่เก็บเป็นประวัติมีช่วงไม่ตรงกัน จึงยังเปรียบเทียบผลสุทธิในช่วงนี้ไม่ได้</span
 			>{/if}
 	</p>
-	<details>
+	<details class="rounded-xl border bg-card px-4 sm:px-5">
 		<summary class="min-h-[44px] cursor-pointer py-2"
 			>ประวัติยอดรายวัน ({summary.historyTotals.length})</summary
 		>
@@ -167,7 +215,8 @@
 					class="flex flex-wrap items-center justify-between gap-2 py-3"
 				>
 					<span
-						>{row.date} · {sideLabels[row.side]} · {sourceLabels[row.source]} · {row.points} คะแนน</span
+						>{formatBehaviorDate(row.date)} · {sideLabels[row.side]} · {sourceLabels[row.source]} · {row.points}
+						คะแนน</span
 					>{#if $can.has(PERMISSIONS.BEHAVIOR_CORRECT_SCHOOL)}<Button
 							class="min-h-[44px] min-w-[44px]"
 							type="button"
@@ -184,10 +233,12 @@
 		</ul>
 	</details>
 	{#if editing && $can.has(PERMISSIONS.BEHAVIOR_CORRECT_SCHOOL)}<form
-			class="space-y-3 rounded-md border p-4"
+			class="max-w-3xl space-y-4 rounded-xl border bg-card p-4 sm:p-5"
 			onsubmit={adjust}
 		>
-			<h3 class="font-semibold">ปรับยอด {editing.date} · {sideLabels[editing.side]}</h3>
+			<h3 class="font-semibold">
+				ปรับยอด {formatBehaviorDate(editing.date)} · {sideLabels[editing.side]}
+			</h3>
 			{#if error}<PageState
 					variant="error"
 					title="ปรับยอดไม่สำเร็จ"

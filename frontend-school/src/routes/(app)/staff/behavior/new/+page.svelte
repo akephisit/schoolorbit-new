@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ClipboardPen } from '@lucide/svelte';
 	import type { PageProps } from './$types';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageState } from '#lib/components/app-state/index.js';
@@ -10,6 +11,7 @@
 </script>
 
 <PageShell
+	icon={ClipboardPen}
 	title="บันทึกพฤติกรรม"
 	description="เลือกรายการและนักเรียนรายคนหรือกลุ่มผสมข้ามห้อง"
 	backHref={`/staff/behavior?academicTermId=${data.term ?? ''}`}

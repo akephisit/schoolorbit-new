@@ -17,6 +17,7 @@ test('reader loads history without settings or action-only selector reads', asyn
 	const api = await mockBehavior(page, { permissions: [PERMISSIONS.BEHAVIOR_READ_SCHOOL] });
 	await page.goto(behaviorPath());
 	await expect(page.getByRole('heading', { name: 'พฤติกรรมนักเรียน', exact: true })).toBeVisible();
+	await page.getByText('รายละเอียดเพิ่มเติม', { exact: true }).first().click();
 	await expect(page.getByText('ช่วยจัดห้อง', { exact: true })).toBeVisible();
 	await expect(page.getByText(/ระบบอัตโนมัติ/)).toBeVisible();
 	await expect(page.getByRole('link', { name: 'บันทึกพฤติกรรม', exact: true })).toHaveCount(0);
@@ -187,13 +188,18 @@ for (const theme of ['light', 'dark'])
 		await expect
 			.poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
 			.toBe(theme === 'dark');
-		const choice = page.getByRole('button', { name: 'ประเภท', exact: true });
+		const choice = page.getByRole('radio', { name: 'ความดี', exact: true });
 		await choice.click();
-		const option = page.getByRole('option', { name: 'คะแนนความดี', exact: true });
-		await expect
-			.poll(async () => (await option.boundingBox())?.height ?? 0)
-			.toBeGreaterThanOrEqual(44);
-		await page.keyboard.press('Escape');
+		await expect(choice).toBeChecked();
+		await choice.click();
+		await expect(choice).toBeChecked();
+		const misconduct = page.getByRole('radio', { name: 'ความผิด', exact: true });
+		await misconduct.focus();
+		await page.keyboard.press('Space');
+		await expect(misconduct).toBeChecked();
+		await choice.focus();
+		await page.keyboard.press('Space');
+		await expect(choice).toBeChecked();
 		const checkbox = page.getByRole('checkbox', { name: 'เลือก นักเรียน หนึ่ง', exact: true });
 		expect((await checkbox.locator('..').boundingBox())!.height).toBeGreaterThanOrEqual(44);
 		await checkbox.check();

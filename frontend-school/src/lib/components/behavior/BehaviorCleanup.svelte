@@ -28,9 +28,19 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
-	import BehaviorSelect from './BehaviorSelect.svelte';
+	import BehaviorFormSection from './BehaviorFormSection.svelte';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { RotateCcw, Trash2, SearchCheck, TriangleAlert } from '@lucide/svelte';
 	let { term, year }: { term: string | null; year: string | null } = $props();
 	let reset = $state(false);
+	function chooseOperation(value: string) {
+		if (value === 'reset' || value === 'cleanup') reset = value === 'reset';
+	}
+	function chooseMode(value: string) {
+		const selected = modes.find((candidate) => candidate === value);
+		if (selected) mode = selected;
+	}
 	let start = $state(bangkokDateTime().date.slice(0, 7) + '-01');
 	let allDates = $state(false);
 	let end = $state(bangkokDateTime().date);
@@ -163,124 +173,233 @@
 	}
 </script>
 
-<form class="mx-auto max-w-4xl space-y-4" onsubmit={inspect}>
-	<h2 class="text-lg font-semibold">ขอบเขตข้อมูล</h2>
-	<fieldset disabled={!!pending || !!requestId} class="space-y-4">
-		<label class="flex min-h-[44px] items-center gap-2"
-			><Checkbox bind:checked={reset} />รีเซ็ตคะแนน เปิดรอบใหม่เริ่มศูนย์ และเก็บยอดเดิมเป็นประวัติ</label
-		>{#if reset}<p class="text-sm text-muted-foreground">
-				รีเซ็ตฝั่งที่เลือกทั้งโรงเรียน ต้องปิดยอดเช็กชื่อถึงวันที่เลือกก่อน
-			</p>{:else}<BehaviorSelect
-				id="cleanup-mode"
-				label="วิธีล้างข้อมูล"
-				value={mode}
-				options={modes.map((m) => ({ value: m, label: modeLabels[m] }))}
-				onValueChange={(v) => {
-					const m = modes.find((m) => m === v);
-					if (m) mode = m;
-				}}
-			/><label class="flex min-h-[44px] items-center gap-2"
-				><Checkbox bind:checked={termOnly} />เฉพาะภาคเรียนที่เลือก (ปิดเพื่อเลือกทุกภาคเรียน)</label
-			>{/if}
-		{#if !reset}<label class="flex min-h-[44px] items-center gap-2"
-				><Checkbox bind:checked={allDates} />ทุกวันในขอบเขตที่เลือก</label
-			>{/if}
-		<div class="grid gap-3 sm:grid-cols-2">
-			{#if !reset}<div>
-					<Label for="cleanup-start">เริ่มวันที่</Label><DatePicker
-						id="cleanup-start"
-						value={start}
-						onValueChange={(v) => {
-							if (v) start = v;
-						}}
-					/>
-				</div>{/if}
-			<div>
-				<Label for="cleanup-end">ถึงวันที่ *</Label><DatePicker
-					id="cleanup-end"
-					value={end}
-					onValueChange={(v) => {
-						if (v) end = v;
-					}}
-					required
-				/>
+<form class="max-w-5xl space-y-6" onsubmit={inspect}>
+	<fieldset disabled={!!pending || !!requestId} class="min-w-0 space-y-6">
+		<legend class="sr-only">วิธีจัดการและขอบเขตข้อมูลคะแนน</legend>
+		<BehaviorFormSection
+			step={1}
+			title="เลือกวิธีจัดการ"
+			description="รีเซ็ตยอดปัจจุบัน หรือจัดการรายละเอียดและผลคะแนน"
+		>
+			<ToggleGroup.Root
+				type="single"
+				bind:value={() => (reset ? 'reset' : 'cleanup'), chooseOperation}
+				aria-label="วิธีจัดการคะแนน"
+				class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+				disabled={!!pending || !!requestId}
+			>
+				<ToggleGroup.Item
+					value="reset"
+					class="min-h-[44px] min-w-[44px] h-auto justify-start gap-3 whitespace-normal p-4 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+					><RotateCcw class="size-5 shrink-0" aria-hidden="true" /><span
+						><span class="block font-semibold">รีเซ็ตคะแนน</span><span
+							class="mt-1 block text-xs text-muted-foreground"
+							>เริ่มรอบใหม่ที่ศูนย์ เก็บยอดเดิมเป็นประวัติ</span
+						></span
+					></ToggleGroup.Item
+				>
+				<ToggleGroup.Item
+					value="cleanup"
+					class="min-h-[44px] min-w-[44px] h-auto justify-start gap-3 whitespace-normal p-4 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+					><Trash2 class="size-5 shrink-0" aria-hidden="true" /><span
+						><span class="block font-semibold">ล้างรายการ</span><span
+							class="mt-1 block text-xs text-muted-foreground"
+							>ลบรายละเอียดจริงและเลือกวิธีเก็บผลคะแนน</span
+						></span
+					></ToggleGroup.Item
+				>
+			</ToggleGroup.Root>
+			{#if reset}<p class="rounded-xl bg-muted/30 p-3 text-sm text-muted-foreground">
+					รีเซ็ตฝั่งที่เลือกทั้งโรงเรียน ต้องปิดยอดเช็กชื่อถึงวันที่เลือกก่อน
+				</p>{:else}
+				<div class="space-y-2">
+					<Label id="cleanup-mode-label">วิธีล้างข้อมูล</Label><ToggleGroup.Root
+						type="single"
+						bind:value={() => mode, chooseMode}
+						aria-labelledby="cleanup-mode-label"
+						class="flex-col items-stretch gap-2"
+						disabled={!!pending || !!requestId}
+					>
+						{#each modes as option (option)}<ToggleGroup.Item
+								value={option}
+								class="min-h-[44px] min-w-[44px] h-auto justify-start whitespace-normal px-4 py-3 text-left data-[state=on]:border-primary data-[state=on]:bg-primary/5"
+								>{modeLabels[option]}</ToggleGroup.Item
+							>{/each}
+					</ToggleGroup.Root>
+				</div>
+			{/if}
+		</BehaviorFormSection>
+		<BehaviorFormSection
+			step={2}
+			title="ขอบเขตข้อมูล"
+			description="เลือกฝั่งคะแนนและช่วงวันที่ที่ต้องการจัดการ"
+		>
+			<div class="space-y-2">
+				<p class="text-sm font-medium">ฝั่งคะแนน</p>
+				<div class="grid gap-3 sm:grid-cols-2">
+					{#each sides as side (side)}<label
+							class="flex min-h-[44px] items-center gap-3 rounded-xl border p-3 has-[[data-state=checked]]:border-primary/30 has-[[data-state=checked]]:bg-primary/5"
+							><Checkbox
+								checked={chosenSides.includes(side)}
+								onCheckedChange={(checked) =>
+									(chosenSides = checked
+										? [...chosenSides, side]
+										: chosenSides.filter((candidate) => candidate !== side))}
+							/>{sideLabels[side]}</label
+						>{/each}
+				</div>
 			</div>
-		</div>
-		<div class="flex flex-wrap gap-4">
-			{#each sides as side (side)}<label class="flex min-h-[44px] items-center gap-2"
-					><Checkbox
-						checked={chosenSides.includes(side)}
-						onCheckedChange={(v) =>
-							(chosenSides = v ? [...chosenSides, side] : chosenSides.filter((s) => s !== side))}
-					/>{sideLabels[side]}</label
-				>{/each}
-		</div>
-		{#if !reset}<div class="flex flex-wrap gap-4">
-				{#each sources as source (source)}<label class="flex min-h-[44px] items-center gap-2"
-						><Checkbox
-							checked={chosenSources.includes(source)}
-							onCheckedChange={(v) =>
-								(chosenSources = v
-									? [...chosenSources, source]
-									: chosenSources.filter((s) => s !== source))}
-						/>{sourceLabels[source]}</label
-					>{/each}
-			</div>{/if}
+			{#if !reset}<div class="space-y-2 border-t pt-4">
+					<label class="flex min-h-[44px] items-center gap-3"
+						><Checkbox bind:checked={termOnly} />เฉพาะภาคเรียนที่เลือก (ปิดเพื่อเลือกทุกภาคเรียน)</label
+					><label class="flex min-h-[44px] items-center gap-3"
+						><Checkbox bind:checked={allDates} />ทุกวันในขอบเขตที่เลือก</label
+					>
+				</div>{/if}
+			<div class="grid gap-4 sm:grid-cols-2">
+				{#if !reset}<div class="space-y-2">
+						<Label for="cleanup-start">เริ่มวันที่</Label><DatePicker
+							id="cleanup-start"
+							value={start}
+							disabled={allDates}
+							onValueChange={(value) => {
+								if (value) start = value;
+							}}
+						/>
+					</div>{/if}
+				<div class="space-y-2">
+					<Label for="cleanup-end">ถึงวันที่ *</Label><DatePicker
+						id="cleanup-end"
+						value={end}
+						disabled={!reset && allDates}
+						onValueChange={(value) => {
+							if (value) end = value;
+						}}
+						required
+					/>
+				</div>
+			</div>
+			{#if !reset}<div class="space-y-2 border-t pt-4">
+					<p class="text-sm font-medium">ที่มาของคะแนน</p>
+					<div class="grid gap-2 sm:grid-cols-2">
+						{#each sources as source (source)}<label
+								class="flex min-h-[44px] items-center gap-3 rounded-lg px-2"
+								><Checkbox
+									checked={chosenSources.includes(source)}
+									onCheckedChange={(checked) =>
+										(chosenSources = checked
+											? [...chosenSources, source]
+											: chosenSources.filter((candidate) => candidate !== source))}
+								/>{sourceLabels[source]}</label
+							>{/each}
+					</div>
+				</div>{/if}
+		</BehaviorFormSection>
 	</fieldset>
-	<LoadingButton
-		class="min-h-[44px] min-w-[44px]"
-		type="submit"
-		variant="outline"
-		loading={pending === 'preview'}
-		disabled={!!pending || !chosenSides.length || (!reset && !chosenSources.length)}
-		>ตรวจผลกระทบก่อนดำเนินการ</LoadingButton
-	>
+	<div class="flex justify-end border-t pt-4">
+		<LoadingButton
+			class="min-h-[44px] min-w-[44px]"
+			type="submit"
+			variant="outline"
+			loading={pending === 'preview'}
+			disabled={!!pending || !chosenSides.length || (!reset && !chosenSources.length)}
+			><SearchCheck class="size-4" aria-hidden="true" />ตรวจผลกระทบก่อนดำเนินการ</LoadingButton
+		>
+	</div>
 </form>
 {#if error}<PageState variant="error" title="ดำเนินการไม่สำเร็จ" description={error} />{/if}
-{#if preview}<section class="mx-auto max-w-4xl space-y-3 rounded-md border p-4">
-		<h2 class="font-semibold">ผลกระทบที่ตรวจแล้ว</h2>
-		<p>
-			{preview.students} คน · {preview.entries} รายการ · ความดี {preview.merit} · ถูกหัก {preview.deduction}
-		</p>
-		<p class="text-sm">
-			ยอดในขอบเขต: ปัจจุบัน {preview.current.merit}/{preview.current.deduction} · ประวัติ {preview
-				.history.merit}/{preview.history.deduction} · สะสม {preview.lifetime.merit}/{preview
-				.lifetime.deduction}
-		</p>
-		<p class="text-sm text-muted-foreground">
-			รายละเอียดที่ลบแล้วจะเปิดดูหรือยกเลิกรายเหตุการณ์ไม่ได้ ข้อมูลเช็กชื่อยังอยู่ในระบบเช็กชื่อ
-		</p>
-		<Label for="cleanup-reason">เหตุผล *</Label><Textarea
-			id="cleanup-reason"
-			bind:value={reason}
-			required
-			maxlength={1000}
-			disabled={!!pending || !!requestId}
-		/>{#if previewKey !== key}<p class="text-warning">
-				ขอบเขตเปลี่ยน กรุณาตรวจผลกระทบใหม่
-			</p>{/if}<Button
-			class="min-h-[44px] min-w-[44px]"
-			type="button"
-			variant="destructive"
-			disabled={!!pending || previewKey !== key || !reason.trim()}
-			onclick={() => (confirm = true)}>ดำเนินการตามผลที่ตรวจ</Button
+{#if preview}<div class="max-w-5xl">
+		<BehaviorFormSection
+			step={3}
+			title="ผลกระทบที่ตรวจแล้ว"
+			description="ตรวจยอดและจำนวนรายการก่อนยืนยันดำเนินการ"
 		>
-	</section>{/if}
-{#if outcome}<section role="status" class="rounded-md border p-4">
-		<h2 class="font-semibold">
-			{outcome.status === 'pending' ? 'กำลังจัดการข้อมูล' : 'จัดการข้อมูลสำเร็จ'}
-		</h2>
-		<p>ลบรายละเอียดแล้ว {outcome.entriesDeleted} รายการ · นักเรียน {outcome.students} คน</p>
-		{#if outcome.status === 'pending' && !pending}<Button
-				class="min-h-[44px] min-w-[44px]"
-				type="button"
-				variant="outline"
-				onclick={() => {
-					pending = 'job';
-					void poll(outcome!.id);
-				}}>ตรวจสถานะต่อ</Button
-			>{/if}
-	</section>{/if}
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="rounded-xl border bg-muted/20 p-4">
+					<p class="text-sm text-muted-foreground">นักเรียนที่ได้รับผลกระทบ</p>
+					<p class="mt-2 text-2xl font-semibold tabular-nums">
+						{preview.students} <span class="text-sm font-normal">คน</span>
+					</p>
+				</div>
+				<div class="rounded-xl border bg-muted/20 p-4">
+					<p class="text-sm text-muted-foreground">รายละเอียดในขอบเขต</p>
+					<p class="mt-2 text-2xl font-semibold tabular-nums">
+						{preview.entries} <span class="text-sm font-normal">รายการ</span>
+					</p>
+				</div>
+			</div>
+			<dl class="grid gap-3 sm:grid-cols-2">
+				<div class="rounded-xl border border-success/20 bg-success/5 p-4">
+					<dt class="text-sm text-muted-foreground">คะแนนความดีในขอบเขต</dt>
+					<dd class="mt-1 text-xl font-semibold text-success">{preview.merit}</dd>
+				</div>
+				<div class="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+					<dt class="text-sm text-muted-foreground">คะแนนที่ถูกหักในขอบเขต</dt>
+					<dd class="mt-1 text-xl font-semibold text-destructive">{preview.deduction}</dd>
+				</div>
+			</dl>
+			<div class="grid gap-3 sm:grid-cols-3">
+				{#each [{ label: 'ปัจจุบัน', totals: preview.current }, { label: 'ประวัติ', totals: preview.history }, { label: 'สะสม', totals: preview.lifetime }] as group (group.label)}<div
+						class="rounded-xl border p-3"
+					>
+						<h3 class="mb-2 text-sm font-medium">{group.label}</h3>
+						<dl class="grid grid-cols-2 gap-2 text-sm">
+							<dt class="text-muted-foreground">ความดี</dt>
+							<dd class="text-end font-medium">{group.totals.merit}</dd>
+							<dt class="text-muted-foreground">ถูกหัก</dt>
+							<dd class="text-end font-medium">{group.totals.deduction}</dd>
+						</dl>
+					</div>{/each}
+			</div>
+			<div class="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4">
+				<TriangleAlert class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+				<p class="text-sm">
+					รายละเอียดที่ลบแล้วจะเปิดดูหรือยกเลิกรายเหตุการณ์ไม่ได้
+					ข้อมูลเช็กชื่อยังอยู่ในระบบเช็กชื่อ
+				</p>
+			</div>
+			<div class="space-y-2">
+				<Label for="cleanup-reason">เหตุผล *</Label><Textarea
+					id="cleanup-reason"
+					bind:value={reason}
+					required
+					maxlength={1000}
+					disabled={!!pending || !!requestId}
+				/>
+			</div>
+			{#if previewKey !== key}<p class="text-sm text-warning">
+					ขอบเขตเปลี่ยน กรุณาตรวจผลกระทบใหม่
+				</p>{/if}
+			<div class="flex justify-end border-t pt-4">
+				<Button
+					class="min-h-[44px] min-w-[44px]"
+					type="button"
+					variant="destructive"
+					disabled={!!pending || previewKey !== key || !reason.trim()}
+					onclick={() => (confirm = true)}>ดำเนินการตามผลที่ตรวจ</Button
+				>
+			</div>
+		</BehaviorFormSection>
+	</div>{/if}
+{#if outcome}<Card.Root role="status" class="max-w-5xl gap-0 py-0"
+		><Card.Content class="space-y-2 p-4 sm:p-5"
+			><h2 class="font-semibold">
+				{outcome.status === 'pending' ? 'กำลังจัดการข้อมูล' : 'จัดการข้อมูลสำเร็จ'}
+			</h2>
+			<p class="text-sm text-muted-foreground">
+				ลบรายละเอียดแล้ว {outcome.entriesDeleted} รายการ · นักเรียน {outcome.students} คน
+			</p>
+			{#if outcome.status === 'pending' && !pending}<Button
+					class="min-h-[44px] min-w-[44px]"
+					type="button"
+					variant="outline"
+					onclick={() => {
+						pending = 'job';
+						void poll(outcome!.id);
+					}}>ตรวจสถานะต่อ</Button
+				>{/if}</Card.Content
+		></Card.Root
+	>{/if}
 <AlertDialog.Root bind:open={confirm}
 	><AlertDialog.Content
 		><AlertDialog.Header

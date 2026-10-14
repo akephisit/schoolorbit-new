@@ -10,6 +10,10 @@
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import BehaviorSelect from './BehaviorSelect.svelte';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import BehaviorFormSection from './BehaviorFormSection.svelte';
+	import { ListChecks } from '@lucide/svelte';
 	let { initial }: { initial: BehaviorItem[] } = $props();
 	let items = $state(untrack(() => initial));
 	const blank = (): SaveBehaviorItem => ({
@@ -60,32 +64,53 @@
 	}
 </script>
 
-<section class="space-y-4 rounded-md border p-4">
-	<h2 class="text-lg font-semibold">รายการทำดี / ทำผิด</h2>
-	<p class="text-sm text-muted-foreground">
-		คะแนนในหน้าบันทึกถูกล็อกตามเกณฑ์ การเปลี่ยนเกณฑ์ไม่เปลี่ยนรายการเก่า
-	</p>
-	<ul class="divide-y">
-		{#each items as item (item.id)}<li
-				class="flex flex-wrap items-center justify-between gap-2 py-3"
-			>
-				<span
-					>{item.name} · {sideLabels[item.side]}
-					{item.points ?? 'ยังไม่มีเกณฑ์'} · {item.enabled ? 'เปิดใช้' : 'ปิดใช้'}</span
-				><Button
-					class="min-h-[44px] min-w-[44px]"
-					type="button"
-					variant="outline"
-					disabled={pending || !!frozen}
-					onclick={() => edit(item)}>แก้ไข / ตั้งเกณฑ์ใหม่</Button
-				>
-			</li>{/each}
-	</ul>
+<BehaviorFormSection
+	title="รายการทำดี / ทำผิด"
+	description="คะแนนในหน้าบันทึกถูกล็อกตามเกณฑ์ การเปลี่ยนเกณฑ์ไม่เปลี่ยนรายการเก่า"
+	icon={ListChecks}
+>
+	<div class="overflow-hidden rounded-xl border">
+		<Table.Root
+			><Table.Header
+				><Table.Row
+					><Table.Head>รายการ</Table.Head><Table.Head>ประเภท</Table.Head><Table.Head
+						>คะแนน</Table.Head
+					><Table.Head>สถานะ</Table.Head><Table.Head></Table.Head></Table.Row
+				></Table.Header
+			><Table.Body
+				>{#each items as item (item.id)}<Table.Row
+						><Table.Cell class="whitespace-normal"
+							><span class="font-medium">{item.name}</span></Table.Cell
+						><Table.Cell class="whitespace-normal">{sideLabels[item.side]}</Table.Cell><Table.Cell
+							class="whitespace-normal"
+							><span class="font-semibold tabular-nums">{item.points ?? 'ยังไม่มีเกณฑ์'}</span
+							></Table.Cell
+						><Table.Cell class="whitespace-normal"
+							><Badge variant={item.enabled ? 'outline' : 'secondary'}
+								>{item.enabled ? 'เปิดใช้' : 'ปิดใช้'}</Badge
+							></Table.Cell
+						><Table.Cell class="text-end"
+							><Button
+								class="min-h-[44px] min-w-[44px]"
+								type="button"
+								variant="outline"
+								disabled={pending || !!frozen}
+								onclick={() => edit(item)}>แก้ไข / ตั้งเกณฑ์ใหม่</Button
+							></Table.Cell
+						></Table.Row
+					>{:else}<Table.Row
+						><Table.Cell colspan={5} class="p-6 text-center text-muted-foreground"
+							>ยังไม่มีรายการ</Table.Cell
+						></Table.Row
+					>{/each}</Table.Body
+			></Table.Root
+		>
+	</div>
 	<form class="space-y-3 border-t pt-4" onsubmit={save}>
 		<h3 class="font-semibold">{draft.id ? 'แก้ไขรายการ' : 'เพิ่มรายการ'}</h3>
 		{#if error}<PageState variant="error" title="บันทึกไม่สำเร็จ" description={error} />{/if}
 		<fieldset disabled={pending || !!frozen} class="grid gap-3 sm:grid-cols-2">
-			<div>
+			<div class="space-y-2">
 				<Label for="behavior-item-name">ชื่อรายการ *</Label><Input
 					id="behavior-item-name"
 					bind:value={draft.name}
@@ -94,7 +119,7 @@
 				/>
 			</div>
 			<div>
-				<Label for="behavior-item-side">ฝั่งคะแนน</Label><BehaviorSelect
+				<BehaviorSelect
 					id="behavior-item-side"
 					label="ฝั่งรายการ"
 					value={draft.side}
@@ -105,7 +130,7 @@
 					}}
 				/>
 			</div>
-			<div>
+			<div class="space-y-2">
 				<Label for="behavior-item-points">คะแนน *</Label><Input
 					id="behavior-item-points"
 					type="number"
@@ -114,7 +139,7 @@
 					required
 				/>
 			</div>
-			<div>
+			<div class="space-y-2">
 				<Label for="behavior-item-effective">วันเริ่มใช้เกณฑ์ *</Label><DatePicker
 					id="behavior-item-effective"
 					value={draft.effectiveFrom}
@@ -139,4 +164,4 @@
 			>
 		</div>
 	</form>
-</section>
+</BehaviorFormSection>

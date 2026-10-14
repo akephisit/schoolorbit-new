@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatBehaviorDate } from '#lib/features/behavior/presentation.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { onDestroy, untrack } from 'svelte';
@@ -29,6 +30,8 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageState, LoadingButton } from '#lib/components/app-state/index.js';
 	import BehaviorSelect from './BehaviorSelect.svelte';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import { History, Search } from '@lucide/svelte';
 	let {
 		initial,
 		query,
@@ -179,14 +182,23 @@
 </script>
 
 <section class="space-y-4" aria-label="ประวัติรายการคะแนน">
-	<form onsubmit={filter} class="grid gap-3 rounded-md border p-4 sm:grid-cols-3">
+	<div class="flex items-center gap-3">
+		<span class="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary"
+			><History class="size-4" aria-hidden="true" /></span
+		>
 		<div>
+			<h2 class="text-lg font-semibold">ประวัติรายการคะแนน</h2>
+			<p class="text-sm text-muted-foreground">รายการเพิ่มความดีและหักคะแนนตามช่วงที่เลือก</p>
+		</div>
+	</div>
+	<form onsubmit={filter} class="grid gap-3 rounded-xl border bg-card p-3 sm:grid-cols-3 sm:p-4">
+		<div class="space-y-2">
 			<Label for="behavior-log-search">ค้นหานักเรียนหรือรายการ</Label><Input
 				id="behavior-log-search"
 				bind:value={search}
 			/>
 		</div>
-		<div>
+		<div class="space-y-2">
 			<Label for="behavior-log-start">เริ่มวันที่</Label><DatePicker
 				id="behavior-log-start"
 				value={start}
@@ -196,7 +208,7 @@
 				required
 			/>
 		</div>
-		<div>
+		<div class="space-y-2">
 			<Label for="behavior-log-end">ถึงวันที่</Label><DatePicker
 				id="behavior-log-end"
 				value={end}
@@ -206,48 +218,58 @@
 				required
 			/>
 		</div>
-		<BehaviorSelect
-			id="behavior-log-side"
-			label="ฝั่งคะแนน"
-			value={side}
-			options={[
-				{ value: '', label: 'ทุกฝั่ง' },
-				...sides.map((s) => ({ value: s, label: sideLabels[s] }))
-			]}
-			onValueChange={(v) => (side = v)}
-		/><BehaviorSelect
-			id="behavior-log-source"
-			label="ที่มา"
-			value={source}
-			options={[
-				{ value: '', label: 'ทุกที่มา' },
-				...sources.map((s) => ({ value: s, label: sourceLabels[s] }))
-			]}
-			onValueChange={(v) => (source = v)}
-		/><BehaviorSelect
-			id="behavior-log-cancelled"
-			label="สถานะรายการ"
-			value={cancelled}
-			options={[
-				{ value: '', label: 'ทุกสถานะ' },
-				{ value: 'no', label: 'มีผล' },
-				{ value: 'yes', label: 'ยกเลิกแล้ว' }
-			]}
-			onValueChange={(v) => (cancelled = v)}
-		/>
-		<div>
-			<Label for="behavior-log-batch">รหัสกลุ่มรายการ</Label><Input
-				id="behavior-log-batch"
-				bind:value={batchId}
-			/>
-		</div>
-		<label class="flex min-h-[44px] items-center gap-2"
-			><Checkbox bind:checked={mine} />รายการที่ฉันบันทึก</label
-		><LoadingButton
+		<details class="sm:col-span-3">
+			<summary class="min-h-[44px] cursor-pointer py-3 text-sm font-medium"
+				>ตัวกรองเพิ่มเติม</summary
+			>
+			<div class="grid gap-3 border-t pt-3 sm:grid-cols-3">
+				<BehaviorSelect
+					id="behavior-log-side"
+					label="ฝั่งคะแนน"
+					value={side}
+					options={[
+						{ value: '', label: 'ทุกฝั่ง' },
+						...sides.map((s) => ({ value: s, label: sideLabels[s] }))
+					]}
+					onValueChange={(v) => (side = v)}
+				/><BehaviorSelect
+					id="behavior-log-source"
+					label="ที่มา"
+					value={source}
+					options={[
+						{ value: '', label: 'ทุกที่มา' },
+						...sources.map((s) => ({ value: s, label: sourceLabels[s] }))
+					]}
+					onValueChange={(v) => (source = v)}
+				/><BehaviorSelect
+					id="behavior-log-cancelled"
+					label="สถานะรายการ"
+					value={cancelled}
+					options={[
+						{ value: '', label: 'ทุกสถานะ' },
+						{ value: 'no', label: 'มีผล' },
+						{ value: 'yes', label: 'ยกเลิกแล้ว' }
+					]}
+					onValueChange={(v) => (cancelled = v)}
+				/>
+				<div class="space-y-2">
+					<Label for="behavior-log-batch">รหัสกลุ่มรายการ</Label><Input
+						id="behavior-log-batch"
+						bind:value={batchId}
+					/>
+				</div>
+				{#if onStudent}<label class="flex min-h-[44px] items-center gap-2"
+						><Checkbox bind:checked={mine} />รายการที่ฉันบันทึก</label
+					>
+				{/if}
+			</div>
+		</details>
+		<LoadingButton
 			class="min-h-[44px] min-w-[44px]"
 			type="submit"
 			loading={pending === 'read'}
-			disabled={!!pending || !!frozen}>ค้นหา</LoadingButton
+			disabled={!!pending || !!frozen}
+			><Search class="size-4" aria-hidden="true" />ค้นหา</LoadingButton
 		>
 	</form>
 	{#if error}<PageState
@@ -267,70 +289,107 @@
 				requestId = '';
 			}}>ยกเลิกที่เลือก {selected.length} รายการ</Button
 		>{/if}
-	<ul class="divide-y rounded-md border" aria-busy={pending === 'read'}>
-		{#each page.items as row (row.id)}<li class="space-y-2 p-4">
-				<div class="flex flex-wrap items-start justify-between gap-3">
-					<div class="flex min-w-0 items-start gap-3">
-						{#if canCancel && row.canCancel}<label class="flex min-h-[44px] items-center"
-								><Checkbox
-									aria-label={`เลือกยกเลิก ${row.studentName} ${row.itemName}`}
-									disabled={!!requestId}
-									checked={selected.includes(row.id)}
-									onCheckedChange={(v) =>
-										(selected = v
-											? [...new Set([...selected, row.id])]
-											: selected.filter((id) => id !== row.id))}
-								/></label
-							>{/if}
-						<div>
-							<Button
-								type="button"
-								variant="link"
-								class="min-h-[44px] min-w-[44px] h-auto whitespace-normal p-0 text-left"
-								onclick={() => onStudent?.(row.studentId)}>{row.studentName}</Button
-							>
-							<p class="text-xs text-muted-foreground">{row.studentCode ?? '—'} · {row.homeroom}</p>
-							<p>
-								{row.itemName} ·
-								<span class={row.side === 'merit' ? 'text-success' : 'text-destructive'}
-									>{sideLabels[row.side]} {row.points}</span
+	<div class="overflow-hidden rounded-xl border bg-card" aria-busy={pending === 'read'}>
+		<Table.Root class="block lg:table" aria-label="รายการคะแนน">
+			<Table.Header class="hidden bg-muted/30 lg:table-header-group"
+				><Table.Row
+					><Table.Head class="px-4">นักเรียน</Table.Head><Table.Head>รายการและคะแนน</Table.Head
+					><Table.Head>ที่มา / ผู้บันทึก</Table.Head><Table.Head class="px-4 text-end"
+						>จัดการ</Table.Head
+					></Table.Row
+				></Table.Header
+			>
+			<Table.Body class="block lg:table-row-group">
+				{#each page.items as row (row.id)}
+					<Table.Row class="block space-y-2 p-4 lg:table-row lg:space-y-0 lg:p-0">
+						<Table.Cell class="block whitespace-normal p-0 lg:table-cell lg:px-4 lg:py-3"
+							><div class="flex min-w-0 items-start gap-3">
+								{#if canCancel && row.canCancel}<label class="flex min-h-[44px] items-center"
+										><Checkbox
+											aria-label={`เลือกยกเลิก ${row.studentName} ${row.itemName}`}
+											disabled={!!requestId}
+											checked={selected.includes(row.id)}
+											onCheckedChange={(v) =>
+												(selected = v
+													? [...new Set([...selected, row.id])]
+													: selected.filter((id) => id !== row.id))}
+										/></label
+									>{/if}
+								<div class="min-w-0">
+									{#if onStudent}<Button
+											type="button"
+											variant="link"
+											class="min-h-[44px] min-w-[44px] h-auto whitespace-normal p-0 text-left font-semibold"
+											onclick={() => onStudent?.(row.studentId)}>{row.studentName}</Button
+										>{:else}<p class="font-semibold">{row.studentName}</p>{/if}
+									<p class="text-xs text-muted-foreground">
+										{row.studentCode ?? '—'} · {row.homeroom}
+									</p>
+								</div>
+							</div></Table.Cell
+						>
+						<Table.Cell class="block whitespace-normal p-0 lg:table-cell lg:py-3"
+							><p class="font-medium">{row.itemName}</p>
+							<div class="mt-2 flex flex-wrap items-center gap-2">
+								<span
+									class={row.side === 'merit'
+										? 'font-semibold text-success'
+										: 'font-semibold text-destructive'}>{sideLabels[row.side]} {row.points}</span
+								><Badge variant={row.cancelledAt ? 'secondary' : 'outline'}
+									>{row.cancelledAt ? 'ยกเลิกแล้ว' : 'มีผล'}</Badge
 								>
+							</div>
+							<p class="mt-2 text-xs text-muted-foreground">
+								เกิดเหตุ {row.occurredAt
+									? formatBehaviorTime(row.occurredAt)
+									: formatBehaviorDate(row.date)}
 							</p>
-						</div>
-					</div>
-					<Badge variant={row.cancelledAt ? 'secondary' : 'outline'}
-						>{row.cancelledAt ? 'ยกเลิกแล้ว' : 'มีผล'}</Badge
-					>
-				</div>
-				<p class="whitespace-pre-wrap break-words text-sm">{row.detail ?? ''}</p>
-				<p class="text-xs text-muted-foreground">
-					เกิดเหตุ {row.occurredAt ? formatBehaviorTime(row.occurredAt) : row.date} · บันทึก {formatBehaviorTime(
-						row.createdAt
-					)} · {row.creatorName || (row.createdBy ? 'ผู้บันทึก' : 'ระบบอัตโนมัติ')} · {sourceLabels[
-						row.source
-					]}
-				</p>
-				{#if row.cancelledAt}<p class="text-sm text-muted-foreground">
-						ยกเลิก: {row.cancellationReason}
-					</p>{/if}
-				<div class="flex flex-wrap gap-2">
-					{#if row.source !== 'manual' && $can.hasAny(PERMISSIONS.ATTENDANCE_READ_ASSIGNED, PERMISSIONS.ATTENDANCE_READ_SCHOOL, PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED, PERMISSIONS.ATTENDANCE_UPDATE_SCHOOL, PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL)}<Button
-							class="min-h-[44px] min-w-[44px]"
-							href={sourceHref(row)}
-							variant="outline">เปิดเช็กชื่อต้นทาง</Button
-						>{/if}{#if row.canCancel && canCancel && row.batchId}<Button
-							class="min-h-[44px] min-w-[44px]"
-							type="button"
-							variant="outline"
-							disabled={!!pending || !!frozen}
-							onclick={() => void selectBatch(row)}>เลือกยกเลิกทั้งกลุ่ม</Button
-						>{/if}
-				</div>
-			</li>{:else}<li class="p-8 text-center text-muted-foreground">
-				ไม่มีรายการในช่วงที่เลือก
-			</li>{/each}
-	</ul>
-	<div class="flex items-center justify-between">
+							{#if row.detail || row.cancelledAt}<details class="mt-2">
+									<summary class="min-h-[44px] cursor-pointer py-2 text-sm text-muted-foreground"
+										>รายละเอียดเพิ่มเติม</summary
+									>{#if row.detail}<p class="whitespace-pre-wrap break-words pb-2 text-sm">
+											{row.detail}
+										</p>{/if}{#if row.cancelledAt}<p class="pb-2 text-sm text-muted-foreground">
+											ยกเลิก: {row.cancellationReason}
+										</p>{/if}
+								</details>{/if}</Table.Cell
+						>
+						<Table.Cell class="block whitespace-normal p-0 lg:table-cell lg:py-3"
+							><p class="text-sm">{sourceLabels[row.source]}</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								{row.creatorName || (row.createdBy ? 'ผู้บันทึก' : 'ระบบอัตโนมัติ')}
+							</p>
+							<p class="mt-1 text-xs text-muted-foreground">
+								บันทึก {formatBehaviorTime(row.createdAt)}
+							</p></Table.Cell
+						>
+						<Table.Cell class="block whitespace-normal p-0 lg:table-cell lg:px-4 lg:py-3"
+							><div class="flex flex-wrap gap-2 lg:justify-end">
+								{#if row.source !== 'manual' && $can.hasAny(PERMISSIONS.ATTENDANCE_READ_ASSIGNED, PERMISSIONS.ATTENDANCE_READ_SCHOOL, PERMISSIONS.ATTENDANCE_UPDATE_ASSIGNED, PERMISSIONS.ATTENDANCE_UPDATE_SCHOOL, PERMISSIONS.ATTENDANCE_MANAGE_SCHOOL)}<Button
+										class="min-h-[44px] min-w-[44px]"
+										href={sourceHref(row)}
+										variant="outline">เปิดเช็กชื่อต้นทาง</Button
+									>{/if}{#if row.canCancel && canCancel && row.batchId}<Button
+										class="min-h-[44px] min-w-[44px]"
+										type="button"
+										variant="outline"
+										disabled={!!pending || !!frozen}
+										onclick={() => void selectBatch(row)}>เลือกยกเลิกทั้งกลุ่ม</Button
+									>{/if}
+							</div></Table.Cell
+						>
+					</Table.Row>
+				{:else}<Table.Row class="block lg:table-row"
+						><Table.Cell
+							colspan={4}
+							class="block p-8 text-center whitespace-normal text-muted-foreground lg:table-cell"
+							>ไม่มีรายการในช่วงที่เลือก</Table.Cell
+						></Table.Row
+					>{/each}
+			</Table.Body>
+		</Table.Root>
+	</div>
+	<div class="flex items-center justify-between gap-3 text-sm">
 		<Button
 			class="min-h-[44px] min-w-[44px]"
 			type="button"
@@ -348,7 +407,7 @@
 	</div>
 	{#if confirming && canCancel}<form
 			onsubmit={cancel}
-			class="space-y-3 rounded-md border border-destructive/30 p-4"
+			class="space-y-4 rounded-xl border border-destructive/30 bg-card p-4 sm:p-5"
 		>
 			<h3 class="font-semibold">ยกเลิกคะแนน {selected.length} รายการ</h3>
 			<p class="text-sm">ประวัติยังอยู่ แต่คะแนนจะไม่นับในยอด</p>
