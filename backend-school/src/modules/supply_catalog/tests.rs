@@ -178,6 +178,116 @@ async fn lifecycle(pool: &PgPool, id: Uuid) -> String {
 }
 
 #[tokio::test]
+async fn seeded_category_names_reject_duplicates_in_both_thai_unicode_forms() {
+    let (pool, manager, _, _) = fixture("supply-category-seed-duplicates").await;
+    let categories = services::list_categories(&pool, &manager).await.unwrap();
+    for category in &categories {
+        for name in [
+            category.name.clone(),
+            super::validation::normalize(&category.name),
+        ] {
+            let result = services::write_category(
+                &pool,
+                &manager,
+                None,
+                SupplyCategoryWrite {
+                    name,
+                    revision: None,
+                },
+            )
+            .await;
+            assert!(
+                matches!(result, Err(AppError::Conflict(_))),
+                "{}",
+                category.name
+            );
+        }
+    }
+    assert_eq!(
+        services::list_categories(&pool, &manager)
+            .await
+            .unwrap()
+            .len(),
+        categories.len()
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn category_key_repair_preserves_canonical_keys_and_refuses_collisions() {
+    const REPAIR: &str = include_str!("../../../migrations/112_supply_category_normalization.sql");
+    let (pool, manager, _, _) = fixture("supply-category-key-repair").await;
+    let custom = services::write_category(
+        &pool,
+        &manager,
+        None,
+        SupplyCategoryWrite {
+            name: "custom  category".into(),
+            revision: None,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::raw_sql(REPAIR).execute(&pool).await.unwrap();
+    let key: String =
+        sqlx::query_scalar("SELECT normalized_name FROM supply_categories WHERE id=$1")
+            .bind(custom.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(key, "custom category");
+
+    let office: Uuid =
+        sqlx::query_scalar("SELECT id FROM supply_categories WHERE name='วัสดุสำนักงาน'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let item = services::create_item(&pool, &manager, product(office, "Office paper", None))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE supply_categories SET normalized_name=name WHERE id=$1")
+        .bind(office)
+        .execute(&pool)
+        .await
+        .unwrap();
+    services::write_category(
+        &pool,
+        &manager,
+        None,
+        SupplyCategoryWrite {
+            name: "วัสดุสำนักงาน".into(),
+            revision: None,
+        },
+    )
+    .await
+    .unwrap();
+    let before: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id,name,normalized_name FROM supply_categories ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let error = sqlx::raw_sql(REPAIR).execute(&pool).await.unwrap_err();
+    assert!(error
+        .as_database_error()
+        .is_some_and(|error| error.is_unique_violation()));
+    let after: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id,name,normalized_name FROM supply_categories ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        services::get_item(&pool, &manager, item.id)
+            .await
+            .unwrap()
+            .item
+            .category_id,
+        office
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn description_search_normalizes_thai_and_fullwidth_text() {
     let (pool, manager, _, category) = fixture("supply-description-search").await;
     let mut payload = product(category, "Paper", None);

@@ -1096,7 +1096,7 @@ From `frontend-school`, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright t
 
 ## Supply catalog
 
-Supply catalog ownership is in `backend-school/src/modules/supply_catalog/`, its reusable access policy and migration 110. It does not create projects. Run its focused transactional tests on an owned disposable PostgreSQL fixture:
+Supply catalog ownership is in `backend-school/src/modules/supply_catalog/`, its reusable access policy and migrations 110–112. It does not create projects. Run its focused transactional tests on an owned disposable PostgreSQL fixture:
 
 ```bash
 ./scripts/test_backend_school.sh modules::supply_catalog -- --test-threads=4

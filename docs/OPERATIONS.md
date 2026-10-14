@@ -1079,7 +1079,9 @@ When reconciliation is unhealthy:
 
 ### Supply catalog rollout and recovery
 
-Deploy the supply catalog through the coordinated School release, including [migration 110](../backend-school/migrations/110_supply_catalog.sql), [migration 111](../backend-school/migrations/111_supply_catalog_navigation.sql), backend and frontend. The additive schema remains compatible with the previous runtime before supply uploads begin. Once supply-purpose files or lifecycle operations exist, recovery must use a supply-aware runtime: earlier File Platform binaries reject those purpose codes. Preserve the expanded schema and repair forward instead of restoring an earlier binary.
+Deploy the supply catalog through the coordinated School release, including [migration 110](../backend-school/migrations/110_supply_catalog.sql), [migration 111](../backend-school/migrations/111_supply_catalog_navigation.sql), [migration 112](../backend-school/migrations/112_supply_category_normalization.sql), backend and frontend. The additive schema remains compatible with the previous runtime before supply uploads begin. Once supply-purpose files or lifecycle operations exist, recovery must use a supply-aware runtime: earlier File Platform binaries reject those purpose codes. Preserve the expanded schema and repair forward instead of restoring an earlier binary.
+
+Migration 112 aligns raw seed-category keys with application Unicode normalization while preserving canonical application-written keys. An existing collision blocks the transaction without deleting categories or changing their references; reconcile duplicates through an explicitly reviewed correction before retrying.
 
 Proposal approval and image replacement revoke old file delivery inside the business transaction. Object deletion follows through the existing durable reconciler; a committed decision with pending provider work is not a failed approval. Use the lifecycle recovery procedure above for failed physical cleanup, and verify private storage/scanner health with disposable items in an isolated tenant.
 
