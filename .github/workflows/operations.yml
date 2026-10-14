@@ -79,6 +79,8 @@ jobs:
   compiler-cache-diagnostic:
     if: inputs.operation == 'compiler-cache-diagnostic'
     uses: ./.github/workflows/compiler-cache-diagnostic.yml
+    with:
+      workload: ${{ fromJson(inputs.options).workload || 'probe' }}
   provision:
     if: inputs.operation == 'provision' && github.ref == 'refs/heads/main'
     concurrency:

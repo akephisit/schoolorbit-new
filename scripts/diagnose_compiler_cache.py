@@ -7,6 +7,8 @@ import re
 import subprocess
 import tempfile
 import time
+import io
+import tarfile
 
 from render_backend_build_summary import counter
 
@@ -72,6 +74,15 @@ def stats(container):
     return values
 
 
+def dependency_recipe(dockerfile):
+    marker = "RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url"
+    prefix, separator, _ = dockerfile.partition(marker)
+    if not separator or "COPY --from=planner /app/recipe.json recipe.json" not in prefix:
+        raise ValueError("Dependency build owner changed")
+    # Stop immediately before the canonical dependency cook, retaining its exact inputs.
+    return prefix
+
+
 def main():
     run_id, attempt = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_RUN_ATTEMPT", "")
     if not re.fullmatch(r"[0-9]+", run_id) or not re.fullmatch(r"[0-9]+", attempt):
@@ -79,13 +90,16 @@ def main():
     for key in ("ACTIONS_RESULTS_URL", "ACTIONS_RUNTIME_TOKEN"):
         if not os.environ.get(key):
             raise ValueError("Cache runtime is unavailable")
+    workload = os.environ.get("COMPILER_CACHE_WORKLOAD", "probe")
+    if workload not in ("probe", "dependencies"):
+        raise ValueError("Unsupported compiler workload")
     root = pathlib.Path(__file__).resolve().parents[1]
     output = pathlib.Path(os.environ["COMPILER_CACHE_OUTPUT"])
     output.mkdir(parents=True, exist_ok=True)
     namespace = f"compiler-cache-probe-{run_id}-{attempt}"
     image = f"schoolorbit-compiler-cache-probe:{run_id}-{attempt}"
     result = dict(schemaVersion=1, source_sha=command(["git", "-C", str(root), "rev-parse", "HEAD"], "source"),
-                  complete=False, healthy=False, samples=[])
+                  workload=workload, complete=False, healthy=False, samples=[])
     evidence = output / "evidence.json"
     try:
         with tempfile.TemporaryDirectory(prefix=namespace + "-") as temporary:
@@ -97,7 +111,21 @@ def main():
             (fixture / "Cargo.toml").write_text('[package]\nname = "compiler-cache-probe"\nversion = "0.0.0"\nedition = "2024"\n')
             (fixture / "Cargo.lock").write_text('version = 4\n\n[[package]]\nname = "compiler-cache-probe"\nversion = "0.0.0"\n')
             (fixture / "src/lib.rs").write_text(f'pub const PROBE_ID: &str = "{namespace}";\npub fn sum(a: u64, b: u64) -> u64 {{ a + b }}\n')
-            command(["docker", "build", "--platform", "linux/amd64", "--tag", image, str(context)], "pinned_image")
+            if workload == "dependencies":
+                archive = subprocess.run(["git", "-C", str(root), "archive", "HEAD:backend-school"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if archive.returncode:
+                    raise ProbeFailure("source_archive", archive.returncode)
+                with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as source:
+                    source.extractall(context, filter="data")
+                (context / "Dockerfile").write_text(dependency_recipe((root / "backend-school/Dockerfile").read_text()))
+                owner = os.environ["GITHUB_REPOSITORY_OWNER"].lower()
+                if not re.fullmatch(r"[a-z0-9-]+", owner):
+                    raise ValueError("Invalid registry owner")
+                command(["docker", "buildx", "build", "--platform", "linux/amd64", "--load", "--tag", image,
+                         "--cache-from", f"type=registry,ref=ghcr.io/{owner}/schoolorbit-backend-school-cache:buildcache",
+                         str(context)], "pinned_image")
+            else:
+                command(["docker", "build", "--platform", "linux/amd64", "--tag", image, str(context)], "pinned_image")
             for index in (1, 2):
                 container = f"{namespace}-{index}"
                 sample = dict(sample=index, counters=None, diagnostics=[])
@@ -109,17 +137,25 @@ def main():
                              "-e", "ACTIONS_CACHE_SERVICE_V2=true", "-e", "SCCACHE_GHA_ENABLED=on",
                              "-e", "SCCACHE_GHA_VERSION=schoolorbit-backend-school",
                              "-e", "SCCACHE_LOG=sccache::server=debug", "-e", "SCCACHE_ERROR_LOG=/private/server.log",
+                             "--tmpfs", "/run/secrets:rw,nosuid,nodev,noexec,mode=0700,size=1m",
+                             "-e", "SCHOOL_COMPILER_CACHE=gha",
                              "-e", "RUSTC_WRAPPER=/usr/local/bin/rustc-cache", "-e", "CARGO_INCREMENTAL=0",
                              "--entrypoint", "sleep", image, "infinity"], "fresh_container")
                     # docker cp writes beneath a running tmpfs mount on some daemons.
                     # Copy inside the mount namespace used by Cargo instead.
                     command(["docker", "exec", container, "sh", "-c", "cp -a /fixture/. /probe/"], "probe_context")
                     started = time.monotonic()
-                    command(["docker", "exec", container, "cargo", "build", "--release", "--lib", "--locked", "--offline"], "compile")
+                    if workload == "dependencies":
+                        command(["docker", "exec", container, "sh", "-c",
+                                 'umask 077; printf %s "$ACTIONS_RESULTS_URL" > /run/secrets/sccache_gha_url; '
+                                 'printf %s "$ACTIONS_RUNTIME_TOKEN" > /run/secrets/sccache_gha_token; '
+                                 'exec bash scripts/build_release.sh dependencies'], "compile")
+                    else:
+                        command(["docker", "exec", container, "cargo", "build", "--release", "--lib", "--locked", "--offline"], "compile")
                     # Cache writes finish asynchronously. Wait for an observed write, error or hit.
                     values = stats(container)
                     deadline = time.monotonic() + 60
-                    while not (values["cache_hits"] or values["cache_writes"] or values["cache_write_errors"]) and time.monotonic() < deadline:
+                    while values["cache_writes"] + values["cache_write_errors"] < values["cache_misses"] and time.monotonic() < deadline:
                         time.sleep(0.2)
                         values = stats(container)
                     sample.update(duration_seconds=time.monotonic() - started, counters=values)
@@ -134,9 +170,14 @@ def main():
                     subprocess.run(["docker", "rm", "--force", container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             first, second = [x["counters"] for x in result["samples"]]
             errors = ("cache_errors", "cache_read_errors", "cache_write_errors", "cache_timeouts")
-            result["healthy"] = (first["cache_misses"] == first["cache_writes"] == 1 and first["cache_hits"] == 0
-                                  and second["cache_hits"] == 1 and second["cache_misses"] == second["cache_writes"] == 0
-                                  and all(v[key] == 0 for v in (first, second) for key in errors))
+            if workload == "probe":
+                reuse = (first["cache_misses"] == first["cache_writes"] == 1 and first["cache_hits"] == 0
+                         and second["cache_hits"] == 1 and second["cache_misses"] == second["cache_writes"] == 0)
+            else:
+                reuse = (first["cache_hits"] + first["cache_misses"] > 0
+                         and first["cache_writes"] == first["cache_misses"]
+                         and second["cache_hits"] > 0 and second["cache_misses"] == second["cache_writes"] == 0)
+            result["healthy"] = reuse and all(v[key] == 0 for v in (first, second) for key in errors)
             result["complete"] = True
     except ProbeFailure as error:
         result["failure"] = dict(stage=error.stage, exit_code=error.code)
