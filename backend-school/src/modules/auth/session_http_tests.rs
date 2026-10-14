@@ -934,10 +934,10 @@ mod protected_router {
     }
 
     impl ProtectedFixture {
-        async fn new() -> Self {
-            let tenant_a_pool = create_named_test_pool("session_router_tenant_a").await;
+        async fn new(test_name: &str) -> Self {
+            let tenant_a_pool = create_named_test_pool(&format!("{test_name}_tenant_a")).await;
             run_test_migrations(&tenant_a_pool).await;
-            let tenant_b_pool = create_named_test_pool("session_router_tenant_b").await;
+            let tenant_b_pool = create_named_test_pool(&format!("{test_name}_tenant_b")).await;
             run_test_migrations(&tenant_b_pool).await;
 
             let tenant_a_id = Uuid::new_v4();
@@ -1137,7 +1137,7 @@ mod protected_router {
 
         static ROSTERS: school_academic_delivery::services::roster_tracking::RoomRosterTracking =
             school_academic_delivery::services::roster_tracking::RoomRosterTracking;
-        let fixture = ProtectedFixture::new().await;
+        let fixture = ProtectedFixture::new("academic_router_boundary").await;
         let user_id = fixture
             .insert_user(&fixture.tenant_a_pool, "academic-router-user", "active")
             .await;
@@ -1337,7 +1337,7 @@ mod protected_router {
 
     #[tokio::test]
     async fn opaque_session_boundary_rejects_legacy_identity_and_rotates_safely() {
-        let fixture = ProtectedFixture::new().await;
+        let fixture = ProtectedFixture::new("opaque_session_boundary").await;
         let active_user = fixture
             .insert_user(&fixture.tenant_a_pool, "router-active", "active")
             .await;
