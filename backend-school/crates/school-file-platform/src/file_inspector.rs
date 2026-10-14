@@ -14,6 +14,71 @@ const PDF_HEADER_PREFIX: &[u8] = b"%PDF-";
 const PDF_STRUCTURE_WINDOW_BYTES: usize = 64 * 1024;
 const MAX_PDF_OBJECTS: u32 = 1_000_000;
 
+/// Temporary supply-source validation bound to the exact payload and detected raster format.
+/// Storage still accepts only the canonical JPEG/PNG/WebP formats through `inspect_file`.
+pub(crate) struct ValidatedSupplyImage<'a> {
+    data: &'a [u8],
+    format: ImageFormat,
+}
+
+impl ValidatedSupplyImage<'_> {
+    pub(crate) fn decode_image(&self) -> Result<image::DynamicImage, FileInspectionError> {
+        use image::ImageDecoder;
+        let mut decoder = ImageReader::with_format(Cursor::new(self.data), self.format)
+            .into_decoder()
+            .map_err(|_| FileInspectionError::MalformedContent)?;
+        let orientation = decoder
+            .orientation()
+            .map_err(|_| FileInspectionError::MalformedContent)?;
+        let mut image = image::DynamicImage::from_decoder(decoder)
+            .map_err(|_| FileInspectionError::MalformedContent)?;
+        image.apply_orientation(orientation);
+        Ok(image)
+    }
+}
+
+pub(crate) fn inspect_supply_image(
+    purpose: FilePurpose,
+    data: &[u8],
+) -> Result<ValidatedSupplyImage<'_>, FileInspectionError> {
+    if !matches!(
+        purpose,
+        FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource
+    ) {
+        return Err(FileInspectionError::ContentNotAllowed);
+    }
+    let definition =
+        purpose_definition(purpose).map_err(|_| FileInspectionError::UnsupportedContent)?;
+    if data.len() as u64 > definition.limits.max_bytes {
+        return Err(FileInspectionError::ByteLimitExceeded);
+    }
+    let format = image::guess_format(data).map_err(|_| FileInspectionError::UnsupportedContent)?;
+    if !matches!(
+        format,
+        ImageFormat::Jpeg
+            | ImageFormat::Png
+            | ImageFormat::WebP
+            | ImageFormat::Gif
+            | ImageFormat::Bmp
+            | ImageFormat::Tiff
+    ) {
+        return Err(FileInspectionError::ContentNotAllowed);
+    }
+    if let Some(content) = match format {
+        ImageFormat::Jpeg => Some(DetectedContent::Jpeg),
+        ImageFormat::Png => Some(DetectedContent::Png),
+        ImageFormat::WebP => Some(DetectedContent::Webp),
+        _ => None,
+    } {
+        validate_image_container(data, content)?;
+    }
+    let (width, height) = ImageReader::with_format(Cursor::new(data), format)
+        .into_dimensions()
+        .map_err(|_| FileInspectionError::MalformedContent)?;
+    validate_image_limits(width, height, definition.limits)?;
+    Ok(ValidatedSupplyImage { data, format })
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct InspectedFile {
     detected_content: DetectedContent,

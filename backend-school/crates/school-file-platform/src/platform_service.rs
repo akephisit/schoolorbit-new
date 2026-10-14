@@ -133,7 +133,20 @@ impl FilePlatform {
         command: UploadCommand,
     ) -> Result<PlatformFile, FilePlatformError> {
         let definition = purpose_definition(command.purpose)?;
-        let inspected = inspect_file(command.purpose, &command.bytes)?;
+        let upload_bytes = if matches!(
+            command.purpose,
+            FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource
+        ) {
+            let source = command.bytes.clone();
+            let purpose = command.purpose;
+            tokio::task::spawn_blocking(move || crate::catalog_images::normalize(purpose, &source))
+                .await
+                .map_err(|_| FilePlatformError::InspectionRejected)?
+                .map_err(|_| FilePlatformError::InspectionRejected)?
+        } else {
+            command.bytes.clone()
+        };
+        let inspected = inspect_file(command.purpose, &upload_bytes)?;
 
         match self.scanner.scan(&command.bytes).await {
             ScanOutcome::Clean => {}
@@ -160,9 +173,21 @@ impl FilePlatform {
             .filter(|derivative| derivative.metadata.required)
             .map(|derivative| derivative.metadata.id)
             .collect::<Vec<_>>();
-        let byte_size = i64::try_from(command.bytes.len())
-            .map_err(|_| FilePlatformError::InspectionRejected)?;
-        let display_filename = sanitized_display_filename(&command.display_filename);
+        let byte_size =
+            i64::try_from(upload_bytes.len()).map_err(|_| FilePlatformError::InspectionRejected)?;
+        let display_filename = if matches!(
+            command.purpose,
+            FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource
+        ) {
+            let extension = if inspected.canonical_mime_type() == "image/jpeg" {
+                "jpg"
+            } else {
+                "webp"
+            };
+            format!("supply-image.{extension}")
+        } else {
+            sanitized_display_filename(&command.display_filename)
+        };
         let upload = NewUpload {
             file_id,
             version_id,
@@ -176,7 +201,7 @@ impl FilePlatform {
             display_filename: display_filename.clone(),
             original: original.clone(),
             byte_size,
-            checksum: FileHasher::sha256(&command.bytes),
+            checksum: FileHasher::sha256(&upload_bytes),
             inspection_metadata: inspected.metadata().clone(),
             derivatives: derivatives
                 .iter()
@@ -186,7 +211,7 @@ impl FilePlatform {
 
         repository.reserve_upload(&upload).await?;
 
-        if let Err(error) = self.provider.put(&original, command.bytes.clone()).await {
+        if let Err(error) = self.provider.put(&original, upload_bytes.clone()).await {
             let _ = repository
                 .mark_upload_failed(file_id, version_id, error.log_safe_code())
                 .await;
@@ -571,6 +596,7 @@ mod tests {
         put_results: Mutex<VecDeque<Result<(), StorageError>>>,
         delete_results: Mutex<VecDeque<Result<(), StorageError>>>,
         puts: Mutex<Vec<StorageClass>>,
+        bodies: Mutex<Vec<Bytes>>,
         deletes: Mutex<usize>,
     }
 
@@ -583,8 +609,9 @@ mod tests {
             }
         }
 
-        async fn put(&self, object: &StoredObject, _body: Bytes) -> Result<(), StorageError> {
+        async fn put(&self, object: &StoredObject, body: Bytes) -> Result<(), StorageError> {
             self.puts.lock().unwrap().push(object.storage_class());
+            self.bodies.lock().unwrap().push(body);
             self.put_results
                 .lock()
                 .unwrap()
@@ -814,6 +841,58 @@ mod tests {
             display_filename: "../../unsafe ชื่อ.png".to_string(),
             bytes: png(),
         }
+    }
+
+    struct RecordingScanner(Mutex<Vec<u8>>);
+    #[async_trait]
+    impl MalwareScanner for RecordingScanner {
+        async fn scan(&self, content: &[u8]) -> ScanOutcome {
+            *self.0.lock().unwrap() = content.to_vec();
+            ScanOutcome::Clean
+        }
+    }
+
+    #[tokio::test]
+    async fn supply_ingest_scans_source_but_stores_only_one_normalized_private_image() {
+        let source = DynamicImage::new_rgb8(2400, 1200);
+        let mut encoded = Cursor::new(Vec::new());
+        source.write_to(&mut encoded, ImageFormat::Tiff).unwrap();
+        let source_bytes = encoded.into_inner();
+        let scanner = Arc::new(RecordingScanner(Mutex::new(Vec::new())));
+        let provider = Arc::new(FakeProvider::default());
+        let repository = FakeRepository::default();
+        let platform = FilePlatform::new(provider.clone(), scanner.clone());
+        let mut payload = command(FilePurpose::SupplyCatalogImage);
+        payload.bytes = Bytes::from(source_bytes.clone());
+        platform.upload(&repository, payload).await.unwrap();
+        assert_eq!(*scanner.0.lock().unwrap(), source_bytes);
+        assert_eq!(*provider.puts.lock().unwrap(), vec![StorageClass::Private]);
+        let bodies = provider.bodies.lock().unwrap();
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(image::guess_format(&bodies[0]).unwrap(), ImageFormat::Jpeg);
+        assert!(bodies[0].len() < 500_000);
+        assert_eq!(
+            repository.upload_inspection.lock().unwrap().as_ref(),
+            Some(&FileInspectionMetadata::Image {
+                width_px: 1600,
+                height_px: 800
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_supply_scans_never_leave_normalized_objects() {
+        let provider = Arc::new(FakeProvider::default());
+        let repository = FakeRepository::default();
+        assert_eq!(
+            platform(ScanOutcome::Infected, provider.clone())
+                .upload(&repository, command(FilePurpose::SupplyProposalSource))
+                .await
+                .unwrap_err(),
+            FilePlatformError::MalwareDetected
+        );
+        assert!(provider.bodies.lock().unwrap().is_empty());
+        assert!(repository.events.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

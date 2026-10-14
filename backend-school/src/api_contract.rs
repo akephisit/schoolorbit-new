@@ -168,6 +168,27 @@ use utoipa::OpenApi;
 #[openapi(
     paths(
         crate::modules::behavior::handlers::cleanup_job,
+        crate::modules::supply_catalog::handlers::duplicates,
+        crate::modules::supply_catalog::handlers::list_categories,
+        crate::modules::supply_catalog::handlers::create_category,
+        crate::modules::supply_catalog::handlers::update_category,
+        crate::modules::supply_catalog::handlers::list_items,
+        crate::modules::supply_catalog::handlers::create_item,
+        crate::modules::supply_catalog::handlers::get_item,
+        crate::modules::supply_catalog::handlers::update_item,
+        crate::modules::supply_catalog::handlers::list_versions,
+        crate::modules::supply_catalog::handlers::append_version,
+        crate::modules::supply_catalog::handlers::update_version,
+        crate::modules::supply_catalog::handlers::set_favorite,
+        crate::modules::supply_catalog::handlers::list_bundles,
+        crate::modules::supply_catalog::handlers::create_bundle,
+        crate::modules::supply_catalog::handlers::update_bundle,
+        crate::modules::supply_catalog::handlers::delete_bundle,
+        crate::modules::supply_catalog::handlers::list_proposals,
+        crate::modules::supply_catalog::handlers::create_proposal,
+        crate::modules::supply_catalog::handlers::get_proposal,
+        crate::modules::supply_catalog::handlers::approve_proposal,
+        crate::modules::supply_catalog::handlers::reject_proposal,
         crate::modules::behavior::handlers::overview,
         crate::modules::behavior::handlers::list_items,
         crate::modules::behavior::handlers::save_item,
@@ -745,6 +766,7 @@ use utoipa::OpenApi;
         (name = "parent", description = "Parent self-service reads"),
         (name = "academic", description = "Academic structure administration and self-service reads"),
         (name = "calendar", description = "Date-based calendars and activity requests"),
+        (name = "supply-catalog", description = "Supply catalog, latest prices, favorites, bundles and proposals"),
         (name = "behavior", description = "Student behavior scores, cycles and authorized cleanup"),
         (name = "supervision", description = "Teaching supervision workflows and reports"),
         (name = "question-bank", description = "Authorized question bank and export operations"),
@@ -2073,6 +2095,39 @@ fn build_schema_group_18() -> utoipa::openapi::OpenApi {
     SchoolApiSchemasGroup18::openapi()
 }
 
+#[derive(OpenApi)]
+#[openapi(components(schemas(
+    crate::modules::supply_catalog::models::SupplyCategory,
+    crate::modules::supply_catalog::models::SupplyCategoryWrite,
+    crate::modules::supply_catalog::models::SupplyVersion,
+    crate::modules::supply_catalog::models::SupplyItem,
+    crate::modules::supply_catalog::models::SupplyItemDetail,
+    crate::modules::supply_catalog::models::SupplyItemPage,
+    crate::modules::supply_catalog::models::SupplyItemWrite,
+    crate::modules::supply_catalog::models::SupplyItemUpdate,
+    crate::modules::supply_catalog::models::SupplyVersionWrite,
+    crate::modules::supply_catalog::models::SupplyVersionAppend,
+    crate::modules::supply_catalog::models::SupplyVersionPage,
+    crate::modules::supply_catalog::models::SupplyFavoriteWrite,
+    crate::modules::supply_catalog::models::SupplyBundleEntryWrite,
+    crate::modules::supply_catalog::models::SupplyBundleWrite,
+    crate::modules::supply_catalog::models::SupplyBundleEntry,
+    crate::modules::supply_catalog::models::SupplyBundle,
+    crate::modules::supply_catalog::models::SupplyBundlePage,
+    crate::modules::supply_catalog::models::SupplyRevision,
+    crate::modules::supply_catalog::models::SupplyProposalWrite,
+    crate::modules::supply_catalog::models::SupplyProposal,
+    crate::modules::supply_catalog::models::SupplyProposalPage,
+    crate::modules::supply_catalog::models::SupplyProposalApprove,
+    crate::modules::supply_catalog::models::SupplyProposalReject
+)))]
+struct SupplyCatalogSchemas;
+
+#[inline(never)]
+fn build_supply_catalog_schemas() -> utoipa::openapi::OpenApi {
+    SupplyCatalogSchemas::openapi()
+}
+
 struct SchoolApiSchemasDoc;
 
 impl OpenApi for SchoolApiSchemasDoc {
@@ -2095,6 +2150,7 @@ impl OpenApi for SchoolApiSchemasDoc {
         append_schema_registry(&mut document, build_schema_group_16());
         append_schema_registry(&mut document, build_schema_group_17());
         append_schema_registry(&mut document, build_schema_group_18());
+        append_schema_registry(&mut document, build_supply_catalog_schemas());
         document
     }
 }

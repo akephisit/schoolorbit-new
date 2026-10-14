@@ -358,7 +358,7 @@ from also wrapping C/C++ and assembly compilers, reducing requests to GitHub's c
 The pinned sccache backend does not retry rate-limited writes; inspect dependency-cook write
 errors as well as application statistics before treating a run as successful cache population.
 School enables JPEG, PNG and WebP codecs to match the File Platform's inspected-content policy,
-with Rayon processing retained. Unaccepted image codecs are excluded from the dependency graph.
+with Rayon processing retained. GIF, BMP and TIFF decoding additionally supports temporary supply image sources, which are normalized before canonical storage. The School image dependency keeps its codec features explicit.
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use
 `SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
 does not select v2; a build that reports write errors has not populated a usable cache.
@@ -1080,6 +1080,14 @@ When reconciliation is unhealthy:
 3. restore scanner or bucket access before retrying terminal work;
 4. compare file/version/derivative rows with object counts using file IDs and tenant/purpose aggregates;
 5. do not manually delete metadata rows or reuse object keys.
+
+### Supply catalog rollout and recovery
+
+Deploy the supply catalog through the coordinated School release, including [migration 110](../backend-school/migrations/110_supply_catalog.sql), [migration 111](../backend-school/migrations/111_supply_catalog_navigation.sql), [migration 112](../backend-school/migrations/112_supply_category_normalization.sql), backend and frontend. The additive schema remains compatible with the previous runtime before supply uploads begin. Once supply-purpose files or lifecycle operations exist, recovery must use a supply-aware runtime: earlier File Platform binaries reject those purpose codes. Preserve the expanded schema and repair forward instead of restoring an earlier binary.
+
+Migration 112 aligns raw seed-category keys with application Unicode normalization while preserving canonical application-written keys. An existing collision blocks the transaction without deleting categories or changing their references; reconcile duplicates through an explicitly reviewed correction before retrying.
+
+Proposal approval and image replacement revoke old file delivery inside the business transaction. Object deletion follows through the existing durable reconciler; a committed decision with pending provider work is not a failed approval. Use the lifecycle recovery procedure above for failed physical cleanup, and verify private storage/scanner health with disposable items in an isolated tenant.
 
 ### School font ownership and recovery
 

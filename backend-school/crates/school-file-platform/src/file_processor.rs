@@ -1,12 +1,20 @@
 use image::{DynamicImage, ImageFormat};
 use std::io::Cursor;
 
-use crate::file_inspector::ValidatedFile;
+use crate::file_inspector::{ValidatedFile, ValidatedSupplyImage};
 
 /// Image processing utilities
 pub struct ImageProcessor;
 
 impl ImageProcessor {
+    pub(crate) fn decode_supply_image(
+        validated: &ValidatedSupplyImage<'_>,
+    ) -> Result<DynamicImage, String> {
+        validated
+            .decode_image()
+            .map_err(|_| "Inspected supply image could not be decoded".to_string())
+    }
+
     /// Decodes only the exact payload borrowed by a successful purpose-bound inspection.
     pub fn decode_inspected_image(validated: &ValidatedFile<'_>) -> Result<DynamicImage, String> {
         if !validated.is_image() {

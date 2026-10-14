@@ -46,6 +46,9 @@ BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_
 # Attendance facts, guardian fan-out, special-group uniqueness and verified archival.
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh modules::attendance -- --test-threads=4
 
+# Supply catalog versions, duplicates, proposal decisions and private file ownership.
+./scripts/test_backend_school.sh modules::supply_catalog -- --test-threads=4
+
 # Behavior mutations, replay, scope isolation, reset and physical detail cleanup.
 ./scripts/test_backend_school.sh --package school-behavior -- --test-threads=4
 

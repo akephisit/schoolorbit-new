@@ -76,6 +76,7 @@ pub fn simple_file_access(
             FilePolicyAction::Create | FilePolicyAction::Delete => actor
                 .has_any_permission(&[codes::ADMISSION_MANAGE_ALL, codes::ADMISSION_VERIFY_ALL]),
         }),
+        FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => None,
         FilePurpose::SchoolFont => Some(actor.has_permission(codes::FONT_MANAGE_SCHOOL)),
         FilePurpose::QuestionBankImage
         | FilePurpose::Transcript
@@ -161,6 +162,13 @@ pub async fn authorize_create(
             )
             .await?;
             Ok(actor.user_id)
+        }
+        FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => {
+            crate::modules::supply_catalog::file_relationships::authorize_create(
+                actor,
+                purpose,
+                resource_id,
+            )
         }
         FilePurpose::SchoolFont => {
             if let Some(template_id) = resource_id {
@@ -323,6 +331,16 @@ pub async fn authorize_existing(
         }
         FilePurpose::CertificateTemplateBackground | FilePurpose::CertificateTemplateImage => {
             authorize_certificate_template_file(pool, actor, file, action, resource_id).await
+        }
+        FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => {
+            crate::modules::supply_catalog::file_relationships::require_file_access(
+                pool,
+                actor,
+                file,
+                action,
+                resource_id,
+            )
+            .await
         }
         FilePurpose::SchoolFont => {
             authorize_school_font_file(pool, actor, file, action, resource_id).await

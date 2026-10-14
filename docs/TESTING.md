@@ -1093,3 +1093,24 @@ The central School database suite runs `school-behavior` against its own fresh D
 From `frontend-school`, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/behavior-workflow.spec.ts tests/e2e/attendance.spec.ts --project=chromium --workers=1` against a ready local frontend. Attendance identity-change fixtures require Vite development module imports; also verify production build and the Behavior fixtures against a production preview. Behavior fixtures exercise read-first loading, mixed student selection and conflict draft retention, separate current/history totals, own cancellation, exact source correction links, pending cleanup and narrow mobile layouts in both themes. Intercepted APIs establish browser behavior; the Docker fixtures establish database ownership and replay behavior.
 
 `school-behavior` owns score models and services; application adapters own Attendance delivery and lifecycle ordering. Pure domain tests can run with `cargo test -p school-behavior --lib`. Keep fixture checks distinct: a passing pure test without `TEST_DATABASE_URL` does not verify database mutations.
+
+## Supply catalog
+
+Supply catalog ownership is in `backend-school/src/modules/supply_catalog/`, its reusable access policy and migrations 110–112. It does not create projects. Run its focused transactional tests on an owned disposable PostgreSQL fixture:
+
+```bash
+./scripts/test_backend_school.sh modules::supply_catalog -- --test-threads=4
+cargo test --manifest-path backend-school/Cargo.toml -p school-file-platform --lib catalog_images
+cargo test --manifest-path backend-school/Cargo.toml -p school-file-platform --lib supply
+```
+
+The domain fixtures cover exact duplicates, simultaneous price appends, current-price bundle totals, actor ownership, clean/unexpired file attachment, proposal approval/rejection and rollback, current-image replacement, and attachment versus generic deletion. Provider failures are synthetic and leave durable object-deletion work. Image cases cover JPEG/PNG/WebP/BMP/GIF/TIFF normalization, transparency, camera orientation/metadata removal, and malformed/oversized input. HEIC/HEIF conversion uses the existing browser-only decoder; AVIF conversion needs the browser decoder.
+
+From `frontend-school`, run exact money/draft helper coverage and the synthetic browser workflow against a ready local frontend:
+
+```bash
+node --test tests/static/supply-catalog-money.test.mjs
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/supply-catalog.spec.ts --project=chromium --workers=1
+```
+
+Keep fixture browser evidence distinct from real device-format and private-storage/scanner acceptance. Use only disposable catalog items/proposals in an isolated tenant for the latter: verify uploads from iPhone/Android/desktop, replacement cleanup, pending-source private access and permanent source removal after approval. Do not print grants, source URLs or private contents. Always finish with the applicable `./scripts/pipeline verify --scope auto` suites.
