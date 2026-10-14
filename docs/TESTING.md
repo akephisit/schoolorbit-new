@@ -547,12 +547,15 @@ For focused deployment-runtime work, run:
 bats scripts/tests/installer/runtime_image_retention.bats \
   scripts/tests/installer/deployment_timing.bats \
   scripts/tests/installer/clamd_runtime_matches.bats
-node --test scripts/tests/prune-ghcr-versions.test.mjs
+node --test scripts/tests/prune-ghcr-versions.test.mjs scripts/tests/pipeline-build-cache.test.mjs
 node --test frontend-school/tests/static/deployment-installer.test.mjs
 node --test frontend-school/tests/static/documentation-policy.test.mjs
 ```
 
-The retention tests use only fake Podman and a loopback HTTP server. They must not contact the
+The retention tests use only fake Podman and a loopback HTTP server. Cache fixtures cover protected
+tags, newest-version retention, the 24-hour grace period, missing packages, denied inventories and
+retagging during revalidation. Selector tests cover main-only registry exports, preserved Admin GHA
+policy, CLI output and image/evidence wiring. They must not contact the
 production VPS, delete a live package version, or replace the manual GHCR dry-run review. Dockerfile
 changes also require Docker runtime-target builds and config inspection:
 

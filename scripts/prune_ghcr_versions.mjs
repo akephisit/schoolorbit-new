@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
 import { pathToFileURL } from 'node:url';
+import { SCHOOL_BUILD_CACHE_PACKAGE } from './lib/pipeline-build-cache.mjs';
 
 const ALLOWED_PACKAGES = new Set([
 	'schoolorbit-backend-admin',
-	'schoolorbit-backend-school'
+	'schoolorbit-backend-school',
+	SCHOOL_BUILD_CACHE_PACKAGE
 ]);
 const SHA_TAG = /^[0-9a-f]{40}$/;
 const RELEASE_TAG = /^(?:[0-9a-f]{40}|input-[0-9a-f]{64})$/;
@@ -61,6 +63,26 @@ function compareOldestFirst(left, right) {
 	return left.createdAtEpoch - right.createdAtEpoch || left.id - right.id;
 }
 
+function normalizeInventory(versions) {
+	const normalized = versions.map(normalizeVersion);
+	const ids = new Set();
+	for (const version of normalized) {
+		if (ids.has(version.id)) throw new Error('GHCR inventory contains duplicate version IDs');
+		ids.add(version.id);
+	}
+
+	return normalized;
+}
+
+function deletionCandidate(version) {
+	return {
+		id: version.id,
+		createdAt: version.createdAt,
+		safeTags: [...version.tags].sort(),
+		signature: versionSignature(version)
+	};
+}
+
 export function selectDeletionCandidates(versions, keep, protectedTags = []) {
 	if (!Array.isArray(versions)) throw new Error('GHCR inventory must be an array');
 	if (!Number.isSafeInteger(keep) || keep < 1 || keep > 100) {
@@ -68,12 +90,7 @@ export function selectDeletionCandidates(versions, keep, protectedTags = []) {
 	}
 
 	if (!Array.isArray(protectedTags) || protectedTags.some((tag) => !SHA_TAG.test(tag))) throw new Error('Invalid protected release tag');
-	const normalized = versions.map(normalizeVersion);
-	const ids = new Set();
-	for (const version of normalized) {
-		if (ids.has(version.id)) throw new Error('GHCR inventory contains duplicate version IDs');
-		ids.add(version.id);
-	}
+	const normalized = normalizeInventory(versions);
 
 	const releases = normalized
 		.filter((version) => version.tags.some((tag) => RELEASE_TAG.test(tag)))
@@ -90,12 +107,23 @@ export function selectDeletionCandidates(versions, keep, protectedTags = []) {
 				version.tags.every((tag) => RELEASE_TAG.test(tag))
 		)
 		.sort(compareOldestFirst)
-		.map((version) => ({
-			id: version.id,
-			createdAt: version.createdAt,
-			safeTags: [...version.tags].sort(),
-			signature: versionSignature(version)
-		}));
+		.map(deletionCandidate);
+}
+
+export function selectCacheDeletionCandidates(versions, keep, now = Date.now()) {
+	if (!Array.isArray(versions)) throw new Error('GHCR inventory must be an array');
+	if (!Number.isSafeInteger(keep) || keep < 1 || keep > 100) {
+		throw new Error('GHCR retention count must be from 1 through 100');
+	}
+	if (!Number.isFinite(now) || now < 0) throw new Error('Invalid cache retention clock');
+	const normalized = normalizeInventory(versions);
+	const retainedIds = new Set([...normalized].sort(compareNewestFirst).slice(0, keep).map(({ id }) => id));
+	const cutoff = now - 24 * 60 * 60 * 1000;
+	// Preserve every tagged version and recent untagged versions while builds finish.
+	return normalized
+		.filter((version) => version.tags.length === 0 && !retainedIds.has(version.id) && version.createdAtEpoch <= cutoff)
+		.sort(compareOldestFirst)
+		.map(deletionCandidate);
 }
 
 function validateTarget({ owner, packageName, keep, token, apiBase }) {
@@ -187,6 +215,8 @@ export async function pruneGhcrVersions({
 	fetchImpl = globalThis.fetch
 }) {
 	const normalizedApiBase = validateTarget({ owner, packageName, keep, token, apiBase });
+	const cacheOnly = packageName === SCHOOL_BUILD_CACHE_PACKAGE;
+	if (cacheOnly && (!Array.isArray(protectedTags) || protectedTags.length)) throw new Error('Cache retention does not accept release protection tags');
 	if (typeof fetchImpl !== 'function') throw new Error('Fetch implementation is unavailable');
 	if (typeof logger !== 'function') throw new Error('Logger is unavailable');
 
@@ -198,13 +228,14 @@ export async function pruneGhcrVersions({
 		'user-agent': 'schoolorbit-ghcr-retention'
 	};
 
-	async function request(path, { method = 'GET', expectedStatus = 200 } = {}) {
+	async function request(path, { method = 'GET', expectedStatus = 200, allowMissingCache = false } = {}) {
 		let response;
 		try {
 			response = await fetchImpl(`${normalizedApiBase}${path}`, { method, headers });
 		} catch {
 			throw new Error('GitHub API request failed');
 		}
+		if (cacheOnly && allowMissingCache && method === 'GET' && response.status === 404) return { data: [], link: null };
 		if (response.status !== expectedStatus) {
 			throw new Error(`GitHub API request failed with status ${response.status}`);
 		}
@@ -221,7 +252,7 @@ export async function pruneGhcrVersions({
 	const inventory = [];
 	for (let page = 1; page <= 1000; page += 1) {
 		const path = `${packagePath}?per_page=100&page=${page}`;
-		const { data, link } = await request(path);
+		const { data, link } = await request(path, { allowMissingCache: cacheOnly && page === 1 });
 		if (!Array.isArray(data) || data.length > 100) {
 			throw new Error('GitHub API returned an invalid package inventory');
 		}
@@ -232,10 +263,10 @@ export async function pruneGhcrVersions({
 	}
 
 	const normalizedInventory = inventory.map(normalizeVersion);
-	const releaseCount = normalizedInventory.filter((version) =>
-		version.tags.some((tag) => RELEASE_TAG.test(tag))
-	).length;
-	const allCandidates = selectDeletionCandidates(inventory, keep, protectedTags);
+	const managedCount = cacheOnly ? normalizedInventory.length : normalizedInventory.filter((version) => version.tags.some((tag) => RELEASE_TAG.test(tag))).length;
+	const allCandidates = cacheOnly ? selectCacheDeletionCandidates(inventory, keep) : selectDeletionCandidates(inventory, keep, protectedTags);
+	const countLabel = cacheOnly ? 'cache_versions' : 'releases';
+	const retainedCount = cacheOnly ? managedCount - allCandidates.length : Math.min(managedCount, keep);
 	const candidates = allCandidates.slice(0, MAX_DELETIONS);
 
 	for (const candidate of candidates) {
@@ -246,7 +277,7 @@ export async function pruneGhcrVersions({
 
 	if (!execute) {
 		logger(
-			`ghcr_retention package=${packageName} releases=${releaseCount} retained=${Math.min(releaseCount, keep)} candidates=${allCandidates.length} selected=${candidates.length} deleted=0 mode=dry-run`
+			`ghcr_retention package=${packageName} ${countLabel}=${managedCount} retained=${retainedCount} candidates=${allCandidates.length} selected=${candidates.length} deleted=0 mode=dry-run`
 		);
 		return { candidates: allCandidates.length, selected: candidates.length, deleted: 0 };
 	}
@@ -255,10 +286,10 @@ export async function pruneGhcrVersions({
 		const { data } = await request(`${packagePath}/${candidate.id}`);
 		const current = normalizeVersion(data);
 		if (
-			current.tags.includes('latest') ||
-			current.tags.some((tag) => protectedTags.includes(tag)) ||
-			current.tags.length === 0 ||
-			!current.tags.every((tag) => RELEASE_TAG.test(tag)) ||
+			(cacheOnly ? current.tags.length !== 0 : (
+				current.tags.includes('latest') || current.tags.some((tag) => protectedTags.includes(tag)) ||
+				current.tags.length === 0 || !current.tags.every((tag) => RELEASE_TAG.test(tag))
+			)) ||
 			versionSignature(current) !== candidate.signature
 		) {
 			throw new Error(`GHCR version ${candidate.id} changed during revalidation`);
@@ -281,7 +312,7 @@ export async function pruneGhcrVersions({
 	}
 
 	logger(
-		`ghcr_retention package=${packageName} releases=${releaseCount} retained=${Math.min(releaseCount, keep)} candidates=${allCandidates.length} selected=${candidates.length} deleted=${deleted} mode=execute`
+		`ghcr_retention package=${packageName} ${countLabel}=${managedCount} retained=${retainedCount} candidates=${allCandidates.length} selected=${candidates.length} deleted=${deleted} mode=execute`
 	);
 	return { candidates: allCandidates.length, selected: candidates.length, deleted };
 }

@@ -22,9 +22,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - schoolorbit-backend-admin
-          - schoolorbit-backend-school
+        include:
+          - package: schoolorbit-backend-admin
+            keep: 30
+          - package: schoolorbit-backend-school
+            keep: 30
+          - package: schoolorbit-backend-school-cache
+            keep: 2
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -40,12 +44,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGE_NAME: ${{ matrix.package }}
-          EXECUTE: ${{ (github.event_name == 'schedule' && vars.GHCR_RETENTION_ENABLED == 'true') || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+          EXECUTE: ${{ (github.event_name == 'schedule' && (matrix.package == 'schoolorbit-backend-school-cache' || vars.GHCR_RETENTION_ENABLED == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+          KEEP: ${{ matrix.keep }}
         run: |
           arguments=(
             --owner "${{ github.repository_owner }}"
             --package "$PACKAGE_NAME"
-            --keep 30
+            --keep "$KEEP"
           )
           component="${PACKAGE_NAME#schoolorbit-}"
           protected_sha=$(jq -r --arg part "$component" '.components[$part].sha // empty' "$RUNNER_TEMP/accepted-state.json")

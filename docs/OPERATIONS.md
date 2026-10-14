@@ -365,7 +365,10 @@ retention owns the isolated BuildKit entries. Compiler snapshots stay on the dis
 are excluded from uploaded evidence; their hashes and sizes are recorded. Do not delete shared BuildKit blobs.
 Keep the production cache backend until repeated warm build wall times and cache reuse justify a change.
 
-Backend image builds keep separate BuildKit cache scopes for admin and school. Rust, cargo-chef, and
+School BuildKit layers use the dedicated `schoolorbit-backend-school-cache:buildcache` GHCR
+package; Admin uses its existing GHA scope. The [cache selector](../scripts/lib/pipeline-build-cache.mjs)
+owns this policy. Only main exports the School registry cache; other refs read it without replacing it.
+Rust compiler caching still uses GHA, independently of the BuildKit layer backend. Rust, cargo-chef, and
 sccache are pinned in their Dockerfiles. GitHub's cache runtime reaches Cargo as BuildKit secrets;
 a missing or unavailable compiler cache falls back to an ordinary Cargo build. School uses the
 same compiler cache for dependency cooking and the final application build. A changed workspace
@@ -384,7 +387,9 @@ Component hashes exclude application READMEs and top-level integration tests alr
 from image contexts. Public frontend configuration and the artifact-producing
 [backend](../.github/actions/build-backend-image/action.yml) or
 [frontend](../.github/actions/build-frontend-bundle/action.yml) recipe participate in keys.
-Cache lookup, reporting and orchestration in `prepare.yml` do not participate. Change actual build
+Cache lookup, reporting and orchestration in `prepare.yml` do not participate. The initial cache-policy
+input wiring changes the hashed backend action and prepares fresh backend manifests once; later cache
+selector/orchestration edits preserve the artifact keys. Change actual build
 commands at these recipe owners; their source and application Dockerfiles/scripts invalidate the
 relevant artifact family. Migrating the hash format requires one fresh artifact preparation per
 component before exact-input reuse is available in the new namespace.
@@ -555,14 +560,21 @@ deployment verifies the resulting PID limit before proceeding. Keep this value a
 Image-exposed ports with null or empty binding lists do not publish host ports; the matcher accepts
 those Podman inspect entries but rejects every actual host binding, including loopback bindings.
 
-GHCR retention runs weekly and can be dispatched manually. It preserves `latest`, the 30 newest
+Runtime GHCR retention runs weekly and can be dispatched manually. It preserves `latest`, the 30 newest
 SHA-tagged releases for each backend, and every untagged or unrecognized version such as an
-attestation. Manual dispatch defaults to dry-run. The weekly run also remains dry-run unless the
+attestation. Manual dispatch defaults to dry-run. Scheduled runtime release cleanup stays dry-run unless the
 repository variable `GHCR_RETENTION_ENABLED` is exactly `true`. Before enabling it, run a manual
 dry-run and review both package candidate lists. The repository must have the package's Actions
 admin access; a `403` is an access/configuration failure and must not be bypassed with another token
 in source. Execution re-reads all selected candidates before mutation and again immediately before
 each delete, processes oldest first, and deletes at most 100 versions per package per run.
+
+The separate School BuildKit cache package has automatic weekly maintenance. It retains every tagged
+version and the two newest versions, and selects only untagged versions at least 24 hours old.
+It uses the same complete-inventory and immediate revalidation guards, with at most 100 deletions;
+a candidate gaining any tag aborts deletion. An uninitialized cache package (first inventory `404`)
+is empty; `403` and other errors fail. Run and review a manual dry-run after the first cache export
+before its first scheduled cleanup. Runtime release retention keeps its existing opt-in variable.
 
 For the first post-merge observation, use the next ordinary admin and school deployments rather
 than triggering benchmark-only production changes:

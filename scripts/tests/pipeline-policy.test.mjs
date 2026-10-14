@@ -74,6 +74,7 @@ test('accepted per-component baselines retain queued changes across merges and r
 test('reporting and orchestration retain artifact hashes; real build recipes invalidate only their owners', t => {
   for (const [file, owners] of [
     ['.github/workflows/prepare.yml', []],
+    ['scripts/lib/pipeline-build-cache.mjs', []],
     ['.github/workflows/pipeline.yml', []],
     ['.github/actions/build-backend-image/action.yml', ['backend-admin', 'backend-school']],
     ['.github/actions/build-frontend-bundle/action.yml', ['frontend-admin', 'frontend-school']]
