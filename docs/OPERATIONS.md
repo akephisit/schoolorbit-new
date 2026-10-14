@@ -1068,6 +1068,12 @@ When reconciliation is unhealthy:
 4. compare file/version/derivative rows with object counts using file IDs and tenant/purpose aggregates;
 5. do not manually delete metadata rows or reuse object keys.
 
+### Supply catalog rollout and recovery
+
+Deploy the supply catalog through the coordinated School release, including [migration 110](../backend-school/migrations/110_supply_catalog.sql), [migration 111](../backend-school/migrations/111_supply_catalog_navigation.sql), backend and frontend. The additive schema remains compatible with the previous runtime before supply uploads begin. Once supply-purpose files or lifecycle operations exist, recovery must use a supply-aware runtime: earlier File Platform binaries reject those purpose codes. Preserve the expanded schema and repair forward instead of restoring an earlier binary.
+
+Proposal approval and image replacement revoke old file delivery inside the business transaction. Object deletion follows through the existing durable reconciler; a committed decision with pending provider work is not a failed approval. Use the lifecycle recovery procedure above for failed physical cleanup, and verify private storage/scanner health with disposable items in an isolated tenant.
+
 ### School font ownership and recovery
 
 `school_font` is a private, scanned File Platform purpose. A new upload is staged either for the central school-font manager or for one exact certificate template; attaching a reviewed batch promotes the files into the school-owned library. The promoted font is not owned by a campaign or template, and campaign purge removes only its template references. Delivery remains grant-based and must never expose a bucket name, object key, provider URL, or signed URL in logs or persistent client state.

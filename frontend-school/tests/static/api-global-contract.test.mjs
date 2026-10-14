@@ -1665,15 +1665,19 @@ test('frontend menu route metadata is complete for deployment sync', async () =>
 		(file) => file.endsWith('+page.ts')
 	);
 	const violations = [];
-	const allowedWorkspaces = new Set([
-		'home',
-		'teaching',
-		'academic',
-		'student_affairs',
-		'personnel',
-		'operations',
-		'settings'
-	]);
+	const allowedWorkspaces = new Set();
+	const migrations = await listFiles(path.join(repoRoot, 'backend-school/migrations'), (file) =>
+		file.endsWith('.sql')
+	);
+	for (const migration of migrations) {
+		const sql = await readFile(migration, 'utf8');
+		for (const seed of sql.matchAll(
+			/INSERT INTO menu_workspaces\s*\(\s*code\b[^)]*\)\s*VALUES\s*([\s\S]*?)(?:ON CONFLICT|;)/gi
+		)) {
+			for (const row of seed[1].matchAll(/\(\s*'([^']+)'/g)) allowedWorkspaces.add(row[1]);
+		}
+	}
+	assert.ok(allowedWorkspaces.size > 0, 'canonical workspace seeds must be discoverable');
 
 	for (const file of routeFiles) {
 		const source = stripComments(await readFile(file, 'utf8'));
