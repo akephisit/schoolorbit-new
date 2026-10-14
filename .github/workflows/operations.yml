@@ -13,6 +13,7 @@ on:
           - diagnostics
           - benchmark
           - cache-benchmark
+          - compiler-cache-diagnostic
           - http-benchmark
       request_id:
         description: Exact provisioning request identifier
@@ -75,6 +76,9 @@ jobs:
     uses: ./.github/workflows/backend-cache-benchmark.yml
     with:
       samples: ${{ fromJson(inputs.options).samples || '2' }}
+  compiler-cache-diagnostic:
+    if: inputs.operation == 'compiler-cache-diagnostic'
+    uses: ./.github/workflows/compiler-cache-diagnostic.yml
   provision:
     if: inputs.operation == 'provision' && github.ref == 'refs/heads/main'
     concurrency:

@@ -378,6 +378,10 @@ The `rustc-cache` wrapper executes the pinned sccache binary. This prevents cc-r
 from also wrapping C/C++ and assembly compilers, reducing requests to GitHub's cache service.
 The pinned sccache backend does not retry rate-limited writes; inspect dependency-cook write
 errors as well as application statistics before treating a run as successful cache population.
+Operations `compiler-cache-diagnostic` compiles an isolated library with the pinned toolchain,
+then restores its new GHA entry in a fresh container. Daemon logs remain on private tmpfs mounts;
+only allowlisted error classes, HTTP statuses and numeric counters enter the evidence artifact.
+The probe publishes no release image and fails unless the new write and restoration are observed.
 School enables JPEG, PNG and WebP codecs to match the File Platform's inspected-content policy,
 with Rayon processing retained. GIF, BMP and TIFF decoding additionally supports temporary supply image sources, which are normalized before canonical storage. The School image dependency keeps its codec features explicit.
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use

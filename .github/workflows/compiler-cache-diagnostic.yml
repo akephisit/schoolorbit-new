@@ -1,0 +1,32 @@
+name: Rust compiler cache diagnostic
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Expose compiler cache runtime
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            if (!token || !process.env.ACTIONS_RESULTS_URL) throw new Error('Cache runtime is unavailable');
+            core.setSecret(token);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', token);
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
+      - name: Probe a new compiler entry and restore it in a fresh container
+        env:
+          COMPILER_CACHE_OUTPUT: ${{ runner.temp }}/compiler-cache-evidence
+        run: python3 -B scripts/diagnose_compiler_cache.py
+      - name: Publish allowlisted compiler evidence only
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: compiler-cache-evidence
+          path: ${{ runner.temp }}/compiler-cache-evidence/evidence.json
+          retention-days: 7
+          if-no-files-found: error
