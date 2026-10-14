@@ -58,7 +58,7 @@ def probe_recipe(dockerfile):
             f"ADD --checksum=sha256:{binary.group(1)} {binary.group(2)} /tmp/sccache.tar.gz\n"
             f"RUN tar -xzf /tmp/sccache.tar.gz -C /tmp && install -m 0755 /tmp/{folder}/sccache /usr/local/bin/sccache "
             f"&& rm -rf /tmp/sccache.tar.gz /tmp/{folder}\n"
-            "RUN printf '%s\\n' '#!/bin/sh' 'exec /usr/local/bin/sccache \"$@\"' > /usr/local/bin/rustc-cache && chmod 0755 /usr/local/bin/rustc-cache\n"
+            "COPY --chmod=0755 rustc-cache /usr/local/bin/rustc-cache\n"
             "WORKDIR /probe\n")
 
 
@@ -91,6 +91,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix=namespace + "-") as temporary:
             context = pathlib.Path(temporary)
             (context / "Dockerfile").write_text(probe_recipe((root / "backend-school/Dockerfile").read_text()))
+            (context / "rustc-cache").write_text('#!/bin/sh\nexec /usr/local/bin/sccache "$@"\n')
             fixture = context / "fixture"
             (fixture / "src").mkdir(parents=True)
             (fixture / "Cargo.toml").write_text('[package]\nname = "compiler-cache-probe"\nversion = "0.0.0"\nedition = "2024"\n')

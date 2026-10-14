@@ -29,7 +29,7 @@ test('probe recipe derives the same pinned compiler and binary without release a
   const source = readFileSync(path.join(repo,'backend-school/Dockerfile'),'utf8');
   assert.ok(result.includes(source.match(/^FROM (\S+) AS base$/m)[1]));
   assert.ok(result.includes(source.match(/--checksum=(sha256:[a-f0-9]{64})/)[1]));
-  assert.match(result,/exec \/usr\/local\/bin\/sccache/);
+  assert.match(result,/COPY --chmod=0755 rustc-cache \/usr\/local\/bin\/rustc-cache/);
   assert.doesNotMatch(result,/TOKEN|RESULTS_URL|PUSH|COPY \. \./);
 });
 test('fresh containers prove a new remote write and subsequent restoration without exporting private logs', () => {
