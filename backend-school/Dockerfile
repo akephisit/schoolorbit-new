@@ -13,17 +13,27 @@ FROM base AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM base AS builder
-ADD --checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006 \
-    https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-x86_64-unknown-linux-musl.tar.gz \
-    /tmp/sccache.tar.gz
-RUN tar -xzf /tmp/sccache.tar.gz -C /tmp \
-    && install -m 0755 \
-        /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl/sccache \
-        /usr/local/bin/sccache \
+# Keep the upstream cache-key format; retry only transient GHA storage failures.
+FROM base AS sccache-tool
+RUN apt-get update && apt-get install -y --no-install-recommends patch \
+    && rm -rf /var/lib/apt/lists/*
+ADD --checksum=sha256:6d445dc788b9f51d131d193d9ab466e76425b39f7df079f0dfddcac3222f7eb5 \
+    https://github.com/mozilla/sccache/archive/c037e117c7625a2668633574028a6addf2a96a6e.tar.gz \
+    /tmp/sccache-source.tar.gz
+COPY scripts/sccache-gha-retry.patch /tmp/sccache-gha-retry.patch
+RUN --mount=type=cache,id=school-sccache-tool-build,target=/tmp/sccache-target \
+    mkdir /tmp/sccache-source \
+    && tar -xzf /tmp/sccache-source.tar.gz -C /tmp/sccache-source --strip-components=1 \
+    && cd /tmp/sccache-source \
+    && patch --batch --fuzz=0 -p1 < /tmp/sccache-gha-retry.patch \
+    && CARGO_TARGET_DIR=/tmp/sccache-target cargo build --release --locked --no-default-features --features=gha --bin sccache \
+    && install -m 0755 /tmp/sccache-target/release/sccache /usr/local/bin/sccache \
     && printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/sccache "$@"' > /usr/local/bin/rustc-cache \
     && chmod 0755 /usr/local/bin/rustc-cache \
-    && rm -rf /tmp/sccache.tar.gz /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl
+    && rm -rf /tmp/sccache-source /tmp/sccache-source.tar.gz /tmp/sccache-gha-retry.patch
+
+FROM base AS builder
+COPY --from=sccache-tool /usr/local/bin/sccache /usr/local/bin/rustc-cache /usr/local/bin/
 COPY --from=planner /app/recipe.json recipe.json
 COPY scripts/build_release.sh scripts/release_linker.sh scripts/
 ARG SCHOOL_COMPILER_CACHE=off
