@@ -381,8 +381,12 @@ with a narrow GHA retry patch. OpenDAL retries only temporary failures, includin
 transient 5xx responses, with jitter, 1–8 second exponential backoff and at most five retries per
 operation. Permanent errors still propagate to the cache counters. The tool stage is cached;
 Rust application profiles, native compiler wrapping and the existing cache-key format are unchanged.
+The shared sccache configuration allows 120 seconds for server startup so temporary storage
+checks can finish their retries before the client gives up. Both release and diagnostic images
+use this configuration; the timeout changes no compiler options.
 After Cargo finishes, the build waits at most 120 seconds for asynchronous cache writes to settle
-before recording statistics. This wait has its own metric, separate from Cargo and link time;
+before recording statistics. Settlement uses JSON counters because the human-readable CLI omits
+successful write counts. This wait has its own metric, separate from Cargo and link time;
 unavailable or unsettled writes are explicit and do not turn a successful compile into a failure.
 Inspect dependency-cook write errors as well as application statistics before treating a run as
 successful cache population.
@@ -392,7 +396,8 @@ only allowlisted error classes, HTTP statuses and numeric counters enter the evi
 The probe publishes no release image and fails unless the new write and restoration are observed.
 Set `options={"workload":"dependencies"}` to repeat the canonical School dependency cook in
 two fresh containers, importing only its GHCR preparation layers. This preserves the release
-toolchain, recipe and compiler settings, checks all eligible writes and subsequent hits, and
+toolchain, recipe and compiler settings, checks the canonical build's write-settlement result,
+all eligible writes and subsequent hits, and
 exports neither BuildKit layers nor a release image. Feature-ref writes remain scoped to that ref;
 a successful branch diagnostic alone does not prove that a main-only failure is resolved.
 Use `options={"workload":"cold-dependencies"}` to verify full population under load. It adds

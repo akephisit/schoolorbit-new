@@ -138,6 +138,11 @@ def main():
                                  'umask 077; printf %s "$ACTIONS_RESULTS_URL" > /run/secrets/sccache_gha_url; '
                                  'printf %s "$ACTIONS_RUNTIME_TOKEN" > /run/secrets/sccache_gha_token; '
                                  'exec bash scripts/build_release.sh dependencies'], "compile")
+                        metrics = json.loads(command(["docker", "exec", container, "cat", "/app/target/dependency-timings/build-metrics.json"], "compiler_metrics"))
+                        settled, waited = metrics.get("cacheWritesSettled"), metrics.get("cacheWriteWaitNanoseconds")
+                        if not isinstance(settled, bool) or type(waited) is not int or waited < 0:
+                            raise ValueError("Compiler write settlement is unavailable")
+                        sample.update(cache_writes_settled=settled, cache_write_wait_seconds=waited / 1e9)
                     else:
                         command(["docker", "exec", container, "cargo", "build", "--release", "--lib", "--locked", "--offline"], "compile")
                     # Cache writes finish asynchronously. Wait until every observed miss has settled.
@@ -168,7 +173,8 @@ def main():
                 reuse = (first["cache_misses"] == first["cache_writes"] == 1 and first["cache_hits"] == 0
                          and second["cache_hits"] == 1 and second["cache_misses"] == second["cache_writes"] == 0)
             else:
-                reuse = (first["cache_hits"] + first["cache_misses"] > 0
+                reuse = (all(sample["cache_writes_settled"] for sample in result["samples"])
+                         and first["cache_hits"] + first["cache_misses"] > 0
                          and first["cache_writes"] == first["cache_misses"]
                          and (workload != "cold-dependencies" or first["cache_hits"] == 0 < first["cache_misses"])
                          and second["cache_hits"] > 0 and second["cache_misses"] == second["cache_writes"] == 0)

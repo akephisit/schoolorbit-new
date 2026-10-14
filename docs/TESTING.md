@@ -58,6 +58,9 @@ Compiler-service diagnostics use `node --test scripts/tests/pipeline-compiler-ca
 locally, then Operations `compiler-cache-diagnostic` on the reviewed branch. Inspect its bounded
 evidence for a successful new write followed by a hit in a fresh container; raw daemon logs must
 never enter Actions logs, artifacts or cache layers.
+Dependency diagnostics also require the canonical build's JSON write-settlement metric to be
+true in both containers. Local evidence fixtures cover delayed writes, empty and invalid counters,
+and successful-write counts missing from the human-readable CLI.
 Cache-backend experiment fixtures run with
 `node --test scripts/tests/pipeline-cache-benchmark.test.mjs`. They exercise paired scratch
 contexts, fresh builder ownership, cleanup on failure, frozen local compiler snapshots, read-only counters, missing metrics

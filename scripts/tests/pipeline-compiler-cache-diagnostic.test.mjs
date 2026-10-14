@@ -31,12 +31,15 @@ test('probe recipe derives the same pinned compiler and binary without release a
   assert.ok(result.includes(source.match(/--checksum=(sha256:[a-f0-9]{64})/)[1]));
   assert.match(result,/FROM sccache-tool AS compiler-cache-probe/);
   assert.match(result,/sccache-gha-retry\.patch/);
+  assert.match(result,/COPY scripts\/sccache-startup\.json \/etc\/sccache-school\.json/);
+  assert.match(result,/ENV SCCACHE_CONF=\/etc\/sccache-school\.json/);
   assert.doesNotMatch(result,/TOKEN|RESULTS_URL|PUSH|AS runtime|AS builder/);
 });
 test('dependency diagnostic retains canonical preparation and stops before compilation', () => {
   const result = python(`from diagnose_compiler_cache import dependency_recipe\nfrom pathlib import Path\nimport json\nprint(json.dumps(dependency_recipe(Path('backend-school/Dockerfile').read_text())))\n`);
   assert.match(result, /COPY --from=planner \/app\/recipe.json recipe.json/);
   assert.match(result, /COPY scripts\/build_release.sh scripts\/release_linker.sh scripts\//);
+  assert.match(result, /COPY --from=sccache-tool \/etc\/sccache-school\.json \/etc\/sccache-school\.json/);
   assert.doesNotMatch(result, /bash scripts\/build_release.sh|FROM scratch|AS runtime/);
 });
 test('fresh containers prove a new remote write and subsequent restoration without exporting private logs', () => {
@@ -53,7 +56,7 @@ test('compiler failures retain only sanitized diagnostics and clean the owned co
   assert.equal(result.status,0,result.stderr);
   assert.doesNotMatch(result.stdout+result.stderr,/sentinel/);
 });
-for (const scenario of ['healthy', 'write_error', 'restore_miss', 'cold_healthy', 'cold_reused']) {
+for (const scenario of ['healthy', 'write_error', 'restore_miss', 'cold_healthy', 'cold_reused', 'unsettled', 'invalid_metrics']) {
   test(`canonical dependency diagnostic rejects incomplete population: ${scenario}`, () => {
     const evidence = python(`
 import contextlib,io,json,os,tempfile
@@ -79,6 +82,7 @@ with tempfile.TemporaryDirectory() as output:
    assert 'type=registry,ref=ghcr.io/akephisit/schoolorbit-backend-school-cache:buildcache' in args
    assert '--cache-to' not in args and '--push' not in args
   if stage=='compile': assert args[-1].endswith('exec bash scripts/build_release.sh dependencies')
+  if stage=='compiler_metrics': return json.dumps(dict(cacheWritesSettled=${JSON.stringify(scenario)}!='unsettled',cacheWriteWaitNanoseconds=True if ${JSON.stringify(scenario)}=='invalid_metrics' else 1000000))
   return 'a'*40 if stage=='source' else ''
  def counters(_):
   first=current[0]==1
@@ -97,8 +101,10 @@ with tempfile.TemporaryDirectory() as output:
   try: p.main()
   except SystemExit as error: assert error.code==1
  result=json.loads((Path(output)/'evidence.json').read_text())
- assert result['complete'] and result['healthy']==(${JSON.stringify(scenario)} in ('healthy','cold_healthy'))
- assert len(result['samples'])==2
+ assert result['complete']==(${JSON.stringify(scenario)}!='invalid_metrics') and result['healthy']==(${JSON.stringify(scenario)} in ('healthy','cold_healthy'))
+ assert len(result['samples'])==(1 if ${JSON.stringify(scenario)}=='invalid_metrics' else 2)
+ if ${JSON.stringify(scenario)}=='unsettled': assert all(sample['cache_writes_settled'] is False for sample in result['samples'])
+ if result['healthy']: assert all(sample['cache_write_wait_seconds']==0.001 and sample['cache_writes_settled'] is True for sample in result['samples'])
  assert all(sample['observed_retry_events']==1 and sample['diagnostics'][0]['stage']=='cache_retry' for sample in result['samples'])
  assert not any('sentinel' in ' '.join(args) for args in commands)
  print(json.dumps(result))

@@ -209,7 +209,7 @@ for (const phase of ["application", "dependencies"])
       }
     });
 
-for (const outcome of ["write", "error", "timeout"])
+for (const outcome of ["write", "error", "timeout", "empty", "other_language", "invalid", "negative", "missing"])
   test(`School waits for asynchronous cache settlement without changing compile success (${outcome})`, (t) => {
     const root = fixture(t), bin = path.join(root, "bin");
     mkdirSync(bin);
@@ -217,7 +217,7 @@ for (const outcome of ["write", "error", "timeout"])
     writeFileSync(path.join(root, "bash-env"), "sleep() { SECONDS=$((SECONDS + 120)); }\n");
     writeFileSync(path.join(bin, "sleep"), "#!/bin/sh\nexit 0\n", {mode: 0o755});
     writeFileSync(path.join(bin, "sccache"), `#!/bin/bash
-if [[ "$*" == *stats-format=json* ]]; then printf '{}\\n'; exit 0; fi
+if [[ "$*" != *stats-format=json* ]]; then printf 'Cache misses 1\\nCache write errors 0\\n'; exit 0; fi
 count=0
 if [[ -f "$CACHE_CALLS" ]]; then read -r count < "$CACHE_CALLS"; fi
 count=$((count + 1))
@@ -225,7 +225,14 @@ printf '%s\\n' "$count" > "$CACHE_CALLS"
 writes=0; errors=0
 if ((count > 1)) && [[ "$CACHE_OUTCOME" == write ]]; then writes=1; fi
 if ((count > 1)) && [[ "$CACHE_OUTCOME" == error ]]; then errors=1; fi
-printf 'Cache misses 1\\nCache writes %s\\nCache write errors %s\\n' "$writes" "$errors"
+case "$CACHE_OUTCOME" in
+ empty) printf '{"stats":{"cache_misses":{"counts":{}},"cache_writes":0,"cache_write_errors":0}}\\n';;
+ other_language) printf '{"stats":{"cache_misses":{"counts":{"Rust":0,"C/C++":1}},"cache_writes":1,"cache_write_errors":0}}\\n';;
+ invalid) printf 'invalid-json\\n';;
+ negative) printf '{"stats":{"cache_misses":{"counts":{"Rust":-1}},"cache_writes":0,"cache_write_errors":0}}\\n';;
+ missing) printf '{"stats":{"cache_misses":{"counts":{}},"cache_write_errors":0}}\\n';;
+ *) printf '{"stats":{"cache_misses":{"counts":{"Rust":1}},"cache_writes":%s,"cache_write_errors":%s}}\\n' "$writes" "$errors";;
+esac
 `, {mode: 0o755});
     const script = readFileSync(path.join(repo, "backend-school/scripts/build_release.sh"), "utf8")
       .replaceAll("/usr/local/bin/sccache", path.join(bin, "sccache"));
@@ -236,9 +243,10 @@ printf 'Cache misses 1\\nCache writes %s\\nCache write errors %s\\n' "$writes" "
     });
     assert.equal(result.status, 0, result.stderr);
     const metrics = JSON.parse(readFileSync(path.join(root, "target/dependency-timings/build-metrics.json"), "utf8"));
-    assert.equal(metrics.cacheWritesSettled, outcome !== "timeout");
+    const settled = ["write", "error", "empty", "other_language"].includes(outcome);
+    assert.equal(metrics.cacheWritesSettled, settled);
     assert.ok(metrics.cacheWriteWaitNanoseconds >= 0);
-    assert.equal(/unavailable or timed out/.test(result.stderr), outcome === "timeout");
+    assert.equal(/unavailable or timed out/.test(result.stderr), !settled);
     assert.ok(Number(readFileSync(path.join(root, "calls"), "utf8")) >= 2);
   });
 
