@@ -348,8 +348,13 @@ browser mount/assets and authenticated smoke always execute under universal main
 ### Build, deployment timing, and image retention
 
 Backend image builds keep separate BuildKit cache scopes for admin and school. Rust, cargo-chef, and
-sccache are pinned in their Dockerfiles. GitHub's cache runtime reaches the final Cargo build as
-BuildKit secrets; a missing or unavailable compiler cache falls back to an ordinary Cargo build.
+sccache are pinned in their Dockerfiles. GitHub's cache runtime reaches Cargo as BuildKit secrets;
+a missing or unavailable compiler cache falls back to an ordinary Cargo build. School uses the
+same compiler cache for dependency cooking and the final application build. A changed workspace
+recipe still invalidates the cargo-chef layer, but unchanged eligible dependencies can be restored
+by sccache. This does not avoid compiling new dependencies or the final application executable.
+School enables JPEG, PNG and WebP codecs to match the File Platform's inspected-content policy,
+with Rayon processing retained. Unaccepted image codecs are excluded from the dependency graph.
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use
 `SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
 does not select v2; a build that reports write errors has not populated a usable cache.
@@ -380,6 +385,10 @@ browser caches have compatible runner environments.
 
 [Compiler summaries](../scripts/render_backend_build_summary.py) show measured Cargo duration,
 the largest compiler units, Rust library cache counters and available BuildKit phase durations.
+School also exports separate dependency-cook wall time and cache counters. The dependency layer,
+application compiler layer and GitHub Actions cache export each have their own current BuildKit
+duration; a reused dependency layer may carry older cook metrics. Empty observed Rust counter maps
+mean zero for that counter, while absent counters remain unavailable.
 A cached compiler layer reuses its previous evidence; the summary labels it accordingly. Manifest
 import time does not include every lazy cache-layer transfer. Full evidence remains in the compiler
 artifact, and metric/log unavailability is displayed without changing successful build acceptance.
