@@ -54,6 +54,13 @@ Production acceptance also checks aliases and socket source addresses after star
 
 For deployment dependency selection and compiler evidence, run
 `node --test scripts/tests/pipeline-deployment-tooling.test.mjs scripts/tests/pipeline-build-evidence.test.mjs`.
+Cache-backend experiment fixtures run with
+`node --test scripts/tests/pipeline-cache-benchmark.test.mjs`. They exercise paired scratch
+contexts, fresh builder ownership, cleanup on failure, read-only compiler counters, missing metrics
+and complete counterbalanced sampling. Dispatch the isolated remote comparison through Operations
+`cache-benchmark` with `options={"samples":"2"}` on the reviewed experiment branch. Both variants
+must retain the runtime UID/command and canonical offline OpenAPI; inspect full build wall time,
+dependency-layer reuse, cache export and error counters before changing production cache policy.
 Scope fixtures in `scripts/tests/pipeline-policy.test.mjs` cover recipe/report separation,
 component deployment ownership and queued baseline reconciliation. The School release source guards
 exercise parallel branch failure joins, backend prerequisite refusal, pinned runner compatibility and

@@ -347,6 +347,20 @@ browser mount/assets and authenticated smoke always execute under universal main
 
 ### Build, deployment timing, and image retention
 
+Operations `cache-benchmark` compares School BuildKit `gha` and GHCR `registry` exporters
+with `mode=max`, fresh pinned builders and the same production release flags on one Ubuntu 24.04
+runner. It seeds a run-owned Rust cache once, then makes both variants read-only against that
+namespace. Cold cache seeding, two source-only edits and two dependency-free workspace-member
+edits are measured separately with reversed pair ordering. Scratch contexts never become releases.
+The comparison includes runtime image export/load; image push, evidence extraction, builder
+bootstrap and offline acceptance are reported outside the build wall clock. Builder network bytes
+include all external traffic, not just cache transfers; unavailable cache sizes remain unavailable.
+Full timing, cache counters, source hashes and runtime/OpenAPI checks are retained as Actions
+evidence. Each sample removes its exact local builder/image. The workflow deletes only its unique
+`schoolorbit-cache-benchmark-<run>-<attempt>` GHCR package, never a runtime package; GitHub's cache
+retention owns the isolated compiler/BuildKit cache entries. Do not delete shared BuildKit blobs.
+Keep the production cache backend until repeated warm build wall times and cache reuse justify a change.
+
 Backend image builds keep separate BuildKit cache scopes for admin and school. Rust, cargo-chef, and
 sccache are pinned in their Dockerfiles. GitHub's cache runtime reaches Cargo as BuildKit secrets;
 a missing or unavailable compiler cache falls back to an ordinary Cargo build. School uses the

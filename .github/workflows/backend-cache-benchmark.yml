@@ -1,0 +1,85 @@
+name: Backend Cache Benchmark
+on:
+  workflow_call:
+    inputs:
+      samples:
+        description: Warm source and workspace samples per cache backend
+        type: string
+        default: "2"
+permissions:
+  contents: read
+  actions: read
+  packages: write
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate bounded sample count
+        env:
+          BENCH_SAMPLES: ${{ inputs.samples }}
+        run: |
+          [[ "$BENCH_SAMPLES" =~ ^[2-3]$ ]]
+      - uses: docker/setup-buildx-action@v4
+        id: buildx
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Expose cache runtime through BuildKit secrets
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            if (!token || !process.env.ACTIONS_RESULTS_URL) throw new Error('Cache runtime is unavailable');
+            core.setSecret(token);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', token);
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'true');
+      - name: Freeze BuildKit image for every fresh builder
+        env:
+          BUILDER: ${{ steps.buildx.outputs.name }}
+        run: |
+          set -euo pipefail
+          image=$(docker inspect "buildx_buildkit_${BUILDER}0" --format '{{.Image}}')
+          pinned=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          [[ "$pinned" =~ @sha256:[a-f0-9]{64}$ ]]
+          printf 'BENCH_BUILDKIT_IMAGE=%s\n' "$pinned" >> "$GITHUB_ENV"
+      - name: Compare isolated remote caches on one runner
+        env:
+          BENCH_SAMPLES: ${{ inputs.samples }}
+          BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
+        run: python3 -B scripts/benchmark_backend_cache.py
+      - name: Publish complete benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-cache-benchmark
+          path: |
+            ${{ runner.temp }}/backend-cache-benchmark
+            !${{ runner.temp }}/backend-cache-benchmark/contexts/**
+          retention-days: 7
+          if-no-files-found: error
+      - name: Remove only this run's disposable registry package
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          OWNER_TYPE: ${{ github.event.repository.owner.type }}
+        run: |
+          set -euo pipefail
+          package="schoolorbit-cache-benchmark-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          [[ "$package" =~ ^schoolorbit-cache-benchmark-[0-9]+-[0-9]+$ ]]
+          case "$OWNER_TYPE" in
+            User) endpoint="/users/$OWNER/packages/container/$package" ;;
+            Organization) endpoint="/orgs/$OWNER/packages/container/$package" ;;
+            *) exit 64 ;;
+          esac
+          if gh api --method GET "$endpoint" > /dev/null 2> "$RUNNER_TEMP/cache-package.err"; then
+            gh api --method DELETE "$endpoint"
+          elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/cache-package.err"; then
+            cat "$RUNNER_TEMP/cache-package.err" >&2
+            exit 1
+          fi
