@@ -31,23 +31,25 @@
 </script>
 
 <section class="space-y-3 rounded-xl border bg-muted/20 p-3" aria-label="ค้นหาพัสดุเข้าชุด">
-	<form
-		class="flex items-end gap-2"
-		onsubmit={(e) => {
-			e.preventDefault();
-			void load();
-		}}
-	>
+	<div class="flex items-end gap-2">
 		<div class="min-w-0 flex-1 space-y-1">
 			<Label for="item-picker-search">ค้นหาพัสดุในคลัง</Label><Input
 				id="item-picker-search"
 				bind:value={search}
 				placeholder="ชื่อหรือรายละเอียด"
+				onkeydown={(event) => {
+					if (event.key !== 'Enter') return;
+					event.preventDefault();
+					event.stopPropagation();
+					if (!event.isComposing && !disabled && !loading) void load();
+				}}
 				{disabled}
 			/>
 		</div>
-		<Button type="submit" variant="outline" disabled={disabled || loading}>ค้นหา</Button>
-	</form>
+		<Button type="button" variant="outline" disabled={disabled || loading} onclick={() => load()}
+			>ค้นหา</Button
+		>
+	</div>
 	{#if loading && !result}<PageSkeleton variant="cards" rows={2} />{/if}
 	{#if error}<PageState
 			variant="error"

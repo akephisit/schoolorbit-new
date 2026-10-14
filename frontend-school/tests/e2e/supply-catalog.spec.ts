@@ -269,41 +269,45 @@ async function catalog(
 		}
 		return reply(route, {}, 200);
 	});
-	await page.route('**/api/files**', async (route) => {
-		const req = route.request(),
-			path = new URL(req.url()).pathname;
-		if (req.method() === 'POST' && path === '/api/files') {
-			const body = req.postData() ?? '';
-			uploads.push(body.includes('supply_proposal_source') ? 'source' : 'image');
-			return reply(
-				route,
-				{
-					id: id(fileNumber++),
+	await page.route(
+		(url) => url.pathname === '/api/files' || url.pathname.startsWith('/api/files/'),
+		async (route) => {
+			const req = route.request(),
+				path = new URL(req.url()).pathname;
+			if (req.method() === 'POST' && path === '/api/files') {
+				const body = req.postData() ?? '';
+				uploads.push(body.includes('supply_proposal_source') ? 'source' : 'image');
+				return reply(
+					route,
+					{
+						id: id(fileNumber++),
+						filename: 'test.png',
+						mimeType: 'image/png',
+						size: 68,
+						purpose: uploads.at(-1) === 'source' ? 'supply_proposal_source' : 'supply_catalog_image'
+					},
+					201
+				);
+			}
+			if (req.method() === 'DELETE') {
+				deleted.push(path);
+				return reply(route, { id: path.split('/').at(-1), deleted: true });
+			}
+			if (path.endsWith('/download'))
+				return reply(route, {
+					url: 'https://files.example.invalid/synthetic-image',
+					expiresAt: '2026-10-15T00:00:00Z',
 					filename: 'test.png',
-					mimeType: 'image/png',
-					size: 68,
-					purpose: uploads.at(-1) === 'source' ? 'supply_proposal_source' : 'supply_catalog_image'
-				},
-				201
-			);
+					mimeType: 'image/png'
+				});
+			return reply(route, {});
 		}
-		if (req.method() === 'DELETE') {
-			deleted.push(path);
-			return reply(route, { id: path.split('/').at(-1), deleted: true });
-		}
-		if (path.endsWith('/download'))
-			return reply(route, {
-				url: 'https://files.example.invalid/synthetic-image',
-				expiresAt: '2026-10-15T00:00:00Z',
-				filename: 'test.png',
-				mimeType: 'image/png'
-			});
-		return reply(route, {});
-	});
+	);
 	await page.route('https://files.example.invalid/synthetic-image', (route) =>
 		route.fulfill({
 			status: 200,
 			contentType: 'image/png',
+			headers: { 'Access-Control-Allow-Origin': '*' },
 			body: Buffer.from(
 				'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+yL9sAAAAASUVORK5CYII=',
 				'base64'
@@ -351,6 +355,7 @@ for (const width of [1280, 375])
 				api.reads.some((path) => path.includes('favoritesOnly=true') && path.includes('search='))
 			)
 			.toBe(true);
+		await page.screenshot({ path: testInfo.outputPath(`catalog-grid-${width}-light.png`) });
 		await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await expect(dialog).toContainText('ประวัติราคา (2 รุ่น)');
@@ -360,8 +365,19 @@ for (const width of [1280, 375])
 		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 			true
 		);
+		const lightColor = await dialog.evaluate(
+			(element) => getComputedStyle(element).backgroundColor
+		);
 		await page.screenshot({ path: testInfo.outputPath(`catalog-${width}-light.png`) });
-		await page.evaluate(() => document.documentElement.classList.add('dark'));
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+		await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+		await page.screenshot({ path: testInfo.outputPath(`catalog-grid-${width}-dark.png`) });
+		await page.getByRole('button', { name: 'ดูรายละเอียด', exact: true }).click();
+		await expect(dialog).toContainText('ประวัติราคา (2 รุ่น)');
+		await expect
+			.poll(() => dialog.evaluate((element) => getComputedStyle(element).backgroundColor))
+			.not.toBe(lightColor);
 		await page.screenshot({ path: testInfo.outputPath(`catalog-${width}-dark.png`) });
 		await page.keyboard.press('Escape');
 		await expect(dialog).toHaveCount(0);
@@ -386,7 +402,7 @@ test('manager preserves failed creation draft and distinguishes editing current 
 	dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'แก้ไขรุ่นปัจจุบัน', exact: true }).click();
 	await dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true }).fill('130.25');
-	await dialog.getByRole('button', { name: 'บันทึกรุ่นปัจจุบัน', exact: true }).click();
+	await dialog.getByRole('button', { name: 'บันทึกรุ่นราคา', exact: true }).click();
 	await expect(dialog).toContainText('ราคาล่าสุด · รุ่น 2');
 	const edit = api.writes.find(
 		(write) => write.path.includes('/versions/') && write.method === 'PUT'
@@ -455,7 +471,7 @@ test('reviewer edits every approved field while source stays out of approved pay
 	await dialog.getByLabel('หน่วยนับ *', { exact: true }).fill('แพ็ก');
 	await dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true }).fill('50.25');
 	await dialog.getByLabel('ร้านค้า *', { exact: true }).fill('ร้านตรวจแล้ว');
-	await dialog.getByRole('combobox', { name: 'หมวดหมู่ *', exact: true }).click();
+	await dialog.getByLabel('หมวดหมู่ *', { exact: true }).click();
 	await page.getByRole('option', { name: 'อุปกรณ์เรียน', exact: true }).click();
 	await dialog.getByLabel('รูปสินค้า', { exact: true }).setInputFiles(png);
 	await expect(dialog.getByRole('status')).toHaveCount(0);
@@ -487,7 +503,13 @@ test('reader can create personal bundles with quantities and latest prices witho
 	await dialog.getByRole('button', { name: 'สร้างชุดพัสดุ', exact: true }).click();
 	await dialog.getByLabel('ชื่อชุดพัสดุ *', { exact: true }).fill('ชุดเอกสาร');
 	await dialog.getByRole('button', { name: 'ค้นหา', exact: true }).click();
+	expect(api.writes).toHaveLength(0);
 	await dialog.getByRole('button', { name: /กระดาษ A4.*125.50/ }).click();
+	await dialog.getByLabel('ค้นหาพัสดุในคลัง', { exact: true }).fill('กระดาษ');
+	await dialog.getByLabel('ค้นหาพัสดุในคลัง', { exact: true }).press('Enter');
+	await expect(dialog.getByRole('button', { name: /กระดาษ A4.*125.50/ })).toBeEnabled();
+	expect(api.writes).toHaveLength(0);
+	await expect(dialog.getByLabel('ชื่อชุดพัสดุ *', { exact: true })).toHaveValue('ชุดเอกสาร');
 	await dialog.getByRole('spinbutton', { name: 'จำนวน กระดาษ A4', exact: true }).fill('3');
 	await expect(dialog).toContainText('รวม 376.50 ฿');
 	await expect(
@@ -532,7 +554,7 @@ test('old version history is bounded, loaded lazily and edited without changing 
 	await expect(dialog.getByRole('listitem')).toHaveCount(2);
 	await dialog.getByRole('button', { name: 'แก้ไขรุ่น 1', exact: true }).click();
 	await dialog.getByLabel('ราคาต่อหน่วย (บาท) *', { exact: true }).fill('100.00');
-	await dialog.getByRole('button', { name: 'บันทึกรุ่นที่เลือก', exact: true }).click();
+	await dialog.getByRole('button', { name: 'บันทึกรุ่นราคา', exact: true }).click();
 	await expect(dialog).toContainText('ราคาล่าสุด · รุ่น 102');
 	await expect(dialog).toContainText('125.50');
 	await expect(dialog).toContainText('100.00');
@@ -564,6 +586,11 @@ test('choosing existing approval target uses its canonical metadata while keepin
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'แก้ไขและอนุมัติ', exact: true }).click();
 	await dialog.getByRole('button', { name: 'ค้นหา', exact: true }).click();
+	await expect(dialog.getByRole('button', { name: /กระดาษ A4.*125.50/ })).toBeEnabled();
+	expect(api.writes).toHaveLength(0);
+	await dialog.getByLabel('ค้นหาพัสดุในคลัง', { exact: true }).press('Enter');
+	await expect(dialog.getByRole('button', { name: /กระดาษ A4.*125.50/ })).toBeEnabled();
+	expect(api.writes).toHaveLength(0);
 	await dialog.getByRole('button', { name: /กระดาษ A4.*125.50/ }).click();
 	await expect(dialog.getByLabel('ชื่อพัสดุ *', { exact: true })).toHaveValue('กระดาษ A4');
 	await expect(dialog.getByLabel('รายละเอียด', { exact: true })).toHaveValue(
