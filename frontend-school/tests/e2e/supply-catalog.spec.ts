@@ -727,6 +727,71 @@ for (const width of [375, 1280]) {
 	});
 }
 
+for (const width of [375, 1280]) {
+	test(`proposal review detail and confirmations remain usable in both themes at ${width}px`, async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width, height: 900 });
+		const api = await catalog(page, [read, propose, approve]);
+		await page.goto('/staff/supply-catalog/proposals?review=true');
+		const header = page
+			.locator('header')
+			.filter({ has: page.getByRole('heading', { name: 'ตรวจข้อเสนอพัสดุ', exact: true }) });
+		await expect(header.getByRole('button', { name: 'เสนอพัสดุใหม่', exact: true })).toBeEnabled();
+		for (const theme of ['light', 'dark']) {
+			if (theme === 'dark')
+				await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+			await expect(
+				page.getByTestId('supply-proposals').getByText('รออนุมัติ', { exact: true })
+			).toBeVisible();
+			await page.screenshot({
+				path: testInfo.outputPath(`proposals-${width}-${theme}.png`),
+				animations: 'disabled'
+			});
+			await page.getByRole('button', { name: 'ตรวจข้อเสนอ', exact: true }).click();
+			const dialog = page.getByRole('dialog');
+			await expect(dialog.locator('dl').getByText('สำนักงาน', { exact: true })).toBeVisible();
+			await expect(
+				dialog.getByRole('link', { name: 'เปิดลิงก์แหล่งที่มา', exact: true })
+			).toHaveAttribute('rel', 'noopener noreferrer');
+			expect(await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+			await page.screenshot({
+				path: testInfo.outputPath(`proposal-detail-${width}-${theme}.png`),
+				animations: 'disabled'
+			});
+			await dialog.getByRole('button', { name: 'ไม่อนุมัติ', exact: true }).click();
+			const confirmation = page.getByRole('alertdialog');
+			await confirmation.getByRole('button', { name: 'ยืนยันไม่อนุมัติ', exact: true }).click();
+			await expect(confirmation.getByLabel('เหตุผล *', { exact: true })).toHaveAttribute(
+				'aria-invalid',
+				'true'
+			);
+			await expect(confirmation.locator('#proposal-reject-reason-error')).toBeVisible();
+			await confirmation.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+			await dialog.getByRole('button', { name: 'แก้ไขและอนุมัติ', exact: true }).click();
+			await dialog.getByRole('button', { name: 'อนุมัติและรับเข้าคลัง', exact: true }).click();
+			await expect(confirmation).toContainText('ดินสอ');
+			expect(await confirmation.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(
+				true
+			);
+			await page.screenshot({
+				path: testInfo.outputPath(`approval-${width}-${theme}.png`),
+				animations: 'disabled'
+			});
+			await page.keyboard.press('Tab');
+			expect(await confirmation.evaluate((node) => node.contains(document.activeElement))).toBe(
+				true
+			);
+			await confirmation.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+			await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+			await page.keyboard.press('Escape');
+			await expect(dialog).toHaveCount(0);
+		}
+		expect(api.writes).toEqual([]);
+		expect(api.deleted).toEqual([]);
+	});
+}
+
 test('approval confirmation cancels without writes or stage cleanup and preserves failure drafts', async ({
 	page
 }) => {
