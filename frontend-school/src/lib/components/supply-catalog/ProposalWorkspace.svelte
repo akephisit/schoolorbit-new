@@ -14,17 +14,26 @@
 	} from '#lib/api/supply-catalog.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
-	import { money, message } from '#lib/supply-catalog/drafts.js';
+	import {
+		money,
+		message,
+		validateSupplyText,
+		trimSupplyText
+	} from '#lib/supply-catalog/drafts.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { PageShell } from '#lib/components/app-layout/index.js';
+	import { ClipboardList } from '@lucide/svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import CatalogImage from './CatalogImage.svelte';
 	import ItemEditor from './ItemEditor.svelte';
+	import ProposalStatusBadge from './ProposalStatusBadge.svelte';
+	import FieldError from './FieldError.svelte';
 	import { toast } from 'svelte-sonner';
 	let {
 		identity,
@@ -53,9 +62,10 @@
 	let disposed = false,
 		result = $state.raw<SupplyProposalPage | null>(null),
 		categories = $state.raw<SupplyCategory[]>([]);
+	let loadedProposalOwner = '',
+		loadedCategoryOwner = '';
 	let loading = $state(true),
 		error = $state<string | null>(null),
-		categoriesLoading = $state(true),
 		categoriesError = $state<string | null>(null);
 	let mode = $state<'detail' | 'propose' | 'approve' | null>(null),
 		selected = $state.raw<SupplyProposal | null>(null),
@@ -67,23 +77,26 @@
 		rejectPending = $state(false),
 		rejectError = $state<string | null>(null),
 		editor = $state<{ discard: () => Promise<boolean> } | undefined>(undefined);
-	function status(record: SupplyProposal) {
-		return record.status === 'approved'
-			? 'อนุมัติแล้ว'
-			: record.status === 'rejected'
-				? 'ไม่อนุมัติ'
-				: 'รออนุมัติ';
-	}
+	let rejectionSubmitted = $state(false);
+	const reasonError = $derived(
+		rejectionSubmitted ? validateSupplyText(reason, 'เหตุผลที่ไม่อนุมัติ', 2000) : null
+	);
 	$effect.pre(() => {
 		const source = initialProposals,
 			key = `${identity}|${requestKey}`;
 		untrack(() => {
 			const ticket = request.begin();
-			result = null;
+			if (loadedProposalOwner !== key) {
+				result = null;
+				mode = null;
+				selected = null;
+				selectedId = null;
+				rejecting = false;
+				detailRequest.abort();
+			}
+			loadedProposalOwner = key;
 			loading = true;
 			error = null;
-			mode = null;
-			detailRequest.abort();
 			void source.then((loaded) => {
 				if (!request.isCurrent(ticket.revision)) return;
 				loading = false;
@@ -98,11 +111,11 @@
 			key = identity;
 		untrack(() => {
 			const ticket = categoryRequest.begin();
-			categoriesLoading = true;
+			if (loadedCategoryOwner !== key) categories = [];
+			loadedCategoryOwner = key;
 			categoriesError = null;
 			void source.then((loaded) => {
 				if (!categoryRequest.isCurrent(ticket.revision)) return;
-				categoriesLoading = false;
 				if (!loaded.ok) categoriesError = loaded.error;
 				else if (loaded.data.ownerKey === key) categories = loaded.data.categories ?? [];
 			});
@@ -130,7 +143,6 @@
 	}
 	async function loadCategories() {
 		const ticket = categoryRequest.begin();
-		categoriesLoading = true;
 		categoriesError = null;
 		try {
 			const loaded = await listCategories({ signal: ticket.signal });
@@ -138,8 +150,6 @@
 		} catch (e) {
 			if (categoryRequest.isCurrent(ticket.revision))
 				categoriesError = message(e, 'โหลดหมวดหมู่ไม่สำเร็จ');
-		} finally {
-			if (categoryRequest.isCurrent(ticket.revision)) categoriesLoading = false;
 		}
 	}
 	function navigate(next: number) {
@@ -204,18 +214,17 @@
 	}
 	async function reject() {
 		if (!selected || rejectPending) return;
-		if (!reason.trim()) {
-			rejectError = 'กรอกเหตุผลที่ไม่อนุมัติ';
-			return;
-		}
+		rejectionSubmitted = true;
+		if (reasonError) return;
+		const owner = loadedProposalOwner;
 		rejectPending = true;
 		rejectError = null;
 		try {
 			const saved = await rejectProposal(selected.id, {
 				revision: selected.revision,
-				reason: reason.trim()
+				reason: trimSupplyText(reason)
 			});
-			if (!disposed) {
+			if (!disposed && loadedProposalOwner === owner) {
 				patch(saved);
 				rejecting = false;
 				selected = saved;
@@ -223,95 +232,101 @@
 				toast.success('บันทึกผลพิจารณาแล้ว');
 			}
 		} catch (e) {
-			if (!disposed) rejectError = message(e, 'บันทึกผลพิจารณาไม่สำเร็จ');
+			if (!disposed && loadedProposalOwner === owner)
+				rejectError = message(e, 'บันทึกผลพิจารณาไม่สำเร็จ');
 		} finally {
 			if (!disposed) rejectPending = false;
 		}
 	}
 </script>
 
-<div class="space-y-5" data-testid="supply-proposals">
-	<div class="flex flex-wrap justify-end gap-2">
+<PageShell
+	title={query.review ? 'ตรวจข้อเสนอพัสดุ' : 'ข้อเสนอพัสดุของฉัน'}
+	description="ติดตามข้อเสนอและรับข้อมูลที่ตรวจแล้วเข้าคลังพัสดุ"
+	backHref="/staff/supply-catalog"
+	icon={ClipboardList}
+>
+	{#snippet actions()}
 		{#if canApprove && canPropose}<Button
 				variant="outline"
 				href={`${'/staff/supply-catalog/proposals'}?review=${!query.review}`}
 				>{query.review ? 'ข้อเสนอของฉัน' : 'ตรวจข้อเสนอรออนุมัติ'}</Button
 			>{/if}{#if canPropose}<Button
-				disabled={categoriesLoading || !!categoriesError || categories.length === 0}
+				disabled={categories.length === 0}
 				onclick={() => {
 					selected = null;
 					mode = 'propose';
 				}}>เสนอพัสดุใหม่</Button
 			>{/if}
-	</div>
-	{#if categoriesError}<PageState
-			variant="error"
-			title="โหลดหมวดหมู่ไม่สำเร็จ"
-			description={categoriesError}
-			actionLabel="ลองโหลดหมวดหมู่"
-			onaction={loadCategories}
-		/>{/if}
-	{#if loading && !result}<PageSkeleton variant="cards" rows={3} />{/if}
-	{#if error}<PageState
-			variant="error"
-			title="โหลดข้อเสนอไม่สำเร็จ"
-			description={error}
-			actionLabel="ลองอีกครั้ง"
-			onaction={load}
-		/>{/if}
-	{#if result}<section class="space-y-4" aria-busy={loading}>
-			{#if result.items.length === 0}<PageState
-					title={query.review ? 'ไม่มีข้อเสนอรออนุมัติ' : 'ยังไม่มีข้อเสนอของคุณ'}
-					description={query.review
-						? 'ข้อเสนอที่พิจารณาแล้วจะอยู่ในประวัติของผู้เสนอ'
-						: 'เสนอพัสดุพร้อมราคาและร้านค้าเพื่อให้ผู้รับผิดชอบตรวจสอบ'}
-				/>{:else}<div class="grid gap-4 lg:grid-cols-2">
-					{#each result.items as proposal (proposal.id)}<Card.Root class="gap-0 py-0"
-							><Card.Content class="space-y-3 p-4"
-								><div class="flex items-start gap-2">
-									<h3 class="min-w-0 flex-1 break-words font-semibold">{proposal.name}</h3>
-									<Badge variant={proposal.status === 'rejected' ? 'destructive' : 'secondary'}
-										>{status(proposal)}</Badge
-									>
-								</div>
-								<p class="text-sm text-muted-foreground">
-									{categories.find((category) => category.id === proposal.categoryId)?.name ??
-										'หมวดหมู่พัสดุ'} · {proposal.unit}
-								</p>
-								<p class="text-lg font-semibold">
-									{money(proposal.price)} ฿
-									<span class="text-sm font-normal text-muted-foreground">{proposal.shop}</span>
-								</p>
-								<div class="flex items-center justify-between gap-2">
-									<p class="text-xs text-muted-foreground">
-										{new Date(proposal.createdAt).toLocaleDateString('th-TH')}
+	{/snippet}
+	<div class="space-y-5" data-testid="supply-proposals">
+		{#if categoriesError}<PageState
+				variant="error"
+				title="โหลดหมวดหมู่ไม่สำเร็จ"
+				description={categoriesError}
+				actionLabel="ลองโหลดหมวดหมู่"
+				onaction={loadCategories}
+			/>{/if}
+		{#if loading && !result}<PageSkeleton variant="cards" rows={3} />{/if}
+		{#if error}<PageState
+				variant="error"
+				title="โหลดข้อเสนอไม่สำเร็จ"
+				description={error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={load}
+			/>{/if}
+		{#if result}<section class="space-y-4" aria-busy={loading}>
+				{#if result.items.length === 0}<PageState
+						title={query.review ? 'ไม่มีข้อเสนอรออนุมัติ' : 'ยังไม่มีข้อเสนอของคุณ'}
+						description={query.review
+							? 'ข้อเสนอที่พิจารณาแล้วจะอยู่ในประวัติของผู้เสนอ'
+							: 'เสนอพัสดุพร้อมราคาและร้านค้าเพื่อให้ผู้รับผิดชอบตรวจสอบ'}
+					/>{:else}<div class="grid gap-4 lg:grid-cols-2">
+						{#each result.items as proposal (proposal.id)}<Card.Root class="gap-0 py-0"
+								><Card.Content class="space-y-3 p-4"
+									><div class="flex items-start gap-2">
+										<h3 class="min-w-0 flex-1 break-words font-semibold">{proposal.name}</h3>
+										<ProposalStatusBadge status={proposal.status} />
+									</div>
+									<p class="text-sm text-muted-foreground">
+										{categories.find((category) => category.id === proposal.categoryId)?.name ??
+											'หมวดหมู่พัสดุ'} · {proposal.unit}
 									</p>
-									<Button size="sm" variant="outline" onclick={() => detail(proposal.id)}
-										>{query.review && proposal.status === 'pending'
-											? 'ตรวจข้อเสนอ'
-											: 'ดูข้อเสนอ'}</Button
-									>
-								</div></Card.Content
-							></Card.Root
-						>{/each}
-				</div>{/if}
-			<div class="flex items-center justify-between gap-3">
-				<Button
-					size="sm"
-					variant="outline"
-					disabled={loading || result.page === 1}
-					onclick={() => navigate(result!.page - 1)}>ก่อนหน้า</Button
-				><span class="text-sm text-muted-foreground"
-					>หน้า {result.page} / {Math.max(1, Math.ceil(result.total / result.pageSize))}</span
-				><Button
-					size="sm"
-					variant="outline"
-					disabled={loading || result.page * result.pageSize >= result.total}
-					onclick={() => navigate(result!.page + 1)}>ถัดไป</Button
-				>
-			</div>
-		</section>{/if}
-</div>
+									<p class="text-lg font-semibold">
+										{money(proposal.price)} ฿
+										<span class="text-sm font-normal text-muted-foreground">{proposal.shop}</span>
+									</p>
+									<div class="flex items-center justify-between gap-2">
+										<p class="text-xs text-muted-foreground">
+											{new Date(proposal.createdAt).toLocaleDateString('th-TH')}
+										</p>
+										<Button size="sm" variant="outline" onclick={() => detail(proposal.id)}
+											>{query.review && proposal.status === 'pending'
+												? 'ตรวจข้อเสนอ'
+												: 'ดูข้อเสนอ'}</Button
+										>
+									</div></Card.Content
+								></Card.Root
+							>{/each}
+					</div>{/if}
+				<div class="flex items-center justify-between gap-3">
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={loading || result.page === 1}
+						onclick={() => navigate(result!.page - 1)}>ก่อนหน้า</Button
+					><span class="text-sm text-muted-foreground"
+						>หน้า {result.page} / {Math.max(1, Math.ceil(result.total / result.pageSize))}</span
+					><Button
+						size="sm"
+						variant="outline"
+						disabled={loading || result.page * result.pageSize >= result.total}
+						onclick={() => navigate(result!.page + 1)}>ถัดไป</Button
+					>
+				</div>
+			</section>{/if}
+	</div>
+</PageShell>
 <Dialog.Root
 	open={mode !== null}
 	onOpenChange={(open) => {
@@ -347,22 +362,43 @@
 				onaction={() => selectedId && detail(selectedId)}
 			/>
 		{:else if selected}
-			{#if selected.status === 'pending' && (selected.sourceUrl || selected.sourceFileId)}<section
-					class="space-y-2 rounded-xl border p-3"
+			{#if mode === 'detail'}<div class="flex flex-wrap items-center justify-between gap-3">
+					<ProposalStatusBadge status={selected.status} />
+					{#if canApprove && query.review && selected.status === 'pending'}<div
+							class="flex flex-wrap gap-2"
+						>
+							<Button
+								variant="destructive"
+								onclick={() => {
+									reason = '';
+									rejectError = null;
+									rejectionSubmitted = false;
+									rejecting = true;
+								}}>ไม่อนุมัติ</Button
+							>
+							<Button disabled={categories.length === 0} onclick={() => (mode = 'approve')}
+								>แก้ไขและอนุมัติ</Button
+							>
+						</div>{/if}
+				</div>{/if}
+			{#if selected.status === 'pending' && (selected.sourceUrl || selected.sourceFileId)}<Card.Root
+					class="gap-0 py-0"
 				>
-					<h3 class="text-sm font-semibold">แหล่งที่มาชั่วคราว</h3>
-					{#if selected.sourceUrl}<a
-							href={selected.sourceUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="break-all text-sm text-primary underline">เปิดลิงก์แหล่งที่มา</a
-						>{/if}{#if selected.sourceFileId}<CatalogImage
-							fileId={selected.sourceFileId}
-							resourceId={selected.id}
-							alt="รูปแหล่งที่มา"
-							class="h-40 rounded-lg"
-						/>{/if}
-				</section>{/if}
+					<Card.Content class="space-y-3 p-4">
+						<h3 class="font-semibold">แหล่งที่มาชั่วคราว</h3>
+						{#if selected.sourceUrl}<a
+								href={selected.sourceUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="break-all text-sm text-primary underline">เปิดลิงก์แหล่งที่มา</a
+							>{/if}{#if selected.sourceFileId}<CatalogImage
+								fileId={selected.sourceFileId}
+								resourceId={selected.id}
+								alt="รูปแหล่งที่มา"
+								class="h-40 rounded-lg"
+							/>{/if}
+					</Card.Content></Card.Root
+				>{/if}
 			{#if mode === 'approve' && canApprove && selected.status === 'pending'}<ItemEditor
 					bind:this={editor}
 					mode="approve"
@@ -372,50 +408,59 @@
 					oncancel={() => (mode = 'detail')}
 				/>
 			{:else}<div class="space-y-4">
-					{#if selected.imageFileId}<CatalogImage
-							fileId={selected.imageFileId}
-							resourceId={selected.id}
-							alt={selected.name}
-							class="h-44 rounded-xl border"
-						/>{/if}<Badge variant="secondary">{status(selected)}</Badge>
-					<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-						<dt class="text-muted-foreground">หมวดหมู่</dt>
-						<dd class="break-words">
-							{categories.find((category) => category.id === selected?.categoryId)?.name ?? '—'}
-						</dd>
-						<dt class="text-muted-foreground">หน่วยนับ</dt>
-						<dd>{selected.unit}</dd>
-						<dt class="text-muted-foreground">ราคา</dt>
-						<dd>{money(selected.price)} ฿</dd>
-						<dt class="text-muted-foreground">ร้านค้า</dt>
-						<dd class="break-words">{selected.shop}</dd>
-					</dl>
-					{#if selected.description}<p class="whitespace-pre-wrap break-words text-sm">
-							{selected.description}
-						</p>{/if}{#if selected.rejectionReason}<p
-							class="rounded-xl border border-destructive/20 p-3 text-sm"
-						>
-							เหตุผล: {selected.rejectionReason}
-						</p>{/if}{#if selected.status === 'approved'}<p class="text-sm text-muted-foreground">
-							รับเข้าคลังแล้ว แหล่งที่มาชั่วคราวถูกลบ
-						</p>
-						{#if selected.itemId}<Button variant="outline" href="/staff/supply-catalog"
-								>เปิดคลังพัสดุ</Button
-							>{/if}{/if}{#if canApprove && query.review && selected.status === 'pending'}<div
-							class="flex justify-end gap-2"
-						>
-							<Button
-								variant="destructive"
-								onclick={() => {
-									reason = '';
-									rejectError = null;
-									rejecting = true;
-								}}>ไม่อนุมัติ</Button
-							><Button
-								disabled={categoriesLoading || !!categoriesError}
-								onclick={() => (mode = 'approve')}>แก้ไขและอนุมัติ</Button
-							>
-						</div>{/if}
+					<Card.Root class="gap-0 py-0"
+						><Card.Content class="space-y-4 p-4">
+							<h3 class="font-semibold">ข้อมูลพัสดุที่เสนอ</h3>
+							{#if selected.imageFileId}<CatalogImage
+									fileId={selected.imageFileId}
+									resourceId={selected.id}
+									alt={selected.name}
+									class="h-44 rounded-xl border"
+								/>{/if}
+							<dl class="grid gap-4 text-sm sm:grid-cols-2">
+								<div>
+									<dt class="text-muted-foreground">หมวดหมู่</dt>
+									<dd class="mt-1 break-words">
+										{categories.find((category) => category.id === selected?.categoryId)?.name ??
+											'—'}
+									</dd>
+								</div>
+								<div>
+									<dt class="text-muted-foreground">หน่วยนับ</dt>
+									<dd class="mt-1 break-words">{selected.unit}</dd>
+								</div>
+								<div>
+									<dt class="text-muted-foreground">ราคาต่อหน่วย</dt>
+									<dd class="mt-1 font-semibold tabular-nums">{money(selected.price)} ฿</dd>
+								</div>
+								<div>
+									<dt class="text-muted-foreground">ร้านค้า</dt>
+									<dd class="mt-1 break-words">{selected.shop}</dd>
+								</div>
+								{#if selected.description}<div class="sm:col-span-2">
+										<dt class="text-muted-foreground">รายละเอียด</dt>
+										<dd class="mt-1 whitespace-pre-wrap break-words">{selected.description}</dd>
+									</div>{/if}
+							</dl>
+						</Card.Content></Card.Root
+					>
+					{#if selected.rejectionReason}<Card.Root class="gap-0 border-destructive/20 py-0"
+							><Card.Content class="p-4"
+								><dl class="text-sm">
+									<dt class="font-medium text-destructive">เหตุผลที่ไม่อนุมัติ</dt>
+									<dd class="mt-2 whitespace-pre-wrap break-words">{selected.rejectionReason}</dd>
+								</dl></Card.Content
+							></Card.Root
+						>{/if}
+					{#if selected.status === 'approved'}<Card.Root
+							class="gap-0 border-success/20 bg-success/5 py-0"
+							><Card.Content class="space-y-3 p-4"
+								><p class="text-sm">รับเข้าคลังแล้ว แหล่งที่มาชั่วคราวถูกลบ</p>
+								{#if selected.itemId}<Button variant="outline" href="/staff/supply-catalog"
+										>เปิดคลังพัสดุ</Button
+									>{/if}</Card.Content
+							></Card.Root
+						>{/if}
 				</div>{/if}
 		{/if}
 	</Dialog.Content></Dialog.Root
@@ -435,10 +480,16 @@
 			<Label for="proposal-reject-reason">เหตุผล *</Label><Textarea
 				id="proposal-reject-reason"
 				bind:value={reason}
-				maxlength={2000}
 				disabled={rejectPending}
-			/>{#if rejectError}<p role="alert" class="text-sm text-destructive">{rejectError}</p>{/if}
+				aria-invalid={!!reasonError}
+				aria-describedby={reasonError ? 'proposal-reject-reason-error' : undefined}
+			/><FieldError id="proposal-reject-reason-error" message={reasonError} />
 		</div>
+		{#if rejectError}<Alert.Root variant="destructive"
+				><Alert.Title>บันทึกผลพิจารณาไม่สำเร็จ</Alert.Title><Alert.Description
+					>{rejectError}</Alert.Description
+				></Alert.Root
+			>{/if}
 		<AlertDialog.Footer
 			><Button variant="outline" disabled={rejectPending} onclick={() => (rejecting = false)}
 				>ยกเลิก</Button

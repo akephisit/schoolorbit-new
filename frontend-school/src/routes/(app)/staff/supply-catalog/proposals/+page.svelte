@@ -21,24 +21,17 @@
 	);
 </script>
 
-<PageShell
-	title={data.title}
-	description="ติดตามข้อเสนอและรับข้อมูลที่ตรวจแล้วเข้าคลังพัสดุ"
-	backHref="/staff/supply-catalog"
->
-	{#if allowed}{#key identity}<ProposalWorkspace
-				{identity}
-				{canPropose}
-				{canApprove}
-				initialProposals={data.proposals}
-				initialCategories={data.categories}
-				query={data.query}
-				requestKey={data.requestKey}
-			/>{/key}{:else}<PageState
-			variant="permission"
-			title="ไม่มีสิทธิ์ใช้งานข้อเสนอพัสดุ"
-		/>{#if canApprove}<Button
+{#if allowed}{#key identity}<ProposalWorkspace
+			{identity}
+			{canPropose}
+			{canApprove}
+			initialProposals={data.proposals}
+			initialCategories={data.categories}
+			query={data.query}
+			requestKey={data.requestKey}
+		/>{/key}{:else}<PageShell title={data.title} backHref="/staff/supply-catalog"
+		><PageState variant="permission" title="ไม่มีสิทธิ์ใช้งานข้อเสนอพัสดุ" />{#if canApprove}<Button
 				variant="outline"
 				href={`${'/staff/supply-catalog/proposals'}?review=true`}>ตรวจข้อเสนอรออนุมัติ</Button
-			>{/if}{/if}
-</PageShell>
+			>{/if}</PageShell
+	>{/if}
