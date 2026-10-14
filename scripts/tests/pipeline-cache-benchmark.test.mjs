@@ -40,7 +40,8 @@ hashes=[b.context(root,root/'a','source',1),b.context(root,root/'b','source',1)]
 assert hashes[0]==hashes[1]
 assert (root/'a/src/main.rs').read_text().endswith('source sample 1\\n')
 assert 'SCCACHE_LOCAL_RW_MODE=READ_ONLY' in (root/'a/Dockerfile').read_text()
-assert (root/'a/Dockerfile').read_text().count('id=backend-school-sccache,target=/var/cache/sccache,readonly')==2
+assert (root/'a/Dockerfile').read_text().count('id=backend-school-sccache,target=/var/cache/sccache')==2
+assert 'target=/var/cache/sccache,readonly' not in (root/'a/Dockerfile').read_text()
 assert 'from=compiler-cache' not in (root/'a/Dockerfile').read_text()
 assert (root/'a/scripts/build_release.sh').read_bytes()==(root/'backend-school/scripts/build_release.sh').read_bytes()
 for sample in (1,2):

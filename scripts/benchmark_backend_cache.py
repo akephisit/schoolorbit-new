@@ -54,7 +54,8 @@ def context(root, destination, scenario, sample, readonly=True):
         if text.count(mount) != 2:
             raise ValueError("School compiler cache mounts changed")
         text = text.replace(marker, marker + "ENV SCCACHE_LOCAL_RW_MODE=READ_ONLY\n")
-        text = text.replace(mount, mount + ",readonly")
+        # sccache's disk LRU updates entry timestamps even in READ_ONLY mode.
+        # Keep the copied mount writable for metadata; artifact writes stay disabled.
     else:
         # Export only the owned compiler cache mount after the untimed seed build.
         text += ("\nFROM builder AS compiler-cache-capture\n"
@@ -134,7 +135,7 @@ def compiler_evidence(folder, readonly=True):
 
 def report(records):
     lines = ["### BuildKit remote cache comparison", "",
-             "Same runner, fresh pinned BuildKit builders, production release flags; identical local compiler snapshot mounted read-only.",
+             "Same runner, fresh pinned BuildKit builders, production release flags; identical local compiler snapshots with artifact writes disabled and writable LRU metadata.",
              "The compiler snapshot isolates BuildKit storage performance from GHA compiler-cache service failures; production compiler caching is unchanged.",
              "Image export/load is included. Image push, evidence export, API checks, builder bootstrap and compiler snapshot priming are excluded from build wall time.",
              "Network bytes cover the builder's total external traffic, not cache traffic alone. Phase durations can overlap.", "",
@@ -268,7 +269,7 @@ def main():
     environment = dict(
         source_sha=run(["git", "-C", str(root), "rev-parse", "HEAD"]),
         buildkit_image=pinned, namespace=namespace, samples_per_warm_case=int(samples),
-        compiler_cache="identical local snapshot seeded once, mounted read-only; production compiler cache unchanged",
+        compiler_cache="identical local snapshot seeded once; artifact writes disabled, LRU timestamps writable; production compiler cache unchanged",
         registry_cache_package=f"schoolorbit-{namespace}",
         runner=run(["uname", "-m"]), cpus=os.cpu_count(),
         docker=run(["docker", "version", "--format", "{{.Server.Version}}"]),

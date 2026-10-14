@@ -349,8 +349,9 @@ browser mount/assets and authenticated smoke always execute under universal main
 
 Operations `cache-benchmark` compares School BuildKit `gha` and GHCR `registry` exporters
 with `mode=max`, fresh pinned builders and the same production release flags on one Ubuntu 24.04
-runner. It seeds a local Rust cache once, then mounts that identical frozen snapshot read-only
-for both variants. This isolates BuildKit from compiler-cache service failures; production Rust
+runner. It seeds a local Rust cache once, then copies that identical frozen snapshot into each
+builder with compiler artifact writes disabled. Cache mounts allow sccache's LRU timestamp updates;
+the original snapshot remains immutable. This isolates BuildKit from compiler-cache service failures; production Rust
 cache policy is unchanged. Cold cache seeding, two source-only edits and two dependency-free workspace-member
 edits are measured separately with reversed pair ordering. Scratch contexts never become releases.
 The comparison includes runtime image export/load; image push, evidence extraction, builder
