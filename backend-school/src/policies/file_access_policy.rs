@@ -165,7 +165,9 @@ pub async fn authorize_create(
         }
         FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => {
             crate::modules::supply_catalog::file_relationships::authorize_create(
-                actor, purpose, resource_id,
+                actor,
+                purpose,
+                resource_id,
             )
         }
         FilePurpose::SchoolFont => {
@@ -332,8 +334,13 @@ pub async fn authorize_existing(
         }
         FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource => {
             crate::modules::supply_catalog::file_relationships::require_file_access(
-                pool, actor, file, action, resource_id,
-            ).await
+                pool,
+                actor,
+                file,
+                action,
+                resource_id,
+            )
+            .await
         }
         FilePurpose::SchoolFont => {
             authorize_school_font_file(pool, actor, file, action, resource_id).await

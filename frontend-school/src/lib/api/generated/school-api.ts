@@ -6857,6 +6857,230 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/supply-catalog/bundles': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['supplyListBundles'];
+		put?: never;
+		post: operations['supplyCreateBundle'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/bundles/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['supplyUpdateBundle'];
+		post?: never;
+		delete: operations['supplyDeleteBundle'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/categories': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['supplyListCategories'];
+		put?: never;
+		post: operations['supplyCreateCategory'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/categories/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['supplyUpdateCategory'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/duplicates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['supplyDuplicates'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/items': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['supplyListItems'];
+		put?: never;
+		post: operations['supplyCreateItem'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/items/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['supplyGetItem'];
+		put: operations['supplyUpdateItem'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/items/{id}/favorite': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['supplySetFavorite'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/items/{id}/versions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['supplyAppendVersion'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/items/{id}/versions/{version_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['supplyUpdateVersion'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/proposals': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['supplyListProposals'];
+		put?: never;
+		post: operations['supplyCreateProposal'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/proposals/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['supplyGetProposal'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/proposals/{id}/approve': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['supplyApproveProposal'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/supply-catalog/proposals/{id}/reject': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['supplyRejectProposal'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/users/{id}/permissions': {
 		parameters: {
 			query?: never;
@@ -11203,6 +11427,133 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_SupplyBundle: {
+			data: {
+				entries: components['schemas']['SupplyBundleEntry'][];
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: uuid */
+				ownerUserId: string;
+				/** Format: int64 */
+				revision: number;
+				shared: boolean;
+				totalPrice: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyBundlePage: {
+			data: {
+				items: components['schemas']['SupplyBundle'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyCategory: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: int64 */
+				revision: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyItem: {
+			data: {
+				/** Format: uuid */
+				categoryId: string;
+				categoryName: string;
+				description: string;
+				favorite: boolean;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				imageFileId?: string | null;
+				latestVersion: components['schemas']['SupplyVersion'];
+				name: string;
+				/** Format: int64 */
+				revision: number;
+				unit: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyItemDetail: {
+			data: components['schemas']['SupplyItem'] & {
+				versions: components['schemas']['SupplyVersion'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyItemPage: {
+			data: {
+				items: components['schemas']['SupplyItem'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyProposal: {
+			data: {
+				/** Format: uuid */
+				categoryId: string;
+				/** Format: date-time */
+				createdAt: string;
+				description: string;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				imageFileId?: string | null;
+				/** Format: uuid */
+				itemId?: string | null;
+				name: string;
+				price: string;
+				/** Format: uuid */
+				proposedBy: string;
+				rejectionReason?: string | null;
+				/** Format: date-time */
+				reviewedAt?: string | null;
+				/** Format: uuid */
+				reviewedBy?: string | null;
+				/** Format: int64 */
+				revision: number;
+				shop: string;
+				/** Format: uuid */
+				sourceFileId?: string | null;
+				sourceUrl?: string | null;
+				status: string;
+				unit: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupplyProposalPage: {
+			data: {
+				items: components['schemas']['SupplyProposal'][];
+				/** Format: int64 */
+				page: number;
+				/** Format: int64 */
+				pageSize: number;
+				/** Format: int64 */
+				total: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_SwapTimetableBlocksResponse: {
 			data: {
 				blockA: components['schemas']['TimetableBlock'];
@@ -13524,6 +13875,37 @@ export interface components {
 				updatedAt: string;
 				/** Format: int32 */
 				versionNo: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_SupplyCategory: {
+			data: {
+				/** Format: uuid */
+				id: string;
+				name: string;
+				/** Format: int64 */
+				revision: number;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_SupplyItem: {
+			data: {
+				/** Format: uuid */
+				categoryId: string;
+				categoryName: string;
+				description: string;
+				favorite: boolean;
+				/** Format: uuid */
+				id: string;
+				/** Format: uuid */
+				imageFileId?: string | null;
+				latestVersion: components['schemas']['SupplyVersion'];
+				name: string;
+				/** Format: int64 */
+				revision: number;
+				unit: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -17686,7 +18068,9 @@ export interface components {
 			| 'generic_private_document'
 			| 'certificate_template_background'
 			| 'certificate_template_image'
-			| 'school_font';
+			| 'school_font'
+			| 'supply_catalog_image'
+			| 'supply_proposal_source';
 		FileUploadMultipart: {
 			/** Format: binary */
 			file: string;
@@ -21483,6 +21867,218 @@ export interface components {
 			periodOrderIndex: number;
 			roomName?: string | null;
 			startTime: string;
+		};
+		SupplyBundle: {
+			entries: components['schemas']['SupplyBundleEntry'][];
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: uuid */
+			ownerUserId: string;
+			/** Format: int64 */
+			revision: number;
+			shared: boolean;
+			totalPrice: string;
+		};
+		SupplyBundleEntry: {
+			item: components['schemas']['SupplyItem'];
+			/** Format: int32 */
+			quantity: number;
+			subtotal: string;
+		};
+		SupplyBundleEntryWrite: {
+			/** Format: uuid */
+			itemId: string;
+			/** Format: int32 */
+			quantity: number;
+		};
+		SupplyBundlePage: {
+			items: components['schemas']['SupplyBundle'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
+			/** Format: int64 */
+			total: number;
+		};
+		SupplyBundleWrite: {
+			entries: components['schemas']['SupplyBundleEntryWrite'][];
+			name: string;
+			/** Format: int64 */
+			revision?: number | null;
+			shared: boolean;
+		};
+		SupplyCategory: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+			/** Format: int64 */
+			revision: number;
+		};
+		SupplyCategoryWrite: {
+			name: string;
+			/** Format: int64 */
+			revision?: number | null;
+		};
+		SupplyFavoriteWrite: {
+			favorite: boolean;
+		};
+		SupplyItem: {
+			/** Format: uuid */
+			categoryId: string;
+			categoryName: string;
+			description: string;
+			favorite: boolean;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			imageFileId?: string | null;
+			latestVersion: components['schemas']['SupplyVersion'];
+			name: string;
+			/** Format: int64 */
+			revision: number;
+			unit: string;
+		};
+		SupplyItemDetail: components['schemas']['SupplyItem'] & {
+			versions: components['schemas']['SupplyVersion'][];
+		};
+		SupplyItemPage: {
+			items: components['schemas']['SupplyItem'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
+			/** Format: int64 */
+			total: number;
+		};
+		SupplyItemUpdate: {
+			/** Format: uuid */
+			categoryId: string;
+			description: string;
+			/** Format: uuid */
+			imageFileId?: string | null;
+			name: string;
+			/** Format: int64 */
+			revision: number;
+			unit: string;
+		};
+		SupplyItemWrite: {
+			/** Format: uuid */
+			categoryId: string;
+			description: string;
+			/** Format: uuid */
+			imageFileId?: string | null;
+			name: string;
+			price: string;
+			shop: string;
+			unit: string;
+		};
+		SupplyProposal: {
+			/** Format: uuid */
+			categoryId: string;
+			/** Format: date-time */
+			createdAt: string;
+			description: string;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			imageFileId?: string | null;
+			/** Format: uuid */
+			itemId?: string | null;
+			name: string;
+			price: string;
+			/** Format: uuid */
+			proposedBy: string;
+			rejectionReason?: string | null;
+			/** Format: date-time */
+			reviewedAt?: string | null;
+			/** Format: uuid */
+			reviewedBy?: string | null;
+			/** Format: int64 */
+			revision: number;
+			shop: string;
+			/** Format: uuid */
+			sourceFileId?: string | null;
+			sourceUrl?: string | null;
+			status: string;
+			unit: string;
+		};
+		SupplyProposalApprove: {
+			/** Format: uuid */
+			categoryId: string;
+			description: string;
+			/** Format: uuid */
+			existingItemId?: string | null;
+			/** Format: int64 */
+			existingItemRevision?: number | null;
+			/** Format: uuid */
+			imageFileId?: string | null;
+			name: string;
+			price: string;
+			/** Format: int64 */
+			revision: number;
+			shop: string;
+			unit: string;
+		};
+		SupplyProposalPage: {
+			items: components['schemas']['SupplyProposal'][];
+			/** Format: int64 */
+			page: number;
+			/** Format: int64 */
+			pageSize: number;
+			/** Format: int64 */
+			total: number;
+		};
+		SupplyProposalReject: {
+			reason: string;
+			/** Format: int64 */
+			revision: number;
+		};
+		SupplyProposalWrite: {
+			/** Format: uuid */
+			categoryId: string;
+			description: string;
+			/** Format: uuid */
+			imageFileId?: string | null;
+			name: string;
+			price: string;
+			shop: string;
+			/** Format: uuid */
+			sourceFileId?: string | null;
+			sourceUrl?: string | null;
+			unit: string;
+		};
+		SupplyRevision: {
+			/** Format: int64 */
+			revision: number;
+		};
+		SupplyVersion: {
+			/** Format: date-time */
+			createdAt: string;
+			/** Format: uuid */
+			id: string;
+			price: string;
+			/** Format: int64 */
+			revision: number;
+			shop: string;
+			/** Format: date-time */
+			updatedAt: string;
+			/** Format: int32 */
+			version: number;
+		};
+		SupplyVersionAppend: {
+			/** Format: uuid */
+			imageFileId?: string | null;
+			price: string;
+			/** Format: int64 */
+			revision: number;
+			shop: string;
+		};
+		SupplyVersionWrite: {
+			price: string;
+			/** Format: int64 */
+			revision: number;
+			shop: string;
 		};
 		SwapTimetableBlocksRequest: {
 			/** Format: uuid */
@@ -53193,6 +53789,1409 @@ export interface operations {
 			};
 			/** @description Supervision access denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyListBundles: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				page: number | null;
+				pageSize: number | null;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyBundlePage'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyCreateBundle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyBundleWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyBundle'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyUpdateBundle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyBundleWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyBundle'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyDeleteBundle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyRevision'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyListCategories: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SupplyCategory'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyCreateCategory: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyCategoryWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyCategory'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyUpdateCategory: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyCategoryWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyCategory'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyDuplicates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				name: string;
+				unit: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_SupplyItem'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyListItems: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				categoryId: string | null;
+				favoritesOnly: boolean | null;
+				page: number | null;
+				pageSize: number | null;
+				search: string | null;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItemPage'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyCreateItem: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyItemWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItem'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyGetItem: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItemDetail'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyUpdateItem: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyItemUpdate'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItem'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplySetFavorite: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyFavoriteWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItem'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyAppendVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyVersionAppend'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItemDetail'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyUpdateVersion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+				/** @description Supply resource ID */
+				version_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyVersionWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItemDetail'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyListProposals: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				page: number | null;
+				pageSize: number | null;
+				review: boolean | null;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyProposalPage'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyCreateProposal: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyProposalWrite'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyProposal'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyGetProposal: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyProposal'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyApproveProposal: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyProposalApprove'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyItemDetail'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	supplyRejectProposal: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Supply resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SupplyProposalReject'];
+			};
+		};
+		responses: {
+			/** @description Supply catalog result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupplyProposal'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource missing */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Duplicate or stale revision */
+			409: {
 				headers: {
 					[name: string]: unknown;
 				};
