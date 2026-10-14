@@ -1,47 +1,17 @@
 //! Canonical supply raster ingestion. Only the normalized image is persisted.
 use bytes::Bytes;
-use image::{codecs::jpeg::JpegEncoder, ImageDecoder, ImageFormat, ImageReader};
-use std::io::Cursor;
+use image::codecs::jpeg::JpegEncoder;
 
-use crate::file_processor::ImageProcessor;
+use crate::{
+    file_inspector::inspect_supply_image, file_processor::ImageProcessor,
+    platform_types::FilePurpose,
+};
 
-const MAX_BYTES: usize = 20 * 1024 * 1024;
-const MAX_PIXELS: u64 = 80_000_000;
 const MAX_EDGE: u32 = 1600;
 
-pub(crate) fn normalize(data: &[u8]) -> Result<Bytes, ()> {
-    if data.is_empty() || data.len() > MAX_BYTES {
-        return Err(());
-    }
-    let format = image::guess_format(data).map_err(|_| ())?;
-    if !matches!(
-        format,
-        ImageFormat::Jpeg
-            | ImageFormat::Png
-            | ImageFormat::WebP
-            | ImageFormat::Gif
-            | ImageFormat::Bmp
-            | ImageFormat::Tiff
-    ) {
-        return Err(());
-    }
-    let (width, height) = ImageReader::with_format(Cursor::new(data), format)
-        .into_dimensions()
-        .map_err(|_| ())?;
-    if width == 0
-        || height == 0
-        || width > 16000
-        || height > 16000
-        || u64::from(width) * u64::from(height) > MAX_PIXELS
-    {
-        return Err(());
-    }
-    let mut decoder = ImageReader::with_format(Cursor::new(data), format)
-        .into_decoder()
-        .map_err(|_| ())?;
-    let orientation = decoder.orientation().map_err(|_| ())?;
-    let mut decoded = image::DynamicImage::from_decoder(decoder).map_err(|_| ())?;
-    decoded.apply_orientation(orientation);
+pub(crate) fn normalize(purpose: FilePurpose, data: &[u8]) -> Result<Bytes, ()> {
+    let validated = inspect_supply_image(purpose, data).map_err(|_| ())?;
+    let decoded = ImageProcessor::decode_supply_image(&validated).map_err(|_| ())?;
     let resized = if decoded.width() > MAX_EDGE || decoded.height() > MAX_EDGE {
         decoded.resize(MAX_EDGE, MAX_EDGE, image::imageops::FilterType::Triangle)
     } else {
@@ -62,6 +32,16 @@ pub(crate) fn normalize(data: &[u8]) -> Result<Bytes, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file_inspector::inspect_file;
+    use image::ImageFormat;
+    use std::io::Cursor;
+    fn normalize(data: &[u8]) -> Result<Bytes, ()> {
+        super::normalize(FilePurpose::SupplyCatalogImage, data)
+    }
+    fn decode(data: &[u8]) -> image::DynamicImage {
+        let validated = inspect_file(FilePurpose::SupplyCatalogImage, data).unwrap();
+        ImageProcessor::decode_inspected_image(&validated).unwrap()
+    }
     fn raster(format: ImageFormat, alpha: bool) -> Vec<u8> {
         let picture = if alpha {
             image::DynamicImage::new_rgba8(1800, 900)
@@ -86,8 +66,7 @@ mod tests {
         ] {
             let source = raster(format, false);
             let output = normalize(&source).expect("supported raster should normalize");
-            let decoded =
-                image::load_from_memory(&output).expect("normalized output should decode");
+            let decoded = decode(&output);
             assert_eq!((decoded.width(), decoded.height()), (1600, 800));
             assert!(matches!(
                 image::guess_format(&output).unwrap(),
@@ -100,14 +79,7 @@ mod tests {
     fn transparency_survives_as_webp() {
         let output = normalize(&raster(ImageFormat::Png, true)).unwrap();
         assert_eq!(image::guess_format(&output).unwrap(), ImageFormat::WebP);
-        assert_eq!(
-            image::load_from_memory(&output)
-                .unwrap()
-                .to_rgba8()
-                .get_pixel(0, 0)
-                .0[3],
-            0
-        );
+        assert_eq!(decode(&output).to_rgba8().get_pixel(0, 0).0[3], 0);
     }
     #[test]
     fn camera_orientation_is_applied_and_exif_is_removed() {
@@ -126,16 +98,19 @@ mod tests {
         source.extend_from_slice(exif);
         source.extend_from_slice(&jpeg[2..]);
         let output = normalize(&source).unwrap();
-        let decoded = image::load_from_memory(&output).unwrap();
+        let decoded = decode(&output);
         assert_eq!((decoded.width(), decoded.height()), (80, 120));
         assert!(!output.windows(4).any(|window| window == b"Exif"));
     }
 
     #[test]
     fn malformed_unsupported_and_oversized_input_are_rejected() {
+        let supported = raster(ImageFormat::Jpeg, false);
+        assert!(super::normalize(FilePurpose::ProfileImage, &supported).is_err());
+        assert!(super::normalize(FilePurpose::SupplyProposalSource, &supported).is_ok());
         assert!(normalize(b"not an image").is_err());
         assert!(normalize(b"<svg xmlns='http://www.w3.org/2000/svg'/>").is_err());
-        assert!(normalize(&vec![0; MAX_BYTES + 1]).is_err());
+        assert!(normalize(&vec![0; 20 * 1024 * 1024 + 1]).is_err());
         let mut truncated = raster(ImageFormat::Png, false);
         truncated.truncate(30);
         assert!(normalize(&truncated).is_err());

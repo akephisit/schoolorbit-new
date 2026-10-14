@@ -138,7 +138,8 @@ impl FilePlatform {
             FilePurpose::SupplyCatalogImage | FilePurpose::SupplyProposalSource
         ) {
             let source = command.bytes.clone();
-            tokio::task::spawn_blocking(move || crate::catalog_images::normalize(&source))
+            let purpose = command.purpose;
+            tokio::task::spawn_blocking(move || crate::catalog_images::normalize(purpose, &source))
                 .await
                 .map_err(|_| FilePlatformError::InspectionRejected)?
                 .map_err(|_| FilePlatformError::InspectionRejected)?
