@@ -354,7 +354,7 @@ same compiler cache for dependency cooking and the final application build. A ch
 recipe still invalidates the cargo-chef layer, but unchanged eligible dependencies can be restored
 by sccache. This does not avoid compiling new dependencies or the final application executable.
 School enables JPEG, PNG and WebP codecs to match the File Platform's inspected-content policy,
-with Rayon processing retained. Unaccepted image codecs are excluded from the dependency graph.
+with Rayon processing retained. GIF, BMP and TIFF decoding additionally supports temporary supply image sources, which are normalized before canonical storage. The School image dependency keeps its codec features explicit.
 Compiler-cache builds explicitly select GitHub cache API v2 inside Docker and use
 `SCCACHE_GHA_VERSION` to separate admin and school entries. Passing the cache URL and token alone
 does not select v2; a build that reports write errors has not populated a usable cache.
