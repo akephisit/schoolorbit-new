@@ -14,8 +14,6 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM base AS builder
-COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
 ADD --checksum=sha256:67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006 \
     https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-x86_64-unknown-linux-musl.tar.gz \
     /tmp/sccache.tar.gz
@@ -24,10 +22,18 @@ RUN tar -xzf /tmp/sccache.tar.gz -C /tmp \
         /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl/sccache \
         /usr/local/bin/sccache \
     && rm -rf /tmp/sccache.tar.gz /tmp/sccache-v0.17.0-x86_64-unknown-linux-musl
+COPY --from=planner /app/recipe.json recipe.json
+COPY scripts/build_release.sh scripts/release_linker.sh scripts/
+ARG SCHOOL_COMPILER_CACHE=off
+# A changed workspace recipe misses the whole cargo-chef layer. Compiler caching
+# still reuses unchanged dependencies instead of compiling them all from scratch.
+RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
+    --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
+    --mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache \
+    bash scripts/build_release.sh dependencies
 COPY . .
 # Disable local ThinLTO only for the final application crate. Dependencies keep
 # their existing release settings and cargo-chef cache; opt-level is unchanged.
-ARG SCHOOL_COMPILER_CACHE=off
 RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
     --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
     --mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache \
@@ -38,6 +44,8 @@ COPY --from=builder /app/target/cargo-timings/cargo-timing.html /cargo-timing.ht
 COPY --from=builder /app/target/cargo-timings/sccache-stats.json /sccache-stats.json
 COPY --from=builder /app/target/cargo-timings/build-metrics.json /build-metrics.json
 COPY --from=builder /app/target/cargo-timings/link-nanoseconds.txt /link-nanoseconds.txt
+COPY --from=builder /app/target/dependency-timings/build-metrics.json /dependency-build-metrics.json
+COPY --from=builder /app/target/dependency-timings/sccache-stats.json /dependency-sccache-stats.json
 
 FROM public.ecr.aws/docker/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 WORKDIR /app

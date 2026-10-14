@@ -918,7 +918,8 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			);
 		} else {
 			const release = await readRepo('backend-school/scripts/build_release.sh');
-			assert.match(dockerfile, /RUN cargo chef cook --release --recipe-path recipe.json/);
+			assert.match(dockerfile, /bash scripts\/build_release\.sh dependencies/);
+			assert.match(release, /cargo chef cook --release --recipe-path recipe.json/);
 			assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
 			assert.match(
 				dockerfile,
@@ -928,7 +929,7 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			assert.match(dockerfile, /bash scripts\/build_release\.sh/);
 			assert.match(
 				release,
-				/^cargo rustc --release --locked --bin backend-school --timings -- -C lto=off -C "linker=\$PWD\/scripts\/release_linker\.sh"$/m
+				/^\s+cargo rustc --release --locked --bin backend-school --timings -- -C lto=off -C "linker=\$PWD\/scripts\/release_linker\.sh"$/m
 			);
 			assert.match(release, /SCCACHE_GHA_VERSION=schoolorbit-backend-school/);
 			assert.match(release, /ACTIONS_CACHE_SERVICE_V2=true/);
